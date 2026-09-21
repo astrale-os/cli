@@ -80,11 +80,18 @@ export function useChatMutations() {
     onError: (error) => toast.error(`Could not close the chat — ${String(error)}`),
   })
   const update = useMutation({
-    mutationFn: (input: { chatId: string; title?: string; model?: string; effort?: string }) =>
+    mutationFn: (input: {
+      chatId: string
+      title?: string
+      model?: string
+      effort?: string
+      fastMode?: boolean
+    }) =>
       api.updateChat(input.chatId, {
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.effort === undefined ? {} : { effort: input.effort }),
+        ...(input.fastMode === undefined ? {} : { fastMode: input.fastMode }),
       }),
     onSuccess: () => refresh(),
     onError: (error) => toast.error(String(error)),

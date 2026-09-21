@@ -26,6 +26,7 @@ const effortId = provider === 'codex' ? 'reasoning_effort' : 'effort'
 let buffer = ''
 let promptRequest
 let currentModel = 'native'
+let currentFast = false
 
 const record = (value) => {
   if (log) appendFileSync(log, JSON.stringify(value) + '\\n')
@@ -56,6 +57,14 @@ const configOptions = () => [
       { value: 'native', name: 'Native' },
       { value: 'studio-model', name: 'Studio' },
     ],
+  },
+  {
+    id: 'fast-mode',
+    name: 'Fast mode',
+    category: 'model_config',
+    type: 'boolean',
+    currentValue: currentFast,
+    description: '1.5x speed, increased usage',
   },
   ...(process.env.FAKE_ACP_NO_EFFORT === '1'
     ? []
@@ -158,6 +167,7 @@ function handle(message) {
       return
     case 'session/set_config_option':
       if (params.configId === 'model') currentModel = params.value
+      if (params.configId === 'fast-mode') currentFast = params.value
       send({ id: message.id, result: { configOptions: configOptions() } })
       return
     case 'session/delete':
@@ -410,6 +420,7 @@ describe('ACP harness adapter', () => {
       appendSystemPrompt: 'Return the Studio machine block.',
       model: 'studio-model',
       effort: 'max',
+      fastMode: true,
       access: 'workspace',
       mcpServers: [
         {
@@ -457,6 +468,7 @@ describe('ACP harness adapter', () => {
       'session/set_mode',
       'session/set_config_option',
       'session/set_config_option',
+      'session/set_config_option',
       'session/prompt',
     ])
     const created = requests.find((message) => message.method === 'session/new')!
@@ -478,10 +490,15 @@ describe('ACP harness adapter', () => {
     )
     expect(configRequests.map((message) => message.params!.configId)).toEqual([
       'model',
+      'fast-mode',
       'reasoning_effort',
     ])
     // `max` is a rung Codex really has, so it is sent as asked rather than capped
-    expect(configRequests.map((message) => message.params!.value)).toEqual(['studio-model', 'max'])
+    expect(configRequests.map((message) => message.params!.value)).toEqual([
+      'studio-model',
+      true,
+      'max',
+    ])
     expect(requests.find((message) => message.id === 'permission-1')!.result).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow' },
     })

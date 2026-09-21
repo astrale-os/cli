@@ -8,7 +8,14 @@ import type { AcpProviderOptions } from './provider'
 
 import { isAgentEffort } from '../../../../shared/agent-effort'
 import { childEnvironment, terminateProcessTree } from '../process'
-import { effortConfig, effortOptions, modelConfig, modelOptions } from './options'
+import {
+  effortConfig,
+  effortOptions,
+  fastConfig,
+  fastEnabled,
+  modelConfig,
+  modelOptions,
+} from './options'
 import { providerEnvironment, providerSessionMeta } from './provider'
 
 const PROBE_TIMEOUT_MS = 30_000
@@ -303,6 +310,7 @@ export async function probeAcpLoadout(
     // Read the ladder AFTER the model override: it is the selected model that
     // decides which levels exist, and whether there are any at all.
     const effort = effortConfig(snapshot.configOptions)
+    const fast = fastConfig(snapshot.configOptions)
     const efforts = effortOptions(options.provider, effort)
     const nativeEffort = effortConfig(snapshot.nativeConfigOptions)?.currentValue
     const implementation = snapshot.initialized.agentInfo
@@ -317,6 +325,14 @@ export async function probeAcpLoadout(
       ...(isAgentEffort(effort?.currentValue) ? { effort: effort.currentValue } : {}),
       ...(isAgentEffort(nativeEffort) ? { nativeEffort } : {}),
       ...(efforts === undefined ? {} : { efforts }),
+      ...(fast
+        ? {
+            fastMode: {
+              enabled: fastEnabled(fast),
+              ...(fast.description ? { description: fast.description } : {}),
+            },
+          }
+        : {}),
       cwd: root,
       protocolVersion: snapshot.initialized.protocolVersion,
       agentName,

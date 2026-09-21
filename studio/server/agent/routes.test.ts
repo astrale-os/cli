@@ -138,6 +138,27 @@ test('a chat pins its own reasoning level, and the turn carries it', async () =>
   expect(await patch('')).not.toHaveProperty('effort')
 })
 
+test('fast mode can be toggled on a chat without starting or stopping a turn', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  fixture()
+  const chatId = listChats().activeId
+  const patch = async (fastMode: boolean) => {
+    const url = new URL('http://127.0.0.1/api/agent/chats')
+    return (await (
+      await handleAgentRoute({
+        req: new Request(url, { method: 'POST' }),
+        url,
+        rest: '/agent/chats',
+        body: { action: 'update', chatId, fastMode },
+        notify: () => {},
+      })
+    )?.json()) as { fastMode?: boolean; status: string }
+  }
+
+  expect(await patch(true)).toMatchObject({ fastMode: true, status: 'idle' })
+  expect(await patch(false)).toMatchObject({ fastMode: false, status: 'idle' })
+})
+
 test('a new chat resolves and exposes the domain its creation brief targets', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   const handle = fixture()

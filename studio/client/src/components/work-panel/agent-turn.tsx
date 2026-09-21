@@ -1,8 +1,9 @@
 import type { AgentEvent, AgentRun } from '@shared/types'
 
-import { Loader2, MessageSquare, TriangleAlert } from 'lucide-react'
+import { Copy, Loader2, LogIn, MessageSquare, TriangleAlert } from 'lucide-react'
 
 import { Markdown } from '@/components/markdown'
+import { Button } from '@/components/ui/button'
 import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -37,6 +38,32 @@ export function activityLabel(run: AgentRun): string {
 
 const isProse = (event: AgentEvent) => event.kind === 'message'
 
+export interface AgentAuthFailure {
+  title: string
+  command: string
+}
+
+/**
+ * ACP providers currently return authentication failures as unstructured text.
+ * Keep that implementation detail out of the conversation while retaining a
+ * deliberately narrow match: an unrelated 401 from a tool must remain visible.
+ */
+export function agentAuthFailure(run: AgentRun): AgentAuthFailure | undefined {
+  if (!run.error || (run.harness !== 'claude' && run.harness !== 'codex')) return undefined
+  const error = run.error.toLowerCase()
+  const authenticationFailure =
+    /failed to authenticate|authentication (?:failed|required)|not (?:logged|signed) in|login required/.test(
+      error,
+    ) ||
+    (/oauth|auth token|credentials/.test(error) &&
+      /expired|refresh|missing|invalid|unauthorized/.test(error))
+  if (!authenticationFailure) return undefined
+
+  return run.harness === 'codex'
+    ? { title: 'Your Codex session has expired', command: 'codex login' }
+    : { title: 'Your Claude Code session has expired', command: 'claude auth login' }
+}
+
 /** How many comment threads this turn answered in place. */
 export function answeredThreads(run: AgentRun): number {
   const replied = new Set(
@@ -51,11 +78,20 @@ export function answeredThreads(run: AgentRun): number {
  * One exchange: what you asked, then what came back. The steps in between stay
  * out of the way — a turn is only legible once it is a message, not a log.
  */
-export function AgentTurn({ run, onResume }: { run: AgentRun; onResume?: () => void }) {
+export function AgentTurn({
+  run,
+  onResume,
+  onRetry,
+}: {
+  run: AgentRun
+  onResume?: () => void
+  onRetry?: () => void
+}) {
   const messages = run.events.filter(isProse)
   const active = run.status === 'running' || run.status === 'queued'
   const answered = answeredThreads(run)
   const setPanelTab = useUI((state) => state.setPanelTab)
+  const authFailure = agentAuthFailure(run)
 
   return (
     <div className="space-y-2.5">
@@ -85,10 +121,46 @@ export function AgentTurn({ run, onResume }: { run: AgentRun; onResume?: () => v
                 <span className="truncate">{activityLabel(run)}</span>
               </div>
             )}
-            {!active && run.error && (
+            {!active && run.error && !authFailure && (
               <div className="flex items-start gap-1.5 text-[12px] text-destructive">
                 <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 flex-1">{run.error}</span>
+              </div>
+            )}
+            {!active && authFailure && (
+              <div
+                role="alert"
+                className="space-y-2.5 rounded-lg border border-destructive/25 bg-destructive/5 p-3"
+              >
+                <div className="flex items-start gap-2">
+                  <LogIn className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium text-foreground">{authFailure.title}</p>
+                    <p className="text-[12px] leading-relaxed text-muted-foreground">
+                      Sign in again from a terminal. Your conversation is saved, so you can retry
+                      this turn without losing your work.
+                    </p>
+                  </div>
+                </div>
+                <code className="block rounded-md bg-muted px-2.5 py-2 font-mono text-[11px] text-foreground">
+                  {authFailure.command}
+                </code>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => void navigator.clipboard.writeText(authFailure.command)}
+                  >
+                    <Copy />
+                    Copy command
+                  </Button>
+                  {onRetry && (
+                    <Button type="button" size="xs" onClick={onRetry}>
+                      I’ve signed in — retry
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
             {run.status === 'interrupted' && onResume && (

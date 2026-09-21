@@ -89,6 +89,7 @@ export async function runAsk(
     ...(chat?.sessionId ? { sessionId: chat.sessionId } : {}),
     model,
     effort,
+    fastMode: chat?.fastMode,
     access: resolved.configuration.settings.agentAccess,
     env: { ...env, ASTRALE_SESSION: studioSessionId(workspace.key) },
     signal,

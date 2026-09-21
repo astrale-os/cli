@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Boxes,
   FlaskConical,
@@ -5,11 +6,13 @@ import {
   MessagesSquare,
   Network,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   Workflow,
 } from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useEffect, useMemo } from 'react'
+import { toast } from 'sonner'
 
 import { AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
@@ -23,7 +26,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
 import { useAgentLive, useAgentSnapshot } from '@/lib/agent'
-import { useWorkspace } from '@/lib/hooks'
+import { api, qk } from '@/lib/api'
+import { useInvalidateDomain, useWorkspace } from '@/lib/hooks'
 import { type SectionKey, useUI } from '@/lib/store'
 import { useStudioEventSync } from '@/lib/studio-events'
 import { cn } from '@/lib/utils'
@@ -78,12 +82,14 @@ function IconAction({
   label,
   shortcut,
   active,
+  disabled,
   onClick,
   children,
 }: {
   label: string
   shortcut?: string
   active?: boolean
+  disabled?: boolean
   onClick: () => void
   children: ReactNode
 }) {
@@ -94,9 +100,10 @@ function IconAction({
           type="button"
           aria-label={label}
           aria-pressed={active}
+          disabled={disabled}
           onClick={onClick}
           className={cn(
-            'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+            'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-60',
             active
               ? 'bg-primary/10 text-primary'
               : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -114,6 +121,8 @@ function IconAction({
 }
 
 export function App() {
+  const queryClient = useQueryClient()
+  const invalidateDomain = useInvalidateDomain()
   const { data: domains } = useWorkspace()
   const workspaceUiReady = useWorkspaceUiSync()
   const section = useUI((s) => s.section)
@@ -136,6 +145,15 @@ export function App() {
     (selectionDomainId && validIds.has(selectionDomainId) ? selectionDomainId : undefined) ??
     domains?.[0]?.id
   const scopedDomain = domains?.find((domain) => domain.id === scopedDomainId)
+  const refreshDomains = useMutation({
+    mutationFn: api.refreshWorkspace,
+    onSuccess: ({ refreshed }) => {
+      for (const domain of domains ?? []) invalidateDomain(domain.id)
+      void queryClient.invalidateQueries({ queryKey: qk.workspace })
+      toast.success(`${refreshed === 1 ? 'Domain' : 'Domains'} refreshed`)
+    },
+    onError: (error) => toast.error(`Could not refresh domains — ${String(error)}`),
+  })
 
   // A concrete canvas selection hands its owner to the local readers. Their picker
   // can then diverge without creating a workspace-wide active-domain concept.
@@ -224,6 +242,13 @@ export function App() {
 
           {/* what you can do */}
           <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            <IconAction
+              label="Refresh domains"
+              disabled={refreshDomains.isPending}
+              onClick={() => refreshDomains.mutate()}
+            >
+              <RefreshCw className={cn('h-4 w-4', refreshDomains.isPending && 'animate-spin')} />
+            </IconAction>
             <IconAction label="Search" shortcut="⌘K" onClick={() => setPaletteOpen(true)}>
               <Search className="h-4 w-4" />
             </IconAction>
