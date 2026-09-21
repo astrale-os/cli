@@ -21,6 +21,11 @@ export const frontend = defineFrontend({
   A View declaration has no callable auth mode: its graph reads and calls retain their own authorization.
 - Keep `frontend/` for browser entry/router/styles, `views/` for SDK hooks and screen orchestration,
   and `ui/` for presentation. Leaf UI receives values/callbacks, not credentials or a Kernel client.
+- The SDK's Cloudflare adapter already manages caching for the frontends it serves; standalone
+  Workers do not inherit it. Verify the serving path before adding local cache headers. Long-lived
+  asset caching requires public files identified by the build as content-addressed, not a filename
+  regex. Keep HTML, API/auth, and cookie-bearing responses outside this asset policy, and preserve
+  existing `private`/`no-store` directives.
 
 ## React Shell and authentication
 
