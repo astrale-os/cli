@@ -131,6 +131,7 @@ const TARGET_BARREL_HELPERS = [
   'isIrSchemaRef',
   'isNodePathSchema',
   'isSchemaRevision',
+  'nodePathAccepts',
   'parseClassRefKey',
   'parseSchemaRefKey',
   'schemaRefKey',

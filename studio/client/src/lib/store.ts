@@ -100,11 +100,12 @@ interface UIState {
   selectionDomainId?: string
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
-  /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains / Integrations
-   *  overview) instead of the selected-class detail. Cleared by selecting a class / navigating. */
+  /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Functions / Domains /
+   *  Integrations overview) instead of the selected-class detail. Cleared by selecting a
+   *  class / navigating. */
   panelOverlay: {
-    kind: 'views' | 'domains' | 'integrations'
-    /** Domains and Integrations are local; Views may span the whole canvas. */
+    kind: 'views' | 'functions' | 'domains' | 'integrations'
+    /** Domains and Integrations are local; Views and Functions may span the whole canvas. */
     domainId?: string
   } | null
   /** comment-mode draft: the floating composer target + screen position */
@@ -157,13 +158,17 @@ interface UIState {
   /** Jump to whatever an anchor points at: the right section, the member that declares
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string, domainId: string) => void
-  setPanelOverlay: (kind: 'views' | 'domains' | 'integrations' | null, domainId?: string) => void
+  setPanelOverlay: (
+    kind: 'views' | 'functions' | 'domains' | 'integrations' | null,
+    domainId?: string,
+  ) => void
   /** `domainId` names the owner; it is required for a real selection. */
   selectClass: (n?: string, domainId?: string) => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
   focusClass: (id: string, domainId: string) => void
   /** Drop the selection and its graph focus — what clicking empty space means. Leaves an
-   *  open overlay panel (Views / Domains / Integrations) alone: it is not a selection. */
+   *  open overlay panel (Views / Functions / Domains / Integrations) alone: it is not a
+   *  selection. */
   clearSelection: () => void
   setFocus: (id: string | null) => void
   toggleCardinality: () => void
@@ -188,7 +193,7 @@ function revealSelection(ref: string): string {
 function revealFocus(ref: string): string | null {
   if (ref.startsWith('edge.')) return null
   const selection = revealSelection(ref)
-  return selection.startsWith('class.') ? selection : null
+  return selection.startsWith('class.') || selection.startsWith('function.') ? selection : null
 }
 /** What the canvas is asked to bring into view. An `edge.` ref stays an edge ref: the canvas
  *  frames the cards its paths run between, and knows to drop the request if it draws none. */
@@ -292,6 +297,7 @@ export const useUI = create<UIState>((set) => ({
       selectionDomainId: domainId,
       ...(selection.startsWith('class.') ||
       selection.startsWith('edge.') ||
+      selection.startsWith('function.') ||
       selection.startsWith('module.')
         ? {
             selectedClass: revealSelection(selection),
@@ -326,11 +332,12 @@ export const useUI = create<UIState>((set) => ({
         revealTarget: null,
         // A same-named class in ANOTHER domain is a different node: focus follows the
         // selection there rather than staying pinned on the one it used to mean.
-        focusId: selectedClass?.startsWith('class.')
-          ? selectedClass
-          : owner === s.selectionDomainId
-            ? s.focusId
-            : null,
+        focusId:
+          selectedClass?.startsWith('class.') || selectedClass?.startsWith('function.')
+            ? selectedClass
+            : owner === s.selectionDomainId
+              ? s.focusId
+              : null,
       }
     }),
   focusClass: (id, domainId) =>

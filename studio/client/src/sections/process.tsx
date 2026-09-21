@@ -15,10 +15,10 @@ import {
 } from '@/components/studio-kit'
 import { ScrollArea } from '@/components/ui/misc'
 import { methodGlyph } from '@/lib/friendly'
+import { functionGlyph } from '@/lib/functions'
 import { useAnatomy, useBundle } from '@/lib/hooks'
 import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
-import { cn } from '@/lib/utils'
 import { DomainPicker, DomainsRailHeader } from '@/schema-studio/domains-rail'
 import { ModulesSidebar } from '@/schema-studio/sidebar'
 
@@ -69,6 +69,7 @@ export function ProcessSection({
   const setSection = useUI((s) => s.setSection)
   const focusClass = useUI((s) => s.focusClass)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
+  const revealOnCanvas = useUI((s) => s.revealOnCanvas)
 
   const bundle = bundleQ.data
   const anatomy = anatomyQ.data
@@ -86,7 +87,7 @@ export function ProcessSection({
     if (domainFunctions.length > 0) {
       out.push({
         owner: ir.domain,
-        label: 'Domain callables',
+        label: 'Functions',
         className: null,
         fns: domainFunctions.map(([name, method]) => ({
           owner: ir.domain,
@@ -126,9 +127,21 @@ export function ProcessSection({
     setSection('schema')
     focusClass(`class.${name}`, domainId)
   }
+  // A standalone Function is a schema member with a node of its own, so it gets the same
+  // jump a Class does — Process names the callable, the schema shows what it is wired to.
+  const gotoFunction = (name: string) => {
+    if (!domainId) return
+    setSection('schema')
+    focusClass(`function.${name}`, domainId)
+    revealOnCanvas(`function.${name}`)
+  }
   const gotoViews = () => {
     setSection('schema')
     setPanelOverlay('views', domainId)
+  }
+  const gotoFunctions = () => {
+    setSection('schema')
+    setPanelOverlay('functions', domainId)
   }
 
   if (!domainId) {
@@ -210,11 +223,15 @@ export function ProcessSection({
                     <Surface key={g.owner} className="overflow-hidden">
                       <button
                         type="button"
-                        onClick={g.className ? () => gotoClass(g.className!) : undefined}
-                        className={cn(
-                          'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                          g.className && 'hover:bg-accent/40',
-                        )}
+                        onClick={
+                          g.className === null ? gotoFunctions : () => gotoClass(g.className!)
+                        }
+                        title={
+                          g.className
+                            ? `Open ${g.className} in the schema`
+                            : 'Open the Functions overview'
+                        }
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40"
                       >
                         <IconTile tone="muted" size="sm">
                           {g.className ? <Box /> : <Braces />}
@@ -232,7 +249,9 @@ export function ProcessSection({
                             origin={ir.domain}
                             domainId={domainId}
                             onClick={
-                              fn.ownerKind === 'class' ? () => gotoClass(fn.owner) : undefined
+                              fn.ownerKind === 'class'
+                                ? () => gotoClass(fn.owner)
+                                : () => gotoFunction(fn.name)
                             }
                           />
                         ))}
@@ -293,7 +312,9 @@ function FnRow({
         ? { icon: Zap, tone: 'violet' }
         : 'abstract' in fn.method
           ? methodGlyph(fn.method)
-          : { icon: Zap, tone: 'violet' }
+          : // A standalone Function: the same glyph the canvas, the rail and the Functions
+            // overview give it, rather than a bolt it has not earned.
+            { icon: functionGlyph(fn), tone: 'fn' }
   const Glyph = glyph.icon
   const calls = fn.link?.kernelCalls ?? []
   const contractOnly =

@@ -15,13 +15,15 @@ import {
 import { type CSSProperties, useState } from 'react'
 
 import { ViewModal } from '@/components/view-modal'
+import { functionGlyph } from '@/lib/functions'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { driftLabel } from '@/lib/views'
 
+import { type FunctionNodeData, functionNodeId } from '../function-graph'
 import { type KernelRole } from '../inheritance'
 import { NodeCommentPin } from '../node-comment-pin'
-import { CLASS_H, CLASS_W, VIEW_H, VIEW_W, moduleTint } from '../palette'
+import { CLASS_H, CLASS_W, FUNCTION_H, FUNCTION_W, VIEW_H, VIEW_W, moduleTint } from '../palette'
 import { type ClassNodeData, type GroupNodeData } from '../projection'
 import { SchemaIcon } from '../schema-icon'
 import { type ViewNodeData, viewNodeId } from '../view-graph'
@@ -256,6 +258,58 @@ function ViewNode({ data }: NodeProps) {
   )
 }
 
+// ── functions ──
+
+/**
+ * A standalone Function, on the canvas next to the Classes it works on. It wears the
+ * view pill's shape — neither is a Class — in the function hue, so the two populations
+ * hanging off the cards stay tellable apart at any zoom. Clicking it OPENS it: unlike a
+ * view there is nothing to run here, and what a reader wants is the contract.
+ */
+function FunctionNode({ data }: NodeProps) {
+  const d = data as FunctionNodeData
+  const fn = d.fn
+  const select = useUI((s) => s.selectClass)
+  // The same glyph every other surface gives this callable: how it is implemented is
+  // the first thing a reader asks of a Function, and the pill has room for one mark.
+  const Glyph = functionGlyph(fn)
+  return (
+    <div
+      data-domain-id={d.domainId}
+      data-anchor-ref={functionNodeId(fn.name)}
+      data-anchor-excerpt={fn.name}
+      style={{ width: FUNCTION_W, height: FUNCTION_H }}
+      className="relative"
+    >
+      <Handle type="target" position={Position.Top} className="!opacity-0" />
+      <button
+        type="button"
+        title={[`Open ${fn.name}`, fn.link?.kind ?? 'contract only'].filter(Boolean).join(' · ')}
+        onClick={(event) => {
+          event.stopPropagation()
+          select(functionNodeId(fn.name), d.domainId)
+        }}
+        className={cn(
+          'group flex h-full w-full items-center gap-1.5 rounded-full border px-2.5',
+          'border-schema-function/45 bg-schema-function/10 text-schema-function',
+          'transition-colors hover:bg-schema-function/20',
+        )}
+      >
+        <Glyph className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left text-[12px] font-medium">{fn.name}</span>
+        {fn.contractOnly && <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />}
+      </button>
+      <NodeCommentPin
+        domainId={d.domainId}
+        anchorRef={functionNodeId(fn.name)}
+        kind="schema"
+        excerpt={fn.name}
+      />
+      <Handle type="source" position={Position.Bottom} className="!opacity-0" />
+    </div>
+  )
+}
+
 // ── external (cross-domain) nodes ──
 
 function ExtDomainNode({ data }: NodeProps) {
@@ -303,6 +357,7 @@ function ExtMemberNode({ data }: NodeProps) {
 export const schemaNodeTypes = {
   classNode: ClassNode,
   viewNode: ViewNode,
+  functionNode: FunctionNode,
   group: GroupNode,
   moduleNode: GroupNode,
   extDomain: ExtDomainNode,

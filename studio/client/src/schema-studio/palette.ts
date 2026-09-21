@@ -68,6 +68,13 @@ export const VIEW_W = 168
 export const VIEW_H = 32
 /** The view hue (matching `--schema-view`), for surfaces that need a literal colour. */
 export const VIEW_HUE = 205
+/** Rendered size of a function node. Same pill metrics as a view — both are callables
+ *  or screens hanging off the classes, and one shape for "not a class" keeps the
+ *  canvas readable at a glance; the hue is what tells them apart. */
+export const FUNCTION_W = 168
+export const FUNCTION_H = 32
+/** The function hue (matching `--schema-function`). */
+export const FUNCTION_HUE = 300
 /** Module box insets: children start below the header, padded on every side. */
 export const MODULE_HEADER = 38
 export const MODULE_PAD = 18

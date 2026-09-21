@@ -8,6 +8,8 @@ import {
   MODULE_COLLAPSED_H,
   MODULE_HEADER,
   MODULE_PAD,
+  FUNCTION_H,
+  FUNCTION_W,
   VIEW_H,
   VIEW_W,
 } from './palette'
@@ -107,6 +109,7 @@ interface Rect {
 const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
   classNode: { w: CLASS_W, h: CLASS_H },
   viewNode: { w: VIEW_W, h: VIEW_H },
+  functionNode: { w: FUNCTION_W, h: FUNCTION_H },
   moduleNode: { w: MODULE_BOX.min.w, h: MODULE_COLLAPSED_H },
   group: MODULE_BOX.min,
   workspaceDomain: DOMAIN_BOX.min,

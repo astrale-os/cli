@@ -59,6 +59,7 @@
   --edge-cross: oklch(0.68 0.1 45);
   --edge-inherit: oklch(0.55 0.14 300);
   --edge-view: oklch(0.62 0.09 205);
+  --edge-function: oklch(0.62 0.13 300);
   --edge-soft: oklch(0.78 0.01 255);
   --minimap-mask: oklch(0.55 0.01 255 / 0.12);
 }
@@ -105,6 +106,7 @@
   --edge-cross: oklch(0.66 0.11 45);
   --edge-inherit: oklch(0.66 0.13 300);
   --edge-view: oklch(0.64 0.08 205);
+  --edge-function: oklch(0.66 0.12 300);
   --edge-soft: oklch(0.42 0.012 255);
   --minimap-mask: oklch(0.15 0.01 255 / 0.5);
 }
@@ -151,6 +153,7 @@
   --color-edge-cross: var(--edge-cross);
   --color-edge-inherit: var(--edge-inherit);
   --color-edge-view: var(--edge-view);
+  --color-edge-function: var(--edge-function);
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   --font-sans:
     ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui,

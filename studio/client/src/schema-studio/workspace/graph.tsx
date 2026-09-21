@@ -40,7 +40,7 @@ import { type EdgeFocus, edgeTypes } from '../floating-edge'
 import { type Geometry, normalizeContainerLayout } from '../geometry'
 import { neighborSet, relationshipEdgeIds, selectedRelationshipContext } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
-import { CLASS_H, CLASS_W, DOCK_CLEARANCE, VIEW_HUE, moduleTint } from '../palette'
+import { CLASS_H, CLASS_W, DOCK_CLEARANCE, FUNCTION_HUE, VIEW_HUE, moduleTint } from '../palette'
 import { workspaceExternalNodeId, workspaceExternalOrigin } from './external-frames'
 import { workspaceGeometry, workspaceLayoutUpdate } from './geometry'
 import {
@@ -88,6 +88,9 @@ function revealTargetNodeIds(
     const composed = composedDomainIdByOrigin.get(origin)
     return [composed ? workspaceDomainNodeId(composed) : workspaceExternalNodeId(origin)]
   }
+  // A standalone Function is a node of its own, named exactly as its ref: nothing to
+  // resolve through the relationship paths below.
+  if (target.startsWith('function.')) return [qualifiedNodeId(domainId, target)]
   const name = /^(?:class|edge)\./.exec(target) ? target.slice(target.indexOf('.') + 1) : null
   if (name === null) return null
   const paths = relationshipEdgeIds(edges, domainId, name)
@@ -491,7 +494,8 @@ export function WorkspaceSchemaGraph({
 
   const displayNodes = useMemo(() => {
     const mapped = nodes.map((node) => {
-      const focusable = node.type === 'classNode' || node.type === 'viewNode'
+      const focusable =
+        node.type === 'classNode' || node.type === 'viewNode' || node.type === 'functionNode'
       const inFocus = focusable && sets ? sets.nodeIds.has(node.id) : false
       const cls =
         cn(
@@ -589,7 +593,8 @@ export function WorkspaceSchemaGraph({
             }
             const target = localNodeRef(node.id)
             if (!target) return
-            if (target.localId.startsWith('class.')) select(target.domainId, target.localId)
+            if (target.localId.startsWith('class.') || target.localId.startsWith('function.'))
+              select(target.domainId, target.localId)
             else if (target.localId.startsWith('grp-'))
               select(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
           }}
@@ -644,9 +649,11 @@ export function WorkspaceSchemaGraph({
                 ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
                 : node.type === 'viewNode'
                   ? moduleTint(VIEW_HUE, scheme).mark
-                  : node.type === 'workspaceDomain' && !solo
-                    ? moduleTint(255, scheme).border
-                    : 'transparent'
+                  : node.type === 'functionNode'
+                    ? moduleTint(FUNCTION_HUE, scheme).mark
+                    : node.type === 'workspaceDomain' && !solo
+                      ? moduleTint(255, scheme).border
+                      : 'transparent'
             }
             nodeStrokeWidth={0}
           />

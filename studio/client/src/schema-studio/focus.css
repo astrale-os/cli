@@ -2,7 +2,7 @@
    Opacity carries the fade — except on edge labels, which fade through their colours so they
    keep hiding the line they name; the node's own module hue carries the lift, so a highlight
    always says WHICH family a connection belongs to. Group containers keep their chrome legible (only
-   class + view nodes and edges fade) so the user keeps their bearings.
+   class, view + function nodes and edges fade) so the user keeps their bearings.
 
    Every selector below hangs off React Flow's OWN wrapper classes — `react-flow__node` and,
    where a rule is type-specific, `react-flow__node-<nodeType>`. A node's own class (`classNode`)
@@ -47,7 +47,8 @@
 .react-flow__node-classNode.is-related > div {
   border-color: var(--node-tint);
 }
-.react-flow__node-viewNode.is-related > div > button {
+.react-flow__node-viewNode.is-related > div > button,
+.react-flow__node-functionNode.is-related > div > button {
   border-color: currentColor;
 }
 .schema-edge-label.is-on {

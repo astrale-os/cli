@@ -3,6 +3,7 @@ import type { Edge, Node } from '@xyflow/react'
 
 import { isIrClassRef } from '@shared/schema/identity'
 
+import { buildFunctionsModel } from '@/lib/functions'
 import { encodeFlowEdgeId, encodeFlowNodeId } from '@/lib/targets'
 import { buildViewsModel } from '@/lib/views'
 
@@ -10,6 +11,7 @@ import type { WorkspaceDomainInput } from './use-domain-inputs'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from '../edge-markers'
 import { elkLayout } from '../elk-layout'
+import { functionGraph } from '../function-graph'
 import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
 import { isKernelClass, isKernelImplementationClass } from '../inheritance'
 import { moduleOfClass } from '../modules'
@@ -93,9 +95,17 @@ export async function prepareWorkspaceDomain(
     collapsed,
     input.visibility.hidden,
   )
+  // Standalone Functions ride along the same way, for the same reason: they are members
+  // of this domain's schema, so its frame has to hold them.
+  const functions = functionGraph(
+    buildFunctionsModel(input.bundle),
+    input.bundle,
+    collapsed,
+    input.visibility.hidden,
+  )
   const structure = {
-    nodes: [...schema.nodes, ...views.nodes],
-    edges: [...schema.edges, ...views.edges],
+    nodes: [...schema.nodes, ...views.nodes, ...functions.nodes],
+    edges: [...schema.edges, ...views.edges, ...functions.edges],
   }
   const saved = input.layout.positions
   const placed = structure.nodes.filter((node) => saved[node.id])
