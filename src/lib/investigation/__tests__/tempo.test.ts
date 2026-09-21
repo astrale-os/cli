@@ -77,3 +77,67 @@ test('bounds saturated searches, deduplicates trace IDs and exposes unknown job 
     server.stop(true)
   }
 })
+
+for (const provider of ['tempo', 'cockpit'] as const) {
+  test(`inspect --${provider}-url overrides the other configured provider over real HTTP`, async () => {
+    const requests: string[] = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const path = new URL(request.url).pathname
+        requests.push(path)
+        if (path === '/login') {
+          expect(request.headers.get('X-Auth-Token')).toBe('operator-key')
+          return new Response(null, { status: 302, headers: { 'Set-Cookie': 'session=test' } })
+        }
+        return new Response(null, { status: 404 })
+      },
+    })
+    try {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          new URL('../../../../bin/astrale.ts', import.meta.url).pathname,
+          'inspect',
+          '--telemetry-instance',
+          'instance',
+          '--trace',
+          'ab',
+          `--${provider}-url`,
+          server.url.toString(),
+          '--tempo-datasource',
+          'tempo',
+          '--json',
+        ],
+        {
+          env: {
+            ...process.env,
+            ASTRALE_TEMPO_URL: 'http://unused-tempo.invalid',
+            ASTRALE_COCKPIT_URL: 'http://unused-cockpit.invalid',
+            ASTRALE_TELEMETRY_TOKEN: '',
+            SCW_API_KEY: 'operator-key',
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      )
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      expect(code).toBe(1)
+      expect(stdout + stderr).toContain('TELEMETRY_READ_FAILED')
+      expect(requests).toEqual(
+        provider === 'cockpit'
+          ? [
+              '/login',
+              '/api/datasources/proxy/uid/tempo/api/traces/000000000000000000000000000000ab',
+            ]
+          : ['/api/traces/000000000000000000000000000000ab'],
+      )
+    } finally {
+      server.stop(true)
+    }
+  })
+}

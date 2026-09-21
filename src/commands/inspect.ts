@@ -76,9 +76,10 @@ Examples:
         until: opts.until ?? new Date().toISOString(),
         limit: opts.maxPages ?? '100',
       })
+      const explicitTelemetry = opts.tempoUrl !== undefined || opts.cockpitUrl !== undefined
       const reader = createTempoReader({
-        tempoUrl: opts.tempoUrl ?? process.env.ASTRALE_TEMPO_URL,
-        cockpitUrl: opts.cockpitUrl ?? process.env.ASTRALE_COCKPIT_URL,
+        tempoUrl: explicitTelemetry ? opts.tempoUrl : process.env.ASTRALE_TEMPO_URL,
+        cockpitUrl: explicitTelemetry ? opts.cockpitUrl : process.env.ASTRALE_COCKPIT_URL,
         datasource: opts.tempoDatasource,
         token: process.env.ASTRALE_TELEMETRY_TOKEN,
         scalewayKey: process.env.SCW_API_KEY,
