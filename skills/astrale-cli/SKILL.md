@@ -366,7 +366,7 @@ objects. Use `--data` for nested or digits-only string values.
 ## Journal
 
 `astrale logs` reads the public Kernel journal syscall and returns
-`{ records, frontier?, gap?, cursor? }`. Filters match exact values; use `--topic-prefix` for
+`{ records, cursor? }`. Filters match exact values; use `--topic-prefix` for
 prefix matching:
 
 ```bash
@@ -381,41 +381,6 @@ Structured output retains the admitted `correlation` object, including invocatio
 parent identifiers, and includes `correlationId` as a projection of `invocationId`.
 With `--json`, `--follow` emits NDJSON with one complete admitted record per line; combining
 `--format yaml` with `--follow` is rejected.
-
-## Agent investigations
-
-Use `astrale inspect` to correlate a trace or operation with the authorized Instance journal:
-
-```bash
-astrale inspect --telemetry-instance <service.instance.id> --trace <trace-id> --cockpit-url <url> --as operator --json
-astrale inspect --telemetry-instance <service.instance.id> --operation <operation-id> --tempo-url <url> --since <ISO-timestamp> --json
-astrale logs -i staging --all --max-pages 100 --since <ISO-timestamp> --json
-```
-
-Cockpit uses `SCW_API_KEY`; direct Tempo uses optional `ASTRALE_TELEMETRY_TOKEN`.
-URLs may be configured with `ASTRALE_COCKPIT_URL` or `ASTRALE_TEMPO_URL`. The CLI selects
-an unambiguous Tempo datasource, or accepts `--tempo-datasource <uid>`. It resolves the
-exact telemetry Instance issuer and checks an explicit Kernel target against that issuer.
-
-Select an existing identity explicitly with `--as`, or configure an existing operator identity
-with `instance bookmark <name> --url <url> --operator-identity <identity>`. This affects investigations
-only; ordinary commands keep the bookmark's default identity. No root identity is imported
-automatically, and a refusal never triggers a switch to another identity. Session credential
-renewal stays in the ordinary Client Session. An explicit `instance root import` accepts `--fleet`.
-
-`logs --all` freezes its time window, follows empty pages with cursors, deduplicates entries,
-and retains frontier, gaps, capture omissions and partial-read errors. Always inspect `coverage`.
-Resume with its cursor, original selection and `--until`; changing the selection invalidates a cursor.
-`--invocation <root-id> --invocation-source <issuer>` selects an existing root invocation.
-A page limit, gap, repeated cursor or failed read is partial, not an empty successful investigation.
-Read errors preserve prior evidence and return a nonzero exit status. `--all` and `--follow` cannot mix.
-
-The inspection dossier preserves raw authorized journal payloads, spans and version resources.
-Provider statistics, cache decisions and phase durations are available only on instrumented versions;
-missing fields are unknown, not zero or a cache miss. Backend template fingerprints identify exact
-unbound text, not semantic query equivalence. Do not sum parent and child durations or label
-provider-call time minus internal FalkorDB time as exact network latency. Trace search coverage
-never proves sampling completeness. Cypher templates are not retained by this feature.
 
 ## Views And Browser Sessions
 
