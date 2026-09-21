@@ -7,7 +7,7 @@ import type { CommandDefinition } from '../../../program'
 import { formatKernelError } from '../../../connection/errors'
 import { AstraleError } from '../../../errors'
 import { findOwnedInstance, listOwnedInstancesWithIdentity } from '../../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS } from '../../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS, FLEET_OPTION } from '../../../lib/admin-target'
 import { importInstanceRootIdentity } from '../../../lib/instance-root-identity'
 import { canPrompt } from '../../../lib/interactive'
 import { log, withSpinner } from '../../../lib/log'
@@ -28,6 +28,7 @@ export default {
   arguments: [{ name: 'instance', description: 'Owned Instance slug or id', required: true }],
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
     { flags: '--yes', description: 'Skip the typed recovery confirmation' },
   ],
   afterHelpText: `

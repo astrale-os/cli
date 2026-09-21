@@ -160,6 +160,7 @@ describe('program composition', () => {
       'idp refresh',
       'idp remove',
       'idp show',
+      'inspect',
       'instance',
       'instance active',
       'instance bookmark',
@@ -615,7 +616,7 @@ describe('help contract — skill is single-source, not duplicated', () => {
   )
 })
 
-test('exposes Fleet selection only on the four Fleet-targeted commands', async () => {
+test('exposes Fleet selection on Fleet-targeted commands including root recovery', async () => {
   const program = await buildProgram()
   expect(program.commands.some((command) => command.name() === 'fleet')).toBe(false)
   const selected: string[] = []
@@ -632,5 +633,6 @@ test('exposes Fleet selection only on the four Fleet-targeted commands', async (
     'domain publish',
     'instance create',
     'instance list',
+    'instance root import',
   ])
 })

@@ -28,6 +28,7 @@ export const InstanceEntrySchema = z.object({
   kind: InstanceKindSchema.optional(),
   mode: RegistryModeSchema.optional(),
   defaultIdentity: z.string().optional(),
+  operatorIdentity: z.string().min(1).optional(),
   caFile: z.string().optional(),
   // WorkOS org captured from `instance create` — authoritative for token
   // scoping (the router's /auth/org lookup is eventually consistent).
@@ -51,6 +52,7 @@ export type AddInstanceOpts = {
   issuer?: string
   domainIssuer?: string
   defaultIdentity?: string
+  operatorIdentity?: string
   caFile?: string
   organizationId?: string
 }
