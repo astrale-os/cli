@@ -248,11 +248,9 @@ export function ProcessSection({
                             fn={fn}
                             origin={ir.domain}
                             domainId={domainId}
-                            onClick={
-                              fn.ownerKind === 'class'
-                                ? () => gotoClass(fn.owner)
-                                : () => gotoFunction(fn.name)
-                            }
+                            {...(fn.ownerKind === 'class'
+                              ? { onClick: () => gotoClass(fn.owner) }
+                              : { onOpen: () => gotoFunction(fn.name) })}
                           />
                         ))}
                       </div>
@@ -299,11 +297,15 @@ function FnRow({
   origin,
   domainId,
   onClick,
+  onOpen,
 }: {
   fn: Fn
   origin: string
   domainId: string
+  /** Makes the WHOLE row navigate — which costs the chips inside it their own clicks. */
   onClick?: () => void
+  /** A jump carried by one trailing control instead, leaving those chips live. */
+  onOpen?: () => void
 }) {
   const glyph =
     fn.link?.kind === 'workflow'
@@ -317,6 +319,9 @@ function FnRow({
             { icon: functionGlyph(fn), tone: 'fn' }
   const Glyph = glyph.icon
   const calls = fn.link?.kernelCalls ?? []
+  // A row that is itself a button cannot hold the Policy link or the auth popover — a
+  // button inside a button — so an inert row keeps them and offers its jump on the side.
+  const inert = onClick === undefined
   const contractOnly =
     (!('executable' in fn.method) || fn.method.executable) && fn.link && !fn.link.implemented
   return (
@@ -331,13 +336,9 @@ function FnRow({
       title={
         <span className="flex items-center gap-1.5">
           <span className="font-semibold">{fn.name}</span>
-          <MethodAuthBadge method={fn.method} domainId={domainId} interactive={!onClick} />
+          <MethodAuthBadge method={fn.method} domainId={domainId} interactive={inert} />
           {/* the policies this callable checks — the shield's hover card proves them on demo data */}
-          <PolicyChips
-            method={fn.method}
-            origin={origin}
-            domainId={onClick ? undefined : domainId}
-          />
+          <PolicyChips method={fn.method} origin={origin} domainId={inert ? domainId : undefined} />
           {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}
           {'static' in fn.method && fn.method.static && <Chip tone="default">static</Chip>}
           {'abstract' in fn.method && fn.method.abstract && <Chip tone="fn">contract</Chip>}
@@ -346,15 +347,30 @@ function FnRow({
         </span>
       }
       trailing={
-        calls.length > 0 ? (
-          <div className="hidden items-center gap-1 sm:flex">
-            {calls.slice(0, 3).map((k) => (
-              <Chip key={k} tone="outline" className="font-mono">
-                {k}
-              </Chip>
-            ))}
-            {calls.length > 3 && <Chip tone="default">+{calls.length - 3}</Chip>}
-          </div>
+        calls.length > 0 || onOpen ? (
+          <>
+            {calls.length > 0 && (
+              <div className="hidden items-center gap-1 sm:flex">
+                {calls.slice(0, 3).map((k) => (
+                  <Chip key={k} tone="outline" className="font-mono">
+                    {k}
+                  </Chip>
+                ))}
+                {calls.length > 3 && <Chip tone="default">+{calls.length - 3}</Chip>}
+              </div>
+            )}
+            {onOpen && (
+              <button
+                type="button"
+                onClick={onOpen}
+                title={`Open ${fn.name} in the schema`}
+                aria-label={`Open ${fn.name} in the schema`}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+              </button>
+            )}
+          </>
         ) : undefined
       }
     />

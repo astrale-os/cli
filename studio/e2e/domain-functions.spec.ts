@@ -82,7 +82,9 @@ test('Process leads back to the schema for a function, as it does for a class', 
   await page.getByRole('button', { name: 'Process', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Process' })).toBeVisible()
 
-  await page.getByRole('button', { name: /escalateTicket/ }).click()
+  // The row itself stays inert so its Policy and auth chips keep their own clicks; the
+  // jump is the control beside them.
+  await page.getByRole('button', { name: 'Open escalateTicket in the schema' }).click()
   await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'escalateTicket' })).toBeVisible()
 })
