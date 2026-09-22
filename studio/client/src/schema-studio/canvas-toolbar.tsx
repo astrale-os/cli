@@ -12,45 +12,6 @@ export function CanvasToolbar({ children }: { children: ReactNode }) {
   )
 }
 
-export function CanvasToggle({
-  icon,
-  label,
-  count,
-  pressed,
-  title,
-  onClick,
-}: {
-  icon: ReactNode
-  label: string
-  count?: number
-  pressed: boolean
-  title?: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      title={title}
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5',
-        pressed
-          ? 'bg-primary/10 text-primary'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      {icon}
-      {label}
-      {count !== undefined && (
-        <span className={cn('tabular-nums', pressed ? 'text-primary/70' : 'text-muted-foreground')}>
-          {count}
-        </span>
-      )}
-    </button>
-  )
-}
-
 /**
  * A reading-mode switch: the glyph IS the control, and a tooltip spells out what
  * turning it on changes. These toggles never leave the bar, so their meaning is

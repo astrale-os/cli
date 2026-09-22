@@ -6,6 +6,8 @@ import { useUI } from '@/lib/store'
 
 /** The panel's default width, restored by a double click on its edge. */
 const DEFAULT_WIDTH = 420
+/** The modules rail beside the panel, when its section has one. */
+const RAIL_SELECTOR = ':scope > [data-testid="modules-sidebar"]'
 
 export function PanelShell({
   onClose,
@@ -28,14 +30,13 @@ export function PanelShell({
     const container = panel.current?.parentElement
     if (!container) return
     const measure = () => {
-      const rail = container.querySelector<HTMLElement>(':scope > [data-testid="modules-sidebar"]')
+      const rail = container.querySelector<HTMLElement>(RAIL_SELECTOR)
       // Leave the rail and a usable strip of canvas visible on narrower windows.
       setAvailableWidth(Math.max(160, container.clientWidth - (rail?.offsetWidth ?? 0) - 160))
     }
     const observer = new ResizeObserver(measure)
     observer.observe(container)
-    for (const rail of container.querySelectorAll(':scope > [data-testid="modules-sidebar"]'))
-      observer.observe(rail)
+    for (const rail of container.querySelectorAll(RAIL_SELECTOR)) observer.observe(rail)
     measure()
     return () => observer.disconnect()
   }, [])
