@@ -14,7 +14,7 @@ import type { AgentEffort, ChatInfo, HarnessEffortOption, HarnessStatus } from '
 
 import { effectiveAgentEffort } from '@shared/agent-effort'
 import { Check } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useChatMutations } from '@/lib/chats'
@@ -32,27 +32,79 @@ const EFFORT_LABELS: Record<AgentEffort, string> = {
   ultracode: 'Ultracode',
 }
 
-/** The shortest rung and the rise between two rungs, in whole px. */
+/** The meter's proportions, in CSS px: bar width, gap, shortest rung, rise per rung. */
+const BAR_W = 2
+const BAR_GAP = 1
 const BAR_MIN_H = 4
 const BAR_STEP_H = 2
 
-/**
- * One rung's height. Every edge of the meter sits on a WHOLE pixel: a fractional
- * height lands the bar's top between two pixels and paints it as a grey smear, so a
- * linear ramp squeezed into a fixed range (6.4·7.8·9.2…) read as a soft, uneven
- * meter. A fixed whole-pixel step keeps every rise identical instead; the meter grows
- * a little with a long ladder, and the tallest one still fits the composer's row.
- */
-function barHeight(index: number): number {
-  return BAR_MIN_H + BAR_STEP_H * index
+export interface MeterGeometry {
+  /** The SVG's CSS size. */
+  width: number
+  height: number
+  /** Everything below is in DEVICE pixels: the SVG's viewBox units. */
+  viewWidth: number
+  viewHeight: number
+  bars: { x: number; y: number; width: number; height: number }[]
+}
+
+/** A length in CSS px, as a whole number of device pixels (never less than one). */
+function devicePx(css: number, dpr: number): number {
+  return Math.max(1, Math.round(css * dpr))
 }
 
 /**
- * Ascending bars, tallest last — the meter reads as signal strength. Width and gap are
- * whole pixels too, and the bars are square: a 1.5px gap started every other bar on a
- * half pixel (the browser then snapped the gaps to 1px/2px or blurred one bar in two
- * into a wider one), and a 1px radius on a 2px bar only softened both of its ends.
+ * The meter, laid out on the SCREEN's pixel grid rather than the CSS one.
+ *
+ * A 2px bar is a whole number of device pixels only at 100% or 200%. At 110%, 125%,
+ * 175% (Windows display scaling, or browser zoom) it is 2.2, 2.5, 3.5 device pixels,
+ * and the browser rounds each bar's edges on its own: the same meter came out
+ * 2·3·3·2·2·3 pixels wide, bars visibly thicker than their neighbours. So every
+ * width, gap and height is rounded to whole device pixels ONCE, here, and drawn in
+ * an SVG whose viewBox is that grid: every bar is exactly as wide as the others and
+ * every rise identical, at any scale.
  */
+export function meterGeometry(total: number, dpr: number): MeterGeometry {
+  const ratio = Number.isFinite(dpr) && dpr > 0 ? dpr : 1
+  const barWidth = devicePx(BAR_W, ratio)
+  const gap = devicePx(BAR_GAP, ratio)
+  const minHeight = devicePx(BAR_MIN_H, ratio)
+  const step = devicePx(BAR_STEP_H, ratio)
+  const viewWidth = total * barWidth + Math.max(0, total - 1) * gap
+  const viewHeight = minHeight + step * Math.max(0, total - 1)
+  const bars = Array.from({ length: total }, (_, index) => {
+    const height = minHeight + step * index
+    return { x: index * (barWidth + gap), y: viewHeight - height, width: barWidth, height }
+  })
+  return { width: viewWidth / ratio, height: viewHeight / ratio, viewWidth, viewHeight, bars }
+}
+
+/** The screen's device pixels per CSS px, kept current across zoom and monitor moves. */
+function subscribeDevicePixelRatio(onChange: () => void): () => void {
+  if (typeof window === 'undefined' || !window.matchMedia) return () => {}
+  let query: MediaQueryList | undefined
+  const listen = () => {
+    query?.removeEventListener('change', handle)
+    query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    query.addEventListener('change', handle)
+  }
+  const handle = () => {
+    listen()
+    onChange()
+  }
+  listen()
+  return () => query?.removeEventListener('change', handle)
+}
+
+function useDevicePixelRatio(): number {
+  return useSyncExternalStore(
+    subscribeDevicePixelRatio,
+    () => window.devicePixelRatio || 1,
+    () => 1,
+  )
+}
+
+/** Ascending bars, tallest last: the meter reads as signal strength. */
 function EffortBars({
   level,
   total,
@@ -62,19 +114,28 @@ function EffortBars({
   total: number
   className?: string
 }) {
+  const geometry = meterGeometry(total, useDevicePixelRatio())
   return (
-    <span aria-hidden className={cn('flex items-end gap-px', className)}>
-      {Array.from({ length: total }, (_, index) => (
-        <span
+    <svg
+      aria-hidden
+      width={geometry.width}
+      height={geometry.height}
+      viewBox={`0 0 ${geometry.viewWidth} ${geometry.viewHeight}`}
+      shapeRendering="crispEdges"
+      className={cn('block shrink-0', className)}
+    >
+      {geometry.bars.map((bar, index) => (
+        <rect
           key={index}
-          style={{ height: `${barHeight(index)}px` }}
-          className={cn(
-            'w-[2px] bg-current transition-opacity',
-            index <= level ? 'opacity-100' : 'opacity-25',
-          )}
+          x={bar.x}
+          y={bar.y}
+          width={bar.width}
+          height={bar.height}
+          fill="currentColor"
+          className={cn('transition-opacity', index <= level ? 'opacity-100' : 'opacity-25')}
         />
       ))}
-    </span>
+    </svg>
   )
 }
 

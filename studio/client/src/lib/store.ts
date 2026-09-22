@@ -48,8 +48,8 @@ export type PanelTab = WorkspacePanelUiState['tab']
 export type PanelSide = WorkspacePanelUiState['side']
 
 /** The bottom dock's size bounds, in px. The server clamps to the same ones. */
-export const DOCK_WIDTH = { min: 420, max: 1600, fallback: 768 } as const
-export const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 480 } as const
+export const DOCK_WIDTH = { min: 420, max: 1600, fallback: 880 } as const
+export const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 } as const
 
 function clampTo({ min, max }: { min: number; max: number }, value: number): number {
   return Math.min(max, Math.max(min, Math.round(value)))

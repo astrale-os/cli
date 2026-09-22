@@ -1,7 +1,11 @@
 import { X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { ResizeHandle } from '@/components/ui/resize-handle'
 import { useUI } from '@/lib/store'
+
+/** The panel's default width, restored by a double click on its edge. */
+const DEFAULT_WIDTH = 420
 
 export function PanelShell({
   onClose,
@@ -13,7 +17,7 @@ export function PanelShell({
   const preferredWidth = useUI((state) => state.detailWidth)
   const setWidth = useUI((state) => state.setDetailWidth)
   const panel = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ x: number; width: number } | null>(null)
+  const dragFrom = useRef(preferredWidth)
   const [availableWidth, setAvailableWidth] = useState(900)
   const max = Math.min(900, availableWidth)
   const min = Math.min(320, max)
@@ -38,54 +42,20 @@ export function PanelShell({
 
   return (
     <div ref={panel} style={{ width }} className="relative min-h-0 shrink-0 border-l bg-card">
-      <div
-        role="separator"
-        aria-label="Resize detail panel"
-        aria-orientation="vertical"
-        aria-valuemin={min}
-        aria-valuemax={max}
-        aria-valuenow={Math.round(width)}
-        tabIndex={0}
-        title="Drag to resize"
-        onPointerDown={(event) => {
-          if (event.button !== 0) return
-          event.preventDefault()
-          drag.current = { x: event.clientX, width }
-          event.currentTarget.setPointerCapture(event.pointerId)
-        }}
-        onPointerMove={(event) => {
-          if (drag.current) resize(drag.current.width + drag.current.x - event.clientX)
-        }}
-        onPointerUp={(event) => {
-          drag.current = null
-          if (event.currentTarget.hasPointerCapture(event.pointerId))
-            event.currentTarget.releasePointerCapture(event.pointerId)
-        }}
-        onLostPointerCapture={() => {
-          drag.current = null
-        }}
-        onPointerCancel={() => {
-          drag.current = null
-        }}
-        onKeyDown={(event) => {
-          const next =
-            event.key === 'ArrowLeft'
-              ? width + 20
-              : event.key === 'ArrowRight'
-                ? width - 20
-                : event.key === 'Home'
-                  ? min
-                  : event.key === 'End'
-                    ? max
-                    : null
-          if (next === null) return
-          event.preventDefault()
-          resize(next)
-        }}
-        className="group absolute left-0 top-0 z-30 h-full w-2 -translate-x-1/2 touch-none select-none cursor-col-resize focus-visible:outline-none"
-      >
-        <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-primary/50 group-focus-visible:bg-primary" />
-      </div>
+      <ResizeHandle
+        orientation="vertical"
+        label="Resize detail panel"
+        className="left-0 top-0 h-full w-2 -translate-x-1/2"
+        value={width}
+        min={min}
+        max={max}
+        // the grip is on the panel's left edge: dragging left widens it
+        onDragStart={() => (dragFrom.current = width)}
+        onDrag={(dx) => resize(dragFrom.current - dx)}
+        onStep={(dx) => resize(width - dx)}
+        onLimit={(to) => resize(to === 'min' ? min : max)}
+        onReset={() => resize(DEFAULT_WIDTH)}
+      />
       <button
         type="button"
         onClick={onClose}
