@@ -1,12 +1,19 @@
-import type { AgentRun, ChatList, QueuedMessage } from '@shared/types'
-import type { ReactNode } from 'react'
+import type { AgentRun, ChatAttachment, ChatList, QueuedMessage } from '@shared/types'
+import type { ClipboardEvent, ReactNode } from 'react'
 
+import { imagesLabel } from '@shared/attachments'
 import { useQueryClient } from '@tanstack/react-query'
-import { ListPlus, Loader2, Square, TriangleAlert } from 'lucide-react'
+import { ImagePlus, ListPlus, Loader2, Square, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
+import {
+  ComposerField,
+  ComposerFrame,
+  DropZone,
+  FilePickButton,
+  SendButton,
+} from '@/components/composer'
 import { ScrollArea } from '@/components/ui/misc'
 import {
   type HarnessLink,
@@ -20,6 +27,7 @@ import {
 } from '@/lib/agent'
 import { useReadAgentReplies } from '@/lib/agent-unread'
 import { api, qk } from '@/lib/api'
+import { isImageFile, useComposerImages, useDraftImages } from '@/lib/attachments'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
 import { labelOf, noAgentNotice, presenceOf } from '@/lib/harnesses'
 import { useHarness, useWorkspace, useWorkspaceDocuments } from '@/lib/hooks'
@@ -36,6 +44,7 @@ import { CommentPicker, useAttachedComments } from './comment-picker'
 import { DockActivity } from './dock-activity'
 import { AttachButton, DocumentChips } from './documents'
 import { HandoffChip } from './handoff-chip'
+import { ComposerImages } from './images'
 import { MessageQueue, type PendingMessage } from './message-queue'
 import { NewDomainChip } from './new-domain-chip'
 
@@ -72,9 +81,10 @@ export function AgentTab() {
 }
 
 /**
- * Whatever it wraps takes documents by drag and drop. Dropped files join the
- * domain context and can be named in the message, so the agent knows which one
- * to open.
+ * Whatever it wraps takes files by drag and drop. A dropped image goes with the
+ * next message, like a pasted one — it is something to look at now. Any other
+ * file joins the domain context and can be named in the message, so the agent
+ * knows which one to open.
  */
 export function AgentDropZone({
   children,
@@ -85,9 +95,12 @@ export function AgentDropZone({
   children: ReactNode
 } & React.HTMLAttributes<HTMLDivElement>) {
   const { data: domains = [] } = useWorkspace()
+  const { data: chats } = useChats()
+  const { attach } = useComposerImages(chats?.activeId)
   const queryClient = useQueryClient()
 
   const upload = async (files: File[]) => {
+    if (!files.length) return
     if (domains.length !== 1) {
       toast.info('Choose a domain with the paperclip before attaching documents.')
       return
@@ -103,7 +116,14 @@ export function AgentDropZone({
   }
 
   return (
-    <DropZone {...rest} onFiles={(files) => void upload(files)}>
+    <DropZone
+      {...rest}
+      onFiles={(files) => {
+        const images = files.filter(isImageFile)
+        if (images.length) attach(images)
+        void upload(files.filter((file) => !isImageFile(file)))
+      }}
+    >
       {children}
     </DropZone>
   )
@@ -161,7 +181,12 @@ export function AgentTranscript() {
                   index === turns.length - 1
                     ? () =>
                         void api
-                          .agentSubmit(turn.instruction, activeId, turn.targetCommentIds)
+                          .agentSubmit(
+                            turn.instruction,
+                            activeId,
+                            turn.targetCommentIds,
+                            turn.attachments?.map((attachment) => attachment.id),
+                          )
                           .then(
                             (result) => {
                               if (result.run) useAgentLive.getState().setRun(result.run)
@@ -329,6 +354,7 @@ export function AgentComposer({
   const setRun = useAgentLive((state) => state.setRun)
   const dropRun = useAgentLive((state) => state.dropRun)
   const { attached } = useAttachedComments()
+  const { images, attach, detach, uploading } = useComposerImages(chatId)
   const setAttached = useUI((state) => state.setAgentComments)
   const { data: documentGroups } = useWorkspaceDocuments()
   const qc = useQueryClient()
@@ -358,9 +384,10 @@ export function AgentComposer({
   // would be a turn nobody could see.
   const payloadShowing = !bar || !!expanded
   const carriesPayload = payloadShowing && !active && (awaiting > 0 || documentCount > 0)
-  const sendsPayload = carriesPayload && !text.trim()
-  const sendable = !!text.trim() || carriesPayload
-  const canSend = available && sendable
+  const sendsPayload = carriesPayload && !text.trim() && !images.length
+  const sendable = !!text.trim() || images.length > 0 || carriesPayload
+  // an image still on its way up has no id to send yet — the message waits for it
+  const canSend = available && sendable && !uploading
 
   // Grow with the content before paint, up to half the panel. In the bottom dock
   // the composer's height positions the whole frame; waiting for a passive effect
@@ -390,6 +417,25 @@ export function AgentComposer({
     // over the render that started the send
     const current = agentDraftOf(useUI.getState().agentDrafts, sentChatId)
     setDraft(sentChatId, current.trim() ? `${message}\n\n${current}` : message)
+  }
+
+  // The images come back the same way: to the chat they were sent from, in front
+  // of any pasted since.
+  const restoreImages = (attachments: ChatAttachment[], sentChatId?: string) => {
+    if (attachments.length && sentChatId) useDraftImages.getState().restore(sentChatId, attachments)
+  }
+
+  // A pasted image goes with the message. Pasted TEXT always wins, though: an
+  // office app puts a picture of the selection on the clipboard beside the text,
+  // and it is the text that was copied. Only a file's own name (what a file
+  // manager adds) does not count as text.
+  const paste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = [...event.clipboardData.files].filter(isImageFile)
+    if (!files.length) return
+    const text = event.clipboardData.getData('text/plain').trim()
+    if (text && !files.every((file) => text.includes(file.name))) return
+    event.preventDefault()
+    attach(files)
   }
 
   // The server parked the message; show it on the tab it belongs to now, rather
@@ -433,6 +479,13 @@ export function AgentComposer({
     if (!canSend) return
     const message = text.trim()
     const comments = attached
+    const sentImages = chatId
+      ? useDraftImages
+          .getState()
+          .take(chatId)
+          .flatMap((image) => (image.attachment ? [image.attachment] : []))
+      : []
+    const label = message || (sentImages.length ? imagesLabel(sentImages.length) : carriedLabel)
     const id = `pending-${(ticket.current += 1)}`
     const started =
       active || !chatId
@@ -442,13 +495,14 @@ export function AgentComposer({
             chatId,
             harness: chat?.harness ?? '',
             message,
-            summary: message || carriedLabel,
+            summary: label,
+            attachments: sentImages,
           })
     setText('')
     // the pick goes with this message; the next one starts from nothing attached again
     setAttached([])
     if (started) setRun(started)
-    else setPending((current) => [...current, { id, label: message || carriedLabel, chatId }])
+    else setPending((current) => [...current, { id, label, chatId }])
     // take back whatever this send put up — a turn the server never confirmed, or
     // the queue row that stood for it
     const drop = () => {
@@ -463,7 +517,8 @@ export function AgentComposer({
     const restoreComments = () => {
       if (comments.length && useUI.getState().agentComments.length === 0) setAttached(comments)
     }
-    void api.agentSubmit(message, chatId, comments).then(
+    const ids = sentImages.map((attachment) => attachment.id)
+    void api.agentSubmit(message, chatId, comments, ids).then(
       (result) => {
         // the real turn takes the shown one's place first, so nothing blinks out
         // between the two — `drop` then finds none of ours left to take back
@@ -471,6 +526,7 @@ export function AgentComposer({
         drop()
         if (result.error) {
           restore(message, result.error, chatId)
+          restoreImages(sentImages, chatId)
           restoreComments()
         } else if (result.queued) landQueued(result.queued)
         refresh()
@@ -478,6 +534,7 @@ export function AgentComposer({
       (error) => {
         drop()
         restore(message, String(error), chatId)
+        restoreImages(sentImages, chatId)
         restoreComments()
         refresh()
       },
@@ -491,6 +548,7 @@ export function AgentComposer({
       value={text}
       onChange={setText}
       onSubmit={send}
+      onPaste={paste}
       onFocus={onFocus}
       // One prompt, whatever the turn happens to be carrying. The chips above already
       // show the threads and the documents; saying it again here only made the field
@@ -515,6 +573,18 @@ export function AgentComposer({
       className={bar ? 'min-w-0 flex-1 px-1 py-1' : 'w-full px-3 pt-2.5'}
     />
   )
+
+  const addImage = (
+    <FilePickButton
+      icon={ImagePlus}
+      label="Add an image"
+      accept="image/*"
+      disabled={!chatId}
+      onFiles={attach}
+      onPicked={() => field.current?.focus()}
+    />
+  )
+  const imageChips = <ComposerImages images={images} onRemove={detach} />
 
   const stop = (
     <button
@@ -566,6 +636,7 @@ export function AgentComposer({
     if (noAgent) return noAgent.full
     if (link === 'connecting') return `Connecting to ${harnessLabel} — nothing can be sent yet`
     if (!available) return unreachableReason ?? `${harnessLabel} is not reachable`
+    if (uploading) return 'Waiting for the images to finish uploading'
     if (active) return 'Queue for when this turn ends (↵)'
     return sendsPayload ? 'Send what the composer carries (↵)' : 'Send (↵)'
   }
@@ -619,11 +690,15 @@ export function AgentComposer({
             missing={noAgent?.full}
           />
         )}
+        {/* shown even on the resting bar: a pasted image is part of the message
+            being written, and a paste that left no trace would read as refused */}
+        {imageChips}
         {/* items-end so a field that grew to several lines keeps the controls at its
             foot; the controls then centre among THEMSELVES, or the model's 11px label
             would sit a third of a line below the icons it shares the row with */}
         <div className="flex items-end gap-1 px-2 py-2">
           <AttachButton onPicked={() => field.current?.focus()} />
+          {addImage}
           {!payloadShowing && linkMark}
           {composed}
           <div className="flex shrink-0 items-center gap-1">
@@ -672,9 +747,11 @@ export function AgentComposer({
             missing={noAgent?.full}
           />
         )}
+        {imageChips}
         {composed}
         <div className="flex items-center gap-1 px-2 pb-2">
           <AttachButton onPicked={() => field.current?.focus()} />
+          {addImage}
           <div className="ml-auto flex items-center gap-1.5">
             <ChatFastToggle chat={chat} />
             {/* the meter sits before the model, in reading order: how hard, on what */}

@@ -1,3 +1,5 @@
+import { statSync } from 'node:fs'
+
 import type { Comment } from '../../../../shared/types'
 import type { AgentHarness, AgentTurnInput, AgentTurnResult, AskInput, AskResult } from '../adapter'
 
@@ -69,6 +71,13 @@ export class MockHarness implements AgentHarness {
     )
 
     input.onEvent({ kind: 'status', text: 'session started' })
+    // like a real agent, look at what was sent: an image that never arrives is the bug
+    const images = (input.images ?? []).filter((image) => statSync(image.path).size > 0)
+    if (images.length)
+      input.onEvent({
+        kind: 'status',
+        text: `looked at ${images.map((image) => image.name).join(', ')}`,
+      })
     await sleep(250, input.signal)
     if (extraDelay > 0) await sleep(extraDelay, input.signal)
     if (mode === 'error') throw new Error('mock harness failure (test)')

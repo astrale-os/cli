@@ -75,6 +75,7 @@ export async function completeRun(
     harnessEnv,
     bridge,
     run,
+    images,
     promptSnapshot,
   } = prepared
   const stateRoot = workspace.stateRoot
@@ -117,6 +118,7 @@ export async function completeRun(
       return harness.run({
         root: workspace.root,
         prompt: prompt.turnPrompt,
+        images,
         appendSystemPrompt: prompt.systemPrompt,
         sessionId,
         model,

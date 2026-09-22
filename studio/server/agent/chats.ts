@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto'
 
 import type {
   AgentEffort,
+  ChatAttachment,
   ChatInfo,
   ChatStatus,
   NewDomainContext,
@@ -32,6 +33,7 @@ import { isChatTone, nextChatTone } from '../../shared/chat-tone'
 import { DEFAULT_CHAT_TITLE } from '../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { listState, readJson, removeState, writeJson } from '../state/store'
+import { decodeAttachments } from './attachments'
 
 const CHATS_DIR = 'chats'
 const chatFile = (id: string) => `${CHATS_DIR}/${id}.json`
@@ -155,8 +157,9 @@ function decodeQueue(value: unknown): QueuedMessage[] {
   return value.flatMap((entry) => {
     const record = asJsonRecord(entry)
     const id = asString(record?.id)
-    const text = asString(record?.text)
-    if (!id || !text) return []
+    const text = asString(record?.text) ?? ''
+    const attachments = decodeAttachments(record?.attachments)
+    if (!id || (!text && !attachments)) return []
     const comments = Array.isArray(record?.comments)
       ? record.comments.filter((entry): entry is string => typeof entry === 'string')
       : []
@@ -165,6 +168,7 @@ function decodeQueue(value: unknown): QueuedMessage[] {
         id,
         text,
         ...(comments.length ? { comments } : {}),
+        ...(attachments ? { attachments } : {}),
         createdAt: asString(record?.createdAt) ?? new Date().toISOString(),
       },
     ]
@@ -498,11 +502,13 @@ export function enqueueChatMessage(
   chatId: string,
   text: string,
   comments?: string[],
+  attachments?: ChatAttachment[],
 ): QueuedMessage | undefined {
   const message: QueuedMessage = {
     id: randomUUID(),
     text: text.trim(),
     ...(comments?.length ? { comments } : {}),
+    ...(attachments?.length ? { attachments } : {}),
     createdAt: new Date().toISOString(),
   }
   return mutateChat(root, chatId, (chat) => {
@@ -551,11 +557,11 @@ export function editQueuedMessage(
   text: string,
 ): QueuedMessage | undefined {
   const trimmed = text.trim()
-  if (!trimmed) return undefined
   let edited: QueuedMessage | undefined
   mutateChat(root, chatId, (chat) => {
     chat.queue = chatQueue(chat).map((entry) => {
-      if (entry.id !== messageId) return entry
+      // the text may go only when images are left to carry the message
+      if (entry.id !== messageId || (!trimmed && !entry.attachments?.length)) return entry
       edited = { ...entry, text: trimmed }
       return edited
     })

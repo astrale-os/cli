@@ -32,7 +32,15 @@ test('closing a chat never re-colours the others', async ({ page, request }) => 
     expect(new Set(before).size).toBe(3)
 
     await page.getByRole('button', { name: 'Tone billing', exact: true }).click()
+    // agent routes wait on the harness probe, so the close can take a while to land
+    const closed = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/agent/chats') &&
+        response.request().postDataJSON()?.action === 'close',
+      { timeout: 30_000 },
+    )
     await page.getByRole('button', { name: 'Close Tone billing' }).click()
+    await closed
     await expect(page.getByRole('button', { name: 'Tone billing', exact: true })).toHaveCount(0)
 
     expect(await markColour(page, 'Tone orders')).toBe(before[0]!)

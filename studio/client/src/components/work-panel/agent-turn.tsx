@@ -9,6 +9,7 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { AgentErrorChip } from './agent-error'
+import { MessageImages } from './images'
 
 /** The panel is narrow, and CSS truncation eats the END of a string — the only
  *  part of a path or URL that says anything. Long targets keep their tail. */
@@ -95,15 +96,18 @@ export function AgentTurn({
   const setPanelTab = useUI((state) => state.setPanelTab)
   const authFailure = agentAuthFailure(run)
 
+  const images = run.attachments ?? []
+
   return (
     <div className="space-y-2.5">
+      {images.length > 0 && <MessageImages chatId={run.chatId} attachments={images} />}
       {run.instruction ? (
         <div className="flex justify-end">
           <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-muted px-3 py-2 text-[13px] leading-relaxed">
             {run.instruction}
           </div>
         </div>
-      ) : (
+      ) : images.length ? null : (
         <div className="flex justify-end">
           <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">
             {run.summary}

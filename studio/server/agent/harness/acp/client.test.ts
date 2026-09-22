@@ -129,6 +129,7 @@ function handle(message) {
           protocolVersion: 1,
           agentInfo: { name: 'fake-acp', version: '0.test' },
           agentCapabilities: {
+            ...(process.env.FAKE_ACP_IMAGES === '1' ? { promptCapabilities: { image: true } } : {}),
             sessionCapabilities: {
               resume: {},
               delete: {},
@@ -188,7 +189,7 @@ function handle(message) {
         name: 'Read',
         kind: 'read',
         status: 'in_progress',
-        locations: [{ path: params.prompt[0].text === 'hang' ? '/tmp/hang' : '/repo/package.json' }],
+        locations: [{ path: params.prompt.find((block) => block.type === 'text')?.text === 'hang' ? '/tmp/hang' : '/repo/package.json' }],
       })
       update(params.sessionId, {
         sessionUpdate: 'plan',
@@ -503,6 +504,33 @@ describe('ACP harness adapter', () => {
     expect(requests.find((message) => message.id === 'permission-1')!.result).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow' },
     })
+  })
+
+  test('hands pasted images over as image blocks, only to an agent that takes them', async () => {
+    const root = temporaryRoot('studio-acp-images-')
+    const image = join(root, 'shot.png')
+    writeFileSync(image, Uint8Array.from([0x89, 0x50, 0x4e, 0x47]))
+    const harness = new AcpClaudeHarness('/opt/claude-test', fakeAcpAgent(root))
+    const prompted = async (images: '1' | '0') => {
+      const log = join(root, `acp-${images}.jsonl`)
+      const result = await harness.run({
+        root,
+        prompt: 'what is wrong here?',
+        images: [{ path: image, mimeType: 'image/png', name: 'shot.png' }],
+        env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'claude', FAKE_ACP_IMAGES: images },
+        signal: new AbortController().signal,
+        onEvent: () => {},
+      })
+      expect(result.isError).toBe(false)
+      return messages(log).find((message) => message.method === 'session/prompt')!.params!.prompt
+    }
+
+    expect(await prompted('1')).toEqual([
+      { type: 'image', mimeType: 'image/png', data: 'iVBORw==' },
+      { type: 'text', text: 'what is wrong here?' },
+    ])
+    // the prompt text already names each image's path for an agent that cannot see it
+    expect(await prompted('0')).toEqual([{ type: 'text', text: 'what is wrong here?' }])
   })
 
   test('resumes Claude Code through ACP with system prompt, full access, and Ultracode settings', async () => {

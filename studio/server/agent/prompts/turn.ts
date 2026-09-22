@@ -39,6 +39,8 @@ export interface TurnParts {
   domains: DomainTurnParts[]
   firstTurn: boolean
   message?: string
+  /** images sent with the message — given to the agent as images, listed here by path */
+  images?: { name: string; path: string }[]
   /** present only when this first turn is the creation brief for a fresh scaffold */
   newDomain?: NewDomainContext
 }
@@ -114,9 +116,17 @@ export function buildTurnPrompt(parts: TurnParts): string {
         `The user’s creation brief below applies specifically to this domain. Work inside \`${parts.newDomain.path}\`, load the **astrale-domain** skill first, and follow its **New Domain Creation Workflow**.`,
       ]
     : []
-  const instruction = message
-    ? ['', parts.newDomain ? '## User creation brief' : '## Direct instruction', '', message]
-    : []
+  const images = parts.images ?? []
+  const instruction =
+    message || images.length
+      ? [
+          '',
+          parts.newDomain ? '## User creation brief' : '## Direct instruction',
+          '',
+          message || '_No text — the user sent only the attached images. Look at them._',
+          ...attachedImages(images),
+        ]
+      : []
   const sections = briefed.map((domain) => {
     const anchors = resolveThreadAnchors(domain.awaitingThreads, domain.overlay)
     const body = buildCopyMarkdown({
@@ -148,6 +158,20 @@ export function buildTurnPrompt(parts: TurnParts): string {
   ]
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
+}
+
+/**
+ * The images a message carries. The harness receives them as images alongside
+ * this prompt; the paths are for everything else — an agent that cannot see
+ * them, or work that needs the file itself (copying a mockup into the repo).
+ */
+function attachedImages(images: { name: string; path: string }[]): string[] {
+  if (!images.length) return []
+  return [
+    '',
+    `Attached ${count(images.length, 'image')} (sent with this message, also saved on disk):`,
+    ...images.map((image) => `- ${image.name}: \`${image.path}\``),
+  ]
 }
 
 /** Build the minimal nudge for a surviving interrupted conversation. */

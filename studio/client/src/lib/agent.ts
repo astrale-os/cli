@@ -7,7 +7,7 @@
  * independently, so the mirror is keyed by chat id — a turn streaming into a
  * background tab must not overwrite what the foreground one shows.
  */
-import type { AgentEvent, AgentRun } from '@shared/types'
+import type { AgentEvent, AgentRun, ChatAttachment } from '@shared/types'
 
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
@@ -89,6 +89,8 @@ export function pendingRun(input: {
   /** what was typed; empty when the turn only carries documents and threads */
   message: string
   summary: string
+  /** the images it carries, already uploaded — the turn shows them from the start */
+  attachments?: ChatAttachment[]
 }): AgentRun {
   return {
     id: input.id,
@@ -99,6 +101,7 @@ export function pendingRun(input: {
     createdAt: new Date().toISOString(),
     summary: input.summary,
     ...(input.message ? { instruction: input.message } : {}),
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     targetCommentIds: [],
     events: [],
   }

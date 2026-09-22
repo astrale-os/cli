@@ -1,5 +1,6 @@
 import type {
   AgentRunSnapshot,
+  ChatAttachment,
   AgentRunStatus,
   AgentSessionInfo,
   AgentSubmitResult,
@@ -12,6 +13,13 @@ import type {
 import type { StoredChat } from '../chats'
 import type { AgentWorkspace } from '../workspace'
 
+import {
+  deleteAttachment,
+  deleteChatAttachments,
+  readAttachment,
+  resolveAttachments,
+  saveAttachment,
+} from '../attachments'
 import {
   activeChat,
   chatInfo,
@@ -273,8 +281,37 @@ export function closeChat(chatId: string): ChatResult<ChatList> {
   // persist against, instead of racing the transcript cleanup below.
   deleteChat(workspace.stateRoot, chat.id, workspace.uiRoot)
   deleteChatRuns(workspace.stateRoot, chat)
+  deleteChatAttachments(workspace.stateRoot, chat.id)
   forgetChat(chat.id)
   return { ok: true, value: listChats() }
+}
+
+/** Keep one pasted image with its chat, ready for the message it will go with. */
+export function addAttachment(
+  chatId: string | undefined,
+  file: { name: string; bytes: Uint8Array },
+): ChatResult<ChatAttachment> {
+  const workspace = agentWorkspace()
+  const chat = chatOf(workspace, chatId)
+  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
+  const saved = saveAttachment(workspace.stateRoot, chat.id, file)
+  return 'error' in saved
+    ? { ok: false, error: saved.error }
+    : { ok: true, value: saved.attachment }
+}
+
+/** Where one of a chat's images is, to serve it back to the page that shows it. */
+export function attachmentOf(chatId: string | undefined, id: string) {
+  const workspace = agentWorkspace()
+  const chat = chatOf(workspace, chatId)
+  return chat ? readAttachment(workspace.stateRoot, chat.id, id) : undefined
+}
+
+/** An image taken back out of the composer before it was sent. */
+export function removeAttachment(chatId: string | undefined, id: string): boolean {
+  const workspace = agentWorkspace()
+  const chat = chatOf(workspace, chatId)
+  return !!chat && deleteAttachment(workspace.stateRoot, chat.id, id)
 }
 
 export async function getSnapshot(chatId?: string): Promise<AgentRunSnapshot> {
@@ -359,13 +396,17 @@ export async function submitRun(
   const workspace = agentWorkspace()
   const chat = chatOf(workspace, options?.chatId)
   if (!chat) return { error: `unknown chat: ${options?.chatId ?? '(active)'}` }
+  // Resolved before anything else: an image the chat does not hold refuses the
+  // send, rather than letting the message leave without it.
+  const images = resolveAttachments(workspace.stateRoot, chat.id, options?.attachments ?? [])
+  if ('error' in images) return images
   const controller = reserveRun(chat.id)
   if (!controller) {
     // Reserving and parking are ONE synchronous decision: nothing can settle the
     // running turn between them, so a message never lands in a queue that was
     // drained a moment ago and will never be drained again.
-    const message = options?.message?.trim()
-    if (!message || options?.queue === false)
+    const message = options?.message?.trim() ?? ''
+    if ((!message && !images.attachments.length) || options?.queue === false)
       return { error: 'a turn is already running in this chat' }
     if (chatQueue(chat).length >= MAX_QUEUED_MESSAGES)
       return { error: `the queue is full — ${MAX_QUEUED_MESSAGES} messages already wait here` }
@@ -376,13 +417,17 @@ export async function submitRun(
       chat.id,
       message,
       options?.comments === 'all' ? awaitingThreadIds(workspace) : options?.comments,
+      images.attachments,
     )
     if (!queued) return { error: `unknown chat: ${chat.id}` }
     emitStudioEvent(notify, { type: 'chats' })
     return { queued }
   }
   try {
-    const result = await prepareRun(workspace, chat, notify, controller, options)
+    const result = await prepareRun(workspace, chat, notify, controller, {
+      ...options,
+      attachments: images.attachments.map((attachment) => attachment.id),
+    })
     if ('error' in result) return result
     const { prepared } = result
     // Pressing Send commits the frozen first-turn prompt. From this point the
@@ -440,6 +485,7 @@ async function drainQueue(
     result = await submitRun(notify, {
       message: next.text,
       comments: next.comments,
+      attachments: next.attachments?.map((attachment) => attachment.id),
       chatId,
       queue: false,
     })
@@ -475,7 +521,9 @@ export function editQueued(
   text: string,
 ): ChatResult<ChatInfo> {
   return withQueue(chatId, (stateRoot, chat) => {
-    if (!text.trim()) return 'a queued message cannot be empty — delete it instead'
+    const images = chatQueue(chat).find((entry) => entry.id === messageId)?.attachments
+    if (!text.trim() && !images?.length)
+      return 'a queued message cannot be empty — delete it instead'
     return editQueuedMessage(stateRoot, chat.id, messageId, text)
       ? undefined
       : `unknown queued message: ${messageId}`
@@ -536,6 +584,7 @@ export async function sendQueuedNow(
   const result = await submitRun(notify, {
     message: message.text,
     comments: message.comments,
+    attachments: message.attachments?.map((attachment) => attachment.id),
     chatId: chat.id,
     queue: false,
   })
