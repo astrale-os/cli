@@ -27,10 +27,18 @@ import { DescriptionText } from './studio-kit'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 
+type ViewRuntime = NonNullable<ReturnType<typeof useViewRuntime>['data']>
+
 type SessionState =
   | { phase: 'idle' | 'launching' }
   | { phase: 'ready'; session: Extract<ViewSessionResult, { status: 'ready' }> }
   | { phase: 'error'; reason: string }
+
+const errorReason = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+/** Whether the runtime has what it needs to open: a target, when the View requires one. */
+const hasTarget = (runtime: ViewRuntime, targetId: string) =>
+  !runtime.targetRequired || runtime.targets.items.some((target) => target.id === targetId)
 
 /**
  * A View workbench backed by the CLI-owned session. `astrale view` resolves the
@@ -77,9 +85,7 @@ export function ViewModal({
     setTargetId(runtime.targets.selected?.id ?? '')
   }, [domainId, open, runtime, view.slug])
 
-  const targetReady =
-    !!runtime &&
-    (!runtime.targetRequired || runtime.targets.items.some((target) => target.id === targetId))
+  const targetReady = !!runtime && hasTarget(runtime, targetId)
   const launchReady = open && !restarting && !!runtime?.instance && targetReady
 
   useEffect(() => {
@@ -105,12 +111,7 @@ export function ViewModal({
         }
       })
       .catch((error: unknown) => {
-        if (!disposed) {
-          setSession({
-            phase: 'error',
-            reason: error instanceof Error ? error.message : String(error),
-          })
-        }
+        if (!disposed) setSession({ phase: 'error', reason: errorReason(error) })
       })
     return () => {
       disposed = true
@@ -151,10 +152,7 @@ export function ViewModal({
     try {
       await runtimeQuery.refetch()
     } catch (error) {
-      setSession({
-        phase: 'error',
-        reason: error instanceof Error ? error.message : String(error),
-      })
+      setSession({ phase: 'error', reason: errorReason(error) })
     } finally {
       setRestarting(false)
     }
@@ -397,7 +395,7 @@ function PreviewState({
 }: {
   loading: boolean
   runtimeError: boolean
-  runtime?: ReturnType<typeof useViewRuntime>['data']
+  runtime?: ViewRuntime
   targetId: string
   sessionError?: string
   onRetry: () => void
@@ -423,7 +421,7 @@ function PreviewState({
       </StateFrame>
     )
   }
-  if (runtime.targetRequired && !runtime.targets.items.some((target) => target.id === targetId)) {
+  if (!hasTarget(runtime, targetId)) {
     const stale = runtime.targets.stale
     return (
       <StateFrame

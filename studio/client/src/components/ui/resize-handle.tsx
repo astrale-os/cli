@@ -34,10 +34,11 @@ const RESIZE_TONE: Record<ResizeState, string> = {
   active: 'bg-primary',
 }
 
+const RESIZE_RANK: Record<ResizeState, number> = { idle: 0, hover: 1, active: 2 }
+
 /** The strongest of two states: a corner lighting an edge must not dim a drag on it. */
 export function strongestResizeState(a: ResizeState, b: ResizeState): ResizeState {
-  const rank = { idle: 0, hover: 1, active: 2 }
-  return rank[a] >= rank[b] ? a : b
+  return RESIZE_RANK[a] >= RESIZE_RANK[b] ? a : b
 }
 
 /**

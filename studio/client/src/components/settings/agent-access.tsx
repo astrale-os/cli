@@ -7,6 +7,15 @@ const ACCESS_LABELS: Record<AgentAccess, string> = {
   full: 'Full automation',
 }
 
+/** The level a saved value maps to: itself when offered, else full automation, else the first. */
+export function resolveAgentAccess(
+  value: string | undefined,
+  levels: readonly AgentAccess[],
+): AgentAccess | undefined {
+  if (levels.includes(value as AgentAccess)) return value as AgentAccess
+  return levels.includes('full') ? 'full' : levels[0]
+}
+
 export function AgentAccessPicker({
   value,
   levels,
@@ -16,12 +25,10 @@ export function AgentAccessPicker({
   levels: readonly AgentAccess[]
   onChange: (value: AgentAccess) => void
 }) {
-  const current =
-    AGENT_ACCESS_LEVELS.includes(value as AgentAccess) && levels.includes(value as AgentAccess)
-      ? (value as AgentAccess)
-      : levels.includes('full')
-        ? 'full'
-        : levels[0]
+  const current = resolveAgentAccess(
+    AGENT_ACCESS_LEVELS.includes(value as AgentAccess) ? value : undefined,
+    levels,
+  )
   return (
     <SettingSelect
       aria-label="Agent access"

@@ -17,18 +17,20 @@ export function PolicyLink({
   className?: string
   label?: string
 }) {
+  const key = schemaRefKey(policy)
   return (
     <button
       type="button"
-      title={`Open ${schemaRefKey(policy)}`}
+      title={`Open ${key}`}
       className={cn(
         'rounded text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         className,
       )}
       onClick={(event) => {
         event.stopPropagation()
-        useUI.getState().setSection('schema')
-        useUI.getState().selectClass(`policy.${schemaRefKey(policy)}`, domainId)
+        const ui = useUI.getState()
+        ui.setSection('schema')
+        ui.selectClass(`policy.${key}`, domainId)
       }}
     >
       {label ?? policy.name}
