@@ -4,6 +4,7 @@ import { Copy, Loader2, LogIn, MessageSquare } from 'lucide-react'
 
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
+import { isRunActive } from '@/lib/agent'
 import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -31,7 +32,8 @@ export function compactTarget(target: string): string {
  * never a raw status string ("session started" tells a reader nothing).
  */
 export function activityLabel(run: AgentRun): string {
-  for (const event of [...run.events].reverse()) {
+  for (let index = run.events.length - 1; index >= 0; index -= 1) {
+    const event = run.events[index]!
     if (event.kind === 'tool')
       return [event.tool, event.target && compactTarget(event.target)].filter(Boolean).join(' · ')
     if (event.kind === 'thinking') return 'Thinking…'
@@ -91,11 +93,10 @@ export function AgentTurn({
   onRetry?: () => void
 }) {
   const messages = run.events.filter(isProse)
-  const active = run.status === 'running' || run.status === 'queued'
+  const active = isRunActive(run)
   const answered = answeredThreads(run)
   const setPanelTab = useUI((state) => state.setPanelTab)
   const authFailure = agentAuthFailure(run)
-
   const images = run.attachments ?? []
 
   return (
@@ -129,40 +130,7 @@ export function AgentTurn({
             )}
             {!active && run.error && !authFailure && <AgentErrorChip run={run} onRetry={onRetry} />}
             {!active && authFailure && (
-              <div
-                role="alert"
-                className="space-y-2.5 rounded-lg border border-destructive/25 bg-destructive/5 p-3"
-              >
-                <div className="flex items-start gap-2">
-                  <LogIn className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                  <div className="min-w-0 space-y-1">
-                    <p className="font-medium text-foreground">{authFailure.title}</p>
-                    <p className="text-[12px] leading-relaxed text-muted-foreground">
-                      Sign in again from a terminal. Your conversation is saved, so you can retry
-                      this turn without losing your work.
-                    </p>
-                  </div>
-                </div>
-                <code className="block rounded-md bg-muted px-2.5 py-2 font-mono text-[11px] text-foreground">
-                  {authFailure.command}
-                </code>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    onClick={() => void navigator.clipboard.writeText(authFailure.command)}
-                  >
-                    <Copy />
-                    Copy command
-                  </Button>
-                  {onRetry && (
-                    <Button type="button" size="xs" onClick={onRetry}>
-                      I’ve signed in — retry
-                    </Button>
-                  )}
-                </div>
-              </div>
+              <AuthFailureNotice failure={authFailure} onRetry={onRetry} />
             )}
             {run.status === 'interrupted' && onResume && (
               <button
@@ -193,6 +161,52 @@ export function AgentTurn({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** A turn the agent could not run because its CLI is signed out: how to sign back in. */
+function AuthFailureNotice({
+  failure,
+  onRetry,
+}: {
+  failure: AgentAuthFailure
+  onRetry?: () => void
+}) {
+  return (
+    <div
+      role="alert"
+      className="space-y-2.5 rounded-lg border border-destructive/25 bg-destructive/5 p-3"
+    >
+      <div className="flex items-start gap-2">
+        <LogIn className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium text-foreground">{failure.title}</p>
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            Sign in again from a terminal. Your conversation is saved, so you can retry this turn
+            without losing your work.
+          </p>
+        </div>
+      </div>
+      <code className="block rounded-md bg-muted px-2.5 py-2 font-mono text-[11px] text-foreground">
+        {failure.command}
+      </code>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onClick={() => void navigator.clipboard.writeText(failure.command)}
+        >
+          <Copy />
+          Copy command
+        </Button>
+        {onRetry && (
+          <Button type="button" size="xs" onClick={onRetry}>
+            I’ve signed in — retry
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

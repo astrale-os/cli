@@ -45,7 +45,8 @@ export function useAttachedComments(): {
   }
 }
 
-function threadText(comment: Comment): string {
+/** A thread's latest word, or its first when the latest says nothing. */
+export function threadText(comment: Comment): string {
   return (comment.thread.at(-1)?.text ?? comment.thread[0]?.text ?? '').trim() || 'Empty thread'
 }
 

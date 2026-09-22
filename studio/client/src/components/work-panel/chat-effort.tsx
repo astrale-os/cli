@@ -179,32 +179,30 @@ export function ChatEffortPicker({ chat, harness }: { chat?: ChatInfo; harness?:
         <p className="px-2 pb-0.5 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
           Reasoning
         </p>
-        {levels.map((option, index) => (
-          <button
-            key={option.id}
-            type="button"
-            title={option.description}
-            aria-current={option.id === running ? 'true' : undefined}
-            onClick={() => {
-              setOpen(false)
-              update.mutate({ chatId: chat.id, effort: option.id })
-            }}
-            className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left transition-colors hover:bg-accent"
-          >
-            <EffortBars
-              level={index}
-              total={levels.length}
-              className={option.id === running ? 'text-foreground' : 'text-muted-foreground'}
-            />
-            <span className="min-w-0 flex-1 truncate text-[13px]">{option.label}</span>
-            <Check
-              className={cn(
-                'h-3 w-3 shrink-0',
-                option.id === running ? 'opacity-100' : 'opacity-0',
-              )}
-            />
-          </button>
-        ))}
+        {levels.map((option, index) => {
+          const current = option.id === running
+          return (
+            <button
+              key={option.id}
+              type="button"
+              title={option.description}
+              aria-current={current ? 'true' : undefined}
+              onClick={() => {
+                setOpen(false)
+                update.mutate({ chatId: chat.id, effort: option.id })
+              }}
+              className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left transition-colors hover:bg-accent"
+            >
+              <EffortBars
+                level={index}
+                total={levels.length}
+                className={current ? 'text-foreground' : 'text-muted-foreground'}
+              />
+              <span className="min-w-0 flex-1 truncate text-[13px]">{option.label}</span>
+              <Check className={cn('h-3 w-3 shrink-0', current ? 'opacity-100' : 'opacity-0')} />
+            </button>
+          )
+        })}
       </PopoverContent>
     </Popover>
   )

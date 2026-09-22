@@ -11,6 +11,11 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { useCanvasDomains } from '@/schema-studio/workspace/canvas-selection'
 
+import { threadText } from './comment-picker'
+
+/** One thread's key in the list, which spans every domain of the workspace. */
+const threadKey = (domainId: string, commentId: string) => `${domainId}:${commentId}`
+
 /**
  * The comments half of the work panel. A thread is a note pinned somewhere in the
  * domain, so the list is also a way to navigate: opening one takes the main view
@@ -36,7 +41,7 @@ export function CommentsTab() {
   const commentCount = commentGroups.reduce((total, group) => total + group.comments.length, 0)
   const waitingFor = groups.filter((group) => group.loading).map((group) => group.domain.origin)
   const reveal = (domainId: string, comment: Comment) => {
-    const key = `${domainId}:${comment.id}`
+    const key = threadKey(domainId, comment.id)
     const next = openId === key ? null : key
     setOpenId(next)
     const ref = comment.anchorRefs[0]?.ref
@@ -88,7 +93,8 @@ export function CommentsTab() {
                 </header>
                 <div className="divide-y">
                   {comments.map((comment) => {
-                    const key = `${domain.id}:${comment.id}`
+                    const key = threadKey(domain.id, comment.id)
+                    const open = openId === key
                     return (
                       <div key={key}>
                         <button
@@ -96,17 +102,13 @@ export function CommentsTab() {
                           onClick={() => reveal(domain.id, comment)}
                           className={cn(
                             'flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent',
-                            openId === key && 'bg-accent',
+                            open && 'bg-accent',
                           )}
                         >
                           <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px]">
-                              {(
-                                comment.thread.at(-1)?.text ??
-                                comment.thread[0]?.text ??
-                                ''
-                              ).trim() || 'Empty thread'}
+                              {threadText(comment)}
                             </span>
                             <span className="mt-0.5 flex items-center gap-1.5">
                               <span className="truncate text-[11px] text-muted-foreground">
@@ -119,7 +121,7 @@ export function CommentsTab() {
                             </span>
                           </span>
                         </button>
-                        {openId === key && (
+                        {open && (
                           <div className="px-3 pb-3 pt-1">
                             <ThreadView domainId={domain.id} comment={comment} />
                           </div>
