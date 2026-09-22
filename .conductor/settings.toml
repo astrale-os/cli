@@ -4,7 +4,7 @@
 setup = "AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh"
 run_mode = "concurrent"
 
-# The watch loop is the authoring feedback cycle; `check` is the full gate, which also
+# The watch loop is the authoring feedback cycle; `check` is the full test suite, which also
 # regenerates the embedded assets and walks the source boundary.
 [scripts.run.watch]
 command = "pnpm test:watch"
@@ -14,3 +14,22 @@ icon = "test-tube"
 [scripts.run.check]
 command = "pnpm test"
 icon = "test-tube"
+
+# Live-edit Studio against its local fixture. The HTTP preview uses Conductor's
+# port; Studio picks another free loopback port for Vite and supervises both servers.
+[scripts.run.studio]
+available_in = ["local"]
+command = 'bun bin/astrale.ts studio studio/e2e/fixture --dev --port "$CONDUCTOR_PORT"'
+icon = "play"
+
+[scripts.run.build]
+command = "pnpm build"
+icon = "package"
+
+[scripts.run.typecheck]
+command = "pnpm typecheck"
+icon = "braces"
+
+[scripts.run.lint]
+command = "pnpm lint"
+icon = "check"
