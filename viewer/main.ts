@@ -38,6 +38,13 @@ const HEARTBEAT_MS = 1_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
 const base = location.pathname.replace(/\/+$/, '')
+/**
+ * This page's hold on the session. The server keeps a session up while any page
+ * holds one, so the host that opened this page may name the hold it is going to
+ * hand back (`?page=`); every other page, a tab the operator opened the View in
+ * among them, owns a hold nobody else can release.
+ */
+const pageId = new URLSearchParams(location.search).get('page') || crypto.randomUUID()
 let revision: number | undefined
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
@@ -57,7 +64,7 @@ function report(state: string, error?: string): void {
   void fetch(`${base}/status`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ state, error }),
+    body: JSON.stringify({ state, error, page: pageId }),
     keepalive: true,
   })
     .then(async (response) => {
@@ -67,6 +74,19 @@ function report(state: string, error?: string): void {
     })
     .catch(() => {})
 }
+
+/**
+ * Leaving is explicit: a released session with no page left shuts down instead
+ * of waiting out its idle budget. Registered before the first mount, so a page
+ * that never came up still hands its hold back.
+ *
+ * Only a page that is really going: `pagehide` also fires for the back/forward
+ * cache, and that page still holds its session - it resumes reporting the
+ * moment the reader comes back to it.
+ */
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) report('gone')
+})
 
 function el(id: string): HTMLElement {
   return document.getElementById(id)!

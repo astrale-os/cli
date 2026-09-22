@@ -3,7 +3,7 @@ import { getAnatomy, getBundle } from '../cache'
 import { asString } from '../json'
 import { studioSettings } from '../studio-settings'
 import { getViewRuntime } from '../views/runtime'
-import { closeViewSession, launchViewSession } from '../views/session'
+import { launchViewSession, releaseViewSession } from '../views/session'
 import { badRequest, json, notFound, type DomainRouteContext } from './http'
 
 const VALID_SLUG = /^[a-z][a-z0-9-]*$/
@@ -13,8 +13,8 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
   const id = handle.id
   const root = handle.root
 
-  if (rest === '/views/sessions/close' && req.method === 'POST') {
-    return json(await closeViewSession(asString(body.sessionId) ?? ''))
+  if (rest === '/views/sessions/release' && req.method === 'POST') {
+    return json(await releaseViewSession(asString(body.sessionId) ?? '', asString(body.page)))
   }
 
   const runtimeMatch = rest.match(/^\/views\/([^/]+)\/runtime$/)

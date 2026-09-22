@@ -64,6 +64,13 @@ export type ViewOpts = KernelCommandOpts &
     all?: boolean
     allowExternalOrigin?: string[]
     allowIdentity?: string[]
+    /**
+     * Internal Studio host override. A Studio session is released when its
+     * dialog closes, so its idle budget is only the net for a page that stopped
+     * reporting; a terminal session has no host to release it and keeps the
+     * short default.
+     */
+    idleMs?: number
     /** Internal Studio host override; ordinary CLI calls resolve their own executable. */
     serveRuntime?: { file: string; args: string[] }
   }
@@ -262,7 +269,14 @@ export function createViewServeConfig(
   record: ViewSessionRecord,
   opts: Pick<
     ViewOpts,
-    'allowExternalOrigin' | 'allowIdentity' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'
+    | 'allowExternalOrigin'
+    | 'allowIdentity'
+    | 'as'
+    | 'creds'
+    | 'idleMs'
+    | 'instance'
+    | 'timeout'
+    | 'url'
   >,
   kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
 ): ViewServeConfig {
@@ -291,7 +305,7 @@ export function createViewServeConfig(
     ...(opts.allowIdentity?.length
       ? { identities: [...new Set([record.identity!, ...opts.allowIdentity])] }
       : {}),
-    idleMs: IDLE_MS,
+    idleMs: opts.idleMs ?? IDLE_MS,
   }
 }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.116](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.115...cli/v1.0.0-beta.116) (2026-09-22)
+
+
+### Features
+
+* inspect traces with correlated journal evidence and coverage ([#515](https://github.com/astrale-os/cli/issues/515)) ([a40ef52](https://github.com/astrale-os/cli/commit/a40ef52625937847436af67e47cb77d11907d317))
+
+
+### Bug Fixes
+
+* **studio:** keep each chat's composer draft on its own tab ([#523](https://github.com/astrale-os/cli/issues/523)) ([b502df4](https://github.com/astrale-os/cli/commit/b502df4564a6f95b1c92453f3f5df9b33350f976))
+
 ## [1.0.0-beta.115](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.114...cli/v1.0.0-beta.115) (2026-09-21)
 
 

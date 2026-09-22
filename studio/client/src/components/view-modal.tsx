@@ -36,6 +36,11 @@ type SessionState =
  * A View workbench backed by the CLI-owned session. `astrale view` resolves the
  * installed placement and owns identity, active-instance data, delegation, and
  * the Shell mount. Opening the dialog is the only start action the user needs.
+ *
+ * The dialog holds one named page of that session and hands exactly that page
+ * back when it goes. It never closes the session: the operator may have opened
+ * the same View in a tab of their own, and the session server keeps the session
+ * up for as long as any page still holds it.
  */
 export function ViewModal({
   domainId,
@@ -51,6 +56,9 @@ export function ViewModal({
   const runtimeQuery = useViewRuntime(domainId, view.slug, open)
   const runtime = runtimeQuery.data
   const [targetId, setTargetId] = useState('')
+  // This dialog's page of whatever session it is showing. Stable for the life of
+  // the dialog, and never the id of the tab the View was popped out into.
+  const [pageId] = useState(() => crypto.randomUUID())
   const [restarting, setRestarting] = useState(false)
   const [session, setSession] = useState<SessionState>({ phase: 'idle' })
   const initializedFor = useRef('')
@@ -90,7 +98,7 @@ export function ViewModal({
       .then((result) => {
         if (result.status === 'ready') {
           openedSessionId = result.sessionId
-          if (disposed) void api.closeViewSession(domainId, result.sessionId)
+          if (disposed) void api.releaseViewSession(domainId, result.sessionId, pageId)
           else setSession({ phase: 'ready', session: result })
         } else if (!disposed) {
           setSession({ phase: 'error', reason: result.reason })
@@ -106,24 +114,35 @@ export function ViewModal({
       })
     return () => {
       disposed = true
-      if (openedSessionId) void api.closeViewSession(domainId, openedSessionId)
+      if (openedSessionId) void api.releaseViewSession(domainId, openedSessionId, pageId)
     }
-  }, [domainId, launchReady, runtime?.instance, runtime?.preparationId, targetId, view.slug])
+  }, [
+    domainId,
+    launchReady,
+    pageId,
+    runtime?.instance,
+    runtime?.preparationId,
+    targetId,
+    view.slug,
+  ])
 
+  // Unloading Studio takes this dialog's page with it, and an unload runs no
+  // effect cleanup. Release that page here so a session nobody else holds does
+  // not sit out its idle budget - and so one a popped-out tab holds survives.
   useEffect(() => {
     if (session.phase !== 'ready') return
-    const closeOnPageExit = () => {
-      const url = `/api/domain/${encodeURIComponent(domainId)}/views/sessions/close`
+    const releaseOnPageExit = () => {
+      const url = `/api/domain/${encodeURIComponent(domainId)}/views/sessions/release`
       navigator.sendBeacon(
         url,
-        new Blob([JSON.stringify({ sessionId: session.session.sessionId })], {
+        new Blob([JSON.stringify({ sessionId: session.session.sessionId, page: pageId })], {
           type: 'application/json',
         }),
       )
     }
-    window.addEventListener('pagehide', closeOnPageExit)
-    return () => window.removeEventListener('pagehide', closeOnPageExit)
-  }, [domainId, session])
+    window.addEventListener('pagehide', releaseOnPageExit)
+    return () => window.removeEventListener('pagehide', releaseOnPageExit)
+  }, [domainId, pageId, session])
 
   const restart = async () => {
     if (restarting) return
@@ -173,7 +192,7 @@ export function ViewModal({
                 href={session.session.pageUrl}
                 target="_blank"
                 rel="noreferrer"
-                title="Open in a new tab"
+                title="Open in a new tab (the View stays open after this dialog closes)"
                 className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <ExternalLink className="h-4 w-4" />
@@ -202,7 +221,7 @@ export function ViewModal({
           {session.phase === 'ready' ? (
             <iframe
               key={session.session.sessionId}
-              src={session.session.pageUrl}
+              src={`${session.session.pageUrl}?page=${encodeURIComponent(pageId)}`}
               title={`${view.slug} preview`}
               className="h-full w-full border-0 bg-white"
               allow="clipboard-read; clipboard-write"
