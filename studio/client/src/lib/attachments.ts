@@ -80,23 +80,26 @@ export const useDraftImages = create<DraftImagesState>((set, get) => ({
     return taken
   },
   restore: (chatId, attachments) =>
-    set((s) => ({
-      images: {
-        ...s.images,
-        [chatId]: [
-          ...attachments.map((attachment): DraftImage => ({
-            key: attachment.id,
-            name: attachment.name,
-            src: api.attachmentUrl(chatId, attachment.id),
-            status: 'ready',
-            attachment,
-          })),
-          ...(s.images[chatId] ?? NONE).filter(
-            (image) => !attachments.some((entry) => entry.id === image.attachment?.id),
-          ),
-        ],
-      },
-    })),
+    set((s) => {
+      const restored = new Set(attachments.map((attachment) => attachment.id))
+      return {
+        images: {
+          ...s.images,
+          [chatId]: [
+            ...attachments.map((attachment): DraftImage => ({
+              key: attachment.id,
+              name: attachment.name,
+              src: api.attachmentUrl(chatId, attachment.id),
+              status: 'ready',
+              attachment,
+            })),
+            ...(s.images[chatId] ?? NONE).filter(
+              (image) => !image.attachment || !restored.has(image.attachment.id),
+            ),
+          ],
+        },
+      }
+    }),
 }))
 
 /** The longest edge a re-encoded image keeps — what the model APIs scale down to anyway. */
