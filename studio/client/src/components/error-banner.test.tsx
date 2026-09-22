@@ -34,3 +34,11 @@ test('the full text is reachable — the strip itself opens the modal, and Detai
   expect(html).toContain('Read the full message')
   expect(html).toContain('Details')
 })
+
+test('copying is one click from the strip — no detour through the modal', () => {
+  const html = renderToStaticMarkup(<ErrorBanner messages={[LONG]} />)
+
+  expect(html).toContain('Copy the message')
+  // the copy sits before Details, so the strip reads message · copy · details
+  expect(html.indexOf('Copy the message')).toBeLessThan(html.indexOf('Details'))
+})
