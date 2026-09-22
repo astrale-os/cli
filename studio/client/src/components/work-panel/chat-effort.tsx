@@ -32,6 +32,22 @@ const EFFORT_LABELS: Record<AgentEffort, string> = {
   ultracode: 'Ultracode',
 }
 
+/** The shortest and the tallest rung, in px; everything between them is spaced evenly. */
+const BAR_MIN_H = 5
+const BAR_MAX_H = 12
+
+/**
+ * One rung's height. The ramp is LINEAR and unrounded on purpose: rounding each bar to
+ * a whole pixel made the steps uneven for every ladder whose length does not divide the
+ * range — five rungs came out 6·7·9·10·12, which reads as a broken meter rather than a
+ * rising one. A 2px-wide bar carries a fractional height without looking soft, and an
+ * even ramp is the whole point of the shape.
+ */
+function barHeight(index: number, total: number): number {
+  if (total <= 1) return BAR_MAX_H
+  return BAR_MIN_H + ((BAR_MAX_H - BAR_MIN_H) * index) / (total - 1)
+}
+
 /** Ascending bars, tallest last — the meter reads as signal strength. */
 function EffortBars({
   level,
@@ -47,7 +63,7 @@ function EffortBars({
       {Array.from({ length: total }, (_, index) => (
         <span
           key={index}
-          style={{ height: `${4 + Math.round(((index + 1) * 8) / total)}px` }}
+          style={{ height: `${barHeight(index, total)}px` }}
           className={cn(
             'w-[2px] rounded-[1px] bg-current transition-opacity',
             index <= level ? 'opacity-100' : 'opacity-25',
