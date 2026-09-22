@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { AcpClaudeHarness } from './claude'
+import { errorText } from './client'
 import { AcpCodexHarness } from './codex'
 
 const roots: string[] = []
@@ -708,4 +709,19 @@ describe('ACP harness adapter', () => {
     }
     expect(exited).toBe(true)
   }, 10_000)
+})
+
+test('a JSON-RPC failure keeps its code and data under a clean first line', () => {
+  const error = Object.assign(new Error('Internal error'), {
+    code: -32603,
+    data: { details: 'model overloaded' },
+  })
+  const text = errorText(error)
+  expect(text.split('\n')[0]).toBe('Internal error (JSON-RPC -32603)')
+  expect(text).toContain('"details": "model overloaded"')
+
+  // data the message already carries is not repeated
+  const same = Object.assign(new Error('Internal error: boom'), { code: -32603, data: 'boom' })
+  expect(errorText(same)).toBe('Internal error: boom (JSON-RPC -32603)')
+  expect(errorText(new Error('plain'))).toBe('plain')
 })

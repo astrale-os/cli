@@ -100,14 +100,30 @@ export function acpMcpServers(
   }))
 }
 
-function errorText(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message
-  return String(error)
+/**
+ * A JSON-RPC failure keeps its real cause in `data` ("Internal error" alone says
+ * nothing), so the code and the data travel with the message: the first line stays
+ * the headline the chat shows, the rest is what the details view is for.
+ */
+export function errorText(error: unknown): string {
+  if (!(error instanceof Error) || !error.message) return String(error)
+  const { code, data } = error as Error & { code?: unknown; data?: unknown }
+  if (typeof code !== 'number') return error.message
+  const detail =
+    data === undefined || data === null
+      ? ''
+      : typeof data === 'string'
+        ? data.trim()
+        : JSON.stringify(data, null, 2)
+  const lines = [`${error.message} (JSON-RPC ${code})`]
+  if (detail && !error.message.includes(detail)) lines.push(detail)
+  return lines.join('\n')
 }
 
+/** The agent's own stderr tail, on its own block so it never swallows the headline. */
 function stderrSuffix(stderr: string): string {
   const text = stderr.trim()
-  return text ? `: ${text.slice(-800)}` : ''
+  return text ? `\n\nstderr (tail):\n${text.slice(-2000)}` : ''
 }
 
 function toolTarget(update: acp.ToolCall | acp.ToolCallUpdate): string {
