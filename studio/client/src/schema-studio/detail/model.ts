@@ -25,6 +25,11 @@ export function selectedClassName(id: string): string {
   return id.startsWith('class.') ? id.slice('class.'.length) : id
 }
 
+/** The selection id that opens a Class: its bare name at home, its exact key when imported. */
+export function classSelectionId(ref: IrClassRef, domain: string | undefined): string {
+  return ref.origin === domain ? `class.${ref.name}` : `class.${classRefKey(ref)}`
+}
+
 /** Where an inherited member comes from — enough to prefix it and to anchor it. */
 export interface MemberOwner {
   name: string

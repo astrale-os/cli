@@ -162,6 +162,9 @@ function Tab({
   }, [active])
 
   const named = chat.title !== DEFAULT_CHAT_TITLE
+  const name = named ? chat.title : harnessLabel
+  const busy = isBusy(chat)
+  const failed = chat.status === 'failed'
   const commit = () => {
     const next = field.current?.value.trim() ?? ''
     setEditing(false)
@@ -205,9 +208,9 @@ function Tab({
           aria-current={active ? 'page' : undefined}
           // the spin is the only thing that says "working", and it says nothing
           // to a screen reader or to anyone who turned motion off
-          aria-busy={isBusy(chat) || undefined}
-          aria-label={named ? chat.title : harnessLabel}
-          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${isBusy(chat) ? ' — running' : ''}${unread ? ' — unread reply' : ''}${active ? ' — double-click to rename' : ''}`}
+          aria-busy={busy || undefined}
+          aria-label={name}
+          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${busy ? ' — running' : ''}${unread ? ' — unread reply' : ''}${active ? ' — double-click to rename' : ''}`}
           className="flex h-full min-w-0 items-center gap-1.5 px-2"
         >
           <span className="relative grid h-3.5 w-3.5 shrink-0 place-items-center">
@@ -219,7 +222,7 @@ function Tab({
               className={cn(
                 tone.mark,
                 !active && 'opacity-70',
-                isBusy(chat) && 'animate-spin [animation-duration:4s]',
+                busy && 'animate-spin [animation-duration:4s]',
               )}
             />
             {/* no mark for this agent — its initials still say which one it is */}
@@ -229,18 +232,18 @@ function Tab({
                   'text-[9px] font-semibold uppercase',
                   tone.mark,
                   // spinning letters read as broken, so those tabs breathe instead
-                  isBusy(chat) && 'animate-pulse',
+                  busy && 'animate-pulse',
                 )}
               >
                 {harnessLabel.slice(0, 2)}
               </span>
             )}
-            {(unread || chat.status === 'failed') && (
+            {(unread || failed) && (
               <span
                 aria-label={unread ? 'Unread reply' : 'Agent failed'}
                 className={cn(
                   'absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full',
-                  chat.status === 'failed' ? 'bg-destructive' : 'bg-success',
+                  failed ? 'bg-destructive' : 'bg-success',
                 )}
               />
             )}
@@ -256,7 +259,7 @@ function Tab({
           type="button"
           onClick={onClose}
           title="Close this chat"
-          aria-label={`Close ${named ? chat.title : harnessLabel}`}
+          aria-label={`Close ${name}`}
           className="mr-1 grid h-4 w-4 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
         >
           <X className="h-3 w-3" />

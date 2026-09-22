@@ -7,14 +7,16 @@ import type {
 
 import { queryStudioViewTargets } from '../../../src/lib/view/studio-runtime'
 import { decodeJsonObject } from '../cli'
-import { reconcileRememberedTarget, targetFromRow, type RawTargetRow } from './model'
+import {
+  assertOrigin,
+  emptyTargets,
+  reconcileRememberedTarget,
+  targetFromRow,
+  type RawTargetRow,
+} from './model'
 import { readRememberedTarget } from './selection-repository'
 
 const TARGET_LIMIT = 200
-
-interface RawQueryResult {
-  graph?: { nodes?: RawTargetRow[] }
-}
 
 interface ViewTargetDependencies {
   query: typeof queryStudioViewTargets
@@ -30,12 +32,12 @@ function decodeTargetRow(value: unknown): RawTargetRow | null {
   }
 }
 
-function decodeQueryResult(value: unknown): RawQueryResult | null {
+/** The rows of a `{ graph: { nodes } }` query payload, or null when it is not that shape. */
+function decodeQueryRows(value: unknown): RawTargetRow[] | null {
   const payload = decodeJsonObject(value)
   const graph = decodeJsonObject(payload?.graph)
   if (!graph || !Array.isArray(graph.nodes)) return null
-  const nodes = graph.nodes.map(decodeTargetRow).filter((row) => row !== null)
-  return { graph: { nodes } }
+  return graph.nodes.map(decodeTargetRow).filter((row) => row !== null)
 }
 
 export async function listViewTargets(
@@ -48,15 +50,7 @@ export async function listViewTargets(
   dependencies: Partial<ViewTargetDependencies> = {},
 ): Promise<ViewTargetResult> {
   const bindings = viewDefinitionBindings(origin, view, bundle)
-  if (bindings.length === 0) {
-    return {
-      status: 'available',
-      items: [],
-      selected: null,
-      stale: null,
-      truncated: false,
-    }
-  }
+  if (bindings.length === 0) return emptyTargets()
 
   const query = dependencies.query ?? queryStudioViewTargets
   const results = await query(
@@ -67,38 +61,19 @@ export async function listViewTargets(
     })),
     timeoutMs,
   )
-  const queried = bindings.map((binding, index) => {
+  const successes = bindings.flatMap((binding, index) => {
     const result = results[index]
-    const data =
-      result?.value === null || result?.value === undefined ? null : decodeQueryResult(result.value)
-    return {
-      binding,
-      result: {
-        ok: result?.ok === true && data !== null,
-        data,
-        detail: result?.detail ?? '',
-      },
-    }
+    const rows = result?.value == null ? null : decodeQueryRows(result.value)
+    return result?.ok === true && rows !== null ? [{ binding, rows }] : []
   })
-  const successes = queried.filter(
-    (item) => item.result.ok && Array.isArray(item.result.data?.graph?.nodes),
-  )
   if (successes.length === 0) {
-    const reason = queried.map((item) => item.result.detail).find(Boolean)
-    return {
-      status: 'unavailable',
-      items: [],
-      selected: null,
-      stale: null,
-      truncated: false,
-      reason: reason || 'The active instance could not be queried for view targets.',
-    }
+    const reason = bindings.map((_, index) => results[index]?.detail).find(Boolean)
+    return emptyTargets(reason || 'The active instance could not be queried for view targets.')
   }
 
   const byId = new Map<string, ViewTargetCandidate>()
   let truncated = false
-  for (const { binding, result } of successes) {
-    const rows = result.data?.graph?.nodes ?? []
+  for (const { binding, rows } of successes) {
     if (rows.length > TARGET_LIMIT) truncated = true
     for (const row of rows.slice(0, TARGET_LIMIT)) {
       const target = targetFromRow(row, binding.className, binding.classOrigin)
@@ -202,11 +177,6 @@ function uniqueViewBindings(bindings: ViewDefinitionBinding[]): ViewDefinitionBi
     if (!unique.has(key)) unique.set(key, binding)
   }
   return [...unique.values()]
-}
-
-function assertOrigin(value: string): string {
-  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(value)) throw new Error(`Invalid domain origin: ${value}`)
-  return value
 }
 
 function assertSchemaName(value: string): string {

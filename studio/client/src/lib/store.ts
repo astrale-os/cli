@@ -51,6 +51,11 @@ export type PanelSide = WorkspacePanelUiState['side']
 export const DOCK_WIDTH = { min: 420, max: 1600, fallback: 880 } as const
 export const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 } as const
 
+/** Bounds the persisted projection holds the other panel sizes to. */
+const PANEL_SIZE = { min: 260, max: 900 } as const
+const RAIL_WIDTH = { min: 180, max: 560 } as const
+const DETAIL_WIDTH = { min: 320, max: 900 } as const
+
 function clampTo({ min, max }: { min: number; max: number }, value: number): number {
   return Math.min(max, Math.max(min, Math.round(value)))
 }
@@ -343,16 +348,16 @@ export const useUI = create<UIState>((set) => ({
     }),
   setAgentComments: (agentComments) => set({ agentComments }),
   revealAnchor: (ref, domainId) => {
-    const section: SectionKey = ref.startsWith('section.')
-      ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')
+    const named = ref.startsWith('section.')
+      ? ref.slice('section.'.length).split('.')[0]
       : ref.startsWith('core.')
         ? 'core'
         : 'schema'
-    const target = SECTION_KEYS.includes(section) ? section : 'schema'
+    const target = SECTION_KEYS.find((key) => key === named) ?? 'schema'
     // A property or method is revealed INSIDE the member that declares it — selecting
     // the field itself would select a canvas node that does not exist.
     const selection = detailRefFor(ref)
-    set(() => ({
+    set({
       section: target,
       panelOverlay: null,
       revealedRef: ref,
@@ -371,7 +376,7 @@ export const useUI = create<UIState>((set) => ({
           selection.startsWith('domain.')
           ? { revealTarget: selection }
           : {}),
-    }))
+    })
   },
   setPanelOverlay: (kind, domainId) =>
     set({ panelOverlay: kind ? { kind, ...(domainId ? { domainId } : {}) } : null }),
@@ -404,11 +409,10 @@ export const useUI = create<UIState>((set) => ({
     }),
   focusClass: (id, domainId) =>
     set((s) => {
-      const owner = domainId
-      const same = s.focusId === id && s.selectionDomainId === owner
+      const same = s.focusId === id && s.selectionDomainId === domainId
       return {
         selectedClass: id,
-        selectionDomainId: owner,
+        selectionDomainId: domainId,
         panelOverlay: null,
         revealedRef: null,
         revealTarget: null,
@@ -454,18 +458,18 @@ export function uiWorkspaceSnapshot(state = useUI.getState()): Pick<
   return {
     section: state.section,
     edgeStyle: state.edgeStyle,
-    detailWidth: Math.min(900, Math.max(320, Math.round(state.detailWidth))),
+    detailWidth: clampTo(DETAIL_WIDTH, state.detailWidth),
     readerDomainId: state.readerDomainId ?? null,
     panel: {
       open: state.panelOpen,
       tab: state.panelTab,
       side: state.panelSide,
-      size: Math.min(900, Math.max(260, Math.round(state.panelSize))),
+      size: clampTo(PANEL_SIZE, state.panelSize),
       dockWidth: clampTo(DOCK_WIDTH, state.dockWidth),
       dockHeight: clampTo(DOCK_HEIGHT, state.dockHeight),
     },
     rail: {
-      width: Math.min(560, Math.max(180, Math.round(state.modulesWidth))),
+      width: clampTo(RAIL_WIDTH, state.modulesWidth),
       collapsed: state.modulesCollapsed,
     },
   }

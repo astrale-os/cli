@@ -9,16 +9,28 @@ import { applyMockDomainEdit } from './domain-edit'
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve()
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-      { once: true },
-    )
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
   })
+}
+
+/** `DOMAIN_STUDIO_MOCK_EXPECT_MODEL` pins the model a test expects Studio to send. */
+function unexpectedModel(model: string | undefined): string | undefined {
+  const expected = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
+  return expected && model !== expected
+    ? `mock expected model ${expected}, received ${model ?? '(default)'}`
+    : undefined
+}
+
+function authorReply(text: string) {
+  return { id: crypto.randomUUID(), role: 'author' as const, type: 'text' as const, text }
 }
 
 export class MockHarness implements AgentHarness {
@@ -37,11 +49,8 @@ export class MockHarness implements AgentHarness {
   }
 
   async run(input: AgentTurnInput): Promise<AgentTurnResult> {
-    const expectedModel = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
-    if (expectedModel && input.model !== expectedModel)
-      throw new Error(
-        `mock expected model ${expectedModel}, received ${input.model ?? '(default)'}`,
-      )
+    const modelMismatch = unexpectedModel(input.model)
+    if (modelMismatch) throw new Error(modelMismatch)
     const mode = process.env.DOMAIN_STUDIO_MOCK_MODE || 'normal'
     const extraDelay = Number(process.env.DOMAIN_STUDIO_MOCK_DELAY_MS || 0)
     if ((mode === 'resumefail' || mode === 'resumefailafterevent') && input.sessionId) {
@@ -127,21 +136,9 @@ export class MockHarness implements AgentHarness {
       status: 'closed',
       thread: [
         ...comment.thread,
-        {
-          id: crypto.randomUUID(),
-          role: 'author' as const,
-          type: 'text' as const,
-          text: replyText,
-        },
+        authorReply(replyText),
         ...(mode === 'liveandblockdifferent'
-          ? [
-              {
-                id: crypto.randomUUID(),
-                role: 'author' as const,
-                type: 'text' as const,
-                text: 'Additional final detail. (mock agent)',
-              },
-            ]
+          ? [authorReply('Additional final detail. (mock agent)')]
           : []),
       ],
     }))
@@ -171,13 +168,8 @@ export class MockHarness implements AgentHarness {
   }
 
   async ask(input: AskInput): Promise<AskResult> {
-    const expectedModel = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
-    if (expectedModel && input.model !== expectedModel)
-      return {
-        text: '',
-        isError: true,
-        errorMessage: `mock expected model ${expectedModel}, received ${input.model ?? '(default)'}`,
-      }
+    const modelMismatch = unexpectedModel(input.model)
+    if (modelMismatch) return { text: '', isError: true, errorMessage: modelMismatch }
     const expectedSession = process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION
     if (expectedSession && input.sessionId !== expectedSession)
       return {

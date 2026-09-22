@@ -12,9 +12,8 @@ import { cn } from '@/lib/utils'
  */
 
 function sanitizeSvg(raw: string): string | null {
-  const trimmed = raw.trim()
-  if (!trimmed.startsWith('<svg')) return null
-  let s = trimmed
+  let s = raw.trim()
+  if (!s.startsWith('<svg')) return null
   // strip anything executable or external
   s = s.replace(/<script[\s\S]*?<\/script>/gi, '')
   s = s.replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
@@ -53,8 +52,4 @@ export function SchemaIcon({
       dangerouslySetInnerHTML={{ __html: clean }}
     />
   )
-}
-
-export function hasIcon(svg?: string): boolean {
-  return !!svg && svg.trim().startsWith('<svg')
 }

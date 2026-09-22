@@ -6,6 +6,7 @@ import { ResizeHandle, type ResizeState, strongestResizeState } from '@/componen
 import { isRunActive, useDisplayRun } from '@/lib/agent'
 import { useUnreadAgentReplies } from '@/lib/agent-unread'
 import { useActiveChatId, useChatMutations, useModelCatalog } from '@/lib/chats'
+import { openCommentThreads } from '@/lib/comments'
 import { useHarness, useLoadout, useWorkspaceComments } from '@/lib/hooks'
 import { DOCK_HEIGHT, DOCK_WIDTH, type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -65,12 +66,16 @@ function useWaitingCount(): number {
   return data.reduce(
     (total, entry) =>
       total +
-      (entry.store?.comments.filter(
-        (comment) => comment.status === 'open' && comment.thread.at(-1)?.role === 'author',
-      ).length ?? 0),
+      openCommentThreads(entry.store?.comments).filter(
+        (comment) => comment.thread.at(-1)?.role === 'author',
+      ).length,
     0,
   )
 }
+
+/** The panel header's square icon buttons: the dock control and the close button. */
+const HEADER_BUTTON =
+  'grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
 
 /**
  * The work panel: the agent conversation and the comment threads, showing beside
@@ -411,6 +416,8 @@ const DOCK_EDGES: Record<
   },
 }
 
+const DOCK_EDGE_NAMES = Object.keys(DOCK_EDGES) as DockEdge[]
+
 /** Literal per side and state, so Tailwind sees every class it has to generate. */
 const DOCK_SIDE_TONE: Record<DockSide, Record<ResizeState, string>> = {
   top: { idle: '', hover: 'border-t-primary/60', active: 'border-t-primary' },
@@ -441,12 +448,10 @@ function DockResize({
 }) {
   const [states, setStates] = useState<Partial<Record<DockEdge, ResizeState>>>({})
   const lit = (side: DockSide): ResizeState =>
-    (Object.keys(DOCK_EDGES) as DockEdge[])
-      .filter((edge) => DOCK_EDGES[edge].sides.includes(side))
-      .reduce<ResizeState>(
-        (tone, edge) => strongestResizeState(tone, states[edge] ?? 'idle'),
-        'idle',
-      )
+    DOCK_EDGE_NAMES.filter((edge) => DOCK_EDGES[edge].sides.includes(side)).reduce<ResizeState>(
+      (tone, edge) => strongestResizeState(tone, states[edge] ?? 'idle'),
+      'idle',
+    )
 
   return (
     <>
@@ -459,7 +464,7 @@ function DockResize({
           DOCK_SIDE_TONE.right[lit('right')],
         )}
       />
-      {(Object.keys(DOCK_EDGES) as DockEdge[]).map((edge) => {
+      {DOCK_EDGE_NAMES.map((edge) => {
         const { x, y, cursor, className, label } = DOCK_EDGES[edge]
         const corner = x !== 0 && y
         return (
@@ -683,7 +688,7 @@ function PanelHeader({
           title={closeLabel}
           aria-label={closeLabel}
           onClick={onClose}
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={HEADER_BUTTON}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -715,7 +720,7 @@ function DockPicker() {
           type="button"
           title="Where the panel sits"
           aria-label="Where the panel sits"
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={HEADER_BUTTON}
         >
           <Current className="h-3.5 w-3.5" />
         </button>

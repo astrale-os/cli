@@ -1,6 +1,6 @@
 import { type EdgeStyle, type Theme, useUI } from '@/lib/store'
 
-import { SettingRow, SettingSelect } from './row'
+import { SettingRow, SettingSelect, SettingsHeading } from './row'
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'Match system' },
@@ -21,9 +21,7 @@ export function AppearanceSettings() {
   const setEdgeStyle = useUI((state) => state.setEdgeStyle)
   return (
     <div>
-      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Appearance
-      </div>
+      <SettingsHeading>Appearance</SettingsHeading>
       <div className="divide-y rounded-lg border bg-card">
         <SettingRow label="Theme" description="Applies to this browser, saved on change.">
           <SettingSelect value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>

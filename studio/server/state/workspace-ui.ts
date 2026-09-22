@@ -21,6 +21,9 @@ const PANEL_TABS = new Set<WorkspacePanelUiState['tab']>(['agent', 'comments'])
 const PANEL_SIDES = new Set<WorkspacePanelUiState['side']>(['left', 'right', 'bottom'])
 const DOCK_WIDTH = { min: 420, max: 1600, fallback: 880 }
 const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 }
+const PANEL_SIZE = { min: 260, max: 900 }
+const RAIL_WIDTH = { min: 180, max: 560 }
+const DETAIL_WIDTH = { min: 320, max: 900, fallback: 420 }
 /**
  * The dock's first default size. Every state saved since the dock became resizable
  * stores its size, so a workspace that never touched it holds exactly this pair: read
@@ -42,7 +45,7 @@ export function emptyWorkspaceUiState(): WorkspaceUiState {
     version: 1,
     section: 'schema',
     edgeStyle: 'curved',
-    detailWidth: 420,
+    detailWidth: DETAIL_WIDTH.fallback,
     panel: {
       open: false,
       tab: 'agent',
@@ -117,14 +120,13 @@ function schemaState(value: unknown, fallback: WorkspaceSchemaUiState): Workspac
 function panelState(value: unknown, fallback: WorkspacePanelUiState): WorkspacePanelUiState {
   const record = asJsonRecord(value)
   if (!record) return fallback
-  const size = asFiniteNumber(record.size)
   const untouchedDock =
     record.dockWidth === FIRST_DOCK_DEFAULT.width && record.dockHeight === FIRST_DOCK_DEFAULT.height
   return {
     open: asBoolean(record.open) ?? fallback.open,
     tab: oneOf(record.tab, PANEL_TABS) ?? fallback.tab,
     side: oneOf(record.side, PANEL_SIDES) ?? fallback.side,
-    size: size === undefined ? fallback.size : Math.min(900, Math.max(260, Math.round(size))),
+    size: clamped(record.size, PANEL_SIZE, fallback.size),
     // absent in states saved before the bottom dock could be resized
     dockWidth: untouchedDock
       ? DOCK_WIDTH.fallback
@@ -138,9 +140,8 @@ function panelState(value: unknown, fallback: WorkspacePanelUiState): WorkspaceP
 function railState(value: unknown, fallback: WorkspaceRailUiState): WorkspaceRailUiState {
   const record = asJsonRecord(value)
   if (!record) return fallback
-  const width = asFiniteNumber(record.width)
   return {
-    width: width === undefined ? fallback.width : Math.min(560, Math.max(180, Math.round(width))),
+    width: clamped(record.width, RAIL_WIDTH, fallback.width),
     collapsed: asBoolean(record.collapsed) ?? fallback.collapsed,
   }
 }
@@ -162,9 +163,8 @@ function decodeWorkspaceUiState(value: unknown): WorkspaceUiState | undefined {
   }
 }
 
-function detailWidth(value: unknown, fallback = 420): number {
-  const width = asFiniteNumber(value)
-  return width === undefined ? fallback : Math.min(900, Math.max(320, Math.round(width)))
+function detailWidth(value: unknown, fallback = DETAIL_WIDTH.fallback): number {
+  return clamped(value, DETAIL_WIDTH, fallback)
 }
 
 export function readWorkspaceUiState(root: string): WorkspaceUiState {

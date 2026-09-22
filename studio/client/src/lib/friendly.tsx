@@ -57,13 +57,6 @@ export function methodGlyph(method: IrMethod): { icon: LucideIcon; tone: string 
   return { icon: Zap, tone: 'primary' }
 }
 
-/** Short, human label for the params of a method ("no input" / "url, name" / …). */
-export function paramSummary(method: IrMethod): string {
-  const keys = Object.keys(method.input.properties ?? {})
-  if (keys.length === 0) return 'No input'
-  return keys.join(', ')
-}
-
 /** `friendlyType`, with a List naming what it holds: "List of Text" says more than "List". */
 export function friendlyFieldType(
   schema?: JsonSchema,

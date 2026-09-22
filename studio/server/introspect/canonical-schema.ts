@@ -226,14 +226,17 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
   const declaration = asRecord(value) ?? {}
   const kind = declaration.kind === 'edge' ? 'edge' : 'node'
   const extendsRefs = refsOf(declaration.extends)
-  const propertyEntries = entriesOf(declaration.properties)
+  const propertyEntries = entriesOf(declaration.properties).map(
+    ([propertyName, raw]) => [propertyName, asRecord(raw)] as const,
+  )
   const propertyMetadata = Object.fromEntries(
-    propertyEntries.map(([propertyName, raw]) => {
-      const member = { ...(asRecord(raw) ?? {}) }
+    propertyEntries.map(([propertyName, property]) => {
+      const member = { ...(property ?? {}) }
       delete member.schema
       return [propertyName, jsonCopy(member)]
     }),
   )
+  const data = dataDeclaration(declaration.data)
   const policies = Object.fromEntries(
     entriesOf(declaration.policies).flatMap(([policyName, raw]) => {
       const ref = definitionRefOf(raw)
@@ -248,13 +251,13 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
     extends: extendsRefs.map((ref) => ref.name),
     extendsRefs,
     properties: Object.fromEntries(
-      propertyEntries.map(([propertyName, raw]) => [
+      propertyEntries.map(([propertyName, property]) => [
         propertyName,
-        studioSchema(asRecord(raw)?.schema),
+        studioSchema(property?.schema),
       ]),
     ),
-    required: propertyEntries.flatMap(([propertyName, raw]) =>
-      asRecord(raw)?.required === true ? [propertyName] : [],
+    required: propertyEntries.flatMap(([propertyName, property]) =>
+      property?.required === true ? [propertyName] : [],
     ),
     methods: Object.fromEntries(
       entriesOf(declaration.methods).map(([methodName, raw]) => [
@@ -263,15 +266,14 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
       ]),
     ),
     ...(kind === 'edge' ? edgeFields(declaration) : {}),
+    // the SDK lets a Class carry its own glyph; without this the schema declared one
+    // and every surface still drew the generic box
     ...(typeof declaration.icon === 'string' ? { icon: declaration.icon } : {}),
     ...(typeof declaration.description === 'string'
       ? { description: declaration.description }
       : {}),
-    // the SDK lets a Class carry its own glyph; without this the schema declared one
-    // and every surface still drew the generic box
-    ...(typeof declaration.icon === 'string' ? { icon: declaration.icon } : {}),
     ...(Object.keys(propertyMetadata).length === 0 ? {} : { propertyMetadata }),
-    ...(dataDeclaration(declaration.data) ? { data: dataDeclaration(declaration.data) } : {}),
+    ...(data ? { data } : {}),
     ...(Object.keys(policies).length === 0 ? {} : { policies }),
   }
 }

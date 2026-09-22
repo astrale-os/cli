@@ -1,4 +1,5 @@
 import type { AgentRun, ChatAttachment, ChatList, QueuedMessage } from '@shared/types'
+import type { QueryClient } from '@tanstack/react-query'
 import type { ClipboardEvent, ReactNode } from 'react'
 
 import { imagesLabel } from '@shared/attachments'
@@ -68,6 +69,43 @@ interface PendingSend extends PendingMessage {
 
 /** What the composer asks for, always — never what it is already carrying. */
 const PROMPT = 'Message the agent…'
+
+/** Every document the workspace's domains have given the agent. */
+function countDocuments(groups: { documents?: readonly unknown[] }[]): number {
+  return groups.reduce((total, group) => total + (group.documents?.length ?? 0), 0)
+}
+
+/** Run the last turn again, as it was first sent. */
+function retryTurn(turn: AgentRun, chatId: string | undefined, qc: QueryClient): void {
+  void api
+    .agentSubmit(
+      turn.instruction,
+      chatId,
+      turn.targetCommentIds,
+      turn.attachments?.map((attachment) => attachment.id),
+    )
+    .then(
+      (result) => {
+        if (result.run) useAgentLive.getState().setRun(result.run)
+        if (result.error) toast.error(`Could not retry — ${result.error}`)
+        qc.invalidateQueries({ queryKey: qk.agent(chatId) })
+        qc.invalidateQueries({ queryKey: qk.agentHistory(chatId) })
+      },
+      (error) => toast.error(`Could not retry — ${String(error)}`),
+    )
+}
+
+/** Pick an interrupted turn back up. */
+function resumeTurn(chatId: string | undefined): void {
+  // a refused resume answers 200 with an error field; without
+  // this the button would look like it did nothing at all
+  void api.agentResume(chatId).then(
+    (result) => {
+      if (result.error) toast.error(`Could not continue — ${result.error}`)
+    },
+    (error) => toast.error(`Could not continue — ${String(error)}`),
+  )
+}
 
 /**
  * The agent half of the work panel: the chat tabs on top, the selected
@@ -185,42 +223,15 @@ export function AgentTranscript() {
               <AgentTurn
                 run={turn}
                 onRetry={
-                  index === turns.length - 1
-                    ? () =>
-                        void api
-                          .agentSubmit(
-                            turn.instruction,
-                            activeId,
-                            turn.targetCommentIds,
-                            turn.attachments?.map((attachment) => attachment.id),
-                          )
-                          .then(
-                            (result) => {
-                              if (result.run) useAgentLive.getState().setRun(result.run)
-                              if (result.error) toast.error(`Could not retry — ${result.error}`)
-                              qc.invalidateQueries({ queryKey: qk.agent(activeId) })
-                              qc.invalidateQueries({ queryKey: qk.agentHistory(activeId) })
-                            },
-                            (error) => toast.error(`Could not retry — ${String(error)}`),
-                          )
-                    : undefined
+                  index === turns.length - 1 ? () => retryTurn(turn, activeId, qc) : undefined
                 }
-                onResume={() =>
-                  // a refused resume answers 200 with an error field; without
-                  // this the button would look like it did nothing at all
-                  void api.agentResume(activeId).then(
-                    (result) => {
-                      if (result.error) toast.error(`Could not continue — ${result.error}`)
-                    },
-                    (error) => toast.error(`Could not continue — ${String(error)}`),
-                  )
-                }
+                onResume={() => resumeTurn(activeId)}
               />
             </div>
           ))}
           {turns.length === 0 && (
             <p className="px-2 py-6 text-center text-[12px] text-muted-foreground">
-              {chat?.origin
+              {origin
                 ? 'Continue the work below — the summary above goes with your first message.'
                 : chat?.newDomain
                   ? 'Describe how this new domain should evolve below.'
@@ -249,11 +260,7 @@ function needsDivider(previous: AgentRun | undefined, turn: AgentRun): boolean {
 function TurnPayload() {
   const { data: documentGroups } = useWorkspaceDocuments()
   const { awaiting } = useAttachedComments()
-  const documents = documentGroups.reduce(
-    (total, group) => total + (group.documents?.length ?? 0),
-    0,
-  )
-  if (!documents && !awaiting) return null
+  if (!countDocuments(documentGroups) && !awaiting) return null
 
   return (
     <div className="flex flex-wrap items-center gap-1 px-2 pb-1.5 pt-2">
@@ -342,7 +349,8 @@ export function AgentComposer({
   trailing?: ReactNode
 }) {
   const { data: chats } = useChats()
-  const chat = chatOf(chats?.chats ?? [], chats?.activeId)
+  const openChats = chats?.chats ?? []
+  const chat = chatOf(openChats, chats?.activeId)
   const { data: harness } = useHarness()
   const run = useDisplayRun(chats?.activeId)
   const chatId = chat?.id
@@ -381,10 +389,7 @@ export function AgentComposer({
   // an empty composer is a valid submit that carries them as they are. Mirrors the
   // server's own rule (agent/run/preparation.ts), which only rejects an empty turn.
   const awaiting = attached.length
-  const documentCount = documentGroups.reduce(
-    (total, group) => total + (group.documents?.length ?? 0),
-    0,
-  )
+  const documentCount = countDocuments(documentGroups)
   // Not while a turn runs, though — they go with whatever turn starts next, so an
   // empty composer would queue a blank message to say so. And not before the chips
   // are on screen: a resting bar shows one line, so a send button on an empty field
@@ -466,6 +471,12 @@ export function AgentComposer({
     )
   }
 
+  // what an empty send is carrying, in the words the run itself will use
+  const carriedLabel =
+    awaiting > 0
+      ? `${awaiting} attached thread${awaiting === 1 ? '' : 's'}`
+      : `${documentCount} document${documentCount === 1 ? '' : 's'}`
+
   /**
    * Send what is typed — as a turn if the chat is free, into the queue if not.
    *
@@ -479,12 +490,6 @@ export function AgentComposer({
    * A free chat therefore never shows a queue: queueing is what a BUSY chat does
    * with a message, and saying it of an idle one only made the send look refused.
    */
-  // what an empty send is carrying, in the words the run itself will use
-  const carriedLabel =
-    awaiting > 0
-      ? `${awaiting} attached thread${awaiting === 1 ? '' : 's'}`
-      : `${documentCount} document${documentCount === 1 ? '' : 's'}`
-
   const send = () => {
     if (!canSend) return
     const message = text.trim()
@@ -523,8 +528,11 @@ export function AgentComposer({
       qc.invalidateQueries({ queryKey: qk.agent(chatId) })
       qc.invalidateQueries({ queryKey: qk.chats })
     }
-    // a send that did not start takes its threads back too, unless a new pick replaced them
-    const restoreComments = () => {
+    // a failed send gives back everything it took: the text, the images, and the
+    // threads too, unless a new pick replaced them
+    const giveBack = (error: string) => {
+      restore(message, error, chatId)
+      restoreImages(sentImages, chatId)
       if (comments.length && useUI.getState().agentComments.length === 0) setAttached(comments)
     }
     const ids = sentImages.map((attachment) => attachment.id)
@@ -534,18 +542,13 @@ export function AgentComposer({
         // between the two — `drop` then finds none of ours left to take back
         if (result.run) setRun(result.run)
         drop()
-        if (result.error) {
-          restore(message, result.error, chatId)
-          restoreImages(sentImages, chatId)
-          restoreComments()
-        } else if (result.queued) landQueued(result.queued)
+        if (result.error) giveBack(result.error)
+        else if (result.queued) landQueued(result.queued)
         refresh()
       },
       (error) => {
         drop()
-        restore(message, String(error), chatId)
-        restoreImages(sentImages, chatId)
-        restoreComments()
+        giveBack(String(error))
         refresh()
       },
     )
@@ -680,11 +683,27 @@ export function AgentComposer({
     </SendButton>
   )
 
-  // The dock's bar: one line, and on it only what is worth a line. At rest that is
-  // the clip, the field and the way to the threads — no payload, no model to read,
-  // and nothing to send until there is something written to send. A turn in flight
-  // buys the one exception: what the agent is doing is the only thing the reader
-  // cannot find anywhere else in this layout.
+  const queue = (
+    <MessageQueue
+      chatId={chatId}
+      queued={chat?.queued ?? NO_QUEUE}
+      // one composer serves every tab, so a send still on the wire must not
+      // show up under the queue of the tab you switched to meanwhile
+      pending={pending.filter((entry) => entry.chatId === chatId)}
+      running={active}
+    />
+  )
+  // below the payload and above the field: the last thing read before the caret,
+  // because it is the thing that decides whether the caret matters
+  const linkStatus = !available && (
+    <LinkStatus
+      link={link}
+      label={harnessLabel}
+      reason={unreachableReason}
+      missing={noAgent?.full}
+    />
+  )
+
   // The dock's bar. Resting it is ONE line: the clip, the draft's opening words,
   // and only what is worth a line beside them. Open it is the panel's composer
   // laid out the same way as docked: whatever the turn carries, then the field
@@ -696,26 +715,12 @@ export function AgentComposer({
       <div className="shrink-0">
         {payloadShowing && (
           <>
-            <MessageQueue
-              chatId={chatId}
-              queued={chat?.queued ?? NO_QUEUE}
-              pending={pending.filter((entry) => entry.chatId === chatId)}
-              running={active}
-            />
+            {queue}
             <TurnPayload />
           </>
         )}
-        {/* below the payload and above the field: the last thing read before the
-            caret, because it is the thing that decides whether the caret matters.
-            Only once the chat is open — a resting bar has no second line to give */}
-        {payloadShowing && link !== 'ready' && (
-          <LinkStatus
-            link={link}
-            label={harnessLabel}
-            reason={unreachableReason}
-            missing={noAgent?.full}
-          />
-        )}
+        {/* only once the chat is open — a resting bar has no second line to give */}
+        {payloadShowing && linkStatus}
         {!resting && imageChips}
         <div
           className={cn('flex flex-wrap items-center gap-1 px-2', resting ? 'py-2' : 'pb-2 pt-1')}
@@ -766,7 +771,7 @@ export function AgentComposer({
               <DockActivity
                 run={run}
                 harness={chat?.harness ?? ''}
-                tone={toneOf(chats?.chats ?? [], chatId, chat?.harness)}
+                tone={toneOf(openChats, chatId, chat?.harness)}
               />
             )}
             {/* the meter sits before the model, in reading order: how hard, on what */}
@@ -786,24 +791,10 @@ export function AgentComposer({
 
   return (
     <div className="shrink-0 px-3 pb-3 pt-2">
-      <MessageQueue
-        chatId={chatId}
-        queued={chat?.queued ?? NO_QUEUE}
-        // one composer serves every tab, so a send still on the wire must not
-        // show up under the queue of the tab you switched to meanwhile
-        pending={pending.filter((entry) => entry.chatId === chatId)}
-        running={active}
-      />
+      {queue}
       <ComposerFrame>
         <TurnPayload />
-        {link !== 'ready' && (
-          <LinkStatus
-            link={link}
-            label={harnessLabel}
-            reason={unreachableReason}
-            missing={noAgent?.full}
-          />
-        )}
+        {linkStatus}
         {imageChips}
         {composed}
         <div className="flex items-center gap-1 px-2 pb-2">

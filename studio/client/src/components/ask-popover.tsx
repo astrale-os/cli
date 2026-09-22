@@ -1,13 +1,15 @@
 import { Loader2, Minus, Send, Sparkles, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { type AskEntry, useAsks } from '@/lib/asks'
+import { type AskEntry, type AskStatus, useAsks } from '@/lib/asks'
 import { locateTargetElement } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { Button } from './ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 import { Textarea } from './ui/textarea'
+
+type Point = { x: number; y: number }
 
 function domainIsRendered(domainId: string): boolean {
   for (const element of document.querySelectorAll<HTMLElement>('[data-domain-id]')) {
@@ -19,7 +21,7 @@ function domainIsRendered(domainId: string): boolean {
 /** Top-right corner of the ask's target element on screen, or the click point for a
  *  rendered section/canvas anchor. Hidden domains return null instead of leaking a dot
  *  at stale coordinates into the next canvas. */
-function locate(entry: AskEntry): { x: number; y: number } | null {
+function locate(entry: AskEntry): Point | null {
   if (!domainIsRendered(entry.domainId)) return null
   const el = locateTargetElement(document, entry.domainId, entry.ref)
   if (el) {
@@ -143,8 +145,14 @@ function AskBody({ entry }: { entry: AskEntry }) {
   )
 }
 
+const DOT_TITLE: Partial<Record<AskStatus, string>> = {
+  streaming: 'Ask — answering…',
+  done: 'Ask — answer ready',
+  error: 'Ask — error',
+}
+
 /** A single ask, shown as a dot on its element; click to expand the popover. */
-function AskDot({ entry, pos }: { entry: AskEntry; pos: { x: number; y: number } }) {
+function AskDot({ entry, pos }: { entry: AskEntry; pos: Point }) {
   const openKey = useAsks((s) => s.openKey)
   const open = useAsks((s) => s.open)
   const collapse = useAsks((s) => s.collapse)
@@ -174,15 +182,7 @@ function AskDot({ entry, pos }: { entry: AskEntry; pos: { x: number; y: number }
       <PopoverAnchor asChild>
         <button
           type="button"
-          title={
-            entry.status === 'streaming'
-              ? 'Ask — answering…'
-              : entry.status === 'done'
-                ? 'Ask — answer ready'
-                : entry.status === 'error'
-                  ? 'Ask — error'
-                  : 'Ask'
-          }
+          title={DOT_TITLE[entry.status] ?? 'Ask'}
           onClick={() => (isOpen ? collapse() : open(entry.key))}
           style={{ position: 'fixed', left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' }}
           className={cn(
@@ -219,7 +219,7 @@ function AskDot({ entry, pos }: { entry: AskEntry; pos: { x: number; y: number }
 export function AskLayer() {
   const entries = useAsks((s) => s.entries)
   const list = Object.values(entries)
-  const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({})
+  const [pos, setPos] = useState<Record<string, Point>>({})
 
   const keys = list.map((e) => e.key).join('|')
   useEffect(() => {
@@ -227,13 +227,14 @@ export function AskLayer() {
       setPos({})
       return
     }
+    const tracked = keys.split('|')
     let raf = 0
     const tick = () => {
       const cur = useAsks.getState().entries
       setPos((prev) => {
-        const next: Record<string, { x: number; y: number }> = {}
+        const next: Record<string, Point> = {}
         let changed = false
-        for (const k of keys.split('|')) {
+        for (const k of tracked) {
           const e = cur[k]
           if (!e) continue
           const p = locate(e)

@@ -49,7 +49,6 @@ const MAX_HANDOFF_CHARS = 8000
  * this the enqueue fails loudly rather than growing a backlog nobody reviews.
  */
 export const MAX_QUEUED_MESSAGES = 20
-const DEFAULT_TITLE = DEFAULT_CHAT_TITLE
 
 /**
  * A summary of another harness's conversation.
@@ -125,7 +124,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const tone = isChatTone(record.tone) ? record.tone : undefined
   return {
     id,
-    title: asString(record.title) || DEFAULT_TITLE,
+    title: asString(record.title) || DEFAULT_CHAT_TITLE,
     harness,
     turns: turns !== undefined && Number.isInteger(turns) && turns >= 0 ? turns : 0,
     createdAt,
@@ -198,7 +197,7 @@ function newChat(harness: string, extra?: Partial<StoredChat>): StoredChat {
   const now = new Date().toISOString()
   return {
     id: randomUUID(),
-    title: DEFAULT_TITLE,
+    title: DEFAULT_CHAT_TITLE,
     harness,
     turns: 0,
     createdAt: now,
@@ -300,8 +299,7 @@ export function activeChat(
   seed?: ChatSeed,
   activeRoot = root,
 ): StoredChat {
-  const store = ensureChats(root, defaultHarness, seed, activeRoot)
-  return store.chats.find((chat) => chat.id === store.activeId)!
+  return resolveChat(root, defaultHarness, undefined, seed, activeRoot)!
 }
 
 /** Resolve a caller-supplied chat id, falling back to the active tab. */
@@ -313,8 +311,8 @@ export function resolveChat(
   activeRoot = root,
 ): StoredChat | undefined {
   const store = ensureChats(root, defaultHarness, seed, activeRoot)
-  if (!chatId) return store.chats.find((chat) => chat.id === store.activeId)
-  return store.chats.find((chat) => chat.id === chatId)
+  const wanted = chatId || store.activeId
+  return store.chats.find((chat) => chat.id === wanted)
 }
 
 export function createChat(
@@ -366,7 +364,8 @@ export function forkChat(
     root,
     {
       harness,
-      title: source.title === DEFAULT_TITLE ? DEFAULT_TITLE : `${source.title} (${harness})`,
+      title:
+        source.title === DEFAULT_CHAT_TITLE ? DEFAULT_CHAT_TITLE : `${source.title} (${harness})`,
       ...(model ? { model } : {}),
       // how hard you asked this work to be thought about is about the work, not
       // about the agent — it follows, mapped onto whatever ladder it lands on
@@ -385,15 +384,17 @@ export function forkChat(
   )
 }
 
-/** Apply `patch` to one chat and stamp `updatedAt`; the harness is never patchable. */
+/**
+ * Apply `patch` to one chat and stamp `updatedAt`; the harness is never patchable.
+ * A patch that returns `false` changed nothing, and the file is left as it was.
+ */
 function mutateChat(
   root: string,
   chatId: string,
-  patch: (chat: StoredChat) => void,
+  patch: (chat: StoredChat) => void | false,
 ): StoredChat | undefined {
   const chat = readChat(root, chatId)
-  if (!chat) return undefined
-  patch(chat)
+  if (!chat || patch(chat) === false) return undefined
   chat.updatedAt = new Date().toISOString()
   writeChat(root, chat)
   return chat
@@ -402,7 +403,7 @@ function mutateChat(
 export function renameChat(root: string, chatId: string, title: string): StoredChat | undefined {
   const trimmed = title.trim().slice(0, 80)
   return mutateChat(root, chatId, (chat) => {
-    chat.title = trimmed || DEFAULT_TITLE
+    chat.title = trimmed || DEFAULT_CHAT_TITLE
   })
 }
 
@@ -411,7 +412,7 @@ export function titleChatFromMessage(root: string, chatId: string, message: stri
   const summary = message.trim().split('\n')[0]?.trim()
   if (!summary) return
   mutateChat(root, chatId, (chat) => {
-    if (chat.title === DEFAULT_TITLE)
+    if (chat.title === DEFAULT_CHAT_TITLE)
       chat.title = summary.length > 48 ? `${summary.slice(0, 48).trimEnd()}…` : summary
   })
 }
@@ -538,14 +539,13 @@ export function takeQueuedMessage(
   messageId?: string,
 ): QueuedMessage | undefined {
   let taken: QueuedMessage | undefined
-  const chat = readChat(root, chatId)
-  if (!chat) return undefined
-  const queue = chatQueue(chat)
-  taken = messageId ? queue.find((entry) => entry.id === messageId) : queue[0]
-  if (!taken) return undefined
-  chat.queue = queue.filter((entry) => entry.id !== taken!.id)
-  chat.updatedAt = new Date().toISOString()
-  writeChat(root, chat)
+  mutateChat(root, chatId, (chat) => {
+    const queue = chatQueue(chat)
+    const found = messageId ? queue.find((entry) => entry.id === messageId) : queue[0]
+    if (!found) return false
+    chat.queue = queue.filter((entry) => entry.id !== found.id)
+    taken = found
+  })
   return taken
 }
 
@@ -576,17 +576,15 @@ export function moveQueuedMessage(
   messageId: string,
   delta: -1 | 1,
 ): boolean {
-  const chat = readChat(root, chatId)
-  if (!chat) return false
-  const queue = [...chatQueue(chat)]
-  const from = queue.findIndex((entry) => entry.id === messageId)
-  const to = from + delta
-  if (from < 0 || to < 0 || to >= queue.length) return false
-  queue.splice(to, 0, queue.splice(from, 1)[0]!)
-  chat.queue = queue
-  chat.updatedAt = new Date().toISOString()
-  writeChat(root, chat)
-  return true
+  const moved = mutateChat(root, chatId, (chat) => {
+    const queue = [...chatQueue(chat)]
+    const from = queue.findIndex((entry) => entry.id === messageId)
+    const to = from + delta
+    if (from < 0 || to < 0 || to >= queue.length) return false
+    queue.splice(to, 0, queue.splice(from, 1)[0]!)
+    chat.queue = queue
+  })
+  return moved !== undefined
 }
 
 /** The transferred summary has reached the harness; never send it twice. */

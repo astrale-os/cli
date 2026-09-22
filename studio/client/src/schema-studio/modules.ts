@@ -75,6 +75,10 @@ function schemaLocation(file: string | undefined, schemaDir: string): SchemaLoca
   }
 }
 
+function locate(bundle: StudioSchemaBundle, key: string, schemaDir: string): SchemaLocation {
+  return schemaLocation(bundle.overlay.sourceSpans[key]?.file, schemaDir)
+}
+
 function collectClasses(bundle: StudioSchemaBundle, schemaDir: string): RawMember[] {
   if (!bundle.ir) return []
   return Object.entries(bundle.ir.classes).map(([name, value]) => {
@@ -82,7 +86,7 @@ function collectClasses(bundle: StudioSchemaBundle, schemaDir: string): RawMembe
     return {
       name,
       kind,
-      ...schemaLocation(bundle.overlay.sourceSpans[`${kind}.${name}`]?.file, schemaDir),
+      ...locate(bundle, `${kind}.${name}`, schemaDir),
       icon: value.icon,
     }
   })
@@ -107,28 +111,27 @@ function member(member: RawMember, origin: string): MemberRef {
 }
 
 export function buildModuleTree(bundle: StudioSchemaBundle, schemaDir = 'schema'): TreeNode {
-  const members = collectClasses(bundle, schemaDir)
+  const classes = collectClasses(bundle, schemaDir)
+  // Hues come from the Class folders alone, exactly as `folderModules` derives them, so a
+  // module reads in the same colour in the tree and on the canvas.
+  const hues = topHueMap(classes)
+  const declarations = {
+    policy: bundle.ir?.policies,
+    function: bundle.ir?.functions,
+    view: bundle.ir?.views,
+  }
+  const members = [...classes]
   for (const kind of ['policy', 'function', 'view'] as const) {
-    const declarations =
-      kind === 'policy'
-        ? bundle.ir?.policies
-        : kind === 'function'
-          ? bundle.ir?.functions
-          : bundle.ir?.views
-    for (const name of Object.keys(declarations ?? {})) {
-      members.push({
-        name,
-        kind,
-        ...schemaLocation(bundle.overlay.sourceSpans[`${kind}.${name}`]?.file, schemaDir),
-      })
+    for (const name of Object.keys(declarations[kind] ?? {})) {
+      members.push({ name, kind, ...locate(bundle, `${kind}.${name}`, schemaDir) })
     }
   }
-  const hues = topHueMap(collectClasses(bundle, schemaDir))
   const root: TreeNode = { name: schemaDir, path: '', hue: 0, children: [], members: [] }
+  const modules = new Map<string, TreeNode>()
   for (const value of members) {
     let node = root
     if (value.modulePath !== 'root') {
-      let child = root.children.find((candidate) => candidate.path === value.modulePath)
+      let child = modules.get(value.modulePath)
       if (!child) {
         child = {
           name: moduleLabel(value.modulePath, schemaDir),
@@ -137,6 +140,7 @@ export function buildModuleTree(bundle: StudioSchemaBundle, schemaDir = 'schema'
           children: [],
           members: [],
         }
+        modules.set(value.modulePath, child)
         root.children.push(child)
       }
       node = child
@@ -185,11 +189,10 @@ export function folderModules(bundle: StudioSchemaBundle, schemaDir = 'schema'):
   const hues = topHueMap(members)
   const modules = new Map<string, FolderModule>()
   for (const value of members) {
-    const top = value.modulePath
     const selected = modules.get(value.modulePath) ?? {
       path: value.modulePath,
       label: moduleLabel(value.modulePath, schemaDir),
-      hue: hues.get(top) ?? 264,
+      hue: hues.get(value.modulePath) ?? 264,
       classes: [],
       edges: [],
     }
@@ -208,6 +211,5 @@ export function moduleOfClass(
   className: string,
   schemaDir = 'schema',
 ): string {
-  return schemaLocation(bundle.overlay.sourceSpans[`class.${className}`]?.file, schemaDir)
-    .modulePath
+  return locate(bundle, `class.${className}`, schemaDir).modulePath
 }

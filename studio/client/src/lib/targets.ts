@@ -183,8 +183,10 @@ export function locateTargetElement(
   if (ref.startsWith('class.') || ref.startsWith('module.') || ref.startsWith('function.')) {
     for (const element of root.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')) {
       const id = element.dataset.id ?? ''
-      const identity = decodeFlowNodeId(id)
-      if (flowNodeAnchorRef(id) === ref && belongsToDomain(element, domainId, identity.domainId))
+      if (
+        flowNodeAnchorRef(id) === ref &&
+        belongsToDomain(element, domainId, decodeFlowNodeId(id).domainId)
+      )
         return element
     }
   }

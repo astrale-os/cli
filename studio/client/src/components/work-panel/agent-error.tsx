@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentRun } from '@shared/types'
+import type { ReactNode } from 'react'
 
 import { ChevronRight, CircleAlert, Copy, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
@@ -186,19 +187,13 @@ export function AgentErrorChip({ run, onRetry }: { run: AgentRun; onRetry?: () =
           </DialogHeader>
 
           <div className="max-h-[65vh] space-y-5 overflow-y-auto">
-            <section className="space-y-1.5">
-              <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Error
-              </h3>
+            <DetailSection title="Error">
               <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
                 {error || '(no message)'}
               </pre>
-            </section>
+            </DetailSection>
 
-            <section className="space-y-1.5">
-              <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Context
-              </h3>
+            <DetailSection title="Context">
               <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-[12px]">
                 {context.map(([label, value]) => (
                   <div key={label} className="contents">
@@ -209,35 +204,35 @@ export function AgentErrorChip({ run, onRetry }: { run: AgentRun; onRetry?: () =
                   </div>
                 ))}
               </dl>
-            </section>
+            </DetailSection>
 
             {activity.length > 0 && (
-              <section className="space-y-1.5">
-                <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Last activity
-                </h3>
+              <DetailSection title="Last activity">
                 <ol className="space-y-1 font-mono text-[11.5px]">
-                  {activity.map((event) => (
-                    <li key={event.id} className="flex min-w-0 gap-2">
-                      <span className="shrink-0 text-muted-foreground">
-                        {new Date(event.ts).toLocaleTimeString()}
-                      </span>
-                      <span
-                        className={
-                          event.kind === 'error'
-                            ? 'shrink-0 text-destructive'
-                            : 'shrink-0 text-muted-foreground'
-                        }
-                      >
-                        {event.kind}
-                      </span>
-                      <span className="min-w-0 truncate" title={eventLine(event)}>
-                        {eventLine(event)}
-                      </span>
-                    </li>
-                  ))}
+                  {activity.map((event) => {
+                    const line = eventLine(event)
+                    return (
+                      <li key={event.id} className="flex min-w-0 gap-2">
+                        <span className="shrink-0 text-muted-foreground">
+                          {new Date(event.ts).toLocaleTimeString()}
+                        </span>
+                        <span
+                          className={
+                            event.kind === 'error'
+                              ? 'shrink-0 text-destructive'
+                              : 'shrink-0 text-muted-foreground'
+                          }
+                        >
+                          {event.kind}
+                        </span>
+                        <span className="min-w-0 truncate" title={line}>
+                          {line}
+                        </span>
+                      </li>
+                    )
+                  })}
                 </ol>
-              </section>
+              </DetailSection>
             )}
           </div>
 
@@ -263,5 +258,17 @@ export function AgentErrorChip({ run, onRetry }: { run: AgentRun; onRetry?: () =
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+/** One block of the details view, under its small uppercase heading. */
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1.5">
+      <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
+      {children}
+    </section>
   )
 }
