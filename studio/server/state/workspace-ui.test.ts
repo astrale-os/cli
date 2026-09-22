@@ -55,7 +55,14 @@ test('keeps one validated UI state per workspace on the machine', () => {
     section: 'core',
     readerDomainId: 'orders',
     edgeStyle: 'orthogonal',
-    panel: { open: true, tab: 'comments', side: 'right', size: 1_200 },
+    panel: {
+      open: true,
+      tab: 'comments',
+      side: 'right',
+      size: 1_200,
+      dockWidth: 5_000,
+      dockHeight: 12,
+    },
     rail: { width: 90, collapsed: true },
     schema: {
       visibleDomainIds: ['orders', 'orders', '', 'billing'],
@@ -76,7 +83,14 @@ test('keeps one validated UI state per workspace on the machine', () => {
     section: 'core',
     readerDomainId: 'orders',
     edgeStyle: 'orthogonal',
-    panel: { open: true, tab: 'comments', side: 'right', size: 900 },
+    panel: {
+      open: true,
+      tab: 'comments',
+      side: 'right',
+      size: 900,
+      dockWidth: 1_600,
+      dockHeight: 200,
+    },
     rail: { width: 180, collapsed: true },
     schema: {
       visibleDomainIds: ['orders', 'billing'],

@@ -199,6 +199,72 @@ test('opening grows the dock upward without moving the field it grew from', asyn
   expect(Math.round((await composer(page).boundingBox())!.y)).toBe(Math.round(before.y))
 })
 
+/**
+ * The open dock resizes from its edges: the top edge sets the conversation's
+ * height, a side edge the dock's width on both sides at once, so it never leaves
+ * the middle of the view. The field under the caret stays where it was.
+ */
+test('the open dock resizes from its edges and stays centred', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await goBottom(page)
+  await openDock(page)
+  const box = async () => (await dock(page).boundingBox())!
+  const centre = (rect: { x: number; width: number }) => Math.round(rect.x + rect.width / 2)
+  const before = await box()
+  const field = (await composer(page).boundingBox())!
+
+  // wider, from the right edge: both sides move, the centre does not
+  const right = (await dock(page).locator('[data-dock-resize="right"]').boundingBox())!
+  await page.mouse.move(right.x + right.width / 2, right.y + right.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(right.x + right.width / 2 + 100, right.y + right.height / 2, { steps: 4 })
+  await page.mouse.up()
+  const wider = await box()
+  expect(Math.round(wider.width)).toBe(Math.round(before.width) + 200)
+  expect(Math.abs(centre(wider) - centre(before))).toBeLessThanOrEqual(1)
+
+  // narrower, from the left edge: same rule
+  const left = (await dock(page).locator('[data-dock-resize="left"]').boundingBox())!
+  await page.mouse.move(left.x + left.width / 2, left.y + left.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(left.x + left.width / 2 + 150, left.y + left.height / 2, { steps: 4 })
+  await page.mouse.up()
+  const narrower = await box()
+  expect(Math.round(narrower.width)).toBe(Math.round(wider.width) - 300)
+  expect(Math.abs(centre(narrower) - centre(before))).toBeLessThanOrEqual(1)
+
+  // taller, from the top edge: the dock grows upward and the field stays put
+  const top = (await dock(page).locator('[data-dock-resize="top"]').boundingBox())!
+  await page.mouse.move(top.x + top.width / 2, top.y + top.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(top.x + top.width / 2, top.y + top.height / 2 - 120, { steps: 4 })
+  await page.mouse.up()
+  const taller = await box()
+  expect(Math.round(taller.height)).toBe(Math.round(narrower.height) + 120)
+  expect(Math.round((await composer(page).boundingBox())!.y)).toBe(Math.round(field.y))
+
+  // and never past the view: a drag far beyond the top stops at the window
+  const top2 = (await dock(page).locator('[data-dock-resize="top"]').boundingBox())!
+  await page.mouse.move(top2.x + top2.width / 2, top2.y + top2.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(top2.x + top2.width / 2, -400, { steps: 4 })
+  await page.mouse.up()
+  const tallest = await box()
+  const main = (await page.locator('main').boundingBox())!
+  expect(tallest.y).toBeGreaterThanOrEqual(main.y)
+
+  // the size is the dock's own: it survives closing and reopening
+  await page.keyboard.press('Escape')
+  await expect.poll(() => dockHeight(page)).toBeLessThan(BAR_CEILING)
+  expect(Math.round((await box()).width)).toBe(Math.round(narrower.width))
+  await openDock(page)
+  await expect.poll(async () => Math.round((await box()).height)).toBe(Math.round(tallest.height))
+
+  // a double click on an edge puts the default back
+  await dock(page).locator('[data-dock-resize="left"]').dblclick()
+  await expect.poll(async () => Math.round((await box()).width)).toBe(Math.round(before.width))
+})
+
 test('a click beside the dock puts it away', async ({ page }) => {
   await goBottom(page)
   await openDock(page)

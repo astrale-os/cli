@@ -19,6 +19,17 @@ const SECTIONS = new Set<WorkspaceSection>(['schema', 'core', 'tests', 'process'
 const EDGE_STYLES = new Set<WorkspaceUiState['edgeStyle']>(['curved', 'orthogonal'])
 const PANEL_TABS = new Set<WorkspacePanelUiState['tab']>(['agent', 'comments'])
 const PANEL_SIDES = new Set<WorkspacePanelUiState['side']>(['left', 'right', 'bottom'])
+const DOCK_WIDTH = { min: 420, max: 1600, fallback: 768 }
+const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 480 }
+
+function clamped(
+  value: unknown,
+  { min, max }: { min: number; max: number },
+  fallback: number,
+): number {
+  const number = asFiniteNumber(value)
+  return number === undefined ? fallback : Math.min(max, Math.max(min, Math.round(number)))
+}
 
 export function emptyWorkspaceUiState(): WorkspaceUiState {
   return {
@@ -26,7 +37,14 @@ export function emptyWorkspaceUiState(): WorkspaceUiState {
     section: 'schema',
     edgeStyle: 'curved',
     detailWidth: 420,
-    panel: { open: false, tab: 'agent', side: 'bottom', size: 360 },
+    panel: {
+      open: false,
+      tab: 'agent',
+      side: 'bottom',
+      size: 360,
+      dockWidth: DOCK_WIDTH.fallback,
+      dockHeight: DOCK_HEIGHT.fallback,
+    },
     rail: { width: 240, collapsed: false },
     schema: {
       visibleDomainIds: [],
@@ -99,6 +117,9 @@ function panelState(value: unknown, fallback: WorkspacePanelUiState): WorkspaceP
     tab: oneOf(record.tab, PANEL_TABS) ?? fallback.tab,
     side: oneOf(record.side, PANEL_SIDES) ?? fallback.side,
     size: size === undefined ? fallback.size : Math.min(900, Math.max(260, Math.round(size))),
+    // absent in states saved before the bottom dock could be resized
+    dockWidth: clamped(record.dockWidth, DOCK_WIDTH, fallback.dockWidth),
+    dockHeight: clamped(record.dockHeight, DOCK_HEIGHT, fallback.dockHeight),
   }
 }
 
