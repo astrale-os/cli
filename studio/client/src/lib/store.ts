@@ -30,6 +30,10 @@ export type SectionKey = WorkspaceSection
 
 const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'tests', 'process']
 
+/** The draft key for "no chat yet" — the chat list is a fetch, and the composer is
+ *  on screen before it lands. No chat id can collide with it: chat ids are non-empty. */
+const NO_CHAT = ''
+
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
 
@@ -88,9 +92,15 @@ interface UIState {
   modulesWidth: number
   detailWidth: number
   modulesCollapsed: boolean
-  /** What is typed in the agent composer. It lives here, not in the composer, so that
-   *  closing the floating chat — or re-docking the panel — never throws a message away. */
-  agentDraft: string
+  /** What is typed in the agent composer, per chat. It lives here, not in the composer,
+   *  so that closing the floating chat — or re-docking the panel — never throws a message
+   *  away; and it is keyed by chat because a draft belongs to the agent it was written
+   *  for. Switching tabs empties the field and coming back fills it again, which is the
+   *  same message still being written, not a new one.
+   *
+   *  The `NO_CHAT` key holds what was typed before the chat list landed; `adoptAgentDraft`
+   *  hands it to the first real chat, so an early keystroke is not lost either. */
+  agentDrafts: Record<string, string>
   selectedClass?: string
   /**
    * Which domain `selectedClass` and `focusId` belong to. A class ref is LOCAL
@@ -154,7 +164,12 @@ interface UIState {
   setModulesWidth: (width: number) => void
   setDetailWidth: (width: number) => void
   setModulesCollapsed: (collapsed: boolean) => void
-  setAgentDraft: (text: string) => void
+  /** Write this chat's draft. `undefined` writes the pre-chat one — see `agentDrafts`. */
+  setAgentDraft: (chatId: string | undefined, text: string) => void
+  /** Give the pre-chat draft to a chat, once there is one to give it to. */
+  adoptAgentDraft: (chatId: string) => void
+  /** A closed chat takes its draft with it: nothing can be sent to it any more. */
+  dropAgentDraft: (chatId: string) => void
   /** Jump to whatever an anchor points at: the right section, the member that declares
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string, domainId: string) => void
@@ -181,6 +196,11 @@ interface UIState {
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
   setNewDomainOpen: (b: boolean) => void
+}
+
+/** This chat's draft, or what was typed before there was a chat to key it by. */
+export function agentDraftOf(drafts: Record<string, string>, chatId?: string): string {
+  return drafts[chatId ?? NO_CHAT] ?? ''
 }
 
 /** `edge.X` selects like a class (both live in the `class.` selection namespace). */
@@ -218,7 +238,7 @@ export const useUI = create<UIState>((set) => ({
   modulesWidth: 240,
   detailWidth: 420,
   modulesCollapsed: false,
-  agentDraft: '',
+  agentDrafts: {},
   focusId: null,
   panelOverlay: null,
   commentDraft: null,
@@ -279,7 +299,22 @@ export const useUI = create<UIState>((set) => ({
   setModulesWidth: (modulesWidth) => set({ modulesWidth }),
   setDetailWidth: (detailWidth) => set({ detailWidth }),
   setModulesCollapsed: (modulesCollapsed) => set({ modulesCollapsed }),
-  setAgentDraft: (agentDraft) => set({ agentDraft }),
+  setAgentDraft: (chatId, text) =>
+    set((s) => ({ agentDrafts: { ...s.agentDrafts, [chatId ?? NO_CHAT]: text } })),
+  adoptAgentDraft: (chatId) =>
+    set((s) => {
+      const pending = s.agentDrafts[NO_CHAT]
+      // Nothing waiting, or the chat is already being written to: leave both alone.
+      if (!pending || s.agentDrafts[chatId]) return {}
+      const { [NO_CHAT]: _dropped, ...rest } = s.agentDrafts
+      return { agentDrafts: { ...rest, [chatId]: pending } }
+    }),
+  dropAgentDraft: (chatId) =>
+    set((s) => {
+      if (!(chatId in s.agentDrafts)) return {}
+      const { [chatId]: _closed, ...rest } = s.agentDrafts
+      return { agentDrafts: rest }
+    }),
   revealAnchor: (ref, domainId) => {
     const section: SectionKey = ref.startsWith('section.')
       ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')

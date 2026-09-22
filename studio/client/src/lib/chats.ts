@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 
 import { api, qk } from './api'
 import { useSchemaSettled } from './hooks'
+import { useUI } from './store'
 
 const NO_CHATS: ChatInfo[] = []
 
@@ -73,7 +74,10 @@ export function useChatMutations() {
   })
   const close = useMutation({
     mutationFn: (chatId: string) => api.closeChat(chatId),
-    onSuccess: (list) => {
+    onSuccess: (list, chatId) => {
+      // A draft belongs to its chat, so it goes when the chat does — there is
+      // nothing left to send it to, and the tab id will never come back.
+      useUI.getState().dropAgentDraft(chatId)
       setList(list)
       refresh()
     },

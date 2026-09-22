@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
 import { ListPlus, Loader2, MessageSquare, Square, TriangleAlert } from 'lucide-react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
@@ -24,7 +24,7 @@ import { chatOf, useChatMutations, useChats } from '@/lib/chats'
 import { threadsAwaitingAgent } from '@/lib/comments'
 import { labelOf, noAgentNotice, presenceOf } from '@/lib/harnesses'
 import { useHarness, useWorkspace, useWorkspaceComments, useWorkspaceDocuments } from '@/lib/hooks'
-import { useUI } from '@/lib/store'
+import { agentDraftOf, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { AgentTurn, TurnDivider } from './agent-turn'
@@ -335,10 +335,14 @@ export function AgentComposer({
   const { data: harness } = useHarness()
   const run = useDisplayRun(chats?.activeId)
   const chatId = chat?.id
-  // the draft lives in the store: re-docking the panel unmounts the composer, and a
-  // half-written message must survive that
-  const text = useUI((state) => state.agentDraft)
-  const setText = useUI((state) => state.setAgentDraft)
+  // The draft lives in the store, keyed by chat: re-docking the panel unmounts the
+  // composer and a half-written message must survive that — and a message is written
+  // TO an agent, so it stays on the tab it was written on. Switching tabs therefore
+  // shows that tab's own draft, which is empty until you write one there.
+  const text = useUI((state) => agentDraftOf(state.agentDrafts, chatId))
+  const setDraft = useUI((state) => state.setAgentDraft)
+  const adoptDraft = useUI((state) => state.adoptAgentDraft)
+  const setText = useCallback((next: string) => setDraft(chatId, next), [setDraft, chatId])
   const [pending, setPending] = useState<PendingSend[]>([])
   const ticket = useRef(0)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -392,15 +396,23 @@ export function AgentComposer({
     el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
   }, [text])
 
+  // The composer is on screen before `GET /agent/chats` answers, so the first
+  // keystrokes have no chat to belong to yet. When one arrives, it takes them.
+  useEffect(() => {
+    if (chatId) adoptDraft(chatId)
+  }, [chatId, adoptDraft])
+
   // A failed send must never be the reason a message is gone: nothing typed
-  // since gets it back as it was, something typed gets it in front of that.
-  const restore = (message: string, error: string) => {
+  // since gets it back as it was, something typed gets it in front of that. It
+  // comes back to the chat it was sent from, which is not necessarily the one
+  // being looked at when the failure lands.
+  const restore = (message: string, error: string, sentChatId?: string) => {
     toast.error(error)
     if (!message) return
     // the draft lives in the store, so read what is there NOW rather than closing
     // over the render that started the send
-    const current = useUI.getState().agentDraft
-    setText(current.trim() ? `${message}\n\n${current}` : message)
+    const current = agentDraftOf(useUI.getState().agentDrafts, sentChatId)
+    setDraft(sentChatId, current.trim() ? `${message}\n\n${current}` : message)
   }
 
   // The server parked the message; show it on the tab it belongs to now, rather
@@ -473,13 +485,13 @@ export function AgentComposer({
         // between the two — `drop` then finds none of ours left to take back
         if (result.run) setRun(result.run)
         drop()
-        if (result.error) restore(message, result.error)
+        if (result.error) restore(message, result.error, chatId)
         else if (result.queued) landQueued(result.queued)
         refresh()
       },
       (error) => {
         drop()
-        restore(message, String(error))
+        restore(message, String(error), chatId)
         refresh()
       },
     )
