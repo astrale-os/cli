@@ -3,7 +3,14 @@ import type { ClipboardEvent, ReactNode } from 'react'
 
 import { imagesLabel } from '@shared/attachments'
 import { useQueryClient } from '@tanstack/react-query'
-import { ImagePlus, ListPlus, Loader2, Square, TriangleAlert } from 'lucide-react'
+import {
+  Image as ImageIcon,
+  ImagePlus,
+  ListPlus,
+  Loader2,
+  Square,
+  TriangleAlert,
+} from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -393,12 +400,15 @@ export function AgentComposer({
   // the composer's height positions the whole frame; waiting for a passive effect
   // would briefly leave the frame at its previous bounds while the textarea had
   // already accepted the new value.
+  // The resting bar is one line whatever the draft holds: it shows a preview of
+  // it instead, and the field only grows once the dock is open.
+  const resting = !!bar && !expanded
   useLayoutEffect(() => {
     const el = field.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
-  }, [text])
+    if (!resting) el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
+  }, [text, resting])
 
   // The composer is on screen before `GET /agent/chats` answers, so the first
   // keystrokes have no chat to belong to yet. When one arrives, it takes them.
@@ -541,6 +551,9 @@ export function AgentComposer({
     )
   }
 
+  // The draft as the resting bar shows it: its opening words, on one line.
+  const draftPreview = text.trim().replace(/\s+/g, ' ')
+
   const composed = (
     <ComposerField
       ref={field}
@@ -570,7 +583,14 @@ export function AgentComposer({
               : `${harnessLabel} unavailable`
       }
       disabled={!available}
-      className={bar ? 'min-w-0 flex-1 px-1 py-1' : 'w-full px-3 pt-2.5'}
+      grow={!resting}
+      className={cn(
+        bar ? 'block w-full px-1 py-1' : 'w-full px-3 pt-2.5',
+        // under the preview: still the thing a click or a Tab lands on, which is
+        // what opens the dock, but not a second copy of the same words
+        resting && 'overflow-hidden',
+        resting && draftPreview && 'text-transparent caret-transparent',
+      )}
     />
   )
 
@@ -665,6 +685,12 @@ export function AgentComposer({
   // and nothing to send until there is something written to send. A turn in flight
   // buys the one exception: what the agent is doing is the only thing the reader
   // cannot find anywhere else in this layout.
+  // The dock's bar. Resting it is ONE line: the clip, the draft's opening words,
+  // and only what is worth a line beside them. Open it is the panel's composer
+  // laid out the same way as docked: whatever the turn carries, then the field
+  // across the whole width, then the controls under it. Both are the same row
+  // wrapped differently — the field keeps its place in the tree, so the focus
+  // that opens the dock is never lost to a remount mid-open.
   if (bar)
     return (
       <div className="shrink-0">
@@ -690,22 +716,53 @@ export function AgentComposer({
             missing={noAgent?.full}
           />
         )}
-        {/* shown even on the resting bar: a pasted image is part of the message
-            being written, and a paste that left no trace would read as refused */}
-        {imageChips}
-        {/* items-end so a field that grew to several lines keeps the controls at its
-            foot; the controls then centre among THEMSELVES, or the model's 11px label
-            would sit a third of a line below the icons it shares the row with */}
-        <div className="flex items-end gap-1 px-2 py-2">
-          <AttachButton onPicked={() => field.current?.focus()} />
-          {addImage}
-          {!payloadShowing && linkMark}
-          {composed}
-          <div className="flex shrink-0 items-center gap-1">
+        {!resting && imageChips}
+        <div
+          className={cn('flex flex-wrap items-center gap-1 px-2', resting ? 'py-2' : 'pb-2 pt-1')}
+        >
+          <div
+            className={cn(
+              'relative min-w-0 flex-1',
+              resting ? 'order-2' : 'order-first basis-full',
+            )}
+          >
+            {composed}
+            {resting && draftPreview && (
+              <span
+                aria-hidden
+                data-draft-preview=""
+                className="pointer-events-none absolute inset-0 truncate px-1 py-1 text-[14px] leading-relaxed text-foreground"
+              >
+                {draftPreview}
+              </span>
+            )}
+          </div>
+          <div className="order-1 flex shrink-0 items-center gap-1">
+            <AttachButton onPicked={() => field.current?.focus()} />
+            {addImage}
+            {resting && linkMark}
+            {/* the images wait in the field's row as a count: their chips are a
+                second line, and the resting bar has one */}
+            {resting && images.length > 0 && (
+              <span
+                title={imagesLabel(images.length)}
+                aria-label={`${imagesLabel(images.length)} attached`}
+                className="flex h-6 items-center gap-1 rounded-full bg-muted px-2 text-[11px] text-muted-foreground"
+              >
+                {uploading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <ImageIcon className="h-3 w-3" />
+                )}
+                {images.length}
+              </span>
+            )}
+          </div>
+          <div className="order-3 ml-auto flex shrink-0 items-center gap-1">
             {/* Resting, this bar IS the agent on screen — nothing else on the window
                 says a turn is running, so it says so here. Opened, the transcript
                 above says it better, and in more words than a line has room for. */}
-            {active && !expanded && (
+            {active && resting && (
               <DockActivity
                 run={run}
                 harness={chat?.harness ?? ''}
@@ -713,9 +770,9 @@ export function AgentComposer({
               />
             )}
             {/* the meter sits before the model, in reading order: how hard, on what */}
-            {expanded && <ChatFastToggle chat={chat} />}
-            {expanded && <ChatEffortPicker chat={chat} harness={harness} />}
-            {expanded && <ChatModelPicker chat={chat} harness={harness} />}
+            {!resting && <ChatFastToggle chat={chat} />}
+            {!resting && <ChatEffortPicker chat={chat} harness={harness} />}
+            {!resting && <ChatModelPicker chat={chat} harness={harness} />}
             {trailing}
             {/* a running turn keeps Stop within reach even on the resting bar; Send
                 only shows once there is something to send, or the bar gains a button

@@ -42,6 +42,7 @@ export function ComposerField({
   value,
   onChange,
   onSubmit,
+  grow = true,
   className,
   ref,
   ...rest
@@ -50,6 +51,9 @@ export function ComposerField({
   onChange: (next: string) => void
   /** Enter without Shift — the one gesture a composer has. */
   onSubmit: () => void
+  /** Grow with what is written. Off, the field stays one line tall — a resting
+   *  bar that shows a preview of the draft instead. */
+  grow?: boolean
   /** The caller's own handle on the field: the dock focuses it, the clip gives
    *  the caret back to it. Left out, the field still grows on its own. */
   ref?: React.RefObject<HTMLTextAreaElement | null>
@@ -61,8 +65,8 @@ export function ComposerField({
     const el = field.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
-  }, [value, field])
+    if (grow) el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
+  }, [value, field, grow])
 
   return (
     <textarea
