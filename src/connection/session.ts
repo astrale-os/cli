@@ -187,12 +187,11 @@ function openConnection(
   const auth = createCliCredential(target, options, config, fetch, timeoutMs, credential)
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
-  const authApi = session.auth
   return {
     context: Object.freeze({
       session,
       graph,
-      auth: authApi,
+      auth: session.auth,
       self: () =>
         withResolvedClientSession(
           target,
