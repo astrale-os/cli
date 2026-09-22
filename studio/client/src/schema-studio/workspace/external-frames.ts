@@ -2,9 +2,11 @@ import type { DomainCatalogEntry } from '@shared/types'
 import type { Node } from '@xyflow/react'
 
 import {
+  rectsOverlap,
   WORKSPACE_DOMAIN_GAP,
   type WorkspaceDomainFrame,
   type WorkspacePoint,
+  type WorkspaceRect,
   type WorkspaceSize,
 } from './geometry'
 
@@ -39,11 +41,6 @@ interface ExternalFrame extends WorkspaceExternalCluster {
   position: WorkspacePoint
   size: WorkspaceSize
   layout: ExternalFrameLayout
-}
-
-interface Rect {
-  position: WorkspacePoint
-  size: WorkspaceSize
 }
 
 const EXTERNAL_WIDTH = 216
@@ -117,20 +114,25 @@ export const workspaceExternalMemberNodeId = (
 ) =>
   `workspace-external-member:${encodeURIComponent(origin)}:${definition ? `${definition}:` : ''}${encodeURIComponent(name)}`
 
-function overlaps(a: Rect, b: Rect, gap: number): boolean {
-  return (
-    a.position.x < b.position.x + b.size.width + gap &&
-    a.position.x + a.size.width + gap > b.position.x &&
-    a.position.y < b.position.y + b.size.height + gap &&
-    a.position.y + a.size.height + gap > b.position.y
-  )
+/**
+ * Where the external frames that already have a position sit — what a domain placed for
+ * the first time has to fit around, since a saved frame never moves to make room.
+ */
+export function savedExternalRects(
+  clusters: WorkspaceExternalCluster[],
+  savedPositions: Record<string, WorkspacePoint>,
+): WorkspaceRect[] {
+  return clusters.flatMap((cluster) => {
+    const position = savedPositions[cluster.origin]
+    return position ? [{ position, size: externalFrameLayout(cluster).size }] : []
+  })
 }
 
 function initialPosition(
   frame: Omit<ExternalFrame, 'position'>,
   domainsById: Map<string, WorkspaceDomainFrame>,
   domainFrames: WorkspaceDomainFrame[],
-  obstacles: Rect[],
+  obstacles: WorkspaceRect[],
 ): WorkspacePoint {
   const owners = frame.ownerDomainIds
     .map((domainId) => domainsById.get(domainId))
@@ -148,7 +150,7 @@ function initialPosition(
   while (true) {
     const candidate = { position: { x, y }, size: frame.size }
     const collision = obstacles.find((obstacle) =>
-      overlaps(candidate, obstacle, EXTERNAL_VERTICAL_GAP),
+      rectsOverlap(candidate, obstacle, EXTERNAL_VERTICAL_GAP),
     )
     if (!collision) return candidate.position
     y = collision.position.y + collision.size.height + EXTERNAL_VERTICAL_GAP
@@ -167,7 +169,7 @@ function layoutExternalFrames(
       return { ...cluster, layout, size: layout.size }
     })
   const domainsById = new Map(domainFrames.map((frame) => [frame.domainId, frame]))
-  const obstacles: Rect[] = domainFrames.map(({ position, size }) => ({ position, size }))
+  const obstacles: WorkspaceRect[] = domainFrames.map(({ position, size }) => ({ position, size }))
 
   for (const frame of frames) {
     const position = savedPositions[frame.origin]

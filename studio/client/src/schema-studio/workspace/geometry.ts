@@ -76,28 +76,130 @@ function packInitialFrames(frames: Omit<WorkspaceDomainFrame, 'position'>[]): Wo
   return positions
 }
 
+export interface WorkspaceRect {
+  position: WorkspacePoint
+  size: WorkspaceSize
+}
+
+export function rectsOverlap(a: WorkspaceRect, b: WorkspaceRect, gap: number): boolean {
+  return (
+    a.position.x < b.position.x + b.size.width + gap &&
+    a.position.x + a.size.width + gap > b.position.x &&
+    a.position.y < b.position.y + b.size.height + gap &&
+    a.position.y + a.size.height + gap > b.position.y
+  )
+}
+
+/** The empty space between two rectangles — 0 when they touch or overlap. */
+function distanceBetween(a: WorkspaceRect, b: WorkspaceRect): number {
+  const dx = Math.max(
+    0,
+    b.position.x - (a.position.x + a.size.width),
+    a.position.x - (b.position.x + b.size.width),
+  )
+  const dy = Math.max(
+    0,
+    b.position.y - (a.position.y + a.size.height),
+    a.position.y - (b.position.y + b.size.height),
+  )
+  return Math.hypot(dx, dy)
+}
+
+/** How much a canvas this wide and this tall costs to look at — a screen is landscape. */
+const LANDSCAPE = 1.6
+
+/**
+ * A free spot for a frame beside what the canvas already holds.
+ *
+ * Nothing here moves: every obstacle is somewhere the reader (or an earlier placement) put
+ * it, and the newcomer has to fit around it. The candidates are the edges the obstacles
+ * offer — flush with one, or a gap right of or below it — so a hole a hand-moved domain left behind is filled
+ * before the canvas grows, and growth goes whichever way keeps the whole thing closest to a
+ * screen's shape. Between spots that cost the same, the one closest to an `anchor` wins — a
+ * new domain sits next to the domains already there, not adrift in an empty corner or
+ * tucked against an imported frame — then the one lined up with that neighbour, and the
+ * last ties read like text: top first, then left.
+ */
+export function placeBeside(
+  size: WorkspaceSize,
+  obstacles: WorkspaceRect[],
+  anchors: WorkspaceRect[] = obstacles,
+  gap = WORKSPACE_DOMAIN_GAP,
+): WorkspacePoint {
+  if (obstacles.length === 0) return { x: 0, y: 0 }
+  const left = Math.min(...obstacles.map((rect) => rect.position.x))
+  const top = Math.min(...obstacles.map((rect) => rect.position.y))
+  const right = Math.max(...obstacles.map((rect) => rect.position.x + rect.size.width))
+  const bottom = Math.max(...obstacles.map((rect) => rect.position.y + rect.size.height))
+  // Every edge a frame could line up with: flush with an obstacle, or one gap past it.
+  const xs = [
+    ...new Set(
+      obstacles.flatMap((rect) => [rect.position.x, rect.position.x + rect.size.width + gap]),
+    ),
+  ]
+  const ys = [
+    ...new Set(
+      obstacles.flatMap((rect) => [rect.position.y, rect.position.y + rect.size.height + gap]),
+    ),
+  ]
+
+  let best: {
+    position: WorkspacePoint
+    score: number
+    distance: number
+    misalignment: number
+  } | null = null
+  for (const y of ys) {
+    for (const x of xs) {
+      const candidate = { position: { x, y }, size }
+      if (obstacles.some((obstacle) => rectsOverlap(candidate, obstacle, gap))) continue
+      const width = Math.max(right, x + size.width) - left
+      const height = Math.max(bottom, y + size.height) - top
+      const score = Math.max(width, height * LANDSCAPE)
+      let distance = Number.POSITIVE_INFINITY
+      let misalignment = Number.POSITIVE_INFINITY
+      for (const anchor of anchors) {
+        const apart = distanceBetween(candidate, anchor)
+        const offset = Math.min(Math.abs(x - anchor.position.x), Math.abs(y - anchor.position.y))
+        if (apart < distance || (apart === distance && offset < misalignment)) {
+          distance = apart
+          misalignment = offset
+        }
+      }
+      const better =
+        !best ||
+        score < best.score ||
+        (score === best.score &&
+          (distance < best.distance ||
+            (distance === best.distance &&
+              (misalignment < best.misalignment ||
+                (misalignment === best.misalignment &&
+                  (y < best.position.y || (y === best.position.y && x < best.position.x)))))))
+      if (better) best = { position: { x, y }, score, distance, misalignment }
+    }
+  }
+  // The far right of everything is always free, so the search above cannot come back empty.
+  return best?.position ?? { x: right + gap, y: top }
+}
+
 function positionFrames(
   frames: Omit<WorkspaceDomainFrame, 'position'>[],
   savedPositions: Record<string, WorkspacePoint>,
+  fixed: WorkspaceRect[],
 ): WorkspacePoint[] {
   const placed = frames.filter((frame) => savedPositions[frame.domainId])
-  if (placed.length === 0) return packInitialFrames(frames)
+  if (placed.length === 0 && fixed.length === 0) return packInitialFrames(frames)
 
-  let x = placed.reduce((right, frame) => {
-    const position = savedPositions[frame.domainId]!
-    return Math.max(right, position.x + frame.size.width)
-  }, 0)
-  const y = placed.reduce(
-    (top, frame) => Math.min(top, savedPositions[frame.domainId]!.y),
-    Number.POSITIVE_INFINITY,
-  )
-
+  const domains: WorkspaceRect[] = placed.map((frame) => ({
+    position: savedPositions[frame.domainId]!,
+    size: frame.size,
+  }))
   return frames.map((frame) => {
     const saved = savedPositions[frame.domainId]
     if (saved) return saved
-    x += WORKSPACE_DOMAIN_GAP
-    const position = { x, y: Number.isFinite(y) ? y : 0 }
-    x += frame.size.width
+    const obstacles = [...fixed, ...domains]
+    const position = placeBeside(frame.size, obstacles, domains.length > 0 ? domains : obstacles)
+    domains.push({ position, size: frame.size })
     return position
   })
 }
@@ -106,16 +208,21 @@ function positionFrames(
  * Resolve stable domain frames. A frame wraps exactly what it holds — the same rule a
  * module box follows — so its SIZE is never a stored preference, only its position is.
  * Default positions are persisted by the caller after the first projection.
+ *
+ * A frame with no position yet never lands on one that has: saved frames, and the `fixed`
+ * rectangles of anything else already placed on the canvas, stay exactly where they are
+ * and the newcomer is fitted into the free space beside them.
  */
 export function layoutWorkspaceFrames(
   sources: WorkspaceFrameSource[],
   savedPositions: Record<string, WorkspacePoint>,
+  fixed: WorkspaceRect[] = [],
 ): WorkspaceDomainFrame[] {
   const unpositioned = sources.map((source) => {
     const box = containerBoxSize(DOMAIN_BOX, contentRects(source.nodes))
     return { domainId: source.domainId, size: { width: box.w, height: box.h } }
   })
-  const positions = positionFrames(unpositioned, savedPositions)
+  const positions = positionFrames(unpositioned, savedPositions, fixed)
   return unpositioned.map((frame, index) => ({ ...frame, position: positions[index]! }))
 }
 

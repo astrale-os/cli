@@ -21,6 +21,7 @@ import { viewGraph } from '../view-graph'
 import { classRef, domainRef, edgeRef, isHidden } from '../visibility'
 import {
   projectExternalFrames,
+  savedExternalRects,
   workspaceExternalMemberNodeId,
   type WorkspaceExternalCluster,
   type WorkspaceExternalReference,
@@ -437,9 +438,18 @@ export function composeWorkspaceCanvas(
     origins.set(origin, [...(origins.get(origin) ?? []), domain])
   }
 
+  // The dependency footprint comes first: a domain placed for the first time has to fit
+  // around the external frames already sitting on the canvas, not only the domain frames.
+  const index = externalIndex()
+  const cross = crossDomainEdges(domains, origins, diagnostics, index)
+  const inheritance = inheritanceEdges(domains, origins, diagnostics, index)
+  rememberDependencyFootprint(domains, origins, index)
+  const clusters = index.clusters({ workspaceOrigins, expanded: new Set(expandedExternals) })
+
   const frames = layoutWorkspaceFrames(
     domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
     domainPositions,
+    savedExternalRects(clusters, externalPositions),
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
   const nodes: Node[] = []
@@ -504,16 +514,7 @@ export function composeWorkspaceCanvas(
     }
   }
 
-  const index = externalIndex()
-  const cross = crossDomainEdges(domains, origins, diagnostics, index)
-  const inheritance = inheritanceEdges(domains, origins, diagnostics, index)
-  rememberDependencyFootprint(domains, origins, index)
-  const externals = projectExternalFrames(
-    index.clusters({ workspaceOrigins, expanded: new Set(expandedExternals) }),
-    frames,
-    externalPositions,
-    catalog,
-  )
+  const externals = projectExternalFrames(clusters, frames, externalPositions, catalog)
   nodes.push(...externals.nodes)
   edges.push(...cross, ...inheritance)
 
