@@ -157,7 +157,7 @@ test('mid-drag the closed hand holds across the whole canvas', async ({ page }) 
   await expect(page.locator('.react-flow__node').first()).toBeVisible()
 
   // Panning the pane and moving a node are the same gesture as far as the pointer is concerned:
-  // either one closes the hand over everything, the toolbar and minimap floating above included.
+  // either one closes the hand over everything, the toolbar and controls floating above included.
   expect(await page.evaluate(probeWhileDragging, '.react-flow__pane')).toEqual(['grabbing'])
   expect(await page.evaluate(probeWhileDragging, '.react-flow__node')).toEqual(['grabbing'])
 

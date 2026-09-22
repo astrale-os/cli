@@ -48,7 +48,7 @@ const tone = ([lightness, chroma]: Tone, hue: number) => `oklch(${lightness} ${c
 /**
  * Tint for a module hue. Without a scheme the colour is a `light-dark()` pair —
  * the browser picks the side, so a theme switch repaints without re-rendering.
- * Pass a scheme where the value lands in an SVG *attribute* (the minimap), which
+ * Pass a scheme where the value lands in an SVG *attribute*, which
  * would not resolve a CSS function.
  */
 export function moduleTint(hue: number, scheme?: 'light' | 'dark'): ModuleTint {

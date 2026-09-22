@@ -9,7 +9,6 @@ import {
   type Edge,
   type EdgeChange,
   type InternalNode,
-  MiniMap,
   type Node,
   type NodeChange,
   Panel,
@@ -29,8 +28,6 @@ import { useUI } from '@/lib/store'
 import { decodeFlowNodeId } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
-import type { ClassNodeData } from '../projection'
-
 import { CanvasIconToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
@@ -40,7 +37,7 @@ import { type EdgeFocus, edgeTypes } from '../floating-edge'
 import { type Geometry, normalizeContainerLayout } from '../geometry'
 import { neighborSet, relationshipEdgeIds, selectedRelationshipContext } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
-import { CLASS_H, CLASS_W, DOCK_CLEARANCE, FUNCTION_HUE, VIEW_HUE, moduleTint } from '../palette'
+import { CLASS_H, CLASS_W, DOCK_CLEARANCE } from '../palette'
 import { workspaceExternalNodeId, workspaceExternalOrigin } from './external-frames'
 import { workspaceGeometry, workspaceLayoutUpdate } from './geometry'
 import {
@@ -159,7 +156,6 @@ export function WorkspaceSchemaGraph({
   const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const setOpenAnchor = useUI((state) => state.setOpenAnchor)
   const showCardinality = useUI((state) => state.showCardinality)
-  const scheme = useUI((state) => state.resolvedTheme)
   const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
@@ -191,7 +187,6 @@ export function WorkspaceSchemaGraph({
   const fittedNodes = useRef('')
   // The domains a running reorganize still waits on — see the projection effect below.
   const reorganizing = useRef<string[] | null>(null)
-  const solo = domains.length === 1
 
   // Selecting on the canvas says what you are looking at, and nothing else. It used to
   // also make the clicked node's domain ACTIVE — which silently swapped the agent
@@ -640,23 +635,6 @@ export function WorkspaceSchemaGraph({
               <LayoutGrid className="h-4 w-4 text-foreground" />
             </ControlButton>
           </Controls>
-          <MiniMap
-            pannable
-            zoomable
-            style={{ width: 168, height: 112, ...dockLift }}
-            nodeColor={(node) =>
-              node.type === 'classNode'
-                ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
-                : node.type === 'viewNode'
-                  ? moduleTint(VIEW_HUE, scheme).mark
-                  : node.type === 'functionNode'
-                    ? moduleTint(FUNCTION_HUE, scheme).mark
-                    : node.type === 'workspaceDomain' && !solo
-                      ? moduleTint(255, scheme).border
-                      : 'transparent'
-            }
-            nodeStrokeWidth={0}
-          />
 
           {projection.diagnostics.length > 0 && (
             <Panel position="top-center" className="max-w-xl">

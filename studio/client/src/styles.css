@@ -61,7 +61,6 @@
   --edge-view: oklch(0.62 0.09 205);
   --edge-function: oklch(0.62 0.13 300);
   --edge-soft: oklch(0.78 0.01 255);
-  --minimap-mask: oklch(0.55 0.01 255 / 0.12);
 }
 
 .dark {
@@ -108,7 +107,6 @@
   --edge-view: oklch(0.64 0.08 205);
   --edge-function: oklch(0.66 0.12 300);
   --edge-soft: oklch(0.42 0.012 255);
-  --minimap-mask: oklch(0.15 0.01 255 / 0.5);
 }
 
 @theme inline {
@@ -256,7 +254,7 @@ body {
    that name it — but only if the layer outranks EVERY edge layer, and z-index 1 did not.
    React Flow derives an edge's z-index from its endpoints' nesting depth: a class inside a module
    inside a domain frame already scores 12, and selecting an edge adds 1000 more. So the layer is
-   lifted clear of all of it. This cannot reach the toolbar or the minimap — the layer lives inside
+   lifted clear of all of it. This cannot reach the toolbar or the controls — the layer lives inside
    `.react-flow__viewport`, whose transform makes it a stacking context of its own. */
 .react-flow__edgelabel-renderer {
   z-index: 2000;
@@ -314,7 +312,7 @@ body {
    those reads as an affordance: sweeping the mouse across a dense graph merely flickered
    hand → pointer → hand several times a second. Hence one rule and no exceptions — the hand
    covers the pane, the nodes and their buttons, the edges, the handles, and the floating chrome
-   (toolbar, controls, minimap all pan and zoom the same surface). The class is repeated so this
+   (toolbar, controls all pan and zoom the same surface). The class is repeated so this
    sweep outweighs React Flow's own two-class cursor rules — `.react-flow__node.selectable` and
    friends — which a plain descendant selector would lose to. */
 .react-flow,
@@ -322,7 +320,7 @@ body {
   cursor: grab;
 }
 /* Mid-drag the whole surface holds the closed hand: whatever slides under the pointer — another
-   node, the minimap, the toolbar — would otherwise re-assert `grab` and flicker for as long as
+   node, the controls, the toolbar — would otherwise re-assert `grab` and flicker for as long as
    the drag lasts. React Flow marks the pane mid-pan and the node mid-move; either one closes
    the hand across the canvas. */
 .react-flow:has(.dragging),
@@ -359,15 +357,6 @@ body[data-target-mode] .react-flow.react-flow * {
   fill: currentColor;
   max-width: 12px;
   max-height: 12px;
-}
-.react-flow__minimap {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-card);
-}
-/* fill wins over React Flow's `fill` attribute, so the mask follows the theme */
-.react-flow__minimap-mask {
-  fill: var(--minimap-mask);
 }
 .react-flow__edge-text {
   font-family: var(--font-sans);
