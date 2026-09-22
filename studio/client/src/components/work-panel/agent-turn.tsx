@@ -1,12 +1,14 @@
 import type { AgentEvent, AgentRun } from '@shared/types'
 
-import { Copy, Loader2, LogIn, MessageSquare, TriangleAlert } from 'lucide-react'
+import { Copy, Loader2, LogIn, MessageSquare } from 'lucide-react'
 
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
+
+import { AgentErrorChip } from './agent-error'
 
 /** The panel is narrow, and CSS truncation eats the END of a string — the only
  *  part of a path or URL that says anything. Long targets keep their tail. */
@@ -121,12 +123,7 @@ export function AgentTurn({
                 <span className="truncate">{activityLabel(run)}</span>
               </div>
             )}
-            {!active && run.error && !authFailure && (
-              <div className="flex items-start gap-1.5 text-[12px] text-destructive">
-                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span className="min-w-0 flex-1">{run.error}</span>
-              </div>
-            )}
+            {!active && run.error && !authFailure && <AgentErrorChip run={run} onRetry={onRetry} />}
             {!active && authFailure && (
               <div
                 role="alert"
