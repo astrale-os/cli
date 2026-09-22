@@ -26,12 +26,7 @@ export interface DomainHandle {
 
 const registry = new Map<string, DomainHandle>()
 
-export function makeId(root: string): string {
-  return workspaceKey(root)
-}
-
 const APPLICATION_MODULES = new Set(['@astrale-os/sdk/application', '@astrale-os/sdk'])
-
 const PROJECT_MODULES = new Set(['@astrale-os/sdk/project', '@astrale-os/sdk'])
 const TESTING_MODULES = new Set(['@astrale-os/sdk/testing'])
 
@@ -100,8 +95,11 @@ function datasetsOf(node: Node | undefined, source: SourceFile): string[] {
 /** The module an identifier is imported from (named, aliased or default), resolved inside the root. */
 function importedModuleOf(node: Node, source: SourceFile, root: string): string | null {
   const value = unwrap(node)
-  if (!Node.isIdentifier(value)) return null
-  const name = value.getText()
+  return Node.isIdentifier(value) ? moduleImportingName(value.getText(), source, root) : null
+}
+
+/** The module that binds local `name` (named, aliased or default import), resolved inside the root. */
+function moduleImportingName(name: string, source: SourceFile, root: string): string | null {
   for (const declaration of source.getImportDeclarations()) {
     const named = declaration
       .getNamedImports()
@@ -152,15 +150,16 @@ export function isDomainDir(root: string): boolean {
 
 export function registerDomain(root: string): DomainHandle | null {
   const project = resolve(root)
+  const configFile = join(project, 'astrale.config.ts')
   const applicationFile = resolveApplicationEntry(project)
-  if (applicationFile === null || !existsSync(join(project, 'astrale.config.ts'))) return null
+  if (applicationFile === null || !existsSync(configFile)) return null
   const schemaIndex = resolveSchemaEntry(project, applicationFile)
   if (schemaIndex === null) return null
   const schemaDir = dirname(schemaIndex)
   const handle: DomainHandle = {
-    id: makeId(project),
+    id: workspaceKey(project),
     root: project,
-    configFile: join(project, 'astrale.config.ts'),
+    configFile,
     applicationFile,
     schemaDirName: relative(project, schemaDir).replaceAll('\\', '/') || '.',
     schemaDir,
@@ -294,16 +293,7 @@ function schemaModuleOf(node: Node, source: SourceFile, root: string): string | 
   if (Node.isIdentifier(value)) {
     const initializer = source.getVariableDeclaration(value.getText())?.getInitializer()
     if (initializer) return schemaModuleOf(initializer, source, root)
-    for (const declaration of source.getImportDeclarations()) {
-      const imported = declaration
-        .getNamedImports()
-        .some((named) => (named.getAliasNode()?.getText() ?? named.getName()) === value.getText())
-      const defaultImported = declaration.getDefaultImport()?.getText() === value.getText()
-      if (imported || defaultImported) {
-        return resolveAuthoredModule(root, source, declaration.getModuleSpecifierValue())
-      }
-    }
-    return null
+    return moduleImportingName(value.getText(), source, root)
   }
   if (Node.isPropertyAccessExpression(value) && Node.isIdentifier(value.getExpression())) {
     const namespace = value.getExpression().getText()

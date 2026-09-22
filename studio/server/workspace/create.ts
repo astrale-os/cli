@@ -134,10 +134,8 @@ export async function createDomain(
     }
   }
   stoppers.get(handle.id)?.()
-  const { origin } = await bootDomain(handle).then((b) => {
-    stoppers.set(handle.id, b.stop)
-    return b
-  })
+  const { origin, stop } = await bootDomain(handle)
+  stoppers.set(handle.id, stop)
   await getBundle(handle.id, true) // refresh the cache now that deps are installed
 
   return { ok: true, id: handle.id, origin, output: combine(scaffold, install) }

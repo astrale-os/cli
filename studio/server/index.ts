@@ -157,6 +157,16 @@ function staticBody(file: string, req: Request): { body: BodyInit; encoding?: st
   return { body: held, encoding: 'gzip' }
 }
 
+function staticResponse(file: string, req: Request, headers: Record<string, string>): Response {
+  const { body, encoding } = staticBody(file, req)
+  return new Response(body, {
+    headers: {
+      ...headers,
+      ...(encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {}),
+    },
+  })
+}
+
 function serveStatic(pathname: string, req: Request): Response {
   const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '')
   const file = join(DIST, rel)
@@ -164,13 +174,9 @@ function serveStatic(pathname: string, req: Request): Response {
     // Vite emits content-hashed asset names (index-<hash>.js), so a given URL is
     // immutable — cache it forever. A rebuild produces a NEW name, and the
     // never-cached shell below points the browser at it.
-    const { body, encoding } = staticBody(file, req)
-    return new Response(body, {
-      headers: {
-        'cache-control': 'public, max-age=31536000, immutable',
-        'content-type': Bun.file(file).type,
-        ...(encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {}),
-      },
+    return staticResponse(file, req, {
+      'cache-control': 'public, max-age=31536000, immutable',
+      'content-type': Bun.file(file).type,
     })
   }
   const index = join(DIST, 'index.html')
@@ -178,14 +184,7 @@ function serveStatic(pathname: string, req: Request): Response {
     // NEVER cache the HTML shell: it references the CURRENT hashed bundle. A stale
     // shell would point at an asset a later build deleted → 404 → the app never
     // boots and the page "loads forever". no-store guarantees every load is fresh.
-    const { body, encoding } = staticBody(index, req)
-    return new Response(body, {
-      headers: {
-        'content-type': 'text/html',
-        'cache-control': 'no-store',
-        ...(encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {}),
-      },
-    })
+    return staticResponse(index, req, { 'content-type': 'text/html', 'cache-control': 'no-store' })
   }
   return new Response(
     'client not built — run `vite build` (or set DOMAIN_STUDIO_DEV=1 for the Vite dev server)',

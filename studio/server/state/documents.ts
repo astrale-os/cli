@@ -10,7 +10,7 @@ import { extname } from 'node:path'
 
 import type { DocMeta } from '../../shared/types'
 
-import { asFiniteNumber, asJsonRecord, asString } from '../json'
+import { asFiniteNumber, asJsonRecord, asString, decodeEach } from '../json'
 import { readJson, removeState, statePath, writeJson, writeStateBuffer } from './store'
 
 const INDEX = 'context/documents/index.json'
@@ -96,11 +96,7 @@ function decodeDocument(value: unknown): DocMeta | undefined {
 }
 
 function decodeDocuments(value: unknown): DocMeta[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  return value.flatMap((item) => {
-    const document = decodeDocument(item)
-    return document ? [document] : []
-  })
+  return decodeEach(value, decodeDocument)
 }
 
 export function listDocuments(root: string): DocMeta[] {
@@ -109,11 +105,12 @@ export function listDocuments(root: string): DocMeta[] {
 
 export function addDocument(root: string, name: string, type: string, data: Uint8Array): DocMeta {
   const docs = listDocuments(root)
-  const stored = uniqueStoredPath(root, docs, name || 'untitled')
+  const docName = name || 'untitled'
+  const stored = uniqueStoredPath(root, docs, docName)
   writeStateBuffer(root, stored, data)
   const meta: DocMeta = {
     id: randomUUID(),
-    name: name || 'untitled',
+    name: docName,
     type: type || 'application/octet-stream',
     size: data.byteLength,
     addedAt: new Date().toISOString(),

@@ -11,14 +11,12 @@ import { asBoolean, asJsonRecord } from '../json'
 import { readJson, writeJson } from './store'
 
 const FILE = 'visibility.json'
-const DEFAULT: VisibilityState = {
-  hidden: {},
-  showInheritedEdges: true,
-}
+const DEFAULT_SHOW_INHERITED_EDGES = true
 
+/** A fresh default each time: callers may mutate the `hidden` record they get back. */
 const defaultVisibility = (): VisibilityState => ({
   hidden: {},
-  showInheritedEdges: DEFAULT.showInheritedEdges,
+  showInheritedEdges: DEFAULT_SHOW_INHERITED_EDGES,
 })
 
 function trueSet(value: unknown): Record<string, true> {
@@ -34,7 +32,7 @@ function decodeVisibility(value: unknown): VisibilityState | undefined {
   if (!record) return undefined
   return {
     hidden: trueSet(record.hidden),
-    showInheritedEdges: asBoolean(record.showInheritedEdges) ?? DEFAULT.showInheritedEdges,
+    showInheritedEdges: asBoolean(record.showInheritedEdges) ?? DEFAULT_SHOW_INHERITED_EDGES,
   }
 }
 
