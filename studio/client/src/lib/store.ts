@@ -47,6 +47,14 @@ export type PanelTab = WorkspacePanelUiState['tab']
  *  over the middle of the screen when you click in. */
 export type PanelSide = WorkspacePanelUiState['side']
 
+/** The bottom dock's size bounds, in px. The server clamps to the same ones. */
+export const DOCK_WIDTH = { min: 420, max: 1600, fallback: 768 } as const
+export const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 480 } as const
+
+function clampTo({ min, max }: { min: number; max: number }, value: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
+
 function loadStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
     const value = localStorage.getItem(key) as T | null
@@ -86,8 +94,12 @@ interface UIState {
   panelOpen: boolean
   panelTab: PanelTab
   panelSide: PanelSide
-  /** panel width in px when docked left/right; the bottom dock has no size to keep */
+  /** panel width in px when docked left/right */
   panelSize: number
+  /** The bottom dock's own size: its width, grown on both sides so it stays centred,
+   *  and the height of the conversation it opens above the composer. */
+  dockWidth: number
+  dockHeight: number
   /** domains/modules rail furniture, scoped to this scanned workspace */
   modulesWidth: number
   detailWidth: number
@@ -164,6 +176,7 @@ interface UIState {
   setPanelTab: (tab: PanelTab) => void
   setPanelSide: (side: PanelSide) => void
   setPanelSize: (size: number) => void
+  setDockSize: (size: { width?: number; height?: number }) => void
   setModulesWidth: (width: number) => void
   setDetailWidth: (width: number) => void
   setModulesCollapsed: (collapsed: boolean) => void
@@ -240,6 +253,8 @@ export const useUI = create<UIState>((set) => ({
   panelTab: 'agent',
   panelSide: 'bottom',
   panelSize: 360,
+  dockWidth: DOCK_WIDTH.fallback,
+  dockHeight: DOCK_HEIGHT.fallback,
   modulesWidth: 240,
   detailWidth: 420,
   modulesCollapsed: false,
@@ -302,6 +317,11 @@ export const useUI = create<UIState>((set) => ({
     set({ panelSide, panelOpen })
   },
   setPanelSize: (panelSize) => set({ panelSize }),
+  setDockSize: ({ width, height }) =>
+    set((s) => ({
+      dockWidth: width === undefined ? s.dockWidth : clampTo(DOCK_WIDTH, width),
+      dockHeight: height === undefined ? s.dockHeight : clampTo(DOCK_HEIGHT, height),
+    })),
   setModulesWidth: (modulesWidth) => set({ modulesWidth }),
   setDetailWidth: (detailWidth) => set({ detailWidth }),
   setModulesCollapsed: (modulesCollapsed) => set({ modulesCollapsed }),
@@ -441,6 +461,8 @@ export function uiWorkspaceSnapshot(state = useUI.getState()): Pick<
       tab: state.panelTab,
       side: state.panelSide,
       size: Math.min(900, Math.max(260, Math.round(state.panelSize))),
+      dockWidth: clampTo(DOCK_WIDTH, state.dockWidth),
+      dockHeight: clampTo(DOCK_HEIGHT, state.dockHeight),
     },
     rail: {
       width: Math.min(560, Math.max(180, Math.round(state.modulesWidth))),
@@ -459,6 +481,8 @@ export function hydrateWorkspaceUi(state: WorkspaceUiState): void {
     panelTab: state.panel.tab,
     panelSide: state.panel.side,
     panelSize: state.panel.size,
+    dockWidth: state.panel.dockWidth,
+    dockHeight: state.panel.dockHeight,
     modulesWidth: state.rail.width,
     detailWidth: state.detailWidth ?? 420,
     modulesCollapsed: state.rail.collapsed,

@@ -211,6 +211,10 @@ export interface WorkspacePanelUiState {
   tab: 'agent' | 'comments'
   side: 'left' | 'right' | 'bottom'
   size: number
+  /** Width of the centred bottom dock; it grows on both sides and stays centred. */
+  dockWidth: number
+  /** Height of the conversation the bottom dock opens above its composer. */
+  dockHeight: number
 }
 
 /** Machine-side placement of the domains/modules rail. */

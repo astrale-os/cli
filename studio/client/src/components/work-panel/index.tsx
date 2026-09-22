@@ -6,7 +6,7 @@ import { isRunActive, useDisplayRun } from '@/lib/agent'
 import { useUnreadAgentReplies } from '@/lib/agent-unread'
 import { useActiveChatId, useChatMutations, useModelCatalog } from '@/lib/chats'
 import { useHarness, useLoadout, useWorkspaceComments } from '@/lib/hooks'
-import { type PanelSide, useUI } from '@/lib/store'
+import { DOCK_HEIGHT, DOCK_WIDTH, type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { AgentComposer, AgentDropZone, AgentTab, AgentTranscript } from './agent-tab'
@@ -193,7 +193,11 @@ function FloatingDock() {
   const setPanelTab = useUI((s) => s.setPanelTab)
   const waiting = useWaitingCount()
   const run = useDisplayRun()
+  const dockWidth = useUI((s) => s.dockWidth)
+  const dockHeight = useUI((s) => s.dockHeight)
   const box = useRef<HTMLDivElement>(null)
+  const conversation = useRef<HTMLDivElement>(null)
+  const { resizing, start: startResize, reset: resetSize } = useDockResize(box, conversation)
   // Closed, the dock is all the agent has on screen — a running turn has to show
   // on the bar itself. Open it needs nothing: the turn is unfolding right above.
   const working = !open && isRunActive(run)
@@ -233,8 +237,12 @@ function FloatingDock() {
           setPanelTab('agent')
           field()?.focus()
         }}
+        // The width is the dock's own, grown or shrunk on both sides at once so it
+        // never leaves the middle; max-w-full keeps a narrow window from pushing
+        // it past the edges, whatever width was saved on a wider one.
+        style={{ width: dockWidth }}
         className={cn(
-          'pointer-events-auto relative flex max-h-full w-full max-w-3xl flex-col overflow-clip rounded-2xl border',
+          'pointer-events-auto relative flex max-h-full max-w-full flex-col overflow-clip rounded-2xl border',
           'shadow-[0_20px_60px_-28px_rgb(0_0_0/0.55)] backdrop-blur-xl transition-colors duration-300',
           // at rest it is a bar over a canvas, and seeing the canvas through it is the
           // point; opened it is something to read, and that wants a solid page
@@ -267,10 +275,15 @@ function FloatingDock() {
             the panel header slid out of the top for good, leaving the dock with no
             way back to the threads and no way to close it. Clipping cannot scroll. */}
         <div
+          ref={conversation}
           inert={!open}
+          // A saved height taller than the window is simply shrunk: the box stops at
+          // max-h-full and this is the one child that can give way.
+          style={{ height: open ? dockHeight : 0 }}
           className={cn(
-            'flex min-h-0 flex-col overflow-clip transition-[height] duration-300 ease-out',
-            open ? 'h-[min(60vh,480px)]' : 'h-0',
+            'flex min-h-0 flex-col overflow-clip',
+            // following the pointer, not easing after it
+            !resizing && 'transition-[height] duration-300 ease-out',
           )}
         >
           <PanelHeader closeLabel="Close the chat" onClose={close} />
@@ -290,6 +303,20 @@ function FloatingDock() {
             documents are on the server, so coming back finds the message exactly as
             it was left. At rest it stays whatever tab it would open on — the bar IS
             the dock, and there would otherwise be nothing on screen. */}
+        {/* Opened, the edges resize it: the top edge sets how tall the conversation
+            is, the side edges how wide the whole dock is — both sides at once, so
+            it stays centred — and the top corners do both. At rest there is only
+            a bar, and every press on it means "open". */}
+        {open && (
+          <>
+            <DockHandle edge="top" onPointerDown={startResize} onReset={resetSize} />
+            <DockHandle edge="left" onPointerDown={startResize} onReset={resetSize} />
+            <DockHandle edge="right" onPointerDown={startResize} onReset={resetSize} />
+            <DockHandle edge="top-left" onPointerDown={startResize} onReset={resetSize} />
+            <DockHandle edge="top-right" onPointerDown={startResize} onReset={resetSize} />
+          </>
+        )}
+
         {(!open || tab === 'agent') && (
           <AgentComposer
             bar
@@ -318,6 +345,170 @@ function FloatingDock() {
       </AgentDropZone>
     </div>
   )
+}
+
+type DockEdge = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
+
+const DOCK_EDGES: Record<
+  DockEdge,
+  { x: -1 | 0 | 1; y: boolean; cursor: string; className: string; label: string }
+> = {
+  top: {
+    x: 0,
+    y: true,
+    cursor: 'ns-resize',
+    className: 'inset-x-3 top-0 h-1.5 cursor-ns-resize',
+    label: 'Drag to change the chat height',
+  },
+  left: {
+    x: -1,
+    y: false,
+    cursor: 'ew-resize',
+    className: 'inset-y-3 left-0 w-1.5 cursor-ew-resize',
+    label: 'Drag to change the chat width',
+  },
+  right: {
+    x: 1,
+    y: false,
+    cursor: 'ew-resize',
+    className: 'inset-y-3 right-0 w-1.5 cursor-ew-resize',
+    label: 'Drag to change the chat width',
+  },
+  'top-left': {
+    x: -1,
+    y: true,
+    cursor: 'nwse-resize',
+    className: 'left-0 top-0 h-3 w-3 cursor-nwse-resize',
+    label: 'Drag to resize the chat',
+  },
+  'top-right': {
+    x: 1,
+    y: true,
+    cursor: 'nesw-resize',
+    className: 'right-0 top-0 h-3 w-3 cursor-nesw-resize',
+    label: 'Drag to resize the chat',
+  },
+}
+
+/** One grip on the open dock's edge; a double click puts the dock back to its default size. */
+function DockHandle({
+  edge,
+  onPointerDown,
+  onReset,
+}: {
+  edge: DockEdge
+  onPointerDown: (edge: DockEdge, event: React.PointerEvent) => void
+  onReset: () => void
+}) {
+  const { className, label, x, y } = DOCK_EDGES[edge]
+  const corner = x !== 0 && y
+  return (
+    <div
+      role={corner ? undefined : 'separator'}
+      aria-orientation={corner ? undefined : y ? 'horizontal' : 'vertical'}
+      aria-label={corner ? undefined : label}
+      title={`${label} (double-click to reset)`}
+      data-dock-resize={edge}
+      onPointerDown={(event) => onPointerDown(edge, event)}
+      onDoubleClick={onReset}
+      className={cn('group absolute z-20 touch-none', className)}
+    >
+      {!corner && (
+        <div
+          className={cn(
+            'absolute rounded-full bg-transparent transition-colors group-hover:bg-primary/50',
+            y
+              ? 'left-1/2 top-px h-0.5 w-12 -translate-x-1/2'
+              : cn('top-1/2 h-12 w-0.5 -translate-y-1/2', x < 0 ? 'left-px' : 'right-px'),
+          )}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Drag the open dock's edges. Width moves both sides at once — a pixel dragged
+ * outward on one edge is a pixel on the other too — so the dock stays centred.
+ * Height is the conversation's, above a composer that never moves.
+ *
+ * Both are bounded by what the view has room for as the drag starts, not only by
+ * the stored limits: dragging past the window would store a size the dock cannot
+ * show, and dragging back would then do nothing for the first stretch.
+ */
+function useDockResize(
+  box: React.RefObject<HTMLElement | null>,
+  conversation: React.RefObject<HTMLElement | null>,
+): {
+  resizing: boolean
+  start: (edge: DockEdge, event: React.PointerEvent) => void
+  reset: () => void
+} {
+  const setDockSize = useUI((s) => s.setDockSize)
+  const [resizing, setResizing] = useState(false)
+
+  const start = useCallback(
+    (edge: DockEdge, event: React.PointerEvent) => {
+      const dock = box.current
+      const chat = conversation.current
+      const frame = dock?.parentElement
+      if (!dock || !chat || !frame || event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      const { x, y, cursor } = DOCK_EDGES[edge]
+      const frameStyle = getComputedStyle(frame)
+      const roomX =
+        frame.clientWidth - parseFloat(frameStyle.paddingLeft) - parseFloat(frameStyle.paddingRight)
+      const roomY =
+        frame.clientHeight -
+        parseFloat(frameStyle.paddingTop) -
+        parseFloat(frameStyle.paddingBottom)
+      const startX = event.clientX
+      const startY = event.clientY
+      const startWidth = dock.offsetWidth
+      const startHeight = chat.offsetHeight
+      // everything in the dock that is not the conversation: the composer, borders
+      const chrome = dock.offsetHeight - startHeight
+      const maxWidth = Math.max(DOCK_WIDTH.min, Math.min(DOCK_WIDTH.max, roomX))
+      const maxHeight = Math.max(DOCK_HEIGHT.min, Math.min(DOCK_HEIGHT.max, roomY - chrome))
+
+      const onMove = (move: PointerEvent) => {
+        const next: { width?: number; height?: number } = {}
+        if (x !== 0) {
+          const width = startWidth + 2 * x * (move.clientX - startX)
+          next.width = Math.min(maxWidth, Math.max(DOCK_WIDTH.min, width))
+        }
+        if (y) {
+          // the dock grows upward: dragging the top edge up makes it taller
+          const height = startHeight + (startY - move.clientY)
+          next.height = Math.min(maxHeight, Math.max(DOCK_HEIGHT.min, height))
+        }
+        setDockSize(next)
+      }
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove)
+        document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointercancel', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        setResizing(false)
+      }
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointercancel', onUp)
+      document.body.style.cursor = cursor
+      document.body.style.userSelect = 'none'
+      setResizing(true)
+    },
+    [box, conversation, setDockSize],
+  )
+
+  const reset = useCallback(
+    () => setDockSize({ width: DOCK_WIDTH.fallback, height: DOCK_HEIGHT.fallback }),
+    [setDockSize],
+  )
+
+  return { resizing, start, reset }
 }
 
 /** The notice opens the chat that owns the reply, including replies from another tab. */
