@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { StudioEvent } from '../../../shared/types'
 import type { HarnessMcpServer } from '../harness/adapter'
+import type { Notify } from '../notify'
 import type { AgentWorkspace } from '../workspace'
 
 import { studioCliCommand } from '../../cli'
 import { removeState, statePath, writeJson } from '../../state/store'
 import { openBridgeSession } from './routes'
+import { BRIDGE_TOOLS } from './tools'
 
 export interface Bridge {
   enabled: boolean
@@ -18,15 +19,10 @@ export interface Bridge {
   dispose(): void
 }
 
-const TOOL_ROUTES: Record<string, string> = {
-  list_domains: 'domains',
-  list_open_threads: 'threads',
-  get_domain_context: 'context',
-  reply_to_thread: 'reply',
-  resolve_thread: 'resolve',
-  post_progress: 'progress',
-  raise_question: 'raise_question',
-}
+/** Each tool the MCP server advertises, by name, to the bridge route that serves it. */
+const TOOL_ROUTES: Record<string, string> = Object.fromEntries(
+  BRIDGE_TOOLS.map((tool) => [tool.name, tool.route]),
+)
 
 let studioPort = Number(process.env.PORT) || 4319
 
@@ -42,10 +38,7 @@ const MCP_SERVER = join(import.meta.dir, 'stdio.ts')
  * The file lives in the Studio's machine-global agent folder, never in a domain. Its
  * bearer is still scoped in memory to the workspace snapshot that minted the run.
  */
-export function startBridge(
-  workspace: AgentWorkspace,
-  notify: (event: StudioEvent) => void,
-): Bridge {
+export function startBridge(workspace: AgentWorkspace, notify: Notify): Bridge {
   const token = randomUUID()
   const fileId = randomUUID()
   const session = openBridgeSession(workspace, token, notify)

@@ -240,7 +240,7 @@ export function readRunHistory(root: string, chat: StoredChat, limit = 40): Agen
     .map(({ prompt: _prompt, ...turn }) => turn)
 }
 
-/** The full transcript a fork summarizes — prompts included would be pure weight. */
+/** The full transcript a fork summarizes, every stored turn with its frozen prompt. */
 export function readChatTranscript(root: string, chat: StoredChat): AgentRun[] {
   return chatRuns(root, chat)
 }

@@ -8,9 +8,10 @@ import type {
   ChatList,
   ChatStatus,
   ConversationInfo,
-  StudioEvent,
+  QueuedMessage,
 } from '../../../shared/types'
 import type { StoredChat } from '../chats'
+import type { Notify } from '../notify'
 import type { AgentWorkspace } from '../workspace'
 
 import {
@@ -147,14 +148,30 @@ export function listChats(): ChatList {
   }
 }
 
+function unknownChat(chatId: string | undefined): { ok: false; error: string } {
+  return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
+}
+
+/** Resolve a chat and let `action` answer for it; an id no tab holds is refused. */
+function inChat<T>(
+  chatId: string | undefined,
+  action: (workspace: AgentWorkspace, chat: StoredChat) => ChatResult<T>,
+): ChatResult<T> {
+  const workspace = agentWorkspace()
+  const chat = chatOf(workspace, chatId)
+  return chat ? action(workspace, chat) : unknownChat(chatId)
+}
+
 function withChat<T>(
   chatId: string | undefined,
   run: (workspace: AgentWorkspace, chat: StoredChat) => T,
 ): ChatResult<T> {
-  const workspace = agentWorkspace()
-  const chat = chatOf(workspace, chatId)
-  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
-  return { ok: true, value: run(workspace, chat) }
+  return inChat(chatId, (workspace, chat) => ({ ok: true, value: run(workspace, chat) }))
+}
+
+/** The tab as it stands on disk now, after a change made through its id. */
+function describeLatest(workspace: AgentWorkspace, chat: StoredChat): ChatInfo {
+  return describe(workspace, chatOf(workspace, chat.id) ?? chat)
 }
 
 export function openChat(input: {
@@ -205,36 +222,28 @@ export function switchChatHarness(
 ): ChatResult<ChatInfo> {
   const target = harness.trim().toLowerCase()
   if (!hasHarness(target)) return { ok: false, error: `unknown harness: ${harness}` }
-  const workspace = agentWorkspace()
-  const source = chatOf(workspace, chatId)
-  if (!source) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
-  if (source.harness === target) return { ok: false, error: `this chat already runs ${target}` }
-
-  const live = currentRun(source.id)
-  const stored = readChatTranscript(workspace.stateRoot, source)
-  // The live turn is fresher than its stored copy, and on a first turn it is the
-  // only copy there is — a fork mid-conversation must still carry it.
-  const runs = live ? [...stored.filter((run) => run.id !== live.id), live] : stored
-  const summary = summarizeChatTranscript({
-    runs,
-    // the label, not the id: this text is read by a person in the chip as much
-    // as by the agent receiving it
-    fromHarness: getHarnessById(source.harness).label,
-    title: source.title,
+  return inChat(chatId, (workspace, source) => {
+    if (source.harness === target) return { ok: false, error: `this chat already runs ${target}` }
+    const live = currentRun(source.id)
+    const stored = readChatTranscript(workspace.stateRoot, source)
+    // The live turn is fresher than its stored copy, and on a first turn it is the
+    // only copy there is — a fork mid-conversation must still carry it.
+    const runs = live ? [...stored.filter((run) => run.id !== live.id), live] : stored
+    const summary = summarizeChatTranscript({
+      runs,
+      // the label, not the id: this text is read by a person in the chip as much
+      // as by the agent receiving it
+      fromHarness: getHarnessById(source.harness).label,
+      title: source.title,
+    })
+    const fork = forkChat(workspace.stateRoot, source, target, summary, model, workspace.uiRoot)
+    return { ok: true, value: describe(workspace, fork) }
   })
-  return {
-    ok: true,
-    value: describe(
-      workspace,
-      forkChat(workspace.stateRoot, source, target, summary, model, workspace.uiRoot),
-    ),
-  }
 }
 
 export function selectChat(chatId: string): ChatResult<ChatList> {
   const workspace = agentWorkspace()
-  if (!setActiveChat(workspace.stateRoot, chatId, workspace.uiRoot))
-    return { ok: false, error: `unknown chat: ${chatId}` }
+  if (!setActiveChat(workspace.stateRoot, chatId, workspace.uiRoot)) return unknownChat(chatId)
   return { ok: true, value: listChats() }
 }
 
@@ -248,7 +257,7 @@ export function updateChat(
     if (patch.model !== undefined) setChatModel(workspace.stateRoot, chat.id, patch.model)
     if (patch.effort !== undefined) setChatEffort(workspace.stateRoot, chat.id, patch.effort)
     if (patch.fastMode !== undefined) setChatFastMode(workspace.stateRoot, chat.id, patch.fastMode)
-    return describe(workspace, chatOf(workspace, chat.id) ?? chat)
+    return describeLatest(workspace, chat)
   })
 }
 
@@ -260,30 +269,28 @@ export function updateChat(
  * history: hiding it would imply that the agent could somehow unread it.
  */
 export function forgetChatOrigin(chatId: string): ChatResult<ChatInfo> {
-  const workspace = agentWorkspace()
-  const chat = chatOf(workspace, chatId)
-  if (!chat) return { ok: false, error: `unknown chat: ${chatId}` }
-  const cleared = clearChatHandoff(workspace.stateRoot, chat.id)
-  if (cleared === 'delivered')
-    return { ok: false, error: 'the transferred context was already sent to the agent' }
-  if (cleared === 'missing')
-    return { ok: false, error: 'this chat has no unsent transferred context' }
-  return { ok: true, value: describe(workspace, chatOf(workspace, chat.id) ?? chat) }
+  return inChat(chatId, (workspace, chat) => {
+    const cleared = clearChatHandoff(workspace.stateRoot, chat.id)
+    if (cleared === 'delivered')
+      return { ok: false, error: 'the transferred context was already sent to the agent' }
+    if (cleared === 'missing')
+      return { ok: false, error: 'this chat has no unsent transferred context' }
+    return { ok: true, value: describeLatest(workspace, chat) }
+  })
 }
 
 /** Close a tab: its turn is stopped, its transcripts and its row are removed. */
 export function closeChat(chatId: string): ChatResult<ChatList> {
-  const workspace = agentWorkspace()
-  const chat = chatOf(workspace, chatId)
-  if (!chat) return { ok: false, error: `unknown chat: ${chatId}` }
-  cancelActiveRun(chat.id)
-  // Drop the row FIRST: a turn settling a moment later then finds no chat to
-  // persist against, instead of racing the transcript cleanup below.
-  deleteChat(workspace.stateRoot, chat.id, workspace.uiRoot)
-  deleteChatRuns(workspace.stateRoot, chat)
-  deleteChatAttachments(workspace.stateRoot, chat.id)
-  forgetChat(chat.id)
-  return { ok: true, value: listChats() }
+  return withChat(chatId, (workspace, chat) => {
+    cancelActiveRun(chat.id)
+    // Drop the row FIRST: a turn settling a moment later then finds no chat to
+    // persist against, instead of racing the transcript cleanup below.
+    deleteChat(workspace.stateRoot, chat.id, workspace.uiRoot)
+    deleteChatRuns(workspace.stateRoot, chat)
+    deleteChatAttachments(workspace.stateRoot, chat.id)
+    forgetChat(chat.id)
+    return listChats()
+  })
 }
 
 /** Keep one pasted image with its chat, ready for the message it will go with. */
@@ -291,13 +298,12 @@ export function addAttachment(
   chatId: string | undefined,
   file: { name: string; bytes: Uint8Array },
 ): ChatResult<ChatAttachment> {
-  const workspace = agentWorkspace()
-  const chat = chatOf(workspace, chatId)
-  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
-  const saved = saveAttachment(workspace.stateRoot, chat.id, file)
-  return 'error' in saved
-    ? { ok: false, error: saved.error }
-    : { ok: true, value: saved.attachment }
+  return inChat(chatId, (workspace, chat) => {
+    const saved = saveAttachment(workspace.stateRoot, chat.id, file)
+    return 'error' in saved
+      ? { ok: false, error: saved.error }
+      : { ok: true, value: saved.attachment }
+  })
 }
 
 /** Where one of a chat's images is, to serve it back to the page that shows it. */
@@ -369,15 +375,14 @@ export function setSessionId(
   chatId: string | undefined,
   sessionId: string,
 ): ChatResult<AgentSessionInfo> {
-  const workspace = agentWorkspace()
-  const chat = chatOf(workspace, chatId)
-  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
-  if (isRunActive(chat.id))
-    return { ok: false, error: 'the session id cannot be changed while a turn is running' }
-  const trimmed = sessionId.trim()
-  if (trimmed) setChatSession(workspace.stateRoot, chat.id, trimmed)
-  else clearChatSession(workspace.stateRoot, chat.id)
-  return { ok: true, value: getSessionId(chat.id) }
+  return inChat(chatId, (workspace, chat) => {
+    if (isRunActive(chat.id))
+      return { ok: false, error: 'the session id cannot be changed while a turn is running' }
+    const trimmed = sessionId.trim()
+    if (trimmed) setChatSession(workspace.stateRoot, chat.id, trimmed)
+    else clearChatSession(workspace.stateRoot, chat.id)
+    return { ok: true, value: getSessionId(chat.id) }
+  })
 }
 
 /**
@@ -390,12 +395,12 @@ export function setSessionId(
  * chat rather than silently re-queued at the wrong end.
  */
 export async function submitRun(
-  notify: (event: StudioEvent) => void,
+  notify: Notify,
   options?: SubmitOpts & { chatId?: string; queue?: boolean },
 ): Promise<AgentSubmitResult> {
   const workspace = agentWorkspace()
   const chat = chatOf(workspace, options?.chatId)
-  if (!chat) return { error: `unknown chat: ${options?.chatId ?? '(active)'}` }
+  if (!chat) return { error: unknownChat(options?.chatId).error }
   // Resolved before anything else: an image the chat does not hold refuses the
   // send, rather than letting the message leave without it.
   const images = resolveAttachments(workspace.stateRoot, chat.id, options?.attachments ?? [])
@@ -451,7 +456,7 @@ export async function submitRun(
 async function runThenDrain(
   prepared: PreparedRun,
   controller: AbortController,
-  notify: (event: StudioEvent) => void,
+  notify: Notify,
 ): Promise<void> {
   try {
     await completeRun(prepared, controller, notify)
@@ -470,11 +475,7 @@ async function runThenDrain(
  * you. Nor does an INTERRUPTED one, which means the Studio process died
  * mid-turn: restarting must not replay work nobody is watching.
  */
-async function drainQueue(
-  chatId: string,
-  notify: (event: StudioEvent) => void,
-  settled: AgentRunStatus,
-): Promise<void> {
+async function drainQueue(chatId: string, notify: Notify, settled: AgentRunStatus): Promise<void> {
   if (settled !== 'succeeded' && settled !== 'failed') return
   const stateRoot = agentWorkspace().stateRoot
   const next = takeQueuedMessage(stateRoot, chatId)
@@ -482,13 +483,7 @@ async function drainQueue(
   emitStudioEvent(notify, { type: 'chats' })
   let result: AgentSubmitResult
   try {
-    result = await submitRun(notify, {
-      message: next.text,
-      comments: next.comments,
-      attachments: next.attachments?.map((attachment) => attachment.id),
-      chatId,
-      queue: false,
-    })
+    result = await submitQueued(notify, chatId, next)
   } catch (error) {
     result = { error: error instanceof Error ? error.message : String(error) }
   }
@@ -500,18 +495,34 @@ async function drainQueue(
   emitStudioEvent(notify, { type: 'chats' })
 }
 
+/**
+ * Submit a message taken off the queue. Its place was already decided, so a busy
+ * chat refuses it (`queue: false`) instead of parking it again at the back.
+ */
+function submitQueued(
+  notify: Notify,
+  chatId: string,
+  message: QueuedMessage,
+): Promise<AgentSubmitResult> {
+  return submitRun(notify, {
+    message: message.text,
+    comments: message.comments,
+    attachments: message.attachments?.map((attachment) => attachment.id),
+    chatId,
+    queue: false,
+  })
+}
+
 /** Resolve a chat, change its queue, and answer with the tab as it now stands. */
 function withQueue(
   chatId: string | undefined,
   change: (stateRoot: string, chat: StoredChat) => string | undefined,
 ): ChatResult<ChatInfo> {
-  const workspace = agentWorkspace()
-  const chat = chatOf(workspace, chatId)
-  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
-  const error = change(workspace.stateRoot, chat)
-  if (error) return { ok: false, error }
-  const updated = chatOf(workspace, chat.id) ?? chat
-  return { ok: true, value: describe(workspace, updated) }
+  return inChat(chatId, (workspace, chat) => {
+    const error = change(workspace.stateRoot, chat)
+    if (error) return { ok: false, error }
+    return { ok: true, value: describeLatest(workspace, chat) }
+  })
 }
 
 /** Rewrite a message that has not been sent yet. */
@@ -562,13 +573,13 @@ export function moveQueued(
  * wheel), which is what keeps this from sending two messages at once.
  */
 export async function sendQueuedNow(
-  notify: (event: StudioEvent) => void,
+  notify: Notify,
   chatId: string | undefined,
   messageId: string,
 ): Promise<ChatResult<AgentSubmitResult>> {
   const workspace = agentWorkspace()
   const chat = chatOf(workspace, chatId)
-  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
+  if (!chat) return unknownChat(chatId)
   const message = takeQueuedMessage(workspace.stateRoot, chat.id, messageId)
   if (!message) return { ok: false, error: `unknown queued message: ${messageId}` }
   emitStudioEvent(notify, { type: 'chats' })
@@ -581,12 +592,6 @@ export async function sendQueuedNow(
   cancelActiveRun(chat.id)
   if (!(await waitUntilIdle(chat.id)))
     return restore('the running turn did not stop — try again in a moment')
-  const result = await submitRun(notify, {
-    message: message.text,
-    comments: message.comments,
-    attachments: message.attachments?.map((attachment) => attachment.id),
-    chatId: chat.id,
-    queue: false,
-  })
+  const result = await submitQueued(notify, chat.id, message)
   return result.error ? restore(result.error) : { ok: true, value: result }
 }
