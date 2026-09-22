@@ -1,6 +1,6 @@
 import type { ChatInfo } from '@shared/types'
 
-import { Bolt } from 'lucide-react'
+import { Zap } from 'lucide-react'
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/misc'
 import { useChatMutations } from '@/lib/chats'
@@ -36,7 +36,7 @@ export function ChatFastToggle({ chat }: { chat?: ChatInfo }) {
               : 'text-muted-foreground hover:bg-accent hover:text-foreground',
           )}
         >
-          <Bolt className={cn('h-3.5 w-3.5', enabled && 'fill-current')} />
+          <Zap className={cn('h-3.5 w-3.5', enabled && 'fill-current')} />
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">

@@ -85,6 +85,26 @@ test('the meter reads the level the ACP session is actually on', () => {
   expect(html.match(/w-\[2px\]/g)?.length).toBe(6)
 })
 
+test('the meter rises in even steps, whatever the ladder’s length', () => {
+  // A rounded ramp made the rungs uneven on every length the range does not divide —
+  // six came out 5·7·8·9·11·12, which reads as a broken meter rather than a rising one.
+  for (const length of [2, 3, 4, 5, 6]) {
+    const ladder: HarnessLoadout = {
+      ...probed,
+      effort: 'low',
+      efforts: probed.efforts!.slice(0, length),
+    }
+    const heights = [...render(ladder).matchAll(/height:\s*([\d.]+)px/g)].map((match) =>
+      Number(match[1]),
+    )
+    expect(heights).toHaveLength(length)
+    expect(heights[0]).toBe(5)
+    expect(heights.at(-1)).toBe(12)
+    const steps = heights.slice(1).map((height, index) => height - heights[index]!)
+    for (const step of steps) expect(step).toBeCloseTo(steps[0]!, 6)
+  }
+})
+
 test('a level pinned on the chat outranks the agent’s own', () => {
   expect(render(probed, { ...chat, effort: 'max' })).toContain('Reasoning: Max')
 })

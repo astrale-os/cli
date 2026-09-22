@@ -2,10 +2,22 @@ import type { DomainIntrospectionTiming, DomainSummary, StudioSchemaBundle } fro
 
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Command } from 'cmdk'
-import { AppWindow, ArrowRight, Box, Folder, Globe, Loader2, Plug, Spline, Tag } from 'lucide-react'
+import {
+  AppWindow,
+  ArrowRight,
+  Box,
+  Braces,
+  Folder,
+  Globe,
+  Loader2,
+  Plug,
+  Spline,
+  Tag,
+} from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 import { api, qk } from '@/lib/api'
+import { buildFunctionsModel } from '@/lib/functions'
 import { useWorkspace } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
 import { type SectionKey, useUI } from '@/lib/store'
@@ -23,12 +35,16 @@ const SECTIONS: { key: SectionKey; label: string }[] = [
 
 /** The domain-level overviews. They open in the schema section's right panel —
  *  reachable from here rather than from a permanent row of canvas buttons. */
-const OVERVIEWS: { key: 'domains' | 'views' | 'integrations'; label: string; icon: typeof Box }[] =
-  [
-    { key: 'domains', label: 'Imported domains', icon: Globe },
-    { key: 'views', label: 'Views', icon: AppWindow },
-    { key: 'integrations', label: 'Integrations', icon: Plug },
-  ]
+const OVERVIEWS: {
+  key: 'domains' | 'views' | 'functions' | 'integrations'
+  label: string
+  icon: typeof Box
+}[] = [
+  { key: 'domains', label: 'Imported domains', icon: Globe },
+  { key: 'views', label: 'Views', icon: AppWindow },
+  { key: 'functions', label: 'Functions', icon: Braces },
+  { key: 'integrations', label: 'Integrations', icon: Plug },
+]
 
 /** Summarise a JSON Schema property type for the muted meta column. */
 function propTypeLabel(
@@ -84,6 +100,13 @@ interface SearchIndex {
     meta: string
   }>
   edges: Array<{ domainId: string; domainLabel: string; name: string; value: string; meta: string }>
+  functions: Array<{
+    domainId: string
+    domainLabel: string
+    name: string
+    value: string
+    meta: string
+  }>
   properties: Array<{
     domainId: string
     domainLabel: string
@@ -111,6 +134,7 @@ interface CachedDomainIndex {
 const emptySearchIndex = (): SearchIndex => ({
   classes: [],
   edges: [],
+  functions: [],
   properties: [],
   modules: [],
 })
@@ -160,6 +184,9 @@ export class PaletteSearchIndexCache {
         .flatMap((entry) => entry.classes)
         .sort((a, b) => a.value.localeCompare(b.value)),
       edges: indexes.flatMap((entry) => entry.edges).sort((a, b) => a.value.localeCompare(b.value)),
+      functions: indexes
+        .flatMap((entry) => entry.functions)
+        .sort((a, b) => a.value.localeCompare(b.value)),
       properties: indexes
         .flatMap((entry) => entry.properties)
         .sort((a, b) => a.value.localeCompare(b.value)),
@@ -208,7 +235,7 @@ function loadingDetail(
 
 function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): SearchIndex {
   const ir = bundle?.ir
-  if (!ir || !bundle) return { classes: [], edges: [], properties: [], modules: [] }
+  if (!ir || !bundle) return emptySearchIndex()
   const base = { domainId: domain.id, domainLabel: domain.origin }
 
   const classes = Object.values(ir.classes)
@@ -245,6 +272,19 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
       }
     })
 
+  // A standalone Function is a schema member like any other: findable by its own name,
+  // not only through the domain's Functions overview.
+  const functions = buildFunctionsModel(bundle).all.map((fn) => {
+    const worksOn = fn.boundClasses.join(' ')
+    const kind = fn.link?.kind ?? 'contract'
+    return {
+      ...base,
+      name: fn.name,
+      value: `${domain.origin} function ${fn.name} ${kind} ${worksOn}`,
+      meta: [domain.origin, kind, worksOn].filter(Boolean).join(' · '),
+    }
+  })
+
   const properties: SearchIndex['properties'] = []
   for (const candidate of Object.values(ir.classes)) {
     if (candidate.type !== 'node') continue
@@ -272,7 +312,7 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
     }
   })
 
-  return { classes, edges, properties, modules }
+  return { classes, edges, functions, properties, modules }
 }
 
 export function CommandPalette() {
@@ -394,6 +434,27 @@ export function CommandPalette() {
                 }}
               >
                 <Row icon={Box} label={c.name} meta={c.meta} />
+              </Command.Item>
+            ))}
+          </Command.Group>
+        )}
+
+        {index.functions.length > 0 && (
+          <Command.Group heading="Functions">
+            {index.functions.map((f) => (
+              <Command.Item
+                key={`${f.domainId}:function.${f.name}`}
+                value={f.value}
+                className={ITEM_CLS}
+                onSelect={() => {
+                  setSection('schema')
+                  showDomain(f.domainId)
+                  focusClass(`function.${f.name}`, f.domainId)
+                  revealOnCanvas(`function.${f.name}`)
+                  close()
+                }}
+              >
+                <Row icon={Braces} label={f.name} meta={f.meta} />
               </Command.Item>
             ))}
           </Command.Group>

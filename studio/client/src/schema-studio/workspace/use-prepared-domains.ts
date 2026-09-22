@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { buildFunctionsModel } from '@/lib/functions'
 import { buildViewsModel } from '@/lib/views'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
+import { functionGraphKey } from '../function-graph'
 import { viewGraphKey } from '../view-graph'
 import { prepareWorkspaceDomain, type WorkspaceDomainProjection } from './projection'
 
@@ -17,6 +19,10 @@ export function domainPreparationKey(
     input.bundle.renderFingerprint,
     // Views come from anatomy, which the render fingerprint does not cover.
     viewGraphKey(buildViewsModel(input.anatomy, input.bundle)),
+    // A Function's own declaration IS covered by the fingerprint, but the Action or
+    // Workflow wired to it lives in the overlay, which is not — and that is the glyph
+    // its pill wears.
+    functionGraphKey(buildFunctionsModel(input.bundle)),
     Object.keys(input.visibility.hidden).sort().join(','),
     input.visibility.showInheritedEdges,
     Object.entries(input.layout.positions)

@@ -5,7 +5,12 @@
  * is owned by `../schema/identity`; SDK admission owns schema semantics.
  */
 
-import type { IrClassKey, IrClassRef, IrSchemaRef } from '../schema/identity'
+import {
+  isIrClassRef,
+  type IrClassKey,
+  type IrClassRef,
+  type IrSchemaRef,
+} from '../schema/identity'
 
 export interface JsonSchema {
   type?: string | string[]
@@ -27,6 +32,21 @@ const NODE_PATH_SCHEMA_ID = 'https://schemas.astrale.ai/graph/1/node-path'
 /** Structural form emitted by the V1 DSL for a graph Node path. */
 export function isNodePathSchema(schema: JsonSchema): boolean {
   return schema.$ref === NODE_PATH_SCHEMA_ID && Object.hasOwn(schema, 'x-astrale-path')
+}
+
+/**
+ * The Classes a Node path value schema accepts, as exact Definition coordinates.
+ *
+ * `x-astrale-path.accepts` is where the V1 DSL records what a `→node` field may point
+ * at, and it is the only place a standalone Function names the Classes it works on —
+ * a Function declares no receiver, so this is what ties it to the schema.
+ */
+export function nodePathAccepts(schema: JsonSchema): IrClassRef[] {
+  if (!isNodePathSchema(schema)) return []
+  const path = schema['x-astrale-path']
+  if (typeof path !== 'object' || path === null) return []
+  const accepts = (path as { accepts?: unknown }).accepts
+  return Array.isArray(accepts) ? accepts.filter(isIrClassRef) : []
 }
 
 /** Portable form of the DSL-owned canonical schema revision. */

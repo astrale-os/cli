@@ -156,15 +156,17 @@ export const schema = defineSchema('example.dev', {
           properties: { note: property(z.string()) },
         })
         export const createIssue = fn({ input, output })
+        /** Close one issue. */
+        export const closeIssue = func({ input, output })
       `,
     )
     writeFileSync(
       join(schemaDir, 'index.ts'),
       `
-        import { Issue, assigned_to, createIssue } from './members.js'
+        import { Issue, assigned_to, closeIssue, createIssue } from './members.js'
         export const Schema = defineSchema('issues.example', {
           classes: { Issue, assigned_to },
-          functions: { createIssue },
+          functions: { createIssue, closeIssue },
         })
       `,
     )
@@ -175,5 +177,8 @@ export const schema = defineSchema('example.dev', {
     expect(spans['edge.assigned_to.endpoint.owner']?.file).toBe('domain/model/members.ts')
     expect(spans['edge.assigned_to.property.note']?.file).toBe('domain/model/members.ts')
     expect(spans['function.createIssue']?.file).toBe('domain/model/members.ts')
+    // `func` is the current DSL helper; its Function needs the same span and doc.
+    expect(spans['function.closeIssue']?.file).toBe('domain/model/members.ts')
+    expect(spans['function.closeIssue']?.doc).toBe('Close one issue.')
   })
 })

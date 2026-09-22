@@ -10,6 +10,7 @@ import { concreteAnchorKind } from '@shared/comment-anchors'
  *   domain.<origin>                       a whole domain (its frame, its row in the rail)
  *   section.<id>                          a whole tab (the schema canvas, env…)
  *   view.<slug>                           a declared domain view (Views panel rows)
+ *   function.<name>                       a standalone domain Function (no receiver)
  *   module.<path>                         a file/folder grouping of members
  *   class|edge.<Name>                     a member
  *   class|edge.<Name>.property|method|endpoint.<x>             a member's field
@@ -123,7 +124,7 @@ export function encodeFlowEdgeId(
 /** Convert a class/module React Flow id to the target ref used by comments and Ask. */
 export function flowNodeAnchorRef(nodeId: string): string | null {
   const { localId } = decodeFlowNodeId(nodeId)
-  if (localId.startsWith('class.')) return localId
+  if (localId.startsWith('class.') || localId.startsWith('function.')) return localId
   if (localId.startsWith('grp-')) return `module.${localId.slice('grp-'.length)}`
   return null
 }
@@ -179,7 +180,7 @@ export function locateTargetElement(
   domainId: string,
   ref: string,
 ): HTMLElement | null {
-  if (ref.startsWith('class.') || ref.startsWith('module.')) {
+  if (ref.startsWith('class.') || ref.startsWith('module.') || ref.startsWith('function.')) {
     for (const element of root.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')) {
       const id = element.dataset.id ?? ''
       const identity = decodeFlowNodeId(id)

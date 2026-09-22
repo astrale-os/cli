@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo } from 'react'
 
 import { ScrollArea } from '@/components/ui/misc'
 import { api, qk } from '@/lib/api'
+import { buildFunctionsModel } from '@/lib/functions'
 import { useWorkspace } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
 import { useUI } from '@/lib/store'
@@ -16,12 +17,14 @@ import { buildViewsModel } from '@/lib/views'
 import { SchemaDetail } from '../detail'
 import { DomainsPanel } from '../domains-panel'
 import { DomainsRailHeader } from '../domains-rail'
+import { FunctionsPanel } from '../functions-panel'
 import { IntegrationsPanel } from '../integrations-panel'
 import { PanelShell } from '../panel-shell'
 import { SchemaPolicyDetail } from '../policy-detail'
 import { ModulesSidebar } from '../sidebar'
 import { ViewsPanel } from '../views-panel'
 import { toggleVisibilityRef } from '../visibility'
+import { WorkspaceFunctionsPanel } from './functions-panel'
 import { WorkspaceSchemaGraph } from './graph'
 import { useSchemaWorkspace } from './store'
 import { WorkspaceDomainTree } from './tree'
@@ -172,6 +175,18 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
               />
             ) : (
               <WorkspaceViewsPanel inputs={inputs} />
+            )}
+          </PanelShell>
+        ) : panelOverlay?.kind === 'functions' ? (
+          <PanelShell onClose={() => setPanelOverlay(null)}>
+            {overlayInput ? (
+              <FunctionsPanel
+                domainId={overlayInput.summary.id}
+                model={buildFunctionsModel(overlayInput.bundle)}
+                bundle={overlayInput.bundle}
+              />
+            ) : (
+              <WorkspaceFunctionsPanel inputs={inputs} />
             )}
           </PanelShell>
         ) : panelOverlay?.kind === 'domains' && overlayInput ? (

@@ -2,17 +2,21 @@ import type { IrClassRef, StudioSchemaBundle } from '@shared/types'
 
 import { classRefKey, parseClassRefKey } from '@shared/types'
 import { Box, MousePointerClick, Spline } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+
+import type { FunctionModel } from '@/lib/functions'
 
 import { AnchorButton } from '@/components/anchor'
 import { PolicyLink } from '@/components/policy-link'
 import { Chip, DescriptionText, EmptyState, Group, IconTile } from '@/components/studio-kit'
+import { buildFunctionsModel, functionGlyph, functionsForClass } from '@/lib/functions'
 import { useViewsModel } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { anchorData, schemaMemberRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 import { viewsForClass } from '@/lib/views'
 
+import { FunctionRow } from '../functions-panel'
 import { ancestryOfClass, isKernelClass, resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
@@ -29,6 +33,7 @@ export function SchemaDetail({
 }) {
   const ir = bundle.ir
   const viewsModel = useViewsModel(bundle.domainId)
+  const functionsModel = useMemo(() => buildFunctionsModel(bundle), [bundle])
 
   if (!ir || !selected) {
     return (
@@ -43,17 +48,9 @@ export function SchemaDetail({
   }
   if (selected.startsWith('function.')) {
     const name = selected.slice('function.'.length)
-    const callable = ir.functions[name]
-    return callable ? (
-      <div className="h-full overflow-y-auto p-5" {...anchorData(selected, name)}>
-        <h2 className="mb-4 pr-8 text-[15px] font-semibold">{name}</h2>
-        <CallableDetail
-          bundle={bundle}
-          owner={ir.domain}
-          method={callable}
-          doc={bundle.overlay.sourceSpans[selected]?.doc ?? callable.description}
-        />
-      </div>
+    const model = functionsModel.all.find((entry) => entry.name === name)
+    return model ? (
+      <FunctionDetail bundle={bundle} model={model} selected={selected} />
     ) : (
       <EmptyState title="Not found" hint={selected} />
     )
@@ -99,6 +96,10 @@ export function SchemaDetail({
   const lists = memberLists(bundle, name, member, local && !isEdge)
   const ancestry = ancestryOfClass(bundle, member.extendsRefs ?? [])
   const classViews = local && !isEdge ? viewsForClass(viewsModel, name) : []
+  // Standalone Functions that name this Class. A Method is declared ON the Class and reads
+  // as one of its members; a Function merely works on it, so it sits with the Views —
+  // the other things that point AT a Class without belonging to it.
+  const classFunctions = local && !isEdge ? functionsForClass(functionsModel, name) : []
 
   return (
     <div
@@ -227,9 +228,130 @@ export function SchemaDetail({
           </Group>
         )}
 
+        {classFunctions.length > 0 && (
+          <Group label="Functions" hint="declared outside this class">
+            <div className="flex flex-col gap-0.5">
+              {classFunctions.map((fn) => (
+                <FunctionRow key={fn.name} domainId={bundle.domainId} fn={fn} />
+              ))}
+            </div>
+          </Group>
+        )}
+
         {lists.properties.length === 0 && lists.methods.length === 0 && !isEdge && (
           <EmptyState title="No properties or methods" hint="This Class declares no own members." />
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A standalone Function, read on its own page.
+ *
+ * It answers the three questions a Class card answers for a Method, in the same order:
+ * what it IS (the header, with how it is implemented), what it WORKS ON (the Classes its
+ * Node-path fields accept, each one a click away) and its CONTRACT (the shared callable
+ * sheet — Policy, Input, Returns).
+ */
+function FunctionDetail({
+  bundle,
+  model,
+  selected,
+}: {
+  bundle: StudioSchemaBundle
+  model: FunctionModel
+  selected: string
+}) {
+  const selectClass = useUI((state) => state.selectClass)
+  const Glyph = functionGlyph(model)
+  const calls = model.link?.kernelCalls ?? []
+  return (
+    <div
+      data-comment-outline-inset=""
+      className="h-full overflow-y-auto"
+      {...anchorData(selected, model.name)}
+    >
+      <div className="space-y-6 px-5 py-5">
+        <header className="space-y-3">
+          <div className="flex items-start gap-3 pr-8">
+            <IconTile tone="fn" size="lg">
+              <Glyph />
+            </IconTile>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-[15px] font-semibold tracking-tight">{model.name}</h2>
+                <Chip tone="outline">function</Chip>
+                <AnchorButton
+                  domainId={bundle.domainId}
+                  anchorRef={{
+                    ref: selected,
+                    kind: 'schema',
+                    ...(model.file ? { file: model.file } : {}),
+                  }}
+                  excerpt={model.name}
+                  className="ml-auto"
+                />
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {model.link ? (
+                  <Chip tone="primary">{model.link.kind}</Chip>
+                ) : (
+                  <Chip tone="fn">contract only</Chip>
+                )}
+                {model.contractOnly && <Chip tone="warning">needs handler</Chip>}
+                {model.link?.unlinked && <Chip tone="default">unlinked</Chip>}
+                {calls.map((call) => (
+                  <Chip key={call} tone="outline" className="font-mono">
+                    {call}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* What it works on, as the Classes themselves — the one thing a Function's own
+            declaration does not say out loud, and the reason it has a place on the canvas. */}
+        {model.refs.length > 0 && (
+          <Group label="Works on">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {model.refs.map((ref) => {
+                const isLocal = ref.origin === bundle.ir?.domain
+                return (
+                  <button
+                    key={classRefKey(ref)}
+                    type="button"
+                    title={isLocal ? `Open ${ref.name}` : `${ref.name} (${ref.origin})`}
+                    onClick={() =>
+                      selectClass(
+                        isLocal ? `class.${ref.name}` : `class.${classRefKey(ref)}`,
+                        bundle.domainId,
+                      )
+                    }
+                    className="rounded-full"
+                  >
+                    <Chip
+                      tone="outline"
+                      className="transition-colors hover:border-foreground/40 hover:text-foreground"
+                    >
+                      {ref.name}
+                    </Chip>
+                  </button>
+                )
+              })}
+            </div>
+          </Group>
+        )}
+
+        <Group label="Contract">
+          <CallableDetail
+            bundle={bundle}
+            owner={bundle.ir?.domain ?? ''}
+            method={model.fn}
+            doc={model.doc}
+          />
+        </Group>
       </div>
     </div>
   )
