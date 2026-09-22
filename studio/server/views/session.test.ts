@@ -63,6 +63,7 @@ describe('view session runtime', () => {
         instance: 'local',
         timeoutMs: 20_000,
         allowIdentity: ['alice', 'bob'],
+        idleMs: 8 * 60 * 60_000,
         serveRuntime: { file: '/cli/astrale', args: [] },
       },
     ])

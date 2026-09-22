@@ -6,8 +6,8 @@ import type {
 } from '../../shared/types'
 
 import {
-  closeStudioViewSession,
   openStudioViewSession,
+  releaseStudioViewSession,
   studioViewIdentityNames,
 } from '../../../src/lib/view/studio-runtime'
 import { studioCliCommand } from '../cli'
@@ -17,9 +17,18 @@ import { rememberTarget } from './selection-repository'
 
 export { conciseCliFailure } from '../cli'
 
+/**
+ * Idle budget for a Studio-opened session. Studio releases a session as soon as
+ * its dialog closes, so this is only the net for a page that stopped reporting
+ * without leaving: a tab the browser froze in the background, a machine that
+ * slept. Hours, not minutes, because the tab an operator popped a View out into
+ * has to survive an afternoon behind other windows.
+ */
+const STUDIO_VIEW_IDLE_MS = 8 * 60 * 60_000
+
 interface ViewSessionDependencies {
   activeInstance: typeof activeInstanceName
-  close: typeof closeStudioViewSession
+  release: typeof releaseStudioViewSession
   open: typeof openStudioViewSession
   readPreparation: typeof readViewPreparation
   identityNames: typeof studioViewIdentityNames
@@ -110,6 +119,7 @@ export async function launchViewSession(
         ...(target ? { targetRef: target.ref } : {}),
         instance,
         allowIdentity: identities,
+        idleMs: STUDIO_VIEW_IDLE_MS,
         timeoutMs: Math.max(20_000, timeoutMs + 12_000),
         serveRuntime: (dependencies.serveRuntime ?? studioViewServeRuntime)(),
       }),
@@ -132,12 +142,22 @@ export async function launchViewSession(
   return session
 }
 
-export async function closeViewSession(
+/**
+ * Hand a session back on behalf of one Studio page. Never a close: the operator
+ * may have opened this View in a tab of their own, and that tab holds the
+ * session on its own account.
+ */
+export async function releaseViewSession(
   sessionId: string,
-  dependencies: Pick<Partial<ViewSessionDependencies>, 'close'> = {},
+  page: string | undefined,
+  dependencies: Pick<Partial<ViewSessionDependencies>, 'release'> = {},
 ): Promise<{ ok: true }> {
   if (!/^v-[0-9a-f]+$/.test(sessionId)) return { ok: true }
-  await (dependencies.close ?? closeStudioViewSession)(sessionId)
+  // The page id is the browser's, so it is bounded here rather than in the
+  // CLI-owned session it reaches. Releasing without one still hands the session
+  // back; only its own page stays attached until it goes quiet.
+  const named = page !== undefined && /^[A-Za-z0-9-]{1,64}$/.test(page) ? page : undefined
+  await (dependencies.release ?? releaseStudioViewSession)(sessionId, named)
   return { ok: true }
 }
 

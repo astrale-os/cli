@@ -498,6 +498,7 @@ describe('View CLI orchestration', () => {
         instance: 'staging',
         allowIdentity: ['alice', 'bob'],
         timeoutMs: 20_000,
+        idleMs: 8 * 60 * 60_000,
         serveRuntime: { file: '/cli/astrale', args: [] },
       },
     ])

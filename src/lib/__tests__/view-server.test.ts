@@ -260,3 +260,184 @@ describe('view session server credentials', () => {
     }
   })
 })
+
+describe('view session ownership', () => {
+  const GRACE_MS = 30
+
+  function attachedConfig(nonce: string): ViewServeConfig {
+    return {
+      session: {
+        id: `v-${nonce}`,
+        pid: 0,
+        port: 0,
+        nonce,
+        pageUrl: '',
+        view: {
+          target: target('/:example.test'),
+          route: {
+            key: 'example.test:view.public',
+            declaration: { target: { kind: 'domain' } },
+            href: 'https://example.test/ui/public',
+            handshake: 'none',
+            issuer: issuer('https://example.test'),
+            etag: digest('a'),
+            revision: revision('b'),
+          },
+        },
+        createdAt: '2026-08-20T00:00:00.000Z',
+      },
+      kernel: {},
+      proxy: { kernelUrl: 'https://kernel.test', issuer: 'https://kernel.test', direct: true },
+      externalOrigins: [],
+      // Long enough that nothing here can be the idle rule firing by accident.
+      idleMs: 600_000,
+      releaseGraceMs: GRACE_MS,
+    } satisfies ViewServeConfig
+  }
+
+  /** Give the release grace room to elapse, then let its timer run. */
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 4))
+  }
+
+  function started(nonce: string) {
+    const exit = mock((_code: number) => undefined)
+    const server = startViewServer(attachedConfig(nonce), {
+      connect: (async () => {
+        throw new Error('This View mints nothing')
+      }) as unknown as typeof withClientSession,
+      exit,
+    })
+    const call = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+      fetch(`${address(server)}/s/${nonce}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+      })
+    return { server, exit, call }
+  }
+
+  test('a released session outlives its host while another page holds it', async () => {
+    const { server, exit, call } = started('popped-out')
+    await once(server, 'listening')
+
+    try {
+      // The dialog Studio mounted, and the tab the operator popped the View into.
+      expect((await call('/status', { state: 'alive', page: 'studio-dialog' })).status).toBe(200)
+      expect((await call('/status', { state: 'alive', page: 'operator-tab' })).status).toBe(200)
+
+      const released = await call(
+        '/release',
+        { page: 'studio-dialog' },
+        { 'x-astrale-view-host': '1' },
+      )
+      expect(released.status).toBe(200)
+      expect(await released.json()).toEqual({ released: true, attached: 1 })
+
+      await settle()
+      expect(exit).not.toHaveBeenCalled()
+      // The tab is still served, which is the whole point of releasing.
+      expect((await call('/status', { state: 'alive', page: 'operator-tab' })).status).toBe(200)
+
+      // It ends when that tab goes, not before.
+      expect((await call('/status', { state: 'gone', page: 'operator-tab' })).status).toBe(200)
+      await settle()
+      expect(exit).toHaveBeenCalledWith(0)
+    } finally {
+      server.close()
+    }
+  })
+
+  test('a page a host handed back cannot take the session back', async () => {
+    const { server, exit, call } = started('raced')
+    await once(server, 'listening')
+
+    try {
+      await call('/status', { state: 'alive', page: 'studio-dialog' })
+      await call('/release', { page: 'studio-dialog' }, { 'x-astrale-view-host': '1' })
+      // The heartbeat the dialog had already sent when the dialog went away.
+      const late = await call('/status', { state: 'alive', page: 'studio-dialog' })
+      expect(late.status).toBe(200)
+
+      await settle()
+      expect(exit).toHaveBeenCalledWith(0)
+    } finally {
+      server.close()
+    }
+  })
+
+  test('a released session with no page left shuts down', async () => {
+    const { server, exit, call } = started('unheld')
+    await once(server, 'listening')
+
+    try {
+      await call('/status', { state: 'alive', page: 'studio-dialog' })
+      await call('/release', { page: 'studio-dialog' }, { 'x-astrale-view-host': '1' })
+      await settle()
+      expect(exit).toHaveBeenCalledWith(0)
+    } finally {
+      server.close()
+    }
+  })
+
+  test('a page that comes back within the grace keeps the session', async () => {
+    const { server, exit, call } = started('reloaded')
+    await once(server, 'listening')
+
+    try {
+      await call('/status', { state: 'alive', page: 'operator-tab' })
+      await call('/release', {}, { 'x-astrale-view-host': '1' })
+      // A reload: the page leaves and the fresh load reports under a new id.
+      await call('/status', { state: 'gone', page: 'operator-tab' })
+      await call('/status', { state: 'alive', page: 'operator-tab-reloaded' })
+
+      await settle()
+      expect(exit).not.toHaveBeenCalled()
+    } finally {
+      server.close()
+    }
+  })
+
+  test('a page leaving a session nobody released only leaves it idle', async () => {
+    const { server, exit, call } = started('terminal')
+    await once(server, 'listening')
+
+    try {
+      // `astrale view` has no host to release the session: the idle budget alone ends it.
+      await call('/status', { state: 'alive', page: 'agent-browser' })
+      await call('/status', { state: 'gone', page: 'agent-browser' })
+      await settle()
+      expect(exit).not.toHaveBeenCalled()
+    } finally {
+      server.close()
+    }
+  })
+
+  test('releasing is refused to anything but the View host', async () => {
+    const { server, exit, call } = started('guarded')
+    await once(server, 'listening')
+
+    try {
+      const response = await call('/release', { page: 'operator-tab' })
+      expect(response.status).toBe(403)
+      await settle()
+      expect(exit).not.toHaveBeenCalled()
+    } finally {
+      server.close()
+    }
+  })
+
+  test('leaving does not become the state a snapshot run waits on', async () => {
+    const { server, call } = started('reported')
+    await once(server, 'listening')
+
+    try {
+      await call('/status', { state: 'connected', page: 'operator-tab' })
+      await call('/status', { state: 'gone', page: 'operator-tab' })
+      const state = await (await fetch(`${address(server)}/s/reported/state`)).json()
+      expect(state).toMatchObject({ state: 'connected' })
+    } finally {
+      server.close()
+    }
+  })
+})

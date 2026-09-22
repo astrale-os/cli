@@ -45,7 +45,18 @@ export type ViewServeConfig = {
   externalOrigins: readonly string[]
   /** Local identities explicitly allowed by the operator for this View session. */
   identities?: readonly string[]
+  /**
+   * Budget for a session no page reports on any more. It is the net under the
+   * page-attachment rule, not the ordinary way a session ends: a browser that
+   * froze the tab or a machine that slept stops the heartbeat without the page
+   * ever leaving.
+   */
   idleMs: number
+  /**
+   * How long a released session waits after its last page leaves. A reload
+   * leaves and comes back, so the grace has to outlast one.
+   */
+  releaseGraceMs?: number
 }
 
 export const recordPath = (id: string, directory = VIEW_DIR): string =>

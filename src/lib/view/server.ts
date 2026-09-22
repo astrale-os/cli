@@ -26,8 +26,15 @@ export { ensureViewerAssets, viewerDistDir } from './assets'
  * credentials, receives its lifecycle reports, and proxies the view's kernel
  * calls (one mechanism for CORS, self-signed local CAs, and keeping the kernel
  * origin out of the page). Everything is nonce-scoped under `/s/<nonce>/`;
- * loopback-only. Exits after `idleMs` without a request — the host page's
- * heartbeat keeps a live session alive.
+ * loopback-only.
+ *
+ * A session belongs to the pages attached to it, never to whoever opened it.
+ * Each page announces itself on every heartbeat and says goodbye when it goes,
+ * so a host that is done with a session (Studio closing its dialog) releases it
+ * rather than killing it: the server then shuts down once the last page has
+ * left, and a View the operator opened in its own tab outlives the dialog it
+ * came from. `idleMs` remains the net under that rule, for a page that stopped
+ * reporting without ever leaving.
  */
 
 const VIEW_TOKEN_TTL_SECONDS = 4 * 60
@@ -39,6 +46,12 @@ const VIEW_TOKEN_TTL_SECONDS = 4 * 60
 export const VIEW_DELEGATION_TTL_SECONDS = 60
 const FALLBACK_TOKEN_TTL_MS = VIEW_TOKEN_TTL_SECONDS * 1_000
 const IDLE_SWEEP_MS = 60_000
+/**
+ * Grace between the last page leaving a released session and the shutdown. A
+ * reload leaves and comes back within a fraction of this on loopback; anything
+ * that has not come back by then is not coming back.
+ */
+const RELEASE_GRACE_MS = 10_000
 
 export type PageStatus = { state: string; error?: string; at: string }
 
@@ -50,6 +63,8 @@ export interface ViewServerDependencies {
   readonly connect: typeof withClientSession
   readonly exchange?: typeof exchangeViewCredential
   readonly persist?: typeof saveRecord
+  /** Seam for the tests: the shutdown path ends the process in production. */
+  readonly exit?: (code: number) => void
 }
 
 const DEFAULT_DEPENDENCIES: ViewServerDependencies = Object.freeze({
@@ -71,6 +86,18 @@ export function startViewServer(
   let revision = 0
   let refreshing: Promise<void> | undefined
   let switching = false
+  /** Pages currently holding this session, by the id each one reports. */
+  const pages = new Map<string, number>()
+  /**
+   * Pages a host has handed back. A release races the last heartbeat the page
+   * had already sent, and a page that came back that way would hold the session
+   * for its whole idle budget without anything left to report it gone.
+   */
+  const dropped = new Set<string>()
+  /** Set once a host hands the session back; from then on the pages alone hold it. */
+  let released = false
+  let departure: ReturnType<typeof setTimeout> | undefined
+  const exit = dependencies.exit ?? ((code: number) => process.exit(code))
 
   async function switchIdentity(identity: string): Promise<void> {
     const kernel = { ...config.kernel, as: identity, creds: undefined }
@@ -279,10 +306,36 @@ export function startViewServer(
     }
     if (sub === '/status' && req.method === 'POST') {
       const body = await readJson(req)
-      if (body && typeof body.state === 'string' && body.state !== 'alive') {
-        status = { state: body.state, error: asString(body.error), at: new Date().toISOString() }
+      const page = asString(body?.page)
+      const state = asString(body?.state)
+      if (page !== undefined) {
+        if (state === 'gone') depart(page)
+        else attach(page)
+      }
+      // `gone` is the page leaving, not a state the View reached, so it never
+      // becomes the status a `--snapshot` run is waiting on.
+      if (state !== undefined && state !== 'alive' && state !== 'gone') {
+        status = { state, error: asString(body?.error), at: new Date().toISOString() }
       }
       json(res, 200, { revision })
+      return
+    }
+    if (sub === '/release' && req.method === 'POST') {
+      // Releasing decides the session's lifetime, so it stays with the loopback
+      // host that opened it and never reaches the embedded View.
+      if (req.headers['x-astrale-view-host'] !== '1') {
+        json(res, 403, { error: 'This operation is restricted to the View host.' })
+        return
+      }
+      const body = await readJson(req)
+      const page = asString(body?.page)
+      released = true
+      if (page !== undefined) {
+        pages.delete(page)
+        dropped.add(page)
+      }
+      scheduleDeparture()
+      json(res, 200, { released: true, attached: pages.size })
       return
     }
     if (sub === '/refresh' && req.method === 'POST') {
@@ -355,6 +408,34 @@ export function startViewServer(
     }
   }
 
+  /** A page is holding the session; anything scheduled against its absence is off. */
+  function attach(page: string): void {
+    if (dropped.has(page)) return
+    pages.set(page, Date.now())
+    if (departure === undefined) return
+    clearTimeout(departure)
+    departure = undefined
+  }
+
+  function depart(page: string): void {
+    pages.delete(page)
+    scheduleDeparture()
+  }
+
+  /**
+   * A released session with no page left is nobody's. Shut it down once the
+   * grace has passed without a page taking it back: a reload leaves and returns,
+   * and so does the tab the operator popped the View out into.
+   */
+  function scheduleDeparture(): void {
+    if (!released || pages.size > 0 || departure !== undefined) return
+    departure = setTimeout(() => {
+      departure = undefined
+      if (released && pages.size === 0) void shutdown(0)
+    }, config.releaseGraceMs ?? RELEASE_GRACE_MS)
+    departure.unref()
+  }
+
   const idleTimer = setInterval(() => {
     if (Date.now() - lastActivity > config.idleMs) void shutdown(0)
   }, IDLE_SWEEP_MS)
@@ -362,9 +443,10 @@ export function startViewServer(
 
   async function shutdown(code: number): Promise<void> {
     clearInterval(idleTimer)
+    if (departure !== undefined) clearTimeout(departure)
     server.close()
     await removeSessionFiles(session.id)
-    process.exit(code)
+    exit(code)
   }
   process.on('SIGTERM', () => void shutdown(0))
   process.on('SIGINT', () => void shutdown(0))
