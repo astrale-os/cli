@@ -1,8 +1,6 @@
-import type { Call } from '@astrale-os/sdk/client'
-import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { Call, Input } from '@astrale-os/sdk/client'
 
-import { createAuth } from '@astrale-os/sdk/auth'
-import { call as createCall } from '@astrale-os/sdk/client'
+import { ClientSession } from '@astrale-os/sdk/client/session'
 import { mock } from 'bun:test'
 
 export function adminSession(implementation?: (target: string, input: unknown) => unknown): {
@@ -10,24 +8,24 @@ export function adminSession(implementation?: (target: string, input: unknown) =
   readonly reflection: ReturnType<typeof mock>
   readonly session: ClientSession
 } {
-  const call = mock(async (request: Call) =>
-    implementation?.(String(request.target), request.input),
+  const call = mock<ClientSession['call']>(
+    async (request: Call) => implementation?.(String(request.target), request.input) as Input,
   )
   const reflection = mock(() => {
     throw new Error('Routine Admin commands must not perform schema discovery or reflection.')
   })
-  const session = {
-    call,
-    auth: createAuth({
-      call: async (target, input) => (await call(createCall(target, input))) as never,
-      admit: async () => {
-        throw new Error('Admin selection must not request Function admission.')
-      },
+  const session = Object.assign(
+    new ClientSession({
+      kernel: 'https://admin.test',
+      policy: { maximumRouteAgeMs: 60_000 },
     }),
-    installation: reflection,
-    snapshot: reflection,
-    bind: reflection,
-    invoke: reflection,
-  } as unknown as ClientSession
+    {
+      call,
+      installation: reflection,
+      snapshot: reflection,
+      bind: reflection,
+      invoke: reflection,
+    },
+  )
   return { call, reflection, session }
 }
