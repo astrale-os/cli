@@ -8,6 +8,9 @@ import type { ViewServeConfig } from '../view/session'
 import { refreshViewPlacement } from '../view/refresh'
 import { startViewServer } from '../view/server'
 
+/** What the loopback host page sends on every host-only route. */
+const HOST = { 'x-astrale-view-host': '1' }
+
 describe('in-place View refresh', () => {
   test('refuses a bookmark retargeted to another Kernel', async () => {
     const config = fixture()
@@ -53,10 +56,10 @@ describe('in-place View refresh', () => {
     if (address === null || typeof address === 'string') throw new Error('Missing server port')
     const base = `http://127.0.0.1:${address.port}/s/refresh/`
     try {
-      const before = await (await fetch(`${base}config.json`)).json()
+      const before = await (await fetch(`${base}config.json`, { headers: HOST })).json()
       expect(before.revision).toBe(0)
       expect((await fetch(`${base}refresh`, { method: 'POST' })).status).toBe(200)
-      const after = await (await fetch(`${base}config.json`)).json()
+      const after = await (await fetch(`${base}config.json`, { headers: HOST })).json()
       expect(after).toMatchObject({
         sessionId: before.sessionId,
         revision: 1,
@@ -94,7 +97,7 @@ describe('in-place View refresh', () => {
     const base = `http://127.0.0.1:${address.port}/s/refresh/`
     try {
       expect((await fetch(`${base}refresh`, { method: 'POST' })).status).toBe(502)
-      const current = await (await fetch(`${base}config.json`)).json()
+      const current = await (await fetch(`${base}config.json`, { headers: HOST })).json()
       expect(current).toMatchObject({ revision: 0, view: config.session.view })
       expect(persist).not.toHaveBeenCalled()
     } finally {

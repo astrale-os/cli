@@ -17,7 +17,6 @@ describe('view session runtime', () => {
       2000,
       {
         activeInstance: async () => 'local',
-        identityNames: async () => ['alice', 'bob'],
         serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
         readPreparation: () => ({
           id: 'prepared',
@@ -62,7 +61,7 @@ describe('view session runtime', () => {
         viewPath: '/:issues.astrale.ai:view.dashboard',
         instance: 'local',
         timeoutMs: 20_000,
-        allowIdentity: ['alice', 'bob'],
+        idleMs: 8 * 60 * 60_000,
         serveRuntime: { file: '/cli/astrale', args: [] },
       },
     ])
