@@ -73,9 +73,10 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
     '     comment genuinely needs the detail; put broader explanation in the conversation, which',
     '     may be as long as needed. Thread entries are immutable: never rewrite an existing',
     '     comment or reply. Correct or clarify it by appending a new reply.',
-    'When open threads came with this turn, answer them in the threads AND say so in your final',
+    'When threads are attached to this turn, answer them in the threads AND say so in your final',
     'message (e.g. "answered 2 comments on Invoice and Quote") so the reader knows where to look.',
-    'With no open thread, the conversation is the only channel — just answer there.',
+    'With no attached thread, the conversation is the only channel — just answer there. Open',
+    'threads the turn did NOT attach are only listed for awareness: do not answer them unasked.',
     '',
     'CONTEXT DOCUMENTS — whatever the user attached lives under a domain’s',
     '`.domain-studio/context/docs/` and is listed with its path in each turn (`get_domain_context`',
@@ -83,14 +84,14 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
     'the rest.',
     '',
     'REPLY PROTOCOL — how a thread answer must be shaped:',
-    '- For EVERY thread this turn marks as awaiting you, append exactly one {role:"author"}',
+    '- For EVERY thread attached to this turn, append exactly one {role:"author"}',
     '  reply. Keep it concise by default: say what you changed, give your answer (with `options`',
     '  when it is a decision), or ask a clarifying question.',
     '- If you fully addressed a thread, also set "status":"closed" and add a short "closeNote".',
     '- You MUST end your final message with a fenced ```json``` machine-state block of the SAME',
     '  shape you were given: { "comments":[ { "id", "anchors", "status",',
     '  "thread":[ ...every existing entry PLUS your new author entries... ] } ] }. Merge is by id;',
-    '  a thread whose last entry is not yours is resent next turn, so always answer every thread.',
+    '  always answer every attached thread.',
   ]
   if (options.bridge) {
     lines.push(
@@ -98,7 +99,7 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
       'PREFERRED CHANNEL — the **domain-studio** MCP tools are connected. Use them as your',
       'PRIMARY way to reply, so the user sees answers appear live in the threads:',
       '  • list_domains — every domain in the workspace: origin, path, and how many threads wait there.',
-      '  • list_open_threads — inspect every open thread; `waitingOn` says which need your reply.',
+      '  • list_open_threads — inspect every open thread, attached to this turn or not.',
       '  • get_domain_context — one domain’s attached documents and saved context notes.',
       '  • reply_to_thread { commentId, text, resolve?, closeNote?, options? } — answer one thread.',
       '    Pass `options` (2–5 short strings) to offer a multiple-choice decision. Set resolve=true',
@@ -107,7 +108,7 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
       '    optionally with choices.',
       '  • resolve_thread / post_progress — close or narrate.',
       'When you reply through these tools you do NOT need the final json block — it is only a',
-      'fallback for if a tool call fails. Still answer every thread awaiting you one way or the other.',
+      'fallback for if a tool call fails. Still answer every attached thread one way or the other.',
     )
   }
   lines.push(

@@ -59,7 +59,7 @@ import {
   setCurrentRun,
   waitUntilIdle,
 } from './live-state'
-import { prepareRun, type PreparedRun, type SubmitOpts } from './preparation'
+import { awaitingThreadIds, prepareRun, type PreparedRun, type SubmitOpts } from './preparation'
 import { deleteChatRuns, persistRun, readChatTranscript, readRunHistory } from './transcript'
 
 export type ChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -369,7 +369,14 @@ export async function submitRun(
       return { error: 'a turn is already running in this chat' }
     if (chatQueue(chat).length >= MAX_QUEUED_MESSAGES)
       return { error: `the queue is full — ${MAX_QUEUED_MESSAGES} messages already wait here` }
-    const queued = enqueueChatMessage(workspace.stateRoot, chat.id, message)
+    // A queued message keeps the threads it was sent with, by id: 'all' is resolved
+    // now, so a thread opened while it waits does not ride along unasked.
+    const queued = enqueueChatMessage(
+      workspace.stateRoot,
+      chat.id,
+      message,
+      options?.comments === 'all' ? awaitingThreadIds(workspace) : options?.comments,
+    )
     if (!queued) return { error: `unknown chat: ${chat.id}` }
     emitStudioEvent(notify, { type: 'chats' })
     return { queued }
@@ -430,7 +437,12 @@ async function drainQueue(
   emitStudioEvent(notify, { type: 'chats' })
   let result: AgentSubmitResult
   try {
-    result = await submitRun(notify, { message: next.text, chatId, queue: false })
+    result = await submitRun(notify, {
+      message: next.text,
+      comments: next.comments,
+      chatId,
+      queue: false,
+    })
   } catch (error) {
     result = { error: error instanceof Error ? error.message : String(error) }
   }
@@ -521,6 +533,11 @@ export async function sendQueuedNow(
   cancelActiveRun(chat.id)
   if (!(await waitUntilIdle(chat.id)))
     return restore('the running turn did not stop — try again in a moment')
-  const result = await submitRun(notify, { message: message.text, chatId: chat.id, queue: false })
+  const result = await submitRun(notify, {
+    message: message.text,
+    comments: message.comments,
+    chatId: chat.id,
+    queue: false,
+  })
   return result.error ? restore(result.error) : { ok: true, value: result }
 }

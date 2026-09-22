@@ -128,10 +128,12 @@ export const api = {
   /** every terminal turn one chat kept, oldest first — its transcript */
   agentHistory: (chatId?: string) => get<AgentRun[]>(`/api/agent/history${chatQuery(chatId)}`),
   /** run the message now, or park it behind the turn already running */
-  agentSubmit: (message?: string, chatId?: string) =>
+  /** `comments` are the open threads the turn carries — none unless named, `'all'` for every one */
+  agentSubmit: (message?: string, chatId?: string, comments?: 'all' | string[]) =>
     post<AgentSubmitResult>('/api/agent/submit', {
       ...(message ? { message } : {}),
       ...(chatId ? { chatId } : {}),
+      ...(comments === 'all' || comments?.length ? { comments } : {}),
     }),
   // seamless continue after an interruption — resumes the live session with a bare nudge (no re-briefing)
   agentResume: (chatId?: string) =>

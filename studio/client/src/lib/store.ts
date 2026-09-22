@@ -101,6 +101,9 @@ interface UIState {
    *  The `NO_CHAT` key holds what was typed before the chat list landed; `adoptAgentDraft`
    *  hands it to the first real chat, so an early keystroke is not lost either. */
   agentDrafts: Record<string, string>
+  /** The open threads the user attached to the next agent turn, by id. None by default:
+   *  an open thread is signalled beside the composer, and only rides a turn once chosen. */
+  agentComments: string[]
   selectedClass?: string
   /**
    * Which domain `selectedClass` and `focusId` belong to. A class ref is LOCAL
@@ -170,6 +173,8 @@ interface UIState {
   adoptAgentDraft: (chatId: string) => void
   /** A closed chat takes its draft with it: nothing can be sent to it any more. */
   dropAgentDraft: (chatId: string) => void
+  /** Replace the threads attached to the next agent turn — see `agentComments`. */
+  setAgentComments: (ids: string[]) => void
   /** Jump to whatever an anchor points at: the right section, the member that declares
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string, domainId: string) => void
@@ -239,6 +244,7 @@ export const useUI = create<UIState>((set) => ({
   detailWidth: 420,
   modulesCollapsed: false,
   agentDrafts: {},
+  agentComments: [],
   focusId: null,
   panelOverlay: null,
   commentDraft: null,
@@ -315,6 +321,7 @@ export const useUI = create<UIState>((set) => ({
       const { [chatId]: _closed, ...rest } = s.agentDrafts
       return { agentDrafts: rest }
     }),
+  setAgentComments: (agentComments) => set({ agentComments }),
   revealAnchor: (ref, domainId) => {
     const section: SectionKey = ref.startsWith('section.')
       ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')

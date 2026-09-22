@@ -30,9 +30,17 @@ import { studioSessionId } from '../telemetry'
 import { handoffPreamble } from '../transfer'
 import { domainOrigin, domainRelativePath } from '../workspace'
 
+/**
+ * Which open threads a turn carries. None unless asked: an open thread is the
+ * user's to bring into a turn, not something every message drags along. `'all'`
+ * is the explicit "answer the threads" of the header button.
+ */
+export type CommentSelection = 'all' | string[]
+
 export interface SubmitOpts {
   message?: string
   resume?: boolean
+  comments?: CommentSelection
 }
 
 export interface PreparedRun {
@@ -60,19 +68,36 @@ function awaitingThreads(comments: Comment[]): Comment[] {
   )
 }
 
+/** Every thread awaiting the agent across the workspace, by id — what `'all'` means now. */
+export function awaitingThreadIds(workspace: AgentWorkspace): string[] {
+  return workspace.domains.flatMap((handle) =>
+    awaitingThreads(readComments(handle.root).comments).map((comment) => comment.id),
+  )
+}
+
+/** The awaiting threads the user chose to attach to this turn. */
+function attachedThreads(awaiting: Comment[], selection: CommentSelection | undefined): Comment[] {
+  if (selection === 'all') return awaiting
+  if (!selection?.length) return []
+  const chosen = new Set(selection)
+  return awaiting.filter((comment) => chosen.has(comment.id))
+}
+
 /**
  * What one domain brings to the turn. Every domain is read for its counts — the
- * digest lists them all — but only a domain that carries something (a thread awaiting
- * the agent, a document) is refreshed and introspected: that is what a briefing costs,
- * and a domain nobody asked about is a line in the digest.
+ * digest lists them all — but only a domain that carries something (a thread the
+ * user attached, a document) is refreshed and introspected: that is what a briefing
+ * costs, and a domain nobody asked about is a line in the digest.
  */
 async function domainParts(
   workspace: AgentWorkspace,
   handle: DomainHandle,
   signal: AbortSignal,
+  selection: CommentSelection | undefined,
 ): Promise<DomainTurnParts> {
   const open = readComments(handle.root).comments.filter((comment) => comment.status === 'open')
-  const awaiting = awaitingThreads(open)
+  const pending = awaitingThreads(open)
+  const awaiting = attachedThreads(pending, selection)
   const documents = listDocuments(handle.root)
   const base: DomainTurnParts = {
     origin: domainOrigin(handle),
@@ -80,6 +105,7 @@ async function domainParts(
     relativePath: domainRelativePath(workspace, handle),
     renderFingerprint: '',
     openThreads: open.length,
+    pendingThreads: pending.length,
     awaitingThreads: awaiting,
     userContext: [],
     autoContext: [],
@@ -123,7 +149,7 @@ export async function prepareRun(
   const message = (options?.message ?? '').trim()
   const domains: DomainTurnParts[] = []
   for (const handle of workspace.domains) {
-    domains.push(await domainParts(workspace, handle, controller.signal))
+    domains.push(await domainParts(workspace, handle, controller.signal, options?.comments))
     if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
   }
   const briefed = briefedDomains(domains)
@@ -131,9 +157,9 @@ export async function prepareRun(
   const documents = briefed.reduce((n, domain) => n + domain.documents.length, 0)
   // A turn has to carry something, and a message is only one of the three things it
   // can be: an attached document is an instruction in itself ("read this"), and so is
-  // an open thread. Only a turn carrying none of them is nothing to send.
+  // an attached thread. Only a turn carrying none of them is nothing to send.
   if (!bareResume && awaiting.length === 0 && !message && documents === 0)
-    return { error: 'nothing to send — type an instruction, attach a document or open a thread' }
+    return { error: 'nothing to send — type an instruction, attach a document or a thread' }
 
   const configuration = await resolveHarnessConfiguration(harness, {
     ...(chat.model ? { model: chat.model } : {}),
@@ -190,8 +216,8 @@ export async function prepareRun(
         ? message.slice(0, 60) + (message.length > 60 ? '…' : '')
         : awaiting.length > 0
           ? awaiting.length === 1
-            ? '1 open thread'
-            : `${awaiting.length} open threads`
+            ? '1 attached thread'
+            : `${awaiting.length} attached threads`
           : documents === 1
             ? '1 document'
             : `${documents} documents`,

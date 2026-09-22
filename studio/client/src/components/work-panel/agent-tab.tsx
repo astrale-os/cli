@@ -2,7 +2,7 @@ import type { AgentRun, ChatList, QueuedMessage } from '@shared/types'
 import type { ReactNode } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { ListPlus, Loader2, MessageSquare, Square, TriangleAlert } from 'lucide-react'
+import { ListPlus, Loader2, Square, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -21,9 +21,8 @@ import {
 import { useReadAgentReplies } from '@/lib/agent-unread'
 import { api, qk } from '@/lib/api'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
-import { threadsAwaitingAgent } from '@/lib/comments'
 import { labelOf, noAgentNotice, presenceOf } from '@/lib/harnesses'
-import { useHarness, useWorkspace, useWorkspaceComments, useWorkspaceDocuments } from '@/lib/hooks'
+import { useHarness, useWorkspace, useWorkspaceDocuments } from '@/lib/hooks'
 import { agentDraftOf, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -33,8 +32,9 @@ import { ChatFastToggle } from './chat-fast'
 import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
+import { CommentPicker, useAttachedComments } from './comment-picker'
 import { DockActivity } from './dock-activity'
-import { AttachButton, CHIP, DocumentChips } from './documents'
+import { AttachButton, DocumentChips } from './documents'
 import { HandoffChip } from './handoff-chip'
 import { MessageQueue, type PendingMessage } from './message-queue'
 import { NewDomainChip } from './new-domain-chip'
@@ -160,15 +160,17 @@ export function AgentTranscript() {
                 onRetry={
                   index === turns.length - 1
                     ? () =>
-                        void api.agentSubmit(turn.instruction, activeId).then(
-                          (result) => {
-                            if (result.run) useAgentLive.getState().setRun(result.run)
-                            if (result.error) toast.error(`Could not retry — ${result.error}`)
-                            qc.invalidateQueries({ queryKey: qk.agent(activeId) })
-                            qc.invalidateQueries({ queryKey: qk.agentHistory(activeId) })
-                          },
-                          (error) => toast.error(`Could not retry — ${String(error)}`),
-                        )
+                        void api
+                          .agentSubmit(turn.instruction, activeId, turn.targetCommentIds)
+                          .then(
+                            (result) => {
+                              if (result.run) useAgentLive.getState().setRun(result.run)
+                              if (result.error) toast.error(`Could not retry — ${result.error}`)
+                              qc.invalidateQueries({ queryKey: qk.agent(activeId) })
+                              qc.invalidateQueries({ queryKey: qk.agentHistory(activeId) })
+                            },
+                            (error) => toast.error(`Could not retry — ${String(error)}`),
+                          )
                     : undefined
                 }
                 onResume={() =>
@@ -206,23 +208,15 @@ function needsDivider(previous: AgentRun | undefined, turn: AgentRun): boolean {
 
 /**
  * What the next turn carries, laid out where you are about to send it: the
- * documents the agent can read, and the threads it will answer.
+ * documents the agent can read, and the open threads.
  *
- * The threads come as ONE chip saying how many there are, not one chip each. What
- * a thread is pinned on, and what it says, is the comments tab's job — this line
- * only has to say how much the next turn is carrying, and stay one line while it
- * does. So the chip is a way IN: it opens that tab. It cannot be taken off, unlike
- * a document — a turn answers every open thread, and that is the server's rule
- * (agent/run/preparation.ts), not a choice made here.
+ * The threads come as ONE chip, not one chip each. By default it only SAYS there
+ * are open threads — they do not ride a turn unasked — and it opens the picker
+ * where the user attaches the ones the next message is about.
  */
 function TurnPayload() {
   const { data: documentGroups } = useWorkspaceDocuments()
-  const { data: commentGroups } = useWorkspaceComments()
-  const setPanelTab = useUI((state) => state.setPanelTab)
-  const awaiting = commentGroups.reduce(
-    (total, group) => total + threadsAwaitingAgent(group.store?.comments).length,
-    0,
-  )
+  const { awaiting } = useAttachedComments()
   const documents = documentGroups.reduce(
     (total, group) => total + (group.documents?.length ?? 0),
     0,
@@ -231,22 +225,7 @@ function TurnPayload() {
 
   return (
     <div className="flex flex-wrap items-center gap-1 px-2 pb-1.5 pt-2">
-      {awaiting > 0 && (
-        <button
-          type="button"
-          onClick={() => setPanelTab('comments')}
-          title={`The agent answers ${awaiting === 1 ? 'this thread' : 'these threads'} on its next turn — click to read ${awaiting === 1 ? 'it' : 'them'}`}
-          className={cn(
-            CHIP,
-            'gap-1.5 border-primary/30 bg-primary/10 pr-2.5 text-primary transition-colors hover:bg-primary/20',
-          )}
-        >
-          <MessageSquare className="h-3 w-3 shrink-0" />
-          <span className="truncate">
-            {awaiting} comment{awaiting === 1 ? '' : 's'}
-          </span>
-        </button>
-      )}
+      <CommentPicker />
       <DocumentChips />
     </div>
   )
@@ -349,7 +328,8 @@ export function AgentComposer({
   const snapshot = useAgentSnapshot(chatId)
   const setRun = useAgentLive((state) => state.setRun)
   const dropRun = useAgentLive((state) => state.dropRun)
-  const { data: commentGroups } = useWorkspaceComments()
+  const { attached } = useAttachedComments()
+  const setAttached = useUI((state) => state.setAgentComments)
   const { data: documentGroups } = useWorkspaceDocuments()
   const qc = useQueryClient()
   const active = isRunActive(run)
@@ -364,13 +344,10 @@ export function AgentComposer({
   // Not "this agent is down" but "there is no agent here" — a different sentence,
   // and the only one that tells the reader what to actually do.
   const noAgent = noAgentNotice(harness)
-  // Open threads and attached documents are themselves something to send: with either,
+  // Attached threads and documents are themselves something to send: with either,
   // an empty composer is a valid submit that carries them as they are. Mirrors the
   // server's own rule (agent/run/preparation.ts), which only rejects an empty turn.
-  const awaiting = commentGroups.reduce(
-    (total, group) => total + threadsAwaitingAgent(group.store?.comments).length,
-    0,
-  )
+  const awaiting = attached.length
   const documentCount = documentGroups.reduce(
     (total, group) => total + (group.documents?.length ?? 0),
     0,
@@ -449,12 +426,13 @@ export function AgentComposer({
   // what an empty send is carrying, in the words the run itself will use
   const carriedLabel =
     awaiting > 0
-      ? `${awaiting} open thread${awaiting === 1 ? '' : 's'}`
+      ? `${awaiting} attached thread${awaiting === 1 ? '' : 's'}`
       : `${documentCount} document${documentCount === 1 ? '' : 's'}`
 
   const send = () => {
     if (!canSend) return
     const message = text.trim()
+    const comments = attached
     const id = `pending-${(ticket.current += 1)}`
     const started =
       active || !chatId
@@ -467,6 +445,8 @@ export function AgentComposer({
             summary: message || carriedLabel,
           })
     setText('')
+    // the pick goes with this message; the next one starts from nothing attached again
+    setAttached([])
     if (started) setRun(started)
     else setPending((current) => [...current, { id, label: message || carriedLabel, chatId }])
     // take back whatever this send put up — a turn the server never confirmed, or
@@ -479,19 +459,26 @@ export function AgentComposer({
       qc.invalidateQueries({ queryKey: qk.agent(chatId) })
       qc.invalidateQueries({ queryKey: qk.chats })
     }
-    void api.agentSubmit(message, chatId).then(
+    // a send that did not start takes its threads back too, unless a new pick replaced them
+    const restoreComments = () => {
+      if (comments.length && useUI.getState().agentComments.length === 0) setAttached(comments)
+    }
+    void api.agentSubmit(message, chatId, comments).then(
       (result) => {
         // the real turn takes the shown one's place first, so nothing blinks out
         // between the two — `drop` then finds none of ours left to take back
         if (result.run) setRun(result.run)
         drop()
-        if (result.error) restore(message, result.error, chatId)
-        else if (result.queued) landQueued(result.queued)
+        if (result.error) {
+          restore(message, result.error, chatId)
+          restoreComments()
+        } else if (result.queued) landQueued(result.queued)
         refresh()
       },
       (error) => {
         drop()
         restore(message, String(error), chatId)
+        restoreComments()
         refresh()
       },
     )

@@ -60,8 +60,12 @@ export class MockHarness implements AgentHarness {
       }
     }
     const store = readComments(input.root)
+    // like a real agent, answer only the threads this turn attached — the ones it names
     const open = store.comments.filter(
-      (comment) => comment.status === 'open' && comment.thread.at(-1)?.role !== 'author',
+      (comment) =>
+        comment.status === 'open' &&
+        comment.thread.at(-1)?.role !== 'author' &&
+        input.prompt.includes(comment.id),
     )
 
     input.onEvent({ kind: 'status', text: 'session started' })

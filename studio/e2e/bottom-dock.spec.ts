@@ -220,13 +220,12 @@ test('re-docking to a side leaves the floating dock behind', async ({ page }) =>
 })
 
 /**
- * What the turn carries in threads is a COUNT, and the count is a door.
- *
- * Naming each thread on the composer put the comments tab's job on a line that has
- * to stay one line — and said it in a place you cannot answer from. One chip says
- * how much is coming, and clicking it goes where you can read it.
+ * Open threads are signalled on the composer, not sent: one chip counts them, and
+ * a message only carries the threads picked from it. Naming each thread on the
+ * composer itself would put the comments tab's job on a line that has to stay one
+ * line — so the chip opens a picker, and the picker leads to the comments tab.
  */
-test('the threads on the composer are one chip that counts them, and opens them', async ({
+test('open threads are signalled on the composer and attached only when picked', async ({
   page,
   request,
 }) => {
@@ -247,15 +246,41 @@ test('the threads on the composer are one chip that counts them, and opens them'
     made.push(((await created.json()) as { id: string }).id)
   }
 
+  await stubAgent(page)
+  const submitted: Array<Record<string, unknown>> = []
+  await page.route('**/api/agent/submit', (route) => {
+    submitted.push(route.request().postDataJSON() as Record<string, unknown>)
+    return route.fulfill({ json: {} })
+  })
   await goBottom(page)
   await openDock(page)
 
-  // one chip for both threads, and it says how many — not what they are pinned on
-  const chip = dock(page).getByRole('button', { name: '2 comments' })
-  await expect(chip).toBeVisible()
+  // one chip for both threads, saying they are there — none of them is attached yet
+  const chip = dock(page).getByTestId('comment-picker')
+  await expect(chip).toHaveText('2 open comments')
   await expect(dock(page).getByRole('button', { name: /Rename this class/ })).toHaveCount(0)
 
+  // a plain message goes alone
+  await composer(page).fill('Unrelated work')
+  await composer(page).press('Enter')
+  await expect.poll(() => submitted.length).toBe(1)
+  expect(submitted[0]).not.toHaveProperty('comments')
+
+  // pick one thread: the next message carries it, and only it
   await chip.click()
+  await page.getByRole('menuitemcheckbox', { name: /Rename this class/ }).click()
+  await expect(chip).toHaveText('1 of 2 comments attached')
+  await page.keyboard.press('Escape')
+  await composer(page).fill('Handle this one')
+  await composer(page).press('Enter')
+  await expect.poll(() => submitted.length).toBe(2)
+  expect(submitted[1]).toMatchObject({ message: 'Handle this one', comments: [made[0]] })
+  // the pick went with that message
+  await expect(chip).toHaveText('2 open comments')
+
+  // and the picker is the way to the threads themselves
+  await chip.click()
+  await page.getByRole('button', { name: 'Open the comments tab' }).click()
   const fixtureThreads = dock(page).getByTestId(`comments-domain-${FIXTURE_ID}`)
   await expect(
     fixtureThreads.getByRole('heading', { name: 'crm.studio-demo.astrale.ai' }),

@@ -151,7 +151,17 @@ function decodeQueue(value: unknown): QueuedMessage[] {
     const id = asString(record?.id)
     const text = asString(record?.text)
     if (!id || !text) return []
-    return [{ id, text, createdAt: asString(record?.createdAt) ?? new Date().toISOString() }]
+    const comments = Array.isArray(record?.comments)
+      ? record.comments.filter((entry): entry is string => typeof entry === 'string')
+      : []
+    return [
+      {
+        id,
+        text,
+        ...(comments.length ? { comments } : {}),
+        createdAt: asString(record?.createdAt) ?? new Date().toISOString(),
+      },
+    ]
   })
 }
 
@@ -461,10 +471,12 @@ export function enqueueChatMessage(
   root: string,
   chatId: string,
   text: string,
+  comments?: string[],
 ): QueuedMessage | undefined {
   const message: QueuedMessage = {
     id: randomUUID(),
     text: text.trim(),
+    ...(comments?.length ? { comments } : {}),
     createdAt: new Date().toISOString(),
   }
   return mutateChat(root, chatId, (chat) => {
