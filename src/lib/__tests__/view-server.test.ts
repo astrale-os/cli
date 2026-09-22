@@ -8,22 +8,13 @@ import type { withClientSession } from '../../connection'
 import type { ViewServeConfig } from '../view/session'
 
 import { mintViewCredential, startViewServer, VIEW_DELEGATION_TTL_SECONDS } from '../view/server'
+import { mintedCredential } from './view-credential.fixture'
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const
 const target = (value: string) => value as ViewServeConfig['session']['view']['target']
 const issuer = (value: string) => value as ViewServeConfig['session']['view']['route']['issuer']
 const revision = (character: string) =>
   digest(character) as ViewServeConfig['session']['view']['route']['revision']
-
-/** One compact credential the Kernel could have minted; `inspect` never verifies its signature. */
-function mintedCredential(expiresAtSeconds: number): string {
-  const segment = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url')
-  return [
-    segment({ alg: 'ES256', typ: 'JWT' }),
-    segment({ iss: 'https://kernel.test', aud: 'https://kernel.test', exp: expiresAtSeconds }),
-    'signature',
-  ].join('.')
-}
 
 function address(server: Server): string {
   const value = server.address()
@@ -33,11 +24,11 @@ function address(server: Server): string {
 
 describe('view session server credentials', () => {
   test('mints a proof-bounded credential for the Kernel audience', async () => {
-    const mint = mock(async () => 'minted-credential')
+    const mint = mock(async () => mintedCredential('minted'))
     const auth = { mint } as unknown as Pick<AuthApi, 'mint'>
 
     await expect(mintViewCredential(auth, issuer('https://kernel.test'))).resolves.toBe(
-      'minted-credential',
+      mintedCredential('minted'),
     )
     expect(mint).toHaveBeenCalledWith({
       audience: 'https://kernel.test',
@@ -52,7 +43,7 @@ describe('view session server credentials', () => {
     { managed: true, external: true, explicit: true },
   ])('binds credentials to the mounted View (%j)', async ({ managed, external, explicit }) => {
     const nonce = 'shell-view'
-    const mint = mock(async () => 'minted-credential')
+    const mint = mock(async () => mintedCredential('minted'))
     const exchange = mock(async () => ({
       token: 'exchanged-credential',
       expiresAt: Date.now() + 240_000,
@@ -113,7 +104,7 @@ describe('view session server credentials', () => {
       expect(await response.json()).toMatchObject(
         external && !explicit
           ? { token: 'exchanged-credential', kind: 'exchanged' }
-          : { token: 'minted-credential', kind: 'minted' },
+          : { token: mintedCredential('minted'), kind: 'minted' },
       )
       if (external && !explicit) {
         expect(mint).not.toHaveBeenCalled()
@@ -140,7 +131,7 @@ describe('view session server credentials', () => {
     })
     const mint = mock(async () => {
       await held
-      return 'minted-credential'
+      return mintedCredential('minted')
     })
     const connections = mock(() => undefined)
     const connect: typeof withClientSession = async (_options, action) => {
@@ -190,9 +181,9 @@ describe('view session server credentials', () => {
       const bodies = await Promise.all((await Promise.all(pending)).map((one) => one.json()))
 
       expect(bodies.map((body) => body.token)).toEqual([
-        'minted-credential',
-        'minted-credential',
-        'minted-credential',
+        mintedCredential('minted'),
+        mintedCredential('minted'),
+        mintedCredential('minted'),
       ])
       expect(connections).toHaveBeenCalledTimes(1)
 
@@ -210,7 +201,7 @@ describe('view session server credentials', () => {
     const nonce = 'expiry-view'
     // Deliberately shorter than the requested 240 seconds: the issuer decides, not the request.
     const expiresAtSeconds = Math.floor(Date.now() / 1_000) + 180
-    const mint = mock(async () => mintedCredential(expiresAtSeconds))
+    const mint = mock(async () => mintedCredential('short-lived', expiresAtSeconds))
     const connect: typeof withClientSession = async (_options, action) =>
       action({
         auth: { mint },
@@ -264,13 +255,15 @@ describe('view session server credentials', () => {
     }
   })
 
-  test('keeps the requested-lifetime floor when the expiration claim is out of range', async () => {
+  test.each([
+    { label: 'unreadable by inspect', token: 'not-a-credential' },
+    { label: 'an out-of-range expiration', token: mintedCredential('unbounded', 1e300) },
+    { label: 'no expiration claim', token: mintedCredential('undated', Number.NaN) },
+  ])('fails closed on a minted credential with $label', async ({ token }) => {
     const nonce = 'unbounded-view'
-    const started = Date.now()
-    const mint = mock(async () =>
-      // A claim outside the safe-integer range cannot bound anything; the floor holds instead.
-      mintedCredential(1e300),
-    )
+    // Issuance inspects every credential before returning it, so these cannot reach a live server;
+    // the server still refuses to invent a lifetime it could not read.
+    const mint = mock(async () => token)
     const connect: typeof withClientSession = async (_options, action) =>
       action({
         auth: { mint },
@@ -312,11 +305,10 @@ describe('view session server credentials', () => {
     try {
       const response = await fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST' })
 
-      expect(response.status).toBe(200)
-      const served = (await response.json()) as { kind: string; expiresAt: number }
-      expect(served.kind).toBe('minted')
-      expect(served.expiresAt).toBeGreaterThanOrEqual(started + 240_000)
-      expect(Number.isSafeInteger(served.expiresAt)).toBe(true)
+      expect(response.status).toBe(502)
+      expect(await response.json()).toMatchObject({
+        error: expect.stringContaining('minted View credential'),
+      })
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))

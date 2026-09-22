@@ -38,7 +38,6 @@ const VIEW_TOKEN_TTL_SECONDS = 4 * 60
  * anticipates against the same value from `/config.json`.
  */
 export const VIEW_DELEGATION_TTL_SECONDS = 60
-const FALLBACK_TOKEN_TTL_MS = VIEW_TOKEN_TTL_SECONDS * 1_000
 const IDLE_SWEEP_MS = 60_000
 
 export type PageStatus = { state: string; error?: string; at: string }
@@ -151,7 +150,7 @@ export function startViewServer(
         const token = await mintViewCredential(auth, target.kernelIssuer)
         return {
           token,
-          expiresAt: mintedExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
+          expiresAt: mintedExpiry(token),
           kind: 'minted' as const,
         }
       },
@@ -385,17 +384,27 @@ export async function mintViewCredential(
   })
 }
 
-/** Read the issuer's own expiration; an unreadable credential keeps the requested-lifetime floor. */
-function mintedExpiry(token: string): number | null {
+/**
+ * The issuer's own expiration is the only evidence of this credential's lifetime; the requested TTL
+ * is a request, never a grant. Issuance already refuses to return a credential this cannot read, so
+ * an unreadable one is a Kernel defect and fails closed rather than carrying an estimate into the
+ * browser, where Shell bounds its child delegation by exactly this value.
+ */
+function mintedExpiry(token: string): number {
   let claimed: unknown
   try {
     claimed = credential.inspect(token).claims.exp
-  } catch {
-    return null
+  } catch (cause) {
+    throw new TypeError('The minted View credential could not be read.', { cause })
   }
-  if (typeof claimed !== 'number' || !Number.isSafeInteger(claimed)) return null
+  if (typeof claimed !== 'number' || !Number.isSafeInteger(claimed)) {
+    throw new TypeError('The minted View credential carries no usable expiration.')
+  }
   const expiresAt = claimed * 1_000
-  return Number.isSafeInteger(expiresAt) ? expiresAt : null
+  if (!Number.isSafeInteger(expiresAt)) {
+    throw new TypeError('The minted View credential expiration is out of range.')
+  }
+  return expiresAt
 }
 
 function corsHeaders(origin: string | undefined): Record<string, string> {
