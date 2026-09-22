@@ -170,6 +170,9 @@ export interface ChatInfo {
   title: string
   /** fixed at creation; see the fork rule above */
   harness: string
+  /** colour slot, fixed at creation so closing another tab never re-colours
+   *  this one: 0 is the agent's brand, 1..N the ring (shared/chat-tone.ts) */
+  tone?: number
   /** per-chat model override WITHIN its harness; absent ⇒ the starred model */
   model?: string
   /** per-chat reasoning level; absent ⇒ whatever the agent itself is set to */

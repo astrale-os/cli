@@ -92,6 +92,41 @@ describe('chat tabs', () => {
     expect(resolveChat(dir, 'claude', claude.id)?.sessionId).toBe('claude-session')
   })
 
+  test('a chat keeps its tone for life, whatever tab closes', () => {
+    const dir = root()
+    const first = activeChat(dir, 'claude')
+    const second = createChat(dir, { harness: 'claude' })
+    const third = createChat(dir, { harness: 'claude' })
+    expect([first.tone, second.tone, third.tone]).toEqual([0, 1, 2])
+
+    deleteChat(dir, second.id)
+    expect(resolveChat(dir, 'claude', third.id)?.tone).toBe(2)
+    expect(chatInfo(resolveChat(dir, 'claude', third.id)!, 'idle').tone).toBe(2)
+    // the freed hue goes to the next tab, not the survivor's
+    expect(createChat(dir, { harness: 'claude' }).tone).toBe(1)
+
+    // closing the brand tab hands the brand to the next chat of that agent only
+    deleteChat(dir, first.id)
+    expect(resolveChat(dir, 'claude', third.id)?.tone).toBe(2)
+    expect(createChat(dir, { harness: 'claude' }).tone).toBe(0)
+  })
+
+  test('chats saved before tones existed get one once, and keep it', () => {
+    const dir = root()
+    const legacy = ['a', 'b'].map((id, index) => ({
+      id,
+      title: 'New chat',
+      harness: 'claude',
+      turns: 0,
+      createdAt: `2026-09-01T00:00:0${index}.000Z`,
+      updatedAt: `2026-09-01T00:00:0${index}.000Z`,
+    }))
+    for (const chat of legacy) writeJson(dir, `chats/${chat.id}.json`, chat)
+    expect(ensureChats(dir, 'claude').chats.map((chat) => chat.tone)).toEqual([0, 1])
+    deleteChat(dir, 'a')
+    expect(ensureChats(dir, 'claude').chats.map((chat) => chat.tone)).toEqual([1])
+  })
+
   test('persists the new-domain context and exposes it on the chat', () => {
     const dir = root()
     const chat = createChat(dir, {

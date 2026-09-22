@@ -28,6 +28,7 @@ import type {
 } from '../../shared/types'
 
 import { isAgentEffort } from '../../shared/agent-effort'
+import { isChatTone, nextChatTone } from '../../shared/chat-tone'
 import { DEFAULT_CHAT_TITLE } from '../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { listState, readJson, removeState, writeJson } from '../state/store'
@@ -68,6 +69,9 @@ export interface StoredChat {
   id: string
   title: string
   harness: string
+  /** colour slot picked at creation and kept for life (see shared/chat-tone.ts);
+   *  absent only on chats written before tones were stored */
+  tone?: number
   model?: string
   effort?: AgentEffort
   fastMode?: boolean
@@ -116,6 +120,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const createdAt = asString(record.createdAt) ?? new Date().toISOString()
   const workspace = asString(record.workspace)
   const origins = asStringArray(record.origins)
+  const tone = isChatTone(record.tone) ? record.tone : undefined
   return {
     id,
     title: asString(record.title) || DEFAULT_TITLE,
@@ -123,6 +128,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
     turns: turns !== undefined && Number.isInteger(turns) && turns >= 0 ? turns : 0,
     createdAt,
     updatedAt: asString(record.updatedAt) ?? createdAt,
+    ...(tone === undefined ? {} : { tone }),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(fastMode === undefined ? {} : { fastMode }),
@@ -247,15 +253,34 @@ export function ensureChats(
 ): ChatStore {
   const store = readStore(root, activeRoot)
   if (store.chats.length === 0) {
-    const chat = newChat(defaultHarness, seedFields(seed))
+    const chat = newChat(defaultHarness, {
+      ...seedFields(seed),
+      tone: nextChatTone([], defaultHarness),
+    })
     writeChat(root, chat)
     store.chats.push(chat)
   }
+  backfillTones(root, store.chats)
   if (!store.chats.some((chat) => chat.id === store.activeId)) {
     store.activeId = store.chats[store.chats.length - 1]!.id
     writeActiveId(activeRoot, store.activeId)
   }
   return store
+}
+
+/**
+ * Give chats saved before tones were stored the one they will keep from now on,
+ * in creation order and next to the tones already handed out.
+ */
+function backfillTones(root: string, chats: StoredChat[]): void {
+  if (chats.every((chat) => chat.tone !== undefined)) return
+  const toned = chats.filter((chat) => chat.tone !== undefined)
+  for (const chat of chats) {
+    if (chat.tone !== undefined) continue
+    chat.tone = nextChatTone(toned, chat.harness)
+    toned.push(chat)
+    writeChat(root, chat)
+  }
 }
 
 function seedFields(seed?: ChatSeed): Partial<StoredChat> {
@@ -303,6 +328,7 @@ export function createChat(
 ): StoredChat {
   const chat = newChat(input.harness, {
     ...seedFields(input),
+    tone: nextChatTone(readChats(root), input.harness),
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -612,6 +638,7 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
     title: chat.title,
     harness: chat.harness,
     turns: chat.turns,
+    ...(chat.tone === undefined ? {} : { tone: chat.tone }),
     createdAt: chat.createdAt,
     updatedAt: chat.updatedAt,
     status,
