@@ -58,7 +58,9 @@ export function clusterByClass(nodes: Node[], options: ClusterOptions = CLUSTER_
   const byClass = new Map<string, Node[]>()
   for (const node of nodes) {
     const className = (node.data as CoreNodeData).className ?? ''
-    byClass.set(className, [...(byClass.get(className) ?? []), node])
+    const members = byClass.get(className)
+    if (members) members.push(node)
+    else byClass.set(className, [node])
   }
   // biggest families first, ties by name, so the picture is stable across re-layouts
   const blocks = [...byClass.entries()].sort(
