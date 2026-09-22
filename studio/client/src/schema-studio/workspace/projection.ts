@@ -9,10 +9,10 @@ import { buildViewsModel } from '@/lib/views'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
+import { layoutDomain, packPendingDocked } from '../dock-layout'
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from '../edge-markers'
-import { elkLayout } from '../elk-layout'
 import { functionGraph } from '../function-graph'
-import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
+import { applyGeometry, packPendingNodes, type Geometry } from '../geometry'
 import { isKernelClass, isKernelImplementationClass } from '../inheritance'
 import { moduleOfClass } from '../modules'
 import { EDGE_WIDTH } from '../palette'
@@ -113,14 +113,16 @@ export async function prepareWorkspaceDomain(
   let geometry: Geometry
 
   if (pending.length === 0) geometry = saved
-  else if (placed.length === 0)
-    geometry = geometryOf(await elkLayout(structure.nodes, structure.edges))
+  else if (placed.length === 0) geometry = await layoutDomain(structure.nodes, structure.edges)
   else {
+    const known = placed.map((node) => ({ node, position: saved[node.id] }))
+    const docked = packPendingDocked(known, pending, structure.edges)
     geometry = {
       ...saved,
+      ...docked,
       ...packPendingNodes(
-        placed.map((node) => ({ node, position: saved[node.id] })),
-        pending,
+        known,
+        pending.filter((node) => !docked[node.id]),
       ),
     }
   }
