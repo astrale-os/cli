@@ -2,9 +2,9 @@ import type { VisibilityState } from '@shared/types'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
-import { AlertTriangle } from 'lucide-react'
 import { useCallback, useEffect, useMemo } from 'react'
 
+import { ErrorBanner } from '@/components/error-banner'
 import { ScrollArea } from '@/components/ui/misc'
 import { api, qk } from '@/lib/api'
 import { buildFunctionsModel } from '@/lib/functions'
@@ -137,14 +137,9 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
     : undefined
   return (
     <div className="flex h-full flex-col" data-testid="workspace-schema-section">
-      {(errors.length > 0 || inputs.some((input) => input.bundle.error)) && (
-        <div className="flex items-start gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            {[...errors, ...inputs.flatMap((input) => input.bundle.error?.message ?? [])].join(' ')}
-          </span>
-        </div>
-      )}
+      <ErrorBanner
+        messages={[...errors, ...inputs.flatMap((input) => input.bundle.error?.message ?? [])]}
+      />
       <div className="flex min-h-0 flex-1">
         <ModulesSidebar onClearSelection={clearSelection} header={<DomainsRailHeader />}>
           <ScrollArea className="h-full">
