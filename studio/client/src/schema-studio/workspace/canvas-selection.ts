@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import { useWorkspace } from '@/lib/hooks'
 
@@ -35,15 +35,13 @@ export interface CanvasDomainControls {
 /** Everything the rail does to the canvas composition, in one place. */
 export function useCanvasDomains(): CanvasDomainControls {
   const visibleDomainIds = useSchemaWorkspace((state) => state.visibleDomainIds)
-  const toggleDomain = useSchemaWorkspace((state) => state.toggleDomain)
-
-  const visible = useMemo(() => new Set(visibleDomainIds), [visibleDomainIds])
-
   /**
    * The canvas composition is now the WHOLE meaning of this: a domain is drawn or it is
    * not. Nothing else changes: the agent and comments always cover the whole workspace.
    */
-  const toggleOnCanvas = useCallback((id: string) => toggleDomain(id), [toggleDomain])
+  const toggleOnCanvas = useSchemaWorkspace((state) => state.toggleDomain)
+
+  const visible = useMemo(() => new Set(visibleDomainIds), [visibleDomainIds])
 
   return { visible, toggleOnCanvas }
 }

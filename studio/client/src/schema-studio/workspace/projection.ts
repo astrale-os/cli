@@ -72,7 +72,14 @@ interface ResolvedTarget {
 const CROSS_COLOR = 'var(--edge-cross)'
 const INHERITANCE_COLOR = 'var(--edge-inherit)'
 
-export const workspaceDomainNodeId = (domainId: string) => `workspace-domain:${domainId}`
+const DOMAIN_NODE_PREFIX = 'workspace-domain:'
+
+export const workspaceDomainNodeId = (domainId: string) => `${DOMAIN_NODE_PREFIX}${domainId}`
+
+/** The domain a frame node stands for, or null for any other node on the canvas. */
+export function workspaceDomainOfFrame(nodeId: string): string | null {
+  return nodeId.startsWith(DOMAIN_NODE_PREFIX) ? nodeId.slice(DOMAIN_NODE_PREFIX.length) : null
+}
 export const qualifiedNodeId = encodeFlowNodeId
 
 /** Layout one Domain independently, reusing persisted geometry and packing only new nodes. */
@@ -202,10 +209,6 @@ function resolveClass(
   ]
 }
 
-function edgeId(ownerId: string, name: string, source: string, target: string): string {
-  return encodeFlowEdgeId(ownerId, name, source, target)
-}
-
 interface ExternalIndex {
   /** A dependency the canvas draws a line to. */
   connect: (target: ResolvedTarget, ownerDomainId: string) => void
@@ -306,29 +309,29 @@ function crossDomainEdges(
 ): Edge[] {
   const edges: Edge[] = []
   const seen = new Set<string>()
-  const remember = index.connect
 
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
     if (!ir) continue
+    const ownerId = owner.input.summary.id
     for (const edgeClass of Object.values(ir.classes)) {
       if (edgeClass.type !== 'edge' || edgeClass.endpoints?.length !== 2) continue
       if (isHidden(edgeRef(edgeClass.name), owner.input.visibility.hidden)) continue
-      const sources = endpointClasses(edgeClass.endpoints[0]).flatMap((input) =>
+      const [sourceEnd, targetEnd] = edgeClass.endpoints
+      const sources = endpointClasses(sourceEnd).flatMap((input) =>
         resolveClass(owner, input, origins, diagnostics),
       )
-      const targets = endpointClasses(edgeClass.endpoints[1]).flatMap((input) =>
+      const targets = endpointClasses(targetEnd).flatMap((input) =>
         resolveClass(owner, input, origins, diagnostics),
       )
       const markers = edgeMarkers(edgeClass.orientation)
       for (const source of sources) {
         for (const target of targets) {
-          const crossesDomain =
-            source.domainId !== owner.input.summary.id || target.domainId !== owner.input.summary.id
+          const crossesDomain = source.domainId !== ownerId || target.domainId !== ownerId
           if (!crossesDomain || source.nodeId === target.nodeId) continue
-          remember(source, owner.input.summary.id)
-          remember(target, owner.input.summary.id)
-          const id = edgeId(owner.input.summary.id, edgeClass.name, source.nodeId, target.nodeId)
+          index.connect(source, ownerId)
+          index.connect(target, ownerId)
+          const id = encodeFlowEdgeId(ownerId, edgeClass.name, source.nodeId, target.nodeId)
           if (seen.has(id)) continue
           seen.add(id)
           edges.push({
@@ -339,14 +342,14 @@ function crossDomainEdges(
             data: {
               label: edgeClass.name,
               edgeClass: edgeClass.name,
-              ownerDomainId: owner.input.summary.id,
+              ownerDomainId: ownerId,
               sourceEnd: {
-                ...(edgeClass.endpoints?.[0]?.name ? { role: edgeClass.endpoints[0].name } : {}),
-                cardinality: formatCardinality(edgeClass.endpoints?.[0]?.cardinality),
+                ...(sourceEnd.name ? { role: sourceEnd.name } : {}),
+                cardinality: formatCardinality(sourceEnd.cardinality),
               },
               targetEnd: {
-                ...(edgeClass.endpoints?.[1]?.name ? { role: edgeClass.endpoints[1].name } : {}),
-                cardinality: formatCardinality(edgeClass.endpoints?.[1]?.cardinality),
+                ...(targetEnd.name ? { role: targetEnd.name } : {}),
+                cardinality: formatCardinality(targetEnd.cardinality),
               },
             },
             markerStart: markers.markerStart,
@@ -372,6 +375,7 @@ function inheritanceEdges(
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
     if (!ir) continue
+    const ownerId = owner.input.summary.id
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node') continue
       const source = localTarget(owner, className)
@@ -383,7 +387,7 @@ function inheritanceEdges(
           // implementation-level inheritance line to it.
           if (!isKernelImplementationClass(parent)) {
             for (const target of resolveClass(owner, parent, origins, diagnostics)) {
-              index.connect(target, owner.input.summary.id)
+              index.connect(target, ownerId)
             }
           }
           continue
@@ -394,11 +398,11 @@ function inheritanceEdges(
           // A parent in the owner's OWN domain is already drawn by that domain's projection.
           // Same guard the relationship edges use above — without it every local `extends`
           // lands on the canvas twice, perfectly superposed and routed twice over.
-          if (target.domainId === owner.input.summary.id) continue
+          if (target.domainId === ownerId) continue
           // A parent OUTSIDE the canvas used to be dropped here without a trace, which is
           // the one dependency the reader could not see was there. It gets the same grey
           // box a relationship's far end gets.
-          index.connect(target, owner.input.summary.id)
+          index.connect(target, ownerId)
           const id = `workspace-extends:${source.nodeId}:${target.nodeId}`
           if (seen.has(id)) continue
           seen.add(id)
@@ -407,7 +411,7 @@ function inheritanceEdges(
             source: source.nodeId,
             target: target.nodeId,
             type: 'floating',
-            data: { label: 'extends', kind: 'extends', ownerDomainId: owner.input.summary.id },
+            data: { label: 'extends', kind: 'extends', ownerDomainId: ownerId },
             markerEnd: EDGE_ARROW,
             style: {
               stroke: INHERITANCE_COLOR,
@@ -436,7 +440,9 @@ export function composeWorkspaceCanvas(
   const origins = new Map<string, WorkspaceDomainProjection[]>()
   for (const domain of domains) {
     const origin = domain.input.bundle.ir?.domain ?? domain.input.summary.origin
-    origins.set(origin, [...(origins.get(origin) ?? []), domain])
+    const declaring = origins.get(origin)
+    if (declaring) declaring.push(domain)
+    else origins.set(origin, [domain])
   }
 
   const frames = layoutWorkspaceFrames(

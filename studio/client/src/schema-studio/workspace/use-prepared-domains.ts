@@ -127,24 +127,24 @@ export function usePreparedWorkspaceDomains(
 ): { domains: WorkspaceDomainProjection[]; ready: boolean } {
   const [state, setState] = useState<PreparedWorkspaceState>({ selection: null, domains: [] })
   const cache = useRef(new Map<string, { key: string; projection: WorkspaceDomainProjection }>())
-  const preparationKey = useMemo(
+  // Each key builds the domain's views and functions models, so it is computed once here and
+  // the effect reuses it for the same `inputs` rather than rebuilding it.
+  const domainKeys = useMemo(
     () =>
-      inputs
-        .map((input) => domainPreparationKey(input, collapsedModules[input.summary.id] ?? []))
-        .join('::'),
+      inputs.map((input) => domainPreparationKey(input, collapsedModules[input.summary.id] ?? [])),
     [collapsedModules, inputs],
   )
+  const preparationKey = domainKeys.join('::')
 
   useEffect(() => {
     let cancelled = false
     Promise.all(
-      inputs.map(async (input) => {
+      inputs.map(async (input, index) => {
         const domainId = input.summary.id
-        const collapsed = collapsedModules[domainId] ?? []
-        const key = domainPreparationKey(input, collapsed)
+        const key = domainKeys[index]!
         const cached = cache.current.get(domainId)
         if (cached?.key === key) return { ...cached.projection, input }
-        const projection = await prepareWorkspaceDomain(input, collapsed)
+        const projection = await prepareWorkspaceDomain(input, collapsedModules[domainId] ?? [])
         if (!cancelled) cache.current.set(domainId, { key, projection })
         return projection
       }),
