@@ -15,6 +15,9 @@ const issuer = (value: string) => value as ViewServeConfig['session']['view']['r
 const revision = (character: string) =>
   digest(character) as ViewServeConfig['session']['view']['route']['revision']
 
+/** What the loopback host page sends on every host-only route. */
+const HOST = { 'x-astrale-view-host': '1' }
+
 function address(server: Server): string {
   const value = server.address()
   if (value === null || typeof value === 'string') throw new Error('Missing HTTP address')
@@ -52,6 +55,7 @@ describe('view session server credentials', () => {
       return action({
         auth: { mint },
         target: {
+          url: 'https://kernel.test',
           kernelIssuer: issuer('https://kernel.test'),
           ...(managed ? { domainIssuer: issuer('https://shell.test') } : {}),
         },
@@ -97,6 +101,7 @@ describe('view session server credentials', () => {
     try {
       const response = await fetch(`${address(server)}/s/${nonce}/token`, {
         method: 'POST',
+        headers: HOST,
       })
 
       expect(response.status).toBe(200)
@@ -108,6 +113,7 @@ describe('view session server credentials', () => {
       if (external && !explicit) {
         expect(mint).not.toHaveBeenCalled()
         expect(exchange).toHaveBeenCalledWith(config.kernel, {
+          url: 'https://kernel.test',
           kernelIssuer: 'https://kernel.test',
           domainIssuer: 'https://example.test',
         })
@@ -137,7 +143,7 @@ describe('view session server credentials', () => {
       connections()
       return action({
         auth: { mint },
-        target: { kernelIssuer: issuer('https://kernel.test') },
+        target: { url: 'https://kernel.test', kernelIssuer: issuer('https://kernel.test') },
       } as never)
     }
     const config = {
@@ -174,7 +180,8 @@ describe('view session server credentials', () => {
     await once(server, 'listening')
 
     try {
-      const token = () => fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST' })
+      const token = () =>
+        fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST', headers: HOST })
       const pending = [token(), token(), token()]
       release()
       const bodies = await Promise.all((await Promise.all(pending)).map((one) => one.json()))
@@ -233,7 +240,9 @@ describe('view session server credentials', () => {
     await once(server, 'listening')
 
     try {
-      const configResponse = await fetch(`${address(server)}/s/${nonce}/config.json`)
+      const configResponse = await fetch(`${address(server)}/s/${nonce}/config.json`, {
+        headers: HOST,
+      })
       expect(configResponse.status).toBe(200)
       const served = await configResponse.json()
       expect(served).not.toHaveProperty('transport')
@@ -247,6 +256,7 @@ describe('view session server credentials', () => {
 
       const response = await fetch(`${address(server)}/s/${nonce}/token`, {
         method: 'POST',
+        headers: HOST,
       })
 
       expect(response.status).toBe(403)
@@ -436,6 +446,112 @@ describe('view session ownership', () => {
       await call('/status', { state: 'gone', page: 'operator-tab' })
       const state = await (await fetch(`${address(server)}/s/reported/state`)).json()
       expect(state).toMatchObject({ state: 'connected' })
+    } finally {
+      server.close()
+    }
+  })
+})
+
+describe('view session host authority', () => {
+  function hostConfig(nonce: string, handshake: 'none' | 'shell'): ViewServeConfig {
+    return {
+      session: {
+        id: `v-${nonce}`,
+        pid: 0,
+        port: 0,
+        nonce,
+        pageUrl: '',
+        view: {
+          target: target('/:example.test'),
+          route: {
+            key: 'example.test:view.board',
+            declaration: { target: { kind: 'domain' } },
+            href: 'https://example.test/ui/board',
+            handshake,
+            issuer: issuer('https://kernel.test'),
+            etag: digest('a'),
+            revision: revision('b'),
+          },
+        },
+        identity: 'alice',
+        createdAt: '2026-09-22T00:00:00.000Z',
+      },
+      kernel: { instance: 'staging', as: 'alice' },
+      proxy: { kernelUrl: 'https://kernel.test', issuer: 'https://kernel.test', direct: true },
+      externalOrigins: [],
+      idleMs: 600_000,
+    } satisfies ViewServeConfig
+  }
+
+  /**
+   * Studio opens a View on the identity its instance is bound to and sends no
+   * list to switch between, so the page has no selector to render.
+   */
+  test('a session opened without identities offers none and switches to none', async () => {
+    const nonce = 'bound-identity'
+    const server = startViewServer(hostConfig(nonce, 'none'))
+    await once(server, 'listening')
+
+    try {
+      const served = await (
+        await fetch(`${address(server)}/s/${nonce}/config.json`, { headers: HOST })
+      ).json()
+      expect(served.identity).toBe('alice')
+      expect(served).not.toHaveProperty('identities')
+
+      const switched = await fetch(`${address(server)}/s/${nonce}/identity`, {
+        method: 'POST',
+        headers: { ...HOST, 'content-type': 'application/json' },
+        body: JSON.stringify({ identity: 'bob' }),
+      })
+      expect(switched.status).toBe(403)
+      expect(await switched.json()).toEqual({
+        error: 'Identity was not allowed for this View session.',
+      })
+    } finally {
+      server.close()
+    }
+  })
+
+  /** The embedded View reaches none of it, identity switching configured or not. */
+  test.each(['/config.json', '/identity', '/release', '/token'])(
+    'refuses %s to anything but the View host',
+    async (route) => {
+      const nonce = 'host-only'
+      const server = startViewServer(hostConfig(nonce, 'none'))
+      await once(server, 'listening')
+
+      try {
+        const response = await fetch(`${address(server)}${`/s/${nonce}`}${route}`, {
+          method: route === '/config.json' ? 'GET' : 'POST',
+          headers: { origin: 'https://example.test' },
+        })
+        expect(response.status).toBe(403)
+      } finally {
+        server.close()
+      }
+    },
+  )
+
+  test('mints nothing once the bookmark points at another Kernel', async () => {
+    const nonce = 'repointed'
+    const connect: typeof withClientSession = async (_options, action) =>
+      action({
+        auth: { mint: async () => 'must-not-be-minted' },
+        target: { url: 'https://other.test', kernelIssuer: issuer('https://other.test') },
+      } as never)
+    const server = startViewServer(hostConfig(nonce, 'shell'), { connect })
+    await once(server, 'listening')
+
+    try {
+      const response = await fetch(`${address(server)}/s/${nonce}/token`, {
+        method: 'POST',
+        headers: HOST,
+      })
+      expect(response.status).toBe(502)
+      expect(await response.json()).toEqual({
+        error: 'The session bookmark now points to another Kernel. Open a new View.',
+      })
     } finally {
       server.close()
     }

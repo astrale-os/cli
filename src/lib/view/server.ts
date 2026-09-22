@@ -52,6 +52,13 @@ const IDLE_SWEEP_MS = 60_000
  * that has not come back by then is not coming back.
  */
 const RELEASE_GRACE_MS = 10_000
+/**
+ * Reserved to the loopback host page and the host that opened the session.
+ * Reading the View's identity, minting against it, changing it and ending the
+ * session are the host's, never the embedded View's, whether or not this
+ * session was opened with identities to switch between.
+ */
+const HOST_ONLY_ROUTES = ['/config.json', '/identity', '/release', '/token']
 
 export type PageStatus = { state: string; error?: string; at: string }
 
@@ -160,10 +167,11 @@ export function startViewServer(
     return dependencies.connect(
       kernel,
       async ({ auth, target, identity }) => {
-        if (
-          config.identities?.length &&
-          (target.kernelIssuer !== proxy.issuer || target.url !== proxy.kernelUrl)
-        ) {
+        // This session is bound to the Kernel it was opened against, exactly as
+        // its placement refresh is. A bookmark re-pointed since then mints
+        // nothing here: the View mounted from the old Kernel would receive a
+        // bearer for another one.
+        if (target.kernelIssuer !== proxy.issuer || target.url !== proxy.kernelUrl) {
           throw new Error('The session bookmark now points to another Kernel. Open a new View.')
         }
         // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
@@ -215,13 +223,13 @@ export function startViewServer(
     }
     const sub = url.pathname.slice(base.length) || '/'
 
-    // Identity authority belongs to the loopback host, never the embedded View.
     // A custom header prevents cross-origin simple requests; no preflight is admitted here.
-    if (config.identities?.length && ['/identity', '/token', '/config.json'].includes(sub)) {
+    if (HOST_ONLY_ROUTES.includes(sub)) {
       const address = server.address()
       const origin =
         typeof address === 'object' && address !== null ? `http://127.0.0.1:${address.port}` : ''
       if (
+        origin === '' ||
         req.headers.host !== new URL(origin).host ||
         (req.headers.origin !== undefined && req.headers.origin !== origin) ||
         req.headers['x-astrale-view-host'] !== '1'
@@ -229,7 +237,15 @@ export function startViewServer(
         json(res, 403, { error: 'This operation is restricted to the View host.' })
         return
       }
-      if (sub !== '/config.json' && req.headers['x-astrale-view-revision'] !== String(revision)) {
+      // Only a page acting on the identity in force has to agree on the revision:
+      // reading the config is how a fresh page learns it, and a host releasing a
+      // session holds no page revision at all.
+      if (
+        config.identities?.length &&
+        sub !== '/config.json' &&
+        sub !== '/release' &&
+        req.headers['x-astrale-view-revision'] !== String(revision)
+      ) {
         json(res, 409, { error: 'View session changed; reload before continuing.' })
         return
       }
@@ -321,12 +337,6 @@ export function startViewServer(
       return
     }
     if (sub === '/release' && req.method === 'POST') {
-      // Releasing decides the session's lifetime, so it stays with the loopback
-      // host that opened it and never reaches the embedded View.
-      if (req.headers['x-astrale-view-host'] !== '1') {
-        json(res, 403, { error: 'This operation is restricted to the View host.' })
-        return
-      }
       const body = await readJson(req)
       const page = asString(body?.page)
       released = true

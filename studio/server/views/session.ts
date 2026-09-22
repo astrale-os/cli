@@ -8,7 +8,6 @@ import type {
 import {
   openStudioViewSession,
   releaseStudioViewSession,
-  studioViewIdentityNames,
 } from '../../../src/lib/view/studio-runtime'
 import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
@@ -31,7 +30,6 @@ interface ViewSessionDependencies {
   release: typeof releaseStudioViewSession
   open: typeof openStudioViewSession
   readPreparation: typeof readViewPreparation
-  identityNames: typeof studioViewIdentityNames
   serveRuntime: typeof studioViewServeRuntime
 }
 
@@ -110,15 +108,15 @@ export async function launchViewSession(
 
   let opened: OpenedViewPayload | null = null
   try {
-    // Studio is a local operator workbench. Snapshot names only; the CLI host
-    // retains credentials and verifies the selected identity against this Kernel.
-    const identities = await (dependencies.identityNames ?? studioViewIdentityNames)()
+    // The View opens on the identity this instance is bound to, the one every
+    // other Studio read already runs under. No identity list travels with the
+    // session, so the page offers no switch: changing who Studio is means
+    // changing the instance it works against.
     opened = {
       session: await (dependencies.open ?? openStudioViewSession)({
         viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
         ...(target ? { targetRef: target.ref } : {}),
         instance,
-        allowIdentity: identities,
         idleMs: STUDIO_VIEW_IDLE_MS,
         timeoutMs: Math.max(20_000, timeoutMs + 12_000),
         serveRuntime: (dependencies.serveRuntime ?? studioViewServeRuntime)(),
