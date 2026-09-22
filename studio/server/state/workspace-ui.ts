@@ -19,8 +19,14 @@ const SECTIONS = new Set<WorkspaceSection>(['schema', 'core', 'tests', 'process'
 const EDGE_STYLES = new Set<WorkspaceUiState['edgeStyle']>(['curved', 'orthogonal'])
 const PANEL_TABS = new Set<WorkspacePanelUiState['tab']>(['agent', 'comments'])
 const PANEL_SIDES = new Set<WorkspacePanelUiState['side']>(['left', 'right', 'bottom'])
-const DOCK_WIDTH = { min: 420, max: 1600, fallback: 768 }
-const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 480 }
+const DOCK_WIDTH = { min: 420, max: 1600, fallback: 880 }
+const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 }
+/**
+ * The dock's first default size. Every state saved since the dock became resizable
+ * stores its size, so a workspace that never touched it holds exactly this pair: read
+ * as the current default, it grows with it instead of staying on the old one forever.
+ */
+const FIRST_DOCK_DEFAULT = { width: 768, height: 480 }
 
 function clamped(
   value: unknown,
@@ -112,14 +118,20 @@ function panelState(value: unknown, fallback: WorkspacePanelUiState): WorkspaceP
   const record = asJsonRecord(value)
   if (!record) return fallback
   const size = asFiniteNumber(record.size)
+  const untouchedDock =
+    record.dockWidth === FIRST_DOCK_DEFAULT.width && record.dockHeight === FIRST_DOCK_DEFAULT.height
   return {
     open: asBoolean(record.open) ?? fallback.open,
     tab: oneOf(record.tab, PANEL_TABS) ?? fallback.tab,
     side: oneOf(record.side, PANEL_SIDES) ?? fallback.side,
     size: size === undefined ? fallback.size : Math.min(900, Math.max(260, Math.round(size))),
     // absent in states saved before the bottom dock could be resized
-    dockWidth: clamped(record.dockWidth, DOCK_WIDTH, fallback.dockWidth),
-    dockHeight: clamped(record.dockHeight, DOCK_HEIGHT, fallback.dockHeight),
+    dockWidth: untouchedDock
+      ? DOCK_WIDTH.fallback
+      : clamped(record.dockWidth, DOCK_WIDTH, fallback.dockWidth),
+    dockHeight: untouchedDock
+      ? DOCK_HEIGHT.fallback
+      : clamped(record.dockHeight, DOCK_HEIGHT, fallback.dockHeight),
   }
 }
 

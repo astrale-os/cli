@@ -414,3 +414,11 @@ body[data-target-mode] .react-flow.react-flow * {
 [data-member-list] > [data-revealed] {
   outline-offset: -2px;
 }
+
+/* A resize in progress (components/ui/resize-handle.tsx): the grip's cursor over
+   everything the pointer crosses, and no text selected on the way. */
+html[data-resizing],
+html[data-resizing] * {
+  cursor: var(--resize-cursor) !important;
+  user-select: none !important;
+}
