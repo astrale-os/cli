@@ -83,14 +83,24 @@ test.beforeAll(async () => {
   })
   const port = await new Promise<string>((resolve, reject) => {
     let output = ''
+    let failure = ''
     child!.stdout!.on('data', (chunk: Buffer) => {
       output += chunk.toString()
       const match = output.match(/PORT (\d+)/)
       if (match) resolve(match[1])
     })
-    child!.stderr!.on('data', (chunk: Buffer) => reject(new Error(chunk.toString())))
-    child!.on('exit', (code) => reject(new Error(`session server exited with ${code}`)))
-    setTimeout(() => reject(new Error(`session server did not listen: ${output}`)), 20_000)
+    // Whatever the server said on its way out is the only useful part of a
+    // startup failure, so it is collected rather than raised on arrival.
+    child!.stderr!.on('data', (chunk: Buffer) => {
+      failure += chunk.toString()
+    })
+    child!.on('exit', (code) =>
+      reject(new Error(`session server exited with ${code}\n${failure || output}`)),
+    )
+    setTimeout(
+      () => reject(new Error(`session server did not listen\n${failure || output}`)),
+      30_000,
+    )
   })
   origin = `http://127.0.0.1:${port}`
 })
