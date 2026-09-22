@@ -1,8 +1,8 @@
 import { schemaRefKey } from '@shared/types'
 import { ReactFlowProvider } from '@xyflow/react'
-import { AlertTriangle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ErrorBanner } from '@/components/error-banner'
 import { ScrollArea } from '@/components/ui/misc'
 import { useBundle, useDatasets } from '@/lib/hooks'
 import { type PolicyGuard, indexPolicies, policyGuard, policyUsage } from '@/lib/policy'
@@ -237,21 +237,17 @@ export function TestsSection({
 
   return (
     <div className="h-full flex flex-col">
-      {bundle.error && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-warning/10 border-b border-warning/30 text-warning text-sm">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>{bundle.error.message}</span>
-        </div>
-      )}
-      {selected && !selected.schemaMatch && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-warning/10 border-b border-warning/30 text-warning text-sm">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            Dataset “{datasetLabel(selected)}” was admitted against another schema revision; it is
-            re-extracted once the schema settles.
-          </span>
-        </div>
-      )}
+      <ErrorBanner messages={bundle.error ? [bundle.error.message] : []} />
+      <ErrorBanner
+        title="Dataset revision"
+        messages={
+          selected && !selected.schemaMatch
+            ? [
+                `Dataset “${datasetLabel(selected)}” was admitted against another schema revision; it is re-extracted once the schema settles.`,
+              ]
+            : []
+        }
+      />
 
       <div className="flex-1 flex min-h-0">
         <ModulesSidebar
