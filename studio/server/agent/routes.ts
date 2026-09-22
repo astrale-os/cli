@@ -49,6 +49,14 @@ function errorMessage(error: unknown): string {
 }
 
 /** Chat operations fail on user-supplied ids, so their errors are 400s, not 500s. */
+/** A submit's `comments`: `'all'`, or the ids of the threads to attach — none otherwise. */
+function commentSelection(value: unknown): { comments?: 'all' | string[] } {
+  if (value === 'all') return { comments: 'all' }
+  if (!Array.isArray(value)) return {}
+  const ids = value.filter((entry): entry is string => typeof entry === 'string' && !!entry)
+  return ids.length ? { comments: ids } : {}
+}
+
 function chatJson<T>(result: ChatResult<T>): Response {
   return result.ok ? json(result.value) : badRequest(result.error)
 }
@@ -182,6 +190,7 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
       await submitRun(notify, {
         message: typeof body.message === 'string' ? body.message : undefined,
         resume: body.resume === true,
+        ...commentSelection(body.comments),
         ...(chatBody === undefined ? {} : { chatId: chatBody }),
       }),
     )

@@ -128,6 +128,8 @@ export interface QueuedMessage {
   id: string
   /** the message as typed, verbatim — what the turn it starts will carry */
   text: string
+  /** the open threads attached to it, by id — the turn carries those and no other */
+  comments?: string[]
   createdAt: string
 }
 
