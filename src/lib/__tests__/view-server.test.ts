@@ -15,6 +15,16 @@ const issuer = (value: string) => value as ViewServeConfig['session']['view']['r
 const revision = (character: string) =>
   digest(character) as ViewServeConfig['session']['view']['route']['revision']
 
+/** One compact credential the Kernel could have minted; `inspect` never verifies its signature. */
+function mintedCredential(expiresAtSeconds: number): string {
+  const segment = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return [
+    segment({ alg: 'ES256', typ: 'JWT' }),
+    segment({ iss: 'https://kernel.test', aud: 'https://kernel.test', exp: expiresAtSeconds }),
+    'signature',
+  ].join('.')
+}
+
 function address(server: Server): string {
   const value = server.address()
   if (value === null || typeof value === 'string') throw new Error('Missing HTTP address')
@@ -189,6 +199,124 @@ describe('view session server credentials', () => {
       // The grant still covers the View delegation, so a later request mints nothing.
       await token()
       expect(connections).toHaveBeenCalledTimes(1)
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      })
+    }
+  })
+
+  test('serves the minted credential own expiration rather than the requested lifetime', async () => {
+    const nonce = 'expiry-view'
+    // Deliberately shorter than the requested 240 seconds: the issuer decides, not the request.
+    const expiresAtSeconds = Math.floor(Date.now() / 1_000) + 180
+    const mint = mock(async () => mintedCredential(expiresAtSeconds))
+    const connect: typeof withClientSession = async (_options, action) =>
+      action({
+        auth: { mint },
+        target: { kernelIssuer: issuer('https://kernel.test') },
+      } as never)
+    const config = {
+      session: {
+        id: 'v-expiry',
+        pid: 0,
+        port: 0,
+        nonce,
+        pageUrl: '',
+        view: {
+          target: target('/:example.test'),
+          route: {
+            key: 'example.test:view.private',
+            declaration: { target: { kind: 'domain' } },
+            href: 'https://example.test/ui/private',
+            handshake: 'shell',
+            issuer: issuer('https://kernel.test'),
+            etag: digest('c'),
+            revision: revision('d'),
+          },
+        },
+        createdAt: '2026-08-20T00:00:00.000Z',
+      },
+      kernel: { instance: 'managed', as: 'dispatcher' },
+      proxy: {
+        kernelUrl: 'https://kernel.test',
+        issuer: 'https://kernel.test',
+        direct: true,
+      },
+      externalOrigins: [],
+      idleMs: 60_000,
+    } satisfies ViewServeConfig
+    const server = startViewServer(config, { connect })
+    await once(server, 'listening')
+
+    try {
+      const response = await fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST' })
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        kind: 'minted',
+        expiresAt: expiresAtSeconds * 1_000,
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      })
+    }
+  })
+
+  test('keeps the requested-lifetime floor when the expiration claim is out of range', async () => {
+    const nonce = 'unbounded-view'
+    const started = Date.now()
+    const mint = mock(async () =>
+      // A claim outside the safe-integer range cannot bound anything; the floor holds instead.
+      mintedCredential(1e300),
+    )
+    const connect: typeof withClientSession = async (_options, action) =>
+      action({
+        auth: { mint },
+        target: { kernelIssuer: issuer('https://kernel.test') },
+      } as never)
+    const config = {
+      session: {
+        id: 'v-unbounded',
+        pid: 0,
+        port: 0,
+        nonce,
+        pageUrl: '',
+        view: {
+          target: target('/:example.test'),
+          route: {
+            key: 'example.test:view.private',
+            declaration: { target: { kind: 'domain' } },
+            href: 'https://example.test/ui/private',
+            handshake: 'shell',
+            issuer: issuer('https://kernel.test'),
+            etag: digest('c'),
+            revision: revision('d'),
+          },
+        },
+        createdAt: '2026-08-20T00:00:00.000Z',
+      },
+      kernel: { instance: 'managed', as: 'dispatcher' },
+      proxy: {
+        kernelUrl: 'https://kernel.test',
+        issuer: 'https://kernel.test',
+        direct: true,
+      },
+      externalOrigins: [],
+      idleMs: 60_000,
+    } satisfies ViewServeConfig
+    const server = startViewServer(config, { connect })
+    await once(server, 'listening')
+
+    try {
+      const response = await fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST' })
+
+      expect(response.status).toBe(200)
+      const served = (await response.json()) as { kind: string; expiresAt: number }
+      expect(served.kind).toBe('minted')
+      expect(served.expiresAt).toBeGreaterThanOrEqual(started + 240_000)
+      expect(Number.isSafeInteger(served.expiresAt)).toBe(true)
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))

@@ -3,6 +3,7 @@ import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { SessionCredential } from '@astrale-os/sdk/client/session'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
+import { credential } from '@astrale-os/sdk/auth'
 import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -150,7 +151,7 @@ export function startViewServer(
         const token = await mintViewCredential(auth, target.kernelIssuer)
         return {
           token,
-          expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
+          expiresAt: mintedExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
           kind: 'minted' as const,
         }
       },
@@ -384,15 +385,17 @@ export async function mintViewCredential(
   })
 }
 
-function jwtExpiry(token: string): number | null {
+/** Read the issuer's own expiration; an unreadable credential keeps the requested-lifetime floor. */
+function mintedExpiry(token: string): number | null {
+  let claimed: unknown
   try {
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as {
-      exp?: number
-    }
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : null
+    claimed = credential.inspect(token).claims.exp
   } catch {
     return null
   }
+  if (typeof claimed !== 'number' || !Number.isSafeInteger(claimed)) return null
+  const expiresAt = claimed * 1_000
+  return Number.isSafeInteger(expiresAt) ? expiresAt : null
 }
 
 function corsHeaders(origin: string | undefined): Record<string, string> {
