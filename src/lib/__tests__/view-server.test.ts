@@ -212,7 +212,7 @@ describe('view session server credentials', () => {
     const connect: typeof withClientSession = async (_options, action) =>
       action({
         auth: { mint },
-        target: { kernelIssuer: issuer('https://kernel.test') },
+        target: { url: 'https://kernel.test', kernelIssuer: issuer('https://kernel.test') },
       } as never)
     const config = {
       session: {
@@ -248,7 +248,10 @@ describe('view session server credentials', () => {
     await once(server, 'listening')
 
     try {
-      const response = await fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST' })
+      const response = await fetch(`${address(server)}/s/${nonce}/token`, {
+        method: 'POST',
+        headers: HOST,
+      })
 
       expect(response.status).toBe(200)
       expect(await response.json()).toMatchObject({
@@ -274,7 +277,7 @@ describe('view session server credentials', () => {
     const connect: typeof withClientSession = async (_options, action) =>
       action({
         auth: { mint },
-        target: { kernelIssuer: issuer('https://kernel.test') },
+        target: { url: 'https://kernel.test', kernelIssuer: issuer('https://kernel.test') },
       } as never)
     const config = {
       session: {
@@ -310,7 +313,10 @@ describe('view session server credentials', () => {
     await once(server, 'listening')
 
     try {
-      const response = await fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST' })
+      const response = await fetch(`${address(server)}/s/${nonce}/token`, {
+        method: 'POST',
+        headers: HOST,
+      })
 
       expect(response.status).toBe(502)
       expect(await response.json()).toMatchObject({
