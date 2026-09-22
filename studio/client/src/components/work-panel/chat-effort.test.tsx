@@ -85,23 +85,28 @@ test('the meter reads the level the ACP session is actually on', () => {
   expect(html.match(/w-\[2px\]/g)?.length).toBe(6)
 })
 
-test('the meter rises in even steps, whatever the ladder’s length', () => {
-  // A rounded ramp made the rungs uneven on every length the range does not divide —
-  // six came out 5·7·8·9·11·12, which reads as a broken meter rather than a rising one.
+test('the meter rises in even, whole-pixel steps, whatever the ladder’s length', () => {
+  // A ramp squeezed into a fixed range left every inner rung on a fractional height
+  // (six came out 5·6.4·7.8·9.2·10.6·12): each top landed between two pixels and
+  // painted soft, and the rises read as 1px or 2px — a smeared meter, not a rising one.
   for (const length of [2, 3, 4, 5, 6]) {
     const ladder: HarnessLoadout = {
       ...probed,
       effort: 'low',
       efforts: probed.efforts!.slice(0, length),
     }
-    const heights = [...render(ladder).matchAll(/height:\s*([\d.]+)px/g)].map((match) =>
-      Number(match[1]),
-    )
+    const html = render(ladder)
+    const heights = [...html.matchAll(/height:\s*([\d.]+)px/g)].map((match) => Number(match[1]))
     expect(heights).toHaveLength(length)
-    expect(heights[0]).toBe(5)
-    expect(heights.at(-1)).toBe(12)
+    expect(heights.every(Number.isInteger)).toBe(true)
+    expect(heights[0]).toBe(4)
     const steps = heights.slice(1).map((height, index) => height - heights[index]!)
-    for (const step of steps) expect(step).toBeCloseTo(steps[0]!, 6)
+    expect(new Set(steps)).toEqual(new Set([2]))
+    // the tallest ladder still fits the composer's 20px row
+    expect(Math.max(...heights)).toBeLessThanOrEqual(20)
+    // a half-pixel gap started every other bar mid-pixel; the gap is a whole one now
+    expect(html).toContain('gap-px')
+    expect(html).not.toContain('gap-[1.5px]')
   }
 })
 

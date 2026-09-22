@@ -32,23 +32,27 @@ const EFFORT_LABELS: Record<AgentEffort, string> = {
   ultracode: 'Ultracode',
 }
 
-/** The shortest and the tallest rung, in px; everything between them is spaced evenly. */
-const BAR_MIN_H = 5
-const BAR_MAX_H = 12
+/** The shortest rung and the rise between two rungs, in whole px. */
+const BAR_MIN_H = 4
+const BAR_STEP_H = 2
 
 /**
- * One rung's height. The ramp is LINEAR and unrounded on purpose: rounding each bar to
- * a whole pixel made the steps uneven for every ladder whose length does not divide the
- * range — five rungs came out 6·7·9·10·12, which reads as a broken meter rather than a
- * rising one. A 2px-wide bar carries a fractional height without looking soft, and an
- * even ramp is the whole point of the shape.
+ * One rung's height. Every edge of the meter sits on a WHOLE pixel: a fractional
+ * height lands the bar's top between two pixels and paints it as a grey smear, so a
+ * linear ramp squeezed into a fixed range (6.4·7.8·9.2…) read as a soft, uneven
+ * meter. A fixed whole-pixel step keeps every rise identical instead; the meter grows
+ * a little with a long ladder, and the tallest one still fits the composer's row.
  */
-function barHeight(index: number, total: number): number {
-  if (total <= 1) return BAR_MAX_H
-  return BAR_MIN_H + ((BAR_MAX_H - BAR_MIN_H) * index) / (total - 1)
+function barHeight(index: number): number {
+  return BAR_MIN_H + BAR_STEP_H * index
 }
 
-/** Ascending bars, tallest last — the meter reads as signal strength. */
+/**
+ * Ascending bars, tallest last — the meter reads as signal strength. Width and gap are
+ * whole pixels too, and the bars are square: a 1.5px gap started every other bar on a
+ * half pixel (the browser then snapped the gaps to 1px/2px or blurred one bar in two
+ * into a wider one), and a 1px radius on a 2px bar only softened both of its ends.
+ */
 function EffortBars({
   level,
   total,
@@ -59,13 +63,13 @@ function EffortBars({
   className?: string
 }) {
   return (
-    <span aria-hidden className={cn('flex items-end gap-[1.5px]', className)}>
+    <span aria-hidden className={cn('flex items-end gap-px', className)}>
       {Array.from({ length: total }, (_, index) => (
         <span
           key={index}
-          style={{ height: `${barHeight(index, total)}px` }}
+          style={{ height: `${barHeight(index)}px` }}
           className={cn(
-            'w-[2px] rounded-[1px] bg-current transition-opacity',
+            'w-[2px] bg-current transition-opacity',
             index <= level ? 'opacity-100' : 'opacity-25',
           )}
         />

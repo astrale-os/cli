@@ -3,13 +3,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 /**
@@ -17,8 +11,10 @@ import { cn } from '@/lib/utils'
  * that disagrees with four classes at once used to push the canvas several lines down
  * before anyone could read the first word. The banner therefore stays exactly ONE line
  * tall whatever it carries: the leading message truncates, the rest hide behind a count,
- * and the modal is the place where the text is read whole and copied out — into an agent
- * turn, an issue, a search — instead of being selected out of a wrapping strip.
+ * and the modal is the place where the text is read whole — instead of being selected out
+ * of a wrapping strip. Copying out into an agent turn, an issue or a search is the usual
+ * next move either way, so the copy sits one click deep in the strip itself and, in the
+ * modal, at the top right where a reader's hand already is once the text is read.
  */
 export function ErrorBanner({
   messages,
@@ -69,6 +65,16 @@ export function ErrorBanner({
         <Button
           variant="ghost"
           size="xs"
+          onClick={() => void copy()}
+          title={items.length > 1 ? 'Copy every message' : 'Copy the message'}
+          aria-label={items.length > 1 ? 'Copy every message' : 'Copy the message'}
+          className="shrink-0 px-1.5 text-warning hover:bg-warning/15 hover:text-warning"
+        >
+          <Copy />
+        </Button>
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={() => setOpen(true)}
           className="shrink-0 text-warning hover:bg-warning/15 hover:text-warning"
         >
@@ -77,9 +83,9 @@ export function ErrorBanner({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl" data-testid="error-banner-modal">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 pr-6">
+        <DialogContent className="max-w-4xl" data-testid="error-banner-modal">
+          <DialogHeader className="flex-row items-center justify-between gap-3 pr-9">
+            <DialogTitle className="flex min-w-0 items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
               {title}
               {items.length > 1 && (
@@ -88,8 +94,11 @@ export function ErrorBanner({
                 </span>
               )}
             </DialogTitle>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={() => void copy()}>
+              <Copy /> Copy
+            </Button>
           </DialogHeader>
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+          <div className="max-h-[70vh] space-y-2 overflow-y-auto">
             {items.map((message, index) => (
               <p
                 key={index}
@@ -99,11 +108,6 @@ export function ErrorBanner({
               </p>
             ))}
           </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => void copy()}>
-              <Copy /> Copy
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
