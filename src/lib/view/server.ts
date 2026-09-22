@@ -3,6 +3,7 @@ import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { SessionCredential } from '@astrale-os/sdk/client/session'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
+import { credential } from '@astrale-os/sdk/auth'
 import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -44,7 +45,6 @@ const VIEW_TOKEN_TTL_SECONDS = 4 * 60
  * anticipates against the same value from `/config.json`.
  */
 export const VIEW_DELEGATION_TTL_SECONDS = 60
-const FALLBACK_TOKEN_TTL_MS = VIEW_TOKEN_TTL_SECONDS * 1_000
 const IDLE_SWEEP_MS = 60_000
 /**
  * Grace between the last page leaving a released session and the shutdown. A
@@ -185,7 +185,7 @@ export function startViewServer(
         const token = await mintViewCredential(auth, target.kernelIssuer)
         return {
           token,
-          expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
+          expiresAt: mintedExpiry(token),
           kind: 'minted' as const,
         }
       },
@@ -476,15 +476,27 @@ export async function mintViewCredential(
   })
 }
 
-function jwtExpiry(token: string): number | null {
+/**
+ * The issuer's own expiration is the only evidence of this credential's lifetime; the requested TTL
+ * is a request, never a grant. Issuance already refuses to return a credential this cannot read, so
+ * an unreadable one is a Kernel defect and fails closed rather than carrying an estimate into the
+ * browser, where Shell bounds its child delegation by exactly this value.
+ */
+function mintedExpiry(token: string): number {
+  let claimed: unknown
   try {
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as {
-      exp?: number
-    }
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : null
-  } catch {
-    return null
+    claimed = credential.inspect(token).claims.exp
+  } catch (cause) {
+    throw new TypeError('The minted View credential could not be read.', { cause })
   }
+  if (typeof claimed !== 'number' || !Number.isSafeInteger(claimed)) {
+    throw new TypeError('The minted View credential carries no usable expiration.')
+  }
+  const expiresAt = claimed * 1_000
+  if (!Number.isSafeInteger(expiresAt)) {
+    throw new TypeError('The minted View credential expiration is out of range.')
+  }
+  return expiresAt
 }
 
 function corsHeaders(origin: string | undefined): Record<string, string> {
