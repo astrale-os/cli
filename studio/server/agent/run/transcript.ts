@@ -10,6 +10,7 @@ import {
 } from '../../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
 import { listState, readJson, removeState, writeJson } from '../../state/store'
+import { decodeAttachments } from '../attachments'
 
 /**
  * Transcripts live beside the machine-global chats they belong to in the Studio home:
@@ -147,6 +148,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     return decoded ? [decoded] : []
   })
   const instruction = asString(record.instruction)
+  const attachments = decodeAttachments(record.attachments)
   const finishedAt = asString(record.finishedAt)
   const sessionId = asString(record.sessionId)
   const resumed = asBoolean(record.resumed)
@@ -167,6 +169,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     targetCommentIds,
     events,
     ...(instruction === undefined ? {} : { instruction }),
+    ...(attachments === undefined ? {} : { attachments }),
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(resumed === undefined ? {} : { resumed }),

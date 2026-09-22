@@ -20,6 +20,8 @@ import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './
 import { emitStudioEvent } from './notify'
 import { buildSystemPrompt } from './prompts/system'
 import {
+  addAttachment,
+  attachmentOf,
   cancelRun,
   chatHarness,
   chatModel,
@@ -33,6 +35,7 @@ import {
   listChats,
   moveQueued,
   openChat,
+  removeAttachment,
   selectChat,
   sendQueuedNow,
   setSessionId,
@@ -55,6 +58,13 @@ function commentSelection(value: unknown): { comments?: 'all' | string[] } {
   if (!Array.isArray(value)) return {}
   const ids = value.filter((entry): entry is string => typeof entry === 'string' && !!entry)
   return ids.length ? { comments: ids } : {}
+}
+
+/** A submit's `attachments`: the ids of the images it carries, in order. */
+function attachmentSelection(value: unknown): { attachments?: string[] } {
+  if (!Array.isArray(value)) return {}
+  const ids = value.filter((entry): entry is string => typeof entry === 'string' && !!entry)
+  return ids.length ? { attachments: ids } : {}
 }
 
 function chatJson<T>(result: ChatResult<T>): Response {
@@ -191,9 +201,40 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
         message: typeof body.message === 'string' ? body.message : undefined,
         resume: body.resume === true,
         ...commentSelection(body.comments),
+        ...attachmentSelection(body.attachments),
         ...(chatBody === undefined ? {} : { chatId: chatBody }),
       }),
     )
+  }
+  // One image per upload, sent the moment it is pasted: each chip in the composer
+  // then fills in on its own, and one refused image does not take the others down.
+  if (rest === '/agent/attachments' && req.method === 'POST') {
+    const form = await req.formData().catch(() => undefined)
+    const file = form?.get('file')
+    if (!(file instanceof File)) return badRequest('expected one image in the `file` field')
+    return chatJson(
+      addAttachment(chatParam, {
+        name: file.name,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      }),
+    )
+  }
+  const attachment = rest.match(/^\/agent\/attachments\/([^/]+)$/)
+  if (attachment) {
+    const id = decodeURIComponent(attachment[1]!)
+    if (req.method === 'DELETE') return json({ ok: removeAttachment(chatParam, id) })
+    if (req.method !== 'GET') return badRequest('GET or DELETE')
+    const found = attachmentOf(chatParam, id)
+    if (!found) return notFound()
+    return new Response(Bun.file(found.path), {
+      headers: {
+        'content-type': found.attachment.mimeType,
+        'content-disposition': 'inline',
+        'x-content-type-options': 'nosniff',
+        // an id names one image for good: its bytes never change
+        'cache-control': 'private, max-age=31536000, immutable',
+      },
+    })
   }
   if (rest === '/agent/queue' && req.method === 'POST') {
     const messageId = asString(body.id) ?? ''

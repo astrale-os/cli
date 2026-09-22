@@ -1,10 +1,11 @@
 import * as acp from '@agentclientprotocol/sdk'
 import { spawn } from 'node:child_process'
-import { accessSync, constants } from 'node:fs'
+import { accessSync, constants, readFileSync } from 'node:fs'
 import { delimiter, isAbsolute, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 
 import type {
+  AgentTurnImage,
   AgentTurnInput,
   AgentTurnResult,
   AskInput,
@@ -46,6 +47,26 @@ interface ExecutionResult {
   errorMessage?: string
   resumeRejected?: boolean
   forkAttempted: boolean
+}
+
+/**
+ * What `session/prompt` carries: the images first, as images, then the text that
+ * talks about them. An agent that does not take images gets the text alone — the
+ * prompt already lists each image's path, so the message still reaches it whole.
+ */
+export function promptBlocks(
+  prompt: string,
+  images: readonly AgentTurnImage[] | undefined,
+  acceptsImages: boolean,
+): acp.ContentBlock[] {
+  const pictures: acp.ContentBlock[] = acceptsImages
+    ? (images ?? []).map((image) => ({
+        type: 'image',
+        mimeType: image.mimeType,
+        data: readFileSync(image.path).toString('base64'),
+      }))
+    : []
+  return [...pictures, { type: 'text', text: prompt }]
 }
 
 function executableOnPath(command: string, pathValue: string | undefined): string | undefined {
@@ -530,7 +551,11 @@ async function executeAcp(
     const promptResponse = await withProcess(
       context.request(acp.methods.agent.session.prompt, {
         sessionId: activeSessionId,
-        prompt: [{ type: 'text', text: input.prompt }],
+        prompt: promptBlocks(
+          input.prompt,
+          'images' in input ? input.images : undefined,
+          initialized.agentCapabilities?.promptCapabilities?.image === true,
+        ),
       }),
       'prompt',
       0,

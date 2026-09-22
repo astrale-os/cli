@@ -101,6 +101,8 @@ export interface AgentRun {
   /** the instruction as typed, verbatim — what the chat shows as your message.
    *  Absent when the turn was started from open threads rather than a message. */
   instruction?: string
+  /** the images sent with the instruction, in the order they were attached */
+  attachments?: ChatAttachment[]
   /** comment ids this turn was started to answer */
   targetCommentIds: string[]
   events: AgentEvent[]
@@ -118,6 +120,18 @@ export interface AgentRun {
 }
 
 /**
+ * One image sent with a chat message. The bytes live with the chat that holds
+ * it; limits and accepted formats are in `shared/attachments.ts`.
+ */
+export interface ChatAttachment {
+  id: string
+  /** the file name as given — a pasted image has none, so Studio names it */
+  name: string
+  mimeType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+  size: number
+}
+
+/**
  * One message waiting behind the turn in progress.
  *
  * Typing while the agent works does not interrupt it: the message is parked on
@@ -130,6 +144,8 @@ export interface QueuedMessage {
   text: string
   /** the open threads attached to it, by id — the turn carries those and no other */
   comments?: string[]
+  /** the images it carries — a message may be images alone, with no text */
+  attachments?: ChatAttachment[]
   createdAt: string
 }
 
@@ -170,6 +186,9 @@ export interface ChatInfo {
   title: string
   /** fixed at creation; see the fork rule above */
   harness: string
+  /** colour slot, fixed at creation so closing another tab never re-colours
+   *  this one: 0 is the agent's brand, 1..N the ring (shared/chat-tone.ts) */
+  tone?: number
   /** per-chat model override WITHIN its harness; absent ⇒ the starred model */
   model?: string
   /** per-chat reasoning level; absent ⇒ whatever the agent itself is set to */

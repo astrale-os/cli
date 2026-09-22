@@ -4,6 +4,7 @@ import type {
   AgentPromptSnapshot,
   AgentRun,
   AgentEffort,
+  ChatAttachment,
   Comment,
   StudioEvent,
   StudioSettings,
@@ -11,15 +12,17 @@ import type {
 import type { DomainHandle } from '../../domain'
 import type { Bridge } from '../bridge/grant'
 import type { StoredChat } from '../chats'
-import type { AgentHarness } from '../harness/adapter'
+import type { AgentHarness, AgentTurnImage } from '../harness/adapter'
 import type { DomainTurnParts } from '../prompts/turn'
 import type { AgentWorkspace } from '../workspace'
 
+import { imagesLabel } from '../../../shared/attachments'
 import { getBundle } from '../../cache'
 import { refreshAuto } from '../../handoff/service'
 import { readComments } from '../../state/comments'
 import { readContext } from '../../state/context'
 import { listDocuments } from '../../state/documents'
+import { attachmentFiles, resolveAttachments } from '../attachments'
 import { startBridge } from '../bridge/grant'
 import { pendingHandoff } from '../chats'
 import { getHarnessById } from '../harness/registry'
@@ -41,6 +44,8 @@ export interface SubmitOpts {
   message?: string
   resume?: boolean
   comments?: CommentSelection
+  /** ids of the images this message carries, uploaded to its chat beforehand */
+  attachments?: string[]
 }
 
 export interface PreparedRun {
@@ -57,6 +62,8 @@ export interface PreparedRun {
   harnessEnv: Record<string, string>
   bridge: Bridge
   run: AgentRun
+  /** the images the harness is handed with the prompt, read from the chat's store */
+  images: AgentTurnImage[]
   promptSnapshot(sessionId: string | undefined, firstTurn: boolean): AgentPromptSnapshot
 }
 
@@ -147,6 +154,12 @@ export async function prepareRun(
   const resume = chat.sessionId
   const bareResume = options?.resume === true && !!resume
   const message = (options?.message ?? '').trim()
+  const resolved = resolveAttachments(workspace.stateRoot, chat.id, options?.attachments ?? [])
+  if ('error' in resolved) return resolved
+  const attachments: ChatAttachment[] = bareResume ? [] : resolved.attachments
+  const images: AgentTurnImage[] = attachmentFiles(workspace.stateRoot, chat.id, attachments).map(
+    ({ attachment, path }) => ({ path, mimeType: attachment.mimeType, name: attachment.name }),
+  )
   const domains: DomainTurnParts[] = []
   for (const handle of workspace.domains) {
     domains.push(await domainParts(workspace, handle, controller.signal, options?.comments))
@@ -155,11 +168,14 @@ export async function prepareRun(
   const briefed = briefedDomains(domains)
   const awaiting = briefed.flatMap((domain) => domain.awaitingThreads)
   const documents = briefed.reduce((n, domain) => n + domain.documents.length, 0)
-  // A turn has to carry something, and a message is only one of the three things it
-  // can be: an attached document is an instruction in itself ("read this"), and so is
-  // an attached thread. Only a turn carrying none of them is nothing to send.
-  if (!bareResume && awaiting.length === 0 && !message && documents === 0)
-    return { error: 'nothing to send — type an instruction, attach a document or a thread' }
+  // A turn has to carry something, and text is only one of the things it can be: an
+  // image is a message in itself ("look at this"), an attached document is an
+  // instruction ("read this"), and so is an attached thread. Only a turn carrying
+  // none of them is nothing to send.
+  if (!bareResume && awaiting.length === 0 && !message && !attachments.length && documents === 0)
+    return {
+      error: 'nothing to send — type an instruction, attach an image, a document or a thread',
+    }
 
   const configuration = await resolveHarnessConfiguration(harness, {
     ...(chat.model ? { model: chat.model } : {}),
@@ -185,6 +201,7 @@ export async function prepareRun(
           domains,
           firstTurn,
           message,
+          images,
           ...(firstTurn && chat.turns === 0 && chat.newDomain ? { newDomain: chat.newDomain } : {}),
         })
   const systemPrompt = buildSystemPrompt({ bridge: bridge.enabled })
@@ -214,14 +231,17 @@ export async function prepareRun(
       ? 'continuing after interruption'
       : message
         ? message.slice(0, 60) + (message.length > 60 ? '…' : '')
-        : awaiting.length > 0
-          ? awaiting.length === 1
-            ? '1 attached thread'
-            : `${awaiting.length} attached threads`
-          : documents === 1
-            ? '1 document'
-            : `${documents} documents`,
+        : attachments.length > 0
+          ? imagesLabel(attachments.length)
+          : awaiting.length > 0
+            ? awaiting.length === 1
+              ? '1 attached thread'
+              : `${awaiting.length} attached threads`
+            : documents === 1
+              ? '1 document'
+              : `${documents} documents`,
     ...(message ? { instruction: message } : {}),
+    ...(attachments.length ? { attachments } : {}),
     targetCommentIds: awaiting.map((comment) => comment.id),
     events: [],
     sessionId: resume,
@@ -246,6 +266,7 @@ export async function prepareRun(
       harnessEnv,
       bridge,
       run,
+      images,
       promptSnapshot,
     },
   }

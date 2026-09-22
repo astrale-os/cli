@@ -5,6 +5,7 @@ import type {
   AgentSystemPromptInfo,
   AgentSessionInfo,
   AnchorRef,
+  ChatAttachment,
   ChatInfo,
   ChatList,
   Comment,
@@ -129,12 +130,39 @@ export const api = {
   agentHistory: (chatId?: string) => get<AgentRun[]>(`/api/agent/history${chatQuery(chatId)}`),
   /** run the message now, or park it behind the turn already running */
   /** `comments` are the open threads the turn carries — none unless named, `'all'` for every one */
-  agentSubmit: (message?: string, chatId?: string, comments?: 'all' | string[]) =>
+  /** `attachments` are the ids of images already uploaded to this chat, in order */
+  agentSubmit: (
+    message?: string,
+    chatId?: string,
+    comments?: 'all' | string[],
+    attachments?: string[],
+  ) =>
     post<AgentSubmitResult>('/api/agent/submit', {
       ...(message ? { message } : {}),
       ...(chatId ? { chatId } : {}),
       ...(comments === 'all' || comments?.length ? { comments } : {}),
+      ...(attachments?.length ? { attachments } : {}),
     }),
+  /** keep one image with a chat, before the message it goes with is sent */
+  uploadAttachment: async (chatId: string, file: Blob, name: string) => {
+    const form = new FormData()
+    form.append('file', file, name)
+    const res = await fetch(`/api/agent/attachments${chatQuery(chatId)}`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!res.ok) {
+      const body = (await res.json().catch(() => undefined)) as { error?: string } | undefined
+      throw new Error(body?.error ?? `${res.status} upload failed`)
+    }
+    return (await res.json()) as ChatAttachment
+  },
+  deleteAttachment: (chatId: string, id: string) =>
+    req<{ ok: boolean }>(`/api/agent/attachments/${encodeURIComponent(id)}${chatQuery(chatId)}`, {
+      method: 'DELETE',
+    }),
+  attachmentUrl: (chatId: string, id: string) =>
+    `/api/agent/attachments/${encodeURIComponent(id)}${chatQuery(chatId)}`,
   // seamless continue after an interruption — resumes the live session with a bare nudge (no re-briefing)
   agentResume: (chatId?: string) =>
     post<AgentSubmitResult>('/api/agent/submit', {

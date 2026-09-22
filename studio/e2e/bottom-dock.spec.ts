@@ -141,6 +141,33 @@ test('at rest the bar is one line and carries nothing it cannot act on', async (
   await expect(page.getByRole('button', { name: 'Open comments' })).toHaveCount(0)
 })
 
+test('a long draft rests as its first words on one line, and opens across the whole dock', async ({
+  page,
+}) => {
+  await stubAgent(page)
+  await goBottom(page)
+  const draft =
+    'Several roles per person and per entity, since there are several modules\nAccounts with no profile: reset the data\nSend it on creation: yes'
+
+  await openDock(page)
+  await composer(page).fill(draft)
+  // open, the field runs from edge to edge; the controls wait on the row below it
+  const open = (await dock(page).boundingBox())!
+  const field = (await composer(page).boundingBox())!
+  expect(field.width).toBeGreaterThan(open.width - 40)
+
+  await page.keyboard.press('Escape')
+  await expect.poll(() => dockHeight(page)).toBeLessThan(ONE_LINE)
+  // resting: the opening words, on one line, newlines flattened
+  await expect(dock(page).locator('[data-draft-preview]')).toHaveText(draft.replace(/\n/g, ' '))
+  expect(await composer(page).inputValue()).toBe(draft)
+
+  // and a press on it gives the whole draft back, caret in the field
+  await openDock(page)
+  await expect(composer(page)).toBeFocused()
+  await expect(composer(page)).toHaveValue(draft)
+})
+
 test('the paperclip chooses a domain, then shows what it took', async ({ page }) => {
   await goBottom(page)
   // an upload queues behind the server's first introspection, and a cold fixture
@@ -184,14 +211,19 @@ test('the paperclip chooses a domain, then shows what it took', async ({ page })
   await expect(chip).toHaveCount(0)
 })
 
-test('opening grows the dock upward without moving the field it grew from', async ({ page }) => {
+test('opening grows the dock upward from the bar it rests as', async ({ page }) => {
   await goBottom(page)
   const before = (await composer(page).boundingBox())!
+  const bar = (await dock(page).boundingBox())!
 
   await openDock(page)
+  const opened = (await dock(page).boundingBox())!
+  // the whole point of growing rather than opening a panel: the bar's foot stays
+  // put and everything unfolds above it. The field itself rises by one row — open,
+  // it spans the whole width and the controls sit under it
+  expect(Math.round(opened.y + opened.height)).toBe(Math.round(bar.y + bar.height))
   const after = (await composer(page).boundingBox())!
-  // the whole point of growing rather than opening a panel: the field stays put
-  expect(Math.round(after.y)).toBe(Math.round(before.y))
+  expect(after.width).toBeGreaterThan(before.width)
   await expect(dock(page).getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
 
   await page.keyboard.press('Escape')

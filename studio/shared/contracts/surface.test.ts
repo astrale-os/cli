@@ -28,6 +28,7 @@ const TARGET_BARREL_EXPORTS = [
   'AnchorRef',
   'BundleError',
   'ChangeSet',
+  'ChatAttachment',
   'ChatInfo',
   'ChatList',
   'ChatOrigin',

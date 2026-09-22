@@ -1,5 +1,6 @@
 import type { ChatInfo } from '@shared/types'
 
+import { CHAT_TONE_RING } from '@shared/chat-tone'
 import { expect, test } from 'bun:test'
 
 import { brandTone, chatTones, NEUTRAL_TONE, toneOf } from './chat-tone'
@@ -55,4 +56,22 @@ test('a chat is toned by the strip; a closed one falls back to its agent', () =>
   // the handoff chip outlives the tab it points at
   expect(toneOf(chats, 'gone', 'claude')).toEqual(brandTone('claude'))
   expect(toneOf(chats, undefined)).toBe(NEUTRAL_TONE)
+})
+
+test('a chat keeps the tone it was opened with when another tab closes', () => {
+  const chats = [chat('a'), chat('b'), chat('c'), chat('d')].map((entry, index) => ({
+    ...entry,
+    tone: index,
+  }))
+  const before = chatTones(chats)
+  const after = chatTones(chats.filter((entry) => entry.id !== 'b'))
+  expect(after).toEqual([before[0]!, before[2]!, before[3]!])
+})
+
+test('the ring has one colour per stored slot, then starts over', () => {
+  const slot = (tone: number) => chatTones([{ ...chat('a'), tone }])[0]!.mark
+  const ring = Array.from({ length: CHAT_TONE_RING }, (_, index) => slot(index + 1))
+  expect(new Set(ring).size).toBe(CHAT_TONE_RING)
+  expect(slot(CHAT_TONE_RING + 1)).toBe(ring[0]!)
+  expect(slot(0)).toBe(brandTone('claude').mark)
 })
