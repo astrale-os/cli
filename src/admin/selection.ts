@@ -1,7 +1,5 @@
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 
-import { createAuth } from '@astrale-os/sdk/auth'
-import { call } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 import { PropertyKey, K } from '@astrale-os/sdk/schema'
@@ -25,9 +23,7 @@ export async function resolveAdminFleet(
     }),
     { label: 'Fleet directory', maximum: 10_000, maximumPages: 40 },
   )
-  const auth = createAuth((path, input, options) =>
-    context.session.call(call(path, input), options),
-  )
+  const auth = context.session.auth
   const slugKey = PropertyKey.of(AdminContract.classes.Fleet, 'slug')
   const fleets = await mapBounded(nodes, 8, async (node) => {
     const slug = node.props[slugKey]
