@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.119](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.118...cli/v1.0.0-beta.119) (2026-09-23)
+
+
+### Features
+
+* **studio:** fold an agent turn's work into one line that unfolds on demand ([#539](https://github.com/astrale-os/cli/issues/539)) ([1a8488e](https://github.com/astrale-os/cli/commit/1a8488ea575b81eff27f405a2cb506305ce3763a))
+
 ## [1.0.0-beta.118](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.117...cli/v1.0.0-beta.118) (2026-09-23)
 
 
