@@ -20,6 +20,7 @@ import { projectDomainCanvas } from '../projection'
 import { viewGraph } from '../view-graph'
 import { classRef, domainRef, edgeRef, isHidden } from '../visibility'
 import {
+  externalLanes,
   projectExternalFrames,
   savedExternalRects,
   workspaceExternalMemberNodeId,
@@ -454,8 +455,13 @@ export function composeWorkspaceCanvas(
   rememberDependencyFootprint(domains, origins, index)
   const clusters = index.clusters({ workspaceOrigins, expanded: new Set(expandedExternals) })
 
+  const lanes = externalLanes(clusters, externalPositions)
   const frames = layoutWorkspaceFrames(
-    domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
+    domains.map((domain) => ({
+      domainId: domain.input.summary.id,
+      nodes: domain.nodes,
+      trailing: lanes[domain.input.summary.id],
+    })),
     domainPositions,
     savedExternalRects(clusters, externalPositions),
   )
