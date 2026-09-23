@@ -44,6 +44,12 @@ interface MethodAuthBadgeProps extends MethodAuthProps {
   interactive?: boolean
 }
 
+/** The callable's policy check, decoded once; undefined when absent or unreadable. */
+function usePolicyCheck(method?: AuthCallable) {
+  const raw = method?.policy
+  return useMemo(() => (raw === undefined ? undefined : decodePolicyCheck(raw)), [raw])
+}
+
 /** Row glyph; hover reveals the full card. */
 export function MethodAuthBadge({ method, domainId, interactive = true }: MethodAuthBadgeProps) {
   const v = methodAuth(method)
@@ -85,10 +91,9 @@ function PolicyChecks({ method, domainId }: MethodAuthProps) {
   const { data: bundle } = useBundle(ownerDomainId)
   const ir = bundle?.ir ?? null
   const index = useMemo(() => (ir ? indexPolicies(ir) : null), [ir])
-  const raw = method?.policy
-  const check = useMemo(() => (raw === undefined ? undefined : decodePolicyCheck(raw)), [raw])
+  const check = usePolicyCheck(method)
 
-  if (raw === undefined) return null
+  if (method?.policy === undefined) return null
   if (!check) {
     return (
       <div className="border-t px-3 py-2 text-[12px] text-warning">
@@ -201,8 +206,7 @@ export function PolicyChips({
   origin?: string
   domainId?: string
 }) {
-  const raw = method?.policy
-  const check = useMemo(() => (raw === undefined ? undefined : decodePolicyCheck(raw)), [raw])
+  const check = usePolicyCheck(method)
   if (!check) return null
   return (
     <Chip

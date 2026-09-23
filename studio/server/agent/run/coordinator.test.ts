@@ -26,6 +26,8 @@ import { setHarnessGateway } from '../harness/gateway/config'
 import { getHarness } from '../harness/selection'
 import { agentWorkspace } from '../workspace'
 import {
+  addAttachment,
+  attachmentOf,
   cancelRun,
   closeChat,
   dropQueued,
@@ -161,7 +163,66 @@ function useMock(mode = 'normal', delay = '0'): void {
   process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = delay
 }
 
+/** The smallest valid PNG: one transparent pixel. */
+const PIXEL = Uint8Array.from(
+  atob(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  ),
+  (char) => char.charCodeAt(0),
+)
+
 describe.serial('agent runner invariants', () => {
+  test('an image goes with its message to the agent, stays in the history, and leaves with its chat', async () => {
+    useMock()
+    const handle = fixture()
+    const image = unwrap(addAttachment(undefined, { name: 'mockup.png', bytes: PIXEL }))
+    expect(image).toMatchObject({ name: 'mockup.png', mimeType: 'image/png', size: PIXEL.length })
+
+    // an image alone is a message: no text needed
+    const run = (await submitRun(() => {}, { attachments: [image.id] })).run!
+    expect(run.attachments).toEqual([image])
+    expect(run.summary).toBe('1 image')
+    expect(run.prompt?.turnPrompt).toContain('the user sent only the attached images')
+    expect(run.prompt?.turnPrompt).toContain(attachmentOf(undefined, image.id)!.path)
+
+    const settled = await waitForTerminal(handle.id)
+    expect(settled.status).toBe('succeeded')
+    // the harness was handed the bytes, not just told about them
+    expect(settled.events.map((event) => event.text)).toContain('looked at mockup.png')
+    const root = agentWorkspace().stateRoot
+    const stored = resolveChat(root, 'mock', chatId(handle))!
+    expect(readRunHistory(root, stored).at(-1)?.attachments).toEqual([image])
+
+    unwrap(closeChat(stored.id))
+    expect(attachmentOf(stored.id, image.id)).toBeUndefined()
+  })
+
+  test('refuses an image the chat does not hold, and a file that is not an image', async () => {
+    useMock()
+    fixture()
+    expect(
+      (await submitRun(() => {}, { message: 'look', attachments: [randomUUID()] })).error,
+    ).toMatch(/unknown image/)
+    expect(
+      addAttachment(undefined, { name: 'notes.png', bytes: new TextEncoder().encode('hello') }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining('not a PNG') })
+  })
+
+  test('a message of images alone queues behind a turn and keeps them', async () => {
+    useMock('normal', '200')
+    const handle = fixture()
+    const image = unwrap(addAttachment(undefined, { name: 'after.png', bytes: PIXEL }))
+
+    await submitRun(() => {}, { message: 'first' })
+    const queued = (await submitRun(() => {}, { attachments: [image.id] })).queued!
+    expect(queued).toMatchObject({ text: '', attachments: [image] })
+    await waitForDrained(handle)
+    const root = agentWorkspace().stateRoot
+    const last = readRunHistory(root, resolveChat(root, 'mock', chatId(handle))!).at(-1)
+    expect(last?.attachments).toEqual([image])
+    expect(last?.events.map((event) => event.text)).toContain('looked at after.png')
+  })
+
   test('passes the selected harness model into the turn and its persisted prompt snapshot', async () => {
     useMock()
     const handle = fixture()
@@ -175,6 +236,56 @@ describe.serial('agent runner invariants', () => {
 
     expect(run.status).toBe('succeeded')
     expect(run.prompt?.model).toBe('mock-domain-model')
+  })
+
+  test('open threads ride a turn only when attached, by id or all at once', async () => {
+    useMock()
+    const handle = fixture()
+    const ask = (text: string) =>
+      upsertComment(handle.root, {
+        anchors: ['Test'],
+        anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
+        text,
+      })
+    const first = ask('first question')
+    const second = ask('second question')
+
+    // nothing attached: the message goes alone, the threads are only signalled
+    const plain = (await submitRun(() => {}, { message: 'unrelated work' })).run!
+    expect(plain.targetCommentIds).toEqual([])
+    expect(plain.prompt?.turnPrompt).toContain('2 open threads, 0 attached to this turn')
+    expect(plain.prompt?.turnPrompt).not.toContain('second question')
+    await waitForTerminal(handle.id)
+
+    // an empty composer with nothing attached is nothing to send
+    expect((await submitRun(() => {})).error).toContain('nothing to send')
+
+    const picked = (await submitRun(() => {}, { comments: [second.id] })).run!
+    expect(picked.targetCommentIds).toEqual([second.id])
+    expect(picked.prompt?.turnPrompt).toContain('second question')
+    expect(picked.prompt?.turnPrompt).not.toContain('first question')
+    await waitForTerminal(handle.id)
+    expect(readComments(handle.root).comments.find((item) => item.id === first.id)?.status).toBe(
+      'open',
+    )
+  })
+
+  test('a queued message keeps the threads it was sent with', async () => {
+    useMock('normal', '200')
+    const handle = fixture()
+    const comment = upsertComment(handle.root, {
+      anchors: ['Test'],
+      anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
+      text: 'answer me later',
+    })
+
+    await submitRun(() => {}, { message: 'first' })
+    const queued = (await submitRun(() => {}, { message: 'then this', comments: 'all' })).queued!
+    expect(queued.comments).toEqual([comment.id])
+    await waitForDrained(handle)
+    const root = agentWorkspace().stateRoot
+    const last = readRunHistory(root, resolveChat(root, 'mock', chatId(handle))!).at(-1)
+    expect(last?.targetCommentIds).toEqual([comment.id])
   })
 
   test('reserves setup synchronously and parks the next message behind the turn', async () => {
@@ -298,7 +409,7 @@ describe.serial('agent runner invariants', () => {
     })
     seedConversation(handle, 'stable-session', 2)
 
-    const started = await submitRun(() => {})
+    const started = await submitRun(() => {}, { comments: 'all' })
     expect(started.run?.status).toBe('running')
     const bridgeFile = bridgeFiles(handle.root)[0]!
     const { token } = JSON.parse(
@@ -338,7 +449,7 @@ describe.serial('agent runner invariants', () => {
     })
     seedConversation(handle, 'stable-session', 4)
 
-    await submitRun(() => {})
+    await submitRun(() => {}, { comments: 'all' })
     const thrown = await waitForTerminal(handle.id)
     expect(thrown).toMatchObject({
       status: 'failed',
@@ -354,7 +465,7 @@ describe.serial('agent runner invariants', () => {
     expect(bridgeFiles(handle.root)).toEqual([])
 
     process.env.DOMAIN_STUDIO_MOCK_MODE = 'badblock'
-    await submitRun(() => {})
+    await submitRun(() => {}, { comments: 'all' })
     const malformed = await waitForTerminal(handle.id)
     expect(malformed.status).toBe('failed')
     expect(malformed.error).toContain('malformed JSON')
@@ -378,7 +489,7 @@ describe.serial('agent runner invariants', () => {
     })
     expect(readComments(handle.root).comments.map((item) => item.id)).toEqual([comment.id])
 
-    await submitRun(() => {})
+    await submitRun(() => {}, { comments: 'all' })
     const run = await waitForTerminal(handle.id)
     expect(run).toMatchObject({
       status: 'succeeded',

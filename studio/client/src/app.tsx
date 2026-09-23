@@ -140,10 +140,8 @@ export function App() {
   const clearSelection = useUI((s) => s.clearSelection)
   const setRun = useAgentLive((s) => s.setRun)
   const validIds = useMemo(() => new Set((domains ?? []).map((domain) => domain.id)), [domains])
-  const scopedDomainId =
-    (sectionDomainId && validIds.has(sectionDomainId) ? sectionDomainId : undefined) ??
-    (selectionDomainId && validIds.has(selectionDomainId) ? selectionDomainId : undefined) ??
-    domains?.[0]?.id
+  const known = (domainId?: string) => (domainId && validIds.has(domainId) ? domainId : undefined)
+  const scopedDomainId = known(sectionDomainId) ?? known(selectionDomainId) ?? domains?.[0]?.id
   const scopedDomain = domains?.find((domain) => domain.id === scopedDomainId)
   const refreshDomains = useMutation({
     mutationFn: api.refreshWorkspace,
@@ -159,7 +157,7 @@ export function App() {
   // can then diverge without creating a workspace-wide active-domain concept.
   useEffect(() => {
     if (selectionDomainId && validIds.has(selectionDomainId)) setSectionDomainId(selectionDomainId)
-  }, [selectionDomainId, validIds])
+  }, [selectionDomainId, validIds, setSectionDomainId])
 
   const changeSectionDomain = (domainId: string) => {
     setSectionDomainId(domainId)
@@ -292,7 +290,7 @@ export function App() {
                 onDomainChange={changeSectionDomain}
               />
             ) : (
-              <EmptyWorkspace empty={domains.length === 0} />
+              <EmptyWorkspace />
             )}
           </main>
           <WorkPanel />
@@ -314,20 +312,18 @@ export function App() {
  * to offer, and the rail that normally offers it is inside a section that cannot
  * draw — so it is offered here instead.
  */
-function EmptyWorkspace({ empty }: { empty: boolean }) {
+function EmptyWorkspace() {
   const setNewDomainOpen = useUI((s) => s.setNewDomainOpen)
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-      {empty ? 'This workspace has no domain yet.' : 'No domain selected'}
-      {empty && (
-        <button
-          type="button"
-          onClick={() => setNewDomainOpen(true)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" /> New domain
-        </button>
-      )}
+      This workspace has no domain yet.
+      <button
+        type="button"
+        onClick={() => setNewDomainOpen(true)}
+        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+      >
+        <Plus className="h-4 w-4" /> New domain
+      </button>
     </div>
   )
 }

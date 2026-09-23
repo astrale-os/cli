@@ -11,6 +11,7 @@ function domain(origin: string, relativePath: string): DomainTurnParts {
     relativePath,
     renderFingerprint: '',
     openThreads: 0,
+    pendingThreads: 0,
     awaitingThreads: [],
     userContext: [],
     autoContext: [],
@@ -52,4 +53,17 @@ test('an ordinary first turn keeps the generic direct-instruction framing', () =
   expect(prompt).toContain('## Direct instruction')
   expect(prompt).not.toContain('## Newly created domain')
   expect(prompt).not.toContain('## User creation brief')
+})
+
+test('open threads the user did not attach are signalled, not carried', () => {
+  const prompt = buildTurnPrompt({
+    workspaceRoot: '/workspace',
+    domains: [{ ...domain('billing.example.dev', './billing'), openThreads: 3, pendingThreads: 2 }],
+    firstTurn: false,
+    message: 'Rename Invoice to Bill.',
+  })
+
+  expect(prompt).toContain('3 open threads, 0 attached to this turn')
+  expect(prompt).toContain('2 open threads still wait on a reply but were NOT attached')
+  expect(prompt).not.toContain('```json')
 })

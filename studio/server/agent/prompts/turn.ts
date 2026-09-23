@@ -22,7 +22,9 @@ export interface DomainTurnParts {
   schemaRevision?: SchemaRevision
   /** every open thread, answered or not — the digest counts them */
   openThreads: number
-  /** the threads whose last word is not the agent's — what this turn carries */
+  /** open threads whose last word is not the agent's, attached to this turn or not */
+  pendingThreads: number
+  /** the awaiting threads the user attached to this turn — what this turn carries */
   awaitingThreads: Comment[]
   userContext: ContextItem[]
   autoContext: ContextItem[]
@@ -37,6 +39,8 @@ export interface TurnParts {
   domains: DomainTurnParts[]
   firstTurn: boolean
   message?: string
+  /** images sent with the message — given to the agent as images, listed here by path */
+  images?: { name: string; path: string }[]
   /** present only when this first turn is the creation brief for a fresh scaffold */
   newDomain?: NewDomainContext
 }
@@ -66,16 +70,23 @@ function workspaceDigest(parts: TurnParts): string {
     `Working directory: \`${parts.workspaceRoot}\` — ${count(parts.domains.length, 'domain')}, each its own repo. \`cd\` into a domain for its commands and read its \`.agents/skills/\` before editing it.`,
     '',
   ]
+  let unattached = 0
   for (const domain of parts.domains) {
-    const waiting = domain.awaitingThreads.length
+    const attached = domain.awaitingThreads.length
+    unattached += Math.max(0, domain.pendingThreads - attached)
     const status =
       domain.openThreads === 0
         ? 'no open thread'
-        : `${count(domain.openThreads, 'open thread')}, ${waiting} awaiting your reply`
+        : `${count(domain.openThreads, 'open thread')}, ${attached} attached to this turn`
     const docs =
       domain.documents.length > 0 ? `, ${count(domain.documents.length, 'document')}` : ''
     lines.push(`- **${domain.origin}** — \`${domain.relativePath}\` — ${status}${docs}`)
   }
+  if (unattached > 0)
+    lines.push(
+      '',
+      `${count(unattached, 'open thread')} still ${unattached === 1 ? 'waits' : 'wait'} on a reply but ${unattached === 1 ? 'was' : 'were'} NOT attached to this turn. Leave ${unattached === 1 ? 'it' : 'them'} alone unless the direct instruction asks about ${unattached === 1 ? 'it' : 'them'}; \`list_open_threads\` reads ${unattached === 1 ? 'it' : 'them'} if it does.`,
+    )
   return lines.join('\n')
 }
 
@@ -88,10 +99,10 @@ export function buildTurnPrompt(parts: TurnParts): string {
     ? '> New session. Domain Studio has just scaffolded the domain below. Build it from the user’s creation brief.'
     : parts.firstTurn
       ? hasThreads
-        ? '> New session. The thread pointers and context below are your orientation — implement the open threads and reply by id.'
+        ? '> New session. The thread pointers and context below are your orientation — implement the attached threads and reply by id.'
         : '> New session. Follow the direct instruction below; use the context below and read each domain’s schema/ when needed.'
       : hasThreads
-        ? '> Follow-up turn in the SAME session. The schema files are current (incl. your prior edits); the threads below were added or updated since your last reply — implement and answer them.'
+        ? '> Follow-up turn in the SAME session. The schema files are current (incl. your prior edits); the user attached the threads below to this turn — implement and answer them.'
         : '> Follow-up turn in the SAME session. The schema files are current (incl. your prior edits). Follow the direct instruction below.'
   const message = parts.message?.trim()
   const creation = parts.newDomain
@@ -105,9 +116,17 @@ export function buildTurnPrompt(parts: TurnParts): string {
         `The user’s creation brief below applies specifically to this domain. Work inside \`${parts.newDomain.path}\`, load the **astrale-domain** skill first, and follow its **New Domain Creation Workflow**.`,
       ]
     : []
-  const instruction = message
-    ? ['', parts.newDomain ? '## User creation brief' : '## Direct instruction', '', message]
-    : []
+  const images = parts.images ?? []
+  const instruction =
+    message || images.length
+      ? [
+          '',
+          parts.newDomain ? '## User creation brief' : '## Direct instruction',
+          '',
+          message || '_No text — the user sent only the attached images. Look at them._',
+          ...attachedImages(images),
+        ]
+      : []
   const sections = briefed.map((domain) => {
     const anchors = resolveThreadAnchors(domain.awaitingThreads, domain.overlay)
     const body = buildCopyMarkdown({
@@ -141,14 +160,28 @@ export function buildTurnPrompt(parts: TurnParts): string {
     .replace(/\n{3,}/g, '\n\n')
 }
 
+/**
+ * The images a message carries. The harness receives them as images alongside
+ * this prompt; the paths are for everything else — an agent that cannot see
+ * them, or work that needs the file itself (copying a mockup into the repo).
+ */
+function attachedImages(images: { name: string; path: string }[]): string[] {
+  if (!images.length) return []
+  return [
+    '',
+    `Attached ${count(images.length, 'image')} (sent with this message, also saved on disk):`,
+    ...images.map((image) => `- ${image.name}: \`${image.path}\``),
+  ]
+}
+
 /** Build the minimal nudge for a surviving interrupted conversation. */
 export function buildResumePrompt(): string {
   return [
     '> Resuming the SAME session. Your previous turn was cut off when Domain Studio',
     '> restarted — nothing else has changed. Pick up exactly where you left off.',
     '',
-    'Continue and finish what you were doing, then make sure every open thread gets an',
-    'answer through the usual channel (the domain-studio MCP tools, or the final',
+    'Continue and finish what you were doing, then make sure every thread attached to that',
+    'turn gets an answer through the usual channel (the domain-studio MCP tools, or the final',
     'machine-state ```json``` block). Keep going from where you stopped — do not restart.',
   ].join('\n')
 }

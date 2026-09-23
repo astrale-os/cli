@@ -1,6 +1,6 @@
 import { agentWorkspace } from '../agent/workspace'
 /** Workspace-wide routes that do not require a DomainHandle. */
-import { getBundle, introspectionStatus, invalidate, invalidateDatasets } from '../cache'
+import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
 import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
 import { asJsonRecord, asString } from '../json'
@@ -58,18 +58,9 @@ export async function handleWorkspaceRoute(
         // Keep agent runs entirely outside this path. A manual refresh only replaces
         // derived domain reads; clients retain their current query data while this
         // rebuild runs, so the canvas never blanks between generations.
+        // `invalidate(…, 'all')` drops the domain's Datasets too.
         invalidate(handle.id, 'all')
-        invalidateDatasets(handle.id)
-        notify({ type: 'resolving', domainId: handle.id })
-        const bundle = await getBundle(handle.id, true)
-        if (bundle?.error)
-          notify({ type: 'compile-error', domainId: handle.id, message: bundle.error.message })
-        notify({
-          type: 'schema-diff',
-          domainId: handle.id,
-          renderFingerprint: bundle?.renderFingerprint ?? 'sha-none',
-        })
-        notify({ type: 'anatomy-diff', domainId: handle.id })
+        await rebuildAndAnnounce(handle.id, notify)
         notify({ type: 'datasets', domainId: handle.id })
       }),
     )

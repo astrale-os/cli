@@ -134,24 +134,35 @@ function parseJson(text: string): unknown | null {
   }
 }
 
+function spawnFailure(error: unknown): CapturedProcess {
+  return {
+    exitCode: -1,
+    stdout: '',
+    stderr: '',
+    timedOut: false,
+    spawnError: error instanceof Error ? error.message : String(error),
+  }
+}
+
+/** Why a finished run failed: its spawn error, its timeout, or what its output says. */
+function captureDetail(
+  captured: CapturedProcess,
+  options: RunOptions,
+  fromOutput: () => string,
+): string {
+  return (
+    captured.spawnError ??
+    (captured.timedOut ? `Astrale CLI timed out after ${options.timeoutMs ?? 0}ms` : fromOutput())
+  )
+}
+
 async function captureStudioCli(
   args: readonly string[],
   options: RunOptions,
 ): Promise<CapturedProcess> {
-  let command: string[]
   try {
-    command = studioCliCommand(args)
-  } catch (error) {
-    return {
-      exitCode: -1,
-      stdout: '',
-      stderr: '',
-      timedOut: false,
-      spawnError: error instanceof Error ? error.message : String(error),
-    }
-  }
-
-  try {
+    // Resolving the command throws when the descriptor is missing; that too is a spawn failure.
+    const command = studioCliCommand(args)
     const proc = Bun.spawn(command, {
       ...(options.cwd ? { cwd: options.cwd } : {}),
       stdout: 'pipe',
@@ -179,13 +190,7 @@ async function captureStudioCli(
       if (timer) clearTimeout(timer)
     }
   } catch (error) {
-    return {
-      exitCode: -1,
-      stdout: '',
-      stderr: '',
-      timedOut: false,
-      spawnError: error instanceof Error ? error.message : String(error),
-    }
+    return spawnFailure(error)
   }
 }
 
@@ -199,11 +204,9 @@ export async function runStudioCliJson<T>(
   const value = parseJson(captured.stdout) ?? parseJson(captured.stderr)
   const data = value === null ? null : decoder(value)
   const accepted = options.acceptedExitCodes ?? [0]
-  const detail =
-    captured.spawnError ??
-    (captured.timedOut
-      ? `Astrale CLI timed out after ${options.timeoutMs ?? 0}ms`
-      : resultDetail(value, captured.stdout, captured.stderr))
+  const detail = captureDetail(captured, options, () =>
+    resultDetail(value, captured.stdout, captured.stderr),
+  )
   return {
     version: 1,
     ok: accepted.includes(captured.exitCode) && data !== null && !captured.timedOut,
@@ -223,11 +226,11 @@ export async function runStudioCliText(
 ): Promise<StudioCliTextResult> {
   const captured = await captureStudioCli(args, options)
   const accepted = options.acceptedExitCodes ?? [0]
-  const detail =
-    captured.spawnError ??
-    (captured.timedOut
-      ? `Astrale CLI timed out after ${options.timeoutMs ?? 0}ms`
-      : (conciseCliFailure(captured.stderr) ?? conciseCliFailure(captured.stdout) ?? ''))
+  const detail = captureDetail(
+    captured,
+    options,
+    () => conciseCliFailure(captured.stderr) ?? conciseCliFailure(captured.stdout) ?? '',
+  )
   return {
     version: 1,
     ok: accepted.includes(captured.exitCode) && !captured.timedOut,

@@ -141,6 +141,33 @@ test('at rest the bar is one line and carries nothing it cannot act on', async (
   await expect(page.getByRole('button', { name: 'Open comments' })).toHaveCount(0)
 })
 
+test('a long draft rests as its first words on one line, and opens across the whole dock', async ({
+  page,
+}) => {
+  await stubAgent(page)
+  await goBottom(page)
+  const draft =
+    'Several roles per person and per entity, since there are several modules\nAccounts with no profile: reset the data\nSend it on creation: yes'
+
+  await openDock(page)
+  await composer(page).fill(draft)
+  // open, the field runs from edge to edge; the controls wait on the row below it
+  const open = (await dock(page).boundingBox())!
+  const field = (await composer(page).boundingBox())!
+  expect(field.width).toBeGreaterThan(open.width - 40)
+
+  await page.keyboard.press('Escape')
+  await expect.poll(() => dockHeight(page)).toBeLessThan(ONE_LINE)
+  // resting: the opening words, on one line, newlines flattened
+  await expect(dock(page).locator('[data-draft-preview]')).toHaveText(draft.replace(/\n/g, ' '))
+  expect(await composer(page).inputValue()).toBe(draft)
+
+  // and a press on it gives the whole draft back, caret in the field
+  await openDock(page)
+  await expect(composer(page)).toBeFocused()
+  await expect(composer(page)).toHaveValue(draft)
+})
+
 test('the paperclip chooses a domain, then shows what it took', async ({ page }) => {
   await goBottom(page)
   // an upload queues behind the server's first introspection, and a cold fixture
@@ -184,19 +211,90 @@ test('the paperclip chooses a domain, then shows what it took', async ({ page })
   await expect(chip).toHaveCount(0)
 })
 
-test('opening grows the dock upward without moving the field it grew from', async ({ page }) => {
+test('opening grows the dock upward from the bar it rests as', async ({ page }) => {
   await goBottom(page)
   const before = (await composer(page).boundingBox())!
+  const bar = (await dock(page).boundingBox())!
 
   await openDock(page)
+  const opened = (await dock(page).boundingBox())!
+  // the whole point of growing rather than opening a panel: the bar's foot stays
+  // put and everything unfolds above it. The field itself rises by one row — open,
+  // it spans the whole width and the controls sit under it
+  expect(Math.round(opened.y + opened.height)).toBe(Math.round(bar.y + bar.height))
   const after = (await composer(page).boundingBox())!
-  // the whole point of growing rather than opening a panel: the field stays put
-  expect(Math.round(after.y)).toBe(Math.round(before.y))
+  expect(after.width).toBeGreaterThan(before.width)
   await expect(dock(page).getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
 
   await page.keyboard.press('Escape')
   await expect.poll(() => dockHeight(page)).toBeLessThan(BAR_CEILING)
   expect(Math.round((await composer(page).boundingBox())!.y)).toBe(Math.round(before.y))
+})
+
+/**
+ * The open dock resizes from its edges: the top edge sets the conversation's
+ * height, a side edge the dock's width on both sides at once, so it never leaves
+ * the middle of the view. The field under the caret stays where it was.
+ */
+test('the open dock resizes from its edges and stays centred', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await goBottom(page)
+  await openDock(page)
+  const box = async () => (await dock(page).boundingBox())!
+  const centre = (rect: { x: number; width: number }) => Math.round(rect.x + rect.width / 2)
+  const before = await box()
+  const field = (await composer(page).boundingBox())!
+
+  // wider, from the right edge: both sides move, the centre does not
+  const right = (await dock(page).locator('[data-dock-resize="right"]').boundingBox())!
+  await page.mouse.move(right.x + right.width / 2, right.y + right.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(right.x + right.width / 2 + 100, right.y + right.height / 2, { steps: 4 })
+  await page.mouse.up()
+  const wider = await box()
+  expect(Math.round(wider.width)).toBe(Math.round(before.width) + 200)
+  expect(Math.abs(centre(wider) - centre(before))).toBeLessThanOrEqual(1)
+
+  // narrower, from the left edge: same rule
+  const left = (await dock(page).locator('[data-dock-resize="left"]').boundingBox())!
+  await page.mouse.move(left.x + left.width / 2, left.y + left.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(left.x + left.width / 2 + 150, left.y + left.height / 2, { steps: 4 })
+  await page.mouse.up()
+  const narrower = await box()
+  expect(Math.round(narrower.width)).toBe(Math.round(wider.width) - 300)
+  expect(Math.abs(centre(narrower) - centre(before))).toBeLessThanOrEqual(1)
+
+  // taller, from the top edge: the dock grows upward and the field stays put
+  const top = (await dock(page).locator('[data-dock-resize="top"]').boundingBox())!
+  await page.mouse.move(top.x + top.width / 2, top.y + top.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(top.x + top.width / 2, top.y + top.height / 2 - 120, { steps: 4 })
+  await page.mouse.up()
+  const taller = await box()
+  expect(Math.round(taller.height)).toBe(Math.round(narrower.height) + 120)
+  expect(Math.round((await composer(page).boundingBox())!.y)).toBe(Math.round(field.y))
+
+  // and never past the view: a drag far beyond the top stops at the window
+  const top2 = (await dock(page).locator('[data-dock-resize="top"]').boundingBox())!
+  await page.mouse.move(top2.x + top2.width / 2, top2.y + top2.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(top2.x + top2.width / 2, -400, { steps: 4 })
+  await page.mouse.up()
+  const tallest = await box()
+  const main = (await page.locator('main').boundingBox())!
+  expect(tallest.y).toBeGreaterThanOrEqual(main.y)
+
+  // the size is the dock's own: it survives closing and reopening
+  await page.keyboard.press('Escape')
+  await expect.poll(() => dockHeight(page)).toBeLessThan(BAR_CEILING)
+  expect(Math.round((await box()).width)).toBe(Math.round(narrower.width))
+  await openDock(page)
+  await expect.poll(async () => Math.round((await box()).height)).toBe(Math.round(tallest.height))
+
+  // a double click on an edge puts the default back
+  await dock(page).locator('[data-dock-resize="left"]').dblclick()
+  await expect.poll(async () => Math.round((await box()).width)).toBe(Math.round(before.width))
 })
 
 test('a click beside the dock puts it away', async ({ page }) => {
@@ -220,13 +318,12 @@ test('re-docking to a side leaves the floating dock behind', async ({ page }) =>
 })
 
 /**
- * What the turn carries in threads is a COUNT, and the count is a door.
- *
- * Naming each thread on the composer put the comments tab's job on a line that has
- * to stay one line — and said it in a place you cannot answer from. One chip says
- * how much is coming, and clicking it goes where you can read it.
+ * Open threads are signalled on the composer, not sent: one chip counts them, and
+ * a message only carries the threads picked from it. Naming each thread on the
+ * composer itself would put the comments tab's job on a line that has to stay one
+ * line — so the chip opens a picker, and the picker leads to the comments tab.
  */
-test('the threads on the composer are one chip that counts them, and opens them', async ({
+test('open threads are signalled on the composer and attached only when picked', async ({
   page,
   request,
 }) => {
@@ -247,15 +344,41 @@ test('the threads on the composer are one chip that counts them, and opens them'
     made.push(((await created.json()) as { id: string }).id)
   }
 
+  await stubAgent(page)
+  const submitted: Array<Record<string, unknown>> = []
+  await page.route('**/api/agent/submit', (route) => {
+    submitted.push(route.request().postDataJSON() as Record<string, unknown>)
+    return route.fulfill({ json: {} })
+  })
   await goBottom(page)
   await openDock(page)
 
-  // one chip for both threads, and it says how many — not what they are pinned on
-  const chip = dock(page).getByRole('button', { name: '2 comments' })
-  await expect(chip).toBeVisible()
+  // one chip for both threads, saying they are there — none of them is attached yet
+  const chip = dock(page).getByTestId('comment-picker')
+  await expect(chip).toHaveText('2 open comments')
   await expect(dock(page).getByRole('button', { name: /Rename this class/ })).toHaveCount(0)
 
+  // a plain message goes alone
+  await composer(page).fill('Unrelated work')
+  await composer(page).press('Enter')
+  await expect.poll(() => submitted.length).toBe(1)
+  expect(submitted[0]).not.toHaveProperty('comments')
+
+  // pick one thread: the next message carries it, and only it
   await chip.click()
+  await page.getByRole('menuitemcheckbox', { name: /Rename this class/ }).click()
+  await expect(chip).toHaveText('1 of 2 comments attached')
+  await page.keyboard.press('Escape')
+  await composer(page).fill('Handle this one')
+  await composer(page).press('Enter')
+  await expect.poll(() => submitted.length).toBe(2)
+  expect(submitted[1]).toMatchObject({ message: 'Handle this one', comments: [made[0]] })
+  // the pick went with that message
+  await expect(chip).toHaveText('2 open comments')
+
+  // and the picker is the way to the threads themselves
+  await chip.click()
+  await page.getByRole('button', { name: 'Open the comments tab' }).click()
   const fixtureThreads = dock(page).getByTestId(`comments-domain-${FIXTURE_ID}`)
   await expect(
     fixtureThreads.getByRole('heading', { name: 'crm.studio-demo.astrale.ai' }),

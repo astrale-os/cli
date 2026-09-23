@@ -1,5 +1,8 @@
+import type { SourceFile } from 'ts-morph'
+
 import type { SchemaIR, ViewInfo } from '../../../shared/types'
 
+import { schemaProject } from './schema-definition'
 import { buildFrontendViews, buildSchemaViewSources } from './views/routes'
 
 function mergeRoute(target: ViewInfo, incoming: ViewInfo): void {
@@ -32,15 +35,16 @@ function canonicalViewInfo(slug: string, view: NonNullable<SchemaIR['views']>[st
  */
 export function buildViews(
   root: string,
-  _schemaDirName = 'schema',
+  schemaDirName = 'schema',
   canonicalViews?: NonNullable<SchemaIR['views']>,
+  schemaSources: readonly SourceFile[] = schemaProject(root, schemaDirName),
 ): ViewInfo[] {
   const merged = new Map<string, ViewInfo>()
   const admittedViews = canonicalViews ?? {}
   for (const [slug, view] of Object.entries(admittedViews)) {
     merged.set(slug, canonicalViewInfo(slug, view))
   }
-  for (const [slug, file] of buildSchemaViewSources(root, _schemaDirName)) {
+  for (const [slug, file] of buildSchemaViewSources(root, schemaSources)) {
     const current = merged.get(slug)
     if (current) current.file = file
   }

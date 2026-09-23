@@ -7,6 +7,10 @@ import type { ViewServeConfig } from '../view/session'
 
 import { refreshViewPlacement } from '../view/refresh'
 import { startViewServer } from '../view/server'
+import { mintedCredential } from './view-credential.fixture'
+
+/** What the loopback host page sends on every host-only route. */
+const HOST = { 'x-astrale-view-host': '1' }
 
 describe('in-place View refresh', () => {
   test('refuses a bookmark retargeted to another Kernel', async () => {
@@ -53,10 +57,10 @@ describe('in-place View refresh', () => {
     if (address === null || typeof address === 'string') throw new Error('Missing server port')
     const base = `http://127.0.0.1:${address.port}/s/refresh/`
     try {
-      const before = await (await fetch(`${base}config.json`)).json()
+      const before = await (await fetch(`${base}config.json`, { headers: HOST })).json()
       expect(before.revision).toBe(0)
       expect((await fetch(`${base}refresh`, { method: 'POST' })).status).toBe(200)
-      const after = await (await fetch(`${base}config.json`)).json()
+      const after = await (await fetch(`${base}config.json`, { headers: HOST })).json()
       expect(after).toMatchObject({
         sessionId: before.sessionId,
         revision: 1,
@@ -94,7 +98,7 @@ describe('in-place View refresh', () => {
     const base = `http://127.0.0.1:${address.port}/s/refresh/`
     try {
       expect((await fetch(`${base}refresh`, { method: 'POST' })).status).toBe(502)
-      const current = await (await fetch(`${base}config.json`)).json()
+      const current = await (await fetch(`${base}config.json`, { headers: HOST })).json()
       expect(current).toMatchObject({ revision: 0, view: config.session.view })
       expect(persist).not.toHaveBeenCalled()
     } finally {
@@ -181,7 +185,10 @@ async function setupIdentityView(hooks: IdentityHooks) {
           return { views: [resolved ?? config.session.view.route] }
         },
       },
-      auth: { mint: () => hooks.mint?.(identity) ?? Promise.resolve(`credential-${identity}`) },
+      auth: {
+        mint: () =>
+          hooks.mint?.(identity) ?? Promise.resolve(mintedCredential(`credential-${identity}`)),
+      },
     } as never)
   }
   const server = startViewServer(config, {
@@ -287,7 +294,9 @@ describe('View identity switching', () => {
 
   test('re-resolves and mints as the selected identity while invalidating the old page', () =>
     withIdentityView({}, async ({ request, callers, records }) => {
-      expect(await (await request('token')).json()).toMatchObject({ token: 'credential-alice' })
+      expect(await (await request('token')).json()).toMatchObject({
+        token: mintedCredential('credential-alice'),
+      })
       expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
       expect(await (await request('config.json')).json()).toMatchObject({
         identity: 'bob',
@@ -297,7 +306,9 @@ describe('View identity switching', () => {
       expect(records).toEqual(['bob'])
       expect(callers).toEqual(['alice', 'bob', 'bob'])
       expect((await request('token', 0)).status).toBe(409)
-      expect(await (await request('token', 1)).json()).toMatchObject({ token: 'credential-bob' })
+      expect(await (await request('token', 1)).json()).toMatchObject({
+        token: mintedCredential('credential-bob'),
+      })
     }))
 
   test('requires opt-in, an allowed identity, and same-origin host requests', async () => {
@@ -322,7 +333,7 @@ describe('View identity switching', () => {
         {
           [phase]: async (identity: string) => {
             if (identity === 'bob' || phase === 'persist') throw new Error('Denied')
-            return 'credential-alice'
+            return mintedCredential('credential-alice')
           },
         },
         async ({ request, records }) => {
@@ -332,7 +343,7 @@ describe('View identity switching', () => {
             revision: 0,
           })
           expect(await (await request('token')).json()).toMatchObject({
-            token: 'credential-alice',
+            token: mintedCredential('credential-alice'),
           })
           expect(records).toEqual([])
         },
@@ -378,7 +389,7 @@ describe('View identity switching', () => {
       return withIdentityView(
         {
           [phase]: (identity: string) => {
-            if (identity !== 'alice') return Promise.resolve('credential-bob')
+            if (identity !== 'alice') return Promise.resolve(mintedCredential('credential-bob'))
             started.resolve()
             return delayed.promise
           },
@@ -387,13 +398,13 @@ describe('View identity switching', () => {
           const old = request('token')
           await started.promise
           expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
-          delayed.resolve('credential-alice')
+          delayed.resolve(mintedCredential('credential-alice'))
           expect((await old).status).toBe(502)
           expect(await (await request('token', 1)).json()).toMatchObject({
-            token: 'credential-bob',
+            token: mintedCredential('credential-bob'),
           })
         },
-      ).finally(() => delayed.resolve('credential-alice'))
+      ).finally(() => delayed.resolve(mintedCredential('credential-alice')))
     },
   )
 

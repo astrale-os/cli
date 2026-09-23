@@ -98,7 +98,7 @@ export function AgentSubmitButton() {
   const submit = async () => {
     setBusy(true)
     try {
-      const result = await api.agentSubmit()
+      const result = await api.agentSubmit(undefined, undefined, 'all')
       // this button only shows on an idle chat, so a submit either runs or fails
       // — there is no turn for the threads to queue behind
       if (result.error) toast.error(result.error)

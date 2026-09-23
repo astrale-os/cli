@@ -10,6 +10,7 @@ import {
 } from '../../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
 import { listState, readJson, removeState, writeJson } from '../../state/store'
+import { decodeAttachments } from '../attachments'
 
 /**
  * Transcripts live beside the machine-global chats they belong to in the Studio home:
@@ -147,6 +148,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     return decoded ? [decoded] : []
   })
   const instruction = asString(record.instruction)
+  const attachments = decodeAttachments(record.attachments)
   const finishedAt = asString(record.finishedAt)
   const sessionId = asString(record.sessionId)
   const resumed = asBoolean(record.resumed)
@@ -167,6 +169,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     targetCommentIds,
     events,
     ...(instruction === undefined ? {} : { instruction }),
+    ...(attachments === undefined ? {} : { attachments }),
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(resumed === undefined ? {} : { resumed }),
@@ -237,7 +240,7 @@ export function readRunHistory(root: string, chat: StoredChat, limit = 40): Agen
     .map(({ prompt: _prompt, ...turn }) => turn)
 }
 
-/** The full transcript a fork summarizes — prompts included would be pure weight. */
+/** The full transcript a fork summarizes, every stored turn with its frozen prompt. */
 export function readChatTranscript(root: string, chat: StoredChat): AgentRun[] {
   return chatRuns(root, chat)
 }

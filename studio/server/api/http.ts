@@ -36,6 +36,10 @@ export function json(data: unknown, status = 200): Response {
 export const notFound = () => json({ error: 'not found' }, 404)
 export const badRequest = (message: string) => json({ error: message }, 400)
 
+/** A 400 carrying a thrown error's message. */
+export const badRequestFromError = (error: unknown) =>
+  badRequest(error instanceof Error ? error.message : String(error))
+
 /** Parse an HTTP JSON body once and keep malformed/non-object payloads untrusted. */
 export async function readJsonRecord(req: Request): Promise<JsonRecord> {
   const value: unknown = await req.json().catch(() => undefined)

@@ -22,7 +22,14 @@ const DEFAULT_WORKSPACE_UI: WorkspaceUiState = {
   section: 'schema',
   edgeStyle: 'curved',
   detailWidth: 420,
-  panel: { open: false, tab: 'agent', side: 'bottom', size: 360 },
+  panel: {
+    open: false,
+    tab: 'agent',
+    side: 'bottom',
+    size: 360,
+    dockWidth: 880,
+    dockHeight: 560,
+  },
   rail: { width: 240, collapsed: false },
   schema: {
     visibleDomainIds: [],

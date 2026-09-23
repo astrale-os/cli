@@ -30,6 +30,10 @@ export type SectionKey = WorkspaceSection
 
 const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'tests', 'process']
 
+/** The draft key for "no chat yet" — the chat list is a fetch, and the composer is
+ *  on screen before it lands. No chat id can collide with it: chat ids are non-empty. */
+const NO_CHAT = ''
+
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
 
@@ -42,6 +46,19 @@ export type PanelTab = WorkspacePanelUiState['tab']
  *  `bottom` spends a single composer-shaped bar on it and floats the conversation
  *  over the middle of the screen when you click in. */
 export type PanelSide = WorkspacePanelUiState['side']
+
+/** The bottom dock's size bounds, in px. The server clamps to the same ones. */
+export const DOCK_WIDTH = { min: 420, max: 1600, fallback: 880 } as const
+export const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 } as const
+
+/** Bounds the persisted projection holds the other panel sizes to. */
+const PANEL_SIZE = { min: 260, max: 900 } as const
+const RAIL_WIDTH = { min: 180, max: 560 } as const
+const DETAIL_WIDTH = { min: 320, max: 900 } as const
+
+function clampTo({ min, max }: { min: number; max: number }, value: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
 
 function loadStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -82,15 +99,28 @@ interface UIState {
   panelOpen: boolean
   panelTab: PanelTab
   panelSide: PanelSide
-  /** panel width in px when docked left/right; the bottom dock has no size to keep */
+  /** panel width in px when docked left/right */
   panelSize: number
+  /** The bottom dock's own size: its width, grown on both sides so it stays centred,
+   *  and the height of the conversation it opens above the composer. */
+  dockWidth: number
+  dockHeight: number
   /** domains/modules rail furniture, scoped to this scanned workspace */
   modulesWidth: number
   detailWidth: number
   modulesCollapsed: boolean
-  /** What is typed in the agent composer. It lives here, not in the composer, so that
-   *  closing the floating chat — or re-docking the panel — never throws a message away. */
-  agentDraft: string
+  /** What is typed in the agent composer, per chat. It lives here, not in the composer,
+   *  so that closing the floating chat — or re-docking the panel — never throws a message
+   *  away; and it is keyed by chat because a draft belongs to the agent it was written
+   *  for. Switching tabs empties the field and coming back fills it again, which is the
+   *  same message still being written, not a new one.
+   *
+   *  The `NO_CHAT` key holds what was typed before the chat list landed; `adoptAgentDraft`
+   *  hands it to the first real chat, so an early keystroke is not lost either. */
+  agentDrafts: Record<string, string>
+  /** The open threads the user attached to the next agent turn, by id. None by default:
+   *  an open thread is signalled beside the composer, and only rides a turn once chosen. */
+  agentComments: string[]
   selectedClass?: string
   /**
    * Which domain `selectedClass` and `focusId` belong to. A class ref is LOCAL
@@ -151,10 +181,18 @@ interface UIState {
   setPanelTab: (tab: PanelTab) => void
   setPanelSide: (side: PanelSide) => void
   setPanelSize: (size: number) => void
+  setDockSize: (size: { width?: number; height?: number }) => void
   setModulesWidth: (width: number) => void
   setDetailWidth: (width: number) => void
   setModulesCollapsed: (collapsed: boolean) => void
-  setAgentDraft: (text: string) => void
+  /** Write this chat's draft. `undefined` writes the pre-chat one — see `agentDrafts`. */
+  setAgentDraft: (chatId: string | undefined, text: string) => void
+  /** Give the pre-chat draft to a chat, once there is one to give it to. */
+  adoptAgentDraft: (chatId: string) => void
+  /** A closed chat takes its draft with it: nothing can be sent to it any more. */
+  dropAgentDraft: (chatId: string) => void
+  /** Replace the threads attached to the next agent turn — see `agentComments`. */
+  setAgentComments: (ids: string[]) => void
   /** Jump to whatever an anchor points at: the right section, the member that declares
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string, domainId: string) => void
@@ -181,6 +219,11 @@ interface UIState {
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
   setNewDomainOpen: (b: boolean) => void
+}
+
+/** This chat's draft, or what was typed before there was a chat to key it by. */
+export function agentDraftOf(drafts: Record<string, string>, chatId?: string): string {
+  return drafts[chatId ?? NO_CHAT] ?? ''
 }
 
 /** `edge.X` selects like a class (both live in the `class.` selection namespace). */
@@ -215,10 +258,13 @@ export const useUI = create<UIState>((set) => ({
   panelTab: 'agent',
   panelSide: 'bottom',
   panelSize: 360,
+  dockWidth: DOCK_WIDTH.fallback,
+  dockHeight: DOCK_HEIGHT.fallback,
   modulesWidth: 240,
   detailWidth: 420,
   modulesCollapsed: false,
-  agentDraft: '',
+  agentDrafts: {},
+  agentComments: [],
   focusId: null,
   panelOverlay: null,
   commentDraft: null,
@@ -276,21 +322,42 @@ export const useUI = create<UIState>((set) => ({
     set({ panelSide, panelOpen })
   },
   setPanelSize: (panelSize) => set({ panelSize }),
+  setDockSize: ({ width, height }) =>
+    set((s) => ({
+      dockWidth: width === undefined ? s.dockWidth : clampTo(DOCK_WIDTH, width),
+      dockHeight: height === undefined ? s.dockHeight : clampTo(DOCK_HEIGHT, height),
+    })),
   setModulesWidth: (modulesWidth) => set({ modulesWidth }),
   setDetailWidth: (detailWidth) => set({ detailWidth }),
   setModulesCollapsed: (modulesCollapsed) => set({ modulesCollapsed }),
-  setAgentDraft: (agentDraft) => set({ agentDraft }),
+  setAgentDraft: (chatId, text) =>
+    set((s) => ({ agentDrafts: { ...s.agentDrafts, [chatId ?? NO_CHAT]: text } })),
+  adoptAgentDraft: (chatId) =>
+    set((s) => {
+      const pending = s.agentDrafts[NO_CHAT]
+      // Nothing waiting, or the chat is already being written to: leave both alone.
+      if (!pending || s.agentDrafts[chatId]) return {}
+      const { [NO_CHAT]: _dropped, ...rest } = s.agentDrafts
+      return { agentDrafts: { ...rest, [chatId]: pending } }
+    }),
+  dropAgentDraft: (chatId) =>
+    set((s) => {
+      if (!(chatId in s.agentDrafts)) return {}
+      const { [chatId]: _closed, ...rest } = s.agentDrafts
+      return { agentDrafts: rest }
+    }),
+  setAgentComments: (agentComments) => set({ agentComments }),
   revealAnchor: (ref, domainId) => {
-    const section: SectionKey = ref.startsWith('section.')
-      ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')
+    const named = ref.startsWith('section.')
+      ? ref.slice('section.'.length).split('.')[0]
       : ref.startsWith('core.')
         ? 'core'
         : 'schema'
-    const target = SECTION_KEYS.includes(section) ? section : 'schema'
+    const target = SECTION_KEYS.find((key) => key === named) ?? 'schema'
     // A property or method is revealed INSIDE the member that declares it — selecting
     // the field itself would select a canvas node that does not exist.
     const selection = detailRefFor(ref)
-    set(() => ({
+    set({
       section: target,
       panelOverlay: null,
       revealedRef: ref,
@@ -309,7 +376,7 @@ export const useUI = create<UIState>((set) => ({
           selection.startsWith('domain.')
           ? { revealTarget: selection }
           : {}),
-    }))
+    })
   },
   setPanelOverlay: (kind, domainId) =>
     set({ panelOverlay: kind ? { kind, ...(domainId ? { domainId } : {}) } : null }),
@@ -342,11 +409,10 @@ export const useUI = create<UIState>((set) => ({
     }),
   focusClass: (id, domainId) =>
     set((s) => {
-      const owner = domainId
-      const same = s.focusId === id && s.selectionDomainId === owner
+      const same = s.focusId === id && s.selectionDomainId === domainId
       return {
         selectedClass: id,
-        selectionDomainId: owner,
+        selectionDomainId: domainId,
         panelOverlay: null,
         revealedRef: null,
         revealTarget: null,
@@ -392,16 +458,18 @@ export function uiWorkspaceSnapshot(state = useUI.getState()): Pick<
   return {
     section: state.section,
     edgeStyle: state.edgeStyle,
-    detailWidth: Math.min(900, Math.max(320, Math.round(state.detailWidth))),
+    detailWidth: clampTo(DETAIL_WIDTH, state.detailWidth),
     readerDomainId: state.readerDomainId ?? null,
     panel: {
       open: state.panelOpen,
       tab: state.panelTab,
       side: state.panelSide,
-      size: Math.min(900, Math.max(260, Math.round(state.panelSize))),
+      size: clampTo(PANEL_SIZE, state.panelSize),
+      dockWidth: clampTo(DOCK_WIDTH, state.dockWidth),
+      dockHeight: clampTo(DOCK_HEIGHT, state.dockHeight),
     },
     rail: {
-      width: Math.min(560, Math.max(180, Math.round(state.modulesWidth))),
+      width: clampTo(RAIL_WIDTH, state.modulesWidth),
       collapsed: state.modulesCollapsed,
     },
   }
@@ -417,6 +485,8 @@ export function hydrateWorkspaceUi(state: WorkspaceUiState): void {
     panelTab: state.panel.tab,
     panelSide: state.panel.side,
     panelSize: state.panel.size,
+    dockWidth: state.panel.dockWidth,
+    dockHeight: state.panel.dockHeight,
     modulesWidth: state.rail.width,
     detailWidth: state.detailWidth ?? 420,
     modulesCollapsed: state.rail.collapsed,

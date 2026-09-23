@@ -14,12 +14,12 @@ import type {
   SchemaIR,
 } from '../../shared/types'
 
-export function isOptional(s: JsonSchema | undefined): boolean {
+function isOptional(s: JsonSchema | undefined): boolean {
   if (!s) return false
   return Array.isArray(s.type) ? s.type.includes('null') : false
 }
 
-export function baseType(s: JsonSchema | undefined): string {
+function baseType(s: JsonSchema | undefined): string {
   if (!s) return 'unknown'
   const t = s.type
   if (Array.isArray(t)) {
@@ -44,16 +44,8 @@ export function diffSchemas(prev: SchemaIR | null, next: SchemaIR | null): Schem
   const changes: SchemaChange[] = []
   if (!prev || !next) return changes
 
-  if (
-    !same(
-      { format: prev.format, version: prev.version, domain: prev.domain },
-      {
-        format: next.format,
-        version: next.version,
-        domain: next.domain,
-      },
-    )
-  ) {
+  const metadata = (ir: SchemaIR) => ({ format: ir.format, version: ir.version, domain: ir.domain })
+  if (!same(metadata(prev), metadata(next))) {
     changes.push({ kind: 'schema-metadata-changed', target: next.domain })
   }
 
@@ -206,13 +198,13 @@ function diffMemberBody(name: string, a: IrClass, b: IrClass, out: SchemaChange[
       continue
     }
     if (!same(pa[p], pb[p])) {
-      const baseChanged = baseType(pa[p]) !== baseType(pb[p])
+      const before = baseType(pa[p])
+      const after = baseType(pb[p])
+      const baseChanged = before !== after
       out.push({
         kind: baseChanged ? 'prop-type-changed' : 'prop-schema-changed',
         target: `${name}.${p}`,
-        detail: baseChanged
-          ? `${baseType(pa[p])} → ${baseType(pb[p])}`
-          : 'value constraints changed',
+        detail: baseChanged ? `${before} → ${after}` : 'value constraints changed',
       })
     }
     const wasOpt = !propertyRequired(a, p)
@@ -229,12 +221,7 @@ function diffMemberBody(name: string, a: IrClass, b: IrClass, out: SchemaChange[
   const ma = a.methods ?? {}
   const mb = b.methods ?? {}
   for (const m of sortedKeys(mb)) {
-    if (!ma[m]) {
-      out.push({
-        kind: 'method-added',
-        target: `${name}.${m}`,
-      })
-    }
+    if (!ma[m]) out.push({ kind: 'method-added', target: `${name}.${m}` })
   }
   for (const m of sortedKeys(ma)) {
     if (!mb[m]) {
@@ -249,12 +236,8 @@ function diffMemberBody(name: string, a: IrClass, b: IrClass, out: SchemaChange[
     }
   }
 
-  const kind = memberKind(b)
   if (!same(memberContract(a), memberContract(b))) {
-    out.push({
-      kind: `${kind}-contract-changed`,
-      target: name,
-    })
+    out.push({ kind: `${memberKind(b)}-contract-changed`, target: name })
   }
   if (!same(memberMetadata(a), memberMetadata(b))) {
     out.push({ kind: 'definition-metadata-changed', target: name })

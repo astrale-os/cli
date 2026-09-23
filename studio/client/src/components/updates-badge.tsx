@@ -27,8 +27,8 @@ export function DomainPackageUpdates({ domainId, origin }: { domainId: string; o
 
   const prepare = async () => {
     try {
-      await open.mutateAsync(undefined)
-      setAgentDraft(packageUpdatePrompt(origin, data!))
+      const chat = await open.mutateAsync(undefined)
+      setAgentDraft(chat.id, packageUpdatePrompt(origin, data!))
       setPanelTab('agent')
       setOpened(false)
       toast.success('Update request ready — review it, then send when you are ready')

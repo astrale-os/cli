@@ -2,12 +2,17 @@ import type { SmartEdgeOptions, SmartEdgeProviderOptions } from '@tisoap/react-f
 
 import { type Edge, type Node, Position } from '@xyflow/react'
 
-import { createEdgeLabelObstacleIndex, type EdgeLabelObstacle } from './edge-label-layout'
+import {
+  createEdgeLabelObstacleIndex,
+  edgeLabelRectsOverlap,
+  type EdgeLabelObstacle,
+} from './edge-label-layout'
 import { CLASS_H, CLASS_W } from './palette'
 
 const PORT_CORNER_MARGIN = 8
 const PORT_MIN_GAP = 8
 const PORT_EXIT_CLEARANCE = 48
+const SIDES = [Position.Left, Position.Right, Position.Top, Position.Bottom]
 
 function stableParity(value: string): number {
   let hash = 5381
@@ -238,15 +243,6 @@ function contains(outer: NodeRect, inner: NodeRect): boolean {
   )
 }
 
-function overlaps(left: NodeRect, right: NodeRect): boolean {
-  return (
-    left.x < right.x + right.width &&
-    left.x + left.width > right.x &&
-    left.y < right.y + right.height &&
-    left.y + left.height > right.y
-  )
-}
-
 function sideIsBlocked(
   rect: NodeRect,
   side: Position,
@@ -289,32 +285,29 @@ function sideIsBlocked(
     // Compound parents contain their children by design; neither should make every exit from
     // the other look blocked.
     if (contains(obstacle, rect) || contains(rect, obstacle)) continue
-    if (overlaps(corridor, obstacle)) return true
+    if (edgeLabelRectsOverlap(corridor, obstacle)) return true
   }
   return false
 }
 
 function balanceSides(rect: NodeRect, attachments: Attachment[], rects: Map<string, NodeRect>) {
-  const sides = [Position.Left, Position.Right, Position.Top, Position.Bottom]
-  const count = (side: Position) => attachments.filter((item) => item.assigned === side).length
+  const capacity = new Map(SIDES.map((side) => [side, sideCapacity(rect, side)]))
+  const counts = new Map(SIDES.map((side) => [side, 0]))
+  for (const item of attachments) counts.set(item.assigned, counts.get(item.assigned)! + 1)
+  const count = (side: Position) => counts.get(side)!
+  const hasRoom = (side: Position) => count(side) < capacity.get(side)!
 
   // Four sides are enough to settle every realistic class fan-in. The loop limit is merely a
   // guard against malformed zero-sized geometry producing an impossible capacity graph.
   for (let pass = 0; pass < attachments.length * 4; pass += 1) {
-    const overloaded = sides.find((side) => count(side) > sideCapacity(rect, side))
+    const overloaded = SIDES.find((side) => count(side) > capacity.get(side)!)
     if (!overloaded) return
 
     const candidate = attachments
-      .filter(
-        (item) =>
-          item.assigned === overloaded &&
-          [item.secondary, item.tertiary].some(
-            (side) => side !== overloaded && count(side) < sideCapacity(rect, side),
-          ),
-      )
+      .filter((item) => item.assigned === overloaded)
       .flatMap((item) =>
         [item.secondary, item.tertiary]
-          .filter((side) => side !== overloaded && count(side) < sideCapacity(rect, side))
+          .filter((side) => side !== overloaded && hasRoom(side))
           .map((side) => ({
             item,
             side,
@@ -330,6 +323,8 @@ function balanceSides(rect: NodeRect, attachments: Attachment[], rects: Map<stri
           left.item.end.localeCompare(right.item.end),
       )[0]
     if (!candidate) return
+    counts.set(candidate.item.assigned, count(candidate.item.assigned) - 1)
+    counts.set(candidate.side, count(candidate.side) + 1)
     candidate.item.assigned = candidate.side
   }
 }
@@ -371,6 +366,11 @@ export function assignFloatingEdgePorts(nodes: Node[], edges: Edge[]): Edge[] {
   const rects = absoluteRects(nodes)
   const labelObstacleIndex = createEdgeLabelObstacleIndex(edgeLabelObstacles(nodes))
   const byNode = new Map<string, Attachment[]>()
+  const attachmentsOf = (nodeId: string) => {
+    let attachments = byNode.get(nodeId)
+    if (!attachments) byNode.set(nodeId, (attachments = []))
+    return attachments
+  }
 
   for (const edge of edges) {
     if (edge.type !== 'floating' || edge.source === edge.target) continue
@@ -398,8 +398,8 @@ export function assignFloatingEdgePorts(nodes: Node[], edges: Edge[]): Edge[] {
       ...targetSides,
       assigned: targetSides.primary,
     }
-    byNode.set(edge.source, [...(byNode.get(edge.source) ?? []), sourceAttachment])
-    byNode.set(edge.target, [...(byNode.get(edge.target) ?? []), targetAttachment])
+    attachmentsOf(edge.source).push(sourceAttachment)
+    attachmentsOf(edge.target).push(targetAttachment)
   }
 
   const ports = new Map<string, PortPair>()
@@ -408,7 +408,7 @@ export function assignFloatingEdgePorts(nodes: Node[], edges: Edge[]): Edge[] {
     if (!rect) continue
     balanceSides(rect, attachments, rects)
 
-    for (const side of [Position.Left, Position.Right, Position.Top, Position.Bottom]) {
+    for (const side of SIDES) {
       const onSide = attachments.filter((item) => item.assigned === side).sort(attachmentOrder)
       const offsets = offsetsFor(onSide.length, sideLength(rect, side))
       onSide.forEach((attachment, index) => {

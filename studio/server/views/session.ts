@@ -6,23 +6,31 @@ import type {
 } from '../../shared/types'
 
 import {
-  closeStudioViewSession,
   openStudioViewSession,
-  studioViewIdentityNames,
+  releaseStudioViewSession,
 } from '../../../src/lib/view/studio-runtime'
 import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
+import { assertOrigin } from './model'
 import { readViewPreparation } from './preparation'
 import { rememberTarget } from './selection-repository'
 
 export { conciseCliFailure } from '../cli'
 
+/**
+ * Idle budget for a Studio-opened session. Studio releases a session as soon as
+ * its dialog closes, so this is only the net for a page that stopped reporting
+ * without leaving: a tab the browser froze in the background, a machine that
+ * slept. Hours, not minutes, because the tab an operator popped a View out into
+ * has to survive an afternoon behind other windows.
+ */
+const STUDIO_VIEW_IDLE_MS = 8 * 60 * 60_000
+
 interface ViewSessionDependencies {
   activeInstance: typeof activeInstanceName
-  close: typeof closeStudioViewSession
+  release: typeof releaseStudioViewSession
   open: typeof openStudioViewSession
   readPreparation: typeof readViewPreparation
-  identityNames: typeof studioViewIdentityNames
   serveRuntime: typeof studioViewServeRuntime
 }
 
@@ -101,15 +109,16 @@ export async function launchViewSession(
 
   let opened: OpenedViewPayload | null = null
   try {
-    // Studio is a local operator workbench. Snapshot names only; the CLI host
-    // retains credentials and verifies the selected identity against this Kernel.
-    const identities = await (dependencies.identityNames ?? studioViewIdentityNames)()
+    // The View opens on the identity this instance is bound to, the one every
+    // other Studio read already runs under. No identity list travels with the
+    // session, so the page offers no switch: changing who Studio is means
+    // changing the instance it works against.
     opened = {
       session: await (dependencies.open ?? openStudioViewSession)({
         viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
         ...(target ? { targetRef: target.ref } : {}),
         instance,
-        allowIdentity: identities,
+        idleMs: STUDIO_VIEW_IDLE_MS,
         timeoutMs: Math.max(20_000, timeoutMs + 12_000),
         serveRuntime: (dependencies.serveRuntime ?? studioViewServeRuntime)(),
       }),
@@ -132,18 +141,23 @@ export async function launchViewSession(
   return session
 }
 
-export async function closeViewSession(
+/**
+ * Hand a session back on behalf of one Studio page. Never a close: the operator
+ * may have opened this View in a tab of their own, and that tab holds the
+ * session on its own account.
+ */
+export async function releaseViewSession(
   sessionId: string,
-  dependencies: Pick<Partial<ViewSessionDependencies>, 'close'> = {},
+  page: string | undefined,
+  dependencies: Pick<Partial<ViewSessionDependencies>, 'release'> = {},
 ): Promise<{ ok: true }> {
   if (!/^v-[0-9a-f]+$/.test(sessionId)) return { ok: true }
-  await (dependencies.close ?? closeStudioViewSession)(sessionId)
+  // The page id is the browser's, so it is bounded here rather than in the
+  // CLI-owned session it reaches. Releasing without one still hands the session
+  // back; only its own page stays attached until it goes quiet.
+  const named = page !== undefined && /^[A-Za-z0-9-]{1,64}$/.test(page) ? page : undefined
+  await (dependencies.release ?? releaseStudioViewSession)(sessionId, named)
   return { ok: true }
-}
-
-function assertOrigin(value: string): string {
-  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(value)) throw new Error(`Invalid domain origin: ${value}`)
-  return value
 }
 
 function assertViewSlug(value: string): string {

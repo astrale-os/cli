@@ -13,7 +13,7 @@
  *   meta.json         — format/projection versions, revision, capturedAt
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 import type {
@@ -77,6 +77,16 @@ function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex')
 }
 
+/** What `path` is on disk, or null when it is missing or unreadable. */
+function entryKind(path: string): 'file' | 'dir' | null {
+  try {
+    const st = statSync(path)
+    return st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null
+  } catch {
+    return null
+  }
+}
+
 /** Recursively collect file paths under `dir` (absolute), skipping SKIP_DIRS. */
 function walkFiles(dir: string, out: string[]): void {
   let entries: string[]
@@ -88,14 +98,9 @@ function walkFiles(dir: string, out: string[]): void {
   for (const e of entries) {
     if (SKIP_DIRS.has(e)) continue
     const full = join(dir, e)
-    let st
-    try {
-      st = statSync(full)
-    } catch {
-      continue
-    }
-    if (st.isDirectory()) walkFiles(full, out)
-    else if (st.isFile()) out.push(full)
+    const kind = entryKind(full)
+    if (kind === 'dir') walkFiles(full, out)
+    else if (kind === 'file') out.push(full)
   }
 }
 
@@ -114,39 +119,20 @@ export function hashAnatomyFiles(
   // Schema dir (configurable name) + the fixed anatomy dirs.
   for (const d of [schemaDirName, ...ANATOMY_GLOBS.dirs]) {
     const abs = join(r, d)
-    if (existsSync(abs)) {
-      let st
-      try {
-        st = statSync(abs)
-      } catch {
-        st = null
-      }
-      if (st?.isDirectory()) walkFiles(abs, absFiles)
-      else if (st?.isFile()) absFiles.push(abs)
-    }
+    const kind = entryKind(abs)
+    if (kind === 'dir') walkFiles(abs, absFiles)
+    else if (kind === 'file') absFiles.push(abs)
   }
 
   // Standalone files.
   for (const f of ANATOMY_GLOBS.files) {
     const abs = join(r, f)
-    if (existsSync(abs)) {
-      try {
-        if (statSync(abs).isFile()) absFiles.push(abs)
-      } catch {
-        /* skip */
-      }
-    }
+    if (entryKind(abs) === 'file') absFiles.push(abs)
   }
 
   // A config-selected Application may live below the domain root. It is the
   // composition source of truth and must participate in cache/change identity.
-  if (applicationFile && existsSync(applicationFile)) {
-    try {
-      if (statSync(applicationFile).isFile()) absFiles.push(applicationFile)
-    } catch {
-      /* skip */
-    }
-  }
+  if (applicationFile && entryKind(applicationFile) === 'file') absFiles.push(applicationFile)
 
   const hashes: Record<string, string> = {}
   for (const abs of new Set(absFiles)) {
@@ -261,8 +247,7 @@ export function loadBaseline(root: string): Baseline | null {
   if (
     !meta ||
     meta.formatVersion !== BASELINE_FORMAT_VERSION ||
-    meta.projectionVersion !== STUDIO_SCHEMA_PROJECTION_VERSION ||
-    !isSchemaRevisionOrNull(meta.revision)
+    meta.projectionVersion !== STUDIO_SCHEMA_PROJECTION_VERSION
   ) {
     return null
   }
@@ -277,14 +262,10 @@ export function loadBaseline(root: string): Baseline | null {
     projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION,
     ir,
     root: schemaRoot,
-    revision: meta.revision ?? null,
+    revision: meta.revision,
     files,
     capturedAt: meta.capturedAt,
   }
-}
-
-function isSchemaRevisionOrNull(value: unknown): value is SchemaRevision | null {
-  return value === null || isSchemaRevision(value)
 }
 
 /** Compare two file-hash maps into added/modified/removed FileChange[]. */
@@ -346,9 +327,9 @@ export function computeChanges(
   const schemaChanges =
     baseline.revision && opts.currentRevision === baseline.revision
       ? []
-      : diffSchemas(baseline.ir ?? null, currentIr)
+      : diffSchemas(baseline.ir, currentIr)
   const structuralStatus = structuralStatusOf(schemaChanges)
-  const fileChanges = diffFiles(baseline.files ?? {}, currentFiles)
+  const fileChanges = diffFiles(baseline.files, currentFiles)
 
   const schemaDiffText = hasGit ? opts.git.diffText : summarizeSchemaChanges(schemaChanges)
 

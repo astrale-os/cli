@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { type ViewModel, type ViewsModel, driftLabel } from '@/lib/views'
 
 import { SchemaIcon } from './schema-icon'
+import { viewNodeId } from './view-graph'
 
 function KindIcon({ kind, className }: { kind: ViewModel['kind']; className?: string }) {
   const Icon = kind === 'inline-html' ? FileCode2 : kind === 'spa' ? AppWindow : Globe
@@ -34,7 +35,7 @@ export function ViewRow({
     .join(' · ')
   // Make the row a comment/ask target (ref `view.<slug>`) so commenting on a view
   // anchors to THAT view — not the enclosing `section.schema` it used to fall back to.
-  const anchorRef = `view.${view.slug}`
+  const anchorRef = viewNodeId(view.slug)
   return (
     <>
       <div

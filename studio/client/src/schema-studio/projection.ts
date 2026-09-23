@@ -97,12 +97,10 @@ export function projectDomainCanvas(
         collapsed: isCollapsed,
         classCount: module.classes.length,
       } satisfies GroupNodeData,
-      style: isCollapsed
-        ? { width: CLASS_W + MODULE_PAD * 2, height: MODULE_COLLAPSED_H }
-        : {
-            width: CLASS_W + MODULE_PAD * 2,
-            height: MODULE_HEADER + CLASS_H + MODULE_PAD,
-          },
+      style: {
+        width: CLASS_W + MODULE_PAD * 2,
+        height: isCollapsed ? MODULE_COLLAPSED_H : MODULE_HEADER + CLASS_H + MODULE_PAD,
+      },
     })
     if (isCollapsed) continue
 
@@ -137,21 +135,31 @@ export function projectDomainCanvas(
     }
   }
 
+  // Every relationship asks for both of its ends' modules, so resolve each Class's once.
+  const moduleCache = new Map<string, string>()
+  const moduleOf = (className: string): string => {
+    let modulePath = moduleCache.get(className)
+    if (modulePath === undefined) {
+      modulePath = moduleOfClass(bundle, className)
+      moduleCache.set(className, modulePath)
+    }
+    return modulePath
+  }
   const representative = (className: string): string => {
-    const modulePath = moduleOfClass(bundle, className)
+    const modulePath = moduleOf(className)
     return collapsed.has(modulePath) ? `grp-${modulePath}` : `class.${className}`
   }
-  const targets = (endpoint?: IrEndpoint) => localEndpointTargets(ir, endpoint)
   const edges: Edge[] = []
 
   for (const edgeClass of Object.values(ir.classes)) {
     if (edgeClass.type !== 'edge') continue
-    const left = targets(edgeClass.endpoints?.[0])
-    const right = targets(edgeClass.endpoints?.[1])
+    const [sourceEndpoint, targetEndpoint] = edgeClass.endpoints ?? []
+    const left = localEndpointTargets(ir, sourceEndpoint)
+    const right = localEndpointTargets(ir, targetEndpoint)
     const markers = edgeMarkers(edgeClass.orientation)
     const ends = {
-      sourceEnd: endpointOf(edgeClass.endpoints?.[0]),
-      targetEnd: endpointOf(edgeClass.endpoints?.[1]),
+      sourceEnd: endpointOf(sourceEndpoint),
+      targetEnd: endpointOf(targetEndpoint),
     }
     for (const sourceTarget of left) {
       for (const targetTarget of right) {
@@ -166,14 +174,11 @@ export function projectDomainCanvas(
               bClass: targetTarget.className,
             },
             hidden,
-            showInheritedEdges,
           )
         ) {
           continue
         }
-        const crossModule =
-          moduleOfClass(bundle, sourceTarget.className) !==
-          moduleOfClass(bundle, targetTarget.className)
+        const crossModule = moduleOf(sourceTarget.className) !== moduleOf(targetTarget.className)
         edges.push({
           id: `edge-${edgeClass.name}__${source}__${target}`,
           source,

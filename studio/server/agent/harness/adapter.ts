@@ -39,11 +39,21 @@ export interface HarnessMcpServer {
   invoke?: (tool: string, args: Record<string, unknown>) => Promise<unknown>
 }
 
+/** One image sent with a turn's prompt; the harness reads the bytes from `path`. */
+export interface AgentTurnImage {
+  path: string
+  mimeType: string
+  name: string
+}
+
 export interface AgentTurnInput {
   /** the domain repo root — the agent's working directory */
   root: string
   /** the turn message (scaffolded handoff / delta) */
   prompt: string
+  /** images the user sent with the message — handed over as images where the
+   *  harness takes them; the prompt lists their paths either way */
+  images?: AgentTurnImage[]
   /** appended to the harness's default system prompt — the reply protocol */
   appendSystemPrompt?: string
   /** prior harness session id → resume the same conversation */

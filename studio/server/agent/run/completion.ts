@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
-import type { AgentEvent, MergeResult, StudioEvent } from '../../../shared/types'
+import type { AgentEvent, MergeResult } from '../../../shared/types'
+import type { Notify } from '../notify'
 import type { PreparedRun } from './preparation'
 
 import { mergeParsedReply, parseReplyBlock } from '../../state/comments'
@@ -39,10 +40,9 @@ function mergeAcrossDomains(
     result.merged += merged.merged
     result.closed += merged.closed
     if (merged.merged || merged.closed) touched.push(handle.id)
-    const found = (parsed.comments ?? []).flatMap((comment) =>
-      comment.id && !merged.unknownIds.includes(comment.id) ? [comment.id] : [],
-    )
-    for (const id of found) known.add(id)
+    const unknownHere = new Set(merged.unknownIds)
+    for (const comment of parsed.comments ?? [])
+      if (comment.id && !unknownHere.has(comment.id)) known.add(comment.id)
     unknown = merged.unknownIds
     if (merged.pastedSchemaVersion !== undefined)
       result.pastedSchemaVersion = merged.pastedSchemaVersion
@@ -61,7 +61,7 @@ function mergeAcrossDomains(
 export async function completeRun(
   prepared: PreparedRun,
   controller: AbortController,
-  notify: (event: StudioEvent) => void,
+  notify: Notify,
 ): Promise<void> {
   const {
     workspace,
@@ -75,6 +75,7 @@ export async function completeRun(
     harnessEnv,
     bridge,
     run,
+    images,
     promptSnapshot,
   } = prepared
   const stateRoot = workspace.stateRoot
@@ -103,8 +104,9 @@ export async function completeRun(
   const liveByComment = new Map<string, Set<string>>()
   bridge.onReply((commentId, text) => {
     bridgeReplies += 1
-    if (!liveByComment.has(commentId)) liveByComment.set(commentId, new Set())
-    liveByComment.get(commentId)!.add(text.trim())
+    const texts = liveByComment.get(commentId) ?? new Set<string>()
+    texts.add(text.trim())
+    liveByComment.set(commentId, texts)
     pushEvent({ kind: 'reply', text, commentId })
   })
   bridge.onProgress((text) => pushEvent({ kind: 'status', text }))
@@ -117,6 +119,7 @@ export async function completeRun(
       return harness.run({
         root: workspace.root,
         prompt: prompt.turnPrompt,
+        images,
         appendSystemPrompt: prompt.systemPrompt,
         sessionId,
         model,
@@ -179,12 +182,7 @@ export async function completeRun(
       })
 
     let replyError: string | undefined
-    if (
-      !controller.signal.aborted &&
-      !result.isError &&
-      result.finalText &&
-      result.finalText.trim()
-    ) {
+    if (!controller.signal.aborted && !result.isError && result.finalText?.trim()) {
       try {
         const { result: merged, touched } = mergeAcrossDomains(
           prepared,

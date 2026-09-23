@@ -1,11 +1,7 @@
-import type {
-  StudioSchemaBundle,
-  ViewInfo,
-  ViewRuntime,
-  ViewTargetResult,
-} from '../../shared/types'
+import type { StudioSchemaBundle, ViewInfo, ViewRuntime } from '../../shared/types'
 
 import { activeInstanceName } from '../instances/active'
+import { emptyTargets } from './model'
 import { rememberViewPreparation } from './preparation'
 import { listViewTargets, viewDefinitionBindings } from './target'
 
@@ -35,21 +31,8 @@ export async function getViewRuntime(
           instance,
           timeoutMs,
         )
-      : ({
-          status: 'unavailable',
-          items: [],
-          selected: null,
-          stale: null,
-          truncated: false,
-          reason: 'No active Astrale instance.',
-        } satisfies ViewTargetResult)
-    : ({
-        status: 'available',
-        items: [],
-        selected: null,
-        stale: null,
-        truncated: false,
-      } satisfies ViewTargetResult)
+      : emptyTargets('No active Astrale instance.')
+    : emptyTargets()
 
   const preparation = (dependencies.rememberPreparation ?? rememberViewPreparation)({
     root,

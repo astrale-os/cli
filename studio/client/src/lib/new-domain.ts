@@ -57,7 +57,12 @@ export interface NewDomainPorts {
     name: string,
   ) => Promise<{ ok: boolean; id?: string; origin?: string; error?: string }>
   uploadDocuments: (id: string, files: File[]) => Promise<unknown>
-  submit: (id: string, message: string) => Promise<{ run?: AgentRun; error?: string }>
+  /** Opens the domain's first chat and sends into it; it reports which chat, so a
+   *  message that did not leave can be handed back to that chat's own composer. */
+  submit: (
+    id: string,
+    message: string,
+  ) => Promise<{ chatId?: string; run?: AgentRun; error?: string }>
   onPhase: (phase: NewDomainPhase) => void
 }
 
@@ -65,6 +70,8 @@ export interface NewDomainOutcome {
   /** set from the moment the domain exists — the point of no return */
   id?: string
   origin?: string
+  /** the chat the first message opened, once the send got that far */
+  chatId?: string
   /** the turn the first message started, when one did */
   run?: AgentRun
   error?: string
@@ -125,8 +132,9 @@ export async function createDomainWithBrief(
   ports.onPhase('briefing')
   try {
     const result = await ports.submit(landed.id, message)
-    if (result.error) return { ...landed, error: result.error, unsent: message }
-    return { ...landed, run: result.run }
+    if (result.error)
+      return { ...landed, chatId: result.chatId, error: result.error, unsent: message }
+    return { ...landed, chatId: result.chatId, run: result.run }
   } catch (failure) {
     return { ...landed, error: reason(failure), unsent: message }
   }

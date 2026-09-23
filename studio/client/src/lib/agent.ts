@@ -7,7 +7,7 @@
  * independently, so the mirror is keyed by chat id — a turn streaming into a
  * background tab must not overwrite what the foreground one shows.
  */
-import type { AgentEvent, AgentRun } from '@shared/types'
+import type { AgentEvent, AgentRun, ChatAttachment } from '@shared/types'
 
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
@@ -26,7 +26,8 @@ interface AgentLiveState {
   appendEvent: (chatId: string, runId: string, event: AgentEvent) => void
 }
 
-const TERMINAL: Record<AgentRun['status'], number> = {
+/** How far a run has got; every terminal status ranks the same, and none regresses. */
+const PROGRESS: Record<AgentRun['status'], number> = {
   queued: 0,
   running: 1,
   succeeded: 2,
@@ -47,7 +48,7 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       const cur = s.runs[run.chatId]
       if (cur && cur.id === run.id) {
         const events = run.events.length >= cur.events.length ? run.events : cur.events
-        const status = TERMINAL[run.status] >= TERMINAL[cur.status] ? run.status : cur.status
+        const status = PROGRESS[run.status] >= PROGRESS[cur.status] ? run.status : cur.status
         return { runs: { ...s.runs, [run.chatId]: { ...cur, ...run, events, status } } }
       }
       return { runs: { ...s.runs, [run.chatId]: run } }
@@ -89,6 +90,8 @@ export function pendingRun(input: {
   /** what was typed; empty when the turn only carries documents and threads */
   message: string
   summary: string
+  /** the images it carries, already uploaded — the turn shows them from the start */
+  attachments?: ChatAttachment[]
 }): AgentRun {
   return {
     id: input.id,
@@ -99,6 +102,7 @@ export function pendingRun(input: {
     createdAt: new Date().toISOString(),
     summary: input.summary,
     ...(input.message ? { instruction: input.message } : {}),
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     targetCommentIds: [],
     events: [],
   }
@@ -124,10 +128,15 @@ export function harnessLink(available: boolean | undefined, failed = false): Har
   return failed ? 'unreachable' : 'connecting'
 }
 
+/** The chat a hook was asked about, or the active tab when none was named. */
+function useChatOrActive(chatId?: string): string | undefined {
+  const active = useActiveChatId()
+  return chatId ?? active
+}
+
 /** Initial snapshot for one chat (harness availability + most-recent run). */
 export function useAgentSnapshot(chatId?: string) {
-  const active = useActiveChatId()
-  const chat = chatId ?? active
+  const chat = useChatOrActive(chatId)
   return useQuery({
     queryKey: qk.agent(chat),
     queryFn: () => api.agentSnapshot(chat),
@@ -151,8 +160,7 @@ export function useAgentSnapshot(chatId?: string) {
 
 /** One chat's conversation: past turns from disk, with the live one appended. */
 export function useAgentTurns(chatId?: string): AgentRun[] {
-  const active = useActiveChatId()
-  const chat = chatId ?? active
+  const chat = useChatOrActive(chatId)
   const history = useQuery({
     queryKey: qk.agentHistory(chat),
     queryFn: () => api.agentHistory(chat),
@@ -188,15 +196,14 @@ export function reconcileRun(live: AgentRun | undefined, stored: AgentRun | null
   return {
     ...live,
     ...stored,
-    status: TERMINAL[stored.status] > TERMINAL[live.status] ? stored.status : live.status,
+    status: PROGRESS[stored.status] > PROGRESS[live.status] ? stored.status : live.status,
     events: live.events.length >= stored.events.length ? live.events : stored.events,
   }
 }
 
 /** The run to display for a chat: the live (SSE) copy, corrected by the server. */
 export function useDisplayRun(chatId?: string): AgentRun | null {
-  const active = useActiveChatId()
-  const chat = chatId ?? active
+  const chat = useChatOrActive(chatId)
   const live = useAgentLive((s) => (chat ? s.runs[chat] : undefined))
   const snap = useAgentSnapshot(chat)
   const stored = snap.data?.run ?? null

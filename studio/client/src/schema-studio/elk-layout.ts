@@ -39,6 +39,9 @@ const OPTS: Record<string, string> = {
   'elk.padding': `[top=${MODULE_HEADER},left=${MODULE_PAD},bottom=${MODULE_PAD},right=${MODULE_PAD}]`,
 }
 
+/** Class cards, view and function pills, core (genesis) nodes and collapsed module boxes. */
+const LEAF_TYPES = new Set(['classNode', 'viewNode', 'functionNode', 'coreNode', 'moduleNode'])
+
 export async function elkLayout(nodes: Node[], edges: Edge[]): Promise<Node[]> {
   if (nodes.length === 0) return nodes
 
@@ -47,15 +50,10 @@ export async function elkLayout(nodes: Node[], edges: Edge[]): Promise<Node[]> {
   for (const n of nodes) if (n.parentId) hasChildren.add(n.parentId)
 
   for (const n of nodes) {
-    // classNodes, view and function pills, core (genesis) nodes, and collapsed
-    // (childless) module boxes are fixed-size leaves; expanded module boxes are
-    // containers ELK sizes around children.
+    // Childless module boxes are fixed-size leaves too; expanded ones are containers ELK
+    // sizes around their children.
     const leaf =
-      n.type === 'classNode' ||
-      n.type === 'viewNode' ||
-      n.type === 'functionNode' ||
-      n.type === 'coreNode' ||
-      n.type === 'moduleNode' ||
+      (n.type !== undefined && LEAF_TYPES.has(n.type)) ||
       (n.type === 'group' && !hasChildren.has(n.id))
     const styleW = typeof n.style?.width === 'number' ? n.style.width : undefined
     const styleH = typeof n.style?.height === 'number' ? n.style.height : undefined

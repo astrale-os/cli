@@ -4,7 +4,7 @@
  * runtime import becomes a render-state error (with the overlay still computed
  * statically, so anchors/handler-links survive a mid-edit compile break).
  */
-import type { StudioSchemaBundle } from '../../shared/types'
+import type { SchemaIR, StudioSchemaBundle } from '../../shared/types'
 import type { IntrospectionTimer } from './timing'
 
 import { type DomainHandle, depsInstalled } from '../domain'
@@ -23,7 +23,7 @@ export async function buildBundle(
     timing ? timing.measure(phase, run) : run()
 
   const installed = measured('dependencies', () => depsInstalled(handle.root))
-  let ir = null
+  let ir: SchemaIR | null = null
   let schemaRoot: unknown | undefined
   let schemaMode: StudioSchemaBundle['schemaMode'] = 'unavailable'
   let schemaRevision: StudioSchemaBundle['schemaRevision']

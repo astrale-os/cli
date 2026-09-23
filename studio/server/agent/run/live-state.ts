@@ -38,12 +38,10 @@ export function reserveRun(chatId: string): AbortController | null {
   return controller
 }
 
+/** End the reservation; the controller stays only when the run it guards went live. */
 export function releasePreparation(chatId: string, controller: AbortController): void {
   starting.delete(chatId)
-  if (controllers.get(chatId) === controller && !isRunActive(chatId)) {
-    controllers.delete(chatId)
-    cancellation.delete(chatId)
-  }
+  if (!isRunActive(chatId)) releaseController(chatId, controller)
 }
 
 export function attachCancellation(

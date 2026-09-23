@@ -6,7 +6,7 @@
  */
 import { isEnvName, readEnvModel, writeEnvUpdates } from '../environment/files'
 import { asJsonRecord, asString } from '../json'
-import { badRequest, json, type DomainRouteContext } from './http'
+import { badRequest, badRequestFromError, json, type DomainRouteContext } from './http'
 
 export async function handleProjectRoute(context: DomainRouteContext): Promise<Response | null> {
   const { req, url, rest, body, handle, notify } = context
@@ -19,9 +19,7 @@ export async function handleProjectRoute(context: DomainRouteContext): Promise<R
     if (req.method === 'GET') return json(readEnvModel(root, envName))
     if (req.method === 'POST') {
       const requestedUpdates = asJsonRecord(body.updates)
-      if (!requestedUpdates) {
-        return badRequest('updates object required')
-      }
+      if (!requestedUpdates) return badRequest('updates object required')
       const updates: Record<string, string | null> = {}
       for (const [key, value] of Object.entries(requestedUpdates)) {
         if (!/^[A-Za-z_]\w*$/.test(key)) continue
@@ -32,7 +30,7 @@ export async function handleProjectRoute(context: DomainRouteContext): Promise<R
         notify({ type: 'anatomy-diff', domainId: id })
         return json(model)
       } catch (error) {
-        return badRequest(error instanceof Error ? error.message : String(error))
+        return badRequestFromError(error)
       }
     }
     return badRequest('GET or POST')

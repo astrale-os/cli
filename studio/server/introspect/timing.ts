@@ -98,12 +98,12 @@ export class IntrospectionTimer {
     }
   }
 
-  private add(phase: IntrospectionPhase, duration: number): void {
-    this.phasesMs[phase] = rounded((this.phasesMs[phase] ?? 0) + duration)
-  }
-
   recordCompletedPhase(phase: IntrospectionPhase, duration: number): void {
     this.add(phase, duration)
+  }
+
+  private add(phase: IntrospectionPhase, duration: number): void {
+    this.phasesMs[phase] = rounded((this.phasesMs[phase] ?? 0) + duration)
   }
 
   private report(): void {

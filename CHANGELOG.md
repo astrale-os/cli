@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.0.0-beta.117](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.116...cli/v1.0.0-beta.117) (2026-09-22)
+
+
+### Features
+
+* **studio:** failed agent turns as a quiet chip with a full diagnostic view ([#528](https://github.com/astrale-os/cli/issues/528)) ([f73c011](https://github.com/astrale-os/cli/commit/f73c011138ea748bf5d8ca9e77e75013195ace77))
+* **studio:** one-click diagnostic copy and a crisp reasoning meter ([#526](https://github.com/astrale-os/cli/issues/526)) ([40fe611](https://github.com/astrale-os/cli/commit/40fe611fd812173ddeeba6e56227b87ffb655782))
+* **studio:** open comments are signalled, not sent, until attached ([#529](https://github.com/astrale-os/cli/issues/529)) ([a2010ac](https://github.com/astrale-os/cli/commit/a2010acacbf8fb9795d4a951654afdc34633f44f))
+
+## [1.0.0-beta.116](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.115...cli/v1.0.0-beta.116) (2026-09-22)
+
+
+### Features
+
+* inspect traces with correlated journal evidence and coverage ([#515](https://github.com/astrale-os/cli/issues/515)) ([a40ef52](https://github.com/astrale-os/cli/commit/a40ef52625937847436af67e47cb77d11907d317))
+
+
+### Bug Fixes
+
+* **studio:** keep each chat's composer draft on its own tab ([#523](https://github.com/astrale-os/cli/issues/523)) ([b502df4](https://github.com/astrale-os/cli/commit/b502df4564a6f95b1c92453f3f5df9b33350f976))
+
 ## [1.0.0-beta.115](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.114...cli/v1.0.0-beta.115) (2026-09-21)
 
 

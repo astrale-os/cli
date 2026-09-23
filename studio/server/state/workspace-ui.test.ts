@@ -55,7 +55,14 @@ test('keeps one validated UI state per workspace on the machine', () => {
     section: 'core',
     readerDomainId: 'orders',
     edgeStyle: 'orthogonal',
-    panel: { open: true, tab: 'comments', side: 'right', size: 1_200 },
+    panel: {
+      open: true,
+      tab: 'comments',
+      side: 'right',
+      size: 1_200,
+      dockWidth: 5_000,
+      dockHeight: 12,
+    },
     rail: { width: 90, collapsed: true },
     schema: {
       visibleDomainIds: ['orders', 'orders', '', 'billing'],
@@ -76,7 +83,14 @@ test('keeps one validated UI state per workspace on the machine', () => {
     section: 'core',
     readerDomainId: 'orders',
     edgeStyle: 'orthogonal',
-    panel: { open: true, tab: 'comments', side: 'right', size: 900 },
+    panel: {
+      open: true,
+      tab: 'comments',
+      side: 'right',
+      size: 900,
+      dockWidth: 1_600,
+      dockHeight: 200,
+    },
     rail: { width: 180, collapsed: true },
     schema: {
       visibleDomainIds: ['orders', 'billing'],
@@ -97,4 +111,21 @@ test('does not migrate unversioned UI state and can explicitly clear reader scop
   expect(readWorkspaceUiState(root).readerDomainId).toBe('orders')
   updateWorkspaceUiState(root, { readerDomainId: null })
   expect(readWorkspaceUiState(root).readerDomainId).toBeUndefined()
+})
+
+test('a dock still on its first default size grows to the current one; a chosen size stays', () => {
+  const root = machineWorkspace('dock')
+  const panel = { open: false, tab: 'agent', side: 'bottom', size: 360 }
+  writeJson(root, 'ui.json', { version: 1, panel: { ...panel, dockWidth: 768, dockHeight: 480 } })
+  const fresh = emptyWorkspaceUiState().panel
+  expect(readWorkspaceUiState(root).panel).toMatchObject({
+    dockWidth: fresh.dockWidth,
+    dockHeight: fresh.dockHeight,
+  })
+  expect(fresh.dockWidth).toBeGreaterThan(768)
+  expect(fresh.dockHeight).toBeGreaterThan(480)
+
+  // only the untouched PAIR moves: one edge dragged is a size somebody picked
+  writeJson(root, 'ui.json', { version: 1, panel: { ...panel, dockWidth: 768, dockHeight: 620 } })
+  expect(readWorkspaceUiState(root).panel).toMatchObject({ dockWidth: 768, dockHeight: 620 })
 })

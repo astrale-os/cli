@@ -2,6 +2,7 @@ import type { IrSchemaRef, StudioSchemaBundle } from '@shared/types'
 
 import { parseSchemaRefKey, schemaRefKey } from '@shared/types'
 import { FlaskConical, ShieldCheck } from 'lucide-react'
+import { useMemo } from 'react'
 
 import { EmptyState } from '@/components/studio-kit'
 import { useBundle, useWorkspace } from '@/lib/hooks'
@@ -135,7 +136,7 @@ export function SchemaPolicyDetail({
 
 function PolicyDetail({ bundle, policyKey }: { bundle: StudioSchemaBundle; policyKey: string }) {
   const ir = bundle.ir!
-  const index = indexPolicies(ir)
+  const index = useMemo(() => indexPolicies(ir), [ir])
   const policy =
     index.byKey.get(policyKey) ??
     index.byKey.get(schemaRefKey({ origin: ir.domain, kind: 'policy', name: policyKey }))

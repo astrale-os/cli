@@ -1,9 +1,4 @@
-import {
-  AGENT_ACCESS_LEVELS,
-  type AgentAccess,
-  type HarnessStatus,
-  type StudioSettings,
-} from '@shared/types'
+import { AGENT_ACCESS_LEVELS, type HarnessStatus, type StudioSettings } from '@shared/types'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -23,6 +18,7 @@ import { useHarness, useSettings, useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
 import { AgentDetails, AgentSettings } from './agent'
+import { resolveAgentAccess } from './agent-access'
 import { AppearanceSettings } from './appearance'
 import { generalSettingsPatch, SettingsFields } from './fields'
 import { HarnessGatewaySettings } from './gateway'
@@ -85,14 +81,10 @@ export function SettingsDialog() {
   const save = useMutation({
     mutationFn: async (input: SettingsSaveInput) => {
       const patch = generalSettingsPatch(input.values, input.settings)
-      const accessLevels = input.harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
-      const access = accessLevels.includes(input.values.agentAccess as AgentAccess)
-        ? (input.values.agentAccess as AgentAccess)
-        : accessLevels.includes('full')
-          ? 'full'
-          : accessLevels[0]
+      const accessLevels = input.harness?.capabilities.accessLevels ?? AGENT_ACCESS_LEVELS
+      const access = resolveAgentAccess(input.values.agentAccess, accessLevels)
       if (access) patch.agentAccess = access
-      return api.updateSettings(patch as Partial<StudioSettings>)
+      return api.updateSettings(patch)
     },
     // Every domain composes its anatomy through `integrationsDir` and runs its agent on
     // these values, so a save is news to all of them — the key prefixes below drop the

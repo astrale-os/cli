@@ -14,7 +14,7 @@ import type { AgentEffort, ChatInfo, HarnessEffortOption, HarnessStatus } from '
 
 import { effectiveAgentEffort } from '@shared/agent-effort'
 import { Check } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useChatMutations } from '@/lib/chats'
@@ -32,23 +32,79 @@ const EFFORT_LABELS: Record<AgentEffort, string> = {
   ultracode: 'Ultracode',
 }
 
-/** The shortest and the tallest rung, in px; everything between them is spaced evenly. */
-const BAR_MIN_H = 5
-const BAR_MAX_H = 12
+/** The meter's proportions, in CSS px: bar width, gap, shortest rung, rise per rung. */
+const BAR_W = 2
+const BAR_GAP = 1
+const BAR_MIN_H = 4
+const BAR_STEP_H = 2
 
-/**
- * One rung's height. The ramp is LINEAR and unrounded on purpose: rounding each bar to
- * a whole pixel made the steps uneven for every ladder whose length does not divide the
- * range — five rungs came out 6·7·9·10·12, which reads as a broken meter rather than a
- * rising one. A 2px-wide bar carries a fractional height without looking soft, and an
- * even ramp is the whole point of the shape.
- */
-function barHeight(index: number, total: number): number {
-  if (total <= 1) return BAR_MAX_H
-  return BAR_MIN_H + ((BAR_MAX_H - BAR_MIN_H) * index) / (total - 1)
+export interface MeterGeometry {
+  /** The SVG's CSS size. */
+  width: number
+  height: number
+  /** Everything below is in DEVICE pixels: the SVG's viewBox units. */
+  viewWidth: number
+  viewHeight: number
+  bars: { x: number; y: number; width: number; height: number }[]
 }
 
-/** Ascending bars, tallest last — the meter reads as signal strength. */
+/** A length in CSS px, as a whole number of device pixels (never less than one). */
+function devicePx(css: number, dpr: number): number {
+  return Math.max(1, Math.round(css * dpr))
+}
+
+/**
+ * The meter, laid out on the SCREEN's pixel grid rather than the CSS one.
+ *
+ * A 2px bar is a whole number of device pixels only at 100% or 200%. At 110%, 125%,
+ * 175% (Windows display scaling, or browser zoom) it is 2.2, 2.5, 3.5 device pixels,
+ * and the browser rounds each bar's edges on its own: the same meter came out
+ * 2·3·3·2·2·3 pixels wide, bars visibly thicker than their neighbours. So every
+ * width, gap and height is rounded to whole device pixels ONCE, here, and drawn in
+ * an SVG whose viewBox is that grid: every bar is exactly as wide as the others and
+ * every rise identical, at any scale.
+ */
+export function meterGeometry(total: number, dpr: number): MeterGeometry {
+  const ratio = Number.isFinite(dpr) && dpr > 0 ? dpr : 1
+  const barWidth = devicePx(BAR_W, ratio)
+  const gap = devicePx(BAR_GAP, ratio)
+  const minHeight = devicePx(BAR_MIN_H, ratio)
+  const step = devicePx(BAR_STEP_H, ratio)
+  const viewWidth = total * barWidth + Math.max(0, total - 1) * gap
+  const viewHeight = minHeight + step * Math.max(0, total - 1)
+  const bars = Array.from({ length: total }, (_, index) => {
+    const height = minHeight + step * index
+    return { x: index * (barWidth + gap), y: viewHeight - height, width: barWidth, height }
+  })
+  return { width: viewWidth / ratio, height: viewHeight / ratio, viewWidth, viewHeight, bars }
+}
+
+/** The screen's device pixels per CSS px, kept current across zoom and monitor moves. */
+function subscribeDevicePixelRatio(onChange: () => void): () => void {
+  if (typeof window === 'undefined' || !window.matchMedia) return () => {}
+  let query: MediaQueryList | undefined
+  const listen = () => {
+    query?.removeEventListener('change', handle)
+    query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    query.addEventListener('change', handle)
+  }
+  const handle = () => {
+    listen()
+    onChange()
+  }
+  listen()
+  return () => query?.removeEventListener('change', handle)
+}
+
+function useDevicePixelRatio(): number {
+  return useSyncExternalStore(
+    subscribeDevicePixelRatio,
+    () => window.devicePixelRatio || 1,
+    () => 1,
+  )
+}
+
+/** Ascending bars, tallest last: the meter reads as signal strength. */
 function EffortBars({
   level,
   total,
@@ -58,19 +114,28 @@ function EffortBars({
   total: number
   className?: string
 }) {
+  const geometry = meterGeometry(total, useDevicePixelRatio())
   return (
-    <span aria-hidden className={cn('flex items-end gap-[1.5px]', className)}>
-      {Array.from({ length: total }, (_, index) => (
-        <span
+    <svg
+      aria-hidden
+      width={geometry.width}
+      height={geometry.height}
+      viewBox={`0 0 ${geometry.viewWidth} ${geometry.viewHeight}`}
+      shapeRendering="crispEdges"
+      className={cn('block shrink-0', className)}
+    >
+      {geometry.bars.map((bar, index) => (
+        <rect
           key={index}
-          style={{ height: `${barHeight(index, total)}px` }}
-          className={cn(
-            'w-[2px] rounded-[1px] bg-current transition-opacity',
-            index <= level ? 'opacity-100' : 'opacity-25',
-          )}
+          x={bar.x}
+          y={bar.y}
+          width={bar.width}
+          height={bar.height}
+          fill="currentColor"
+          className={cn('transition-opacity', index <= level ? 'opacity-100' : 'opacity-25')}
         />
       ))}
-    </span>
+    </svg>
   )
 }
 
@@ -114,32 +179,30 @@ export function ChatEffortPicker({ chat, harness }: { chat?: ChatInfo; harness?:
         <p className="px-2 pb-0.5 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
           Reasoning
         </p>
-        {levels.map((option, index) => (
-          <button
-            key={option.id}
-            type="button"
-            title={option.description}
-            aria-current={option.id === running ? 'true' : undefined}
-            onClick={() => {
-              setOpen(false)
-              update.mutate({ chatId: chat.id, effort: option.id })
-            }}
-            className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left transition-colors hover:bg-accent"
-          >
-            <EffortBars
-              level={index}
-              total={levels.length}
-              className={option.id === running ? 'text-foreground' : 'text-muted-foreground'}
-            />
-            <span className="min-w-0 flex-1 truncate text-[13px]">{option.label}</span>
-            <Check
-              className={cn(
-                'h-3 w-3 shrink-0',
-                option.id === running ? 'opacity-100' : 'opacity-0',
-              )}
-            />
-          </button>
-        ))}
+        {levels.map((option, index) => {
+          const current = option.id === running
+          return (
+            <button
+              key={option.id}
+              type="button"
+              title={option.description}
+              aria-current={current ? 'true' : undefined}
+              onClick={() => {
+                setOpen(false)
+                update.mutate({ chatId: chat.id, effort: option.id })
+              }}
+              className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left transition-colors hover:bg-accent"
+            >
+              <EffortBars
+                level={index}
+                total={levels.length}
+                className={current ? 'text-foreground' : 'text-muted-foreground'}
+              />
+              <span className="min-w-0 flex-1 truncate text-[13px]">{option.label}</span>
+              <Check className={cn('h-3 w-3 shrink-0', current ? 'opacity-100' : 'opacity-0')} />
+            </button>
+          )
+        })}
       </PopoverContent>
     </Popover>
   )

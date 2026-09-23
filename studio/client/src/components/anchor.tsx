@@ -1,6 +1,6 @@
 import type { AnchorRef, Comment } from '@shared/types'
 
-import { type ReactNode, useCallback, useId } from 'react'
+import { useCallback, useId, useMemo } from 'react'
 
 import { hasUnsentDraft } from '@/lib/comment-drafts'
 import { openCommentThreads } from '@/lib/comments'
@@ -22,10 +22,68 @@ export function useAnchorThreads(
   orphaned: boolean
 } {
   const { data } = useComments(ownerDomainId)
-  const threads = (data?.comments ?? []).filter((c) => c.anchorRefs.some((r) => r.ref === ref))
-  const openThreads = openCommentThreads(threads)
-  const orphaned = openThreads.some((c) => c.orphaned)
-  return { openThreads, orphaned }
+  const comments = data?.comments
+  return useMemo(() => {
+    const openThreads = openCommentThreads(
+      comments?.filter((c) => c.anchorRefs.some((r) => r.ref === ref)),
+    )
+    return { openThreads, orphaned: openThreads.some((c) => c.orphaned) }
+  }, [comments, ref])
+}
+
+/**
+ * The shared open state of one anchor's thread popover. Open state lives globally in
+ * store.openAnchorRef; `openAnchorId` narrows it to the one surface that opened it
+ * when the same anchor is drawn more than once.
+ */
+export function useAnchorPopover(ownerDomainId: string, ref: string) {
+  const myId = useId()
+  const openKey = anchorKey(ownerDomainId, ref)
+  // one boolean per surface, so opening one anchor does not re-render every other one
+  const open = useUI(
+    (s) => s.openAnchorRef === openKey && (s.openAnchorId === null || s.openAnchorId === myId),
+  )
+  const setOpenAnchor = useUI((s) => s.setOpenAnchor)
+  return {
+    open,
+    onOpenChange: (o: boolean) => setOpenAnchor(o ? openKey : null, o ? myId : null),
+    toggle: () => setOpenAnchor(open ? null : openKey, myId),
+    close: () => setOpenAnchor(null),
+  }
+}
+
+/** The popover body both anchor surfaces open: the anchor's threads and a composer. */
+export function AnchorThreadsContent({
+  domainId,
+  anchor,
+  excerpt,
+  threads,
+  onClose,
+}: {
+  domainId: string
+  anchor: AnchorRef
+  excerpt: string
+  threads: Comment[]
+  onClose: () => void
+}) {
+  return (
+    <PopoverContent
+      // an outside click closes the popover — unless a reply is half-written, in
+      // which case the header's × is the deliberate way out
+      onInteractOutside={(event) => {
+        if (hasUnsentDraft(domainId, anchor.ref, threads)) event.preventDefault()
+      }}
+      className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
+    >
+      <ThreadPopover
+        domainId={domainId}
+        anchor={anchor}
+        excerpt={excerpt}
+        threads={threads}
+        onClose={onClose}
+      />
+    </PopoverContent>
+  )
 }
 
 /**
@@ -33,8 +91,7 @@ export function useAnchorThreads(
  * `class.Order.property.total` opens Order — this is what then says which row was
  * meant: the element brings itself into view and wears the same outline comment mode
  * uses when it targets something, so "this is the element" always reads the same.
- * Spread on the surface itself where a wrapper would disturb the layout; otherwise
- * reach for `RevealedAnchor`.
+ * Spread on the surface itself, where a wrapper would disturb the layout.
  */
 export function useRevealedAnchor(anchorRef: string) {
   const revealed = useUI((s) => s.revealedRef === anchorRef)
@@ -47,18 +104,6 @@ export function useRevealedAnchor(anchorRef: string) {
     [revealed],
   )
   return { ref: bringIntoView, 'data-revealed': revealed ? '' : undefined } as const
-}
-
-/** `useRevealedAnchor` as a wrapper, for list rows and cards that stack vertically. */
-export function RevealedAnchor({
-  anchorRef,
-  children,
-}: {
-  anchorRef: string
-  children: ReactNode
-}) {
-  const revealed = useRevealedAnchor(anchorRef)
-  return <div {...revealed}>{children}</div>
 }
 
 /**
@@ -80,32 +125,22 @@ export function AnchorButton({
   className?: string
   domainId: string
 }) {
-  const myId = useId()
-  const ownerDomainId = domainId
-  const openRef = useUI((s) => s.openAnchorRef)
-  const openId = useUI((s) => s.openAnchorId)
-  const openKey = anchorKey(ownerDomainId, anchorRef.ref)
-  const open = openRef === openKey && (openId === null || openId === myId)
-  const setOpenAnchor = useUI((s) => s.setOpenAnchor)
-  const { openThreads, orphaned } = useAnchorThreads(anchorRef.ref, ownerDomainId)
+  const popover = useAnchorPopover(domainId, anchorRef.ref)
+  const { openThreads, orphaned } = useAnchorThreads(anchorRef.ref, domainId)
 
   if (openThreads.length === 0) return null
 
   return (
-    <Popover
-      modal={false}
-      open={open}
-      onOpenChange={(o) => setOpenAnchor(o ? openKey : null, o ? myId : null)}
-    >
+    <Popover modal={false} open={popover.open} onOpenChange={popover.onOpenChange}>
       <PopoverAnchor asChild>
         <button
           type="button"
           data-anchor-ref={anchorRef.ref}
-          data-domain-id={ownerDomainId}
+          data-domain-id={domainId}
           aria-label={`Comments on ${anchorRef.ref}`}
           onClick={(e) => {
             e.stopPropagation()
-            setOpenAnchor(open ? null : openKey, myId)
+            popover.toggle()
           }}
           className={cn('inline-flex shrink-0 align-middle', className)}
         >
@@ -113,22 +148,13 @@ export function AnchorButton({
         </button>
       </PopoverAnchor>
 
-      <PopoverContent
-        // an outside click closes the popover — unless a reply is half-written, in
-        // which case the header's × is the deliberate way out
-        onInteractOutside={(event) => {
-          if (hasUnsentDraft(ownerDomainId, anchorRef.ref, openThreads)) event.preventDefault()
-        }}
-        className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
-      >
-        <ThreadPopover
-          domainId={ownerDomainId}
-          anchor={anchorRef}
-          excerpt={excerpt}
-          threads={openThreads}
-          onClose={() => setOpenAnchor(null)}
-        />
-      </PopoverContent>
+      <AnchorThreadsContent
+        domainId={domainId}
+        anchor={anchorRef}
+        excerpt={excerpt}
+        threads={openThreads}
+        onClose={popover.close}
+      />
     </Popover>
   )
 }

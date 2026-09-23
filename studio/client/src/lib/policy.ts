@@ -408,7 +408,9 @@ export function policyUsage(ir: SchemaIR, policy: Policy): PolicyUsage {
     if ('match' in expression) continue
     for (const ref of 'allOf' in expression ? expression.allOf : expression.anyOf) {
       const child = schemaRefKey(ref)
-      parents.set(child, [...(parents.get(child) ?? []), candidate])
+      const siblings = parents.get(child)
+      if (siblings) siblings.push(candidate)
+      else parents.set(child, [candidate])
     }
   }
   // Breadth-first traversal retains one shortest explanation per ancestor. Exact keys
@@ -425,8 +427,8 @@ export function policyUsage(ir: SchemaIR, policy: Policy): PolicyUsage {
   const collect = (owner: string, ownerKind: 'class' | 'function', name: string, raw: unknown) => {
     const check = raw === undefined ? undefined : decodePolicyCheck(raw)
     if (!check) return
-    const leaves = policyCheckLeaves(check)
-    for (const leaf of leaves) {
+    const composed = 'allOf' in check || 'anyOf' in check
+    for (const leaf of policyCheckLeaves(check)) {
       const via = paths.get(schemaRefKey(leaf.check))
       if (!via) continue
       usage.callables.push({
@@ -434,7 +436,7 @@ export function policyUsage(ir: SchemaIR, policy: Policy): PolicyUsage {
         ownerKind,
         name,
         object: leaf.object,
-        composed: 'allOf' in check || 'anyOf' in check,
+        composed,
         ...(via.length > 0 ? { via } : {}),
       })
     }
