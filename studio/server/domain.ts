@@ -1,5 +1,5 @@
 /** SDK V1 project discovery and the in-process Studio registry. */
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   Node,
@@ -201,7 +201,34 @@ export function depsInstalled(root: string): boolean {
   }
 }
 
+/**
+ * Parsed config/Application sources, keyed by path and reused while the file's text is
+ * byte-identical. The workspace rescan analyzes every domain twice (`isDomainDir`, then
+ * `registerDomain`) every tick; re-reading the text is cheap, re-parsing it is not. The
+ * key is the content itself (not mtime), so any edit is seen on the very next call.
+ * Only the parse is cached: module resolution (`isFile`, `imports` maps) stays live.
+ */
+const parsedSources = new Map<string, { readonly text: string; readonly source: SourceFile }>()
+
 function addSourceFile(file: string): SourceFile | null {
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch {
+    parsedSources.delete(file)
+    return null
+  }
+  const cached = parsedSources.get(file)
+  if (cached?.text === text) return cached.source
+  const source = parseSourceFile(file)
+  // Cache only when the parse provably saw `text` (a write between the read and the
+  // parse, or any normalization, simply leaves the entry out).
+  if (source !== null && source.getFullText() === text) parsedSources.set(file, { text, source })
+  else parsedSources.delete(file)
+  return source
+}
+
+function parseSourceFile(file: string): SourceFile | null {
   try {
     const project = new Project({
       useInMemoryFileSystem: false,
