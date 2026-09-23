@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { stripVTControlCharacters } from 'node:util'
 
-import { acceptJournalPage, buildJournalInput, followLogs, formatFollowRecord } from '../logs'
+import {
+  acceptJournalPage,
+  buildJournalInput,
+  followLogs,
+  formatFollowRecord,
+  selectCallerRecords,
+} from '../logs'
 
 describe('buildJournalInput', () => {
   /** @evidence TEST-CLI-LOGS-MAPS-EXACT-JOURNAL-INPUT */
@@ -69,6 +76,14 @@ describe('buildJournalInput', () => {
     ).toThrow('--since')
   })
 
+  /** @evidence TEST-CLI-LOGS-CALLER-NOT-SENT */
+  test('never sends --caller: the journal syscall input has no caller field', () => {
+    expect(buildJournalInput({ caller: 'user-1', principal: 'domain-1' })).toEqual({
+      principal: 'domain-1',
+      limit: 200,
+    })
+  })
+
   test('defaults only the finite limit and rejects invalid values', () => {
     expect(buildJournalInput({})).toEqual({ limit: 200 })
     expect(() => buildJournalInput({ limit: '0' })).toThrow('--limit')
@@ -109,6 +124,28 @@ describe('acceptJournalPage', () => {
       ],
       cursor: 'next-page',
     })
+  })
+
+  /** @evidence TEST-CLI-LOGS-ADMITS-CALLER */
+  test('copies the recorded caller beside the executing principal', () => {
+    const record = {
+      sequence: 8,
+      topic: 'function.invoke',
+      occurredAt: '2026-09-23T10:00:00.000Z',
+      payload: {},
+      principal: 'domain-1',
+    }
+    const [withCaller, withoutCaller] = acceptJournalPage({
+      records: [
+        { ...record, caller: 'user-1' },
+        { ...record, sequence: 9 },
+      ],
+    }).records
+    expect(withCaller).toMatchObject({ principal: 'domain-1', caller: 'user-1' })
+    expect(withoutCaller).not.toHaveProperty('caller')
+    expect(() => acceptJournalPage({ records: [{ ...record, caller: 7 }] })).toThrow(
+      'record 0.caller must be text',
+    )
   })
 
   test('rejects malformed record and cursor fields instead of formatting them loosely', () => {
@@ -268,6 +305,55 @@ describe('acceptJournalPage', () => {
   })
 })
 
+describe('selectCallerRecords', () => {
+  const page = acceptJournalPage({
+    records: [
+      { sequence: 1, topic: 't', occurredAt: '2026-09-23T10:00:00.000Z', principal: 'domain-1' },
+      {
+        sequence: 2,
+        topic: 't',
+        occurredAt: '2026-09-23T10:00:01.000Z',
+        principal: 'domain-1',
+        caller: 'user-1',
+      },
+      { sequence: 3, topic: 't', occurredAt: '2026-09-23T10:00:02.000Z', principal: 'user-2' },
+      { sequence: 4, topic: 't', occurredAt: '2026-09-23T10:00:03.000Z' },
+    ],
+    cursor: 'next-page',
+  })
+
+  /** @evidence TEST-CLI-LOGS-FILTERS-CALLER */
+  test('keeps exact effective caller matches (caller, else principal) and the page cursor', () => {
+    expect(selectCallerRecords(page, 'user-1')).toEqual({
+      records: [page.records[1]!],
+      cursor: 'next-page',
+    })
+    // The Domain's own direct call matches; the call it ran for user-1 does not.
+    expect(selectCallerRecords(page, 'domain-1')).toEqual({
+      records: [page.records[0]!],
+      cursor: 'next-page',
+    })
+    // A record with neither caller nor principal never matches.
+    expect(selectCallerRecords(page, 'user-2')).toEqual({
+      records: [page.records[2]!],
+      cursor: 'next-page',
+    })
+    expect(selectCallerRecords(page, undefined)).toBe(page)
+    expect(selectCallerRecords(page, '  ')).toBe(page)
+  })
+
+  /** @evidence TEST-CLI-LOGS-CALLER-DIRECT-CALL */
+  test('matches a direct call, which the Kernel records without caller, by its principal', () => {
+    const direct = acceptJournalPage({
+      records: [
+        { sequence: 5, topic: 't', occurredAt: '2026-09-23T10:00:04.000Z', principal: 'user-3' },
+      ],
+    })
+    expect(direct.records[0]).not.toHaveProperty('caller')
+    expect(selectCallerRecords(direct, 'user-3').records).toEqual([direct.records[0]!])
+  })
+})
+
 describe('follow output routing', () => {
   const inputRecord = {
     sequence: 2,
@@ -307,6 +393,67 @@ describe('follow output routing', () => {
     expect(() => JSON.parse(stdout)).toThrow()
   })
 
+  test('shows the recorded caller beside the principal on an unflagged TTY', async () => {
+    const stdout = await captureFollowOutput({ follow: true }, true, [
+      { ...inputRecord, caller: 'caller-1' },
+    ])
+    expect(stdout).toContain('principal-1')
+    expect(stdout).toContain('caller-1')
+  })
+
+  test('shows the principal as the caller of a direct call on an unflagged TTY', async () => {
+    const stdout = await captureFollowOutput({ follow: true }, true)
+    expect(stripVTControlCharacters(stdout).trimEnd().endsWith(' principal-1 principal-1')).toBe(
+      true,
+    )
+  })
+
+  /** @evidence TEST-CLI-LOGS-CALLER-SELF */
+  test('expands --caller @self once and keeps only that caller', async () => {
+    const inputs: unknown[] = []
+    let whoamiCalls = 0
+    let pages = 0
+    const records = [
+      { ...inputRecord, sequence: 3, caller: 'user-1' },
+      { ...inputRecord, sequence: 4, caller: 'user-2' },
+      { ...inputRecord, sequence: 5 },
+      { ...inputRecord, sequence: 6, principal: 'user-1' },
+    ]
+    const stdout = await captureStdout(true, () =>
+      followLogs(
+        { follow: true, json: true, caller: '@self' },
+        {
+          run: async (input) => {
+            await input.fn({
+              target: {},
+              self: async () => {
+                whoamiCalls += 1
+                return { id: 'user-1' }
+              },
+              session: {
+                call: async (call: { readonly input?: unknown }) => {
+                  inputs.push(call.input)
+                  pages += 1
+                  if (pages === 1) return { records }
+                  throw new Error('end of controlled stream')
+                },
+              },
+            } as never)
+          },
+          pause: async () => {},
+        },
+      ),
+    )
+    expect(whoamiCalls).toBe(1)
+    expect(
+      stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line).sequence),
+    ).toEqual([3, 6])
+    expect(inputs[0]).not.toHaveProperty('caller')
+  })
+
   test('rejects effective YAML before opening a Kernel session', async () => {
     let runCalls = 0
     await expect(
@@ -326,33 +473,38 @@ describe('follow output routing', () => {
   async function captureFollowOutput(
     opts: Parameters<typeof followLogs>[0],
     tty: boolean,
+    records: readonly unknown[] = [inputRecord],
   ): Promise<string> {
+    let pages = 0
+    return captureStdout(tty, () =>
+      followLogs(opts, {
+        run: async (input) => {
+          await input.fn({
+            session: {
+              call: async () => {
+                pages += 1
+                if (pages === 1) return { records }
+                throw new Error('end of controlled stream')
+              },
+            },
+          } as never)
+        },
+        pause: async () => {},
+      }),
+    )
+  }
+
+  async function captureStdout(tty: boolean, follow: () => Promise<void>): Promise<string> {
     const originalWrite = process.stdout.write
     const originalTty = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
     let stdout = ''
-    let pages = 0
     process.stdout.write = ((chunk: string | Uint8Array) => {
       stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
       return true
     }) as typeof process.stdout.write
     Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: tty })
     try {
-      await expect(
-        followLogs(opts, {
-          run: async (input) => {
-            await input.fn({
-              session: {
-                call: async () => {
-                  pages += 1
-                  if (pages === 1) return { records: [inputRecord] }
-                  throw new Error('end of controlled stream')
-                },
-              },
-            } as never)
-          },
-          pause: async () => {},
-        }),
-      ).rejects.toThrow('end of controlled stream')
+      await expect(follow()).rejects.toThrow('end of controlled stream')
       return stdout
     } finally {
       process.stdout.write = originalWrite
