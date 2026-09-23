@@ -117,13 +117,9 @@ describe('Domain token exchange', () => {
     })
     expect(kernelRequests[1]!.body).toMatchObject({
       credential: SOURCE_TOKEN,
-      call: {
-        input: {
-          audience: DOMAIN,
-          attenuation: { kind: 'identity', self: true },
-        },
-      },
+      call: { input: { audience: DOMAIN } },
     })
+    expect(kernelRequests[1]!.body!.call.input).not.toHaveProperty('attenuation')
     const delegatedTtl = kernelRequests[1]!.body!.call.input.ttlSeconds
     expect(delegatedTtl).toBe(240)
     expect(sourceAudiences).toEqual([KERNEL])

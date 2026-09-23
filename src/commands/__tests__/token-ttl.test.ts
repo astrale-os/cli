@@ -85,7 +85,6 @@ describe('issueToken', () => {
     expect(delegate).toHaveBeenCalledWith(identity.id, {
       audience: 'https://service.test',
       ttlSeconds: 120,
-      attenuation: { kind: 'identity', self: true },
     })
   })
 })
