@@ -51,9 +51,10 @@ installed-Domain binding → source Kernel → local result
 - The SDK session owns discovery, delegation transport, redirect admission, and credential reuse.
   Do not assume every call performs separate delegate/exchange requests; local and warm calls differ.
 - A Domain token exchange changes the authenticated principal to that Domain's installed identity while
-  carrying the verified source credential as its Grant. This changes principal capabilities/ownership;
-  Policies still evaluate the complete carried Grant. Class observation Policies do not require such an
-  exchange merely to supply principal Class authority; use the session selected by the host.
+  the caller stays the verified source identity, usually the user. This changes principal
+  capabilities/ownership, not the caller: Policies still evaluate the user, and Journal records name the
+  Domain as principal. Class observation Policies do not require such an exchange merely to supply
+  principal Class authority; use the session selected by the host.
 - A protocol redirect carries a destination credential, not permission to forward the original token
   to any URL. Only the pinned source may redirect; a destination redirect is rejected.
 - Route reuse is partitioned by source, target, credential, delegation, and expected Schema revision.
@@ -68,8 +69,8 @@ installed-Domain binding → source Kernel → local result
 
 - Authentication failure: credential/session evidence was not admitted.
 - Graph authority failure: distinguish observation with a Class Policy, observation without one, and
-  effects. Their principal/Grant rules differ; see `policies.md` before adding Class capabilities.
-- Callable authority failure: inspect the authenticated principal's effective profile and the carried Grant
+  effects. Their principal/caller rules differ; see `policies.md` before adding Class capabilities.
+- Callable authority failure: inspect the authenticated principal's effective profile and the caller
   separately. Missing direct `can_use` may be satisfied through groups; a passing callable Policy cannot
   compensate for a failed principal ceiling. The installed executor never substitutes for that principal.
 - Policy refusal: distinguish Function Root/owner alternatives from Class capability/owner alternatives;
@@ -83,7 +84,7 @@ For a nested Kernel call, inspect the installed Domain's requested and materiali
 before changing auth mode or Policy. Successful remote `Function.admit` followed by `Access denied`
 before the expected Kernel syscall suggests a nested authority problem; it does not identify which
 edge or traversal failed. Check exact requirements, materialized capabilities, the selected
-caller/Domain authority mode, and the deployed Kernel revision. Do not grant the human dynamic
+`caller`/`self` session, and the deployed Kernel revision. Do not grant the human dynamic
 authority to conceal the failure. After correcting the proven cause, repeat the call and observe
 effects independently.
 
