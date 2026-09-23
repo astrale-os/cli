@@ -10,6 +10,17 @@ const state = (handle: Locator) => handle.getAttribute('data-resize-state')
 
 /** Hover, then drag well past the grip, and check the edge on the way. */
 async function checkGrip(page: Page, handle: Locator, drag: { dx: number; dy: number }) {
+  // The dock grows into place on a height transition: a grip measured mid-way is
+  // somewhere the pointer no longer finds it. Aim only once the edge has stopped.
+  let last = ''
+  await expect
+    .poll(async () => {
+      const now = JSON.stringify(await handle.boundingBox())
+      const settled = now === last
+      last = now
+      return settled
+    })
+    .toBe(true)
   const box = (await handle.boundingBox())!
   // an 8px grip across the edge, live along its whole length
   expect(Math.round(Math.min(box.width, box.height))).toBe(8)

@@ -128,7 +128,7 @@ function emptyPanePoint(): { x: number; y: number } {
 test('the canvas wears one cursor across its whole surface', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
-  await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
   // the view pill is one of the buttons that used to flash — the probes need it on screen
   await expect(page.getByRole('button', { name: 'overview', exact: true })).toBeVisible()
 
@@ -146,7 +146,7 @@ test('the canvas wears one cursor across its whole surface', async ({ page }) =>
   expect(swept.steps).toBeGreaterThan(2000)
 
   await page.getByRole('button', { name: 'Core', exact: true }).click()
-  await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
   expect((await page.evaluate(probeElements, 'grab')).offenders).toEqual([])
   expect((await page.evaluate(sweep, 12)).cursors).toEqual(['grab'])
 })
@@ -154,7 +154,7 @@ test('the canvas wears one cursor across its whole surface', async ({ page }) =>
 test('mid-drag the closed hand holds across the whole canvas', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
-  await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
 
   // Panning the pane and moving a node are the same gesture as far as the pointer is concerned:
   // either one closes the hand over everything, the toolbar and minimap floating above included.
@@ -177,7 +177,7 @@ test('comment mode swaps the canvas to the cursor the rest of the window wears',
 }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
-  await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
 
   // Comment mode turns every element into a click target; a hand left on the canvas would say
   // the opposite of what the mode does the moment the pointer crossed into it.

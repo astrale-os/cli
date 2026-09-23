@@ -172,7 +172,7 @@ test('the paperclip chooses a domain, then shows what it took', async ({ page })
   await goBottom(page)
   // an upload queues behind the server's first introspection, and a cold fixture
   // spends most of the test budget on it — let the canvas say that is done
-  await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
   // Opened, because the chip this test is about only exists in the opened chat —
   // the resting bar is one line and shows no payload. Left to the disabled field
   // to open it, the assertion below would be testing that instead.
@@ -422,7 +422,7 @@ test('the comments tab shows threads alone, and gives the draft back on the way 
   await stubAgent(page)
   await goBottom(page)
   // the upload below queues behind the server's first introspection
-  await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
   await openDock(page)
 
   await composer(page).fill('half a sentence')
