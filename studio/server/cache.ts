@@ -69,8 +69,9 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
  * sources — but a shipped standalone has no sources on disk to hash, so there the
  * version is the only thing that can retire a bundle a newer Studio would compose
  * differently. v8: source locations include registered Policies and Views.
+ * v9: a handler link's wiring file is its declaring module, not the handler's.
  */
-const BUNDLE_CACHE_VERSION = 8
+const BUNDLE_CACHE_VERSION = 9
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',

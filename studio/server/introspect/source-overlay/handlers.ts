@@ -159,7 +159,8 @@ export function buildHandlerLinks(args: {
       const link: HandlerLink = {
         ...callable,
         kind,
-        wiringFile: handlerFile,
+        // the declaration itself; the handler may be imported from another module
+        wiringFile: relToRoot(domainRoot, source.getFilePath()),
         wiringLine: call.getStartLineNumber(),
         handlerFile,
         handlerLine: handler.getStartLineNumber(),
