@@ -31,6 +31,15 @@ interface Fn {
   link?: StudioSchemaBundle['overlay']['handlerLinks'][number]
 }
 
+/** The callables one actor owns: the domain's standalone Functions, or one class's Methods. */
+interface FnGroup {
+  owner: string
+  label: string
+  /** The owning class; null for the domain's standalone Functions. */
+  className: string | null
+  fns: Fn[]
+}
+
 /** Count the portable genesis elements in a canonical DomainSchema V1 Core. */
 export function canonicalCoreCount(value: unknown): number {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
@@ -77,11 +86,11 @@ export function ProcessSection({
 
   const coreCount = useMemo(() => canonicalCoreCount(ir?.core), [ir?.core])
 
-  // every class method, grouped by its owning class (the "process actor")
+  // every class method, grouped by its owning class (the "process actor"); the
+  // domain's standalone Functions lead
   const groups = useMemo(() => {
-    if (!ir || !bundle)
-      return [] as { owner: string; label: string; className: string | null; fns: Fn[] }[]
-    const out: { owner: string; label: string; className: string | null; fns: Fn[] }[] = []
+    const out: FnGroup[] = []
+    if (!ir || !bundle) return out
 
     const domainFunctions = Object.entries(ir.functions)
     if (domainFunctions.length > 0) {
@@ -111,16 +120,12 @@ export function ProcessSection({
       }))
       out.push({ owner: c.name, label: c.name, className: c.name, fns })
     }
-    return out.sort((a, b) => {
-      if (a.className === null && b.className !== null) return -1
-      if (a.className !== null && b.className === null) return 1
-      return 0
-    })
+    return out
   }, [ir, bundle])
 
   const fnCount = groups.reduce((n, g) => n + g.fns.length, 0)
   const views = anatomy?.views ?? []
-  const uiTargets = useMemo(() => viewTargets(views), [views])
+  const uiTargets = useMemo(() => viewTargets(anatomy?.views ?? []), [anatomy?.views])
 
   const gotoClass = (name: string) => {
     if (!domainId) return

@@ -5,7 +5,7 @@ import type { WorkspaceDomainProjection } from './projection'
 
 import { DomainRow } from '../domains-rail'
 import { buildModuleTree } from '../modules'
-import { ModuleTree, type ModuleTreeControls } from '../tree'
+import { ModuleTree } from '../tree'
 import { useCanvasDomains } from './canvas-selection'
 import { useSchemaWorkspace } from './store'
 
@@ -63,15 +63,6 @@ export function WorkspaceDomainTree({
         const domain = prepared.get(domainId)
         const visible = canvas.visible.has(domainId)
         const closed = !visible || !expanded.has(domainId)
-        const controls: ModuleTreeControls | null = domain
-          ? {
-              domainId,
-              collapsedModules: collapsedByDomain[domainId] ?? [],
-              hidden: domain.input.visibility.hidden,
-              toggleModule: (path) => toggleModule(domainId, path),
-              toggleHidden: (ref) => onToggleHidden(domainId, ref),
-            }
-          : null
 
         return (
           <section key={domainId}>
@@ -94,13 +85,19 @@ export function WorkspaceDomainTree({
             />
             {/* No rule and no tint between a domain and its modules: the rail is ONE tree,
                 and the hierarchy is carried by the indent alone. */}
-            {visible && !closed && controls && domain && (
+            {!closed && domain && (
               <ModuleTree
                 root={buildModuleTree(domain.input.bundle, summary.schemaDir)}
                 indent={MODULE_INDENT}
                 selected={selectionDomainId === domainId ? selected : undefined}
                 onSelect={(ref) => select(domainId, ref)}
-                controls={controls}
+                controls={{
+                  domainId,
+                  collapsedModules: collapsedByDomain[domainId] ?? [],
+                  hidden: domain.input.visibility.hidden,
+                  toggleModule: (path) => toggleModule(domainId, path),
+                  toggleHidden: (ref) => onToggleHidden(domainId, ref),
+                }}
               />
             )}
           </section>

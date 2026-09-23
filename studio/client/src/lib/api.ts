@@ -5,6 +5,7 @@ import type {
   AgentSystemPromptInfo,
   AgentSessionInfo,
   AnchorRef,
+  ChatAttachment,
   ChatInfo,
   ChatList,
   Comment,
@@ -61,6 +62,12 @@ const d = (id: string) => `/api/domain/${encodeURIComponent(id)}`
 function chatQuery(chatId?: string): string {
   return chatId ? `?chat=${encodeURIComponent(chatId)}` : ''
 }
+
+const attachmentPath = (chatId: string, id: string) =>
+  `/api/agent/attachments/${encodeURIComponent(id)}${chatQuery(chatId)}`
+
+const docRawPath = (id: string, docId: string) =>
+  `${d(id)}/context/documents/${encodeURIComponent(docId)}/raw`
 
 export const api = {
   workspace: () => get<DomainSummary[]>('/api/workspace'),
@@ -127,14 +134,40 @@ export const api = {
   agentSnapshot: (chatId?: string) => get<AgentRunSnapshot>(`/api/agent${chatQuery(chatId)}`),
   /** every terminal turn one chat kept, oldest first — its transcript */
   agentHistory: (chatId?: string) => get<AgentRun[]>(`/api/agent/history${chatQuery(chatId)}`),
-  /** run the message now, or park it behind the turn already running */
-  /** `comments` are the open threads the turn carries — none unless named, `'all'` for every one */
-  agentSubmit: (message?: string, chatId?: string, comments?: 'all' | string[]) =>
+  /**
+   * Run the message now, or park it behind the turn already running. `comments` are the
+   * open threads the turn carries — none unless named, `'all'` for every one;
+   * `attachments` are the ids of images already uploaded to this chat, in order.
+   */
+  agentSubmit: (
+    message?: string,
+    chatId?: string,
+    comments?: 'all' | string[],
+    attachments?: string[],
+  ) =>
     post<AgentSubmitResult>('/api/agent/submit', {
       ...(message ? { message } : {}),
       ...(chatId ? { chatId } : {}),
       ...(comments === 'all' || comments?.length ? { comments } : {}),
+      ...(attachments?.length ? { attachments } : {}),
     }),
+  /** keep one image with a chat, before the message it goes with is sent */
+  uploadAttachment: async (chatId: string, file: Blob, name: string) => {
+    const form = new FormData()
+    form.append('file', file, name)
+    const res = await fetch(`/api/agent/attachments${chatQuery(chatId)}`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!res.ok) {
+      const body = (await res.json().catch(() => undefined)) as { error?: string } | undefined
+      throw new Error(body?.error ?? `${res.status} upload failed`)
+    }
+    return (await res.json()) as ChatAttachment
+  },
+  deleteAttachment: (chatId: string, id: string) =>
+    req<{ ok: boolean }>(attachmentPath(chatId, id), { method: 'DELETE' }),
+  attachmentUrl: attachmentPath,
   // seamless continue after an interruption — resumes the live session with a bare nudge (no re-briefing)
   agentResume: (chatId?: string) =>
     post<AgentSubmitResult>('/api/agent/submit', {
@@ -225,10 +258,8 @@ export const api = {
     post<{ ok: boolean }>(`${d(id)}/context/documents/delete`, { id: docId }),
   updateDocument: (id: string, docId: string, content: string) =>
     post<DocMeta>(`${d(id)}/context/documents/update`, { id: docId, content }),
-  docUrl: (id: string, docId: string) =>
-    `${d(id)}/context/documents/${encodeURIComponent(docId)}/raw`,
-  docContent: (id: string, docId: string) =>
-    fetch(`${d(id)}/context/documents/${encodeURIComponent(docId)}/raw`).then((r) => r.text()),
+  docUrl: docRawPath,
+  docContent: (id: string, docId: string) => fetch(docRawPath(id, docId)).then((r) => r.text()),
 
   layout: (id: string) => get<LayoutState>(`${d(id)}/layout`),
   setLayout: (id: string, positions: Record<string, NodePosition>) =>

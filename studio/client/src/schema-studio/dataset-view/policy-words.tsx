@@ -29,6 +29,25 @@ type VariableClasses = ReadonlyMap<number, IrSchemaRef>
 /** "an Actor", "a Group" — a variable reads as one instance of its class. */
 const anInstance = (name: string): string => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`
 
+/** The shared terms, each in the words and tone the canvas marks cards with. */
+const RESERVED_TERMS: Record<
+  Exclude<PolicyTerm, { kind: 'variable' | 'ref' }>['kind'],
+  [string, ReactNode, string]
+> = {
+  subject: ['Subject', <UserRound key="s" className="h-3 w-3" />, 'bg-primary/10 text-primary'],
+  object: ['Object', <Box key="o" className="h-3 w-3" />, 'bg-schema-node/10 text-schema-node'],
+  source: [
+    'Edge source',
+    <Box key="src" className="h-3 w-3" />,
+    'bg-schema-edge/12 text-schema-edge',
+  ],
+  target: [
+    'Edge target',
+    <Box key="tgt" className="h-3 w-3" />,
+    'bg-schema-edge/12 text-schema-edge',
+  ],
+}
+
 function TermChip({
   term,
   variables,
@@ -53,24 +72,7 @@ function TermChip({
         {term.ref.kind} {policyLabel(term.ref, origin)}
       </span>
     )
-  const reserved: Record<
-    Exclude<PolicyTerm, { kind: 'variable' | 'ref' }>['kind'],
-    [string, ReactNode, string]
-  > = {
-    subject: ['Subject', <UserRound key="s" className="h-3 w-3" />, 'bg-primary/10 text-primary'],
-    object: ['Object', <Box key="o" className="h-3 w-3" />, 'bg-schema-node/10 text-schema-node'],
-    source: [
-      'Edge source',
-      <Box key="src" className="h-3 w-3" />,
-      'bg-schema-edge/12 text-schema-edge',
-    ],
-    target: [
-      'Edge target',
-      <Box key="tgt" className="h-3 w-3" />,
-      'bg-schema-edge/12 text-schema-edge',
-    ],
-  }
-  const [label, icon, tone] = reserved[term.kind]
+  const [label, icon, tone] = RESERVED_TERMS[term.kind]
   return (
     <span
       className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium', tone)}
@@ -121,25 +123,11 @@ export function PatternWords({
       collectVariables(pattern, found)
       return found
     })()
-  if ('allOf' in pattern) {
+  if ('allOf' in pattern || 'anyOf' in pattern) {
+    const parts = 'allOf' in pattern ? pattern.allOf : pattern.anyOf
     return (
-      <Lines label="all of">
-        {pattern.allOf.map((p, i) => (
-          <PatternWords
-            key={i}
-            pattern={p}
-            origin={origin}
-            variables={variables}
-            undirected={undirected}
-          />
-        ))}
-      </Lines>
-    )
-  }
-  if ('anyOf' in pattern) {
-    return (
-      <Lines label="any of">
-        {pattern.anyOf.map((p, i) => (
+      <Lines label={'allOf' in pattern ? 'all of' : 'any of'}>
+        {parts.map((p, i) => (
           <PatternWords
             key={i}
             pattern={p}

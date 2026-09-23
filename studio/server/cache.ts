@@ -14,6 +14,7 @@ import type {
   SchemaOverlay,
   StudioCore,
   StudioDatasets,
+  StudioEvent,
   StudioSchemaBundle,
 } from '../shared/types'
 
@@ -342,6 +343,26 @@ export async function getBundle(
   }
 }
 
+/**
+ * Rebuild a domain's bundle from fresh sources and announce the new generation:
+ * `resolving` first, the compile error if extraction failed, then the schema and
+ * anatomy diffs every client refetches on. Callers invalidate what they need first.
+ */
+export async function rebuildAndAnnounce(
+  id: string,
+  notify: (event: StudioEvent) => void,
+): Promise<void> {
+  notify({ type: 'resolving', domainId: id })
+  const bundle = await getBundle(id, true)
+  if (bundle?.error) notify({ type: 'compile-error', domainId: id, message: bundle.error.message })
+  notify({
+    type: 'schema-diff',
+    domainId: id,
+    renderFingerprint: bundle?.renderFingerprint ?? 'sha-none',
+  })
+  notify({ type: 'anatomy-diff', domainId: id })
+}
+
 export function introspectionStatus(): IntrospectionStatus {
   const queue = introspectionScheduler.snapshot()
   return {
@@ -401,7 +422,8 @@ export async function getCore(id: string, rebuild = false): Promise<StudioCore |
 export async function getDatasets(id: string, rebuild = false): Promise<StudioDatasets | null> {
   const h = getDomain(id)
   if (!h) return null
-  if (!rebuild && datasets.has(id)) return datasets.get(id)!
+  const held = datasets.get(id)
+  if (!rebuild && held) return held
   const run = getBundle(id, rebuild).then((bundle) =>
     buildDatasets(h, bundle, studioSettings().introspectTimeoutMs),
   )

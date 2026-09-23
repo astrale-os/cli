@@ -4,22 +4,25 @@ import type {
   AgentPromptSnapshot,
   AgentRun,
   AgentEffort,
+  ChatAttachment,
   Comment,
-  StudioEvent,
   StudioSettings,
 } from '../../../shared/types'
 import type { DomainHandle } from '../../domain'
 import type { Bridge } from '../bridge/grant'
 import type { StoredChat } from '../chats'
-import type { AgentHarness } from '../harness/adapter'
+import type { AgentHarness, AgentTurnImage } from '../harness/adapter'
+import type { Notify } from '../notify'
 import type { DomainTurnParts } from '../prompts/turn'
 import type { AgentWorkspace } from '../workspace'
 
+import { imagesLabel } from '../../../shared/attachments'
 import { getBundle } from '../../cache'
 import { refreshAuto } from '../../handoff/service'
 import { readComments } from '../../state/comments'
 import { readContext } from '../../state/context'
 import { listDocuments } from '../../state/documents'
+import { attachmentFiles, resolveAttachments } from '../attachments'
 import { startBridge } from '../bridge/grant'
 import { pendingHandoff } from '../chats'
 import { getHarnessById } from '../harness/registry'
@@ -41,6 +44,8 @@ export interface SubmitOpts {
   message?: string
   resume?: boolean
   comments?: CommentSelection
+  /** ids of the images this message carries, uploaded to its chat beforehand */
+  attachments?: string[]
 }
 
 export interface PreparedRun {
@@ -57,10 +62,14 @@ export interface PreparedRun {
   harnessEnv: Record<string, string>
   bridge: Bridge
   run: AgentRun
+  /** the images the harness is handed with the prompt, read from the chat's store */
+  images: AgentTurnImage[]
   promptSnapshot(sessionId: string | undefined, firstTurn: boolean): AgentPromptSnapshot
 }
 
 export type PreparationResult = { prepared: PreparedRun } | { error: string }
+
+const CANCELED_DURING_SETUP = 'agent run canceled during setup'
 
 function awaitingThreads(comments: Comment[]): Comment[] {
   return comments.filter(
@@ -129,11 +138,27 @@ async function domainParts(
   }
 }
 
+/** A run is named after whatever its turn actually carries, in the order it was meant. */
+function runSummary(turn: {
+  bareResume: boolean
+  message: string
+  images: number
+  threads: number
+  documents: number
+}): string {
+  if (turn.bareResume) return 'continuing after interruption'
+  if (turn.message) return turn.message.slice(0, 60) + (turn.message.length > 60 ? '…' : '')
+  if (turn.images > 0) return imagesLabel(turn.images)
+  if (turn.threads > 0)
+    return turn.threads === 1 ? '1 attached thread' : `${turn.threads} attached threads`
+  return turn.documents === 1 ? '1 document' : `${turn.documents} documents`
+}
+
 /** Gather and freeze every input required to start one agent run in one chat. */
 export async function prepareRun(
   workspace: AgentWorkspace,
   chat: StoredChat,
-  notify: (event: StudioEvent) => void,
+  notify: Notify,
   controller: AbortController,
   options?: SubmitOpts,
 ): Promise<PreparationResult> {
@@ -141,25 +166,34 @@ export async function prepareRun(
   // here: a Claude tab keeps running Claude after the user picks Codex.
   const harness = getHarnessById(chat.harness)
   const available = await harness.isAvailable(controller.signal)
-  if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
+  if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
   if (!available) return { error: `${harness.label} is not available on this machine` }
 
   const resume = chat.sessionId
   const bareResume = options?.resume === true && !!resume
   const message = (options?.message ?? '').trim()
+  const resolved = resolveAttachments(workspace.stateRoot, chat.id, options?.attachments ?? [])
+  if ('error' in resolved) return resolved
+  const attachments: ChatAttachment[] = bareResume ? [] : resolved.attachments
+  const images: AgentTurnImage[] = attachmentFiles(workspace.stateRoot, chat.id, attachments).map(
+    ({ attachment, path }) => ({ path, mimeType: attachment.mimeType, name: attachment.name }),
+  )
   const domains: DomainTurnParts[] = []
   for (const handle of workspace.domains) {
     domains.push(await domainParts(workspace, handle, controller.signal, options?.comments))
-    if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
+    if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
   }
   const briefed = briefedDomains(domains)
   const awaiting = briefed.flatMap((domain) => domain.awaitingThreads)
   const documents = briefed.reduce((n, domain) => n + domain.documents.length, 0)
-  // A turn has to carry something, and a message is only one of the three things it
-  // can be: an attached document is an instruction in itself ("read this"), and so is
-  // an attached thread. Only a turn carrying none of them is nothing to send.
-  if (!bareResume && awaiting.length === 0 && !message && documents === 0)
-    return { error: 'nothing to send — type an instruction, attach a document or a thread' }
+  // A turn has to carry something, and text is only one of the things it can be: an
+  // image is a message in itself ("look at this"), an attached document is an
+  // instruction ("read this"), and so is an attached thread. Only a turn carrying
+  // none of them is nothing to send.
+  if (!bareResume && awaiting.length === 0 && !message && !attachments.length && documents === 0)
+    return {
+      error: 'nothing to send — type an instruction, attach an image, a document or a thread',
+    }
 
   const configuration = await resolveHarnessConfiguration(harness, {
     ...(chat.model ? { model: chat.model } : {}),
@@ -167,7 +201,7 @@ export async function prepareRun(
   })
   if (!configuration.ok) return { error: `model gateway auth failed — ${configuration.error}` }
   const { settings, model, effort, env } = configuration.configuration
-  if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
+  if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
 
   const harnessEnv = { ...env, ASTRALE_SESSION: studioSessionId(workspace.key) }
   const bridge = startBridge(workspace, notify)
@@ -185,6 +219,7 @@ export async function prepareRun(
           domains,
           firstTurn,
           message,
+          images,
           ...(firstTurn && chat.turns === 0 && chat.newDomain ? { newDomain: chat.newDomain } : {}),
         })
   const systemPrompt = buildSystemPrompt({ bridge: bridge.enabled })
@@ -209,19 +244,15 @@ export async function prepareRun(
     harness: harness.id,
     status: 'running',
     createdAt: new Date().toISOString(),
-    // named after whatever the turn actually carries, in the order it was meant
-    summary: bareResume
-      ? 'continuing after interruption'
-      : message
-        ? message.slice(0, 60) + (message.length > 60 ? '…' : '')
-        : awaiting.length > 0
-          ? awaiting.length === 1
-            ? '1 attached thread'
-            : `${awaiting.length} attached threads`
-          : documents === 1
-            ? '1 document'
-            : `${documents} documents`,
+    summary: runSummary({
+      bareResume,
+      message,
+      images: attachments.length,
+      threads: awaiting.length,
+      documents,
+    }),
     ...(message ? { instruction: message } : {}),
+    ...(attachments.length ? { attachments } : {}),
     targetCommentIds: awaiting.map((comment) => comment.id),
     events: [],
     sessionId: resume,
@@ -246,6 +277,7 @@ export async function prepareRun(
       harnessEnv,
       bridge,
       run,
+      images,
       promptSnapshot,
     },
   }

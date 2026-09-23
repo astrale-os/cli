@@ -2,8 +2,6 @@ import type { JsonSchema, TypeDescriptor } from '@shared/types'
 
 import { isNodePathSchema } from '@shared/types'
 
-import { cn } from './utils'
-
 /** JSON Schema → render-friendly descriptor (never reads zod). */
 export function describe(s?: JsonSchema): TypeDescriptor {
   if (!s) return { kind: 'unknown', optional: false }
@@ -45,25 +43,6 @@ export function typeLabel(d: TypeDescriptor): string {
     default:
       return d.kind
   }
-}
-
-/** Inline monospace type chip. */
-export function TypeChip({ schema, className }: { schema?: JsonSchema; className?: string }) {
-  const d = describe(schema)
-  return (
-    <span className={cn('font-mono text-xs text-foreground/80', className)}>
-      {typeLabel(d)}
-      {d.optional && <span className="text-muted-foreground">?</span>}
-    </span>
-  )
-}
-
-export function shortHash(h?: string): string {
-  if (!h) return '—'
-  return h
-    .replace(/^sha256:/, '')
-    .replace(/^sha-?/, '')
-    .slice(0, 8)
 }
 
 /** "just now" · "12 min ago" · "3 h ago" · "2 d ago" · "19 Aug". */

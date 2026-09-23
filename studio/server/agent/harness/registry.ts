@@ -32,9 +32,15 @@ export function getHarnessById(id: string): AgentHarness {
 
 /** All registered harnesses (id + label) — every agent the GUI names. */
 export function listHarnesses(selected?: string): { id: string; label: string }[] {
-  return Object.entries(harnesses)
-    .filter(([id]) => id !== 'mock' || id === selected)
-    .map(([id, make]) => ({ id, label: make().label }))
+  return Object.keys(harnesses)
+    .filter((id) => id !== 'mock' || id === selected)
+    .map((id) => ({ id, label: getHarnessById(id).label }))
+}
+
+/** Report one step of the boot sweep when `DOMAIN_STUDIO_TIMINGS=1`. */
+function logTiming(label: string, started: number): void {
+  if (process.env.DOMAIN_STUDIO_TIMINGS === '1')
+    console.log(`    timing acp ${label}=${Math.round((performance.now() - started) * 10) / 10}ms`)
 }
 
 /** The boot sweep, kept so everything that needs an answer waits on the same one. */
@@ -61,17 +67,9 @@ export function probeInstalledHarnesses(): Promise<void> {
       listHarnesses().map(async (entry) => {
         const probeStarted = performance.now()
         await inspectHarnessHealth(getHarnessById(entry.id)).catch(() => undefined)
-        if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
-          console.log(
-            `    timing acp ${entry.id}=${Math.round((performance.now() - probeStarted) * 10) / 10}ms`,
-          )
-        }
+        logTiming(entry.id, probeStarted)
       }),
-    ).then(() => {
-      if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
-        console.log(`    timing acp sweep=${Math.round((performance.now() - started) * 10) / 10}ms`)
-      }
-    })
+    ).then(() => logTiming('sweep', started))
   }
   return sweep
 }

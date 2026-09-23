@@ -2,6 +2,8 @@ import type { IrClassRef, IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shar
 
 import { classRefKey, isIrClassRef } from '@shared/schema/identity'
 
+import { KERNEL_ORIGIN } from './inheritance'
+
 export interface ExternalMember {
   name: string
   ref: IrClassRef
@@ -37,6 +39,11 @@ function endpointClasses(endpoint: Pick<IrEndpoint, 'types' | 'refs'> | undefine
   return endpoint.types.map((name) => ({ name }))
 }
 
+/** A node Class declared by this domain itself (an unqualified name is always local). */
+function isLocalNodeClass(ir: SchemaIR, name: string, ref: IrClassRef | undefined): boolean {
+  return (ref === undefined || ref.origin === ir.domain) && ir.classes[name]?.type === 'node'
+}
+
 export interface LocalEndpointTarget {
   className: string
 }
@@ -46,9 +53,7 @@ export function localEndpointTargets(
   endpoint: Pick<IrEndpoint, 'types' | 'refs'> | undefined,
 ): LocalEndpointTarget[] {
   const names = endpointClasses(endpoint).flatMap(({ name, ref }) =>
-    (ref === undefined || ref.origin === ir.domain) && ir.classes[name]?.type === 'node'
-      ? [name]
-      : [],
+    isLocalNodeClass(ir, name, ref) ? [name] : [],
   )
   return [...new Set(names)].map((className) => ({ className }))
 }
@@ -59,16 +64,14 @@ export function crossDomainEdges(bundle: StudioSchemaBundle): CrossDomainEdge[] 
   const result: CrossDomainEdge[] = []
   for (const [edgeName, edge] of Object.entries(ir.classes)) {
     if (edge.type !== 'edge' || !edge.endpoints) continue
-    const source = edge.endpoints[0]
-    const target = edge.endpoints[1]
+    const [source, target] = edge.endpoints
     if (!source || !target) continue
     for (const [localEndpoint, externalEndpoint] of [
       [source, target],
       [target, source],
     ] as const) {
-      const local = endpointClasses(localEndpoint).filter(
-        ({ name, ref }) =>
-          (ref === undefined || ref.origin === ir.domain) && ir.classes[name]?.type === 'node',
+      const local = endpointClasses(localEndpoint).filter(({ name, ref }) =>
+        isLocalNodeClass(ir, name, ref),
       )
       const external = endpointClasses(externalEndpoint).flatMap(({ name, ref }) => {
         if (ref === undefined || ref.origin === ir.domain) return []
@@ -129,7 +132,7 @@ export function externalDomains(bundle: StudioSchemaBundle): ExternalDomain[] {
   return [...byOrigin]
     .map(([origin, members]) => ({
       origin,
-      kind: origin === 'kernel.astrale.ai' ? ('kernel' as const) : ('external' as const),
+      kind: origin === KERNEL_ORIGIN ? ('kernel' as const) : ('external' as const),
       // What the canvas connects first: the same reading the external frames use.
       members: [...members.values()].sort((left, right) =>
         !left.connected === !right.connected

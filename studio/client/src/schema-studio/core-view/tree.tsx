@@ -61,6 +61,7 @@ function CoreRow({
   const hue = hues.get(n.className) ?? 264
   const icon = classIcon(bundle, n.className)
   const isFolder = n.className === 'Folder'
+  const title = displayName(n)
   return (
     <div>
       <div
@@ -86,7 +87,7 @@ function CoreRow({
         <Commentable
           domainId={domainId}
           anchor={{ ref: nodeAnchor(n.path), kind: 'section' }}
-          excerpt={`${displayName(n)} (${n.className})`}
+          excerpt={`${title} (${n.className})`}
           className="flex-1 min-w-0"
         >
           <button
@@ -103,7 +104,7 @@ function CoreRow({
                 <Box className="h-3.5 w-3.5" />
               )}
             </span>
-            <span className="truncate text-[13px] font-medium">{displayName(n)}</span>
+            <span className="truncate text-[13px] font-medium">{title}</span>
             <span className="ml-auto shrink-0 pl-2 text-[11px] text-muted-foreground">
               {n.className}
             </span>

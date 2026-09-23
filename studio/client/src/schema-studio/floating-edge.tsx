@@ -398,16 +398,16 @@ export function FloatingEdge(props: EdgeProps) {
 
   let geometry: FloatingEdgeGeometry | null = null
   if (sourceNode && targetNode) {
-    const sourcePort = pointAtPort(sourceNode, d?.sourcePort)
-    const targetPort = pointAtPort(targetNode, d?.targetPort)
+    const sourcePoint = pointAtPort(sourceNode, d?.sourcePort)
+    const targetPoint = pointAtPort(targetNode, d?.targetPort)
     const fallback = getEdgeParams(sourceNode, targetNode)
     geometry = {
-      sx: sourcePort?.x ?? fallback.sx,
-      sy: sourcePort?.y ?? fallback.sy,
-      tx: targetPort?.x ?? fallback.tx,
-      ty: targetPort?.y ?? fallback.ty,
-      sourcePosition: sourcePort?.position ?? fallback.sourcePos,
-      targetPosition: targetPort?.position ?? fallback.targetPos,
+      sx: sourcePoint?.x ?? fallback.sx,
+      sy: sourcePoint?.y ?? fallback.sy,
+      tx: targetPoint?.x ?? fallback.tx,
+      ty: targetPoint?.y ?? fallback.ty,
+      sourcePosition: sourcePoint?.position ?? fallback.sourcePos,
+      targetPosition: targetPoint?.position ?? fallback.targetPos,
     }
   }
 

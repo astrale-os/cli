@@ -52,7 +52,9 @@ export function summarizeChatTranscript(input: {
   fromHarness: string
   title?: string
 }): string {
-  const runs = input.runs.filter((run) => run.instruction || run.events.length > 0)
+  const runs = input.runs.filter(
+    (run) => run.instruction || run.attachments?.length || run.events.length > 0,
+  )
   if (runs.length === 0) return ''
   const recent = runs.slice(-MAX_TURNS)
   const omitted = runs.length - recent.length
@@ -63,6 +65,9 @@ export function summarizeChatTranscript(input: {
     if (run.instruction) lines.push(`- Asked: ${clamp(run.instruction, MAX_INSTRUCTION_CHARS)}`)
     else if (run.targetCommentIds.length)
       lines.push(`- Asked: answer ${run.targetCommentIds.length} open comment thread(s)`)
+    // the images themselves stay with the other chat; the new agent only learns they were there
+    if (run.attachments?.length)
+      lines.push(`- Showed: ${run.attachments.map((image) => image.name).join(', ')}`)
     if (reply) lines.push(`- Answered: ${clamp(reply, MAX_REPLY_CHARS)}`)
     if (run.error) lines.push(`- Failed: ${clamp(run.error, MAX_INSTRUCTION_CHARS)}`)
     return lines.join('\n')

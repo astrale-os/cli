@@ -27,8 +27,8 @@ const DEFAULT_WORKSPACE_UI: WorkspaceUiState = {
     tab: 'agent',
     side: 'bottom',
     size: 360,
-    dockWidth: 768,
-    dockHeight: 480,
+    dockWidth: 880,
+    dockHeight: 560,
   },
   rail: { width: 240, collapsed: false },
   schema: {

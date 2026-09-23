@@ -1,10 +1,10 @@
-import { join, relative } from 'node:path'
+import { join } from 'node:path'
 import { Node, type SourceFile, SyntaxKind } from 'ts-morph'
 
 import type { ViewInfo } from '../../../../shared/types'
 
 import { resolveApplicationEntry } from '../../../domain'
-import { defineSchemaCalls, schemaProject } from '../schema-definition'
+import { defineSchemaCalls } from '../schema-definition'
 import {
   addSource,
   callName,
@@ -15,12 +15,16 @@ import {
   objectValue,
   propertySlug,
   propertyValue,
+  relativePosix,
 } from '../source'
 
 /** Locate authored declarations for canonical View keys without projecting any semantics. */
-export function buildSchemaViewSources(root: string, schemaDirName: string): Map<string, string> {
+export function buildSchemaViewSources(
+  root: string,
+  schemaSources: readonly SourceFile[],
+): Map<string, string> {
   const sources = new Map<string, string>()
-  for (const source of schemaProject(root, schemaDirName)) {
+  for (const source of schemaSources) {
     for (const call of defineSchemaCalls(source)) {
       const input = objectValue(call.getArguments()[1], source)
       const declared = input
@@ -36,7 +40,7 @@ export function buildSchemaViewSources(root: string, schemaDirName: string): Map
           Node.isCallExpression(declaration) &&
           callName(declaration) === 'view'
         ) {
-          sources.set(slug, relative(root, source.getFilePath()).replaceAll('\\', '/'))
+          sources.set(slug, relativePosix(root, source.getFilePath()))
         }
       }
     }
@@ -72,9 +76,9 @@ export function buildFrontendViews(
   const views: ViewInfo[] = []
 
   for (const source of sources) {
+    const file = relativePosix(root, source.getFilePath())
     for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const frontendName = callName(call)
-      if (frontendName !== 'defineFrontend') continue
+      if (callName(call) !== 'defineFrontend') continue
       const input = objectValue(call.getArguments()[0], source)
       if (!input) continue
       const routes = objectValue(objectProperty(input, 'routes', source) ?? undefined, source)
@@ -105,7 +109,7 @@ export function buildFrontendViews(
           slug,
           kind: 'spa',
           ...(url ? { url } : { mount: path }),
-          file: relative(root, source.getFilePath()).replaceAll('\\', '/'),
+          file,
         })
       }
     }

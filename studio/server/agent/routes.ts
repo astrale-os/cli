@@ -20,6 +20,8 @@ import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './
 import { emitStudioEvent } from './notify'
 import { buildSystemPrompt } from './prompts/system'
 import {
+  addAttachment,
+  attachmentOf,
   cancelRun,
   chatHarness,
   chatModel,
@@ -33,6 +35,7 @@ import {
   listChats,
   moveQueued,
   openChat,
+  removeAttachment,
   selectChat,
   sendQueuedNow,
   setSessionId,
@@ -48,15 +51,27 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Chat operations fail on user-supplied ids, so their errors are 400s, not 500s. */
+/** The non-empty string entries of a request array, in order; nothing when there are none. */
+function idList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = value.filter((entry): entry is string => typeof entry === 'string' && !!entry)
+  return ids.length ? ids : undefined
+}
+
 /** A submit's `comments`: `'all'`, or the ids of the threads to attach — none otherwise. */
 function commentSelection(value: unknown): { comments?: 'all' | string[] } {
   if (value === 'all') return { comments: 'all' }
-  if (!Array.isArray(value)) return {}
-  const ids = value.filter((entry): entry is string => typeof entry === 'string' && !!entry)
-  return ids.length ? { comments: ids } : {}
+  const ids = idList(value)
+  return ids ? { comments: ids } : {}
 }
 
+/** A submit's `attachments`: the ids of the images it carries, in order. */
+function attachmentSelection(value: unknown): { attachments?: string[] } {
+  const ids = idList(value)
+  return ids ? { attachments: ids } : {}
+}
+
+/** Chat operations fail on user-supplied ids, so their errors are 400s, not 500s. */
 function chatJson<T>(result: ChatResult<T>): Response {
   return result.ok ? json(result.value) : badRequest(result.error)
 }
@@ -134,8 +149,10 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
     if (req.method === 'GET') {
       const snapshot = await getSnapshot(chatParam)
       if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+        const now = performance.now()
+        const ms = (from: number, to: number) => Math.round((to - from) * 10) / 10
         console.log(
-          `    timing agent snapshot total=${Math.round((performance.now() - routeStarted) * 10) / 10}ms sweep-wait=${Math.round((sweepReady - routeStarted) * 10) / 10}ms snapshot=${Math.round((performance.now() - sweepReady) * 10) / 10}ms`,
+          `    timing agent snapshot total=${ms(routeStarted, now)}ms sweep-wait=${ms(routeStarted, sweepReady)}ms snapshot=${ms(sweepReady, now)}ms`,
         )
       }
       return json(snapshot)
@@ -191,9 +208,40 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
         message: typeof body.message === 'string' ? body.message : undefined,
         resume: body.resume === true,
         ...commentSelection(body.comments),
+        ...attachmentSelection(body.attachments),
         ...(chatBody === undefined ? {} : { chatId: chatBody }),
       }),
     )
+  }
+  // One image per upload, sent the moment it is pasted: each chip in the composer
+  // then fills in on its own, and one refused image does not take the others down.
+  if (rest === '/agent/attachments' && req.method === 'POST') {
+    const form = await req.formData().catch(() => undefined)
+    const file = form?.get('file')
+    if (!(file instanceof File)) return badRequest('expected one image in the `file` field')
+    return chatJson(
+      addAttachment(chatParam, {
+        name: file.name,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      }),
+    )
+  }
+  const attachment = rest.match(/^\/agent\/attachments\/([^/]+)$/)
+  if (attachment) {
+    const id = decodeURIComponent(attachment[1]!)
+    if (req.method === 'DELETE') return json({ ok: removeAttachment(chatParam, id) })
+    if (req.method !== 'GET') return badRequest('GET or DELETE')
+    const found = attachmentOf(chatParam, id)
+    if (!found) return notFound()
+    return new Response(Bun.file(found.path), {
+      headers: {
+        'content-type': found.attachment.mimeType,
+        'content-disposition': 'inline',
+        'x-content-type-options': 'nosniff',
+        // an id names one image for good: its bytes never change
+        'cache-control': 'private, max-age=31536000, immutable',
+      },
+    })
   }
   if (rest === '/agent/queue' && req.method === 'POST') {
     const messageId = asString(body.id) ?? ''
@@ -212,10 +260,8 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
         return queued(dropQueued(chatBody, messageId))
       case 'move':
         return queued(moveQueued(chatBody, messageId, body.direction === 'down' ? 'down' : 'up'))
-      case 'send': {
-        const result = await sendQueuedNow(notify, chatBody, messageId)
-        return result.ok ? json(result.value) : badRequest(result.error)
-      }
+      case 'send':
+        return chatJson(await sendQueuedNow(notify, chatBody, messageId))
       default:
         return badRequest(`unknown queue action: ${asString(body.action) ?? ''}`)
     }

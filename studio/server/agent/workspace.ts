@@ -60,12 +60,11 @@ export function findDomain(
   const wanted = reference.trim()
   if (!wanted) return undefined
   const normalized = wanted.replace(/\/+$/, '')
-  return workspace.domains.find(
-    (handle) =>
-      domainOrigin(handle) === normalized ||
-      handle.id === normalized ||
-      domainRelativePath(workspace, handle) === normalized ||
-      domainRelativePath(workspace, handle) === `./${normalized}` ||
-      resolve(workspace.root, normalized) === handle.root,
-  )
+  const dotted = `./${normalized}`
+  const absolute = resolve(workspace.root, normalized)
+  return workspace.domains.find((handle) => {
+    if (domainOrigin(handle) === normalized || handle.id === normalized) return true
+    const path = domainRelativePath(workspace, handle)
+    return path === normalized || path === dotted || absolute === handle.root
+  })
 }

@@ -2,9 +2,11 @@ import { MessageCircle, MessageSquare, PanelBottom, PanelLeft, PanelRight, X } f
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ResizeHandle, type ResizeState, strongestResizeState } from '@/components/ui/resize-handle'
 import { isRunActive, useDisplayRun } from '@/lib/agent'
 import { useUnreadAgentReplies } from '@/lib/agent-unread'
 import { useActiveChatId, useChatMutations, useModelCatalog } from '@/lib/chats'
+import { openCommentThreads } from '@/lib/comments'
 import { useHarness, useLoadout, useWorkspaceComments } from '@/lib/hooks'
 import { DOCK_HEIGHT, DOCK_WIDTH, type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -14,6 +16,8 @@ import { CommentsTab } from './comments-tab'
 
 const MIN_SIZE = 260
 const MAX_SIZE = 900
+/** The column's default width, restored by a double click on its edge. */
+const PANEL_SIZE = 360
 
 /** The sides that dock a column. `bottom` is the floating dock and never does. */
 type DockedSide = Exclude<PanelSide, 'bottom'>
@@ -62,12 +66,16 @@ function useWaitingCount(): number {
   return data.reduce(
     (total, entry) =>
       total +
-      (entry.store?.comments.filter(
-        (comment) => comment.status === 'open' && comment.thread.at(-1)?.role === 'author',
-      ).length ?? 0),
+      openCommentThreads(entry.store?.comments).filter(
+        (comment) => comment.thread.at(-1)?.role === 'author',
+      ).length,
     0,
   )
 }
+
+/** The panel header's square icon buttons: the dock control and the close button. */
+const HEADER_BUTTON =
+  'grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
 
 /**
  * The work panel: the agent conversation and the comment threads, showing beside
@@ -142,7 +150,10 @@ function ExpandedPanel({ side }: { side: DockedSide }) {
   const size = useUI((s) => s.panelSize)
   const setPanelSize = useUI((s) => s.setPanelSize)
   const setPanelOpen = useUI((s) => s.setPanelOpen)
-  const startResize = useResize(side, size, setPanelSize)
+  const dragFrom = useRef(size)
+  // the grip is on the edge facing the view: dragging toward the view widens the panel
+  const toward = side === 'left' ? 1 : -1
+  const clamp = (next: number) => Math.min(MAX_SIZE, Math.max(MIN_SIZE, next))
 
   return (
     <aside
@@ -161,18 +172,22 @@ function ExpandedPanel({ side }: { side: DockedSide }) {
       <PanelContent />
 
       {/* drag handle on the edge that faces the main view */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        onPointerDown={startResize}
-        title="Drag to resize"
+      <ResizeHandle
+        orientation="vertical"
+        label="Resize the panel"
         className={cn(
-          'group absolute top-0 z-20 h-full w-1.5 cursor-col-resize',
+          'top-0 h-full w-2',
           side === 'left' ? 'right-0 translate-x-1/2' : 'left-0 -translate-x-1/2',
         )}
-      >
-        <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-primary/50" />
-      </div>
+        value={size}
+        min={MIN_SIZE}
+        max={MAX_SIZE}
+        onDragStart={() => (dragFrom.current = size)}
+        onDrag={(dx) => setPanelSize(clamp(dragFrom.current + toward * dx))}
+        onStep={(dx) => setPanelSize(clamp(size + toward * dx))}
+        onLimit={(to) => setPanelSize(to === 'min' ? MIN_SIZE : MAX_SIZE)}
+        onReset={() => setPanelSize(PANEL_SIZE)}
+      />
     </aside>
   )
 }
@@ -197,7 +212,7 @@ function FloatingDock() {
   const dockHeight = useUI((s) => s.dockHeight)
   const box = useRef<HTMLDivElement>(null)
   const conversation = useRef<HTMLDivElement>(null)
-  const { resizing, start: startResize, reset: resetSize } = useDockResize(box, conversation)
+  const resize = useDockResize(box, conversation)
   // Closed, the dock is all the agent has on screen — a running turn has to show
   // on the bar itself. Open it needs nothing: the turn is unfolding right above.
   const working = !open && isRunActive(run)
@@ -283,7 +298,7 @@ function FloatingDock() {
           className={cn(
             'flex min-h-0 flex-col overflow-clip',
             // following the pointer, not easing after it
-            !resizing && 'transition-[height] duration-300 ease-out',
+            !resize.resizing && 'transition-[height] duration-300 ease-out',
           )}
         >
           <PanelHeader closeLabel="Close the chat" onClose={close} />
@@ -308,13 +323,13 @@ function FloatingDock() {
             it stays centred — and the top corners do both. At rest there is only
             a bar, and every press on it means "open". */}
         {open && (
-          <>
-            <DockHandle edge="top" onPointerDown={startResize} onReset={resetSize} />
-            <DockHandle edge="left" onPointerDown={startResize} onReset={resetSize} />
-            <DockHandle edge="right" onPointerDown={startResize} onReset={resetSize} />
-            <DockHandle edge="top-left" onPointerDown={startResize} onReset={resetSize} />
-            <DockHandle edge="top-right" onPointerDown={startResize} onReset={resetSize} />
-          </>
+          <DockResize
+            onDragStart={resize.start}
+            onDrag={resize.drag}
+            onDragEnd={resize.end}
+            onReset={resize.reset}
+            onStep={resize.step}
+          />
         )}
 
         {(!open || tab === 'agent') && (
@@ -348,82 +363,130 @@ function FloatingDock() {
 }
 
 type DockEdge = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
+type DockSide = 'top' | 'left' | 'right'
 
+/**
+ * The dock's grips. The straight edges stop where the rounded corners begin (the
+ * corners are 16px, `rounded-2xl`), and each corner is its own grip that moves the two
+ * edges it joins, lighting both.
+ */
 const DOCK_EDGES: Record<
   DockEdge,
-  { x: -1 | 0 | 1; y: boolean; cursor: string; className: string; label: string }
+  { x: -1 | 0 | 1; y: boolean; cursor: string; className: string; label: string; sides: DockSide[] }
 > = {
   top: {
     x: 0,
     y: true,
     cursor: 'ns-resize',
-    className: 'inset-x-3 top-0 h-1.5 cursor-ns-resize',
-    label: 'Drag to change the chat height',
+    className: 'inset-x-4 top-0 h-2',
+    label: 'Resize the chat height',
+    sides: ['top'],
   },
   left: {
     x: -1,
     y: false,
     cursor: 'ew-resize',
-    className: 'inset-y-3 left-0 w-1.5 cursor-ew-resize',
-    label: 'Drag to change the chat width',
+    className: 'inset-y-4 left-0 w-2',
+    label: 'Resize the chat width',
+    sides: ['left'],
   },
   right: {
     x: 1,
     y: false,
     cursor: 'ew-resize',
-    className: 'inset-y-3 right-0 w-1.5 cursor-ew-resize',
-    label: 'Drag to change the chat width',
+    className: 'inset-y-4 right-0 w-2',
+    label: 'Resize the chat width',
+    sides: ['right'],
   },
   'top-left': {
     x: -1,
     y: true,
     cursor: 'nwse-resize',
-    className: 'left-0 top-0 h-3 w-3 cursor-nwse-resize',
-    label: 'Drag to resize the chat',
+    className: 'left-0 top-0 h-4 w-4',
+    label: 'Resize the chat',
+    sides: ['top', 'left'],
   },
   'top-right': {
     x: 1,
     y: true,
     cursor: 'nesw-resize',
-    className: 'right-0 top-0 h-3 w-3 cursor-nesw-resize',
-    label: 'Drag to resize the chat',
+    className: 'right-0 top-0 h-4 w-4',
+    label: 'Resize the chat',
+    sides: ['top', 'right'],
   },
 }
 
-/** One grip on the open dock's edge; a double click puts the dock back to its default size. */
-function DockHandle({
-  edge,
-  onPointerDown,
+const DOCK_EDGE_NAMES = Object.keys(DOCK_EDGES) as DockEdge[]
+
+/** Literal per side and state, so Tailwind sees every class it has to generate. */
+const DOCK_SIDE_TONE: Record<DockSide, Record<ResizeState, string>> = {
+  top: { idle: '', hover: 'border-t-primary/60', active: 'border-t-primary' },
+  left: { idle: '', hover: 'border-l-primary/60', active: 'border-l-primary' },
+  right: { idle: '', hover: 'border-r-primary/60', active: 'border-r-primary' },
+}
+
+/**
+ * The open dock's resize grips, and the edge they light.
+ *
+ * The dock is a rounded card, so a straight line laid over one side (what the columns
+ * draw) would stop short of its corners or cut across them. It lights its own outline
+ * instead: the border of the side being moved, following the curve into each corner.
+ * Same colour, same thickness and same timing as every other edge in the Studio.
+ */
+function DockResize({
+  onDragStart,
+  onDrag,
+  onDragEnd,
   onReset,
+  onStep,
 }: {
-  edge: DockEdge
-  onPointerDown: (edge: DockEdge, event: React.PointerEvent) => void
+  onDragStart: (edge: DockEdge) => void
+  onDrag: (edge: DockEdge, dx: number, dy: number) => void
+  onDragEnd: () => void
   onReset: () => void
+  onStep: (edge: DockEdge, dx: number, dy: number) => void
 }) {
-  const { className, label, x, y } = DOCK_EDGES[edge]
-  const corner = x !== 0 && y
+  const [states, setStates] = useState<Partial<Record<DockEdge, ResizeState>>>({})
+  const lit = (side: DockSide): ResizeState =>
+    DOCK_EDGE_NAMES.filter((edge) => DOCK_EDGES[edge].sides.includes(side)).reduce<ResizeState>(
+      (tone, edge) => strongestResizeState(tone, states[edge] ?? 'idle'),
+      'idle',
+    )
+
   return (
-    <div
-      role={corner ? undefined : 'separator'}
-      aria-orientation={corner ? undefined : y ? 'horizontal' : 'vertical'}
-      aria-label={corner ? undefined : label}
-      title={`${label} (double-click to reset)`}
-      data-dock-resize={edge}
-      onPointerDown={(event) => onPointerDown(edge, event)}
-      onDoubleClick={onReset}
-      className={cn('group absolute z-20 touch-none', className)}
-    >
-      {!corner && (
-        <div
-          className={cn(
-            'absolute rounded-full bg-transparent transition-colors group-hover:bg-primary/50',
-            y
-              ? 'left-1/2 top-px h-0.5 w-12 -translate-x-1/2'
-              : cn('top-1/2 h-12 w-0.5 -translate-y-1/2', x < 0 ? 'left-px' : 'right-px'),
-          )}
-        />
-      )}
-    </div>
+    <>
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute inset-0 z-20 rounded-2xl border-2 border-transparent transition-colors duration-150',
+          DOCK_SIDE_TONE.top[lit('top')],
+          DOCK_SIDE_TONE.left[lit('left')],
+          DOCK_SIDE_TONE.right[lit('right')],
+        )}
+      />
+      {DOCK_EDGE_NAMES.map((edge) => {
+        const { x, y, cursor, className, label } = DOCK_EDGES[edge]
+        const corner = x !== 0 && y
+        return (
+          <ResizeHandle
+            key={edge}
+            data-dock-resize={edge}
+            orientation={y && !corner ? 'horizontal' : 'vertical'}
+            role={corner ? 'presentation' : 'separator'}
+            label={label}
+            cursor={cursor}
+            className={className}
+            line={false}
+            onStateChange={(state) => setStates((all) => ({ ...all, [edge]: state }))}
+            onDragStart={() => onDragStart(edge)}
+            onDrag={(dx, dy) => onDrag(edge, dx, dy)}
+            onDragEnd={onDragEnd}
+            onReset={onReset}
+            onStep={(dx, dy) => onStep(edge, dx, dy)}
+          />
+        )
+      })}
+    </>
   )
 }
 
@@ -439,76 +502,70 @@ function DockHandle({
 function useDockResize(
   box: React.RefObject<HTMLElement | null>,
   conversation: React.RefObject<HTMLElement | null>,
-): {
-  resizing: boolean
-  start: (edge: DockEdge, event: React.PointerEvent) => void
-  reset: () => void
-} {
+) {
   const setDockSize = useUI((s) => s.setDockSize)
   const [resizing, setResizing] = useState(false)
+  const from = useRef({ width: 0, height: 0, maxWidth: 0, maxHeight: 0 })
 
-  const start = useCallback(
-    (edge: DockEdge, event: React.PointerEvent) => {
-      const dock = box.current
-      const chat = conversation.current
-      const frame = dock?.parentElement
-      if (!dock || !chat || !frame || event.button !== 0) return
-      event.preventDefault()
-      event.stopPropagation()
-      const { x, y, cursor } = DOCK_EDGES[edge]
-      const frameStyle = getComputedStyle(frame)
-      const roomX =
-        frame.clientWidth - parseFloat(frameStyle.paddingLeft) - parseFloat(frameStyle.paddingRight)
-      const roomY =
-        frame.clientHeight -
-        parseFloat(frameStyle.paddingTop) -
-        parseFloat(frameStyle.paddingBottom)
-      const startX = event.clientX
-      const startY = event.clientY
-      const startWidth = dock.offsetWidth
-      const startHeight = chat.offsetHeight
-      // everything in the dock that is not the conversation: the composer, borders
-      const chrome = dock.offsetHeight - startHeight
-      const maxWidth = Math.max(DOCK_WIDTH.min, Math.min(DOCK_WIDTH.max, roomX))
-      const maxHeight = Math.max(DOCK_HEIGHT.min, Math.min(DOCK_HEIGHT.max, roomY - chrome))
+  /** The dock's size now, and the most the view has room for. */
+  const measure = useCallback(() => {
+    const dock = box.current
+    const chat = conversation.current
+    const frame = dock?.parentElement
+    if (!dock || !chat || !frame) return null
+    const frameStyle = getComputedStyle(frame)
+    const roomX =
+      frame.clientWidth - parseFloat(frameStyle.paddingLeft) - parseFloat(frameStyle.paddingRight)
+    const roomY =
+      frame.clientHeight - parseFloat(frameStyle.paddingTop) - parseFloat(frameStyle.paddingBottom)
+    // everything in the dock that is not the conversation: the composer, borders
+    const chrome = dock.offsetHeight - chat.offsetHeight
+    return {
+      width: dock.offsetWidth,
+      height: chat.offsetHeight,
+      maxWidth: Math.max(DOCK_WIDTH.min, Math.min(DOCK_WIDTH.max, roomX)),
+      maxHeight: Math.max(DOCK_HEIGHT.min, Math.min(DOCK_HEIGHT.max, roomY - chrome)),
+    }
+  }, [box, conversation])
 
-      const onMove = (move: PointerEvent) => {
-        const next: { width?: number; height?: number } = {}
-        if (x !== 0) {
-          const width = startWidth + 2 * x * (move.clientX - startX)
-          next.width = Math.min(maxWidth, Math.max(DOCK_WIDTH.min, width))
-        }
-        if (y) {
-          // the dock grows upward: dragging the top edge up makes it taller
-          const height = startHeight + (startY - move.clientY)
-          next.height = Math.min(maxHeight, Math.max(DOCK_HEIGHT.min, height))
-        }
-        setDockSize(next)
-      }
-      const onUp = () => {
-        document.removeEventListener('pointermove', onMove)
-        document.removeEventListener('pointerup', onUp)
-        document.removeEventListener('pointercancel', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        setResizing(false)
-      }
-      document.addEventListener('pointermove', onMove)
-      document.addEventListener('pointerup', onUp)
-      document.addEventListener('pointercancel', onUp)
-      document.body.style.cursor = cursor
-      document.body.style.userSelect = 'none'
-      setResizing(true)
+  /** Moves `edge` by (dx, dy) from `start`, within the view. */
+  const apply = useCallback(
+    (edge: DockEdge, start: typeof from.current, dx: number, dy: number) => {
+      const { x, y } = DOCK_EDGES[edge]
+      const next: { width?: number; height?: number } = {}
+      if (x !== 0)
+        next.width = Math.min(start.maxWidth, Math.max(DOCK_WIDTH.min, start.width + 2 * x * dx))
+      // the dock grows upward: dragging the top edge up makes it taller
+      if (y) next.height = Math.min(start.maxHeight, Math.max(DOCK_HEIGHT.min, start.height - dy))
+      setDockSize(next)
     },
-    [box, conversation, setDockSize],
+    [setDockSize],
   )
 
+  const start = useCallback(() => {
+    const now = measure()
+    if (!now) return
+    from.current = now
+    setResizing(true)
+  }, [measure])
+  const drag = useCallback(
+    (edge: DockEdge, dx: number, dy: number) => apply(edge, from.current, dx, dy),
+    [apply],
+  )
+  const end = useCallback(() => setResizing(false), [])
+  const step = useCallback(
+    (edge: DockEdge, dx: number, dy: number) => {
+      const now = measure()
+      if (now) apply(edge, now, dx, dy)
+    },
+    [apply, measure],
+  )
   const reset = useCallback(
     () => setDockSize({ width: DOCK_WIDTH.fallback, height: DOCK_HEIGHT.fallback }),
     [setDockSize],
   )
 
-  return { resizing, start, reset }
+  return { resizing, start, drag, end, step, reset }
 }
 
 /** The notice opens the chat that owns the reply, including replies from another tab. */
@@ -631,7 +688,7 @@ function PanelHeader({
           title={closeLabel}
           aria-label={closeLabel}
           onClick={onClose}
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={HEADER_BUTTON}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -663,7 +720,7 @@ function DockPicker() {
           type="button"
           title="Where the panel sits"
           aria-label="Where the panel sits"
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={HEADER_BUTTON}
         >
           <Current className="h-3.5 w-3.5" />
         </button>
@@ -757,41 +814,5 @@ function TabButton({
         </span>
       )}
     </button>
-  )
-}
-
-/** Drag the panel's inner edge; the size persists across sessions. */
-function useResize(
-  side: DockedSide,
-  size: number,
-  setPanelSize: (next: number) => void,
-): (event: React.PointerEvent) => void {
-  const latest = useRef(size)
-  useEffect(() => {
-    latest.current = size
-  }, [size])
-
-  return useCallback(
-    (event: React.PointerEvent) => {
-      event.preventDefault()
-      const start = event.clientX
-      const startSize = latest.current
-      const onMove = (move: PointerEvent) => {
-        const delta = side === 'left' ? move.clientX - start : start - move.clientX
-        latest.current = Math.min(MAX_SIZE, Math.max(MIN_SIZE, startSize + delta))
-        setPanelSize(latest.current)
-      }
-      const onUp = () => {
-        document.removeEventListener('pointermove', onMove)
-        document.removeEventListener('pointerup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-      }
-      document.addEventListener('pointermove', onMove)
-      document.addEventListener('pointerup', onUp)
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-    },
-    [side, setPanelSize],
   )
 }

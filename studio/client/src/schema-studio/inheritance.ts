@@ -2,7 +2,7 @@ import type { IrClass, IrClassRef, IrMethod, JsonSchema, StudioSchemaBundle } fr
 
 import { classRefKey } from '@shared/schema/identity'
 
-const KERNEL_ORIGIN = 'kernel.astrale.ai'
+export const KERNEL_ORIGIN = 'kernel.astrale.ai'
 
 const KERNEL_IMPLEMENTATION_CLASSES = new Set([
   'Timestamped',
@@ -41,7 +41,7 @@ export function resolveClass(
 
 export function classTier(bundle: StudioSchemaBundle, reference: IrClassRef): ClassTier {
   if (reference.origin === bundle.ir?.domain) return 'local'
-  return reference.origin === KERNEL_ORIGIN ? 'kernel' : 'external'
+  return isKernelClass(reference) ? 'kernel' : 'external'
 }
 
 export function isKernelClass(reference: IrClassRef): boolean {
@@ -66,7 +66,7 @@ const KERNEL_ROLE_ORDER: KernelRole[] = ['identity', 'function', 'view']
 
 /** The role a single `extends` reference confers, if it is one of the kernel bases. */
 export function kernelRoleOf(reference: IrClassRef): KernelRole | undefined {
-  return reference.origin === KERNEL_ORIGIN ? KERNEL_ROLES[reference.name] : undefined
+  return isKernelClass(reference) ? KERNEL_ROLES[reference.name] : undefined
 }
 
 /**
@@ -107,8 +107,7 @@ export function inheritedGroupsOfClass(
 ): InheritedGroup[] {
   const selected = resolveClass(bundle, reference)
   if (!selected) return []
-  const ownProperties = new Set(Object.keys(selected.properties))
-  const claimedProperties = new Set(ownProperties)
+  const claimedProperties = new Set(Object.keys(selected.properties))
   const visited = new Set<string>([classRefKey(selected.ref)])
   const queue = (selected.extendsRefs ?? []).map((ref) => ({ ref, depth: 1 }))
   const groups: InheritedGroup[] = []
@@ -122,11 +121,12 @@ export function inheritedGroupsOfClass(
     if (owner) {
       queue.push(...(owner.extendsRefs ?? []).map((parent) => ({ ref: parent, depth: depth + 1 })))
     }
+    const required = owner?.required ?? []
     const props = Object.entries(owner?.properties ?? {})
       .filter(([name]) => !claimedProperties.has(name))
       .map(
         ([name, value]) =>
-          [name, value, !(owner?.required ?? []).includes(name)] as InheritedGroup['props'][number],
+          [name, value, !required.includes(name)] as InheritedGroup['props'][number],
       )
     const methods = Object.entries(owner?.methods ?? {})
       .filter(([, method]) => method.abstract)

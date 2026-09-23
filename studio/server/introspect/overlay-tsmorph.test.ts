@@ -138,6 +138,32 @@ export const schema = defineSchema('example.dev', {
     ])
   })
 
+  test('scans a shared handler module once per link without double-counting token prefixes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-shared-handler-'))
+    roots.push(root)
+    mkdirSync(join(root, 'functions'))
+    writeFileSync(
+      join(root, 'functions/impl.ts'),
+      `export const shared = async ({ input }) => graph.createEdge(input)\n`,
+    )
+    writeFileSync(
+      join(root, 'functions/index.ts'),
+      `
+        import { defineAction } from '@astrale-os/sdk/action'
+        import { defineWorkflow } from '@astrale-os/sdk/workflow'
+        import { shared } from './impl.ts'
+        export const rename = defineAction()('Issue.rename', shared)
+        export const create = defineWorkflow()('createIssue', shared)
+      `,
+    )
+
+    const links = buildHandlerLinks({ ir, domainRoot: root })
+    expect(links.map((link) => [link.method, link.handlerFile, link.kernelCalls])).toEqual([
+      ['rename', 'functions/impl.ts', ['graph.createEdge']],
+      ['createIssue', 'functions/impl.ts', ['graph.createEdge']],
+    ])
+  })
+
   test('indexes Class, Property, Method, Edge endpoint, and Function declarations', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-schema-spans-'))
     roots.push(root)

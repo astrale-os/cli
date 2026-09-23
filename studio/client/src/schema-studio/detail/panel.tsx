@@ -21,7 +21,7 @@ import { ancestryOfClass, isKernelClass, resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
 import { CallableDetail, MemberList, MethodRow, PropertyRow } from './members'
-import { memberLists, originLabel } from './model'
+import { classSelectionId, memberLists, originLabel, selectedClassName } from './model'
 import { EdgeRelationship } from './relationships'
 
 export function SchemaDetail({
@@ -72,7 +72,7 @@ export function SchemaDetail({
       </div>
     )
   }
-  const token = selected.startsWith('class.') ? selected.slice('class.'.length) : selected
+  const token = selectedClassName(selected)
   const importedRef = parseClassRefKey(token)
   const local = importedRef === undefined || importedRef.origin === ir.domain
   const name = importedRef?.name ?? token
@@ -95,6 +95,7 @@ export function SchemaDetail({
   // list per kind, so the panel answers "what does it have" before "where from".
   const lists = memberLists(bundle, name, member, local && !isEdge)
   const ancestry = ancestryOfClass(bundle, member.extendsRefs ?? [])
+  const policies = Object.entries(member.policies ?? {})
   const classViews = local && !isEdge ? viewsForClass(viewsModel, name) : []
   // Standalone Functions that name this Class. A Method is declared ON the Class and reads
   // as one of its members; a Function merely works on it, so it sits with the Views —
@@ -168,10 +169,10 @@ export function SchemaDetail({
           <EdgeRelationship bundle={bundle} endpoints={member.endpoints!} edgeName={name} />
         )}
 
-        {Object.keys(member.policies ?? {}).length > 0 && (
+        {policies.length > 0 && (
           <Group label="Policies">
             <div className="space-y-1.5 text-[13px]">
-              {Object.entries(member.policies ?? {}).map(([operation, policy]) => (
+              {policies.map(([operation, policy]) => (
                 <div key={operation} className="flex items-baseline gap-2">
                   <span className="text-muted-foreground">{operation}</span>
                   <PolicyLink policy={policy} domainId={bundle.domainId} />
@@ -324,10 +325,7 @@ function FunctionDetail({
                     type="button"
                     title={isLocal ? `Open ${ref.name}` : `${ref.name} (${ref.origin})`}
                     onClick={() =>
-                      selectClass(
-                        isLocal ? `class.${ref.name}` : `class.${classRefKey(ref)}`,
-                        bundle.domainId,
-                      )
+                      selectClass(classSelectionId(ref, bundle.ir?.domain), bundle.domainId)
                     }
                     className="rounded-full"
                   >
@@ -423,7 +421,7 @@ function AncestorChip({
   const local = parent.origin === bundle.ir?.domain
   const kernel = isKernelClass(parent)
   const navigable = resolveClass(bundle, parent) !== undefined
-  const target = local ? `class.${parent.name}` : `class.${classRefKey(parent)}`
+  const target = classSelectionId(parent, bundle.ir?.domain)
   const where = local ? '' : ` (${parent.origin})`
   const relation =
     depth === 0
