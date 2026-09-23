@@ -78,11 +78,7 @@ export async function issueToken(
 ): Promise<MintedCredential> {
   if (audience === kernel) return auth.mint({ ttlSeconds })
   const self = await auth.whoami()
-  return auth.delegate(self.id, {
-    audience,
-    ttlSeconds,
-    attenuation: { kind: 'identity', self: true },
-  })
+  return auth.delegate(self.id, { audience, ttlSeconds })
 }
 
 export function parseTtl(raw: string | undefined): number {

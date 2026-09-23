@@ -108,11 +108,7 @@ async function delegate(
     try {
       const envelope = await auth.delegate(
         user.id,
-        {
-          audience: domainIssuer,
-          ttlSeconds,
-          attenuation: { kind: 'identity', self: true },
-        },
+        { audience: domainIssuer, ttlSeconds },
         { signal },
       )
       return Object.freeze({ envelope, user: user.id })
