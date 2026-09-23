@@ -105,7 +105,7 @@ export const schema = defineSchema('work.example', {
   `unassignMember` removes both. `member` accepts a Shell.User or Shell.Group, including concrete
   descendants; a Class extending only Kernel.Identity is not a Shell membership endpoint.
   Do not write just one Edge or implement a parallel membership system.
-- Both group methods use the same Policy: the carried Grant must administer a concrete Shell-owned
+- Both group methods use the same Policy: the caller must administer a concrete Shell-owned
   Group, or own the concrete Class of the target Group. Thus the Group-Class owner may assign/unassign
   its Teams. Owning the member's User Class alone grants no assignment to Core `member` or `admin`.
 - `User.invite` checks the User instead: its Class owner may invite it; Shell administrators may
@@ -117,15 +117,15 @@ export const schema = defineSchema('work.example', {
 - Unassigning removes that direct pair, not Authentication or every other access path. Memberships
   may precede registration; removing `member` alone is not a permanent ban on owner-authorized readmission.
 
-Shell's three methods above require both effective caller-principal Function authority and their
-caller Policy. A Domain calling them declares the exact Method requirements; a human may inherit
+Shell's three methods above require both the principal's effective Function authority and their
+Policy on the caller. A Domain calling them declares the exact Method requirements; a human may inherit
 capabilities through `extends_with`. Neither bypasses the Policy. Declare Kernel Query/Mutate/Register
 capabilities as needed, and protect the business callable before it invokes Shell. See `policies.md`.
 
-Use `dependencies.shell.caller.invoke(...)` to preserve the incoming Grant, or
+Use `dependencies.shell.caller.invoke(...)` to act for the incoming caller, or
 `dependencies.shell.self.invoke(...)` when an admitted business operation deliberately acts as its
-Domain, for example assigning to its own Team. `.union.invoke(...)` combines both deliberately;
-there is no default dependency `invoke`. The Domain principal still needs the exact Method capability.
+Domain, for example assigning to its own Team. There is no default dependency `invoke` and no mode
+combining both. The Domain principal still needs the exact Method capability.
 
 ## Inspect and exercise the installed surface
 

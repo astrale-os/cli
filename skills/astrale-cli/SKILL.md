@@ -255,8 +255,8 @@ astrale identity register operator \
 ```
 
 `astrale token` issues an audience-bound credential for the selected authenticated identity. When
-the audience is the target Kernel issuer (the default), it mints a top-level Grant credential that
-can be reused with `--creds`. A different `--audience` creates a delegated service envelope for that
+the audience is the target Kernel issuer (the default), it mints a top-level Kernel bearer credential
+for the selected identity that can be reused with `--creds`. A different `--audience` creates a delegated service envelope for that
 receiver instead. TTL defaults to 240 seconds so ordinary tokens remain short beneath the one-hour
 local operator proof; an explicit TTL still cannot outlive the selected source credential. Use
 `--raw` for shell assignment.
