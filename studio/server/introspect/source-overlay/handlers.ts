@@ -79,8 +79,9 @@ function declarationKind(call: CallExpression): 'action' | 'workflow' | undefine
   if (!Node.isCallExpression(expression)) return undefined
   const factory = unwrapExpression(expression.getExpression())
   if (!Node.isIdentifier(factory)) return undefined
-  if (factory.getText() === 'defineAction') return 'action'
-  if (factory.getText() === 'defineWorkflow') return 'workflow'
+  const name = factory.getText()
+  if (name === 'defineAction') return 'action'
+  if (name === 'defineWorkflow') return 'workflow'
   return undefined
 }
 
@@ -132,6 +133,16 @@ export function buildHandlerLinks(args: {
     .map((file) => tryAddFile(project, file))
     .filter((source): source is SourceFile => source !== undefined)
   const links = new Map<string, HandlerLink>()
+  // Several declarations commonly share one handler module; read and scan it once.
+  const kernelCallsByFile = new Map<string, string[]>()
+  const kernelCallsOf = (file: string) => {
+    let calls = kernelCallsByFile.get(file)
+    if (!calls) {
+      calls = scanKernelCalls(file)
+      kernelCallsByFile.set(file, calls)
+    }
+    return calls
+  }
 
   for (const source of sources) {
     for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
@@ -143,17 +154,19 @@ export function buildHandlerLinks(args: {
       const callable = declaredCallable(ir, key)
       if (!callable) continue
       const handler = resolveHandler(handlerArgument)
-      const handlerFile = relToRoot(domainRoot, handler.getSourceFile().getFilePath())
+      const handlerPath = handler.getSourceFile().getFilePath()
+      const handlerFile = relToRoot(domainRoot, handlerPath)
       const link: HandlerLink = {
         ...callable,
         kind,
-        wiringFile: handlerFile,
+        // the declaration itself; the handler may be imported from another module
+        wiringFile: relToRoot(domainRoot, source.getFilePath()),
         wiringLine: call.getStartLineNumber(),
         handlerFile,
         handlerLine: handler.getStartLineNumber(),
         implemented: !isStubHandler(handler),
       }
-      const kernelCalls = scanKernelCalls(handler.getSourceFile().getFilePath())
+      const kernelCalls = kernelCallsOf(handlerPath)
       if (kernelCalls.length > 0) link.kernelCalls = kernelCalls
       links.set(`${callable.ownerKind}:${callable.owner}.${callable.method}`, link)
     }

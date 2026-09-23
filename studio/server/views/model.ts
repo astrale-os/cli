@@ -8,6 +8,24 @@ const NAMED_NAME = 'kernel.astrale.ai:class.Named.property.name'
 const DESCRIPTABLE_DESCRIPTION = 'kernel.astrale.ai:class.Descriptable.property.description'
 const STATUSED_STATUS = 'kernel.astrale.ai:class.Statused.property.status'
 
+/** A target list with no candidates: nothing to pick, or (with a reason) nothing could be queried. */
+export function emptyTargets(reason?: string): ViewTargetResult {
+  return {
+    status: reason === undefined ? 'available' : 'unavailable',
+    items: [],
+    selected: null,
+    stale: null,
+    truncated: false,
+    ...(reason === undefined ? {} : { reason }),
+  }
+}
+
+/** Refuse anything but a plain domain origin before it is spliced into a graph path. */
+export function assertOrigin(value: string): string {
+  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(value)) throw new Error(`Invalid domain origin: ${value}`)
+  return value
+}
+
 export interface RawTargetRow {
   id?: unknown
   props?: Record<string, unknown>

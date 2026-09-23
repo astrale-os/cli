@@ -13,6 +13,7 @@ import type { HarnessGatewayConfig } from '../../../../shared/types'
 import { captureCommand, type CapturedCommand, type CaptureOptions } from '../process'
 
 const MINT_TTL_SECONDS = 4 * 60
+const MINT_TTL_MS = MINT_TTL_SECONDS * 1000
 const REFRESH_SKEW_MS = 60_000
 
 interface CachedToken {
@@ -81,7 +82,7 @@ export class HarnessTokenBroker {
     if (!audience || !token || token.split('.').length !== 3) return false
     const claims = jwtClaims(token)
     if (!claims || !audienceMatches(claims.audience, audience)) return false
-    const expiresAtMs = claims.expiresAtMs ?? this.now() + MINT_TTL_SECONDS * 1000
+    const expiresAtMs = claims.expiresAtMs ?? this.now() + MINT_TTL_MS
     if (expiresAtMs <= this.now()) return false
     this.hostTokens.set(audience, { token, expiresAtMs })
     return true
@@ -146,7 +147,7 @@ export class HarnessTokenBroker {
       )
     this.mintCache.set(key, {
       token,
-      expiresAtMs: claims.expiresAtMs ?? this.now() + MINT_TTL_SECONDS * 1000,
+      expiresAtMs: claims.expiresAtMs ?? this.now() + MINT_TTL_MS,
     })
     return token
   }

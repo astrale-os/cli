@@ -36,6 +36,7 @@ export function HandoffChip({
 }) {
   const [open, setOpen] = useState(false)
   if (!origin.summary) return null
+  const toggleLabel = `${open ? 'Hide' : 'Show'} transferred context`
 
   return (
     <div className="rounded-lg border bg-muted/40">
@@ -44,8 +45,8 @@ export function HandoffChip({
           type="button"
           onClick={() => setOpen((current) => !current)}
           aria-expanded={open}
-          aria-label={`${open ? 'Hide' : 'Show'} transferred context`}
-          title={`${open ? 'Hide' : 'Show'} transferred context`}
+          aria-label={toggleLabel}
+          title={toggleLabel}
           className="ml-1.5 grid h-7 w-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <ChevronRight

@@ -29,6 +29,7 @@ export function ErrorBanner({
   const [open, setOpen] = useState(false)
   const items = messages.filter((message) => message.trim().length > 0)
   if (items.length === 0) return null
+  const copyLabel = items.length > 1 ? 'Copy every message' : 'Copy the message'
 
   const copy = async () => {
     try {
@@ -66,8 +67,8 @@ export function ErrorBanner({
           variant="ghost"
           size="xs"
           onClick={() => void copy()}
-          title={items.length > 1 ? 'Copy every message' : 'Copy the message'}
-          aria-label={items.length > 1 ? 'Copy every message' : 'Copy the message'}
+          title={copyLabel}
+          aria-label={copyLabel}
           className="shrink-0 px-1.5 text-warning hover:bg-warning/15 hover:text-warning"
         >
           <Copy />

@@ -5,7 +5,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ErrorBanner } from '@/components/error-banner'
 import { ScrollArea } from '@/components/ui/misc'
 import { useBundle, useDatasets } from '@/lib/hooks'
-import { type PolicyGuard, indexPolicies, policyGuard, policyUsage } from '@/lib/policy'
+import {
+  type PolicyGuard,
+  type PolicyUsage,
+  indexPolicies,
+  policyGuard,
+  policyUsage,
+} from '@/lib/policy'
 import { useUI } from '@/lib/store'
 
 import type { CoreSpotlight } from '../core-view/model'
@@ -38,6 +44,10 @@ interface Proofs {
   evaluation: PolicyEvaluation
   matches: PolicyMatch[]
 }
+
+/** The edge classes a policy guards the traversal of: the objects of an edge policy. */
+const traversedEdges = (usage: PolicyUsage): string[] =>
+  usage.classes.filter((c) => c.operation === 'traverse').map((c) => c.className)
 
 const fold = (evaluation: PolicyEvaluation): Proofs => ({
   evaluation,
@@ -125,9 +135,7 @@ export function TestsSection({
   const policy = probe && policyIndex ? (policyIndex.byKey.get(probe.policyKey) ?? null) : null
   const guard = probe ? (guards.get(probe.policyKey) ?? 'object') : null
   const usage = useMemo(() => (policy && ir ? policyUsage(ir, policy) : null), [policy, ir])
-  const traversed = (use: NonNullable<typeof usage>) =>
-    use.classes.filter((c) => c.operation === 'traverse').map((c) => c.className)
-  const guardedEdges = useMemo(() => (usage ? traversed(usage) : []), [usage])
+  const guardedEdges = useMemo(() => (usage ? traversedEdges(usage) : []), [usage])
 
   // How many pairs each policy connects in this Dataset — the rail's counts.
   const counts = useMemo(() => {
@@ -138,7 +146,7 @@ export function TestsSection({
         policy: candidate,
         index: policyIndex,
         graph,
-        guardedEdges: traversed(policyUsage(ir, candidate)),
+        guardedEdges: traversedEdges(policyUsage(ir, candidate)),
       })
       out.set(
         schemaRefKey(candidate.ref),
@@ -178,7 +186,7 @@ export function TestsSection({
     if (!shown || shown.evaluation.status !== 'ok') return null
     // green wherever a proof exists; red for a pick nothing connects; an unpicked policy
     // with no proof at all simply lights nothing
-    const tone = shown.matches.length > 0 ? 'pass' : picked ? 'fail' : 'pass'
+    const tone = shown.matches.length > 0 || !picked ? 'pass' : 'fail'
     return proofSpotlight(shown.matches, tone, probe, core)
   }, [probe, core, picked, verdict, overview])
 

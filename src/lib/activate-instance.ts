@@ -1,5 +1,6 @@
-import { createAuth } from '@astrale-os/sdk/auth'
-import { call, Client, type Fetch } from '@astrale-os/sdk/client'
+import type { Fetch } from '@astrale-os/sdk/client'
+
+import { ClientSession } from '@astrale-os/sdk/client/session'
 import { z } from 'zod'
 
 import type { InstanceInfo } from '../admin/instance'
@@ -73,17 +74,16 @@ export async function activateInstance(
       return token
     },
     whoami: async (token, signal) => {
-      const client = new Client({ url: `${target.href}/invoke`, timeoutMs: 15000 })
+      const session = new ClientSession({
+        kernel: target.href,
+        timeoutMs: 15_000,
+        policy: { maximumRouteAgeMs: 30_000 },
+        auth: { ttlSeconds: 30, resolve: () => ({ credential: token }) },
+      })
       try {
-        const session = client.as(token)
-        const auth = createAuth(
-          async (path, input, request) =>
-            (await session.call(call(path, input), { ...request, delegate: { ttlSeconds: 30 } }))
-              .value,
-        )
-        return (await auth.whoami({ signal })).id
+        return (await session.auth.whoami({ signal })).id
       } finally {
-        client.close()
+        session.close()
       }
     },
   })

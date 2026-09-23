@@ -6,7 +6,6 @@ import {
   ChevronRight,
   FileCode2,
   Fingerprint,
-  Globe,
   type LucideIcon,
   Play,
   TriangleAlert,
@@ -121,10 +120,10 @@ function ClassNode({ data }: NodeProps) {
           a glyph rather than a chip: what a Class is stays legible zoomed out, where a word
           would not be, and it never competes with the name for the row. */}
       {roles.map((role) => {
-        const Glyph = ROLE_GLYPHS[role].icon
+        const { icon: Glyph, label } = ROLE_GLYPHS[role]
         // the tooltip rides on the span: `title` on an <svg> is not the one browsers show
         return (
-          <span key={role} title={ROLE_GLYPHS[role].label} className="shrink-0">
+          <span key={role} title={label} className="shrink-0">
             <Glyph className="h-3.5 w-3.5 text-muted-foreground" />
           </span>
         )
@@ -214,10 +213,11 @@ function ViewNode({ data }: NodeProps) {
   const drift = driftLabel(view.drift)
   // AppWindow is the view glyph; Globe would collide with the imported-domain boxes.
   const KindIcon = view.kind === 'inline-html' ? FileCode2 : AppWindow
+  const anchorRef = viewNodeId(view.slug)
   return (
     <div
       data-domain-id={d.domainId}
-      data-anchor-ref={viewNodeId(view.slug)}
+      data-anchor-ref={anchorRef}
       data-anchor-excerpt={view.slug}
       style={{ width: VIEW_W, height: VIEW_H }}
       className="relative"
@@ -248,7 +248,7 @@ function ViewNode({ data }: NodeProps) {
       </button>
       <NodeCommentPin
         domainId={d.domainId}
-        anchorRef={viewNodeId(view.slug)}
+        anchorRef={anchorRef}
         kind="section"
         excerpt={view.slug}
       />
@@ -273,10 +273,11 @@ function FunctionNode({ data }: NodeProps) {
   // The same glyph every other surface gives this callable: how it is implemented is
   // the first thing a reader asks of a Function, and the pill has room for one mark.
   const Glyph = functionGlyph(fn)
+  const anchorRef = functionNodeId(fn.name)
   return (
     <div
       data-domain-id={d.domainId}
-      data-anchor-ref={functionNodeId(fn.name)}
+      data-anchor-ref={anchorRef}
       data-anchor-excerpt={fn.name}
       style={{ width: FUNCTION_W, height: FUNCTION_H }}
       className="relative"
@@ -287,7 +288,7 @@ function FunctionNode({ data }: NodeProps) {
         title={[`Open ${fn.name}`, fn.link?.kind ?? 'contract only'].filter(Boolean).join(' · ')}
         onClick={(event) => {
           event.stopPropagation()
-          select(functionNodeId(fn.name), d.domainId)
+          select(anchorRef, d.domainId)
         }}
         className={cn(
           'group flex h-full w-full items-center gap-1.5 rounded-full border px-2.5',
@@ -299,33 +300,13 @@ function FunctionNode({ data }: NodeProps) {
         <span className="min-w-0 flex-1 truncate text-left text-[12px] font-medium">{fn.name}</span>
         {fn.contractOnly && <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />}
       </button>
-      <NodeCommentPin
-        domainId={d.domainId}
-        anchorRef={functionNodeId(fn.name)}
-        kind="schema"
-        excerpt={fn.name}
-      />
+      <NodeCommentPin domainId={d.domainId} anchorRef={anchorRef} kind="schema" excerpt={fn.name} />
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
     </div>
   )
 }
 
 // ── external (cross-domain) nodes ──
-
-function ExtDomainNode({ data }: NodeProps) {
-  const d = data as { name: string; origin: string; kind: 'kernel' | 'external'; icon?: string }
-  return (
-    <div className="h-full w-full rounded-lg border border-dashed bg-muted/40">
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground">
-        <span className="shrink-0">
-          {d.icon ? <SchemaIcon svg={d.icon} className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
-        </span>
-        <span className="truncate text-[12px] font-semibold text-foreground/80">{d.name}</span>
-        <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wider">{d.kind}</span>
-      </div>
-    </div>
-  )
-}
 
 /**
  * One Class of a domain the canvas does not draw.
@@ -360,6 +341,5 @@ export const schemaNodeTypes = {
   functionNode: FunctionNode,
   group: GroupNode,
   moduleNode: GroupNode,
-  extDomain: ExtDomainNode,
   extMember: ExtMemberNode,
 }

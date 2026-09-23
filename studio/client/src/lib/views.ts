@@ -46,56 +46,48 @@ function exactClassExists(ir: SchemaIR, ref: IrClassRef): boolean {
 }
 
 export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBundle): ViewsModel {
+  const ir = bundle?.ir
   const views = anatomy?.views ?? []
   const routes = anatomy?.client.routes ?? {}
-  const classNames = new Set(Object.keys(bundle?.ir?.classes ?? {}))
+  const classNames = new Set(Object.keys(ir?.classes ?? {}))
   // The schema is only trustworthy when deps are installed (else ir is null and EVERY
   // viewFor would look "unknown"). Without it we can't confirm bindings — say so, don't cry drift.
-  const schemaKnown = !!bundle?.depsInstalled && !!bundle?.ir
+  const schemaKnown = !!bundle?.depsInstalled && !!ir
 
   const all: ViewModel[] = views.map((v) => {
-    const canonicalTarget = bundle?.ir?.views?.[v.slug]?.target
-    const canonicalDefinitions = canonicalTarget
-      ? canonicalTarget.kind === 'definition'
-        ? canonicalTarget.definitions.filter(isIrClassRef)
-        : []
-      : undefined
-    const declared = canonicalDefinitions
-      ? canonicalDefinitions.map((definition) => definition.name)
-      : Array.isArray(v.viewFor)
-        ? v.viewFor
-        : v.viewFor
-          ? [v.viewFor]
+    const canonicalTarget = ir?.views?.[v.slug]?.target
+    let declared: string[]
+    let boundClasses: string[]
+    let resolvedCount: number
+    if (ir && canonicalTarget) {
+      const definitions =
+        canonicalTarget.kind === 'definition'
+          ? canonicalTarget.definitions.filter(isIrClassRef)
           : []
-    const exactResolved = canonicalDefinitions?.filter((definition) =>
-      bundle?.ir ? exactClassExists(bundle.ir, definition) : false,
-    )
-    const sourceResolved = canonicalDefinitions
-      ? undefined
-      : declared.filter((name) => classNames.has(name))
-    // Existing panels and detail routes use member labels. Keep those stable
-    // while resolution itself remains keyed by the exact canonical coordinate.
-    const boundClasses = [
-      ...new Set(
-        exactResolved
-          ? exactResolved
-              .filter((definition) => definition.origin === bundle?.ir?.domain)
-              .map((definition) => definition.name)
-          : (sourceResolved ?? []),
-      ),
-    ]
-    const resolvedCount = exactResolved?.length ?? sourceResolved?.length ?? 0
+      declared = definitions.map((definition) => definition.name)
+      const resolved = definitions.filter((definition) => exactClassExists(ir, definition))
+      resolvedCount = resolved.length
+      // Existing panels and detail routes use member labels. Keep those stable
+      // while resolution itself remains keyed by the exact canonical coordinate.
+      boundClasses = [
+        ...new Set(
+          resolved
+            .filter((definition) => definition.origin === ir.domain)
+            .map((definition) => definition.name),
+        ),
+      ]
+    } else {
+      declared = Array.isArray(v.viewFor) ? v.viewFor : v.viewFor ? [v.viewFor] : []
+      const resolved = declared.filter((name) => classNames.has(name))
+      resolvedCount = resolved.length
+      boundClasses = [...new Set(resolved)]
+    }
     const boundClass = boundClasses[0] ?? null
     let drift: ViewDrift = 'ok'
     if (declared.length && resolvedCount < declared.length) {
       // a declared class didn't resolve — a real mistake only if we can trust the schema
       drift = schemaKnown ? 'unbound-class' : 'schema-unavailable'
-    } else if (
-      v.kind === 'spa' &&
-      v.mount &&
-      !(v.mount in routes) &&
-      !bundle?.ir?.views?.[v.slug]
-    ) {
+    } else if (v.kind === 'spa' && v.mount && !(v.mount in routes) && !ir?.views?.[v.slug]) {
       // Current frontends declare their route as a verified SDK artifact rather
       // than a client-local route registry. The canonical View declaration
       // plus the statically discovered artifact route is already the contract.

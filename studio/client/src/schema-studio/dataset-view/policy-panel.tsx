@@ -18,7 +18,7 @@ import type { DataGraph } from './policy-graph'
 
 import { resolveClass } from '../inheritance'
 import { PolicyUsageSection } from '../policy-detail'
-import { edgeLabel, nodeLabel, sameObject } from './model'
+import { edgeLabel, labelOf, nodeLabel, nodeLookup, sameObject } from './model'
 import {
   type PolicyEvaluation,
   type PolicyMatch,
@@ -67,11 +67,15 @@ function NodeSelect({
 }) {
   // grouped by class so a long Dataset still reads
   const groups = useMemo(() => {
-    const byClass = new Map<string, string[]>()
+    const nodeOf = nodeLookup(core)
+    const byClass = new Map<string, { id: string; label: string }[]>()
     for (const id of ids) {
-      const node = core.nodes.find((candidate) => candidate.path === id)
+      const node = nodeOf(id)
+      const option = { id, label: labelOf(node, id) }
       const cls = node?.className ?? '?'
-      byClass.set(cls, [...(byClass.get(cls) ?? []), id])
+      const members = byClass.get(cls)
+      if (members) members.push(option)
+      else byClass.set(cls, [option])
     }
     return [...byClass.entries()].sort(([left], [right]) => left.localeCompare(right))
   }, [ids, core])
@@ -84,9 +88,9 @@ function NodeSelect({
       <option value="">{placeholder}</option>
       {groups.map(([cls, members]) => (
         <optgroup key={cls} label={cls}>
-          {members.map((id) => (
+          {members.map(({ id, label }) => (
             <option key={id} value={id}>
-              {nodeLabel(core, id)}
+              {label}
             </option>
           ))}
         </optgroup>
@@ -376,7 +380,7 @@ function MatchTable({
                 <span className="shrink-0 text-muted-foreground">→</span>
                 <span className="min-w-0 truncate text-foreground/80">
                   {match.object?.kind === 'node'
-                    ? `${nodeLabel(core, match.object.id)}`
+                    ? nodeLabel(core, match.object.id)
                     : match.object?.kind === 'edge'
                       ? edgeLabel(core, match.object.index)
                       : '—'}

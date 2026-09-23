@@ -75,85 +75,68 @@ export function schemaWorkspaceSnapshot(
   }
 }
 
+/** `list` with `item` removed if present, appended otherwise. */
+function toggled(list: string[], item: string): string[] {
+  const next = new Set(list)
+  if (next.has(item)) next.delete(item)
+  else next.add(item)
+  return [...next]
+}
+
+/** `current` plus every entry of `positions` it lacks, or null when it lacks none. */
+function withMissingPositions(
+  current: Record<string, WorkspacePoint>,
+  positions: Record<string, WorkspacePoint>,
+): Record<string, WorkspacePoint> | null {
+  const next = { ...current }
+  let changed = false
+  for (const [id, position] of Object.entries(positions)) {
+    if (next[id]) continue
+    next[id] = position
+    changed = true
+  }
+  return changed ? next : null
+}
+
 export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
   ...EMPTY,
-  replaceDomains: (ids) =>
-    set(() => {
-      const visibleDomainIds = uniqueDomainIds(ids)
-      return { visibleDomainIds, initialized: true }
-    }),
+  replaceDomains: (ids) => set({ visibleDomainIds: uniqueDomainIds(ids), initialized: true }),
   toggleDomain: (id) =>
-    set((state) => {
-      const selected = new Set(state.visibleDomainIds)
-      if (selected.has(id)) selected.delete(id)
-      else selected.add(id)
-      const visibleDomainIds = [...selected]
-      return { visibleDomainIds, initialized: true }
-    }),
+    set((state) => ({ visibleDomainIds: toggled(state.visibleDomainIds, id), initialized: true })),
   setDomainPosition: (id, position) =>
-    set((state) => {
-      if (samePoint(state.domainPositions[id], position)) return state
-      const domainPositions = { ...state.domainPositions, [id]: position }
-      return { domainPositions }
-    }),
+    set((state) =>
+      samePoint(state.domainPositions[id], position)
+        ? state
+        : { domainPositions: { ...state.domainPositions, [id]: position } },
+    ),
   setExternalPosition: (origin, position) =>
-    set((state) => {
-      if (samePoint(state.externalPositions[origin], position)) return state
-      const externalPositions = { ...state.externalPositions, [origin]: position }
-      return { externalPositions }
-    }),
+    set((state) =>
+      samePoint(state.externalPositions[origin], position)
+        ? state
+        : { externalPositions: { ...state.externalPositions, [origin]: position } },
+    ),
   ensureDomainPositions: (positions) =>
     set((state) => {
-      const domainPositions = { ...state.domainPositions }
-      let changed = false
-      for (const [domainId, position] of Object.entries(positions)) {
-        if (domainPositions[domainId]) continue
-        domainPositions[domainId] = position
-        changed = true
-      }
-      if (!changed) return state
-      return { domainPositions }
+      const domainPositions = withMissingPositions(state.domainPositions, positions)
+      return domainPositions ? { domainPositions } : state
     }),
   ensureExternalPositions: (positions) =>
     set((state) => {
-      const externalPositions = { ...state.externalPositions }
-      let changed = false
-      for (const [origin, position] of Object.entries(positions)) {
-        if (externalPositions[origin]) continue
-        externalPositions[origin] = position
-        changed = true
-      }
-      if (!changed) return state
-      return { externalPositions }
+      const externalPositions = withMissingPositions(state.externalPositions, positions)
+      return externalPositions ? { externalPositions } : state
     }),
-  resetWorkspaceFrames: () =>
-    set(() => {
-      return { domainPositions: {}, externalPositions: {} }
-    }),
+  resetWorkspaceFrames: () => set({ domainPositions: {}, externalPositions: {} }),
   toggleModule: (domainId, path) =>
-    set((state) => {
-      const current = new Set(state.collapsedModules[domainId] ?? [])
-      if (current.has(path)) current.delete(path)
-      else current.add(path)
-      const collapsedModules = { ...state.collapsedModules, [domainId]: [...current] }
-      return { collapsedModules }
-    }),
+    set((state) => ({
+      collapsedModules: {
+        ...state.collapsedModules,
+        [domainId]: toggled(state.collapsedModules[domainId] ?? [], path),
+      },
+    })),
   toggleDomainExpanded: (domainId) =>
-    set((state) => {
-      const current = new Set(state.expandedDomainIds)
-      if (current.has(domainId)) current.delete(domainId)
-      else current.add(domainId)
-      const expandedDomainIds = [...current]
-      return { expandedDomainIds }
-    }),
+    set((state) => ({ expandedDomainIds: toggled(state.expandedDomainIds, domainId) })),
   toggleExternalExpanded: (origin) =>
-    set((state) => {
-      const current = new Set(state.expandedExternals)
-      if (current.has(origin)) current.delete(origin)
-      else current.add(origin)
-      const expandedExternals = [...current]
-      return { expandedExternals }
-    }),
+    set((state) => ({ expandedExternals: toggled(state.expandedExternals, origin) })),
 }))
 
 /** Install the server-owned state without replacing the store's actions. */

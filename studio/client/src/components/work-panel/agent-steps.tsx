@@ -17,6 +17,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { RunElapsed } from '@/components/agent-activity'
 import { Markdown } from '@/components/markdown'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { isRunActive } from '@/lib/agent'
 import { cn } from '@/lib/utils'
 
 /** The panel is narrow, and CSS truncation eats the END of a string — the only
@@ -39,7 +40,8 @@ export function compactTarget(target: string): string {
  * never a raw status string ("session started" tells a reader nothing).
  */
 export function activityLabel(run: AgentRun): string {
-  for (const event of [...run.events].reverse()) {
+  for (let index = run.events.length - 1; index >= 0; index -= 1) {
+    const event = run.events[index]!
     if (event.kind === 'tool')
       return [event.tool, event.target && compactTarget(event.target)].filter(Boolean).join(' · ')
     if (event.kind === 'thinking') return 'Thinking…'
@@ -60,8 +62,6 @@ export interface TurnParts {
   answer: AgentEvent[]
 }
 
-const isActive = (run: AgentRun) => run.status === 'running' || run.status === 'queued'
-
 /**
  * Splits a turn into its answer and the work behind it. A message the agent wrote
  * before another tool call is narration ("I read the schema…"), not an answer, so
@@ -71,7 +71,7 @@ const isActive = (run: AgentRun) => run.status === 'running' || run.status === '
 export function splitTurn(run: AgentRun): TurnParts {
   const { events } = run
   const answerIds = new Set<string>()
-  if (!isActive(run)) {
+  if (!isRunActive(run)) {
     const lastTool = events.findLastIndex((event) => event.kind === 'tool')
     for (const event of events.slice(lastTool + 1))
       if (event.kind === 'message') answerIds.add(event.id)
@@ -154,7 +154,7 @@ function StepRow({ step }: { step: AgentStep }) {
  */
 export function AgentSteps({ run, steps }: { run: AgentRun; steps: AgentStep[] }) {
   const [open, setOpen] = useState(false)
-  const active = isActive(run)
+  const active = isRunActive(run)
   const list = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
 

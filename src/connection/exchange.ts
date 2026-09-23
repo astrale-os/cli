@@ -1,9 +1,8 @@
 import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { Fetch } from '@astrale-os/sdk/client'
 
-import { createAuth } from '@astrale-os/sdk/auth'
 import { credential, exchange as exchangeProtocol, grant } from '@astrale-os/sdk/auth'
-import { call, Client } from '@astrale-os/sdk/client'
+import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { SourceCredentialResolver } from './credential'
 import type { ConnectionTarget } from './target'
@@ -61,15 +60,18 @@ export function createExchangeCredentialResolver(
         async () => {
           const delegationTtlSeconds = delegationLifetime(sourceToken, exchangeTtlSeconds)
           const exchangeEndpoint = discoverExchangeEndpoint(target.domainIssuer, fetch, signal)
-          const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
+          const session = new ClientSession({
+            kernel: kernelIssuer,
+            fetch,
+            timeoutMs,
+            policy: { maximumRouteAgeMs: 60_000 },
+            auth: {
+              ttlSeconds: delegationTtlSeconds,
+              resolve: () => ({ credential: sourceToken }),
+            },
+          })
           try {
-            const delegated = delegate(
-              client,
-              sourceToken,
-              target.domainIssuer,
-              delegationTtlSeconds,
-              signal,
-            )
+            const delegated = delegate(session, target.domainIssuer, delegationTtlSeconds, signal)
             const [{ envelope, user }, endpoint] = await Promise.all([delegated, exchangeEndpoint])
             return {
               ...(await exchange(
@@ -86,7 +88,7 @@ export function createExchangeCredentialResolver(
               sourceSubject: sourceIdentity.subject,
             }
           } finally {
-            client.close()
+            session.close()
           }
         },
       )
@@ -95,20 +97,12 @@ export function createExchangeCredentialResolver(
 }
 
 async function delegate(
-  client: Client,
-  sourceToken: string,
+  session: ClientSession,
   domainIssuer: IssuerId,
   ttlSeconds: number,
   signal: AbortSignal,
 ): Promise<{ readonly envelope: string; readonly user: string }> {
-  const authenticated = client.as(sourceToken)
-  const auth = createAuth(async (path, input, options) => {
-    const result = await authenticated.call(call(path, input), {
-      ...options,
-      delegate: { ttlSeconds },
-    })
-    return result.value
-  })
+  const auth = session.auth
   const user = await auth.whoami({ signal })
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {

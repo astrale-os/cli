@@ -7,6 +7,7 @@ import { buildViewsModel } from '@/lib/views'
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
 import { ViewRow } from '../views-panel'
+import { WorkspacePanelGroup } from './panel-group'
 
 export function WorkspaceViewsPanel({ inputs }: { inputs: WorkspaceDomainInput[] }) {
   const groups = inputs.map((input) => ({
@@ -41,32 +42,23 @@ export function WorkspaceViewsPanel({ inputs }: { inputs: WorkspaceDomainInput[]
           {groups
             .filter((group) => group.model.all.length > 0)
             .map(({ input, model }) => (
-              <section key={input.summary.id} data-domain-id={input.summary.id}>
-                <div className="mb-2 flex items-center gap-2 border-b border-border pb-2">
-                  <span className="h-2 w-2 rounded-full bg-primary/70" />
-                  <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-                    {input.summary.origin}
-                  </h2>
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] tabular-nums text-muted-foreground">
-                    {model.all.length}
-                  </span>
-                </div>
-                <div className="space-y-0.5">
-                  {model.all.map((view) => {
-                    const icon = view.boundClass
-                      ? input.bundle.ir?.classes[view.boundClass]?.icon
-                      : undefined
-                    return (
-                      <ViewRow
-                        key={`${input.summary.id}:${view.slug}`}
-                        domainId={input.summary.id}
-                        view={view}
-                        icon={icon}
-                      />
-                    )
-                  })}
-                </div>
-              </section>
+              <WorkspacePanelGroup
+                key={input.summary.id}
+                domainId={input.summary.id}
+                origin={input.summary.origin}
+                count={model.all.length}
+              >
+                {model.all.map((view) => (
+                  <ViewRow
+                    key={`${input.summary.id}:${view.slug}`}
+                    domainId={input.summary.id}
+                    view={view}
+                    icon={
+                      view.boundClass ? input.bundle.ir?.classes[view.boundClass]?.icon : undefined
+                    }
+                  />
+                ))}
+              </WorkspacePanelGroup>
             ))}
         </div>
       </div>

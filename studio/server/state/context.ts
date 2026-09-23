@@ -7,7 +7,7 @@
  */
 import type { ContextItem, ContextStore } from '../../shared/types'
 
-import { asBoolean, asJsonRecord, asString } from '../json'
+import { asBoolean, asJsonRecord, asString, decodeEach } from '../json'
 import { readJson, writeJson, writeState } from './store'
 
 const USER_PATH = 'context/user/index.json'
@@ -37,11 +37,7 @@ function decodeContextItem(value: unknown): ContextItem | undefined {
 }
 
 function decodeContextItems(value: unknown): ContextItem[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  return value.flatMap((item) => {
-    const decoded = decodeContextItem(item)
-    return decoded ? [decoded] : []
-  })
+  return decodeEach(value, decodeContextItem)
 }
 
 function readUser(root: string): ContextItem[] {

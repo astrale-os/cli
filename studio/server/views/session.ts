@@ -11,6 +11,7 @@ import {
 } from '../../../src/lib/view/studio-runtime'
 import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
+import { assertOrigin } from './model'
 import { readViewPreparation } from './preparation'
 import { rememberTarget } from './selection-repository'
 
@@ -157,11 +158,6 @@ export async function releaseViewSession(
   const named = page !== undefined && /^[A-Za-z0-9-]{1,64}$/.test(page) ? page : undefined
   await (dependencies.release ?? releaseStudioViewSession)(sessionId, named)
   return { ok: true }
-}
-
-function assertOrigin(value: string): string {
-  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(value)) throw new Error(`Invalid domain origin: ${value}`)
-  return value
 }
 
 function assertViewSlug(value: string): string {

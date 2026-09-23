@@ -93,7 +93,9 @@ export function buildFunctionsModel(bundle?: StudioSchemaBundle): FunctionsModel
   const byClass = new Map<string, FunctionModel[]>()
   for (const model of all) {
     for (const className of model.boundClasses) {
-      byClass.set(className, [...(byClass.get(className) ?? []), model])
+      const models = byClass.get(className)
+      if (models) models.push(model)
+      else byClass.set(className, [model])
     }
   }
 

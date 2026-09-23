@@ -6,13 +6,13 @@ import type {
   AgentEffort,
   ChatAttachment,
   Comment,
-  StudioEvent,
   StudioSettings,
 } from '../../../shared/types'
 import type { DomainHandle } from '../../domain'
 import type { Bridge } from '../bridge/grant'
 import type { StoredChat } from '../chats'
 import type { AgentHarness, AgentTurnImage } from '../harness/adapter'
+import type { Notify } from '../notify'
 import type { DomainTurnParts } from '../prompts/turn'
 import type { AgentWorkspace } from '../workspace'
 
@@ -68,6 +68,8 @@ export interface PreparedRun {
 }
 
 export type PreparationResult = { prepared: PreparedRun } | { error: string }
+
+const CANCELED_DURING_SETUP = 'agent run canceled during setup'
 
 function awaitingThreads(comments: Comment[]): Comment[] {
   return comments.filter(
@@ -136,11 +138,27 @@ async function domainParts(
   }
 }
 
+/** A run is named after whatever its turn actually carries, in the order it was meant. */
+function runSummary(turn: {
+  bareResume: boolean
+  message: string
+  images: number
+  threads: number
+  documents: number
+}): string {
+  if (turn.bareResume) return 'continuing after interruption'
+  if (turn.message) return turn.message.slice(0, 60) + (turn.message.length > 60 ? '…' : '')
+  if (turn.images > 0) return imagesLabel(turn.images)
+  if (turn.threads > 0)
+    return turn.threads === 1 ? '1 attached thread' : `${turn.threads} attached threads`
+  return turn.documents === 1 ? '1 document' : `${turn.documents} documents`
+}
+
 /** Gather and freeze every input required to start one agent run in one chat. */
 export async function prepareRun(
   workspace: AgentWorkspace,
   chat: StoredChat,
-  notify: (event: StudioEvent) => void,
+  notify: Notify,
   controller: AbortController,
   options?: SubmitOpts,
 ): Promise<PreparationResult> {
@@ -148,7 +166,7 @@ export async function prepareRun(
   // here: a Claude tab keeps running Claude after the user picks Codex.
   const harness = getHarnessById(chat.harness)
   const available = await harness.isAvailable(controller.signal)
-  if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
+  if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
   if (!available) return { error: `${harness.label} is not available on this machine` }
 
   const resume = chat.sessionId
@@ -163,7 +181,7 @@ export async function prepareRun(
   const domains: DomainTurnParts[] = []
   for (const handle of workspace.domains) {
     domains.push(await domainParts(workspace, handle, controller.signal, options?.comments))
-    if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
+    if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
   }
   const briefed = briefedDomains(domains)
   const awaiting = briefed.flatMap((domain) => domain.awaitingThreads)
@@ -183,7 +201,7 @@ export async function prepareRun(
   })
   if (!configuration.ok) return { error: `model gateway auth failed — ${configuration.error}` }
   const { settings, model, effort, env } = configuration.configuration
-  if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
+  if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
 
   const harnessEnv = { ...env, ASTRALE_SESSION: studioSessionId(workspace.key) }
   const bridge = startBridge(workspace, notify)
@@ -226,20 +244,13 @@ export async function prepareRun(
     harness: harness.id,
     status: 'running',
     createdAt: new Date().toISOString(),
-    // named after whatever the turn actually carries, in the order it was meant
-    summary: bareResume
-      ? 'continuing after interruption'
-      : message
-        ? message.slice(0, 60) + (message.length > 60 ? '…' : '')
-        : attachments.length > 0
-          ? imagesLabel(attachments.length)
-          : awaiting.length > 0
-            ? awaiting.length === 1
-              ? '1 attached thread'
-              : `${awaiting.length} attached threads`
-            : documents === 1
-              ? '1 document'
-              : `${documents} documents`,
+    summary: runSummary({
+      bareResume,
+      message,
+      images: attachments.length,
+      threads: awaiting.length,
+      documents,
+    }),
     ...(message ? { instruction: message } : {}),
     ...(attachments.length ? { attachments } : {}),
     targetCommentIds: awaiting.map((comment) => comment.id),

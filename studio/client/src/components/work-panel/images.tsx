@@ -16,14 +16,14 @@ import { api } from '@/lib/api'
 import { type DraftImage } from '@/lib/attachments'
 import { cn } from '@/lib/utils'
 
+/** What the full-size preview needs: a draft image or a sent one. */
+interface PreviewImage {
+  name: string
+  src: string
+}
+
 /** One image at full size, over everything. */
-function ImagePreview({
-  image,
-  onClose,
-}: {
-  image: { name: string; src: string } | null
-  onClose: () => void
-}) {
+function ImagePreview({ image, onClose }: { image: PreviewImage | null; onClose: () => void }) {
   return (
     <Dialog open={!!image} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-auto max-w-[min(92vw,1400px)] gap-2 p-3">
@@ -104,7 +104,7 @@ export function MessageImages({
   chatId: string
   attachments: ChatAttachment[]
 }) {
-  const [open, setOpen] = useState<{ name: string; src: string } | null>(null)
+  const [open, setOpen] = useState<PreviewImage | null>(null)
   const single = attachments.length === 1
 
   return (

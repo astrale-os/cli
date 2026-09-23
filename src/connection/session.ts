@@ -6,8 +6,6 @@ import type {
   SessionRouteStore,
 } from '@astrale-os/sdk/client/session'
 
-import { createAuth } from '@astrale-os/sdk/auth'
-import { call } from '@astrale-os/sdk/client'
 import { createGraph } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
@@ -189,12 +187,11 @@ function openConnection(
   const auth = createCliCredential(target, options, config, fetch, timeoutMs, credential)
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
-  const authApi = createAuth((path, input, request) => session.call(call(path, input), request))
   return {
     context: Object.freeze({
       session,
       graph,
-      auth: authApi,
+      auth: session.auth,
       self: () =>
         withResolvedClientSession(
           target,

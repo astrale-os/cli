@@ -8,38 +8,13 @@ import type { EnvName, EnvVarRow } from '@shared/types'
  * the agent declares a new env in env.ts → it shows here as "required" → fill it.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Eye, EyeOff, KeyRound, Loader2, Trash2 } from 'lucide-react'
+import { AlertTriangle, Eye, EyeOff, Loader2, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { api, qk } from '@/lib/api'
 import { useEnv } from '@/lib/hooks'
-import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
-
-/**
- * The header chip — shown ONLY when the dev env has REQUIRED (non-optional) vars
- * declared in env.ts but still empty (e.g. the agent just added an integration's
- * key). Invisible otherwise. Clicking opens Settings → Environment to fill them.
- */
-export function EnvBadge({ domainId }: { domainId: string }) {
-  const { data } = useEnv(domainId, 'dev')
-  const setSettingsOpen = useUI((s) => s.setSettingsOpen)
-  const n = data?.requiredMissing ?? 0
-  if (n === 0) return null
-  return (
-    <button
-      type="button"
-      onClick={() => setSettingsOpen(true)}
-      title={`${n} required env var${n === 1 ? '' : 's'} need a value — open Settings → Environment`}
-      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
-    >
-      <KeyRound className="h-3.5 w-3.5" />
-      <span>{n} env</span>
-      <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-    </button>
-  )
-}
 
 function rowStatus(r: EnvVarRow, value: string): { dot: string; label: string; tone: string } {
   if (!r.declared) return { dot: 'bg-warning', label: 'orphan', tone: 'text-warning' }
@@ -53,7 +28,7 @@ function rowStatus(r: EnvVarRow, value: string): { dot: string; label: string; t
 const ENVS: EnvName[] = ['dev', 'prod']
 
 export function EnvEditor({ domainId }: { domainId?: string }) {
-  const [env, setEnvSel] = useState<EnvName>('dev')
+  const [env, setEnv] = useState<EnvName>('dev')
   const { data, isLoading } = useEnv(domainId, env)
   const qc = useQueryClient()
   const [edits, setEdits] = useState<Record<string, string | null>>({})
@@ -97,7 +72,7 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
             <button
               key={e}
               type="button"
-              onClick={() => setEnvSel(e)}
+              onClick={() => setEnv(e)}
               className={cn(
                 'rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
                 env === e

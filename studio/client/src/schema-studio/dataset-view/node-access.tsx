@@ -14,7 +14,6 @@ import { useMemo } from 'react'
 
 import { MethodAuthBadge } from '@/components/method-auth'
 import { PolicyCheckTree } from '@/components/policy-check-tree'
-import { Chip } from '@/components/studio-kit'
 import { methodGlyph } from '@/lib/friendly'
 import {
   type PolicyCheckLeaf,
@@ -80,7 +79,7 @@ export function NodeAccess({
     () =>
       Object.entries(cls?.methods ?? {})
         .filter(([, method]) => method.executable && !method.static)
-        .map(([name, method]) => ({ name, method, owner: cls!.name })),
+        .map(([name, method]) => ({ name, method })),
     [cls],
   )
 
@@ -116,21 +115,16 @@ export function NodeAccess({
           <p className="mt-1 text-[12px] text-muted-foreground">This class declares no method.</p>
         ) : (
           <div className="mt-1.5 divide-y overflow-hidden rounded-md border bg-card">
-            {callables.map(({ name, method, owner }) => {
-              const glyph = methodGlyph(method)
-              const Glyph = glyph.icon ?? Zap
+            {callables.map(({ name, method }) => {
+              const Glyph = methodGlyph(method).icon ?? Zap
               const check =
                 method.policy === undefined ? undefined : decodePolicyCheck(method.policy)
               return (
-                <div key={`${owner}.${name}`} className="px-2.5 py-1.5">
+                <div key={`${cls.name}.${name}`} className="px-2.5 py-1.5">
                   <div className="flex items-center gap-1.5 text-[12px]">
                     <Glyph className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="font-medium">{name}</span>
                     <MethodAuthBadge method={method} domainId={bundle.domainId} />
-                    {method.static && <Chip tone="default">static</Chip>}
-                    {owner !== cls.name && (
-                      <span className="text-[11px] text-muted-foreground">from {owner}</span>
-                    )}
                   </div>
                   {check && (
                     <div className="mt-1 pl-5 text-[11px]">

@@ -2,6 +2,15 @@ import type { ReactNode, SelectHTMLAttributes } from 'react'
 
 import { cn } from '@/lib/utils'
 
+/** The small caps title over one group of settings. */
+export function SettingsHeading({ children }: { children: ReactNode }) {
+  return (
+    <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </div>
+  )
+}
+
 /** One setting: what it is on the left, the control that changes it on the right. */
 export function SettingRow({
   label,

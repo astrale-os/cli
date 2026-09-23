@@ -20,7 +20,14 @@ import {
   useStore,
 } from '@xyflow/react'
 import { LayoutGrid, Sigma, Spline, TriangleAlert } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type MouseEvent as ReactMouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import { api, qk } from '@/lib/api'
 import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
@@ -52,6 +59,7 @@ import {
   composeWorkspaceCanvas,
   qualifiedNodeId,
   workspaceDomainNodeId,
+  workspaceDomainOfFrame,
   type WorkspaceDomainProjection,
 } from './projection'
 import { reorganizeSettled } from './reorganize'
@@ -93,16 +101,8 @@ function revealTargetNodeIds(
   if (target.startsWith('function.')) return [qualifiedNodeId(domainId, target)]
   const name = /^(?:class|edge)\./.exec(target) ? target.slice(target.indexOf('.') + 1) : null
   if (name === null) return null
-  const paths = relationshipEdgeIds(edges, domainId, name)
-  if (paths.length > 0) {
-    const endpoints = new Set<string>()
-    for (const edge of edges) {
-      if (!paths.includes(edge.id)) continue
-      endpoints.add(edge.source)
-      endpoints.add(edge.target)
-    }
-    return [...endpoints]
-  }
+  const paths = selectedRelationshipContext(relationshipEdgeIds(edges, domainId, name), edges)
+  if (paths) return [...paths.nodeIds]
   // No path drawn for it: an `edge.` target is a relationship the canvas does not hold, a
   // `class.` one is the card it names — possibly not projected yet, which the caller waits on.
   return target.startsWith('class.') ? [qualifiedNodeId(domainId, target)] : null
@@ -204,11 +204,6 @@ export function WorkspaceSchemaGraph({
     else useUI.getState().selectClass(ref, domainId)
   }, [])
 
-  const toggleWorkspaceModule = useCallback(
-    (domainId: string, path: string) => toggleModule(domainId, path),
-    [toggleModule],
-  )
-
   // One gesture, the whole canvas: discard EVERY hand-placed position — the geometry inside
   // each domain (the record on disk) and the frames those domains sit in (the record in the
   // machine-side workspace record) — and let ELK and the frame packer lay it out again, the exact path a
@@ -231,11 +226,11 @@ export function WorkspaceSchemaGraph({
 
   const nodeActions = useMemo<WorkspaceNodeActions>(
     () => ({
-      toggleModule: toggleWorkspaceModule,
+      toggleModule,
       addDomainToCanvas: toggleDomain,
       toggleExternalExpanded,
     }),
-    [toggleDomain, toggleExternalExpanded, toggleWorkspaceModule],
+    [toggleDomain, toggleExternalExpanded, toggleModule],
   )
 
   const projection = useMemo(
@@ -377,10 +372,9 @@ export function WorkspaceSchemaGraph({
         return
       }
 
-      const frameDrag = node.id.startsWith('workspace-domain:')
-      const domainId = frameDrag
-        ? node.id.slice('workspace-domain:'.length)
-        : workspaceGeometry(node)?.domainId
+      const framedDomainId = workspaceDomainOfFrame(node.id)
+      const frameDrag = framedDomainId !== null
+      const domainId = framedDomainId ?? workspaceGeometry(node)?.domainId
       if (!domainId) return
 
       // The frame's position is the domain's anchor on the canvas, and a drag INSIDE it can
@@ -492,21 +486,22 @@ export function WorkspaceSchemaGraph({
     [edges, focusNodeId, selectedEdgeContext],
   )
 
-  const displayNodes = useMemo(() => {
-    const mapped = nodes.map((node) => {
-      const focusable =
-        node.type === 'classNode' || node.type === 'viewNode' || node.type === 'functionNode'
-      const inFocus = focusable && sets ? sets.nodeIds.has(node.id) : false
-      const cls =
-        cn(
-          selectedEdgeContext?.nodeIds.has(node.id) && 'is-edge-endpoint',
-          focusable && sets && !inFocus && 'is-dimmed',
-          inFocus && node.id !== focusNodeId && 'is-related',
-        ) || undefined
-      return node.className === cls ? node : { ...node, className: cls }
-    })
-    return mapped
-  }, [nodes, sets, focusNodeId, selectedEdgeContext])
+  const displayNodes = useMemo(
+    () =>
+      nodes.map((node) => {
+        const focusable =
+          node.type === 'classNode' || node.type === 'viewNode' || node.type === 'functionNode'
+        const inFocus = focusable && sets ? sets.nodeIds.has(node.id) : false
+        const cls =
+          cn(
+            selectedEdgeContext?.nodeIds.has(node.id) && 'is-edge-endpoint',
+            focusable && sets && !inFocus && 'is-dimmed',
+            inFocus && node.id !== focusNodeId && 'is-related',
+          ) || undefined
+        return node.className === cls ? node : { ...node, className: cls }
+      }),
+    [nodes, sets, focusNodeId, selectedEdgeContext],
+  )
 
   const displayEdges = useMemo(
     () =>
@@ -546,6 +541,82 @@ export function WorkspaceSchemaGraph({
     [nodes, displayEdges],
   )
 
+  const onNodeClick = useCallback(
+    (event: ReactMouseEvent, clicked: Node) => {
+      let node = clicked
+      setSelectedEdgeId(null)
+      // External cards let pointer gestures reach their frame. React Flow suppresses
+      // clicks after a drag; a remaining click opens the card at that flow position.
+      // Read live measured positions so this also works after moving or zooming.
+      if (node.type === 'extDomain') {
+        const point = screenToFlowPosition(
+          { x: event.clientX, y: event.clientY },
+          { snapToGrid: false },
+        )
+        const member = nodesRef.current.find((candidate) => {
+          if (candidate.type !== 'extMember' || candidate.parentId !== node.id) return false
+          const box = nodeBox(getInternalNode(candidate.id))
+          return (
+            box !== null &&
+            point.x >= box.x &&
+            point.x <= box.x + box.width &&
+            point.y >= box.y &&
+            point.y <= box.y + box.height
+          )
+        })
+        if (!member) return
+        node = member
+      }
+      const externalSelection = node.data as {
+        selectionDomainId?: string
+        selectionId?: string
+      }
+      if (externalSelection.selectionDomainId && externalSelection.selectionId) {
+        select(externalSelection.selectionDomainId, externalSelection.selectionId)
+        return
+      }
+      const target = localNodeRef(node.id)
+      if (!target) return
+      if (target.localId.startsWith('class.') || target.localId.startsWith('function.'))
+        select(target.domainId, target.localId)
+      else if (target.localId.startsWith('grp-'))
+        select(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
+    },
+    [getInternalNode, screenToFlowPosition, select],
+  )
+
+  const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
+    const ownerDomainId = edge.data?.ownerDomainId as string | undefined
+    const edgeClass = edge.data?.edgeClass as string | undefined
+    if (!ownerDomainId || !edgeClass) return
+    setSelectedEdgeId(edge.id)
+    useUI.getState().selectClass(`class.${edgeClass}`, ownerDomainId)
+    useUI.getState().setFocus(null)
+  }, [])
+
+  const onPaneClick = useCallback(() => {
+    // empty space is "nothing here": drop the selection (which closes its detail
+    // panel) as well as the focus and the selected edge
+    setSelectedEdgeId(null)
+    useUI.getState().clearSelection()
+    // keep a half-written comment open — its own × closes it
+    if (!hasAnyUnsentDraft()) setOpenAnchor(null)
+  }, [setOpenAnchor])
+
+  const minimapNodeColor = useCallback(
+    (node: Node) =>
+      node.type === 'classNode'
+        ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
+        : node.type === 'viewNode'
+          ? moduleTint(VIEW_HUE, scheme).mark
+          : node.type === 'functionNode'
+            ? moduleTint(FUNCTION_HUE, scheme).mark
+            : node.type === 'workspaceDomain' && !solo
+              ? moduleTint(255, scheme).border
+              : 'transparent',
+    [scheme, solo],
+  )
+
   return (
     <WorkspaceNodeActionsProvider actions={nodeActions}>
       <SmartEdgeProvider nodes={nodes} options={SMART_EDGE_PROVIDER_OPTIONS}>
@@ -559,61 +630,9 @@ export function WorkspaceSchemaGraph({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeDragStop={onNodeDragStop}
-          onNodeClick={(event, node) => {
-            setSelectedEdgeId(null)
-            // External cards let pointer gestures reach their frame. React Flow suppresses
-            // clicks after a drag; a remaining click opens the card at that flow position.
-            // Read live measured positions so this also works after moving or zooming.
-            if (node.type === 'extDomain') {
-              const point = screenToFlowPosition(
-                { x: event.clientX, y: event.clientY },
-                { snapToGrid: false },
-              )
-              const member = nodesRef.current.find((candidate) => {
-                if (candidate.type !== 'extMember' || candidate.parentId !== node.id) return false
-                const box = nodeBox(getInternalNode(candidate.id))
-                return (
-                  box !== null &&
-                  point.x >= box.x &&
-                  point.x <= box.x + box.width &&
-                  point.y >= box.y &&
-                  point.y <= box.y + box.height
-                )
-              })
-              if (!member) return
-              node = member
-            }
-            const externalSelection = node.data as {
-              selectionDomainId?: string
-              selectionId?: string
-            }
-            if (externalSelection.selectionDomainId && externalSelection.selectionId) {
-              select(externalSelection.selectionDomainId, externalSelection.selectionId)
-              return
-            }
-            const target = localNodeRef(node.id)
-            if (!target) return
-            if (target.localId.startsWith('class.') || target.localId.startsWith('function.'))
-              select(target.domainId, target.localId)
-            else if (target.localId.startsWith('grp-'))
-              select(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
-          }}
-          onEdgeClick={(_, edge) => {
-            const ownerDomainId = edge.data?.ownerDomainId as string | undefined
-            const edgeClass = edge.data?.edgeClass as string | undefined
-            if (!ownerDomainId || !edgeClass) return
-            setSelectedEdgeId(edge.id)
-            useUI.getState().selectClass(`class.${edgeClass}`, ownerDomainId)
-            useUI.getState().setFocus(null)
-          }}
-          onPaneClick={() => {
-            // empty space is "nothing here": drop the selection (which closes its detail
-            // panel) as well as the focus and the selected edge
-            setSelectedEdgeId(null)
-            useUI.getState().clearSelection()
-            // keep a half-written comment open — its own × closes it
-            if (!hasAnyUnsentDraft()) setOpenAnchor(null)
-          }}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={onPaneClick}
           minZoom={MIN_ZOOM}
           nodesConnectable={false}
           edgesFocusable
@@ -644,17 +663,7 @@ export function WorkspaceSchemaGraph({
             pannable
             zoomable
             style={{ width: 168, height: 112, ...dockLift }}
-            nodeColor={(node) =>
-              node.type === 'classNode'
-                ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
-                : node.type === 'viewNode'
-                  ? moduleTint(VIEW_HUE, scheme).mark
-                  : node.type === 'functionNode'
-                    ? moduleTint(FUNCTION_HUE, scheme).mark
-                    : node.type === 'workspaceDomain' && !solo
-                      ? moduleTint(255, scheme).border
-                      : 'transparent'
-            }
+            nodeColor={minimapNodeColor}
             nodeStrokeWidth={0}
           />
 

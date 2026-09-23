@@ -43,6 +43,7 @@ export function PoliciesRail({
           const key = schemaRefKey(policy.ref)
           const guard = guards.get(key) ?? 'object'
           const count = counts?.get(key)
+          const unproven = count === null || count === undefined
           const selected = key === selectedKey
           return (
             <button
@@ -77,19 +78,19 @@ export function PoliciesRail({
                 <span
                   className={cn(
                     'shrink-0 rounded-full px-1.5 text-[11px] tabular-nums',
-                    count === null || count === undefined
+                    unproven
                       ? 'text-muted-foreground'
                       : count > 0
                         ? 'bg-success/12 text-success'
                         : 'bg-muted text-muted-foreground',
                   )}
                   title={
-                    count === null || count === undefined
+                    unproven
                       ? 'Cannot be proven on this Dataset'
                       : `${count} proof${count === 1 ? '' : 's'} in this Dataset`
                   }
                 >
-                  {count === null || count === undefined ? '—' : count}
+                  {unproven ? '—' : count}
                 </span>
               )}
             </button>
