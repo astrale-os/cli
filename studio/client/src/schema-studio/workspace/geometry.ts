@@ -23,6 +23,11 @@ export interface WorkspaceNodeGeometryData {
 export interface WorkspaceFrameSource {
   domainId: string
   nodes: Node[]
+  /**
+   * Room kept free on the frame's right for the imported frames that follow it there. Not
+   * part of the frame: only what a newly placed domain must stay clear of.
+   */
+  trailing?: number
 }
 
 export interface WorkspaceDomainFrame {
@@ -182,8 +187,15 @@ export function placeBeside(
   return best?.position ?? { x: right + gap, y: top }
 }
 
+type UnpositionedFrame = Omit<WorkspaceDomainFrame, 'position'> & { trailing: number }
+
+/** A frame together with the room its imported frames take up on its right. */
+function footprint(frame: UnpositionedFrame): WorkspaceSize {
+  return { width: frame.size.width + frame.trailing, height: frame.size.height }
+}
+
 function positionFrames(
-  frames: Omit<WorkspaceDomainFrame, 'position'>[],
+  frames: UnpositionedFrame[],
   savedPositions: Record<string, WorkspacePoint>,
   fixed: WorkspaceRect[],
 ): WorkspacePoint[] {
@@ -192,14 +204,15 @@ function positionFrames(
 
   const domains: WorkspaceRect[] = placed.map((frame) => ({
     position: savedPositions[frame.domainId]!,
-    size: frame.size,
+    size: footprint(frame),
   }))
   return frames.map((frame) => {
     const saved = savedPositions[frame.domainId]
     if (saved) return saved
     const obstacles = [...fixed, ...domains]
-    const position = placeBeside(frame.size, obstacles, domains.length > 0 ? domains : obstacles)
-    domains.push({ position, size: frame.size })
+    const size = footprint(frame)
+    const position = placeBeside(size, obstacles, domains.length > 0 ? domains : obstacles)
+    domains.push({ position, size })
     return position
   })
 }
@@ -220,10 +233,18 @@ export function layoutWorkspaceFrames(
 ): WorkspaceDomainFrame[] {
   const unpositioned = sources.map((source) => {
     const box = containerBoxSize(DOMAIN_BOX, contentRects(source.nodes))
-    return { domainId: source.domainId, size: { width: box.w, height: box.h } }
+    return {
+      domainId: source.domainId,
+      size: { width: box.w, height: box.h },
+      trailing: source.trailing ?? 0,
+    }
   })
   const positions = positionFrames(unpositioned, savedPositions, fixed)
-  return unpositioned.map((frame, index) => ({ ...frame, position: positions[index]! }))
+  return unpositioned.map(({ domainId, size }, index) => ({
+    domainId,
+    size,
+    position: positions[index]!,
+  }))
 }
 
 export function workspaceGeometry(node: {

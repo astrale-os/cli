@@ -115,3 +115,15 @@ test('converts a workspace node back to owner-local persisted geometry', () => {
     },
   })
 })
+
+test('a new domain leaves room for the imported frames beside the one already placed', () => {
+  const alpha = { domainId: 'alpha', nodes: [moduleNode('alpha-module')], trailing: 400 }
+  const beta = { domainId: 'beta', nodes: [moduleNode('beta-module')] }
+  const [first, second] = layoutWorkspaceFrames([alpha, beta], { alpha: { x: 0, y: 0 } })
+
+  // Beside alpha, it clears alpha's imported frames; below it, it lines up with alpha.
+  const clearsLane = second.position.x >= first.size.width + 400 + WORKSPACE_DOMAIN_GAP
+  const below = second.position.y >= first.size.height + WORKSPACE_DOMAIN_GAP
+  expect(clearsLane || below).toBe(true)
+  expect(first.size).toEqual(second.size)
+})

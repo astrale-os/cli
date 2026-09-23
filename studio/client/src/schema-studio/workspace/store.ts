@@ -30,7 +30,6 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   setDomainPosition: (id: string, position: WorkspacePoint) => void
   setExternalPosition: (origin: string, position: WorkspacePoint) => void
   ensureDomainPositions: (positions: Record<string, WorkspacePoint>) => void
-  ensureExternalPositions: (positions: Record<string, WorkspacePoint>) => void
   resetWorkspaceFrames: () => void
   toggleModule: (domainId: string, path: string) => void
   toggleDomainExpanded: (domainId: string) => void
@@ -119,11 +118,6 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
     set((state) => {
       const domainPositions = withMissingPositions(state.domainPositions, positions)
       return domainPositions ? { domainPositions } : state
-    }),
-  ensureExternalPositions: (positions) =>
-    set((state) => {
-      const externalPositions = withMissingPositions(state.externalPositions, positions)
-      return externalPositions ? { externalPositions } : state
     }),
   resetWorkspaceFrames: () => set({ domainPositions: {}, externalPositions: {} }),
   toggleModule: (domainId, path) =>
