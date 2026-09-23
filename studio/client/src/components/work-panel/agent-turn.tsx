@@ -1,6 +1,6 @@
-import type { AgentEvent, AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/types'
 
-import { Copy, Loader2, LogIn, MessageSquare } from 'lucide-react'
+import { Copy, LogIn, MessageSquare } from 'lucide-react'
 
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
@@ -10,38 +10,10 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { AgentErrorChip } from './agent-error'
+import { AgentSteps, splitTurn } from './agent-steps'
 import { MessageImages } from './images'
 
-/** The panel is narrow, and CSS truncation eats the END of a string — the only
- *  part of a path or URL that says anything. Long targets keep their tail. */
-const TARGET_BUDGET = 44
-
-export function compactTarget(target: string): string {
-  if (target.length <= TARGET_BUDGET) return target
-  const segments = target.split('/').filter(Boolean)
-  for (let take = 3; take >= 1; take -= 1) {
-    if (segments.length <= take) break
-    const tail = `…/${segments.slice(-take).join('/')}`
-    if (tail.length <= TARGET_BUDGET) return tail
-  }
-  return `…${target.slice(1 - TARGET_BUDGET)}`
-}
-
-/**
- * What the agent is doing right now, in one line — never the whole event log, and
- * never a raw status string ("session started" tells a reader nothing).
- */
-export function activityLabel(run: AgentRun): string {
-  for (let index = run.events.length - 1; index >= 0; index -= 1) {
-    const event = run.events[index]!
-    if (event.kind === 'tool')
-      return [event.tool, event.target && compactTarget(event.target)].filter(Boolean).join(' · ')
-    if (event.kind === 'thinking') return 'Thinking…'
-  }
-  return 'Working…'
-}
-
-const isProse = (event: AgentEvent) => event.kind === 'message'
+export { activityLabel, compactTarget } from './agent-steps'
 
 export interface AgentAuthFailure {
   title: string
@@ -81,7 +53,8 @@ export function answeredThreads(run: AgentRun): number {
 
 /**
  * One exchange: what you asked, then what came back. The steps in between stay
- * out of the way — a turn is only legible once it is a message, not a log.
+ * out of the way — a turn is only legible once it is a message, not a log — and
+ * fold into one line that unfolds on demand.
  */
 export function AgentTurn({
   run,
@@ -92,7 +65,7 @@ export function AgentTurn({
   onResume?: () => void
   onRetry?: () => void
 }) {
-  const messages = run.events.filter(isProse)
+  const { steps, answer: messages } = splitTurn(run)
   const active = isRunActive(run)
   const answered = answeredThreads(run)
   const setPanelTab = useUI((state) => state.setPanelTab)
@@ -116,18 +89,13 @@ export function AgentTurn({
         </div>
       )}
 
-      {(messages.length > 0 || active || run.error) && (
+      {(messages.length > 0 || steps.length > 0 || active || run.error) && (
         <div className="flex">
           <div className="min-w-0 flex-1 space-y-2 text-[13px]">
+            <AgentSteps run={run} steps={steps} />
             {messages.map((message) => (
               <Markdown key={message.id} text={message.text} />
             ))}
-            {active && (
-              <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-                <span className="truncate">{activityLabel(run)}</span>
-              </div>
-            )}
             {!active && run.error && !authFailure && <AgentErrorChip run={run} onRetry={onRetry} />}
             {!active && authFailure && (
               <AuthFailureNotice failure={authFailure} onRetry={onRetry} />

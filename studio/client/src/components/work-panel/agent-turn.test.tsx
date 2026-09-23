@@ -3,6 +3,7 @@ import type { AgentEvent, AgentRun } from '@shared/types'
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import { latestNote, splitTurn } from './agent-steps'
 import { activityLabel, AgentTurn, agentAuthFailure, compactTarget } from './agent-turn'
 
 const event = (
@@ -116,4 +117,97 @@ test('an expired login renders a clean recovery card instead of ACP internals', 
   expect(html).toContain('I’ve signed in — retry')
   expect(html).not.toContain('sessionId=secret')
   expect(html).not.toContain('Internal error')
+})
+
+const done = (events: AgentEvent[]): AgentRun => ({
+  ...run(events),
+  status: 'succeeded',
+  finishedAt: new Date(90_000).toISOString(),
+})
+
+test('only the prose after the last tool is the answer; the narration before it is a step', () => {
+  const { steps, answer } = splitTurn(
+    done([
+      event('message', 'I read the guides first.'),
+      event('tool', 'Read', { tool: 'Read', target: 'schema/user.ts' }),
+      event('thinking', 'the'),
+      event('thinking', 'schema'),
+      event('message', 'Now the schema.'),
+      event('tool', 'Edit', { tool: 'Edit', target: 'schema/user.ts' }),
+      event('status', 'plan'),
+      event('message', 'The Users page is in place.'),
+    ]),
+  )
+
+  expect(answer.map((message) => message.text)).toEqual(['The Users page is in place.'])
+  expect(steps.map((step) => step.kind)).toEqual(['note', 'tool', 'thinking', 'note', 'tool'])
+})
+
+test('a turn that ends on a tool, an error or a stop still shows the last thing it said', () => {
+  const { steps, answer } = splitTurn({
+    ...done([event('message', 'Writing the page.'), event('tool', 'Edit', { tool: 'Edit' })]),
+    status: 'failed',
+    error: 'boom',
+  })
+
+  expect(answer.map((message) => message.text)).toEqual(['Writing the page.'])
+  expect(steps.map((step) => step.kind)).toEqual(['tool'])
+})
+
+test('nothing is final while the turn runs: the next event may be another tool', () => {
+  const { steps, answer } = splitTurn(
+    run([event('tool', 'Read', { tool: 'Read' }), event('message', 'Now the schema.')]),
+  )
+
+  expect(answer).toEqual([])
+  expect(latestNote(steps)).toBe('Now the schema.')
+})
+
+test('the header carries the latest narration on one line, without markdown marks', () => {
+  expect(
+    latestNote([{ kind: 'note', id: 'n', text: '\nI write the `User` **class**.\nMore.' }]),
+  ).toBe('I write the User class.')
+  expect(latestNote([{ kind: 'thinking', id: 't' }])).toBe(undefined)
+})
+
+test('a running turn folds its work into one line naming what it does now', () => {
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={run([
+        event('message', 'I write the User class.'),
+        event('tool', 'Edit', { tool: 'Edit', target: 'schema/user.ts' }),
+      ])}
+    />,
+  )
+
+  expect(html).toContain('I write the User class.')
+  expect(html).toContain('Edit · schema/user.ts')
+  expect(html).toContain('aria-expanded="false"')
+  // folded: the step list is not rendered until asked for
+  expect(html).not.toContain('data-testid="agent-steps"')
+})
+
+test('a finished turn shows its answer under a folded count of the steps behind it', () => {
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={done([
+        event('message', 'I read the guides first.'),
+        event('tool', 'Read', { tool: 'Read' }),
+        event('tool', 'Edit', { tool: 'Edit' }),
+        event('message', 'The Users page is in place.'),
+      ])}
+    />,
+  )
+
+  expect(html).toContain('The Users page is in place.')
+  expect(html).toContain('2 steps')
+  expect(html).toContain('1m 30s')
+  expect(html).not.toContain('I read the guides first.')
+})
+
+test('a finished turn without any work shows no step line', () => {
+  const html = renderToStaticMarkup(<AgentTurn run={done([event('message', 'Hello.')])} />)
+
+  expect(html).toContain('Hello.')
+  expect(html).not.toContain('aria-expanded')
 })
