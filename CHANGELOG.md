@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.118](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.117...cli/v1.0.0-beta.118) (2026-09-23)
+
+
+### Bug Fixes
+
+* **auth:** adopt the session Auth API and published SDK ([#521](https://github.com/astrale-os/cli/issues/521)) ([5450337](https://github.com/astrale-os/cli/commit/5450337662b5ea5756351e3c64478b8fdd51ab16))
+* **studio:** point handler wiring at the declaring module ([#537](https://github.com/astrale-os/cli/issues/537)) ([779c4e9](https://github.com/astrale-os/cli/commit/779c4e9feef61dc3597297144c3e34d1ab60ea9f))
+
 ## [1.0.0-beta.117](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.116...cli/v1.0.0-beta.117) (2026-09-22)
 
 
