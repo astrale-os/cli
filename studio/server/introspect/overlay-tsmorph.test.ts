@@ -164,6 +164,42 @@ export const schema = defineSchema('example.dev', {
     ])
   })
 
+  test('points the wiring at the declaration and the handler at its implementation', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-handler-wiring-'))
+    roots.push(root)
+    mkdirSync(join(root, 'functions'))
+    writeFileSync(
+      join(root, 'functions/impl.ts'),
+      `\n\nexport const settle = async ({ input }) => graph.update(input)\n`,
+    )
+    writeFileSync(
+      join(root, 'functions/index.ts'),
+      `import { defineAction } from '@astrale-os/sdk/action'
+import { defineWorkflow } from '@astrale-os/sdk/workflow'
+import { settle } from './impl.ts'
+
+export const rename = defineAction()('Issue.rename', settle)
+export const create = defineWorkflow()('createIssue', async ({ input }) => graph.create(input))
+`,
+    )
+
+    const links = buildHandlerLinks({ ir, domainRoot: root })
+    expect(
+      links.map((link) => [
+        link.method,
+        link.wiringFile,
+        link.wiringLine,
+        link.handlerFile,
+        link.handlerLine,
+      ]),
+    ).toEqual([
+      // the handler is imported: the declaration and the implementation live apart
+      ['rename', 'functions/index.ts', 5, 'functions/impl.ts', 3],
+      // the handler is inline: both sit in the declaring module
+      ['createIssue', 'functions/index.ts', 6, 'functions/index.ts', 6],
+    ])
+  })
+
   test('indexes Class, Property, Method, Edge endpoint, and Function declarations', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-schema-spans-'))
     roots.push(root)
