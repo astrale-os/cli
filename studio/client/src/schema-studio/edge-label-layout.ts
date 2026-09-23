@@ -18,6 +18,10 @@ export interface EdgeLabelObstacleIndex {
   maxRight: number
 }
 
+interface MutableEdgeLabelObstacleIndex extends EdgeLabelObstacleIndex {
+  cells: Map<string, EdgeLabelObstacle[]>
+}
+
 export type EdgeLabelObstacleSource = EdgeLabelObstacle[] | EdgeLabelObstacleIndex
 
 export interface EdgePathSample extends EdgeLabelPoint {
@@ -32,12 +36,23 @@ export interface EdgeLabelPlacementOptions {
   maxPathDistance?: number
   clearance?: number
   additionalObstacles?: EdgeLabelObstacle[]
+  /**
+   * Labels other edges already hold. Unlike cards, they may be overlapped as a last resort: a label
+   * dragged far from its own line reads worse than one that partly covers a neighbour.
+   */
+  softObstacles?: EdgeLabelObstacleSource
 }
 
 const DEFAULT_CLEARANCE = 4
 const OFF_PATH_STEP = 8
 const OFF_PATH_LIMIT = 256
 const OBSTACLE_CELL_SIZE = 128
+/** How far a label may step off its line to clear another label before it accepts an overlap. */
+const SOFT_OFF_PATH_LIMIT = 16
+/** Path samples (nearest the preferred point first) that may try that short step off the line. */
+const SOFT_OFF_PATH_CANDIDATES = 24
+/** Once a label is off its path anyway, how much further it may go to clear other labels. */
+const SOFT_DETOUR_LIMIT = 32
 
 const cellKey = (column: number, row: number) => `${column}:${row}`
 
@@ -45,29 +60,28 @@ export function createEdgeLabelObstacleIndex(
   obstacles: EdgeLabelObstacle[],
   cellSize = OBSTACLE_CELL_SIZE,
 ): EdgeLabelObstacleIndex {
-  const cells = new Map<string, EdgeLabelObstacle[]>()
-  let maxRight = Number.NEGATIVE_INFINITY
-
-  for (const obstacle of obstacles) {
-    maxRight = Math.max(maxRight, obstacle.x + obstacle.width)
-    const firstColumn = Math.floor(obstacle.x / cellSize)
-    const lastColumn = Math.floor((obstacle.x + obstacle.width) / cellSize)
-    const firstRow = Math.floor(obstacle.y / cellSize)
-    const lastRow = Math.floor((obstacle.y + obstacle.height) / cellSize)
-    for (let column = firstColumn; column <= lastColumn; column += 1) {
-      for (let row = firstRow; row <= lastRow; row += 1) {
-        const key = cellKey(column, row)
-        const entries = cells.get(key)
-        if (entries) entries.push(obstacle)
-        else cells.set(key, [obstacle])
-      }
-    }
-  }
-
-  return {
+  const index: MutableEdgeLabelObstacleIndex = {
     cellSize,
-    cells,
-    maxRight,
+    cells: new Map(),
+    maxRight: Number.NEGATIVE_INFINITY,
+  }
+  for (const obstacle of obstacles) insertObstacle(index, obstacle)
+  return index
+}
+
+function insertObstacle(index: MutableEdgeLabelObstacleIndex, obstacle: EdgeLabelObstacle) {
+  index.maxRight = Math.max(index.maxRight, obstacle.x + obstacle.width)
+  const firstColumn = Math.floor(obstacle.x / index.cellSize)
+  const lastColumn = Math.floor((obstacle.x + obstacle.width) / index.cellSize)
+  const firstRow = Math.floor(obstacle.y / index.cellSize)
+  const lastRow = Math.floor((obstacle.y + obstacle.height) / index.cellSize)
+  for (let column = firstColumn; column <= lastColumn; column += 1) {
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      const key = cellKey(column, row)
+      const entries = index.cells.get(key)
+      if (entries) entries.push(obstacle)
+      else index.cells.set(key, [obstacle])
+    }
   }
 }
 
@@ -96,29 +110,63 @@ export function edgeLabelRectsOverlap(
   )
 }
 
-function isFree(
-  point: EdgeLabelPoint,
-  size: EdgeLabelSize,
+/** Every obstacle of `obstacles` the rectangle touches, each reported once. */
+function overlapping(
+  rect: Omit<EdgeLabelObstacle, 'id'>,
   obstacles: EdgeLabelObstacleSource,
-  additionalObstacles: EdgeLabelObstacle[],
-  clearance: number,
-): boolean {
-  const candidate = edgeLabelRect(point, size, clearance)
+): EdgeLabelObstacle[] {
   if (Array.isArray(obstacles)) {
-    if (obstacles.some((obstacle) => edgeLabelRectsOverlap(candidate, obstacle))) return false
-  } else {
-    const firstColumn = Math.floor(candidate.x / obstacles.cellSize)
-    const lastColumn = Math.floor((candidate.x + candidate.width) / obstacles.cellSize)
-    const firstRow = Math.floor(candidate.y / obstacles.cellSize)
-    const lastRow = Math.floor((candidate.y + candidate.height) / obstacles.cellSize)
-    for (let column = firstColumn; column <= lastColumn; column += 1) {
-      for (let row = firstRow; row <= lastRow; row += 1) {
-        const local = obstacles.cells.get(cellKey(column, row)) ?? []
-        if (local.some((obstacle) => edgeLabelRectsOverlap(candidate, obstacle))) return false
+    return obstacles.filter((obstacle) => edgeLabelRectsOverlap(rect, obstacle))
+  }
+  const hits = new Set<EdgeLabelObstacle>()
+  const firstColumn = Math.floor(rect.x / obstacles.cellSize)
+  const lastColumn = Math.floor((rect.x + rect.width) / obstacles.cellSize)
+  const firstRow = Math.floor(rect.y / obstacles.cellSize)
+  const lastRow = Math.floor((rect.y + rect.height) / obstacles.cellSize)
+  for (let column = firstColumn; column <= lastColumn; column += 1) {
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      for (const obstacle of obstacles.cells.get(cellKey(column, row)) ?? []) {
+        if (edgeLabelRectsOverlap(rect, obstacle)) hits.add(obstacle)
       }
     }
   }
-  return additionalObstacles.every((obstacle) => !edgeLabelRectsOverlap(candidate, obstacle))
+  return [...hits]
+}
+
+function clearOf(rect: Omit<EdgeLabelObstacle, 'id'>, obstacles: EdgeLabelObstacleSource): boolean {
+  if (Array.isArray(obstacles))
+    return !obstacles.some((obstacle) => edgeLabelRectsOverlap(rect, obstacle))
+  const firstColumn = Math.floor(rect.x / obstacles.cellSize)
+  const lastColumn = Math.floor((rect.x + rect.width) / obstacles.cellSize)
+  const firstRow = Math.floor(rect.y / obstacles.cellSize)
+  const lastRow = Math.floor((rect.y + rect.height) / obstacles.cellSize)
+  for (let column = firstColumn; column <= lastColumn; column += 1) {
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      const local = obstacles.cells.get(cellKey(column, row))
+      if (local?.some((obstacle) => edgeLabelRectsOverlap(rect, obstacle))) return false
+    }
+  }
+  return true
+}
+
+function overlapArea(
+  rect: Omit<EdgeLabelObstacle, 'id'>,
+  obstacles: EdgeLabelObstacleSource,
+): number {
+  return overlapping(rect, obstacles).reduce(
+    (area, obstacle) =>
+      area +
+      Math.max(
+        0,
+        Math.min(rect.x + rect.width, obstacle.x + obstacle.width) - Math.max(rect.x, obstacle.x),
+      ) *
+        Math.max(
+          0,
+          Math.min(rect.y + rect.height, obstacle.y + obstacle.height) -
+            Math.max(rect.y, obstacle.y),
+        ),
+    0,
+  )
 }
 
 function finiteSamples(samples: EdgePathSample[]): EdgePathSample[] {
@@ -140,9 +188,12 @@ function ringOffsets(radius: number): EdgeLabelPoint[] {
 }
 
 /**
- * Keep a label on its rendered edge whenever possible. If every point on the relevant part of the
- * path is occupied, search outwards from the preferred point; the final right-of-graph fallback is
- * geometrically guaranteed not to intersect a node, even on an unusually dense canvas.
+ * Keep a label on its rendered edge whenever possible. Cards (`obstacles`) and the edge's own labels
+ * (`additionalObstacles`) are never covered; other edges' labels (`softObstacles`) are avoided first
+ * by sliding along the path, then by a short step off it, and only then overlapped as little as
+ * the path allows. If every point on the relevant part of the path is covered by a card, search
+ * outwards from the preferred point; the final right-of-graph fallback is geometrically guaranteed
+ * not to intersect a node, even on an unusually dense canvas.
  */
 export function placeEdgeLabel(
   rawSamples: EdgePathSample[],
@@ -155,6 +206,14 @@ export function placeEdgeLabel(
 
   const clearance = options.clearance ?? DEFAULT_CLEARANCE
   const additionalObstacles = options.additionalObstacles ?? []
+  const softObstacles = options.softObstacles ?? []
+  const rectAt = (point: EdgeLabelPoint) => edgeLabelRect(point, size, clearance)
+  const isFree = (point: EdgeLabelPoint) => {
+    const rect = rectAt(point)
+    return clearOf(rect, obstacles) && clearOf(rect, additionalObstacles)
+  }
+  const isClear = (point: EdgeLabelPoint) => isFree(point) && clearOf(rectAt(point), softObstacles)
+
   const withinWindow = samples.filter(
     (sample) =>
       options.maxPathDistance === undefined ||
@@ -167,20 +226,42 @@ export function placeEdgeLabel(
         Math.abs(left.sample.distance - options.preferredDistance) -
           Math.abs(right.sample.distance - options.preferredDistance) || left.index - right.index,
     )
+  const origin = candidates[0]?.sample ?? samples[0]!
 
   for (const { sample } of candidates) {
-    if (isFree(sample, size, obstacles, additionalObstacles, clearance)) {
-      return { x: sample.x, y: sample.y }
+    if (isClear(sample)) return { x: sample.x, y: sample.y }
+  }
+
+  for (let radius = OFF_PATH_STEP; radius <= SOFT_OFF_PATH_LIMIT; radius += OFF_PATH_STEP) {
+    for (const { sample } of candidates.slice(0, SOFT_OFF_PATH_CANDIDATES)) {
+      for (const offset of ringOffsets(radius)) {
+        const candidate = { x: sample.x + offset.x, y: sample.y + offset.y }
+        if (isClear(candidate)) return candidate
+      }
     }
   }
 
-  const origin = candidates[0]?.sample ?? samples[0]!
+  let leastCovering: { point: EdgeLabelPoint; area: number } | null = null
+  for (const { sample } of candidates) {
+    if (!isFree(sample)) continue
+    const area = overlapArea(rectAt(sample), softObstacles)
+    if (!leastCovering || area < leastCovering.area) leastCovering = { point: sample, area }
+  }
+  if (leastCovering) return { x: leastCovering.point.x, y: leastCovering.point.y }
+
+  // Off the path, the first card-free point wins unless a point clear of labels too lies within a
+  // short detour further out.
+  let firstFree: { point: EdgeLabelPoint; radius: number } | null = null
   for (let radius = OFF_PATH_STEP; radius <= OFF_PATH_LIMIT; radius += OFF_PATH_STEP) {
+    if (firstFree && radius > firstFree.radius + SOFT_DETOUR_LIMIT) break
     for (const offset of ringOffsets(radius)) {
       const candidate = { x: origin.x + offset.x, y: origin.y + offset.y }
-      if (isFree(candidate, size, obstacles, additionalObstacles, clearance)) return candidate
+      if (!isFree(candidate)) continue
+      if (clearOf(rectAt(candidate), softObstacles)) return candidate
+      firstFree ??= { point: candidate, radius }
     }
   }
+  if (firstFree) return firstFree.point
 
   // All obstacles end strictly before this label begins, so overlap is impossible.
   const indexedRight = Array.isArray(obstacles) ? Number.NEGATIVE_INFINITY : obstacles.maxRight
@@ -189,4 +270,57 @@ export function placeEdgeLabel(
     Math.max(origin.x, indexedRight),
   )
   return { x: right + clearance + size.width / 2, y: origin.y }
+}
+
+/** One label the canvas wants placed: an edge's name (`slot` 0) or one of its end chips. */
+export interface EdgeLabelRequest {
+  edgeId: string
+  /** 0 = the relationship name, 1 = source chip, 2 = target chip. */
+  slot: number
+  samples: EdgePathSample[]
+  size: EdgeLabelSize
+  obstacles: EdgeLabelObstacleSource
+  preferredDistance: number
+  maxPathDistance?: number
+}
+
+export const edgeLabelKey = (edgeId: string, slot: number) => `${edgeId}:${slot}`
+
+/**
+ * Place every label of a canvas together, so each one steers clear of the ones placed before it.
+ * The order depends only on the edges, never on selection or focus: clicking an edge must not
+ * reshuffle the labels around it. Names come first (they carry the meaning), chips second.
+ */
+export function layoutEdgeLabels(
+  requests: EdgeLabelRequest[],
+): Map<string, EdgeLabelObstacle | null> {
+  const ordered = [...requests].sort(
+    (left, right) =>
+      Number(left.slot !== 0) - Number(right.slot !== 0) ||
+      (left.edgeId < right.edgeId ? -1 : left.edgeId > right.edgeId ? 1 : 0) ||
+      left.slot - right.slot,
+  )
+  const placedLabels = createEdgeLabelObstacleIndex([]) as MutableEdgeLabelObstacleIndex
+  const ownLabels = new Map<string, EdgeLabelObstacle[]>()
+  const placements = new Map<string, EdgeLabelObstacle | null>()
+
+  for (const request of ordered) {
+    const key = edgeLabelKey(request.edgeId, request.slot)
+    const own = ownLabels.get(request.edgeId) ?? []
+    const point = placeEdgeLabel(request.samples, request.size, request.obstacles, {
+      preferredDistance: request.preferredDistance,
+      maxPathDistance: request.maxPathDistance,
+      additionalObstacles: own,
+      softObstacles: placedLabels,
+    })
+    if (!point) {
+      placements.set(key, null)
+      continue
+    }
+    const rect = { id: key, ...edgeLabelRect(point, request.size) }
+    placements.set(key, rect)
+    insertObstacle(placedLabels, rect)
+    ownLabels.set(request.edgeId, [...own, rect])
+  }
+  return placements
 }

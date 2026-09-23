@@ -75,7 +75,7 @@ function DomainRow({
         type="button"
         onClick={() => onToggleHidden(domainRef(domain.origin))}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
       >
         {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </button>
