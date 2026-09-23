@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { stripVTControlCharacters } from 'node:util'
 
 import {
   acceptJournalPage,
@@ -315,26 +316,41 @@ describe('selectCallerRecords', () => {
         principal: 'domain-1',
         caller: 'user-1',
       },
-      {
-        sequence: 3,
-        topic: 't',
-        occurredAt: '2026-09-23T10:00:02.000Z',
-        principal: 'user-2',
-        caller: 'user-2',
-      },
+      { sequence: 3, topic: 't', occurredAt: '2026-09-23T10:00:02.000Z', principal: 'user-2' },
+      { sequence: 4, topic: 't', occurredAt: '2026-09-23T10:00:03.000Z' },
     ],
     cursor: 'next-page',
   })
 
   /** @evidence TEST-CLI-LOGS-FILTERS-CALLER */
-  test('keeps exact caller matches and the page cursor; records without caller never match', () => {
+  test('keeps exact effective caller matches (caller, else principal) and the page cursor', () => {
     expect(selectCallerRecords(page, 'user-1')).toEqual({
       records: [page.records[1]!],
       cursor: 'next-page',
     })
-    expect(selectCallerRecords(page, 'domain-1')).toEqual({ records: [], cursor: 'next-page' })
+    // The Domain's own direct call matches; the call it ran for user-1 does not.
+    expect(selectCallerRecords(page, 'domain-1')).toEqual({
+      records: [page.records[0]!],
+      cursor: 'next-page',
+    })
+    // A record with neither caller nor principal never matches.
+    expect(selectCallerRecords(page, 'user-2')).toEqual({
+      records: [page.records[2]!],
+      cursor: 'next-page',
+    })
     expect(selectCallerRecords(page, undefined)).toBe(page)
     expect(selectCallerRecords(page, '  ')).toBe(page)
+  })
+
+  /** @evidence TEST-CLI-LOGS-CALLER-DIRECT-CALL */
+  test('matches a direct call, which the Kernel records without caller, by its principal', () => {
+    const direct = acceptJournalPage({
+      records: [
+        { sequence: 5, topic: 't', occurredAt: '2026-09-23T10:00:04.000Z', principal: 'user-3' },
+      ],
+    })
+    expect(direct.records[0]).not.toHaveProperty('caller')
+    expect(selectCallerRecords(direct, 'user-3').records).toEqual([direct.records[0]!])
   })
 })
 
@@ -385,6 +401,13 @@ describe('follow output routing', () => {
     expect(stdout).toContain('caller-1')
   })
 
+  test('shows the principal as the caller of a direct call on an unflagged TTY', async () => {
+    const stdout = await captureFollowOutput({ follow: true }, true)
+    expect(stripVTControlCharacters(stdout).trimEnd().endsWith(' principal-1 principal-1')).toBe(
+      true,
+    )
+  })
+
   /** @evidence TEST-CLI-LOGS-CALLER-SELF */
   test('expands --caller @self once and keeps only that caller', async () => {
     const inputs: unknown[] = []
@@ -394,6 +417,7 @@ describe('follow output routing', () => {
       { ...inputRecord, sequence: 3, caller: 'user-1' },
       { ...inputRecord, sequence: 4, caller: 'user-2' },
       { ...inputRecord, sequence: 5 },
+      { ...inputRecord, sequence: 6, principal: 'user-1' },
     ]
     const stdout = await captureStdout(true, () =>
       followLogs(
@@ -426,7 +450,7 @@ describe('follow output routing', () => {
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line).sequence),
-    ).toEqual([3])
+    ).toEqual([3, 6])
     expect(inputs[0]).not.toHaveProperty('caller')
   })
 

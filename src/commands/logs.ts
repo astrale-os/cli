@@ -36,7 +36,10 @@ export interface JournalRecord {
   readonly committedAt?: string
   /** Executor that authenticated the recorded operation (a Domain acting for a user included). */
   readonly principal?: string
-  /** Identity whose authority the operation exercised; absent on records from older Kernels. */
+  /**
+   * Identity whose authority the operation exercised, recorded only when it differs from the
+   * principal (astrale-os/kernel#959); absent on direct calls and on records from older Kernels.
+   */
   readonly caller?: string
   readonly correlation?: JournalCorrelation
   readonly correlationId?: string
@@ -133,15 +136,24 @@ export function acceptJournalPage(input: unknown): JournalPage {
 }
 
 /**
- * Keep the records whose recorded caller is exactly `caller`. The journal syscall has no caller
+ * The Kernel records `caller` only when it differs from the principal, so a record without one
+ * was a direct call made by its principal. Exact for records written by a Kernel with
+ * astrale-os/kernel#959; on records from an older Kernel this falls back to the principal, even
+ * when that principal is a Domain acting for a user.
+ */
+function effectiveCaller(record: JournalRecord): string | undefined {
+  return record.caller ?? record.principal
+}
+
+/**
+ * Keep the records whose effective caller is exactly `caller`. The journal syscall has no caller
  * input, so the filter applies to each returned page; the cursor still advances past the page.
- * Records without a caller (written before the Kernel recorded one) never match.
  */
 export function selectCallerRecords(page: JournalPage, caller: string | undefined): JournalPage {
   const wanted = nonEmpty(caller)
   if (wanted === undefined) return page
   return Object.freeze({
-    records: Object.freeze(page.records.filter((record) => record.caller === wanted)),
+    records: Object.freeze(page.records.filter((record) => effectiveCaller(record) === wanted)),
     ...(page.cursor === undefined ? {} : { cursor: page.cursor }),
   })
 }
@@ -215,7 +227,7 @@ function journalProjection(records: JournalRecord[]): ListProjection {
       timestamp: record.timestamp,
       topic: record.topic,
       principal: record.principal ?? '',
-      caller: record.caller ?? '',
+      caller: effectiveCaller(record) ?? '',
     })),
     paths: records.map((record) => String(record.sequence)),
   }
@@ -227,7 +239,7 @@ function printRecord(record: JournalRecord, opts: LogsOpts): void {
     return
   }
   process.stdout.write(
-    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')} ${chalk.dim(record.caller ?? '')}\n`,
+    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')} ${chalk.dim(effectiveCaller(record) ?? '')}\n`,
   )
 }
 
@@ -384,10 +396,14 @@ Behavior:
 
   --principal filters in the Kernel by the executing principal: a Domain acting
   for a user (managed CLI, Console, astrale call) is the principal of its
-  records. --caller keeps the records whose recorded caller, the identity whose
-  authority the operation exercised, matches; it filters each returned page, so
-  --limit bounds the page before the filter. Records written by a Kernel that
-  does not record callers never match --caller. Both accept @self.
+  records. --caller keeps the records whose caller, the identity whose authority
+  the operation exercised, matches; it filters each returned page, so --limit
+  bounds the page before the filter. The Kernel records caller only when it
+  differs from the principal, so the effective caller is caller, else principal;
+  CALLER shows it. This is exact for records written by a Kernel with
+  astrale-os/kernel#959; records from an older Kernel fall back to the
+  principal, so a Domain acting for a user appears as the caller there. JSON
+  output keeps the record as written. Both accept @self.
 
 Examples:
   $ astrale logs -i staging --limit 50
@@ -401,7 +417,7 @@ Examples:
     { flags: '--topic <topic>', description: 'Match one exact topic' },
     { flags: '--topic-prefix <prefix>', description: 'Match one topic prefix' },
     { flags: '--principal <id>', description: 'Filter by executing principal identity ID' },
-    { flags: '--caller <id>', description: 'Filter by recorded caller identity ID' },
+    { flags: '--caller <id>', description: 'Filter by effective caller identity ID' },
     { flags: '--limit <n>', description: `Maximum records (default: ${DEFAULT_LIMIT})` },
     { flags: '--cursor <token>', description: 'Resume from an opaque journal cursor' },
     { flags: '--follow', description: 'Poll using returned cursors until interrupted' },

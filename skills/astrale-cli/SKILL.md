@@ -378,10 +378,13 @@ astrale logs --topic-prefix op:function. --follow
 Use `--principal`, `--caller`, `--since`, `--until`, or an opaque `--cursor` as needed.
 `--principal` filters in the Kernel by the executing principal; a Domain acting for a user
 (managed CLI, Console, `astrale call` through a Domain token exchange) is the principal of its
-records. `--caller` keeps the records whose recorded caller (the identity whose authority the
-operation exercised) matches; it filters each returned page, so `--limit` bounds the page first,
-and records from a Kernel that does not record callers never match. Both accept `@self`; the
-human table shows PRINCIPAL and CALLER.
+records. `--caller` keeps the records whose caller (the identity whose authority the operation
+exercised) matches; it filters each returned page, so `--limit` bounds the page first. The Kernel
+records `caller` only when it differs from the principal, so the effective caller is `caller`,
+else `principal`: exact for records written by a Kernel with astrale-os/kernel#959, while records
+from an older Kernel fall back to the principal (a Domain acting for a user shows as the caller).
+Both accept `@self`; the human table shows PRINCIPAL and the effective CALLER, and JSON keeps
+`caller` only where the Kernel recorded it.
 `--follow` retains one Client session and advances only with returned cursors.
 Structured output retains the admitted `correlation` object, including invocation root and
 parent identifiers, and includes `correlationId` as a projection of `invocationId`.
