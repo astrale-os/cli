@@ -51,7 +51,21 @@ test('edge labels keep clear of each other, and the selected one reads on top', 
 
   const edge = page.locator(`.react-flow__edge[data-id*="edge-${RELATIONSHIP}__"]`)
   const edgeId = await edge.getAttribute('data-id')
-  await edge.locator('.react-flow__edge-interaction').click({ force: true })
+  // Click a point ON the line that nothing covers: the middle of a curve's bounding box is often
+  // off it, and at the fitted zoom a card can sit over part of a long edge.
+  const onLine = await edge.locator('.react-flow__edge-interaction').evaluate((path) => {
+    const line = path as SVGPathElement
+    const length = line.getTotalLength()
+    for (const fraction of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]) {
+      const point = line.getPointAtLength(length * fraction)
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(line.getScreenCTM()!)
+      if (document.elementFromPoint(screen.x, screen.y) === line)
+        return { x: screen.x, y: screen.y }
+    }
+    return null
+  })
+  expect(onLine).not.toBeNull()
+  await page.mouse.click(onLine!.x, onLine!.y)
   await expect(edge).toHaveClass(/is-selected/)
 
   const selectedLabel = page.locator(`.schema-edge-label[data-edge-id="${edgeId}"]`).first()
