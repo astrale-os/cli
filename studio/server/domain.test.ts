@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
@@ -362,5 +370,47 @@ export default defineApplication({ schema: replacement, runtime: {} as never })
     writeFileSync(join(root, 'domain.ts'), 'export default {}\n')
     writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
     expect(isDomainDir(root)).toBe(false)
+  })
+
+  test('sees a same-size, same-mtime config or Application edit on the very next analysis', () => {
+    const root = fixture()
+    mkdirSync(join(root, 'schemb'))
+    writeFileSync(join(root, 'schemb/index.ts'), 'export const schema = {}\n')
+    const application = join(root, 'application.ts')
+    expect(resolveSchemaEntry(root, application)).toBe(join(root, 'schema/index.ts'))
+    expect(isDomainDir(root)).toBe(true)
+
+    // Same byte length and restored mtime: only the content differs.
+    const stamp = statSync(application)
+    writeFileSync(
+      application,
+      `import { defineApplication } from '@astrale-os/sdk/application'
+import { schema } from './schemb/index.js'
+export default defineApplication({ schema, runtime: {} as never })
+`,
+    )
+    utimesSync(application, stamp.atime, stamp.mtime)
+    expect(resolveSchemaEntry(root, application)).toBe(join(root, 'schemb/index.ts'))
+
+    const config = join(root, 'astrale.config.ts')
+    writeFileSync(config, projectConfig('./applicatio2.js'))
+    expect(resolveApplicationEntry(root)).toBeNull()
+    expect(isDomainDir(root)).toBe(false)
+    writeFileSync(config, projectConfig())
+    expect(resolveApplicationEntry(root)).toBe(application)
+    rmSync(config)
+    expect(isDomainDir(root)).toBe(false)
+    expect(analyzeProjectConfig(root).applicationFile).toBeNull()
+  })
+
+  test('module resolution stays live while the parsed config is reused', () => {
+    const root = fixture()
+    expect(isDomainDir(root)).toBe(true)
+    rmSync(join(root, 'schema/index.ts'))
+    expect(isDomainDir(root)).toBe(false)
+    writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
+    expect(isDomainDir(root)).toBe(true)
+    rmSync(join(root, 'application.ts'))
+    expect(resolveApplicationEntry(root)).toBeNull()
   })
 })
