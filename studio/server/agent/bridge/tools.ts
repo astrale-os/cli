@@ -44,14 +44,14 @@ export const BRIDGE_TOOLS = [
   {
     name: 'reply_to_thread',
     description:
-      'Post a concise reply to one comment thread so the user sees it live; only make it longer when the comment genuinely needs the detail. Say what you changed, answer a question, or ask one back. Pass `options` (a short list of concrete choices) to turn the reply into a multiple-choice question the user can pick from (or answer freely). Set resolve=true with a short closeNote ONLY when fully handled — never resolve a question you just asked.',
+      'Append one author reply to a comment thread; the user sees it live in the studio. Existing entries are immutable, so a correction is a new reply. Pass `options` (a short list of concrete choices) to turn the reply into a multiple-choice question the user can pick from or answer freely. Set resolve=true (with a short closeNote) only when the thread is fully handled: a thread you just asked a question in stays open until the user answers.',
     inputSchema: {
       type: 'object',
       properties: {
         commentId: { type: 'string', description: 'the thread id from list_open_threads' },
         text: {
           type: 'string',
-          description: 'your reply (concise — a framing line when offering options)',
+          description: 'your reply; a single framing line when offering options',
         },
         options: {
           type: 'array',
@@ -68,10 +68,14 @@ export const BRIDGE_TOOLS = [
   },
   {
     name: 'resolve_thread',
-    description: 'Mark a comment thread resolved (closed) with an optional closeNote.',
+    description:
+      'Close a comment thread without posting a reply, e.g. after answering it through the conversation or when the user settled it. To answer and close in one step, use reply_to_thread with resolve=true instead. Fails for an unknown commentId.',
     inputSchema: {
       type: 'object',
-      properties: { commentId: { type: 'string' }, closeNote: { type: 'string' } },
+      properties: {
+        commentId: { type: 'string', description: 'the thread id from list_open_threads' },
+        closeNote: { type: 'string', description: 'one-line summary shown on the closed thread' },
+      },
       required: ['commentId'],
       additionalProperties: false,
     },
@@ -80,10 +84,12 @@ export const BRIDGE_TOOLS = [
   {
     name: 'post_progress',
     description:
-      'Post a short progress note shown in the studio activity panel (not tied to a thread).',
+      'Post a short progress note to the studio activity panel, so the user can follow a long turn (a deploy, a multi-step build) while it runs. It is not tied to a thread, is not persisted in any thread, and does not replace the thread replies or the final message.',
     inputSchema: {
       type: 'object',
-      properties: { text: { type: 'string' } },
+      properties: {
+        text: { type: 'string', description: 'one short line; empty text is ignored' },
+      },
       required: ['text'],
       additionalProperties: false,
     },
@@ -105,7 +111,11 @@ export const BRIDGE_TOOLS = [
           type: 'string',
           description: 'the question (one framing line when offering options)',
         },
-        file: { type: 'string' },
+        file: {
+          type: 'string',
+          description:
+            'optional source file the anchored element lives in, to pin the thread to it',
+        },
         options: {
           type: 'array',
           items: { type: 'string' },
