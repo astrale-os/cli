@@ -10,6 +10,13 @@ import type { MergeResult } from './workspace'
 /** Kinds of activity the studio surfaces while a local agent runs a turn. */
 export type AgentEventKind = 'status' | 'thinking' | 'message' | 'tool' | 'reply' | 'error'
 
+/**
+ * Where one tool call stands - ACP's own lifecycle (`ToolCallStatus`): announced
+ * `pending`, `in_progress` while it runs, then settled one way or the other.
+ */
+export const AGENT_TOOL_STATUSES = ['pending', 'in_progress', 'completed', 'failed'] as const
+export type AgentToolStatus = (typeof AGENT_TOOL_STATUSES)[number]
+
 export interface AgentEvent {
   id: string
   ts: string
@@ -19,8 +26,51 @@ export interface AgentEvent {
   tool?: string
   /** for kind:'tool' — a compact target (file path, command, pattern) */
   target?: string
+  /** for kind:'tool' - where the call stands, as the agent last reported it */
+  status?: AgentToolStatus
+  /**
+   * for kind:'tool' - how many times the call's details were recorded. The
+   * details themselves (`AgentToolCall`) never ride the transcript: they are read
+   * on demand, and this number moving is how a reader holding them open knows to
+   * read them again. Absent, the harness recorded none.
+   */
+  revision?: number
   /** for kind:'reply' — the comment id the reply landed on */
   commentId?: string
+}
+
+/**
+ * One thing a tool call gave back, as the agent chose to show it - ACP's
+ * `ToolCallContent`. Text is usually markdown (an agent fences a command's
+ * output); `truncated` says a long one was cut to its head.
+ */
+export type AgentToolContent =
+  | { type: 'text'; text: string; truncated?: boolean }
+  /** a file the call changed: its text before (absent when the call created it) and after */
+  | { type: 'diff'; path: string; oldText?: string; newText: string; truncated?: boolean }
+  /** something named rather than shown - an image, a linked or embedded file - with
+   *  its text when it carried some */
+  | { type: 'resource'; label: string; text?: string; truncated?: boolean }
+
+/**
+ * What one tool call was given and gave back: the detail behind a step, read on
+ * demand from GET /agent/tool-call. Everything here is the agent's own report
+ * over ACP, bounded - a long value keeps its head and says it was cut.
+ */
+export interface AgentToolCall {
+  /** the agent's own words for the call: the command it runs, the file it reads */
+  title: string
+  /** ACP's category for it: read, edit, delete, move, search, execute, think, fetch… */
+  kind?: string
+  status?: AgentToolStatus
+  /** what the tool was given (ACP `rawInput`) */
+  input?: unknown
+  /** what it gave back, as the agent chose to show it (ACP `content`) */
+  content: AgentToolContent[]
+  /** what it gave back verbatim (ACP `rawOutput`) - kept only when `content` shows nothing */
+  output?: unknown
+  /** the files it read or changed, `path` or `path:line` */
+  locations: string[]
 }
 
 /**

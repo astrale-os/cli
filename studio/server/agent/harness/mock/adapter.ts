@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs'
 
-import type { Comment } from '../../../../shared/types'
+import type { AgentToolCall, Comment } from '../../../../shared/types'
 import type { AgentHarness, AgentTurnInput, AgentTurnResult, AskInput, AskResult } from '../adapter'
 
 import { readComments } from '../../../state/comments'
@@ -95,18 +95,65 @@ export class MockHarness implements AgentHarness {
       text: `Reviewing ${open.length} open thread(s) and the current schema.`,
     })
     await sleep(300, input.signal)
-    input.onEvent({
-      kind: 'tool',
-      text: 'Read',
-      tool: 'Read',
-      target: '.domain-studio/comments.json',
-    })
+    // Reported the way an ACP agent reports a call: announced with its input,
+    // then again once it ran, with what it gave back - one step either way.
+    const readCall = (detail: Partial<AgentToolCall>) =>
+      input.onEvent({
+        kind: 'tool',
+        text: 'Read',
+        tool: 'Read',
+        target: '.domain-studio/comments.json',
+        call: {
+          id: 'mock-read',
+          detail: {
+            title: 'Read .domain-studio/comments.json',
+            kind: 'read',
+            input: { file_path: '.domain-studio/comments.json' },
+            content: [],
+            locations: ['.domain-studio/comments.json'],
+            ...detail,
+          },
+        },
+      })
+    readCall({ status: 'in_progress' })
     await sleep(250, input.signal)
+    readCall({
+      status: 'completed',
+      content: [
+        {
+          type: 'text',
+          text: `\`\`\`json\n${JSON.stringify({ open: open.map((comment) => comment.id) }, null, 2)}\n\`\`\``,
+        },
+      ],
+    })
 
     const seed = open[0]?.thread.at(-1)?.text ?? 'note'
     const edit = input.signal.aborted ? null : applyMockDomainEdit(input.root, seed)
     if (edit) {
-      input.onEvent({ kind: 'tool', text: 'Edit', tool: 'Edit', target: edit.file })
+      input.onEvent({
+        kind: 'tool',
+        text: 'Edit',
+        tool: 'Edit',
+        target: edit.file,
+        call: {
+          id: 'mock-edit',
+          detail: {
+            title: `Edit ${edit.file}`,
+            kind: 'edit',
+            status: 'completed',
+            input: { file_path: edit.file, property: edit.prop },
+            content: [
+              {
+                type: 'diff',
+                path: edit.file,
+                oldText: '  props: {',
+                newText: `  props: {\n    /** Added by the agent in response to a studio comment. */\n    ${edit.prop}: z.string().optional(),`,
+              },
+            ],
+            locations: [edit.file],
+          },
+        },
+      })
       await sleep(300, input.signal)
     }
     input.onEvent({

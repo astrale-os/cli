@@ -3,9 +3,10 @@
  *
  * The authoritative run lives on the server; here we mirror it: seed from
  * GET /agent (react-query), then keep it fresh from the SSE stream (`agent-run`
- * replaces the run, `agent-event` appends one activity event). Tabs run
- * independently, so the mirror is keyed by chat id — a turn streaming into a
- * background tab must not overwrite what the foreground one shows.
+ * replaces the run, `agent-event` adds one activity event - or, for a tool call
+ * reported again, replaces its step). Tabs run independently, so the mirror is
+ * keyed by chat id - a turn streaming into a background tab must not overwrite
+ * what the foreground one shows.
  */
 import type { AgentEvent, AgentRun, ChatAttachment } from '@shared/types'
 
@@ -23,7 +24,8 @@ interface AgentLiveState {
   setRun: (run: AgentRun) => void
   /** forget a run this client put up itself — see `pendingRun` */
   dropRun: (chatId: string, runId: string) => void
-  appendEvent: (chatId: string, runId: string, event: AgentEvent) => void
+  /** add one activity event, or bring a step already shown up to date */
+  putEvent: (chatId: string, runId: string, event: AgentEvent) => void
 }
 
 /** How far a run has got; every terminal status ranks the same, and none regresses. */
@@ -38,6 +40,30 @@ const PROGRESS: Record<AgentRun['status'], number> = {
 
 const NO_RUNS: AgentRun[] = []
 
+/** How far a copy of one event has got: a step reported again only ever moves forward. */
+const revisionOf = (event: AgentEvent) => event.revision ?? 0
+
+/**
+ * Two copies of one run's events, as one: the longer list - `preferred` on a tie -
+ * with every step at the furthest revision either copy has seen. Two copies that
+ * are each ahead on something (the stream on new events, a snapshot on a step it
+ * caught settling) must not trade one for the other.
+ */
+export function mergeEvents(preferred: AgentEvent[], other: AgentEvent[]): AgentEvent[] {
+  const [base, rest] = preferred.length >= other.length ? [preferred, other] : [other, preferred]
+  const ahead = new Map<string, AgentEvent>()
+  for (const event of rest) if (event.revision !== undefined) ahead.set(event.id, event)
+  if (!ahead.size) return base
+  let changed = false
+  const merged = base.map((event) => {
+    const further = ahead.get(event.id)
+    if (!further || revisionOf(further) <= revisionOf(event)) return event
+    changed = true
+    return further
+  })
+  return changed ? merged : base
+}
+
 export const useAgentLive = create<AgentLiveState>((set) => ({
   runs: {},
   // merge-forward: the HTTP submit response and the SSE stream race; never let an
@@ -47,7 +73,7 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
     set((s) => {
       const cur = s.runs[run.chatId]
       if (cur && cur.id === run.id) {
-        const events = run.events.length >= cur.events.length ? run.events : cur.events
+        const events = mergeEvents(run.events, cur.events)
         const status = PROGRESS[run.status] >= PROGRESS[cur.status] ? run.status : cur.status
         return { runs: { ...s.runs, [run.chatId]: { ...cur, ...run, events, status } } }
       }
@@ -62,12 +88,17 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       delete runs[chatId]
       return { runs }
     }),
-  appendEvent: (chatId, runId, event) =>
+  putEvent: (chatId, runId, event) =>
     set((s) => {
       const cur = s.runs[chatId]
       if (!cur || cur.id !== runId) return s
-      if (cur.events.some((e) => e.id === event.id)) return s
-      return { runs: { ...s.runs, [chatId]: { ...cur, events: [...cur.events, event] } } }
+      const index = cur.events.findIndex((e) => e.id === event.id)
+      if (index < 0)
+        return { runs: { ...s.runs, [chatId]: { ...cur, events: [...cur.events, event] } } }
+      // the same step reported again: it keeps its place, and only moves forward
+      if (revisionOf(event) <= revisionOf(cur.events[index]!)) return s
+      const events = cur.events.with(index, event)
+      return { runs: { ...s.runs, [chatId]: { ...cur, events } } }
     }),
 }))
 
@@ -197,7 +228,7 @@ export function reconcileRun(live: AgentRun | undefined, stored: AgentRun | null
     ...live,
     ...stored,
     status: PROGRESS[stored.status] > PROGRESS[live.status] ? stored.status : live.status,
-    events: live.events.length >= stored.events.length ? live.events : stored.events,
+    events: mergeEvents(live.events, stored.events),
   }
 }
 

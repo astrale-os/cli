@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type { AgentEvent, MergeResult } from '../../../shared/types'
+import type { AgentStreamEvent } from '../harness/adapter'
 import type { Notify } from '../notify'
 import type { PreparedRun } from './preparation'
 
@@ -8,6 +9,7 @@ import { mergeParsedReply, parseReplyBlock } from '../../state/comments'
 import { chatExists, clearChatSession, recordChatTurn } from '../chats'
 import { emitStudioEvent } from '../notify'
 import { releaseController } from './live-state'
+import { recordToolCall, settleToolCalls } from './tool-calls'
 import { persistRun } from './transcript'
 import { recordRun } from './usage'
 
@@ -79,25 +81,51 @@ export async function completeRun(
     promptSnapshot,
   } = prepared
   const stateRoot = workspace.stateRoot
-  const pushEvent = (event: Omit<AgentEvent, 'id' | 'ts'>) => {
+  const emitEvent = (event: AgentEvent) =>
+    emitStudioEvent(notify, { type: 'agent-event', chatId: chat.id, runId: run.id, event })
+  // where each tool call's step sits in the transcript, by the harness's call id
+  const callSteps = new Map<string, number>()
+  const pushEvent = ({
+    call,
+    ...event
+  }: Omit<AgentEvent, 'id' | 'ts' | 'status' | 'revision'> & Pick<AgentStreamEvent, 'call'>) => {
     let text = event.text
     if (event.kind === 'message') {
       text = stripMachineState(text)
       if (!text) return
+    }
+    const status = call?.detail.status
+    const step = call ? callSteps.get(call.id) : undefined
+    const known = step === undefined ? undefined : run.events[step]
+    if (call && step !== undefined && known) {
+      // a call reported again is the same step, now knowing more: it keeps its
+      // place and its id, and the reader holding its details open reads them again
+      const updated: AgentEvent = {
+        ...known,
+        ...event,
+        text,
+        ...(status ? { status } : {}),
+        revision: (known.revision ?? 0) + 1,
+      }
+      run.events[step] = updated
+      recordToolCall(run, updated.id, call.detail)
+      emitEvent(updated)
+      return
     }
     const stored: AgentEvent = {
       id: randomUUID(),
       ts: new Date().toISOString(),
       ...event,
       text,
+      ...(status ? { status } : {}),
+      ...(call ? { revision: 1 } : {}),
+    }
+    if (call) {
+      callSteps.set(call.id, run.events.length)
+      recordToolCall(run, stored.id, call.detail)
     }
     run.events.push(stored)
-    emitStudioEvent(notify, {
-      type: 'agent-event',
-      chatId: chat.id,
-      runId: run.id,
-      event: stored,
-    })
+    emitEvent(stored)
   }
 
   let bridgeReplies = 0
@@ -234,7 +262,10 @@ export async function completeRun(
     recordRun(stateRoot, run)
     // The transcript did not: a turn settling after its tab was closed would
     // otherwise recreate the files `closeChat` just removed.
-    if (chatExists(stateRoot, chat.id)) persistRun(stateRoot, run, true)
+    const kept = chatExists(stateRoot, chat.id)
+    if (kept) persistRun(stateRoot, run, true)
+    // before the frame below: a reader it prompts to open a step finds it on disk
+    settleToolCalls(stateRoot, run.id, kept)
     emitStudioEvent(notify, { type: 'agent-run', chatId: chat.id, run })
     // The agent may have edited or answered anywhere in the workspace: every domain's
     // threads are worth a second look now.

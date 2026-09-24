@@ -12,6 +12,7 @@ import type {
   AgentAccess,
   AgentEffort,
   AgentEventKind,
+  AgentToolCall,
   HarnessCapabilities,
   HarnessLoadout,
 } from '../../../shared/types'
@@ -22,6 +23,12 @@ export interface AgentStreamEvent {
   text: string
   tool?: string
   target?: string
+  /**
+   * for kind:'tool' - the call this reports on, and everything known about it so
+   * far. An agent reports a call again each time it learns more (its input, then
+   * its output): every report carrying the same `id` updates one step.
+   */
+  call?: { id: string; detail: AgentToolCall }
 }
 
 /** Harness-neutral description of one stdio MCP server. Each harness is

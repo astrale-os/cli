@@ -15,7 +15,7 @@ export type StudioEventEffect =
   | { type: 'invalidate-agent-history'; chatId?: string }
   | { type: 'invalidate-chats' }
   | { type: 'invalidate-datasets'; domainId: string }
-  | { type: 'append-agent-event'; chatId: string; runId: string; event: AgentEvent }
+  | { type: 'put-agent-event'; chatId: string; runId: string; event: AgentEvent }
   | { type: 'synchronize-agent-run'; run: AgentRun }
 
 /** Pure policy table for translating one server event into client synchronizations. */
@@ -36,7 +36,7 @@ export function studioEventEffects(event: StudioEvent): StudioEventEffect[] {
     case 'agent-event':
       return [
         {
-          type: 'append-agent-event',
+          type: 'put-agent-event',
           chatId: event.chatId,
           runId: event.runId,
           event: event.event,
@@ -80,7 +80,7 @@ export function useStudioEventSync(): void {
   const queryClient = useQueryClient()
   const invalidateDomain = useInvalidateDomain()
   const setRun = useAgentLive((state) => state.setRun)
-  const appendEvent = useAgentLive((state) => state.appendEvent)
+  const putEvent = useAgentLive((state) => state.putEvent)
 
   const onEvent = useCallback(
     (event: StudioEvent) => {
@@ -108,8 +108,8 @@ export function useStudioEventSync(): void {
           case 'invalidate-datasets':
             void queryClient.invalidateQueries({ queryKey: qk.datasets(effect.domainId) })
             break
-          case 'append-agent-event':
-            appendEvent(effect.chatId, effect.runId, effect.event)
+          case 'put-agent-event':
+            putEvent(effect.chatId, effect.runId, effect.event)
             break
           case 'synchronize-agent-run':
             setRun(effect.run)
@@ -117,7 +117,7 @@ export function useStudioEventSync(): void {
         }
       }
     },
-    [appendEvent, invalidateDomain, queryClient, setRun],
+    [invalidateDomain, putEvent, queryClient, setRun],
   )
 
   useEventStream(onEvent)

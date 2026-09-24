@@ -211,3 +211,52 @@ test('a finished turn without any work shows no step line', () => {
   expect(html).toContain('Hello.')
   expect(html).not.toContain('aria-expanded')
 })
+
+test('a call the agent described is shown in its own words, and says where it stands', () => {
+  const { steps } = splitTurn(
+    run([
+      event('tool', 'pnpm test', {
+        tool: 'execute',
+        target: 'pnpm test',
+        status: 'in_progress',
+        revision: 2,
+      }),
+      event('tool', 'Read', { tool: 'Read', target: 'schema/user.ts' }),
+    ]),
+  )
+
+  expect(steps).toEqual([
+    {
+      kind: 'tool',
+      id: 'tool-pnpm test',
+      tool: 'execute',
+      detail: 'pnpm test',
+      title: 'pnpm test',
+      status: 'in_progress',
+      revision: 2,
+    },
+    // no words beyond the tool's name, no details recorded: the tool and its target
+    { kind: 'tool', id: 'tool-Read', tool: 'Read', detail: 'schema/user.ts' },
+  ])
+})
+
+test('the toggle sits right after the words it folds, running or done', () => {
+  const whileRunning = renderToStaticMarkup(
+    <AgentTurn run={run([event('tool', 'Edit', { tool: 'Edit', target: 'schema/user.ts' })])} />,
+  )
+  const onceDone = renderToStaticMarkup(
+    <AgentTurn
+      run={done([
+        event('tool', 'Read', { tool: 'Read' }),
+        event('message', 'The Users page is in place.'),
+      ])}
+    />,
+  )
+
+  for (const html of [whileRunning, onceDone]) {
+    const trigger = html.slice(html.indexOf('aria-expanded'), html.indexOf('</button>'))
+    // the chevron is the trigger's last child, and nothing pushes it across the panel
+    expect(trigger.trimEnd()).toMatch(/lucide-chevron-right[^>]*><path[^>]*><\/path><\/svg>$/)
+    expect(trigger).not.toContain('ml-auto')
+  }
+})

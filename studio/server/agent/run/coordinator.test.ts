@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AgentRun } from '../../../shared/types'
+import type { AgentRun, StudioEvent } from '../../../shared/types'
 
 import { registerDomain, unregisterDomain, type DomainHandle } from '../../domain'
 import { readComments, upsertComment } from '../../state/comments'
@@ -34,6 +34,7 @@ import {
   editQueued,
   forgetChatOrigin,
   getSnapshot,
+  getToolCall,
   listChats,
   moveQueued,
   openChat,
@@ -195,6 +196,47 @@ describe.serial('agent runner invariants', () => {
 
     unwrap(closeChat(stored.id))
     expect(attachmentOf(stored.id, image.id)).toBeUndefined()
+  })
+
+  test('a tool call is one step, its details are read on demand, and they leave with the chat', async () => {
+    useMock()
+    const handle = fixture()
+    const frames: StudioEvent[] = []
+    await submitRun((event) => frames.push(event), { message: 'read the threads' })
+    const run = await waitForTerminal(handle.id)
+    const chat = chatId(handle)
+
+    // announced, then settled: two reports of one call are one step, as it ended
+    const reads = run.events.filter((event) => event.kind === 'tool' && event.tool === 'Read')
+    expect(reads).toHaveLength(1)
+    const read = reads[0]!
+    expect(read).toMatchObject({ status: 'completed', revision: 2 })
+    // and every report reached the client under that step's id
+    expect(
+      frames.flatMap((frame) =>
+        frame.type === 'agent-event' && frame.event.id === read.id ? [frame.event.status] : [],
+      ),
+    ).toEqual(['in_progress', 'completed'])
+
+    // the details never ride the transcript: they are read when a step is opened
+    const root = agentWorkspace().stateRoot
+    const stored = resolveChat(root, 'mock', chat)!
+    expect(JSON.stringify(readRunHistory(root, stored))).not.toContain('file_path')
+    expect(getToolCall(chat, run.id, read.id)).toMatchObject({
+      title: 'Read .domain-studio/comments.json',
+      kind: 'read',
+      status: 'completed',
+      input: { file_path: '.domain-studio/comments.json' },
+    })
+    // only through the chat the run belongs to, and only by the ids a run has
+    const other = unwrap(openChat({}))
+    expect(getToolCall(other.id, run.id, read.id)).toBeUndefined()
+    expect(getToolCall(chat, '../runs/x', read.id)).toBeUndefined()
+    expect(getToolCall(chat, run.id, '__proto__')).toBeUndefined()
+
+    expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(true)
+    unwrap(closeChat(chat))
+    expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(false)
   })
 
   test('refuses an image the chat does not hold, and a file that is not an image', async () => {

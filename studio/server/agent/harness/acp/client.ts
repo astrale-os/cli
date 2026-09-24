@@ -2,6 +2,7 @@ import * as acp from '@agentclientprotocol/sdk'
 import { accessSync, constants, readFileSync } from 'node:fs'
 import { delimiter, isAbsolute, resolve } from 'node:path'
 
+import type { AgentToolCall, AgentToolContent } from '../../../../shared/types'
 import type {
   AgentTurnImage,
   AgentTurnInput,
@@ -140,7 +141,121 @@ function stderrSuffix(stderr: string): string {
   return text ? `\n\nstderr (tail):\n${text.slice(-2000)}` : ''
 }
 
-function toolTarget(update: acp.ToolCall | acp.ToolCallUpdate): string {
+/**
+ * Everything an agent has reported about one tool call. ACP announces a call
+ * once (`tool_call`) and then sends only what changed (`tool_call_update`): the
+ * command once its input has streamed in, the output and status once it ran.
+ */
+export interface AcpToolCallState {
+  title?: string
+  name?: string
+  kind?: acp.ToolKind
+  status?: acp.ToolCallStatus
+  rawInput?: unknown
+  rawOutput?: unknown
+  content?: acp.ToolCallContent[]
+  locations?: acp.ToolCallLocation[]
+}
+
+const TOOL_CALL_FIELDS = [
+  'title',
+  'name',
+  'kind',
+  'status',
+  'rawInput',
+  'rawOutput',
+  'content',
+  'locations',
+] as const satisfies readonly (keyof AcpToolCallState)[]
+
+/** Whether a report changed anything a reader sees - a `_meta`-only update does not. */
+function toolCallChanged(before: AcpToolCallState, after: AcpToolCallState): boolean {
+  return TOOL_CALL_FIELDS.some((field) => before[field] !== after[field])
+}
+
+/** Fold one report into what was known; a field it leaves out, or sends as null, is unchanged. */
+export function foldToolCall(
+  known: AcpToolCallState | undefined,
+  update: acp.ToolCall | acp.ToolCallUpdate,
+): AcpToolCallState {
+  const next: AcpToolCallState = { ...known }
+  if (update.title) next.title = update.title
+  if (update.name) next.name = update.name
+  if (update.kind) next.kind = update.kind
+  if (update.status) next.status = update.status
+  if (update.rawInput !== undefined && update.rawInput !== null) next.rawInput = update.rawInput
+  if (update.rawOutput !== undefined && update.rawOutput !== null) next.rawOutput = update.rawOutput
+  // replaced whole, as ACP defines them - an empty list clears what was there
+  if (update.content) next.content = update.content
+  if (update.locations) next.locations = update.locations
+  return next
+}
+
+function toolContent(content: acp.ToolCallContent): AgentToolContent[] {
+  switch (content.type) {
+    case 'diff':
+      return [
+        {
+          type: 'diff',
+          path: content.path,
+          ...(typeof content.oldText === 'string' ? { oldText: content.oldText } : {}),
+          newText: content.newText,
+        },
+      ]
+    // Studio lends the agent no terminal: a command's output reaches it as text
+    case 'terminal':
+      return []
+    case 'content': {
+      const block = content.content
+      switch (block.type) {
+        case 'text':
+          return block.text ? [{ type: 'text', text: block.text }] : []
+        case 'image':
+          return [{ type: 'resource', label: block.uri ?? `Image (${block.mimeType})` }]
+        case 'audio':
+          return [{ type: 'resource', label: `Audio (${block.mimeType})` }]
+        case 'resource_link':
+          return [{ type: 'resource', label: block.uri }]
+        case 'resource': {
+          const resource = block.resource
+          return [
+            {
+              type: 'resource',
+              label: resource.uri,
+              ...('text' in resource && typeof resource.text === 'string'
+                ? { text: resource.text }
+                : {}),
+            },
+          ]
+        }
+        default:
+          return []
+      }
+    }
+    default:
+      return []
+  }
+}
+
+/** A call as Studio keeps it: harness-neutral, and bounded by the store that keeps it. */
+export function toolCallDetail(state: AcpToolCallState): AgentToolCall {
+  const content = (state.content ?? []).flatMap(toolContent)
+  return {
+    title: state.title ?? state.name ?? state.kind ?? 'Tool',
+    ...(state.kind ? { kind: state.kind } : {}),
+    ...(state.status ? { status: state.status } : {}),
+    ...(state.rawInput === undefined ? {} : { input: state.rawInput }),
+    content,
+    // the verbatim result is the fallback: what the agent chose to show says it
+    // better, without the notes it only meant for the model
+    ...(content.length || state.rawOutput === undefined ? {} : { output: state.rawOutput }),
+    locations: (state.locations ?? []).map((location) =>
+      location.line ? `${location.path}:${location.line}` : location.path,
+    ),
+  }
+}
+
+function toolTarget(update: AcpToolCallState): string {
   const location = update.locations?.[0]
   if (location) return `${location.path}${location.line ? `:${location.line}` : ''}`
   const input = update.rawInput
@@ -181,6 +296,9 @@ function permissionResponse(params: acp.RequestPermissionRequest): acp.RequestPe
  * Folds the agent's `session/update` stream into Studio's activity events and the
  * reply text. A new `messageId` starts a new paragraph: the previous message is
  * flushed as its own event and the reply gets a blank line between the two.
+ *
+ * A tool call is one event however many times it is reported: every update is
+ * folded into what was already known and re-emitted under the same call id.
  */
 function transcript(
   onEvent: AgentTurnInput['onEvent'] | undefined,
@@ -188,15 +306,40 @@ function transcript(
 ) {
   let text = ''
   let pendingMessage = ''
-  let pendingMessageId: string | undefined
+  let lastMessageId: string | undefined
   let costUsd: number | undefined
-  const toolCalls = new Set<string>()
+  const toolCalls = new Map<string, AcpToolCallState>()
+  const shown = new Set<string>()
 
   const flush = () => {
     const message = pendingMessage.trim()
     if (message && onEvent) onEvent({ kind: 'message', text: message })
     pendingMessage = ''
-    pendingMessageId = undefined
+  }
+
+  const reportTool = (update: acp.ToolCall | acp.ToolCallUpdate) => {
+    const known = toolCalls.get(update.toolCallId)
+    const state = foldToolCall(known, update)
+    toolCalls.set(update.toolCallId, state)
+    // an update for a call never announced cannot be placed until it names the call
+    if (!state.title && !state.name) return
+    // nothing new to show - claude-agent-acp follows every call with a `_meta`-only
+    // update from its post-tool hook
+    if (known && shown.has(update.toolCallId) && !toolCallChanged(known, state)) return
+    if (!shown.has(update.toolCallId)) {
+      shown.add(update.toolCallId)
+      // what the agent said before calling the tool was said before it: the
+      // narration goes into the transcript first, in the order it happened
+      flush()
+    }
+    const tool = state.name ?? state.kind ?? state.title ?? 'tool'
+    onEvent?.({
+      kind: 'tool',
+      text: state.title ?? tool,
+      tool,
+      target: toolTarget(state),
+      call: { id: update.toolCallId, detail: toolCallDetail(state) },
+    })
   }
 
   const handle = (notification: acp.SessionNotification) => {
@@ -204,19 +347,14 @@ function transcript(
     switch (update.sessionUpdate) {
       case 'agent_message_chunk':
         if (update.content.type !== 'text' || !update.content.text) return
-        if (
-          pendingMessage &&
-          update.messageId &&
-          pendingMessageId &&
-          update.messageId !== pendingMessageId
-        ) {
+        if (update.messageId && lastMessageId && update.messageId !== lastMessageId) {
           flush()
           if (text && !text.endsWith('\n')) {
             text += '\n\n'
             onDelta?.('\n\n')
           }
         }
-        pendingMessageId = update.messageId ?? pendingMessageId
+        lastMessageId = update.messageId ?? lastMessageId
         pendingMessage += update.content.text
         text += update.content.text
         onDelta?.(update.content.text)
@@ -225,29 +363,10 @@ function transcript(
         if (update.content.type === 'text' && update.content.text.trim())
           onEvent?.({ kind: 'thinking', text: update.content.text.trim() })
         return
-      case 'tool_call': {
-        toolCalls.add(update.toolCallId)
-        const tool = update.name ?? update.kind ?? update.title
-        onEvent?.({
-          kind: 'tool',
-          text: update.title,
-          tool,
-          target: toolTarget(update),
-        })
+      case 'tool_call':
+      case 'tool_call_update':
+        reportTool(update)
         return
-      }
-      case 'tool_call_update': {
-        if (toolCalls.has(update.toolCallId) || (!update.title && !update.name)) return
-        toolCalls.add(update.toolCallId)
-        const tool = update.name ?? update.kind ?? update.title ?? 'tool'
-        onEvent?.({
-          kind: 'tool',
-          text: update.title ?? tool,
-          tool,
-          target: toolTarget(update),
-        })
-        return
-      }
       case 'plan': {
         const plan = planText(update.entries)
         if (plan) onEvent?.({ kind: 'status', text: plan })

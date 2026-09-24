@@ -3,6 +3,7 @@ import type { StoredChat } from '../chats'
 import {
   AGENT_ACCESS_LEVELS,
   AGENT_EFFORT_LEVELS,
+  AGENT_TOOL_STATUSES,
   type AgentEvent,
   type AgentPromptSnapshot,
   type AgentRun,
@@ -11,6 +12,7 @@ import {
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
 import { listState, readJson, removeState, writeJson } from '../../state/store'
 import { decodeAttachments } from '../attachments'
+import { deleteToolCalls } from './tool-calls'
 
 /**
  * Transcripts live beside the machine-global chats they belong to in the Studio home:
@@ -47,6 +49,8 @@ function decodeAgentEvent(value: unknown): AgentEvent | undefined {
     return undefined
   const tool = asString(record?.tool)
   const target = asString(record?.target)
+  const status = AGENT_TOOL_STATUSES.find((candidate) => candidate === record?.status)
+  const revision = asFiniteNumber(record?.revision)
   const commentId = asString(record?.commentId)
   return {
     id,
@@ -55,6 +59,8 @@ function decodeAgentEvent(value: unknown): AgentEvent | undefined {
     text,
     ...(tool === undefined ? {} : { tool }),
     ...(target === undefined ? {} : { target }),
+    ...(status === undefined ? {} : { status }),
+    ...(revision === undefined || !Number.isInteger(revision) || revision < 1 ? {} : { revision }),
     ...(commentId === undefined ? {} : { commentId }),
   }
 }
@@ -247,7 +253,12 @@ export function readChatTranscript(root: string, chat: StoredChat): AgentRun[] {
 
 /** Erase a closed tab's transcripts; a deleted chat leaves nothing to re-read. */
 export function deleteChatRuns(root: string, chat: StoredChat): void {
-  for (const run of chatRuns(root, chat)) {
+  const runs = chatRuns(root, chat)
+  deleteToolCalls(
+    root,
+    runs.map((run) => run.id),
+  )
+  for (const run of runs) {
     try {
       removeState(root, runFile(run.id))
     } catch {

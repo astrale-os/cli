@@ -32,6 +32,7 @@ import {
   getHistory,
   getSessionId,
   getSnapshot,
+  getToolCall,
   listChats,
   moveQueued,
   openChat,
@@ -268,6 +269,15 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
   }
   if (rest === '/agent/history' && req.method === 'GET')
     return chatJson(getHistory(chatParam, Number(url.searchParams.get('limit')) || undefined))
+  // A step's details are read when someone opens it, never with the transcript.
+  if (rest === '/agent/tool-call' && req.method === 'GET') {
+    const call = getToolCall(
+      chatParam,
+      url.searchParams.get('run') ?? '',
+      url.searchParams.get('event') ?? '',
+    )
+    return call ? json(call) : notFound()
+  }
   if (rest === '/agent/cancel' && req.method === 'POST') return json({ ok: cancelRun(chatBody) })
   if (rest === '/agent/session') {
     if (req.method === 'GET') return json(getSessionId(chatParam))
