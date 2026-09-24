@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.120](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.119...cli/v1.0.0-beta.120) (2026-09-24)
+
+
+### Features
+
+* **studio:** add an opt-in onboarding tour ([#551](https://github.com/astrale-os/cli/issues/551)) ([271c21b](https://github.com/astrale-os/cli/commit/271c21bd6cc86b4e1744ba10b48636592363b935))
+
+
+### Bug Fixes
+
+* **studio:** imported frames nobody moved follow the domain importing them ([#545](https://github.com/astrale-os/cli/issues/545)) ([f04db3a](https://github.com/astrale-os/cli/commit/f04db3adcc2984da2ced742958e419f1ddc830da))
+* **studio:** show the bottom dock opened in the dock picker ([#549](https://github.com/astrale-os/cli/issues/549)) ([9c58ae6](https://github.com/astrale-os/cli/commit/9c58ae62882f1ca7c12f06c14315b019fa10f97d))
+* **studio:** tighten the agent prompt and bridge tool contracts ([#548](https://github.com/astrale-os/cli/issues/548)) ([cbf7bba](https://github.com/astrale-os/cli/commit/cbf7bba16c097acbc9615e828ec4453a1e0749cc))
+
 ## [1.0.0-beta.119](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.118...cli/v1.0.0-beta.119) (2026-09-23)
 
 
