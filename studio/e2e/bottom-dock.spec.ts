@@ -19,6 +19,8 @@ const BAR_CEILING = 120
 const ONE_LINE = 60
 /** The one chat the stubbed server has. */
 const CHAT_ID = 'chat-live'
+/** The fixture domain, as the paperclip's list names it. */
+const FIXTURE_ORIGIN = 'crm.studio-demo.astrale.ai'
 
 const dock = (page: Page) => page.getByTestId('agent-dock')
 const composer = (page: Page) => page.locator('[data-agent-composer]')
@@ -122,6 +124,8 @@ test('at rest the bar is one line and carries nothing it cannot act on', async (
 
   expect(await dockHeight(page)).toBeLessThan(ONE_LINE)
   await expect(page.getByRole('button', { name: 'Attach a document' })).toBeVisible()
+  // one clip: an image comes in by pasting or dropping it, not by a second button
+  await expect(page.getByRole('button', { name: 'Add an image' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open comments' })).toBeVisible()
   // nothing typed is nothing to send, and the model is a question for a chat you
   // are actually in — neither earns a place on a resting line
@@ -179,12 +183,13 @@ test('the paperclip chooses a domain, then shows what it took', async ({ page })
   await openDock(page)
 
   // A multi-domain workspace has no implicit attachment owner. The paperclip asks once,
-  // then the chosen domain's button opens the native picker.
+  // then the chosen domain's row opens the native picker - with no second clip on it.
   await page.getByRole('button', { name: 'Attach a document to a domain' }).click()
   await expect(page.getByText('Attach to domain')).toBeVisible()
+  await expect(page.getByRole('dialog').locator('svg.lucide-paperclip')).toHaveCount(0)
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: `Attach a document to ${FIXTURE_ID}` }).click(),
+    page.getByRole('button', { name: `Attach a document to ${FIXTURE_ORIGIN}` }).click(),
   ])
 
   await chooser.setFiles({
@@ -429,7 +434,7 @@ test('the comments tab shows threads alone, and gives the draft back on the way 
   await page.getByRole('button', { name: 'Attach a document to a domain' }).click()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: `Attach a document to ${FIXTURE_ID}` }).click(),
+    page.getByRole('button', { name: `Attach a document to ${FIXTURE_ORIGIN}` }).click(),
   ])
   await chooser.setFiles({
     name: 'notes.md',
