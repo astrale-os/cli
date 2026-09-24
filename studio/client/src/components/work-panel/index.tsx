@@ -31,7 +31,7 @@ const SIDES: { side: PanelSide; icon: typeof PanelLeft; label: string; hint: str
     side: 'bottom',
     icon: PanelBottom,
     label: 'Bottom',
-    hint: 'Just a composer under the view — the chat opens in the middle',
+    hint: 'A chat floating over the bottom of the view',
   },
   { side: 'right', icon: PanelRight, label: 'Right', hint: 'A column right of the view' },
 ]
@@ -753,15 +753,13 @@ function DockPicker() {
 }
 
 /** A miniature of the layout: the filled part is where the panel goes. Bottom shows
- *  what it really costs — a bar, with the chat floating clear of it. */
+ *  the dock opened, one block like the columns: centred, and clear of the bottom
+ *  edge, since it floats over the view rather than docking to it. */
 function DockPreview({ side }: { side: PanelSide }) {
   if (side === 'bottom') {
     return (
       <span className="relative block h-8 w-11 overflow-hidden rounded border bg-card">
-        {/* the conversation, floating clear of the view */}
-        <span className="absolute left-1/2 top-[7px] h-3 w-5 -translate-x-1/2 rounded-[3px] border border-primary/50 bg-primary/25" />
-        {/* the bar, and all this layout costs */}
-        <span className="absolute inset-x-1 bottom-1 h-1 rounded-full bg-primary/60" />
+        <span className="absolute inset-x-[7px] bottom-[3px] h-4 rounded-[3px] bg-primary/60" />
       </span>
     )
   }
