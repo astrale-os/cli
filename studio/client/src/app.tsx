@@ -22,6 +22,7 @@ import { CommentModeOverlay } from '@/components/comment-mode'
 import { NewDomainDialog } from '@/components/create-domain'
 import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { Tour } from '@/components/tour'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
 import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
@@ -81,6 +82,7 @@ function SectionRouter({
 function IconAction({
   label,
   shortcut,
+  tour,
   active,
   disabled,
   onClick,
@@ -88,6 +90,8 @@ function IconAction({
 }: {
   label: string
   shortcut?: string
+  /** The tour's handle on this action — see `components/tour.tsx`. */
+  tour?: string
   active?: boolean
   disabled?: boolean
   onClick: () => void
@@ -100,6 +104,7 @@ function IconAction({
           type="button"
           aria-label={label}
           aria-pressed={active}
+          data-tour={tour}
           disabled={disabled}
           onClick={onClick}
           className={cn(
@@ -214,7 +219,7 @@ export function App() {
           </div>
 
           {/* where you are */}
-          <nav className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+          <nav data-tour="sections" className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
             {NAV.map((n) => {
               const Icon = n.icon
               const active = section === n.key
@@ -253,6 +258,7 @@ export function App() {
             <IconAction
               label="Comment mode"
               shortcut="C"
+              tour="comment"
               active={commentMode}
               onClick={() => toggleCommentMode()}
             >
@@ -267,7 +273,9 @@ export function App() {
             {!panelOpen && panelSide !== 'bottom' && (
               <>
                 <span className="mx-1 h-4 w-px bg-border" />
-                <AgentSubmitButton />
+                <span data-tour="agent" className="contents">
+                  <AgentSubmitButton />
+                </span>
               </>
             )}
           </div>
@@ -303,6 +311,7 @@ export function App() {
       <AskLayer />
       <SettingsDialog />
       <NewDomainDialog />
+      <Tour />
     </TooltipProvider>
   )
 }

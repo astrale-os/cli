@@ -168,6 +168,8 @@ interface UIState {
   /** The new-domain composer, centred over everything: a name, a first message,
    *  and the domain that does not exist yet between them. */
   newDomainOpen: boolean
+  /** The onboarding tour. It never opens by itself: Settings and ⌘K start it. */
+  tourOpen: boolean
   /** A policy another section asked Tests to open on its demo data; Tests takes it and clears it. */
   probePolicy: string | null
   setTheme: (theme: Theme) => void
@@ -219,6 +221,7 @@ interface UIState {
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
   setNewDomainOpen: (b: boolean) => void
+  setTourOpen: (b: boolean) => void
 }
 
 /** This chat's draft, or what was typed before there was a chat to key it by. */
@@ -278,6 +281,7 @@ export const useUI = create<UIState>((set) => ({
   paletteOpen: false,
   settingsOpen: false,
   newDomainOpen: false,
+  tourOpen: false,
   probePolicy: null,
   openPolicy: (probePolicy, readerDomainId) => {
     set({
@@ -446,6 +450,7 @@ export const useUI = create<UIState>((set) => ({
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setNewDomainOpen: (newDomainOpen) => set({ newDomainOpen }),
+  setTourOpen: (tourOpen) => set({ tourOpen }),
 }))
 
 /** The small persistent projection of the UI store; transient selections stay in memory. */

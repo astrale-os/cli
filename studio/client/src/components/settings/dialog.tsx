@@ -22,6 +22,7 @@ import { resolveAgentAccess } from './agent-access'
 import { AppearanceSettings } from './appearance'
 import { generalSettingsPatch, SettingsFields } from './fields'
 import { HarnessGatewaySettings } from './gateway'
+import { HelpSettings } from './help'
 
 interface SettingsSaveInput {
   settings: StudioSettings
@@ -111,6 +112,7 @@ export function SettingsDialog() {
           <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
             <AppearanceSettings />
             <AgentSettings harness={harness} />
+            <HelpSettings />
             <CollapsibleContent
               forceMount
               className="overflow-hidden data-[state=open]:animate-in data-[state=closed]:hidden"
