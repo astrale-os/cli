@@ -11,6 +11,7 @@ const STUDIO_ROOT = resolve(SHARED_ROOT, '..')
 const TARGET_BARREL_EXPORTS = [
   'AGENT_ACCESS_LEVELS',
   'AGENT_EFFORT_LEVELS',
+  'AGENT_TOOL_STATUSES',
   'AgentAccess',
   'AgentEffort',
   'AgentModelPreference',
@@ -23,6 +24,9 @@ const TARGET_BARREL_EXPORTS = [
   'AgentSessionInfo',
   'AgentSubmitResult',
   'AgentSystemPromptInfo',
+  'AgentToolCall',
+  'AgentToolContent',
+  'AgentToolStatus',
   'AgentUsage',
   'AnchorKind',
   'AnchorRef',

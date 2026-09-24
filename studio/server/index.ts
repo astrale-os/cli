@@ -8,7 +8,7 @@
  * Boots a Bun HTTP server: serves the built SPA, the JSON API, and the SSE
  * stream; watches each domain's files for live re-render.
  */
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import { setBridgePort } from './agent/bridge/grant'
@@ -18,6 +18,7 @@ import { resolveTarget } from './detect'
 import { allDomains } from './domain'
 import { bootDomain } from './lifecycle'
 import { broadcast, sseResponse } from './sse'
+import { staticFiles } from './static'
 import { initWorkspaceState, stoppers } from './workspace-state'
 import { watchWorkspace } from './workspace-watch'
 
@@ -127,70 +128,7 @@ const DIST = process.env.DOMAIN_STUDIO_DIST || join(import.meta.dir, '..', 'clie
 const DEV = process.env.DOMAIN_STUDIO_DEV === '1'
 const VITE = process.env.VITE_URL || 'http://localhost:5173'
 
-/**
- * Gzip the text assets once and keep the result.
- *
- * The client ships ~1.2 MB of JavaScript and CSS. Their URLs are content-hashed
- * and therefore immutable, so one compression per process serves every reload,
- * every tab, and — the case that actually hurts — every browser reaching the
- * studio through a tunnel rather than loopback.
- */
-const COMPRESSIBLE = /\.(?:js|css|html|json|svg|map)$/u
-const gzipped = new Map<string, ArrayBuffer>()
-
-function acceptsGzip(req: Request): boolean {
-  return (req.headers.get('accept-encoding') ?? '').toLowerCase().includes('gzip')
-}
-
-function staticBody(file: string, req: Request): { body: BodyInit; encoding?: string } {
-  if (!acceptsGzip(req) || !COMPRESSIBLE.test(file)) return { body: Bun.file(file) }
-  let held = gzipped.get(file)
-  if (!held) {
-    try {
-      const packed = Bun.gzipSync(readFileSync(file))
-      held = packed.buffer.slice(packed.byteOffset, packed.byteOffset + packed.byteLength)
-      gzipped.set(file, held)
-    } catch {
-      return { body: Bun.file(file) } // unreadable / already streaming fine
-    }
-  }
-  return { body: held, encoding: 'gzip' }
-}
-
-function staticResponse(file: string, req: Request, headers: Record<string, string>): Response {
-  const { body, encoding } = staticBody(file, req)
-  return new Response(body, {
-    headers: {
-      ...headers,
-      ...(encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {}),
-    },
-  })
-}
-
-function serveStatic(pathname: string, req: Request): Response {
-  const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '')
-  const file = join(DIST, rel)
-  if (existsSync(file) && !file.endsWith('/') && rel !== 'index.html') {
-    // Vite emits content-hashed asset names (index-<hash>.js), so a given URL is
-    // immutable — cache it forever. A rebuild produces a NEW name, and the
-    // never-cached shell below points the browser at it.
-    return staticResponse(file, req, {
-      'cache-control': 'public, max-age=31536000, immutable',
-      'content-type': Bun.file(file).type,
-    })
-  }
-  const index = join(DIST, 'index.html')
-  if (existsSync(index)) {
-    // NEVER cache the HTML shell: it references the CURRENT hashed bundle. A stale
-    // shell would point at an asset a later build deleted → 404 → the app never
-    // boots and the page "loads forever". no-store guarantees every load is fresh.
-    return staticResponse(index, req, { 'content-type': 'text/html', 'cache-control': 'no-store' })
-  }
-  return new Response(
-    'client not built — run `vite build` (or set DOMAIN_STUDIO_DEV=1 for the Vite dev server)',
-    { status: 500 },
-  )
-}
+const serveStatic = staticFiles(DIST)
 
 // Bind to loopback by default. Studio can trigger a LOCAL harness that edits code
 // and runs commands with the configured access level — exposing the trigger on

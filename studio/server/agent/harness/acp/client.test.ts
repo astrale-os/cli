@@ -3,8 +3,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { AgentStreamEvent } from '../adapter'
+
 import { AcpClaudeHarness } from './claude'
-import { errorText } from './client'
+import { errorText, foldToolCall, toolCallDetail } from './client'
 import { AcpCodexHarness } from './codex'
 
 const roots: string[] = []
@@ -201,6 +203,50 @@ function handle(message) {
         size: 200000,
         cost: { amount: 0.01, currency: 'USD' },
       })
+      if (mode === 'tools') {
+        // what claude-agent-acp sends for one Bash call: announced before its input
+        // has streamed in, refined with the command, then settled with the output
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'narration',
+          content: { type: 'text', text: 'I run the tests.' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tool-2',
+          title: 'Terminal',
+          kind: 'execute',
+          status: 'pending',
+          rawInput: {},
+          content: [],
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tool-2',
+          title: 'pnpm test',
+          kind: 'execute',
+          rawInput: { command: 'pnpm test', description: 'Run the suite' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tool-2',
+          status: 'completed',
+          rawOutput: '12 pass',
+          content: [{ type: 'content', content: { type: 'text', text: '12 pass' } }],
+        })
+        // its post-tool hook then reports the call once more, changing nothing shown
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tool-2',
+          _meta: { claudeCode: { toolName: 'Bash', toolResponse: { stdout: '12 pass' } } },
+        })
+        // an update for a call nobody announced, naming nothing: nothing to show
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'stray',
+          status: 'completed',
+        })
+      }
       update(params.sessionId, {
         sessionUpdate: 'agent_message_chunk',
         messageId: 'answer',
@@ -408,6 +454,92 @@ describe('ACP harness adapter', () => {
     expect(loadout.ok).toBe(true)
     expect(loadout.efforts).toBeUndefined()
     expect(loadout.effort).toBeUndefined()
+  })
+
+  test('folds every report of one tool call into one step that carries its details', async () => {
+    const root = temporaryRoot('studio-acp-tools-')
+    const events: AgentStreamEvent[] = []
+    const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
+
+    const result = await harness.run({
+      root,
+      prompt: 'run the tests',
+      env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: 'tools' },
+      signal: new AbortController().signal,
+      onEvent: (event) => events.push(event),
+    })
+
+    expect(result.finalText).toBe('I run the tests.\n\nHello world')
+    const reports = events.filter((event) => event.call?.id === 'tool-2')
+    // announced, refined with its command, settled with its output - and a last
+    // report that changed nothing is not one more
+    expect(reports).toHaveLength(3)
+    expect(reports[0]).toMatchObject({ text: 'Terminal', tool: 'execute', target: '' })
+    expect(reports.at(-1)).toMatchObject({
+      kind: 'tool',
+      text: 'pnpm test',
+      tool: 'execute',
+      target: 'pnpm test',
+      call: {
+        id: 'tool-2',
+        detail: {
+          title: 'pnpm test',
+          kind: 'execute',
+          status: 'completed',
+          input: { command: 'pnpm test', description: 'Run the suite' },
+          content: [{ type: 'text', text: '12 pass' }],
+          locations: [],
+        },
+      },
+    })
+    // shown as content already, the verbatim output is not kept a second time
+    expect(reports.at(-1)?.call?.detail.output).toBeUndefined()
+
+    const order = events.map((event) =>
+      event.call ? `call:${event.call.id}` : `${event.kind}:${event.text}`,
+    )
+    // what the agent said before calling the tool is in the transcript before it
+    expect(order.indexOf('message:I run the tests.')).toBeGreaterThan(-1)
+    expect(order.indexOf('message:I run the tests.')).toBeLessThan(order.indexOf('call:tool-2'))
+    expect(order.at(-1)).toBe('message:Hello world')
+    // an update for a call that was never announced, and names nothing, shows nothing
+    expect(order).not.toContain('call:stray')
+  })
+
+  test('keeps the verbatim output of a call that shows no content of its own', () => {
+    const announced = foldToolCall(undefined, {
+      toolCallId: 'exec-1',
+      title: 'ls',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { command: 'ls', cwd: '/repo' },
+    })
+    const settled = foldToolCall(announced, {
+      toolCallId: 'exec-1',
+      status: 'failed',
+      title: null,
+      rawOutput: { formatted_output: 'ls: denied', exit_code: 1 },
+      locations: [{ path: '/repo/a.ts', line: 3 }],
+    })
+
+    expect(toolCallDetail(settled)).toEqual({
+      title: 'ls',
+      kind: 'execute',
+      status: 'failed',
+      input: { command: 'ls', cwd: '/repo' },
+      content: [],
+      output: { formatted_output: 'ls: denied', exit_code: 1 },
+      locations: ['/repo/a.ts:3'],
+    })
+    // a diff keeps both sides; a file the call created has no "before"
+    expect(
+      toolCallDetail(
+        foldToolCall(settled, {
+          toolCallId: 'exec-1',
+          content: [{ type: 'diff', path: '/repo/new.ts', oldText: null, newText: 'export {}' }],
+        }),
+      ).content,
+    ).toEqual([{ type: 'diff', path: '/repo/new.ts', newText: 'export {}' }])
   })
 
   test('runs Codex through ACP and maps MCP, configuration, permissions, usage, and events', async () => {

@@ -69,6 +69,7 @@ import {
   waitUntilIdle,
 } from './live-state'
 import { awaitingThreadIds, prepareRun, type PreparedRun, type SubmitOpts } from './preparation'
+import { readToolCall } from './tool-calls'
 import { deleteChatRuns, persistRun, readChatTranscript, readRunHistory } from './transcript'
 
 export type ChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -355,6 +356,13 @@ export async function getSnapshot(chatId?: string): Promise<AgentRunSnapshot> {
 
 export function getHistory(chatId?: string, limit?: number) {
   return withChat(chatId, (workspace, chat) => readRunHistory(workspace.stateRoot, chat, limit))
+}
+
+/** What one tool call of a chat's turn was given and gave back - see `run/tool-calls`. */
+export function getToolCall(chatId: string | undefined, runId: string, eventId: string) {
+  const workspace = agentWorkspace()
+  const chat = chatOf(workspace, chatId)
+  return chat ? readToolCall(workspace.stateRoot, chat.id, runId, eventId) : undefined
 }
 
 export function cancelRun(chatId?: string): boolean {

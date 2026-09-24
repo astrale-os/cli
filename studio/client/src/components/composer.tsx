@@ -124,6 +124,36 @@ export function SendButton({
 }
 
 /**
+ * The file dialog, for any control that opens it: the hidden input to render
+ * beside that control, and the call that opens it.
+ */
+export function useFilePicker({
+  onFiles,
+  onPicked,
+}: {
+  onFiles: (files: File[]) => void
+  /** Give the caret back to the composer - see `FilePickButton`. */
+  onPicked?: () => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const field = (
+    <input
+      ref={input}
+      type="file"
+      multiple
+      className="hidden"
+      onChange={(event) => {
+        const files = event.target.files ? [...event.target.files] : []
+        event.target.value = ''
+        if (files.length) onFiles(files)
+        onPicked?.()
+      }}
+    />
+  )
+  return { pick: () => input.current?.click(), field }
+}
+
+/**
  * The paperclip. One click, one meaning: pick files. What becomes of them is the
  * caller's business — a domain uploads them, a domain that does not exist yet
  * holds on to them until it does.
@@ -135,8 +165,6 @@ export function FilePickButton({
   disabled,
   label = 'Attach a document',
   busyLabel = 'Uploading…',
-  icon: Icon = Paperclip,
-  accept,
 }: {
   onFiles: (files: File[]) => void
   /** Give the caret back to the composer — a page with nothing focused reads plain
@@ -148,12 +176,8 @@ export function FilePickButton({
   disabled?: boolean
   label?: string
   busyLabel?: string
-  /** what the button looks like — the clip, unless it picks something narrower */
-  icon?: typeof Paperclip
-  /** the file dialog's filter, as `<input accept>` takes it */
-  accept?: string
 }) {
-  const input = useRef<HTMLInputElement>(null)
+  const { pick, field } = useFilePicker({ onFiles, onPicked })
   const title = busy ? busyLabel : label
 
   return (
@@ -163,24 +187,12 @@ export function FilePickButton({
         title={title}
         aria-label={title}
         disabled={busy || disabled}
-        onClick={() => input.current?.click()}
+        onClick={pick}
         className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
       >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
       </button>
-      <input
-        ref={input}
-        type="file"
-        multiple
-        accept={accept}
-        className="hidden"
-        onChange={(event) => {
-          const files = event.target.files ? [...event.target.files] : []
-          event.target.value = ''
-          if (files.length) onFiles(files)
-          onPicked?.()
-        }}
-      />
+      {field}
     </>
   )
 }

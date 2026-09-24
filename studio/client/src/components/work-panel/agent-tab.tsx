@@ -4,24 +4,11 @@ import type { ClipboardEvent, ReactNode } from 'react'
 
 import { imagesLabel } from '@shared/attachments'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  Image as ImageIcon,
-  ImagePlus,
-  ListPlus,
-  Loader2,
-  Square,
-  TriangleAlert,
-} from 'lucide-react'
+import { Image as ImageIcon, ListPlus, Loader2, Square, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import {
-  ComposerField,
-  ComposerFrame,
-  DropZone,
-  FilePickButton,
-  SendButton,
-} from '@/components/composer'
+import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
 import { ScrollArea } from '@/components/ui/misc'
 import {
   type HarnessLink,
@@ -597,16 +584,6 @@ export function AgentComposer({
     />
   )
 
-  const addImage = (
-    <FilePickButton
-      icon={ImagePlus}
-      label="Add an image"
-      accept="image/*"
-      disabled={!chatId}
-      onFiles={attach}
-      onPicked={() => field.current?.focus()}
-    />
-  )
   const imageChips = <ComposerImages images={images} onRemove={detach} />
 
   const stop = (
@@ -744,7 +721,6 @@ export function AgentComposer({
           </div>
           <div className="order-1 flex shrink-0 items-center gap-1">
             <AttachButton onPicked={() => field.current?.focus()} />
-            {addImage}
             {resting && linkMark}
             {/* the images wait in the field's row as a count: their chips are a
                 second line, and the resting bar has one */}
@@ -799,7 +775,6 @@ export function AgentComposer({
         {composed}
         <div className="flex items-center gap-1 px-2 pb-2">
           <AttachButton onPicked={() => field.current?.focus()} />
-          {addImage}
           <div className="ml-auto flex items-center gap-1.5">
             <ChatFastToggle chat={chat} />
             {/* the meter sits before the model, in reading order: how hard, on what */}

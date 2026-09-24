@@ -4,6 +4,7 @@ import type {
   AgentSubmitResult,
   AgentSystemPromptInfo,
   AgentSessionInfo,
+  AgentToolCall,
   AnchorRef,
   ChatAttachment,
   ChatInfo,
@@ -134,6 +135,11 @@ export const api = {
   agentSnapshot: (chatId?: string) => get<AgentRunSnapshot>(`/api/agent${chatQuery(chatId)}`),
   /** every terminal turn one chat kept, oldest first — its transcript */
   agentHistory: (chatId?: string) => get<AgentRun[]>(`/api/agent/history${chatQuery(chatId)}`),
+  /** what one tool call of a turn was given and gave back - read when its step is opened */
+  agentToolCall: (chatId: string, runId: string, eventId: string) =>
+    get<AgentToolCall>(
+      `/api/agent/tool-call?${new URLSearchParams({ chat: chatId, run: runId, event: eventId })}`,
+    ),
   /**
    * Run the message now, or park it behind the turn already running. `comments` are the
    * open threads the turn carries — none unless named, `'all'` for every one;
@@ -297,6 +303,9 @@ export const qk = {
   agentSession: (chatId?: string) =>
     chatId ? (['agent-session', chatId] as const) : (['agent-session'] as const),
   agentSystemPrompt: ['agent-system-prompt'] as const,
+  /** one revision of a tool call's details: a revision never changes once read */
+  agentToolCall: (runId: string, eventId: string, revision: number) =>
+    ['agent-tool-call', runId, eventId, revision] as const,
   chats: ['chats'] as const,
   models: ['agent-models'] as const,
   harness: ['harness'] as const,
