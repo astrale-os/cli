@@ -202,9 +202,8 @@ async function main(): Promise<void> {
       envelopeTransport: 'http',
     },
     adapter: accessibleIframeAdapter(createIframeShellAdapter()),
-    // `astrale view` is explicit host approval of the exact installed route;
-    // Shell has already rejected invalid or unsupported iframe requirements.
-    iframePolicy: () => true,
+    // No iframe policy: as in the GUI and the Console, a View receives the Shell's shared browser
+    // profile, and a requirement beyond it is refused here rather than granted only locally.
     externalOpen: (request) => openExternalBrowserWindow(window, request),
   })
   await shell.init()
