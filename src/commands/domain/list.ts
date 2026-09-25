@@ -83,7 +83,8 @@ Behavior:
   (+ reachable/schemaRevision in machine output).
 
   The admin kernel is selected like every admin op — the configured default,
-  or --admin <bookmark> / --admin-url <url>.
+  or --admin <bookmark> / --admin-url <url>. -i and --url are rejected: they
+  select an instance, and this command reads the Admin catalog.
 
 Examples:
   $ astrale domain list
