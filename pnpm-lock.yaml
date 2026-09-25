@@ -156,8 +156,8 @@ importers:
         specifier: 0.6.0-beta.0
         version: 0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3)
       '@astrale-os/shell':
-        specifier: 0.6.0-beta.0
-        version: 0.6.0-beta.0(@astrale-os/sdk@0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3))
+        specifier: 0.6.0-beta.3
+        version: 0.6.0-beta.3(@astrale-os/sdk@0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3))
       '@astrale/commitlint-config':
         specifier: jsr:~2.0.1
         version: '@jsr/astrale__commitlint-config@2.0.3'
@@ -213,8 +213,8 @@ importers:
         specifier: 0.6.0-beta.0
         version: 0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3)
       '@astrale-os/shell':
-        specifier: 0.6.0-beta.0
-        version: 0.6.0-beta.0(@astrale-os/sdk@0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3))
+        specifier: 0.6.0-beta.3
+        version: 0.6.0-beta.3(@astrale-os/sdk@0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3))
       '@dagrejs/dagre':
         specifier: ^3.0.0
         version: 3.1.1
@@ -529,8 +529,8 @@ packages:
       oxlint:
         optional: true
 
-  '@astrale-os/shell@0.6.0-beta.0':
-    resolution: {integrity: sha512-hLY4cQQawe3wnsdk3sqPyWcKkjBxuIKeesNd7kI4Rl/RXhSZyVyCjR/kJ+iPKC20l0E/4jKcIz4HQCtl97Uf7A==, tarball: https://registry.npmjs.org/@astrale-os/shell/-/shell-0.6.0-beta.0.tgz}
+  '@astrale-os/shell@0.6.0-beta.3':
+    resolution: {integrity: sha512-mtpdYZ2XRWZvuCSlTbpe4ENI+3VWvEiPvEv2uJR3rXuOCGe7iQIVk9/hQ9ajitB9FNVa+lagX26ftv1mkhQJRA==, tarball: https://registry.npmjs.org/@astrale-os/shell/-/shell-0.6.0-beta.3.tgz}
     peerDependencies:
       '@astrale-os/sdk': '>=0.6.0-beta.0 <1.0.0'
 
@@ -4298,7 +4298,7 @@ snapshots:
     transitivePeerDependencies:
       - msgpackr
 
-  '@astrale-os/shell@0.6.0-beta.0(@astrale-os/sdk@0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3))':
+  '@astrale-os/shell@0.6.0-beta.3(@astrale-os/sdk@0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3))':
     dependencies:
       '@astrale-os/sdk': 0.6.0-beta.0(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(@hono/node-server@2.1.1(hono@4.13.2))(msgpackr@2.0.5)(oxlint@1.78.0)(zod@4.4.3)
       jose: 6.2.9

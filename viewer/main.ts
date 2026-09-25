@@ -224,7 +224,7 @@ async function main(): Promise<void> {
               return { token: next.credential, expiresAt: next.expiresAt }
             },
           }
-    return shell.openView({
+    return shell.mountView({
       host: container,
       view,
       capabilities: hostCapabilities,
