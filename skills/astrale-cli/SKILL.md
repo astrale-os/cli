@@ -154,8 +154,10 @@ removes only the local bookmark.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 `instance invite` requires authority to manage the exact Instance and grants
-only Instance member access. It returns the durable Invitation immediately;
-Admin automatically materializes child Shell access after WorkOS acceptance.
+only Instance member access. It returns the durable Invitation immediately.
+WorkOS acceptance alone grants nothing: Admin registers the child Shell user
+with the recipient's own credential, then adds Instance membership, when they
+sign in to the Instance from the invitation link.
 `instance invitation status <id>` performs one read-only observation of the
 retained Invitation. `completed` means access is materialized; `accepted`,
 `registering`, and `registered` are intermediate states, not completed access.
