@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.121](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.120...cli/v1.0.0-beta.121) (2026-09-25)
+
+
+### Bug Fixes
+
+* **host:** grant astrale view only the browser profile the GUI grants ([#552](https://github.com/astrale-os/cli/issues/552)) ([fcc25fe](https://github.com/astrale-os/cli/commit/fcc25fe3c4c3902d395a9693578dca58e7eb1e3b))
+
 ## [1.0.0-beta.120](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.119...cli/v1.0.0-beta.120) (2026-09-24)
 
 
