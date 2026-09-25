@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.123](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.122...cli/v1.0.0-beta.123) (2026-09-25)
+
+
+### Bug Fixes
+
+* **lib:** stop treating -i and --url as the Admin kernel ([#556](https://github.com/astrale-os/cli/issues/556)) ([92d6ad1](https://github.com/astrale-os/cli/commit/92d6ad150b59d4cc367ee46b3759c1d08a09a8e3))
+
 ## [1.0.0-beta.122](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.121...cli/v1.0.0-beta.122) (2026-09-25)
 
 
