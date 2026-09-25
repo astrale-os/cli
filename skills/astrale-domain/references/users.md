@@ -13,7 +13,7 @@ installed callable contracts before running examples; coordinate dependency upgr
 
 ```text
 create Employee extends Shell.User → same node, initially without Authentication
-  ├─ invite through Shell → Admin registers the accepting user → assures Core member
+  ├─ invite through Shell → invitee signs in → Admin registers their own proof → assures Core member
   └─ register directly with user proof → explicitly assign the intended groups
 ```
 
@@ -87,7 +87,7 @@ export const schema = defineSchema('work.example', {
 
 | Path | Consumer responsibility | Completion |
 | --- | --- | --- |
-| Invitation | Call static `Shell.User.invite({ user, email })` on the existing User | Admin binds the accepting identity and assures Core member |
+| Invitation | Call static `Shell.User.invite({ user, email })` on the existing User | At the invitee's sign-in, Admin registers their own proof and assures Core member |
 | Direct Register | Submit valid self or external user proof for the existing node under authorized Domain/operator authority | Authentication only; group assignment is separate |
 
 - Register needs real user proof valid for the target Kernel. Email, a freely supplied `(iss, sub)`,
