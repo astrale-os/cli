@@ -78,6 +78,7 @@ function mounted(windowId: string, onClose?: () => void): MountedWindow {
       credential: { state: 'none' },
       capabilities: NO_HOST_CAPABILITIES,
     },
+    view: profile,
     handle: { element: {} as HTMLElement },
     credential: { state: 'none' },
     presentation: { kind: 'inline', constrained: false },
@@ -85,6 +86,10 @@ function mounted(windowId: string, onClose?: () => void): MountedWindow {
     close: async () => {
       onClose?.()
       return { kind: 'closed' }
+    },
+    onNavigate: () => () => undefined,
+    traverse: async () => {
+      throw new Error('This View keeps no history to move.')
     },
   }
 }
