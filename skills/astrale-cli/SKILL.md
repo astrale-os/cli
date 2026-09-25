@@ -146,8 +146,11 @@ astrale instance bookmark staging --url https://kernel.example.com
 astrale instance forget staging
 ```
 
-Use explicit `-i <instance>` in scripts. `instance delete` affects an
-admin-managed instance; `instance forget` removes only the local bookmark.
+Use explicit `-i <instance>` in scripts. `-i` and `--url` always select the instance a command
+acts on; they never select the Admin kernel, and Admin operations (`domain list`, `domain publish`,
+`instance list`, …) reject them. Choose the Admin kernel with `--admin <bookmark>` or
+`--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
+removes only the local bookmark.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 `instance invite` requires authority to manage the exact Instance and grants
