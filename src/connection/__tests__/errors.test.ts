@@ -1,6 +1,7 @@
 import { ResponseError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
+import { stripVTControlCharacters } from 'node:util'
 
 import { formatKernelError, functionInputIssues, schemaUpgradeHint } from '../errors'
 import { transportFailure } from './failure-fixtures'
@@ -529,11 +530,11 @@ describe('formatKernelError', () => {
       console.log = originalLog
     }
 
-    expect(errors.join('\n')).toContain('Function input is invalid.')
-    expect(details.join('\n')).toContain(
-      '/customer/email: Must be a valid email address. (INVALID_FORMAT)',
-    )
-    expect(details.join('\n')).not.toContain('astrale introspect')
+    // Interactive output is styled; compare its text so a forced-colour terminal gives the same result.
+    const rendered = stripVTControlCharacters(details.join('\n'))
+    expect(stripVTControlCharacters(errors.join('\n'))).toContain('Function input is invalid.')
+    expect(rendered).toContain('/customer/email: Must be a valid email address. (INVALID_FORMAT)')
+    expect(rendered).not.toContain('astrale introspect')
   })
 
   test('keeps the introspection fallback for legacy Function input issues', async () => {
