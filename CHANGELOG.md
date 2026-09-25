@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.122](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.121...cli/v1.0.0-beta.122) (2026-09-25)
+
+
+### Bug Fixes
+
+* **deps:** mount viewer Views with Shell 0.6.0-beta.3 ([#554](https://github.com/astrale-os/cli/issues/554)) ([9723bd8](https://github.com/astrale-os/cli/commit/9723bd822d1822b74c069b1326b793e10a243bed))
+
 ## [1.0.0-beta.121](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.120...cli/v1.0.0-beta.121) (2026-09-25)
 
 
