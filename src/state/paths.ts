@@ -19,6 +19,7 @@ export interface Paths {
   readonly idpSessionsDir: string
   readonly exchangeCredentials: string
   readonly sessionRoutes: string
+  readonly domainIssuers: string
   idpDir(name: string): string
   idpSession(identityName: string): string
 }
@@ -45,6 +46,7 @@ export function createPaths(home?: string, environment?: PathEnvironment): Paths
     idpSessionsDir,
     exchangeCredentials: join(base, 'exchange', 'credentials.json'),
     sessionRoutes: join(base, 'session', 'routes.json'),
+    domainIssuers: join(base, 'session', 'domain-issuers.json'),
     idpDir: (name: string) => join(idpsDir, name),
     idpSession: (identityName: string) => join(idpSessionsDir, `${identityName}.json`),
   })
@@ -62,3 +64,4 @@ export const IDPS_PATH = paths.idps
 export const IDP_SESSIONS_DIR = paths.idpSessionsDir
 export const EXCHANGE_CREDENTIALS_PATH = paths.exchangeCredentials
 export const SESSION_ROUTES_PATH = paths.sessionRoutes
+export const DOMAIN_ISSUERS_PATH = paths.domainIssuers

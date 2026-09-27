@@ -223,3 +223,16 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
     },
   ],
 })
+
+export const CLI_CONNECTION_CALLABLE_ISSUER_REMEMBERED = defineLaw({
+  id: 'CLI-CONNECTION-CALLABLE-ISSUER-REMEMBERED',
+  statement:
+    'A callable command reads the installed Domain of its declaring origin once per source Kernel and reuses the remembered issuer, or the Kernel-hosted verdict, without opening a discovery Session. Any failure of a command that relied on a remembered issuer forgets it, so the next command reads the installation again; a remembered issuer grants nothing, because the Kernel still admits every exchanged credential. An unusable cache is a miss.',
+  tests: [
+    { file: '__tests__/callable-target.test.ts', id: 'TEST-CLI-CALLABLE-ISSUER-READ-ONCE' },
+    {
+      file: '__tests__/callable-target.test.ts',
+      id: 'TEST-CLI-CALLABLE-ISSUER-FORGOTTEN-ON-FAILURE',
+    },
+  ],
+})

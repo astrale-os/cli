@@ -20,6 +20,7 @@ export interface Paths {
   readonly idpSessionsDir: string
   readonly exchangeCredentials: string
   readonly sessionRoutes: string
+  readonly domainIssuers: string
   idpDir(name: string): string
   idpSession(identityName: string): string
 }
@@ -39,6 +40,37 @@ export const IDPS_PATH: string
 export const IDP_SESSIONS_DIR: string
 export const EXCHANGE_CREDENTIALS_PATH: string
 export const SESSION_ROUTES_PATH: string
+export const DOMAIN_ISSUERS_PATH: string
+
+export namespace domainIssuers {
+  interface Artifact {
+    readonly version: 1
+    readonly entries: Record<string, Entry>
+  }
+
+  interface Entry {
+    /** Installed Domain issuer, or null when the Domain executes on the Kernel itself. */
+    readonly issuer: string | null
+    /** Unix time in milliseconds of the installation read that produced this entry. */
+    readonly observedAt: number
+  }
+}
+
+/** Remember each installed Domain's issuer per source Kernel; installation state, never authority. */
+export class DomainIssuerCache {
+  constructor(path?: string, maximumAgeMs?: number)
+  get(kernelIssuer: string, origin: string, now?: number): Promise<string | null | undefined>
+  set(
+    kernelIssuer: string,
+    origin: string,
+    domainIssuer: string | null,
+    now?: number,
+  ): Promise<void>
+  delete(kernelIssuer: string, origin: string): Promise<void>
+  deleteKernel(kernelIssuer: string): Promise<void>
+}
+
+export const DOMAIN_ISSUER_CACHE: DomainIssuerCache
 
 export namespace exchange {
   interface Artifact {

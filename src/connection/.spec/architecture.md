@@ -35,6 +35,11 @@ issuer and subject metadata from the selected persisted IdP identity may select 
 cryptographically admitted exchange entry before source-token refresh. Missing, unreadable, or
 mismatched metadata falls through to ordinary source resolution. Cache misses alone resolve the
 registered Kernel User and perform delegation plus Domain exchange.
+A callable command needs the issuer of its declaring Domain before it can exchange. The state owner
+remembers that installation fact per source Kernel and origin, so only the first command reads the
+installed Publication through a discovery Session. The remembered issuer is not authority: a stale
+issuer yields a credential the Kernel rejects, and any failure of a command that relied on it
+forgets the entry so the next command reads the installation again.
 Exchange and destination-carrier authority cover the selected command timeout plus one bounded
 receipt margin, never outlive the current source credential, and retain the existing one-minute
 floor for short commands. A cached or freshly exchanged credential that cannot cover that lifetime
