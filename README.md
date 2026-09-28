@@ -146,30 +146,27 @@ local installed versions; `-i` selects the affected instance without connecting 
 always go to the configured Admin (`--admin` / `--admin-url` to override). The active instance is
 never inferred. Versions describe the current local setup, not a past deployed build.
 
-Keep the body short: Context, Scenario (Mermaid when useful), Impact. Admin owns triage and duplicate
-handling. An unconfirmed request is retained privately under `~/.astrale/issues/pending/`; use the
+Keep the body short: Context, Scenario (Mermaid when useful), Impact. An unconfirmed request is retained privately under `~/.astrale/issues/pending/`; use the
 printed `astrale issue --retry <request-id>` with the same Admin and identity to resume its exact
 payload. Confirmed reports return `{ id, reference }` with `--json`.
 
-Example body for “Retrying after a timeout creates two issues” (illustrative):
+Example body for “Orders deployment stays pending” (illustrative):
 
 ````markdown
-**Context:** The first submission timed out. I retried the same report expecting one issue.
+**Context:** Deploying Orders to staging. The command returns successfully, but the displayed state stays pending.
 
 **Scenario:**
 ```mermaid
 sequenceDiagram
+  participant Dev as Developer
   participant CLI as Astrale CLI
-  participant Admin as Admin instance
-  CLI->>Admin: Submit the report
-  Admin-->>CLI: No response received before timeout
-  CLI->>Admin: Retry the same report
-  Admin-->>CLI: Return a reference
-  CLI->>Admin: Inspect issues
-  Admin-->>CLI: Show two matching reports
+  Dev->>CLI: Deploy Orders to staging
+  CLI-->>Dev: Deployment accepted
+  Dev->>CLI: Check the deployment state
+  CLI-->>Dev: Still pending after 5 minutes
 ```
 
-**Impact:** A retry creates duplicate triage work.
+**Impact:** I cannot test the new Orders version on staging.
 ````
 
 This structure is optional. Describe only observed behavior; short text steps also work.

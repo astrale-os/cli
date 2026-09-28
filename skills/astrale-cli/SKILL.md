@@ -66,9 +66,8 @@ on stdin). Prefer optional `--project <directory>` and `-i <instance>` when know
 do not ask for missing context just to fill these options. Available local versions are
 attached automatically. `-i` names the affected instance; without it none is inferred.
 Reports always go to Admin. Suggested body: **Context** (1–2 sentences), **Scenario**
-(short Mermaid if useful), **Impact** (1 sentence). State observations and uncertainties;
-triage and duplicate handling happen on the backend. If confirmation fails, use the
-printed `--retry` command to resend the saved report.
+(short Mermaid if useful), **Impact** (1 sentence). State observations and uncertainties.
+If confirmation fails, use the printed `--retry` command to resend the saved report.
 
 ## UI Projects
 
