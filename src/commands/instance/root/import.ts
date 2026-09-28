@@ -6,7 +6,7 @@ import type { CommandDefinition } from '../../../program'
 
 import { formatKernelError } from '../../../connection/errors'
 import { AstraleError } from '../../../errors'
-import { findOwnedInstance, listOwnedInstancesWithIdentity } from '../../../lib/admin-instance'
+import { resolveOwnedInstance } from '../../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS } from '../../../lib/admin-target'
 import { importInstanceRootIdentity } from '../../../lib/instance-root-identity'
 import { canPrompt } from '../../../lib/interactive'
@@ -44,8 +44,7 @@ Examples:
 `,
   action: async (identifier: string, opts: ImportRootOpts) => {
     try {
-      const inventory = await listOwnedInstancesWithIdentity(opts)
-      const instance = findOwnedInstance(inventory.instances, identifier)
+      const instance = await resolveOwnedInstance(opts, identifier)
       if (instance === undefined) {
         throw new AstraleError(
           'INSTANCE_NOT_FOUND',
