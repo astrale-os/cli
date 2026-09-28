@@ -134,18 +134,20 @@ On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version
 again**. It also detects stale local Astrale skills and offers to repair them.
 
-## Reporting a problem
+## Reporting an issue
 
 ```sh
-astrale issue "Short title" --body "Context and reproduction"
-cat reproduction.md | astrale issue "Short title" --project ./orders -i staging
+astrale issue "Short title" --body "Context and details"
+cat issue.md | astrale issue "Short title" --project ./orders -i staging
 ```
 
 A title and body are enough. Prefer optional `--project` and `-i` when known. The project selects
 local installed versions; `-i` selects the affected instance without connecting to it.
 
-Suggested body: **Context**, **Reproduction** (exact command or input, steps, expected vs. actual
-result), **Impact**. Keep it brief.
+Optionally add `Type: bug`, `Type: limitation` (including capability requests), or `Type: friction`.
+Keep the body brief: **Context** → **Reproduction** for bugs (exact inputs/steps, expected vs. actual
+result) or **Scenario** for limitations/friction (concrete task, obstacle, desired behavior) → **Impact**.
+Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
 
 If confirmation fails, use the printed `--retry` command. `--json` returns the issue ID and reference.
 

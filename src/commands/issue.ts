@@ -63,7 +63,7 @@ export async function reportIssueCommand(
       throw new AstraleError(
         'ISSUE_INPUT_INVALID',
         'Provide a title (1–200 characters) and a body (1–50,000 characters).',
-        'Use --body "Context and reproduction", or pipe the body on stdin.',
+        'Use --body "Context and details", or pipe the body on stdin.',
       )
     const context = await dependencies.collectIssueContext({
       cwd: dependencies.cwd(),
@@ -114,13 +114,13 @@ async function readBodyFromStdin(): Promise<string | undefined> {
 
 const command = withKernelOptions({
   name: 'issue',
-  description: 'Report a problem to Admin with automatic local context',
+  description: 'Report a bug, limitation, or friction to Admin',
   arguments: [
     { name: 'title', description: 'Short factual title (omit only with --retry)', required: false },
   ],
   options: [
     ...ADMIN_TARGET_OPTIONS,
-    { flags: '--body <text>', description: 'Context and reproduction; otherwise read stdin' },
+    { flags: '--body <text>', description: 'Issue details; otherwise read stdin' },
     {
       flags: '--project <directory>',
       description: 'Project package whose installed versions to observe',
@@ -132,12 +132,15 @@ const command = withKernelOptions({
   ],
   afterHelpText: `
   A title and body are enough. Prefer --project and -i when known.
-  Suggested body: Context, Reproduction (exact command or input, steps,
-  expected vs. actual result), Impact. Keep it brief.
+  Optional body type: bug, limitation (including capability requests), or friction.
+  Keep it brief: Context, Reproduction for bugs (exact inputs/steps, expected vs.
+  actual result) or Scenario for limitations/friction (task, obstacle, desired
+  behavior), Impact.
+  Optional bug evidence: short log excerpt, stack trace, or screenshot link.
   If confirmation fails, use the printed --retry command.
 
-  $ astrale issue "Short title" --body "Context and reproduction"
-  $ cat reproduction.md | astrale issue "Short title" --project ./orders -i staging
+  $ astrale issue "Short title" --body "Context and details"
+  $ cat issue.md | astrale issue "Short title" --project ./orders -i staging
 `,
   action: async (title: string | undefined, options: IssueOptions) => {
     try {

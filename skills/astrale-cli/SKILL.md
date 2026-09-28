@@ -44,7 +44,7 @@ astrale identity ...
 astrale auth ...
 astrale idp ...
 astrale admin ...
-astrale issue "Title" --body "Context and reproduction"
+astrale issue "Title" --body "Context and details"
 ```
 
 Kernel-touching commands share `--format`, `--json`, `--raw`, `--url`,
@@ -61,12 +61,15 @@ It cannot be combined with `--as` or `--creds`; required callables reject anonym
 
 ## Report an issue
 
-Use `astrale issue "Factual title" --body "Context and reproduction"` (or pipe the body
+Use `astrale issue "Factual title" --body "Context and details"` (or pipe the body
 on stdin). Prefer optional `--project <directory>` and `-i <instance>` when known;
 do not ask for missing context just to fill these options. Available local versions are
 attached automatically. `-i` names the affected instance.
-Suggested body: **Context**, **Reproduction** (exact command or input, steps, expected vs. actual
-result), **Impact**. Keep it brief. If confirmation fails, use the printed `--retry` command.
+Optionally add `Type: bug`, `Type: limitation` (including capability requests), or `Type: friction`.
+Keep the body brief: **Context** → **Reproduction** for bugs (exact inputs/steps, expected vs. actual
+result) or **Scenario** for limitations/friction (concrete task, obstacle, desired behavior) → **Impact**.
+Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
+If confirmation fails, use the printed `--retry` command.
 
 ## UI Projects
 
