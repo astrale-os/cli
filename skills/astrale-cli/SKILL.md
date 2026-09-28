@@ -268,8 +268,23 @@ local operator proof; an explicit TTL still cannot outlive the selected source c
 
 ```bash
 TOKEN=$(astrale token --raw -i staging)
-astrale call /:notes.example:class.Note:list --creds "$TOKEN" -i staging
+astrale query /:notes.example:class.Note --creds "$TOKEN" -i staging
 ```
+
+A minted token carries the identity itself as principal. Function admission requires the principal
+to be able to use the Function, so a minted token fails a Domain callable that the identity reaches
+only through a Policy. Without `--creds`, the CLI exchanges the selected identity's credential
+through a Domain instead: the Domain becomes the principal, the identity stays the caller, and the
+Policy is evaluated against the identity.
+
+| Selection | Principal presented | Effect |
+| --- | --- | --- |
+| `call` with `--as <identity>` or the default identity | the callable's declaring Domain | the principal gate passes; the Policy is evaluated against the identity |
+| `get`, `query`, `mutate` on an Astrale-managed instance | Shell | bounded by Shell's authority and the identity's Policies |
+| `--creds "$(astrale token --raw)"` | the identity | a Domain callable reached only through a Policy fails with `2004`, unless the identity holds `can_use` on it through a Group |
+
+Reuse a minted token for Kernel reads and writes the identity may perform itself; call Domain
+callables with `--as`.
 
 `astrale auth token` is different: it prints the cached upstream IdP token.
 
@@ -444,7 +459,16 @@ idp-sessions/
 keys/
 browser.json
 browser/
+exchange/credentials.json
+session/routes.json
+session/installations.json
 ```
+
+`exchange/credentials.json` holds Domain-exchanged credentials until they expire;
+`session/routes.json` holds learned Domain routes and their short-lived carriers;
+`session/installations.json` remembers each Domain's installed issuer per Kernel.
+All three are owner-private caches: deleting them only costs a re-read or a new exchange, never
+access.
 
 Optional roots are `ASTRALE_HOME`, `ASTRALE_KEYS_DIR`, and
 `ASTRALE_DATA_DIR`.
