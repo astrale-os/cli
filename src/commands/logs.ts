@@ -21,6 +21,7 @@ type LogsOpts = KernelCommandOpts & {
   topic?: string
   topicPrefix?: string
   principal?: string
+  caller?: string
   limit?: string
   cursor?: string
   follow?: boolean
@@ -33,7 +34,13 @@ export interface JournalRecord {
   readonly payload: unknown
   readonly occurredAt?: string
   readonly committedAt?: string
+  /** Executor that authenticated the recorded operation (a Domain acting for a user included). */
   readonly principal?: string
+  /**
+   * Identity whose authority the operation exercised, recorded only when it differs from the
+   * principal (astrale-os/kernel#959); absent on direct calls and on records from older Kernels.
+   */
+  readonly caller?: string
   readonly correlation?: JournalCorrelation
   readonly correlationId?: string
   readonly causationId?: string
@@ -128,9 +135,35 @@ export function acceptJournalPage(input: unknown): JournalPage {
   })
 }
 
+/**
+ * The Kernel records `caller` only when it differs from the principal, so a record without one
+ * was a direct call made by its principal. Exact for records written by a Kernel with
+ * astrale-os/kernel#959; on records from an older Kernel this falls back to the principal, even
+ * when that principal is a Domain acting for a user.
+ */
+function effectiveCaller(record: JournalRecord): string | undefined {
+  return record.caller ?? record.principal
+}
+
+/**
+ * Keep the records whose effective caller is exactly `caller`. The journal syscall has no caller
+ * input, so the filter applies to each returned page; the cursor still advances past the page.
+ */
+export function selectCallerRecords(page: JournalPage, caller: string | undefined): JournalPage {
+  const wanted = nonEmpty(caller)
+  if (wanted === undefined) return page
+  return Object.freeze({
+    records: Object.freeze(page.records.filter((record) => effectiveCaller(record) === wanted)),
+    ...(page.cursor === undefined ? {} : { cursor: page.cursor }),
+  })
+}
+
 async function fetchPage(context: ConnectionContext, opts: LogsOpts): Promise<JournalPage> {
-  return acceptJournalPage(
-    await context.session.call(createPathCall(JOURNAL_PATH, buildJournalInput(opts))),
+  return selectCallerRecords(
+    acceptJournalPage(
+      await context.session.call(createPathCall(JOURNAL_PATH, buildJournalInput(opts))),
+    ),
+    opts.caller,
   )
 }
 
@@ -185,6 +218,7 @@ function journalProjection(records: JournalRecord[]): ListProjection {
     { key: 'timestamp', header: 'TIME', color: chalk.dim },
     { key: 'topic', header: 'TOPIC', color: chalk.cyan },
     { key: 'principal', header: 'PRINCIPAL', color: chalk.dim },
+    { key: 'caller', header: 'CALLER', color: chalk.dim },
   ]
   return {
     columns,
@@ -193,6 +227,7 @@ function journalProjection(records: JournalRecord[]): ListProjection {
       timestamp: record.timestamp,
       topic: record.topic,
       principal: record.principal ?? '',
+      caller: effectiveCaller(record) ?? '',
     })),
     paths: records.map((record) => String(record.sequence)),
   }
@@ -204,7 +239,7 @@ function printRecord(record: JournalRecord, opts: LogsOpts): void {
     return
   }
   process.stdout.write(
-    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')}\n`,
+    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')} ${chalk.dim(effectiveCaller(record) ?? '')}\n`,
   )
 }
 
@@ -245,6 +280,7 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
   }
   const correlationId = structuredCorrelationId ?? legacyCorrelationId
   const principal = optionalText(input.principal, index, 'principal')
+  const caller = optionalText(input.caller, index, 'caller')
   return Object.freeze({
     sequence: input.sequence as number,
     timestamp,
@@ -255,6 +291,7 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
       ? {}
       : { committedAt: input.committedAt as string }),
     ...(principal === undefined ? {} : { principal }),
+    ...(caller === undefined ? {} : { caller }),
     ...(correlation === undefined ? {} : { correlation }),
     ...(correlationId === undefined ? {} : { correlationId }),
     ...(optionalIdentifier(input.causationId, index, 'causationId') === undefined
@@ -324,9 +361,15 @@ function positiveInteger(flag: string, raw: string): number {
 
 async function resolveLogsOpts(opts: LogsOpts, context: ConnectionContext): Promise<LogsOpts> {
   const principal = nonEmpty(opts.principal)
-  if (principal !== '@self') return opts
+  const caller = nonEmpty(opts.caller)
+  if (principal !== '@self' && caller !== '@self') return opts
   const { path } = await expandSelfInPath('@self', context)
-  return { ...opts, principal: path.startsWith('@') ? path.slice(1) : path }
+  const self = path.startsWith('@') ? path.slice(1) : path
+  return {
+    ...opts,
+    ...(principal === '@self' ? { principal: self } : {}),
+    ...(caller === '@self' ? { caller: self } : {}),
+  }
 }
 
 function nonEmpty(input: string | undefined): string | undefined {
@@ -351,17 +394,30 @@ Behavior:
   and advances only with the returned cursor. With --json, follow output is
   NDJSON with one complete admitted record per line; YAML follow is unsupported.
 
+  --principal filters in the Kernel by the executing principal: a Domain acting
+  for a user (managed CLI, Console, astrale call) is the principal of its
+  records. --caller keeps the records whose caller, the identity whose authority
+  the operation exercised, matches; it filters each returned page, so --limit
+  bounds the page before the filter. The Kernel records caller only when it
+  differs from the principal, so the effective caller is caller, else principal;
+  CALLER shows it. This is exact for records written by a Kernel with
+  astrale-os/kernel#959; records from an older Kernel fall back to the
+  principal, so a Domain acting for a user appears as the caller there. JSON
+  output keeps the record as written. Both accept @self.
+
 Examples:
   $ astrale logs -i staging --limit 50
   $ astrale logs --topic op:function.failed
   $ astrale logs --topic-prefix op:function. --follow
+  $ astrale logs --caller @self --topic-prefix op:function.
 `,
   options: [
     { flags: '--since <timestamp>', description: 'Inclusive journal timestamp lower bound' },
     { flags: '--until <timestamp>', description: 'Inclusive journal timestamp upper bound' },
     { flags: '--topic <topic>', description: 'Match one exact topic' },
     { flags: '--topic-prefix <prefix>', description: 'Match one topic prefix' },
-    { flags: '--principal <id>', description: 'Filter by triggering identity ID' },
+    { flags: '--principal <id>', description: 'Filter by executing principal identity ID' },
+    { flags: '--caller <id>', description: 'Filter by effective caller identity ID' },
     { flags: '--limit <n>', description: `Maximum records (default: ${DEFAULT_LIMIT})` },
     { flags: '--cursor <token>', description: 'Resume from an opaque journal cursor' },
     { flags: '--follow', description: 'Poll using returned cursors until interrupted' },
