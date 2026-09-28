@@ -5,7 +5,7 @@ import type { AstraleConfig } from './config'
 
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
 import { atomicWrite, withFileLock } from '../state/files'
-import { ExchangeCredentialCache, INSTANCES_PATH } from '../state/index'
+import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -372,7 +372,7 @@ export async function removeInstance(key: string): Promise<void> {
     if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
     return removed
   })
-  await new ExchangeCredentialCache().deleteKernel(removed.issuer ?? removed.url!)
+  await forgetKernel(removed.issuer ?? removed.url!)
 }
 
 /** Remove only the bookmark still naming the deleted Admin Instance's exact Kernel. */
@@ -400,7 +400,12 @@ export async function removeDeletedInstanceBookmark(target: {
     if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
     return entry
   })
-  if (removed) await new ExchangeCredentialCache().deleteKernel(removed.issuer ?? removed.url!)
+  if (removed) await forgetKernel(removed.issuer ?? removed.url!)
+}
+
+async function forgetKernel(kernelIssuer: string): Promise<void> {
+  await new ExchangeCredentialCache().deleteKernel(kernelIssuer)
+  await new InstallationCache().deleteKernel(kernelIssuer)
 }
 
 function bookmarkCoordinate(value: string | undefined): string | undefined {
