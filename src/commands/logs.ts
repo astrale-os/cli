@@ -8,7 +8,8 @@ import type { Column, ListProjection } from '../lib/output'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInPath, runKernelCommand } from '../connection'
-import { failInput } from '../lib/log'
+import { AstraleError } from '../errors'
+import { failInput, log } from '../lib/log'
 import { isMachine, output, presentList } from '../lib/output'
 
 const JOURNAL_PATH = Path.project(K.functions.journal.ref).raw
@@ -49,9 +50,32 @@ export interface JournalCorrelation {
   readonly spanId?: string
 }
 
+/** Journal generation and positions at the time of the read. `id` changes when the journal is recreated. */
+export interface JournalFrontier {
+  readonly id: string
+  readonly first?: number
+  readonly committed: number
+  readonly durable: number
+}
+
+/** Records the reader can no longer receive, or a cursor the Kernel refused. Never an ordinary empty page. */
+export type JournalGap =
+  | { readonly kind: 'retention'; readonly frontier: JournalFrontier }
+  | {
+      readonly kind: 'recovery'
+      readonly from: number
+      readonly through: number
+      readonly frontier: JournalFrontier
+    }
+  | { readonly kind: 'generation'; readonly frontier: JournalFrontier }
+  | { readonly kind: 'cursor'; readonly reason: 'stale' | 'selection' | 'visibility' }
+
+/** A page without a cursor reached the end of the selection. */
 export interface JournalPage {
   readonly records: readonly JournalRecord[]
   readonly cursor?: string
+  readonly frontier?: JournalFrontier
+  readonly gap?: JournalGap
 }
 
 export interface JournalInput {
@@ -113,7 +137,7 @@ function cursorFlag(raw: string): string {
   return value
 }
 
-/** Validate the record fields the CLI presentation consumes and retain the opaque cursor. */
+/** Validate the record fields the CLI presentation consumes and retain the cursor, frontier and gap. */
 export function acceptJournalPage(input: unknown): JournalPage {
   if (!isRecord(input) || !Array.isArray(input.records)) {
     throw new TypeError('Kernel journal response must contain a records array')
@@ -125,7 +149,31 @@ export function acceptJournalPage(input: unknown): JournalPage {
   return Object.freeze({
     records: Object.freeze(records),
     ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+    ...(input.frontier === undefined
+      ? {}
+      : { frontier: acceptFrontier(input.frontier, 'frontier') }),
+    ...(input.gap === undefined ? {} : { gap: acceptGap(input.gap) }),
   })
+}
+
+/** One sentence naming what the reader lost or why its cursor was refused. */
+export function describeJournalGap(gap: JournalGap): string {
+  switch (gap.kind) {
+    case 'retention':
+      return gap.frontier.first === undefined
+        ? 'Journal records after this cursor were evicted by retention'
+        : `Journal records before #${gap.frontier.first} were evicted by retention`
+    case 'recovery':
+      return `Journal records #${gap.from}–#${gap.through} were lost during journal recovery`
+    case 'generation':
+      return 'The journal was recreated; records of the previous journal are gone'
+    case 'cursor':
+      return {
+        stale: 'The Kernel no longer accepts this journal cursor',
+        selection: 'This journal cursor belongs to another topic, principal or time selection',
+        visibility: 'This journal cursor was issued under other read authority',
+      }[gap.reason]
+  }
 }
 
 async function fetchPage(context: ConnectionContext, opts: LogsOpts): Promise<JournalPage> {
@@ -144,6 +192,7 @@ async function runOnce(opts: LogsOpts): Promise<void> {
       else {
         presentList([...page.records], format, journalProjection)
         if (page.cursor) process.stderr.write(`  cursor: ${page.cursor}\n`)
+        if (page.gap) log.warn(describeJournalGap(page.gap))
       }
     },
   })
@@ -154,7 +203,14 @@ type FollowDependencies = {
   readonly pause: (milliseconds: number) => Promise<void>
 }
 
-/** Follow one admitted journal stream. Dependencies are explicit so routing is proven at the command boundary. */
+/**
+ * Follow one admitted journal stream. Dependencies are explicit so routing is proven at the command boundary.
+ *
+ * The journal syscall is a finite read: a page that reaches the end of the journal carries no cursor,
+ * so the next poll repeats the previous cursor and re-reads its tail. Records are emitted at most
+ * once per journal generation by sequence. A gap is reported on stderr; after retention or a new
+ * generation the Kernel returns no cursor, and the follow resumes at the oldest retained record.
+ */
 export async function followLogs(
   opts: LogsOpts,
   dependencies: FollowDependencies = {
@@ -169,14 +225,42 @@ export async function followLogs(
     fn: async (context): Promise<never> => {
       const resolved = await resolveLogsOpts(opts, context)
       let cursor = resolved.cursor
+      let emitted: { readonly journal?: string; readonly sequence: number } = { sequence: 0 }
       for (;;) {
         const page = await fetchPage(context, { ...resolved, cursor })
-        for (const record of page.records) printRecord(record, opts)
-        cursor = page.cursor ?? cursor
+        if (page.gap?.kind === 'cursor') {
+          throw new AstraleError(
+            'JOURNAL_CURSOR_INVALID',
+            describeJournalGap(page.gap),
+            'Restart without --cursor, or with --since, to read from a known position.',
+          )
+        }
+        if (page.gap !== undefined) reportGap(page.gap, opts)
+        if (page.frontier !== undefined && page.frontier.id !== emitted.journal) {
+          emitted = { journal: page.frontier.id, sequence: 0 }
+        }
+        for (const record of page.records) {
+          if (record.sequence <= emitted.sequence) continue
+          printRecord(record, opts)
+          emitted = { ...emitted, sequence: record.sequence }
+        }
+        if (page.cursor !== undefined) cursor = page.cursor
+        else if (page.gap !== undefined && cursor !== undefined) {
+          cursor = undefined
+          continue
+        }
         await dependencies.pause(FOLLOW_INTERVAL_MS)
       }
     },
   })
+}
+
+/** Diagnostics never share stdout with the record stream; machine modes get one JSON line. */
+function reportGap(gap: JournalGap, opts: LogsOpts): void {
+  const message = describeJournalGap(gap)
+  if (isMachine(opts) || opts.format === 'json') {
+    process.stderr.write(`${JSON.stringify({ warning: 'JOURNAL_GAP', message, gap })}\n`)
+  } else log.warn(message)
 }
 
 function journalProjection(records: JournalRecord[]): ListProjection {
@@ -294,6 +378,61 @@ function acceptCorrelation(input: unknown, index: number): JournalCorrelation | 
   )
 }
 
+function acceptFrontier(input: unknown, field: string): JournalFrontier {
+  if (
+    !isRecord(input) ||
+    typeof input.id !== 'string' ||
+    input.id.trim() === '' ||
+    !isPosition(input.committed) ||
+    !isPosition(input.durable) ||
+    (input.first !== undefined && !isSequence(input.first))
+  ) {
+    throw new TypeError(`Kernel journal ${field} is invalid`)
+  }
+  return Object.freeze({
+    id: input.id,
+    ...(input.first === undefined ? {} : { first: input.first as number }),
+    committed: input.committed as number,
+    durable: input.durable as number,
+  })
+}
+
+const cursorGapReasons = ['stale', 'selection', 'visibility'] as const
+
+function acceptGap(input: unknown): JournalGap {
+  if (isRecord(input)) {
+    const reason = cursorGapReasons.find((candidate) => candidate === input.reason)
+    if (input.kind === 'cursor' && reason !== undefined) {
+      return Object.freeze({ kind: 'cursor', reason })
+    }
+    if (input.kind === 'retention' || input.kind === 'generation') {
+      return Object.freeze({ kind: input.kind, frontier: acceptFrontier(input.frontier, 'gap') })
+    }
+    if (
+      input.kind === 'recovery' &&
+      isSequence(input.from) &&
+      isSequence(input.through) &&
+      input.through >= input.from
+    ) {
+      return Object.freeze({
+        kind: 'recovery',
+        from: input.from,
+        through: input.through,
+        frontier: acceptFrontier(input.frontier, 'gap'),
+      })
+    }
+  }
+  throw new TypeError('Kernel journal gap is invalid')
+}
+
+function isPosition(input: unknown): input is number {
+  return Number.isSafeInteger(input) && (input as number) >= 0
+}
+
+function isSequence(input: unknown): input is number {
+  return Number.isSafeInteger(input) && (input as number) >= 1
+}
+
 function optionalIdentifier(input: unknown, index: number, field: string): string | undefined {
   const value = optionalText(input, index, field)
   if (value === undefined) return undefined
@@ -343,13 +482,18 @@ export default {
   description: 'Read or follow the authorized Kernel journal',
   afterHelpText: `
 Behavior:
-  Calls the public Kernel journal syscall and emits its { records, cursor }
+  Calls the public Kernel journal syscall and emits its { records, cursor, frontier, gap }
   page. Topic selection is exact or prefix-based; cursors are opaque backend tokens.
+  A page without a cursor reached the end of the journal. A gap names records lost
+  to retention or recovery, a recreated journal, or a refused cursor.
   Timestamps accept ISO-8601 with a timezone and millisecond precision; offsets
   are converted to canonical UTC (e.g. 2026-08-19T16:51:10.000Z).
-  --follow reuses one Client Session
-  and advances only with the returned cursor. With --json, follow output is
-  NDJSON with one complete admitted record per line; YAML follow is unsupported.
+  --follow reuses one Client Session, advances with the returned cursors and emits
+  each record once. With --json, follow output is NDJSON with one complete admitted
+  record per line; YAML follow is unsupported. Gaps are reported on stderr (one JSON
+  line with warning JOURNAL_GAP in machine modes), and after retention or a recreated
+  journal the follow resumes at the oldest retained record. A refused cursor ends the
+  follow with JOURNAL_CURSOR_INVALID.
 
 Examples:
   $ astrale logs -i staging --limit 50
