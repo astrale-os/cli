@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -54,6 +54,35 @@ describe('domain issuer cache', () => {
     await cache.deleteKernel(kernel)
     expect(await cache.get(kernel, 'shell.example', 2_000)).toBeUndefined()
     expect(await cache.get(other, 'issues.example', 2_000)).toBe(issues)
+  })
+
+  /** @evidence TEST-CLI-DOMAIN-ISSUER-CACHE-EVICTABLE */
+  test.skipIf(process.getuid?.() === 0)('never trusts an entry it could not forget', async () => {
+    const cache = new DomainIssuerCache(path)
+    await cache.set(kernel, 'issues.example', issues, 1_000)
+    await chmod(dirname(path), 0o500)
+    try {
+      expect(await cache.get(kernel, 'issues.example', 2_000)).toBeUndefined()
+      await expect(cache.delete(kernel, 'issues.example')).rejects.toBeDefined()
+    } finally {
+      await chmod(dirname(path), 0o700)
+    }
+    expect(await cache.get(kernel, 'issues.example', 2_000)).toBe(issues)
+  })
+
+  test('removes the whole store when one entry cannot be rewritten away', async () => {
+    const cache = new DomainIssuerCache(path, undefined, { timeoutMs: 50, pollIntervalMs: 10 })
+    await cache.set(kernel, 'issues.example', issues, 1_000)
+    await cache.set(kernel, 'shell.example', 'https://shell.example', 1_000)
+    // A live lock held by another process: the locked rewrite cannot run.
+    await writeFile(`${path}.lock`, '{}')
+    try {
+      await cache.delete(kernel, 'issues.example')
+    } finally {
+      await rm(`${path}.lock`, { force: true })
+    }
+    expect(await cache.get(kernel, 'issues.example', 2_000)).toBeUndefined()
+    expect(await cache.get(kernel, 'shell.example', 2_000)).toBeUndefined()
   })
 
   test('treats unreadable, foreign, or malformed state as a miss and repairs it on write', async () => {

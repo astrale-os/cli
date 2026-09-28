@@ -4,7 +4,7 @@ import type { ClientSession } from '@astrale-os/sdk/client/session'
 import { issuer } from '@astrale-os/sdk/auth'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -253,6 +253,32 @@ describe('remembered callable Domain issuer', () => {
     expect(healed.inspected).toEqual(['services.example'])
     expect(await cache.get(kernel, 'services.example')).toBe(serviceIssuer)
   })
+
+  test.skipIf(process.getuid?.() === 0)(
+    'reads the installation again when a remembered issuer could no longer be forgotten',
+    async () => {
+      await cache.set(kernel, 'services.example', 'https://stale.example')
+      const state = join(directory, 'session')
+      await chmod(state, 0o500)
+      try {
+        const fixture = harness()
+        await withResolvedClientSession(
+          target,
+          {},
+          config,
+          async (context) => {
+            expect(context.target.domainIssuer).toBe(serviceIssuer)
+          },
+          fixture.open,
+          intent,
+          cache,
+        )
+        expect(fixture.inspected).toEqual(['services.example'])
+      } finally {
+        await chmod(state, 0o700)
+      }
+    },
+  )
 
   test('keeps a freshly read issuer when the command itself fails', async () => {
     const failure = new Error('input rejected')

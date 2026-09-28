@@ -1,8 +1,9 @@
 import { issuer } from '@astrale-os/sdk/auth'
-import { chmod, mkdir, readFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { access, chmod, mkdir, readFile, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import { atomicWrite, withFileLock } from './files'
+import { atomicWrite, withFileLock, type FileLockOptions } from './files'
 import { DOMAIN_ISSUERS_PATH } from './paths'
 
 const VERSION = 1
@@ -12,6 +13,8 @@ const VERSION = 1
  */
 const MAXIMUM_AGE_MS = 24 * 60 * 60 * 1_000
 const MAXIMUM_ENTRIES = 256
+/** A cache never makes a command wait: a busy lock turns a write into a miss or a file removal. */
+const LOCK: FileLockOptions = Object.freeze({ timeoutMs: 1_000, pollIntervalMs: 25 })
 
 export namespace domainIssuers {
   export interface Artifact {
@@ -32,11 +35,15 @@ export namespace domainIssuers {
  *
  * The value is installation state, never authority: the Kernel still admits every credential the
  * CLI exchanges through it. It lets a callable command skip reading the installation again.
+ *
+ * A remembered issuer is trusted only while the cache can still forget it: a caller that finds it
+ * stale must be able to evict it, or every later command would keep reusing it.
  */
 export class DomainIssuerCache {
   constructor(
     private readonly path = DOMAIN_ISSUERS_PATH,
     private readonly maximumAgeMs = MAXIMUM_AGE_MS,
+    private readonly lock: FileLockOptions = LOCK,
   ) {}
 
   /** The remembered issuer, `null` for a Kernel-hosted Domain, or undefined when unknown. */
@@ -45,6 +52,12 @@ export class DomainIssuerCache {
     origin: string,
     now = Date.now(),
   ): Promise<string | null | undefined> {
+    // Eviction needs a writable directory; without one an entry could never be forgotten.
+    try {
+      await access(dirname(this.path), constants.W_OK)
+    } catch {
+      return undefined
+    }
     const entry = (await readStore(this.path)).entries[encodeKey(kernelIssuer, origin)]
     return entry !== undefined && validEntry(entry, now, this.maximumAgeMs)
       ? entry.issuer
@@ -71,10 +84,20 @@ export class DomainIssuerCache {
     })
   }
 
+  /**
+   * Forget one entry. When the store cannot be rewritten (no space, lock unavailable), remove the
+   * whole file instead: unlinking needs neither, and a lost entry only costs one installation read.
+   */
   async delete(kernelIssuer: string, origin: string): Promise<void> {
-    await this.transition((store) => {
-      delete store.entries[encodeKey(kernelIssuer, origin)]
-    })
+    try {
+      await this.transition((store) => {
+        delete store.entries[encodeKey(kernelIssuer, origin)]
+      })
+    } catch (cause) {
+      await rm(this.path, { force: true }).catch(() => {
+        throw cause
+      })
+    }
   }
 
   async deleteKernel(kernelIssuer: string): Promise<void> {
@@ -87,15 +110,19 @@ export class DomainIssuerCache {
   }
 
   private async transition(change: (store: domainIssuers.Artifact) => void): Promise<void> {
-    await withFileLock(`${this.path}.lock`, async () => {
-      const directory = dirname(this.path)
-      await mkdir(directory, { recursive: true, mode: 0o700 })
-      await chmod(directory, 0o700)
-      const store = await readStore(this.path)
-      change(store)
-      await atomicWrite(this.path, `${JSON.stringify(store, null, 2)}\n`)
-      await chmod(this.path, 0o600)
-    })
+    await withFileLock(
+      `${this.path}.lock`,
+      async () => {
+        const directory = dirname(this.path)
+        await mkdir(directory, { recursive: true, mode: 0o700 })
+        await chmod(directory, 0o700)
+        const store = await readStore(this.path)
+        change(store)
+        await atomicWrite(this.path, `${JSON.stringify(store, null, 2)}\n`)
+        await chmod(this.path, 0o600)
+      },
+      this.lock,
+    )
   }
 }
 

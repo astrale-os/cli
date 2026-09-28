@@ -83,9 +83,10 @@ export const CLI_STATE_EXCHANGE_CACHE = defineLaw({
 export const CLI_STATE_DOMAIN_ISSUER_CACHE = defineLaw({
   id: 'CLI-STATE-DOMAIN-ISSUER-CACHE',
   statement:
-    'The durable Domain issuer Artifact maps an exact source Kernel issuer and Domain origin to the installed Domain issuer, or to null for a Kernel-hosted Domain. It carries no credential. Entries older than the maximum age, from the future, or not canonical issuers are misses; publication is owner-private and atomic, bounded in size, and removed with the Kernel bookmark.',
+    'The durable Domain issuer Artifact maps an exact source Kernel issuer and Domain origin to the installed Domain issuer, or to null for a Kernel-hosted Domain. It carries no credential. Entries older than the maximum age, from the future, or not canonical issuers are misses; publication is owner-private and atomic, bounded in size, and removed with the Kernel bookmark. An entry is trusted only while it can still be forgotten: without a writable directory every entry is a miss, and a deletion that cannot rewrite the store removes the whole file.',
   tests: [
     { file: '__tests__/domain-issuers.test.ts', id: 'TEST-CLI-DOMAIN-ISSUER-CACHE-PARTITION' },
     { file: '__tests__/domain-issuers.test.ts', id: 'TEST-CLI-DOMAIN-ISSUER-CACHE-BOUNDED' },
+    { file: '__tests__/domain-issuers.test.ts', id: 'TEST-CLI-DOMAIN-ISSUER-CACHE-EVICTABLE' },
   ],
 })

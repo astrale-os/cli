@@ -57,8 +57,12 @@ export namespace domainIssuers {
 }
 
 /** Remember each installed Domain's issuer per source Kernel; installation state, never authority. */
+/**
+ * An entry is trusted only while the cache can still forget it: without a writable directory every
+ * entry is a miss, and an entry that cannot be rewritten away is removed with the whole file.
+ */
 export class DomainIssuerCache {
-  constructor(path?: string, maximumAgeMs?: number)
+  constructor(path?: string, maximumAgeMs?: number, lock?: FileLockOptions)
   get(kernelIssuer: string, origin: string, now?: number): Promise<string | null | undefined>
   set(
     kernelIssuer: string,
