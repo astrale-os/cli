@@ -9,6 +9,7 @@ const invitation = Object.freeze({
   state: 'accepted' as const,
   access: 'member' as const,
   instance: '@instance-node',
+  user: '@reserved-user',
   invitedBy: '@owner',
   claimedBy: '@member',
   createdAt: '2026-08-28T10:00:00.000Z',
@@ -85,6 +86,7 @@ test('prints one human headline and the useful durable lifecycle fields', async 
   expect(rendered).not.toContain('Invitation is accepted')
   expect(rendered).toContain('invitation: @invitation-node')
   expect(rendered).toContain('instance: @instance-node')
+  expect(rendered).toContain('user: @reserved-user')
   expect(rendered).toContain('invited by: @owner')
   expect(rendered).toContain('claimed by: @member')
   expect(rendered).toContain('created: 2026-08-28T10:00:00.000Z')

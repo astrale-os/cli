@@ -28,6 +28,10 @@ Behavior:
   invited user and Instance access are materialized. "accepted", "registering"
   and "registered" are intermediate states, not completed access.
 
+  "user" is the Shell User Admin reserved on the Instance for this invitation;
+  the accepting account registers onto it. Invitation grants member access only;
+  an Instance administrator may assign that User to Core admin through Shell.
+
   The sender and Fleet administrators can inspect the Invitation. Its claimed
   user can inspect it after acceptance. Email ownership alone grants no access.
 
@@ -49,6 +53,7 @@ Examples:
         log.success(`Invitation ${invitation.state}: ${invitation.email}`)
         log.dim(`  invitation: ${invitation.id}`)
         log.dim(`  instance: ${invitation.instance}`)
+        if (invitation.user) log.dim(`  user: ${invitation.user}`)
         if (invitation.invitedBy) log.dim(`  invited by: ${invitation.invitedBy}`)
         if (invitation.claimedBy) log.dim(`  claimed by: ${invitation.claimedBy}`)
         log.dim(`  created: ${invitation.createdAt}`)

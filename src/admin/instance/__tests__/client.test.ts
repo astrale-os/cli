@@ -497,6 +497,36 @@ describe('V2 Admin Instance adapter', () => {
     },
   )
 
+  test('exposes the Shell User reserved on the Instance by the Invitation target', async () => {
+    const api = await fixture({
+      invoke: () => ({
+        id: '@invitation-node',
+        version: 1,
+        target: {
+          instance: 'instance-node',
+          kernel: 'https://demo.eu.astrale.ai/api',
+          user: 'user-node',
+          concreteClass: 'shell.astrale.ai:class.User',
+        },
+        email: 'person@example.com',
+        state: 'pending',
+        access: 'member',
+        instance: '@instance-node',
+        createdAt: '2026-09-28T00:00:00.000Z',
+      }),
+    }).connect()
+
+    await expect(api.statusInvitation('@invitation-node')).resolves.toEqual({
+      id: '@invitation-node',
+      email: 'person@example.com',
+      state: 'pending',
+      access: 'member',
+      instance: '@instance-node',
+      user: '@user-node',
+      createdAt: '2026-09-28T00:00:00.000Z',
+    })
+  })
+
   test('invites through the exact Instance receiver and observes before explicit recovery', async () => {
     const summary = {
       id: '@invitation-node',
@@ -538,6 +568,7 @@ describe('V2 Admin Instance adapter', () => {
     ['Invitation id', { id: '@other-invitation' }],
     ['missing Instance', { instance: undefined }],
     ['Fleet access', { access: 'administrator' }],
+    ['target Instance', { target: { instance: 'other-instance', user: 'user-node' } }],
   ] as const)('rejects status with mismatched %s scope', async (_label, mismatch) => {
     const contract = fixture({
       invoke: () => ({

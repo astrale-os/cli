@@ -56,7 +56,8 @@ Examples:
       log.dim(`  invitation: ${invitation.id}`)
       log.dim(`  state: ${invitation.state}`)
       if (invitation.instance) log.dim(`  instance: ${invitation.instance}`)
-      if (invitation.claimedBy) log.dim(`  user: ${invitation.claimedBy}`)
+      if (invitation.user) log.dim(`  user: ${invitation.user}`)
+      if (invitation.claimedBy) log.dim(`  claimed by: ${invitation.claimedBy}`)
       log.dim('  access: after the recipient signs in to the Instance')
     } catch (error) {
       await formatKernelError(error, isMachine(opts), undefined, opts.debug)
