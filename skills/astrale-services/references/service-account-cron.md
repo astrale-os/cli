@@ -29,6 +29,14 @@ target Job. Our qualification split these between two Groups to isolate each che
 are not a product requirement. Register does not grant either permission. Avoid Root, Shell admin,
 or direct Query/Mutate permissions on the worker account unless its actual purpose requires them.
 
+The account's own credential makes the account the principal, so `can_use` on the callable is
+required. An SDK whose Session accepts the `exchange` option (it carries kernel-client
+`0.6.0-beta.76` or later) removes that requirement for Domain callables: with `exchange: {}`,
+each Domain callable is presented with a credential its declaring Domain exchanged for the
+account. The Domain is then the principal and only the business Policy is evaluated against the
+account. Kernel callables, Queries and Mutations still present the account's own credential. See
+"Headless scripts and Domain callables" in the SDK README.
+
 The deployer's identity and the worker account are separate choices. `CloudflareWorker.deploy` is
 `authenticated`: a registered account may create its own Service. `serviceKey` is unique per owner,
 so changing `--as` can create another Service rather than update the original. Receiver management
@@ -86,6 +94,30 @@ function openAccountSession(kernelIssuer, privateJwk) {
       ttlSeconds: 60,
       resolve: async () => ({ credential: await selfCredential(kernelIssuer, privateJwk) }),
     },
+  })
+}
+```
+
+To use the `exchange` option instead of `can_use`, hold the self proof in a provider: Domain
+credentials are cached per source credential, so a `resolve` that signs a new proof on every call
+also exchanges on every call.
+
+```js
+import { credential } from '@astrale-os/sdk/auth'
+import { connect, createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
+
+function openExchangingAccountSession(kernelIssuer, privateJwk) {
+  return connect({
+    url: kernelIssuer,
+    auth: createSessionCredentialProvider({
+      ttlSeconds: 60,
+      mint: async () => {
+        const proof = await selfCredential(kernelIssuer, privateJwk)
+        return { credential: proof, expiresAt: credential.inspect(proof).claims.exp * 1_000 }
+      },
+    }),
+    // A Domain credential never outlives the 3-minute proof; keep it above 65 seconds.
+    exchange: { ttlSeconds: 120 },
   })
 }
 ```
