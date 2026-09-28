@@ -51,6 +51,7 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, (await import('../commands/setup')).default)
   registerCommand(program, (await import('../commands/use')).default)
   registerCommand(program, (await import('../commands/update')).default)
+  registerCommand(program, (await import('../commands/issue')).default)
 
   // ── Graph / kernel ─────────────────────────────────────────────
   registerCommand(program, withKernelOptions((await import('../commands/call')).default))

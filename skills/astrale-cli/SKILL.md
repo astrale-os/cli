@@ -44,6 +44,7 @@ astrale identity ...
 astrale auth ...
 astrale idp ...
 astrale admin ...
+astrale issue "Title" --body "Context and details"
 ```
 
 Kernel-touching commands share `--format`, `--json`, `--raw`, `--url`,
@@ -57,6 +58,18 @@ Kernel command and takes the shared Kernel options.
 
 Use `--anonymous` to omit a caller credential even when a local or bookmark-default identity exists.
 It cannot be combined with `--as` or `--creds`; required callables reject anonymous requests.
+
+## Report an issue
+
+Use `astrale issue "Factual title" --body "Context and details"` (or pipe the body
+on stdin). Prefer optional `--project <directory>` and `-i <instance>` when known;
+do not ask for missing context just to fill these options. Available local versions are
+attached automatically. `-i` names the affected instance.
+Optionally add `Type: bug`, `Type: limitation` (including capability requests), or `Type: friction`.
+Keep the body brief: **Context** → **Reproduction** for bugs (exact inputs/steps, expected vs. actual
+result) or **Scenario** for limitations/friction (concrete task, obstacle, desired behavior) → **Impact**.
+Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
+If confirmation fails, use the printed `--retry` command.
 
 ## UI Projects
 
