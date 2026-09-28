@@ -465,7 +465,7 @@ describe('follow continuity', () => {
 
     expect(run.sequences).toEqual([500, 501])
     expect(run.cursors).toEqual(['evicted-cursor', undefined, 'after-501'])
-    expect(run.events).toEqual(['call', 'call', 'pause', 'call'])
+    expect(run.events).toEqual(['call', 'call', 'call'])
     expect(JSON.parse(run.stderr)).toEqual({
       warning: 'JOURNAL_GAP',
       message: 'Journal records before #500 were evicted by retention',
@@ -525,6 +525,35 @@ describe('follow continuity', () => {
     ])
 
     expect(run.events).toEqual(['call', 'pause', 'call'])
+  })
+
+  /** @evidence TEST-CLI-LOGS-FOLLOW-DRAINS-WHILE-BEHIND */
+  test('reads on at once while the Kernel returns new cursors and polls once caught up', async () => {
+    const current = frontier('journal-1', 3)
+    const run = await follow({ json: true }, [
+      { records: [record(1)], cursor: 'after-one-cursor', frontier: current },
+      { records: [record(2)], cursor: 'after-two-cursor', frontier: current },
+      { records: [record(3)], frontier: current },
+    ])
+
+    expect(run.sequences).toEqual([1, 2, 3])
+    expect(run.cursors).toEqual([
+      undefined,
+      'after-one-cursor',
+      'after-two-cursor',
+      'after-two-cursor',
+    ])
+    expect(run.events).toEqual(['call', 'call', 'call', 'pause', 'call'])
+  })
+
+  test('waits before polling again when the Kernel repeats the cursor it was sent', async () => {
+    const current = frontier('journal-1', 1)
+    const run = await follow({ json: true }, [
+      { records: [record(1)], cursor: 'repeated-cursor', frontier: current },
+      { records: [], cursor: 'repeated-cursor', frontier: current },
+    ])
+
+    expect(run.events).toEqual(['call', 'call', 'pause', 'call'])
   })
 
   test('warns a human reader on stderr, never on stdout', async () => {

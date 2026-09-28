@@ -208,8 +208,10 @@ type FollowDependencies = {
  *
  * The journal syscall is a finite read: a page that reaches the end of the journal carries no cursor,
  * so the next poll repeats the previous cursor and re-reads its tail. Records are emitted at most
- * once per journal generation by sequence. A gap is reported on stderr; after retention or a new
- * generation the Kernel returns no cursor, and the follow resumes at the oldest retained record.
+ * once per journal generation by sequence. A new cursor means the Kernel stopped before the end, so
+ * the next page is read at once; the follow waits only once it has caught up. A gap is reported on
+ * stderr; after retention or a new generation the Kernel returns no cursor, and the follow resumes
+ * at the oldest retained record.
  */
 export async function followLogs(
   opts: LogsOpts,
@@ -244,8 +246,11 @@ export async function followLogs(
           printRecord(record, opts)
           emitted = { ...emitted, sequence: record.sequence }
         }
-        if (page.cursor !== undefined) cursor = page.cursor
-        else if (page.gap !== undefined && cursor !== undefined) {
+        if (page.cursor !== undefined && page.cursor !== cursor) {
+          cursor = page.cursor
+          continue
+        }
+        if (page.cursor === undefined && page.gap !== undefined && cursor !== undefined) {
           cursor = undefined
           continue
         }
@@ -489,7 +494,8 @@ Behavior:
   Timestamps accept ISO-8601 with a timezone and millisecond precision; offsets
   are converted to canonical UTC (e.g. 2026-08-19T16:51:10.000Z).
   --follow reuses one Client Session, advances with the returned cursors and emits
-  each record once. With --json, follow output is NDJSON with one complete admitted
+  each record once. It reads the next page at once while the Kernel returns a new
+  cursor, and polls every 2 s once caught up. With --json, follow output is NDJSON with one complete admitted
   record per line; YAML follow is unsupported. Gaps are reported on stderr (one JSON
   line with warning JOURNAL_GAP in machine modes), and after retention or a recreated
   journal the follow resumes at the oldest retained record. A refused cursor ends the
