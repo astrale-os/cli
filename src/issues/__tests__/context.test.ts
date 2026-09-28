@@ -135,6 +135,23 @@ describe('issue context selection', () => {
     expect(JSON.stringify(value)).not.toContain('private')
   })
 
+  it.each(['/session/private-token', '/private-token/../api', '/api%2Fprivate-token'])(
+    'omits unrecognized credential-bearing path %s without changing instance identity',
+    async (path) => {
+      const value = await collect({
+        instance: 'proxy',
+        instances: {
+          active: '',
+          instances: {
+            proxy: { issuer: `https://kernel.test${path}`, url: `https://proxy.test${path}` },
+          },
+        },
+      })
+      expect(value.instance).toEqual({ name: 'proxy' })
+      expect(JSON.stringify(value)).not.toContain('private-token')
+    },
+  )
+
   it('does not invent an issuer from the transport URL', async () => {
     const value = await collect({
       instance: 'proxy',

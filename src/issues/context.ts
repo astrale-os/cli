@@ -175,14 +175,15 @@ function observeInstance(store: InstanceStore | undefined, name: string): IssueC
     )
   // Sanitizing a transport URL is safe; changing an issuer would invent another identity.
   const issuer = entry.issuer === undefined ? undefined : safeCoordinate(entry.issuer)
+  const url = entry.url === undefined ? undefined : safeCoordinate(entry.url)
   return {
     name: key,
     ...(issuer === entry.issuer && issuer !== undefined ? { issuer } : {}),
-    ...(entry.url === undefined ? {} : { url: safeCoordinate(entry.url) }),
+    ...(url === undefined ? {} : { url }),
   }
 }
 
-function safeCoordinate(value: string): string {
+function safeCoordinate(value: string): string | undefined {
   let url: URL
   try {
     url = new URL(value)
@@ -191,6 +192,16 @@ function safeCoordinate(value: string): string {
   }
   if (!['https:', 'http:'].includes(url.protocol))
     throw new AstraleError('ISSUE_INSTANCE_INVALID', 'The affected instance has an invalid URL.')
+  // Unknown paths may carry credentials. Keep only fixed public Astrale endpoints;
+  // inspect the original path because URL normalization can hide secret/../api segments.
+  const path = /^[a-z]+:\/\/[^/?#]+([^?#]*)/i.exec(value)?.[1]
+  if (
+    path === undefined ||
+    !['', '/', '/api', '/api/invoke', '/invoke', '/kernel/host', '/kernel/host/invoke'].includes(
+      path,
+    )
+  )
+    return undefined
   if (!url.username && !url.password && !url.search && !url.hash) return value
   url.username = ''
   url.password = ''
