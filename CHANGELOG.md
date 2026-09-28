@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0-beta.124](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.123...cli/v1.0.0-beta.124) (2026-09-28)
+
+
+### Features
+
+* **cli:** report issues to Admin with optional project and instance context ([#563](https://github.com/astrale-os/cli/issues/563)) ([441fd33](https://github.com/astrale-os/cli/commit/441fd332709de063c42bba89e82f78f93f8fb431))
+
+
+### Bug Fixes
+
+* **commands:** follow the journal without duplicates, stalls, silent gaps or a drain cap ([#565](https://github.com/astrale-os/cli/issues/565)) ([ae522e1](https://github.com/astrale-os/cli/commit/ae522e1531466800e8fd61635d142b0fa1170af1))
+* **commands:** import an Instance root identity whichever Fleet holds it ([#566](https://github.com/astrale-os/cli/issues/566)) ([903edb7](https://github.com/astrale-os/cli/commit/903edb746d183216bce26ecef9a8846318a27194))
+
+
+### Performance Improvements
+
+* **lib:** remember Domain installations instead of reading them on every call ([#560](https://github.com/astrale-os/cli/issues/560)) ([e0f3754](https://github.com/astrale-os/cli/commit/e0f3754e23322b80ee11933e370a5d3bbe74a1be))
+
 ## [1.0.0-beta.123](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.122...cli/v1.0.0-beta.123) (2026-09-25)
 
 
