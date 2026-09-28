@@ -6,11 +6,15 @@ credentials for an explicit anonymous selection or resolves fresh source-Kernel 
 Call, binds Graph and Auth helpers, and closes every owned Client resource when the command action
 terminates.
 
-When a target also names an exact Domain issuer, the connection owner performs the client-mediated
-`whoami -> delegate(attenuation) -> issuer exchange` journey. The resulting Domain token crosses
-into ClientSession as an opaque credential; connection does not authorize Domain operations. Its
-carried Grant must be exactly the caller proof. Fresh or cached credentials that add Domain self or
-any other authority are rejected rather than forwarded to the Kernel.
+When a target also names an exact Domain issuer, the connection owner obtains a Domain token through
+the Kernel Client's `session.exchange(issuer)`, which runs the
+`whoami -> delegate(attenuation) -> issuer exchange` journey and admits the Domain response. The
+connection owner keeps only what outlives one Client call: the persisted cache, the command-timeout
+lifetime rules, retry of a delegation whose outcome is unknown, and the mapping of each Client
+`ExchangeError` failure reason to a stable CLI error code. The resulting Domain token crosses into
+ClientSession as an opaque credential; connection does not authorize Domain operations. Its carried
+Grant must be exactly the caller proof. Fresh or cached credentials that add Domain self or any
+other authority are rejected rather than forwarded to the Kernel.
 
 ```mermaid
 flowchart LR
