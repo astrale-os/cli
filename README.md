@@ -137,39 +137,17 @@ again**. It also detects stale local Astrale skills and offers to repair them.
 ## Reporting a problem
 
 ```sh
-astrale issue "Deployment stays pending" --body "After deploying Orders, the state stays pending."
-cat scenario.md | astrale issue "Staging request fails" --project ./orders -i staging
+astrale issue "Short title" --body "Context and reproduction"
+cat reproduction.md | astrale issue "Short title" --project ./orders -i staging
 ```
 
 A title and body are enough. Prefer optional `--project` and `-i` when known. The project selects
-local installed versions; `-i` selects the affected instance without connecting to it. Reports
-always go to the configured Admin (`--admin` / `--admin-url` to override). The active instance is
-never inferred. Versions describe the current local setup, not a past deployed build.
+local installed versions; `-i` selects the affected instance without connecting to it.
 
-Keep the body short: Context, Scenario (Mermaid when useful), Impact. An unconfirmed request is retained privately under `~/.astrale/issues/pending/`; use the
-printed `astrale issue --retry <request-id>` with the same Admin and identity to resume its exact
-payload. Confirmed reports return `{ id, reference }` with `--json`.
+Suggested body: **Context**, **Reproduction** (exact command or input, steps, expected vs. actual
+result), **Impact**. Keep it brief.
 
-Example body for “Orders deployment stays pending” (illustrative):
-
-````markdown
-**Context:** Deploying Orders to staging. The command returns successfully, but the displayed state stays pending.
-
-**Scenario:**
-```mermaid
-sequenceDiagram
-  participant Dev as Developer
-  participant CLI as Astrale CLI
-  Dev->>CLI: Deploy Orders to staging
-  CLI-->>Dev: Deployment accepted
-  Dev->>CLI: Check the deployment state
-  CLI-->>Dev: Still pending after 5 minutes
-```
-
-**Impact:** I cannot test the new Orders version on staging.
-````
-
-This structure is optional. Describe only observed behavior; short text steps also work.
+If confirmation fails, use the printed `--retry` command. `--json` returns the issue ID and reference.
 
 ## Commands
 

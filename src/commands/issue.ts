@@ -131,13 +131,13 @@ const command = withKernelOptions({
     },
   ],
   afterHelpText: `
-  A title and body are enough. Prefer --project and -i when their context is known.
-  -i selects the affected instance; reports always go to Admin. Without -i no
-  instance is inferred. Versions describe the current local setup.
-  Suggested body: Context, Scenario (short Mermaid if useful), Impact.
+  A title and body are enough. Prefer --project and -i when known.
+  Suggested body: Context, Reproduction (exact command or input, steps,
+  expected vs. actual result), Impact. Keep it brief.
+  If confirmation fails, use the printed --retry command.
 
-  $ astrale issue "Deployment stays pending" --body "After deploy, ..."
-  $ cat scenario.md | astrale issue "Staging request fails" --project ./orders -i staging
+  $ astrale issue "Short title" --body "Context and reproduction"
+  $ cat reproduction.md | astrale issue "Short title" --project ./orders -i staging
 `,
   action: async (title: string | undefined, options: IssueOptions) => {
     try {

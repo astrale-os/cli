@@ -64,10 +64,9 @@ It cannot be combined with `--as` or `--creds`; required callables reject anonym
 Use `astrale issue "Factual title" --body "Context and reproduction"` (or pipe the body
 on stdin). Prefer optional `--project <directory>` and `-i <instance>` when known;
 do not ask for missing context just to fill these options. Available local versions are
-attached automatically. `-i` names the affected instance; without it none is inferred.
-Reports always go to Admin. Suggested body: **Context** (1–2 sentences), **Scenario**
-(short Mermaid if useful), **Impact** (1 sentence). State observations and uncertainties.
-If confirmation fails, use the printed `--retry` command to resend the saved report.
+attached automatically. `-i` names the affected instance.
+Suggested body: **Context**, **Reproduction** (exact command or input, steps, expected vs. actual
+result), **Impact**. Keep it brief. If confirmation fails, use the printed `--retry` command.
 
 ## UI Projects
 
