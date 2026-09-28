@@ -151,6 +151,29 @@ handling. An unconfirmed request is retained privately under `~/.astrale/issues/
 printed `astrale issue --retry <request-id>` with the same Admin and identity to resume its exact
 payload. Confirmed reports return `{ id, reference }` with `--json`.
 
+Example body for “Retrying after a timeout creates two issues” (illustrative):
+
+````markdown
+**Context:** The first submission timed out. I retried the same report expecting one issue.
+
+**Scenario:**
+```mermaid
+sequenceDiagram
+  participant CLI as Astrale CLI
+  participant Admin as Admin instance
+  CLI->>Admin: Submit the report
+  Admin-->>CLI: No response received before timeout
+  CLI->>Admin: Retry the same report
+  Admin-->>CLI: Return a reference
+  CLI->>Admin: Inspect issues
+  Admin-->>CLI: Show two matching reports
+```
+
+**Impact:** A retry creates duplicate triage work.
+````
+
+This structure is optional. Describe only observed behavior; short text steps also work.
+
 ## Commands
 
 The authoritative command surface is generated from the code:
