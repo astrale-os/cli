@@ -119,6 +119,28 @@ function ledgeredSurface(root: Command): readonly object[] {
 }
 
 describe('program composition', () => {
+  test('issue accepts a retry without a title and keeps the affected instance distinct from Admin', async () => {
+    const program = await buildProgram()
+    const issue = program.commands.find((command) => command.name() === 'issue')!
+    const seen: unknown[] = []
+    issue.action((title: string | undefined, options: Record<string, unknown>) => {
+      seen.push({ title, ...options })
+    })
+    await program.parseAsync([
+      'node',
+      'astrale',
+      'issue',
+      '--retry',
+      '00000000-0000-4000-8000-000000000001',
+    ])
+    expect(seen).toEqual([{ title: undefined, retry: '00000000-0000-4000-8000-000000000001' }])
+    expect(issue.options.find((option) => option.long === '--instance')?.description).toContain(
+      'Affected instance',
+    )
+    expect(issue.options.some((option) => option.long === '--url')).toBe(false)
+    expect(issue.options.some((option) => option.long === '--anonymous')).toBe(false)
+    expect(issue.options.some((option) => option.long === '--admin')).toBe(true)
+  })
   /** @evidence TEST-CLI-PROGRAM-MATCHES-LEDGERED-SURFACE */
   test('matches the complete ledgered command and help surface', async () => {
     const surface = ledgeredSurface(await buildProgram())
@@ -176,6 +198,7 @@ describe('program composition', () => {
       'instance status',
       'instance use',
       'introspect',
+      'issue',
       'logs',
       'mutate',
       'query',

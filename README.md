@@ -134,6 +134,23 @@ On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version
 again**. It also detects stale local Astrale skills and offers to repair them.
 
+## Reporting a problem
+
+```sh
+astrale issue "Deployment stays pending" --body "After deploying Orders, the state stays pending."
+cat scenario.md | astrale issue "Staging request fails" --project ./orders -i staging
+```
+
+A title and body are enough. Prefer optional `--project` and `-i` when known. The project selects
+local installed versions; `-i` selects the affected instance without connecting to it. Reports
+always go to the configured Admin (`--admin` / `--admin-url` to override). The active instance is
+never inferred. Versions describe the current local setup, not a past deployed build.
+
+Keep the body short: Context, Scenario (Mermaid when useful), Impact. Admin owns triage and duplicate
+handling. An unconfirmed request is retained privately under `~/.astrale/issues/pending/`; use the
+printed `astrale issue --retry <request-id>` with the same Admin and identity to resume its exact
+payload. Confirmed reports return `{ id, reference }` with `--json`.
+
 ## Commands
 
 The authoritative command surface is generated from the code:
