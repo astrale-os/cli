@@ -39,7 +39,8 @@ Recovery:
         return
       }
       log.success(`Invitation ${invitation.state}: ${invitation.email}`)
-      if (invitation.claimedBy) log.dim(`  user: ${invitation.claimedBy}`)
+      if (invitation.user) log.dim(`  user: ${invitation.user}`)
+      if (invitation.claimedBy) log.dim(`  claimed by: ${invitation.claimedBy}`)
     } catch (error) {
       await formatKernelError(error, isMachine(opts), undefined, opts.debug)
       process.exit(1)
