@@ -14,8 +14,10 @@ export default {
   description: 'Diagnose or repair one managed Instance invitation',
   afterHelpText: `
 Recovery:
-  Normal invitations reconcile automatically after WorkOS acceptance. Use this
-  command only to diagnose or repair an exceptional retained Invitation.
+  Normal invitations need no reconcile: the WorkOS webhook records the
+  acceptance, and access is granted when the recipient signs in to the
+  Instance. Use this command only to diagnose or repair an exceptional
+  retained Invitation; it cannot register the recipient.
 `,
   arguments: [{ name: 'id', description: 'Invitation Node path', required: true }],
   options: [...ADMIN_TARGET_OPTIONS],
