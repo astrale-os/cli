@@ -161,6 +161,9 @@ astrale introspect /:issues.example -i development --as operator
   ranges. Keep durable regression tests with code and ephemeral qualification output outside delivery.
 - Run checks on the tree actually built and deployed. Do not hide files, weaken typechecking, or forge
   SDK types to satisfy the linter; minimize a genuine SDK gap and report the exact diagnostic.
+- Keep committed non-Domain trees (client mockups, preview harnesses) out of `astrale-domain lint`
+  with root-relative globs in `astrale.lint.json`, e.g. `{ "ignore": ["mockups/**"] }`. The SDK rejects
+  globs covering a declared layer or governed root file; never fake a `workspaces` entry instead.
 - When publishing a package, check emitted declarations and an isolated packed consumer. Avoid leaked
   Kernel imports, private aliases, or workspace overrides; use `pnpm --ignore-workspace` outside the repo.
 - Test operator scripts through their documented package command. A direct module run does not prove
