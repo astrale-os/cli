@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
-import { acceptJournalPage, buildJournalInput, followLogs, formatFollowRecord } from '../logs'
+import {
+  acceptJournalPage,
+  buildJournalInput,
+  describeJournalGap,
+  followLogs,
+  formatFollowRecord,
+} from '../logs'
 
 describe('buildJournalInput', () => {
   /** @evidence TEST-CLI-LOGS-MAPS-EXACT-JOURNAL-INPUT */
@@ -114,6 +120,57 @@ describe('acceptJournalPage', () => {
   test('rejects malformed record and cursor fields instead of formatting them loosely', () => {
     expect(() => acceptJournalPage({ records: [{}] })).toThrow('record 0')
     expect(() => acceptJournalPage({ records: [], cursor: 7 })).toThrow('cursor')
+  })
+
+  /** @evidence TEST-CLI-LOGS-RETAINS-TYPED-GAP */
+  test('retains the frontier and every typed gap instead of an ordinary empty page', () => {
+    const frontier = { id: 'journal-1', first: 40, committed: 90, durable: 90 }
+    for (const gap of [
+      { kind: 'retention', frontier },
+      { kind: 'recovery', from: 41, through: 44, frontier },
+      { kind: 'generation', frontier: { id: 'journal-2', committed: 0, durable: 0 } },
+      { kind: 'cursor', reason: 'stale' },
+      { kind: 'cursor', reason: 'selection' },
+      { kind: 'cursor', reason: 'visibility' },
+    ] as const) {
+      expect(acceptJournalPage({ records: [], frontier, gap })).toEqual({
+        records: [],
+        frontier,
+        gap,
+      })
+    }
+  })
+
+  test('rejects malformed frontiers and gaps', () => {
+    const frontier = { id: 'journal-1', committed: 9, durable: 9 }
+    expect(() => acceptJournalPage({ records: [], frontier: { ...frontier, id: ' ' } })).toThrow(
+      'frontier',
+    )
+    expect(() =>
+      acceptJournalPage({ records: [], frontier: { ...frontier, committed: -1 } }),
+    ).toThrow('frontier')
+    expect(() => acceptJournalPage({ records: [], frontier: { ...frontier, first: 0 } })).toThrow(
+      'frontier',
+    )
+    for (const gap of [
+      { kind: 'retention' },
+      { kind: 'recovery', from: 5, through: 4, frontier },
+      { kind: 'cursor', reason: 'expired' },
+      { kind: 'unknown', frontier },
+      'retention',
+    ]) {
+      expect(() => acceptJournalPage({ records: [], frontier, gap })).toThrow('gap')
+    }
+  })
+
+  test('names what each gap lost', () => {
+    const frontier = { id: 'journal-1', first: 40, committed: 90, durable: 90 }
+    expect(describeJournalGap({ kind: 'retention', frontier })).toContain('before #40')
+    expect(describeJournalGap({ kind: 'recovery', from: 41, through: 44, frontier })).toContain(
+      '#41–#44',
+    )
+    expect(describeJournalGap({ kind: 'generation', frontier })).toContain('recreated')
+    expect(describeJournalGap({ kind: 'cursor', reason: 'selection' })).toContain('selection')
   })
 
   test('admits journal v2 records that use occurredAt instead of timestamp', () => {
@@ -359,5 +416,225 @@ describe('follow output routing', () => {
       if (originalTty === undefined) delete (process.stdout as { isTTY?: boolean }).isTTY
       else Object.defineProperty(process.stdout, 'isTTY', originalTty)
     }
+  }
+})
+
+describe('follow continuity', () => {
+  const record = (sequence: number) => ({
+    sequence,
+    topic: 'function.invoke',
+    occurredAt: '2026-09-28T12:00:00.000Z',
+    payload: {},
+  })
+  const frontier = (id: string, committed: number, first?: number) => ({
+    id,
+    ...(first === undefined ? {} : { first }),
+    committed,
+    durable: committed,
+  })
+
+  /** @evidence TEST-CLI-LOGS-FOLLOW-EMITS-ONCE */
+  test('emits each record once while the tail is re-read without a new cursor', async () => {
+    const run = await follow({ json: true }, [
+      { records: [record(1), record(2)], frontier: frontier('journal-1', 2) },
+      { records: [record(1), record(2), record(3)], frontier: frontier('journal-1', 3) },
+      { records: [record(4)], cursor: 'after-four', frontier: frontier('journal-1', 5) },
+      { records: [record(5)], frontier: frontier('journal-1', 5) },
+      { records: [record(5)], frontier: frontier('journal-1', 5) },
+    ])
+
+    expect(run.sequences).toEqual([1, 2, 3, 4, 5])
+    expect(run.cursors).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      'after-four',
+      'after-four',
+      'after-four',
+    ])
+    expect(run.stderr).toBe('')
+  })
+
+  /** @evidence TEST-CLI-LOGS-FOLLOW-RESUMES-AFTER-RETENTION */
+  test('reports a retention gap and resumes at the oldest retained record at once', async () => {
+    const current = frontier('journal-1', 900, 500)
+    const run = await follow({ json: true, cursor: 'evicted-cursor' }, [
+      { records: [], frontier: current, gap: { kind: 'retention', frontier: current } },
+      { records: [record(500), record(501)], cursor: 'after-501', frontier: current },
+    ])
+
+    expect(run.sequences).toEqual([500, 501])
+    expect(run.cursors).toEqual(['evicted-cursor', undefined, 'after-501'])
+    expect(run.events).toEqual(['call', 'call', 'call'])
+    expect(JSON.parse(run.stderr)).toEqual({
+      warning: 'JOURNAL_GAP',
+      message: 'Journal records before #500 were evicted by retention',
+      gap: { kind: 'retention', frontier: current },
+    })
+  })
+
+  test('restarts sequence tracking in a recreated journal', async () => {
+    const recreated = frontier('journal-2', 2)
+    const run = await follow({ json: true }, [
+      {
+        records: [record(1), record(2), record(3)],
+        cursor: 'journal-1-cursor',
+        frontier: frontier('journal-1', 9),
+      },
+      { records: [], frontier: recreated, gap: { kind: 'generation', frontier: recreated } },
+      { records: [record(1), record(2)], frontier: recreated },
+    ])
+
+    expect(run.sequences).toEqual([1, 2, 3, 1, 2])
+    expect(run.cursors).toEqual([undefined, 'journal-1-cursor', undefined, undefined])
+    expect(JSON.parse(run.stderr)).toMatchObject({ gap: { kind: 'generation' } })
+  })
+
+  test('reports records lost during recovery and keeps the returned cursor', async () => {
+    const current = frontier('journal-1', 7)
+    const run = await follow({ json: true }, [
+      {
+        records: [record(3), record(7)],
+        cursor: 'after-seven',
+        frontier: current,
+        gap: { kind: 'recovery', from: 4, through: 6, frontier: current },
+      },
+    ])
+
+    expect(run.sequences).toEqual([3, 7])
+    expect(run.cursors).toEqual([undefined, 'after-seven'])
+    expect(JSON.parse(run.stderr)).toMatchObject({
+      message: 'Journal records #4–#6 were lost during journal recovery',
+    })
+  })
+
+  test('ends the follow when the Kernel refuses its cursor', async () => {
+    const run = await follow({ json: true, cursor: 'foreign-cursor' }, [
+      { records: [], frontier: frontier('journal-1', 9), gap: { kind: 'cursor', reason: 'stale' } },
+    ])
+
+    expect(run.error).toMatchObject({ code: 'JOURNAL_CURSOR_INVALID' })
+    expect(run.cursors).toEqual(['foreign-cursor'])
+    expect(run.stdout).toBe('')
+  })
+
+  test('waits before polling again when a gap arrives without a cursor to drop', async () => {
+    const current = frontier('journal-1', 9, 5)
+    const run = await follow({ json: true }, [
+      { records: [], frontier: current, gap: { kind: 'retention', frontier: current } },
+    ])
+
+    expect(run.events).toEqual(['call', 'pause', 'call'])
+  })
+
+  /** @evidence TEST-CLI-LOGS-FOLLOW-DRAINS-WHILE-BEHIND */
+  test('reads on at once while the Kernel returns new cursors and polls once caught up', async () => {
+    const current = frontier('journal-1', 3)
+    const run = await follow({ json: true }, [
+      { records: [record(1)], cursor: 'after-one-cursor', frontier: current },
+      { records: [record(2)], cursor: 'after-two-cursor', frontier: current },
+      { records: [record(3)], frontier: current },
+    ])
+
+    expect(run.sequences).toEqual([1, 2, 3])
+    expect(run.cursors).toEqual([
+      undefined,
+      'after-one-cursor',
+      'after-two-cursor',
+      'after-two-cursor',
+    ])
+    expect(run.events).toEqual(['call', 'call', 'call', 'pause', 'call'])
+  })
+
+  test('waits before polling again when the Kernel repeats the cursor it was sent', async () => {
+    const current = frontier('journal-1', 1)
+    const run = await follow({ json: true }, [
+      { records: [record(1)], cursor: 'repeated-cursor', frontier: current },
+      { records: [], cursor: 'repeated-cursor', frontier: current },
+    ])
+
+    expect(run.events).toEqual(['call', 'call', 'pause', 'call'])
+  })
+
+  test('warns a human reader on stderr, never on stdout', async () => {
+    const current = frontier('journal-1', 900, 500)
+    const originalError = console.error
+    const warnings: string[] = []
+    console.error = (...parts: unknown[]) => void warnings.push(parts.join(' '))
+    try {
+      const run = await follow(
+        { cursor: 'evicted-cursor' },
+        [{ records: [], frontier: current, gap: { kind: 'retention', frontier: current } }],
+        true,
+      )
+      expect(run.stdout).toBe('')
+    } finally {
+      console.error = originalError
+    }
+    expect(warnings.join('\n')).toContain('before #500 were evicted by retention')
+  })
+
+  async function follow(
+    opts: Omit<Parameters<typeof followLogs>[0], 'follow'>,
+    pages: readonly unknown[],
+    tty = false,
+  ) {
+    const originalStdout = process.stdout.write
+    const originalStderr = process.stderr.write
+    const originalTty = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    const result = {
+      stdout: '',
+      stderr: '',
+      cursors: [] as (string | undefined)[],
+      events: [] as string[],
+      error: undefined as unknown,
+      sequences: [] as number[],
+    }
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      result.stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+      return true
+    }) as typeof process.stdout.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      result.stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+      return true
+    }) as typeof process.stderr.write
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: tty })
+    try {
+      await followLogs(
+        { ...opts, follow: true },
+        {
+          run: async (input) => {
+            await input.fn({
+              session: {
+                call: async (call: { readonly input: { readonly cursor?: string } }) => {
+                  result.events.push('call')
+                  result.cursors.push(call.input.cursor)
+                  const page = pages[result.cursors.length - 1]
+                  if (page === undefined) throw new Error('end of controlled stream')
+                  return page
+                },
+              },
+            } as never)
+          },
+          pause: async () => void result.events.push('pause'),
+        },
+      )
+    } catch (error) {
+      if (!(error instanceof Error && error.message === 'end of controlled stream')) {
+        result.error = error
+      }
+    } finally {
+      process.stdout.write = originalStdout
+      process.stderr.write = originalStderr
+      if (originalTty === undefined) delete (process.stdout as { isTTY?: boolean }).isTTY
+      else Object.defineProperty(process.stdout, 'isTTY', originalTty)
+    }
+    if (!tty) {
+      result.sequences = result.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => (JSON.parse(line) as { sequence: number }).sequence)
+    }
+    return result
   }
 })
