@@ -4,11 +4,11 @@ import { access, chmod, mkdir, readFile, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { atomicWrite, withFileLock, type FileLockOptions } from './files'
-import { DOMAIN_ISSUERS_PATH } from './paths'
+import { INSTALLATIONS_PATH } from './paths'
 
 const VERSION = 1
 /**
- * An installed Domain keeps its issuer until it is uninstalled, and a stale issuer fails closed at
+ * Every recorded fact is fixed for the life of its installation, and a stale one fails closed at
  * token exchange or Kernel admission. The age only bounds how long an unused entry lingers.
  */
 const MAXIMUM_AGE_MS = 24 * 60 * 60 * 1_000
@@ -16,42 +16,51 @@ const MAXIMUM_ENTRIES = 256
 /** A cache never makes a command wait: a busy lock turns a write into a miss or a file removal. */
 const LOCK: FileLockOptions = Object.freeze({ timeoutMs: 1_000, pollIntervalMs: 25 })
 
-export namespace domainIssuers {
+/**
+ * What the CLI remembers about one Domain installed on one Kernel.
+ *
+ * Only facts fixed for the life of the installation belong here. Facts an upgrade changes
+ * (revision, bindings, readiness) need revalidation and must never be served from this record.
+ */
+export interface Installation {
+  /** Installed Domain issuer, or null when the Domain executes on the Kernel itself. */
+  readonly issuer: string | null
+}
+
+export namespace installations {
   export interface Artifact {
     readonly version: 1
     readonly entries: Record<string, Entry>
   }
 
-  export interface Entry {
-    /** Installed Domain issuer, or null when the Domain executes on the Kernel itself. */
-    readonly issuer: string | null
+  export interface Entry extends Installation {
     /** Unix time in milliseconds of the installation read that produced this entry. */
     readonly observedAt: number
   }
 }
 
 /**
- * Remember which issuer each installed Domain has on each source Kernel.
+ * Remember each Domain installation per source Kernel.
  *
- * The value is installation state, never authority: the Kernel still admits every credential the
- * CLI exchanges through it. It lets a callable command skip reading the installation again.
+ * The record is installation state, never authority: the Kernel still admits every credential the
+ * CLI exchanges through its issuer. It lets a callable command skip reading the installation again.
  *
- * A remembered issuer is trusted only while the cache can still forget it: a caller that finds it
- * stale must be able to evict it, or every later command would keep reusing it.
+ * A record is trusted only while the cache can still forget it: a caller that finds it stale must
+ * be able to evict it, or every later command would keep reusing it.
  */
-export class DomainIssuerCache {
+export class InstallationCache {
   constructor(
-    private readonly path = DOMAIN_ISSUERS_PATH,
+    private readonly path = INSTALLATIONS_PATH,
     private readonly maximumAgeMs = MAXIMUM_AGE_MS,
     private readonly lock: FileLockOptions = LOCK,
   ) {}
 
-  /** The remembered issuer, `null` for a Kernel-hosted Domain, or undefined when unknown. */
+  /** The remembered installation, or undefined when unknown. */
   async get(
     kernelIssuer: string,
     origin: string,
     now = Date.now(),
-  ): Promise<string | null | undefined> {
+  ): Promise<Installation | undefined> {
     // Eviction needs a writable directory; without one an entry could never be forgotten.
     try {
       await access(dirname(this.path), constants.W_OK)
@@ -60,14 +69,14 @@ export class DomainIssuerCache {
     }
     const entry = (await readStore(this.path)).entries[encodeKey(kernelIssuer, origin)]
     return entry !== undefined && validEntry(entry, now, this.maximumAgeMs)
-      ? entry.issuer
+      ? Object.freeze({ issuer: entry.issuer })
       : undefined
   }
 
   async set(
     kernelIssuer: string,
     origin: string,
-    domainIssuer: string | null,
+    installation: Installation,
     now = Date.now(),
   ): Promise<void> {
     await this.transition((store) => {
@@ -76,7 +85,7 @@ export class DomainIssuerCache {
       }
       const encoded = encodeKey(kernelIssuer, origin)
       delete store.entries[encoded]
-      store.entries[encoded] = Object.freeze({ issuer: domainIssuer, observedAt: now })
+      store.entries[encoded] = Object.freeze({ issuer: installation.issuer, observedAt: now })
       const keys = Object.keys(store.entries)
       for (const stale of keys.slice(0, Math.max(0, keys.length - MAXIMUM_ENTRIES))) {
         delete store.entries[stale]
@@ -109,7 +118,7 @@ export class DomainIssuerCache {
     })
   }
 
-  private async transition(change: (store: domainIssuers.Artifact) => void): Promise<void> {
+  private async transition(change: (store: installations.Artifact) => void): Promise<void> {
     await withFileLock(
       `${this.path}.lock`,
       async () => {
@@ -126,9 +135,9 @@ export class DomainIssuerCache {
   }
 }
 
-export const DOMAIN_ISSUER_CACHE = new DomainIssuerCache()
+export const INSTALLATION_CACHE = new InstallationCache()
 
-async function readStore(path: string): Promise<domainIssuers.Artifact> {
+async function readStore(path: string): Promise<installations.Artifact> {
   try {
     const input = JSON.parse(await readFile(path, 'utf8')) as unknown
     if (input === null || typeof input !== 'object' || Array.isArray(input)) return emptyStore()
@@ -143,18 +152,18 @@ async function readStore(path: string): Promise<domainIssuers.Artifact> {
     }
     return {
       version: VERSION,
-      entries: { ...(value.entries as Record<string, domainIssuers.Entry>) },
+      entries: { ...(value.entries as Record<string, installations.Entry>) },
     }
   } catch {
     return emptyStore()
   }
 }
 
-function emptyStore(): domainIssuers.Artifact {
+function emptyStore(): installations.Artifact {
   return { version: VERSION, entries: {} }
 }
 
-function validEntry(entry: domainIssuers.Entry, now: number, maximumAgeMs: number): boolean {
+function validEntry(entry: installations.Entry, now: number, maximumAgeMs: number): boolean {
   if (
     entry === null ||
     typeof entry !== 'object' ||

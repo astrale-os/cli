@@ -3,10 +3,10 @@ import { defineLayout } from '@astrale-os/spec/authoring'
 export default defineLayout({
   entries: [
     '__tests__/',
-    'domain-issuers.ts',
     'exchange-credentials.ts',
     'files.ts',
     'identities.ts',
+    'installations.ts',
     'index.ts',
     'paths.ts',
     'session-routes.ts',

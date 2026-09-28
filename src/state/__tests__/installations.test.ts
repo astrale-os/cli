@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { DomainIssuerCache } from '../domain-issuers'
+import { InstallationCache } from '../installations'
 
 const kernel = 'https://child.example/api'
 const other = 'https://other.example/api'
@@ -13,53 +13,55 @@ let directory: string
 let path: string
 
 beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), 'astrale-domain-issuers-'))
-  path = join(directory, 'session', 'domain-issuers.json')
+  directory = await mkdtemp(join(tmpdir(), 'astrale-installations-'))
+  path = join(directory, 'session', 'installations.json')
 })
 
 afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-describe('domain issuer cache', () => {
-  /** @evidence TEST-CLI-DOMAIN-ISSUER-CACHE-PARTITION */
+describe('installation cache', () => {
+  /** @evidence TEST-CLI-INSTALLATION-CACHE-PARTITION */
   test('remembers remote and Kernel-hosted Domains per Kernel under private modes', async () => {
-    const cache = new DomainIssuerCache(path)
+    const cache = new InstallationCache(path)
     expect(await cache.get(kernel, 'issues.example', 1_000)).toBeUndefined()
-    await cache.set(kernel, 'issues.example', issues, 1_000)
-    await cache.set(kernel, 'local.example', null, 1_000)
+    await cache.set(kernel, 'issues.example', { issuer: issues }, 1_000)
+    await cache.set(kernel, 'local.example', { issuer: null }, 1_000)
 
-    expect(await cache.get(kernel, 'issues.example', 2_000)).toBe(issues)
-    expect(await cache.get(kernel, 'local.example', 2_000)).toBeNull()
+    expect(await cache.get(kernel, 'issues.example', 2_000)).toEqual({ issuer: issues })
+    expect(await cache.get(kernel, 'local.example', 2_000)).toEqual({ issuer: null })
     expect(await cache.get(other, 'issues.example', 2_000)).toBeUndefined()
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect((await stat(dirname(path))).mode & 0o777).toBe(0o700)
   })
 
-  /** @evidence TEST-CLI-DOMAIN-ISSUER-CACHE-BOUNDED */
+  /** @evidence TEST-CLI-INSTALLATION-CACHE-BOUNDED */
   test('forgets entries after their age, on delete, and per Kernel', async () => {
-    const cache = new DomainIssuerCache(path, 10_000)
-    await cache.set(kernel, 'issues.example', issues, 1_000)
-    await cache.set(kernel, 'shell.example', 'https://shell.example', 1_000)
-    await cache.set(other, 'issues.example', issues, 1_000)
+    const cache = new InstallationCache(path, 10_000)
+    await cache.set(kernel, 'issues.example', { issuer: issues }, 1_000)
+    await cache.set(kernel, 'shell.example', { issuer: 'https://shell.example' }, 1_000)
+    await cache.set(other, 'issues.example', { issuer: issues }, 1_000)
 
-    expect(await cache.get(kernel, 'issues.example', 10_999)).toBe(issues)
+    expect(await cache.get(kernel, 'issues.example', 10_999)).toEqual({ issuer: issues })
     expect(await cache.get(kernel, 'issues.example', 11_000)).toBeUndefined()
     expect(await cache.get(kernel, 'issues.example', 999)).toBeUndefined()
 
     await cache.delete(kernel, 'issues.example')
     expect(await cache.get(kernel, 'issues.example', 2_000)).toBeUndefined()
-    expect(await cache.get(kernel, 'shell.example', 2_000)).toBe('https://shell.example')
+    expect(await cache.get(kernel, 'shell.example', 2_000)).toEqual({
+      issuer: 'https://shell.example',
+    })
 
     await cache.deleteKernel(kernel)
     expect(await cache.get(kernel, 'shell.example', 2_000)).toBeUndefined()
-    expect(await cache.get(other, 'issues.example', 2_000)).toBe(issues)
+    expect(await cache.get(other, 'issues.example', 2_000)).toEqual({ issuer: issues })
   })
 
-  /** @evidence TEST-CLI-DOMAIN-ISSUER-CACHE-EVICTABLE */
+  /** @evidence TEST-CLI-INSTALLATION-CACHE-EVICTABLE */
   test.skipIf(process.getuid?.() === 0)('never trusts an entry it could not forget', async () => {
-    const cache = new DomainIssuerCache(path)
-    await cache.set(kernel, 'issues.example', issues, 1_000)
+    const cache = new InstallationCache(path)
+    await cache.set(kernel, 'issues.example', { issuer: issues }, 1_000)
     await chmod(dirname(path), 0o500)
     try {
       expect(await cache.get(kernel, 'issues.example', 2_000)).toBeUndefined()
@@ -67,13 +69,13 @@ describe('domain issuer cache', () => {
     } finally {
       await chmod(dirname(path), 0o700)
     }
-    expect(await cache.get(kernel, 'issues.example', 2_000)).toBe(issues)
+    expect(await cache.get(kernel, 'issues.example', 2_000)).toEqual({ issuer: issues })
   })
 
   test('removes the whole store when one entry cannot be rewritten away', async () => {
-    const cache = new DomainIssuerCache(path, undefined, { timeoutMs: 50, pollIntervalMs: 10 })
-    await cache.set(kernel, 'issues.example', issues, 1_000)
-    await cache.set(kernel, 'shell.example', 'https://shell.example', 1_000)
+    const cache = new InstallationCache(path, undefined, { timeoutMs: 50, pollIntervalMs: 10 })
+    await cache.set(kernel, 'issues.example', { issuer: issues }, 1_000)
+    await cache.set(kernel, 'shell.example', { issuer: 'https://shell.example' }, 1_000)
     // A live lock held by another process: the locked rewrite cannot run.
     await writeFile(`${path}.lock`, '{}')
     try {
@@ -86,7 +88,7 @@ describe('domain issuer cache', () => {
   })
 
   test('treats unreadable, foreign, or malformed state as a miss and repairs it on write', async () => {
-    const cache = new DomainIssuerCache(path)
+    const cache = new InstallationCache(path)
     await mkdir(dirname(path), { recursive: true })
     for (const content of [
       'not json',
@@ -107,7 +109,7 @@ describe('domain issuer cache', () => {
       await writeFile(path, content)
       expect(await cache.get(kernel, 'issues.example', 2)).toBeUndefined()
     }
-    await cache.set(kernel, 'issues.example', issues, 2)
+    await cache.set(kernel, 'issues.example', { issuer: issues }, 2)
     expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({
       version: 1,
       entries: { [JSON.stringify([kernel, 'issues.example'])]: { issuer: issues, observedAt: 2 } },

@@ -23,7 +23,11 @@ import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
 import { log } from '../lib/log'
 import { isMachine } from '../lib/output'
-import { DOMAIN_ISSUER_CACHE, type DomainIssuerCache } from '../state/domain-issuers'
+import {
+  INSTALLATION_CACHE,
+  type Installation,
+  type InstallationCache,
+} from '../state/installations'
 import { SESSION_ROUTE_STORE } from '../state/session-routes'
 import { bindCredentialIdentity } from './auth'
 import { callableOrigin, resolveCallableTarget, withCallableIssuer } from './callable-target'
@@ -89,7 +93,7 @@ export async function withClientSession<Value>(
     action,
     openConnection,
     credential,
-    DOMAIN_ISSUER_CACHE,
+    INSTALLATION_CACHE,
   )
 }
 
@@ -114,7 +118,7 @@ export async function withResolvedClientSession<Value>(
   action: (context: ConnectionContext) => Promise<Value>,
   open: ConnectionFactory = openConnection,
   credential: CredentialIntent = {},
-  issuers?: DomainIssuerCache,
+  installations?: InstallationCache,
 ): Promise<Value> {
   validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
@@ -126,7 +130,7 @@ export async function withResolvedClientSession<Value>(
     action,
     open,
     credential,
-    issuers,
+    installations,
   )
 }
 
@@ -138,7 +142,7 @@ async function runResolvedClientSession<Value>(
   action: (context: ConnectionContext) => Promise<Value>,
   open: ConnectionFactory,
   credential: CredentialIntent = {},
-  issuers?: DomainIssuerCache,
+  installations?: InstallationCache,
 ): Promise<Value> {
   let remembered: string | undefined
   if (credential.principal === 'callable') {
@@ -151,9 +155,9 @@ async function runResolvedClientSession<Value>(
     ) {
       credential = { principal: 'caller' }
     } else {
-      const known = await rememberedIssuer(issuers, target.kernelIssuer, origin)
+      const known = await rememberedInstallation(installations, target.kernelIssuer, origin)
       if (known !== undefined) {
-        target = withCallableIssuer(target, known ?? undefined)
+        target = withCallableIssuer(target, known.issuer ?? undefined)
         remembered = origin
       } else {
         const discovery = open(target, timeoutMs, options, config, { principal: 'caller' })
@@ -162,8 +166,8 @@ async function runResolvedClientSession<Value>(
         } finally {
           discovery.close()
         }
-        await issuers
-          ?.set(target.kernelIssuer, origin, target.domainIssuer ?? null)
+        await installations
+          ?.set(target.kernelIssuer, origin, { issuer: target.domainIssuer ?? null })
           .catch(() => undefined)
       }
       credential =
@@ -176,7 +180,7 @@ async function runResolvedClientSession<Value>(
   } catch (error) {
     // A remembered issuer is re-read after any failure, so a reinstalled Domain heals in one step.
     if (remembered !== undefined) {
-      await issuers?.delete(target.kernelIssuer, remembered).catch(() => undefined)
+      await installations?.delete(target.kernelIssuer, remembered).catch(() => undefined)
     }
     if (error instanceof Error) (error as Error & { url?: string }).url = target.url
     throw error
@@ -186,13 +190,13 @@ async function runResolvedClientSession<Value>(
 }
 
 /** A cache that cannot be read is a miss: installation state must never fail a command. */
-async function rememberedIssuer(
-  issuers: DomainIssuerCache | undefined,
+async function rememberedInstallation(
+  installations: InstallationCache | undefined,
   kernelIssuer: string,
   origin: string,
-): Promise<string | null | undefined> {
+): Promise<Installation | undefined> {
   try {
-    return await issuers?.get(kernelIssuer, origin)
+    return await installations?.get(kernelIssuer, origin)
   } catch {
     return undefined
   }

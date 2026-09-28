@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import type { AstraleConfig } from '../../lib/config'
 import type { ConnectionContext, ConnectionFactory } from '../session'
 
-import { DomainIssuerCache } from '../../state/domain-issuers'
+import { InstallationCache } from '../../state/installations'
 import { callableOrigin } from '../callable-target'
 import { withResolvedClientSession } from '../session'
 
@@ -148,13 +148,13 @@ describe('callable credential ownership', () => {
 
 describe('remembered callable Domain issuer', () => {
   let directory: string
-  let cache: DomainIssuerCache
+  let cache: InstallationCache
   const path = Path.parse(paths[0]!)
   const intent = { principal: 'callable', path } as const
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'astrale-callable-issuer-'))
-    cache = new DomainIssuerCache(join(directory, 'session', 'domain-issuers.json'))
+    cache = new InstallationCache(join(directory, 'session', 'installations.json'))
   })
 
   afterEach(async () => {
@@ -174,7 +174,7 @@ describe('remembered callable Domain issuer', () => {
       cache,
     )
     expect(cold.inspected).toEqual(['services.example'])
-    expect(await cache.get(kernel, 'services.example')).toBe(serviceIssuer)
+    expect(await cache.get(kernel, 'services.example')).toEqual({ issuer: serviceIssuer })
 
     const warm = harness()
     await withResolvedClientSession(
@@ -221,7 +221,7 @@ describe('remembered callable Domain issuer', () => {
 
   /** @evidence TEST-CLI-CALLABLE-ISSUER-FORGOTTEN-ON-FAILURE */
   test('forgets a remembered issuer after a failed command so the next one re-reads it', async () => {
-    await cache.set(kernel, 'services.example', 'https://stale.example')
+    await cache.set(kernel, 'services.example', { issuer: 'https://stale.example' })
     const failure = new Error('credential rejected')
     const stale = harness()
     await expect(
@@ -251,13 +251,13 @@ describe('remembered callable Domain issuer', () => {
       cache,
     )
     expect(healed.inspected).toEqual(['services.example'])
-    expect(await cache.get(kernel, 'services.example')).toBe(serviceIssuer)
+    expect(await cache.get(kernel, 'services.example')).toEqual({ issuer: serviceIssuer })
   })
 
   test.skipIf(process.getuid?.() === 0)(
     'reads the installation again when a remembered issuer could no longer be forgotten',
     async () => {
-      await cache.set(kernel, 'services.example', 'https://stale.example')
+      await cache.set(kernel, 'services.example', { issuer: 'https://stale.example' })
       const state = join(directory, 'session')
       await chmod(state, 0o500)
       try {
@@ -295,11 +295,11 @@ describe('remembered callable Domain issuer', () => {
         cache,
       ),
     ).rejects.toBe(failure)
-    expect(await cache.get(kernel, 'services.example')).toBe(serviceIssuer)
+    expect(await cache.get(kernel, 'services.example')).toEqual({ issuer: serviceIssuer })
   })
 
   test('falls back to the installation when the remembered state cannot be used', async () => {
-    const file = join(directory, 'session', 'domain-issuers.json')
+    const file = join(directory, 'session', 'installations.json')
     await mkdir(dirname(file), { recursive: true })
     await writeFile(file, 'not json')
     const fixture = harness()

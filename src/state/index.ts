@@ -1,10 +1,10 @@
 export { atomicWrite, atomicWriteSync, withFileLock } from './files'
 export type { FileLockOptions } from './files'
-export { DOMAIN_ISSUER_CACHE, DomainIssuerCache } from './domain-issuers'
-export type { domainIssuers } from './domain-issuers'
 export { ExchangeCredentialCache } from './exchange-credentials'
 export type { exchange } from './exchange-credentials'
 export { IDENTITY_STORE_VERSION, readIdentityStore, updateIdentityStore } from './identities'
+export { INSTALLATION_CACHE, InstallationCache } from './installations'
+export type { Installation, installations } from './installations'
 export type {
   Identity,
   IdentityMode,
@@ -18,12 +18,12 @@ export {
   ASTRALE_HOME,
   CONFIG_PATH,
   DATA_DIR,
-  DOMAIN_ISSUERS_PATH,
   IDENTITIES_PATH,
   IDPS_PATH,
   IDP_SESSIONS_DIR,
   EXCHANGE_CREDENTIALS_PATH,
   INSTALL_PATH,
+  INSTALLATIONS_PATH,
   INSTANCES_PATH,
   KEYS_DIR,
   SESSION_ROUTES_PATH,

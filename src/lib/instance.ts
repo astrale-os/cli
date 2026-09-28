@@ -5,7 +5,7 @@ import type { AstraleConfig } from './config'
 
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
 import { atomicWrite, withFileLock } from '../state/files'
-import { DomainIssuerCache, ExchangeCredentialCache, INSTANCES_PATH } from '../state/index'
+import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -405,7 +405,7 @@ export async function removeDeletedInstanceBookmark(target: {
 
 async function forgetKernel(kernelIssuer: string): Promise<void> {
   await new ExchangeCredentialCache().deleteKernel(kernelIssuer)
-  await new DomainIssuerCache().deleteKernel(kernelIssuer)
+  await new InstallationCache().deleteKernel(kernelIssuer)
 }
 
 function bookmarkCoordinate(value: string | undefined): string | undefined {
