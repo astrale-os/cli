@@ -30,11 +30,10 @@ are not a product requirement. Register does not grant either permission. Avoid 
 or direct Query/Mutate permissions on the worker account unless its actual purpose requires them.
 
 The account's own credential makes the account the principal, so `can_use` on the callable is
-required. An SDK whose Session accepts the `exchange` option (it carries kernel-client
-`0.6.0-beta.76` or later) removes that requirement for Domain callables: with `exchange: {}`,
-each Domain callable is presented with a credential its declaring Domain exchanged for the
-account. The Domain is then the principal and only the business Policy is evaluated against the
-account. Kernel callables, Queries and Mutations still present the account's own credential. See
+required. SDK `0.6.0-beta.2` and later remove that requirement for Domain callables: with the
+Session option `exchange: {}`, each Domain callable is presented with a credential its declaring
+Domain exchanged for the account. The Domain is then the principal and only the business Policy
+is evaluated against the account. Kernel callables, Queries and Mutations still present the account's own credential. See
 "Headless scripts and Domain callables" in the SDK README.
 
 The deployer's identity and the worker account are separate choices. `CloudflareWorker.deploy` is
