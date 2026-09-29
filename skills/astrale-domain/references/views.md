@@ -33,6 +33,9 @@ export const frontend = defineFrontend({
   frontend build declarations, not React providers. Declare the packages actually imported by the frontend.
 - `<Astrale>` defaults to the sandboxed child handshake and supplies loading/error boundaries.
   Wrap projected Query/Mutation hooks in `<DomainProvider schema={schema}>`; keep the application's router.
+  Pass the same schemas to `preload={{ domains: [...] }}` so their binding starts with the boot.
+- `useSelf()` is the caller's identity, synchronous and free. `useUser()` reads the User node and may
+  suspend: use it only to show profile properties.
 - `useDomain(schema)` returns a verified installed binding and may suspend. Pass its resolved callable
   to `useAction`; do not reconstruct method keys, forge bound nodes, or resolve another client per component.
 - A local frontend compiled against a newer Schema can fail binding against an older installation.
@@ -47,7 +50,7 @@ import { schema } from '#schema'
 import { router } from './router'
 
 createRoot(document.getElementById('root')!).render(
-  <Astrale>
+  <Astrale preload={{ domains: [schema] }}>
     <DomainProvider schema={schema}>
       <RouterProvider router={router} />
     </DomainProvider>
