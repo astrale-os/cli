@@ -11,35 +11,46 @@ Kernel Runtime defines and evaluates those semantics against the pinned installa
   propagates authentication failure instead of falling back to anonymous;
 - `authenticated` requires an authenticated actor;
 - `authorized` requires an authenticated actor. The principal of the active installed Kernel registration
-  bypasses the remaining callable gate; every other caller requires effective caller-principal authority
-  and complete caller Grant admission described below;
+  bypasses the remaining callable gate; every other call requires the principal's effective authority
+  and the caller's admission described below;
 - only `authorized` may declare a callable Policy. `authenticated` does not add a `can_use` or Policy gate.
 - Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
   a protected operation merely because its handler can access Domain-owned data.
 
-## Function admission: caller principal AND complete Grant
+## Function admission: principal ceiling AND caller
 
-The caller `principal` is the Identity established by authentication. Its effective Identity profile
-and the credential's complete Grant are separate inputs. Do not derive caller authority from the executor.
+Every authenticated call carries two Identities:
 
-For a non-Root caller, an authorized Function requires both:
+- the `principal`, established by authentication: the executor, its non-transferable ceiling, installed
+  ownership, and Root;
+- the `caller`, the one Identity whose authority the call exercises. A direct call has
+  `caller = principal`. When a Domain acts for a user (`graph.caller`, `dependencies.<alias>.caller`,
+  or the SDK Domain token exchange behind the managed CLI and Console), the principal is the Domain and
+  the caller is the user.
 
-1. The caller's own Identity profile supplies `can_use` or exact Function ownership. Evaluate live
-   `extends_with`, `constrained_by`, and `excluded_from` composition with deny-wins: a User may inherit
-   `can_use` from a Group without an individual capability Edge. An unrelated capable Identity merely
-   carried in the credential cannot supply this principal ceiling.
-2. The complete caller Grant passes the intrinsic Root/Function-owner branch OR the declared callable
-   Policy. Missing Policy supplies no alternative. `can_use` is no longer an intrinsic Grant bypass;
-   giving the caller that capability does not defeat a business Policy.
+Both are evaluated through their live `extends_with`, `constrained_by`, and `excluded_from` composition
+with deny-wins. A call carries no set of Identities: there is no union, intersection, or exclusion of
+callers. The caller never raises the principal's ceiling, and principal authority never flows into the
+caller's evaluation.
 
-- The executor never replaces the caller principal. Exact Method ownership follows its executable declaring
-  installation, not a business `ownedBy` Edge; instance receivers must have the exact declaring Class.
-- Evaluate each alternative over the whole Grant. Identities inside an intersection cannot combine
-  intrinsic ownership from one branch with Policy satisfaction from another. A carried Root Identity
-  remains inside the Grant branch; only the authenticated installed Kernel Root takes the outer shortcut.
-- A Policy `subject` is an evaluated Grant Identity, not necessarily the authenticated principal.
+For a non-Root principal, an authorized Function requires both:
+
+1. The principal's own Identity profile supplies `can_use` or exact Function ownership (the principal
+   ceiling). A User may inherit `can_use` from a Group without an individual capability Edge. The caller
+   carried by a Domain session cannot supply this ceiling.
+2. The caller passes the intrinsic Root/Function-owner branch OR the declared callable Policy. Missing
+   Policy supplies no alternative. `can_use` is not an intrinsic bypass; giving the caller that
+   capability does not defeat a business Policy.
+
+- The callee Domain that runs the handler never replaces the calling principal. Exact Method ownership
+  follows its executable declaring installation, not a business `ownedBy` Edge; instance receivers must
+  have the exact declaring Class.
+- Only a Root principal, the authenticated installed Kernel Root, takes the outer shortcut. A Root caller
+  carried by a Domain session stays in the caller branch: it can satisfy the intrinsic Root alternative,
+  never the principal ceiling.
+- A Policy `subject` is the caller, not necessarily the authenticated principal.
 - Protected Kernel syscalls explicitly attach `canUseSyscall` to their exact Function or Method. That
-  Policy checks the complete Grant's `can_use`; resource checks inside the syscall remain independent.
+  Policy checks the caller's `can_use`; resource checks inside the syscall remain independent.
   Capability-only callable admission must likewise be declared explicitly, not inferred from `can_use`.
 
 ## Graph access is a separate decision
@@ -47,14 +58,16 @@ For a non-Root caller, an authorized Function requires both:
 - Invoking `Project.rename` does not grant direct Query/Mutation access to Project nodes. Conversely,
   a permitted graph read is not proof that the caller may invoke a Function operating on that record.
 - With a declared Class `read`/`traverse` Policy, observation admission needs no additional principal
-  Class capability: the complete Grant passes through capability, ownership, or that Policy. Class
+  Class capability: the caller passes through capability, ownership, or that Policy. Class
   capability/ownership therefore remains an alternative to observation Policy, unlike Function `can_use`.
 - Without an observation Policy, the selected principal must own or hold the exact Class capability
-  (or be Kernel Root); the Grant plane is neutral. This does not make data public. The outer Query
+  (or be Kernel Root); the caller is neutral. This does not make data public. The outer Query
   Function gate still applies in both cases. Choose the intended View boundary in `views.md`.
 - Current Class effects (`create`/`update`/`delete`) do not evaluate Class observation Policies. For a
-  non-Root principal, effect closure requires principal capability/ownership and complete-Grant
-  capability/ownership. If initiated through a callable, callable admission remains a separate outer gate.
+  non-Root principal, effect closure requires principal capability/ownership and caller
+  capability/ownership. A Domain's `self` session on Classes it owns closes by installed ownership
+  (principal = caller = owner); a `caller` session does not. If initiated through a callable, callable
+  admission remains a separate outer gate.
 - Read authority also permits traversal; traversal alone does not permit property reads. Test what
   the caller can observe, not just whether one isolated `traverse` Policy matches.
 
@@ -69,12 +82,13 @@ For a non-Root caller, an authorized Function requires both:
   does not justify a shadow User or manual writes to Shell's membership/authority pair.
 - Declare the exact protected foreign Function in Application requirements when calling as the Domain,
   including Policy-admitted Shell methods. Installation supplies the Domain principal's capability;
-  the carried Grant must still satisfy the callable's intrinsic or Policy branch.
+  the caller (the Domain itself in a `self` session, the user in a `caller` session) must still satisfy
+  the callable's intrinsic or Policy branch.
 - For a human-principal session, inspect the human's effective group profile instead. Domain requirements
   do not grant that human authority, and a missing direct User capability is not a reason to duplicate
   rights already supplied through `extends_with`.
 - `kernel.auth.register(...)` requires `K.functions.register` and must independently satisfy
-  its credential, target, and graph/Schema admission. Select the caller/Domain session explicitly; a Schema
+  its credential, target, and graph/Schema admission. Select the `caller` or `self` session explicitly; a Schema
   dependency is not a capability, and granting the human rights is not Domain-owned execution.
 
 ```ts
@@ -151,7 +165,8 @@ export const rename = method({
   Policy denial despite valid principal `can_use`. Keep Root/owner alternatives out of a test claiming Policy enforcement.
   For denials, prove reachable handlers, steps, Providers, and graph effects did not run; earlier Runtime
   initialization is outside that assertion.
-- Inspect requested/materialized capabilities for Domain callers and live group composition for human
-  callers. Prove the carried Grant independently, including relevant constraints, exclusions, and revocation.
+- Inspect requested/materialized capabilities for Domain principals and live group composition for human
+  callers. Prove the caller's authority independently, including relevant constraints, exclusions, and
+  revocation.
 - Keep evidence proportional: mutating denial needs an independent no-effect read, read-only denial does not.
   Test revocation by removing the business fact and repeating the same operation while the Domain stays installed.

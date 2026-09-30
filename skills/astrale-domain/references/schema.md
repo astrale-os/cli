@@ -93,7 +93,7 @@ and its Policy on its Class. Prefer composition when the relationship is not an 
 ## Policies
 
 Schema Policy owns authorization predicates. Keep authentication mode, callable authority, and Policy
-as distinct concerns. Policy may refer to an evaluated Grant subject, receiver, Core Groups, and graph
+as distinct concerns. Policy may refer to the caller as its subject, receiver, Core Groups, and graph
 facts supported by the language. Do not move caller admission into Action/Workflow code.
 
 `node(Class)` includes concrete descendants, including foreign installed descendants; it is not an

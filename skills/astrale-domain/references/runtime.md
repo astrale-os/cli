@@ -23,10 +23,11 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
 - Use public SDK bindings/executors, not hand-built endpoints, tokens, or routing. Transport is
   transparent to business code; consult `debugging.md` only when diagnosing discovery or invocation.
 - Default `query`, `mutate`, and `kernel` use the installed Domain authority (`self`). Select
-  `graph.caller` or `kernel.caller` for the incoming caller Grant, and `union` deliberately when both
-  are needed. Dependencies have no default `invoke`: choose `dependencies.alias.caller.invoke`,
-  `.self.invoke`, or `.union.invoke`. These select the incoming Grant, the Domain alone, or their union;
-  the Domain signs the outgoing callback and remains its authenticated principal.
+  `graph.caller` or `kernel.caller` to act for the incoming caller. Dependencies have no default
+  `invoke`: choose `dependencies.alias.caller.invoke` or `.self.invoke`. In both modes the Domain signs
+  the outgoing callback and remains its authenticated principal; `caller` carries the incoming caller
+  Identity, `self` makes the Domain its own caller. There is no `union` mode: run Domain-owned work as
+  `self` and work on the user's behalf as `caller`.
 - Protected callables receive authenticated `caller` evidence and bound `kernel` sessions.
   An unauthenticated anonymous invocation has null `kernel`, `graph`, and `dependencies`.
 - Use the handler's `kernel` session for admitted Kernel capabilities outside graph operations;
@@ -182,7 +183,7 @@ export const issueNotClosable = error({
 
 - A Schema dependency pins definitions, not capability. Declare exact protected Kernel/foreign Functions
   called as the Domain, including Policy-admitted calls: `can_use` supplies principal usability, while
-  the complete Grant must independently pass admission. See `policies.md` and `users.md`.
+  the caller must independently pass admission. See `policies.md` and `users.md`.
 
 ```ts
 import { defineApplication, requirements } from '@astrale-os/sdk/application'
@@ -191,7 +192,7 @@ import { schema } from '#schema'
 
 // Schema declares dependencies: { kernel: KernelSchema, messaging: MessagingSchema }.
 // Resolve that exact declared dependency, not a separately chosen foreign version.
-// This supplies Domain-principal usability; Messaging.send still checks the carried Grant.
+// This supplies Domain-principal usability; Messaging.send still checks its caller.
 const Messaging = language.resolve(schema).dependencies.messaging
 
 export const application = defineApplication({
@@ -205,8 +206,8 @@ export const application = defineApplication({
 - Add `K.functions.register` when using an admitted `auth.register(...)` capability. Inspect requested
   and materialized authority for the Domain principal; do not grant the human rights to conceal a gap.
 - Call an exact dependency with
-  `dependencies.messaging.caller.invoke((messaging) => messaging.functions.send, input)` to preserve
-  the incoming Grant; an instance Method
+  `dependencies.messaging.caller.invoke((messaging) => messaging.functions.send, input)` to act for
+  the incoming caller; an instance Method
   also takes its NodeId before input. Providers use their invocation-scoped typed `invoke` capability.
   Read `integrations.md` for consumer-owned Integrations/Providers; do not import a foreign handler
   or claim atomicity across Domains.
