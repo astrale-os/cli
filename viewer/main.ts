@@ -1,16 +1,9 @@
 import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
 
 import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
-import {
-  createIframeShellAdapter,
-  createShell,
-  openExternalBrowserWindow,
-  rejectIntent,
-  replyToIntent,
-} from '@astrale-os/shell'
+import { createIframeShellAdapter, createShell, openExternalBrowserWindow } from '@astrale-os/shell'
 
 import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
-import { installOpenIntentHandler } from '../src/lib/view/open-intent'
 import { accessibleIframeAdapter, viewTitle } from './frame'
 
 /**
@@ -209,7 +202,6 @@ async function main(): Promise<void> {
   await shell.init()
 
   const container = el('frame')
-  let mounted: MountedWindow | null = null
 
   const mount = async (view: ResolvedView): Promise<MountedWindow> => {
     const held = view.route.handshake === 'shell' ? await tokens!.acquire() : undefined
@@ -233,28 +225,9 @@ async function main(): Promise<void> {
     })
   }
 
-  installOpenIntentHandler(shell, {
-    current: () => mounted,
-    setCurrent: (next) => {
-      mounted = next
-    },
-    mount,
-    opened: (selected) => {
-      showPlacement(selected)
-      el('error').style.display = 'none'
-    },
-    failed: showIntentError,
-    reply: (message, windowId) => {
-      replyToIntent(shell.children, message.envelope.sender.windowId, message, { windowId })
-    },
-    reject: (message, error) => {
-      rejectIntent(shell.children, message.envelope.sender.windowId, message, error)
-    },
-  })
-
   // One placement means one mount attempt. Shell-handshake failures remain
   // failures; changing them to `none` would grant a different public contract.
-  mounted = await mount(cfg.view)
+  await mount(cfg.view)
   if (route.handshake === 'shell') {
     setStatus('connected')
     report('connected')

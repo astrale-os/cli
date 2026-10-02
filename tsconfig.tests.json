@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["bun-types", "@types/node"]
   },
-  "include": ["src/**/__tests__/**/*.ts", "src/lib/view/open-intent.ts"],
+  "include": ["src/**/__tests__/**/*.ts"],
   "exclude": []
 }
