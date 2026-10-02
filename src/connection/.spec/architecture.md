@@ -44,24 +44,24 @@ An Astrale-managed Instance exchanges its users through its installed Shell, nam
 the source Kernel's pin names, and a reinstall from an immutable deployment changes it. A bookmark
 that names an explicit exact Domain issuer is exchanged there instead, managed or not; the Shell
 issuer earlier releases derived from the route and stored on managed bookmarks is not an explicit
-choice, and the registry read drops it (`lib/legacy/managed-shell-issuer.ts`). The exchange reads
-the pin with `schema.inspect` through the same Client Session that already authenticates the
-selected identity for `whoami` and `delegate`, so no issuer is needed before the Kernel is reached.
-One session reads it once. The state owner also remembers it per source Kernel and origin, as it
-does for callables, but a remembered issuer only selects a credential an earlier command exchanged,
-so a warm command makes no Kernel call for its credential: every fresh exchange uses an issuer read
-in this session. An exchange that fails as a moved issuer would (the issuer no longer serves
-discovery or exchange, or the Domain refuses with 2002) makes the session read the pin once more
-and, only when the pin now names another issuer, exchange there once; when the pin cannot be read
-again, the exchange failure stands and the remembered issuer is kept. The trade-off of remembering
-across commands is bounded: after a Shell reinstall, a command that selects a credential exchanged
-at the old issuer, within that credential's lifetime, fails once with the Kernel's 2002; that
-command forgets the remembered issuer, and the next one reads the pin and exchanges at the new
-issuer. A pin the Kernel refuses to read (the Domain is absent or not ready, the caller may not
-read it, or the Kernel does not serve the read) or answers with invalid evidence fails with
-`TOKEN_EXCHANGE_ISSUER_UNRESOLVED` naming its cause; transport, session, authentication and capacity
-failures of the read keep their own classification, as the source caller's first Kernel call always
-reported them. There is no fallback issuer, and a Domain the Kernel hosts keeps the caller.
+choice, and the registry drops it on every read and from every entry a bookmark write stores
+(`lib/legacy/managed-shell-issuer.ts`). The exchange reads the pin with `schema.inspect` through the
+same Client Session that already authenticates the selected identity for `whoami` and `delegate`,
+so no issuer is needed before the Kernel is reached. One session reads it once and holds it for
+that session only. Because an upgrade can change it, the state owner's installation cache never
+records or serves it; a persisted Domain credential is selected only under the issuer this session
+read, so after a Shell reinstall the next command exchanges at the new issuer and never presents a
+credential exchanged at the old one. The cost is one Kernel read, with the source credential it
+needs, per command that exchanges through the Shell.
+An exchange that fails as a moved issuer would (the issuer no longer serves discovery or exchange,
+or the Domain refuses with 2002) makes the session read the pin once more and, only when the pin
+now names another issuer, exchange there once; when the pin cannot be read again, the exchange
+failure and this session's read stand. A pin the Kernel refuses to read (the Domain is absent or not
+ready, the caller may not read it, or the Kernel does not serve the read) or answers with invalid
+evidence fails with `TOKEN_EXCHANGE_ISSUER_UNRESOLVED` naming its cause; transport, session,
+authentication and capacity failures of the read keep their own classification, as the source
+caller's first Kernel call always reported them. There is no fallback issuer, and a Domain the
+Kernel hosts keeps the caller.
 A callable command needs the issuer of its declaring Domain before it can exchange. The state owner
 remembers that installation fact per source Kernel and origin, so only the first command reads the
 installed Publication through a discovery Session. The remembered issuer is not authority: a stale

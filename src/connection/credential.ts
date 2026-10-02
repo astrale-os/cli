@@ -5,7 +5,6 @@ import type { Path } from '@astrale-os/sdk/graph/path'
 import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
-import type { InstallationCache } from '../state/installations'
 import type { ExchangeTarget } from './exchange'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
@@ -13,7 +12,6 @@ import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
 import { resolveCredential, resolvePersistedIdpSourceIdentity } from './auth'
 import { createExchangeCredentialResolver } from './exchange'
-import { createInstalledIssuer } from './installed-issuer'
 import {
   exchangeCredentialTtlSeconds,
   explicitCredentialTtlSeconds,
@@ -89,7 +87,7 @@ function sourceBoundDelegationTtl(input: string, requestedTtlSeconds: number): n
 
 /**
  * Bind CLI identity state and Core Auth delegation to one Session auth capability. A target that
- * names an installed Domain by origin remembers its issuer in `installations` across commands.
+ * names an installed Domain by origin reads its issuer from the Kernel pin once for this session.
  */
 export function createCliCredential(
   target: ConnectionTarget,
@@ -99,7 +97,6 @@ export function createCliCredential(
   timeoutMs = 30_000,
   intent: CredentialIntent = {},
   resolveSource: CredentialResolver = resolveCredential,
-  installations?: InstallationCache,
 ): SessionAuth | undefined {
   if (intent.principal === 'callable') {
     throw new TypeError('Callable credentials require installed Domain resolution.')
@@ -146,16 +143,7 @@ export function createCliCredential(
   }
   const effective =
     exchange !== undefined
-      ? createExchangeCredentialResolver(
-          exchange,
-          source,
-          fetch,
-          timeoutMs,
-          undefined,
-          exchange.domainIssuer === undefined
-            ? createInstalledIssuer(target.kernelIssuer, exchange.domainOrigin, installations)
-            : undefined,
-        )
+      ? createExchangeCredentialResolver(exchange, source, fetch, timeoutMs)
       : source
   return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
 }

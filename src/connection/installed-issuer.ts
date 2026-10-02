@@ -5,7 +5,6 @@ import type { ClientSession } from '@astrale-os/sdk/client/session'
 import { issuer } from '@astrale-os/sdk/auth'
 import { ResponseError } from '@astrale-os/sdk/client'
 
-import type { InstallationCache } from '../state/installations'
 import type { ExchangeIssuer } from './exchange'
 
 import { AstraleError } from '../errors'
@@ -32,39 +31,28 @@ const INSTALLATION_READ_REFUSALS: ReadonlySet<number> = new Set([1003, 2004, 300
  * The issuer at which the CLI exchanges for the Domain installed under one origin on one Kernel.
  *
  * The Kernel pin names it, read through the Session that already authenticates the selected
- * identity for the exchange, once per session; nothing derives it from a route. The issuer
- * remembered across commands only selects a credential an earlier command exchanged: every fresh
- * exchange uses an issuer read in this session, and an exchange that fails as a moved issuer would
- * makes the session read the pin once more.
+ * identity for the exchange, once per session; nothing derives it from a route. It is held for this
+ * session only: a reinstall from an immutable deployment changes it, so the installation cache,
+ * which records only facts fixed for the life of an installation, never holds it, and a persisted
+ * Domain credential is selected only under an issuer this session read. An exchange that fails as a
+ * moved issuer would makes the session read the pin once more.
  */
 export function createInstalledIssuer(
   kernelIssuer: IssuerId,
   origin: string,
-  installations?: InstallationCache,
   read: InstalledDomainReader = inspectInstalledDomain,
 ): ExchangeIssuer {
   /** What the pin named when this session read it; null for a Domain hosted by the Kernel. */
   let pinned: IssuerId | null | undefined
 
-  /** Remember what this session read; a record that cannot be replaced is forgotten instead. */
-  async function remember(named: IssuerId | null): Promise<void> {
-    if (installations === undefined) return
-    await installations
-      .set(kernelIssuer, origin, { issuer: named })
-      .catch(() => installations.delete(kernelIssuer, origin))
-      .catch(() => undefined)
-  }
-
   return Object.freeze({
     async known() {
-      if (pinned !== undefined) return pinned ?? undefined
-      const remembered = await installations?.get(kernelIssuer, origin).catch(() => undefined)
-      return typeof remembered?.issuer === 'string' ? issuer.accept(remembered.issuer) : undefined
+      return pinned ?? undefined
     },
     async current(session: () => ClientSession, signal: AbortSignal) {
-      if (pinned !== undefined) return pinned
-      pinned = await installedIssuer(kernelIssuer, origin, read, session(), signal)
-      await remember(pinned)
+      if (pinned === undefined) {
+        pinned = await installedIssuer(kernelIssuer, origin, read, session(), signal)
+      }
       return pinned
     },
     async moved(failed: IssuerId, session: () => ClientSession, signal: AbortSignal) {
@@ -72,14 +60,13 @@ export function createInstalledIssuer(
       try {
         next = await installedIssuer(kernelIssuer, origin, read, session(), signal)
       } catch (cause) {
-        // A pin that cannot be read again explains nothing: the exchange failure stands, and so
-        // do this session's read and the remembered issuer.
+        // A pin that cannot be read again explains nothing: the exchange failure and this
+        // session's read stand.
         if (signal.aborted) throw cause
         return undefined
       }
       if (next === failed) return undefined
       pinned = next
-      await remember(next)
       return next
     },
   })

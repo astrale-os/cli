@@ -302,18 +302,18 @@ export async function upsertInstance(
     const normalizedDomainIssuer = opts.domainIssuer
       ? normalizeIssuerUrl(opts.domainIssuer)
       : undefined
-    const entry = withoutLegacyShellIssuer(
-      {
-        ...kept,
-        ...definedEntry(opts),
-        url: normalizedUrl,
-        ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
-        ...(normalizedDomainIssuer ? { domainIssuer: normalizedDomainIssuer } : {}),
-        kind: 'bookmark',
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-      },
-      normalizedUrl,
-    )
+    const merged: InstanceEntry = {
+      ...kept,
+      ...definedEntry(opts),
+      url: normalizedUrl,
+      ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
+      ...(normalizedDomainIssuer ? { domainIssuer: normalizedDomainIssuer } : {}),
+      kind: 'bookmark',
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    }
+    // Read-old guard, deleted with it: every read drops a route-derived Shell issuer from a managed
+    // bookmark as what an earlier release stored, so a write stores what the next read will see.
+    const entry = withoutLegacyShellIssuer(merged, normalizedUrl)
     store.instances[key] = entry
     if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
     return { entry, created: !existing }
@@ -394,7 +394,10 @@ export function bookmarkExchangeDomain(
   return shell === undefined ? {} : { domainOrigin: shell }
 }
 
-/** Read-old: a managed bookmark drops the Shell issuer an earlier release derived from its route. */
+/**
+ * Read-old: a managed bookmark drops the Shell issuer an earlier release derived from its route, on
+ * every read and in the entry every bookmark write stores (`lib/legacy/managed-shell-issuer.ts`).
+ */
 function withoutLegacyShellIssuer(entry: InstanceEntry, url: string): InstanceEntry {
   return managedBookmarkShell(entry, url) === undefined
     ? entry

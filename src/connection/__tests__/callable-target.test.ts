@@ -2,7 +2,6 @@ import type { DomainInfo } from '@astrale-os/sdk/client/schema'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import { issuer } from '@astrale-os/sdk/auth'
-import { ResponseError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -34,19 +33,12 @@ const paths = [
 ]
 
 function harness(publishedIssuer = serviceIssuer, failure?: Error) {
-  const opened: Array<{ target: unknown; credential: unknown; installations: unknown }> = []
+  const opened: Array<{ target: unknown; credential: unknown }> = []
   const closed: number[] = []
   const inspected: string[] = []
-  const open: ConnectionFactory = (
-    selected,
-    _timeout,
-    _options,
-    _config,
-    credential,
-    installations,
-  ) => {
+  const open: ConnectionFactory = (selected, _timeout, _options, _config, credential) => {
     const index = opened.length
-    opened.push({ target: selected, credential, installations })
+    opened.push({ target: selected, credential })
     return {
       context: {
         target: selected,
@@ -338,68 +330,5 @@ describe('remembered callable Domain issuer', () => {
     )
     expect(fixture.inspected).toEqual(['services.example'])
     expect(fixture.opened.at(-1)?.credential).toEqual({ principal: 'domain' })
-  })
-})
-
-describe('remembered installed Shell issuer', () => {
-  let directory: string
-  let cache: InstallationCache
-  const { domainIssuer: _issuer, ...source } = target
-  const managed = { ...source, domainOrigin: 'shell.astrale.ai' }
-  const invocation = { source: kernel, id: 'call' } as ConstructorParameters<
-    typeof ResponseError
-  >[2]
-
-  beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), 'astrale-shell-issuer-'))
-    cache = new InstallationCache(join(directory, 'session', 'installations.json'))
-    await cache.set(kernel, 'shell.astrale.ai', { issuer: 'https://shell.beta.astrale.ai' })
-  })
-
-  afterEach(async () => {
-    await rm(directory, { recursive: true, force: true })
-  })
-
-  /** @evidence TEST-CLI-INSTALLED-SHELL-FORGOTTEN-ON-REJECTED-CREDENTIAL */
-  test('forgets the remembered Shell issuer when the Kernel rejects the exchanged credential', async () => {
-    const rejected = new ResponseError(2002, 'Credential is invalid.', invocation)
-    const fixture = harness()
-    await expect(
-      withResolvedClientSession(
-        managed,
-        {},
-        config,
-        async () => {
-          throw rejected
-        },
-        fixture.open,
-        {},
-        cache,
-      ),
-    ).rejects.toBe(rejected)
-
-    expect(fixture.opened).toEqual([{ target: managed, credential: {}, installations: cache }])
-    expect(await cache.get(kernel, 'shell.astrale.ai')).toBeUndefined()
-  })
-
-  test('keeps the remembered Shell issuer when the command fails for another reason', async () => {
-    const refused = new ResponseError(4001, 'Conflict.', invocation)
-    await expect(
-      withResolvedClientSession(
-        managed,
-        {},
-        config,
-        async () => {
-          throw refused
-        },
-        harness().open,
-        {},
-        cache,
-      ),
-    ).rejects.toBe(refused)
-
-    expect(await cache.get(kernel, 'shell.astrale.ai')).toEqual({
-      issuer: 'https://shell.beta.astrale.ai',
-    })
   })
 })

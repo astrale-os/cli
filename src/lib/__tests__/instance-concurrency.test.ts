@@ -115,6 +115,7 @@ describe('managed bookmark Shell exchange on write', () => {
     expect(entry).not.toHaveProperty('domainIssuer')
   })
 
+  /** @evidence TEST-CLI-INSTANCE-LEGACY-SHELL-ISSUER-NOT-STORED */
   test('a bookmark write keeps an explicit issuer but never the route-derived Shell issuer', async () => {
     const home = await fixture()
     const managed = `{url:${JSON.stringify(url)}, slug:'bryan', name:'bryan'}`
