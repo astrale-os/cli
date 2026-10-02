@@ -52,7 +52,10 @@ export interface ExchangeIssuer {
   known(): Promise<IssuerId | undefined>
   /** The issuer to exchange at; null when the Domain runs on the Kernel and the caller stays itself. */
   current(session: () => ClientSession, signal: AbortSignal): Promise<IssuerId | null>
-  /** After an exchange at `failed` failed as a moved issuer would: the issuer to retry at, if any. */
+  /**
+   * After an exchange at `failed` failed as a moved issuer would: the issuer to retry at, or
+   * undefined when the failure stands (the pin still names `failed`, or it cannot be read again).
+   */
   moved(
     failed: IssuerId,
     session: () => ClientSession,

@@ -109,14 +109,18 @@ describe('InstanceStoreSchema', () => {
     expect(managedShellOrigin('http://bryan.eu.beta.astrale.ai/api')).toBeUndefined()
   })
 
-  test('a managed bookmark names the Shell origin and ignores a stored issuer; others keep theirs', () => {
+  test('a bookmark exchanges at its explicit issuer, else a managed one through the Shell origin', () => {
     const url = 'https://bryan.eu.beta.astrale.ai/api'
+    expect(bookmarkExchangeDomain({ slug: 'bryan', name: 'bryan' }, url)).toEqual({
+      domainOrigin: 'shell.astrale.ai',
+    })
+    // An explicit exact issuer keeps its single meaning, on a managed bookmark too.
     expect(
       bookmarkExchangeDomain(
-        { slug: 'bryan', name: 'bryan', domainIssuer: 'https://shell.beta.astrale.ai' },
+        { slug: 'bryan', name: 'bryan', domainIssuer: 'https://shell-dev.example' },
         url,
       ),
-    ).toEqual({ domainOrigin: 'shell.astrale.ai' })
+    ).toEqual({ domainIssuer: 'https://shell-dev.example' })
     expect(
       bookmarkExchangeDomain({ name: 'bryan', domainIssuer: 'https://crm.example' }, url),
     ).toEqual({ domainIssuer: 'https://crm.example' })
@@ -195,27 +199,75 @@ describe('sanitizeStore — read must not rewrite', () => {
   })
 
   /** @evidence TEST-CLI-INSTANCE-LEGACY-SHELL-ISSUER-DROPPED */
-  test('reads and drops the route-derived Shell issuer an earlier release stored', () => {
+  test.each([
+    ['https://bryan.eu.beta.astrale.ai/api', 'https://shell.beta.astrale.ai'],
+    ['https://bryan.eu.astrale.ai/api', 'https://shell.astrale.ai'],
+  ])(
+    'reads and drops the route-derived Shell issuer an earlier release stored on %s',
+    (url, legacy) => {
+      const store = {
+        active: 'bryan',
+        instances: {
+          bryan: {
+            url,
+            issuer: url,
+            domainIssuer: legacy,
+            slug: 'bryan',
+            name: 'bryan',
+            kind: 'bookmark' as const,
+            organizationId: 'org_123',
+          },
+        },
+      }
+
+      const { store: repaired, changed } = sanitizeStore(InstanceStoreSchema.parse(store))
+
+      expect(changed).toBe(true)
+      expect(repaired.instances.bryan).not.toHaveProperty('domainIssuer')
+      expect(repaired.instances.bryan).toMatchObject({ slug: 'bryan', organizationId: 'org_123' })
+      expect(bookmarkExchangeDomain(repaired.instances.bryan, url)).toEqual({
+        domainOrigin: 'shell.astrale.ai',
+      })
+    },
+  )
+
+  test('keeps an explicit Domain issuer on a managed bookmark', () => {
     const store = {
       active: 'bryan',
       instances: {
         bryan: {
           url: 'https://bryan.eu.beta.astrale.ai/api',
-          issuer: 'https://bryan.eu.beta.astrale.ai/api',
-          domainIssuer: 'https://shell.beta.astrale.ai',
+          domainIssuer: 'https://shell-dev.example',
           slug: 'bryan',
           name: 'bryan',
           kind: 'bookmark' as const,
-          organizationId: 'org_123',
         },
       },
     }
 
-    const { store: repaired, changed } = sanitizeStore(InstanceStoreSchema.parse(store))
+    const { store: retained, changed } = sanitizeStore(store)
 
-    expect(changed).toBe(true)
-    expect(repaired.instances.bryan).not.toHaveProperty('domainIssuer')
-    expect(repaired.instances.bryan).toMatchObject({ slug: 'bryan', organizationId: 'org_123' })
+    expect(changed).toBe(false)
+    expect(retained.instances.bryan.domainIssuer).toBe('https://shell-dev.example')
+  })
+
+  test('keeps a route-derived Shell issuer a user set on a bookmark that is not managed', () => {
+    const store = {
+      active: 'shell',
+      instances: {
+        shell: {
+          url: 'https://bryan.eu.beta.astrale.ai/api',
+          domainIssuer: 'https://shell.beta.astrale.ai',
+          name: 'shell',
+          kind: 'bookmark' as const,
+        },
+      },
+    }
+
+    const { store: retained, changed } = sanitizeStore(store)
+
+    expect(changed).toBe(false)
+    expect(retained.instances.shell.domainIssuer).toBe('https://shell.beta.astrale.ai')
   })
 
   test('keeps an explicit Domain issuer on a bookmark that is not a managed Instance', () => {

@@ -88,6 +88,12 @@ export default {
         defaultIdentity: opts.as,
       })
       log.success(`${created ? 'Bookmarked' : 'Updated bookmark'} "${name}" → ${entry.url}`)
+      if (opts.domainIssuer !== undefined && entry.domainIssuer === undefined) {
+        log.warn(
+          `--domain-issuer ${opts.domainIssuer} is not stored: "${name}" is a managed Instance, ` +
+            'which exchanges through its installed Shell at the issuer its Kernel pin names.',
+        )
+      }
       if (opts.as) log.dim(`  default identity: ${opts.as}`)
       if (opts.use) {
         await setActive(name)

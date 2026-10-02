@@ -227,7 +227,7 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
 export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
   id: 'CLI-CONNECTION-INSTALLED-SHELL-ISSUER',
   statement:
-    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller, once per session; no issuer is derived from the route, and a bookmark issuer an earlier release stored is ignored. A remembered issuer only selects a persisted credential; a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved. A pin that cannot be read fails with a typed error naming its cause, and a 2002 rejection of the exchanged credential forgets the remembered issuer.",
+    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller, once per session; no issuer is derived from the route, the route-derived Shell issuer an earlier release stored on a managed bookmark is dropped on read, and an explicit exact issuer still wins. A remembered issuer only selects a persisted credential; a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure when the pin cannot be read again. A credential selected by a remembered issuer the Kernel rejects with 2002 fails that command, which forgets the remembered issuer so the next command reads the pin. A pin the Kernel refuses to read or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
   tests: [
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -246,12 +246,28 @@ export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
       id: 'TEST-CLI-INSTALLED-SHELL-ISSUER-UNRESOLVED',
     },
     {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-READ-FAILURE-KEEPS-CLASSIFICATION',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-NEXT-COMMAND',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-INSPECT-DECODED',
+    },
+    {
       file: '__tests__/callable-target.test.ts',
       id: 'TEST-CLI-INSTALLED-SHELL-FORGOTTEN-ON-REJECTED-CREDENTIAL',
     },
     {
       file: '../lib/__tests__/instance.test.ts',
       id: 'TEST-CLI-INSTANCE-LEGACY-SHELL-ISSUER-DROPPED',
+    },
+    {
+      file: '../lib/__tests__/admin-target.test.ts',
+      id: 'TEST-CLI-ADMIN-LEGACY-SHELL-ISSUER-IGNORED',
     },
   ],
 })

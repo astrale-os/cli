@@ -79,3 +79,57 @@ describe('bookmark registry write ownership', () => {
     expect(await readFile(path, 'utf8')).toBe('{corrupt')
   })
 })
+
+describe('managed bookmark Shell exchange on write', () => {
+  const url = 'https://bryan.eu.beta.astrale.ai/api'
+
+  async function stored(home: string) {
+    return JSON.parse(await readFile(join(home, 'instances.json'), 'utf8')).instances.bryan
+  }
+
+  test('instance use resets a managed bookmark to exchange through its installed Shell', async () => {
+    const home = await fixture()
+    await writeFile(
+      join(home, 'instances.json'),
+      JSON.stringify({
+        active: 'bryan',
+        instances: {
+          bryan: {
+            url,
+            issuer: url,
+            domainIssuer: 'https://shell-dev.example',
+            slug: 'bryan',
+            name: 'bryan',
+            kind: 'bookmark',
+          },
+        },
+      }),
+    )
+    const result = await command(
+      home,
+      `await registry.upsertManagedBookmark({key:'bryan', slug:'bryan', url:${JSON.stringify(url)}});`,
+    )
+    expect(result).toEqual({ code: 0, stderr: '' })
+    const entry = await stored(home)
+    expect(entry).toMatchObject({ url, slug: 'bryan', name: 'bryan' })
+    expect(entry).not.toHaveProperty('domainIssuer')
+  })
+
+  test('a bookmark write keeps an explicit issuer but never the route-derived Shell issuer', async () => {
+    const home = await fixture()
+    const managed = `{url:${JSON.stringify(url)}, slug:'bryan', name:'bryan'}`
+    const legacy = await command(
+      home,
+      `await registry.upsertInstance('bryan', {...${managed}, domainIssuer:'https://shell.beta.astrale.ai'});`,
+    )
+    expect(legacy).toEqual({ code: 0, stderr: '' })
+    expect(await stored(home)).not.toHaveProperty('domainIssuer')
+
+    const explicit = await command(
+      home,
+      `await registry.upsertInstance('bryan', {...${managed}, domainIssuer:'https://shell-dev.example'});`,
+    )
+    expect(explicit).toEqual({ code: 0, stderr: '' })
+    expect(await stored(home)).toMatchObject({ domainIssuer: 'https://shell-dev.example' })
+  })
+})

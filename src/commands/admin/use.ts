@@ -79,7 +79,7 @@ Examples:
       }
 
       const resolved = await resolveInstance(bookmark)
-      if (resolved.domainIssuer === undefined && resolved.domainOrigin === undefined) {
+      if (resolved.domainIssuer === undefined) {
         fatal(
           `Admin bookmark "${resolved.name}" has no Domain issuer. Re-bookmark it with --domain-issuer <url>.`,
         )
