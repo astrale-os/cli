@@ -11,6 +11,7 @@ export default defineLayout({
     'failure/',
     'exchange.ts',
     'index.ts',
+    'installed-issuer.ts',
     'lifetime.ts',
     'reasons.ts',
     'self.ts',

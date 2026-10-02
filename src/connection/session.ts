@@ -6,7 +6,7 @@ import type {
   SessionRouteStore,
 } from '@astrale-os/sdk/client/session'
 
-import { createGraph } from '@astrale-os/sdk/client'
+import { createGraph, ResponseError } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { AstraleConfig } from '../lib/config'
@@ -69,6 +69,7 @@ export type ConnectionFactory = (
   options: ConnectionOptions,
   config: AstraleConfig,
   credential?: CredentialIntent,
+  installations?: InstallationCache,
 ) => OwnedConnection
 
 /** Resolve one ordinary target, run a command action, then close terminally. */
@@ -174,7 +175,7 @@ async function runResolvedClientSession<Value>(
         target.domainIssuer === undefined ? { principal: 'caller' } : { principal: 'domain' }
     }
   }
-  const connection = open(target, timeoutMs, options, config, credential)
+  const connection = open(target, timeoutMs, options, config, credential, installations)
   try {
     return await action(connection.context)
   } catch (error) {
@@ -182,11 +183,21 @@ async function runResolvedClientSession<Value>(
     if (remembered !== undefined) {
       await installations?.delete(target.kernelIssuer, remembered).catch(() => undefined)
     }
+    // A credential the Kernel no longer admits may come from an issuer the pin replaced since it
+    // was remembered: the next command reads the installation again.
+    if (target.domainOrigin !== undefined && rejectedCredential(error)) {
+      await installations?.delete(target.kernelIssuer, target.domainOrigin).catch(() => undefined)
+    }
     if (error instanceof Error) (error as Error & { url?: string }).url = target.url
     throw error
   } finally {
     connection.close()
   }
+}
+
+/** 2002 AUTH_INVALID: the Kernel did not authenticate the presented credential. */
+function rejectedCredential(error: unknown): boolean {
+  return error instanceof ResponseError && error.code === 2002
 }
 
 /** A cache that cannot be read is a miss: installation state must never fail a command. */
@@ -226,9 +237,19 @@ function openConnection(
   options: ConnectionOptions,
   config: AstraleConfig,
   credential: CredentialIntent = {},
+  installations?: InstallationCache,
 ): OwnedConnection {
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
-  const auth = createCliCredential(target, options, config, fetch, timeoutMs, credential)
+  const auth = createCliCredential(
+    target,
+    options,
+    config,
+    fetch,
+    timeoutMs,
+    credential,
+    undefined,
+    installations,
+  )
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
   return {

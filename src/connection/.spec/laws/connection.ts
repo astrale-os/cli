@@ -224,6 +224,38 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
   ],
 })
 
+export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
+  id: 'CLI-CONNECTION-INSTALLED-SHELL-ISSUER',
+  statement:
+    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller, once per session; no issuer is derived from the route, and a bookmark issuer an earlier release stored is ignored. A remembered issuer only selects a persisted credential; a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved. A pin that cannot be read fails with a typed error naming its cause, and a 2002 rejection of the exchanged credential forgets the remembered issuer.",
+  tests: [
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-DEPLOYMENT-ISSUER',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-RECOVERS-ONCE',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-LEGACY-ISSUER-UNCHANGED',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-ISSUER-UNRESOLVED',
+    },
+    {
+      file: '__tests__/callable-target.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-FORGOTTEN-ON-REJECTED-CREDENTIAL',
+    },
+    {
+      file: '../lib/__tests__/instance.test.ts',
+      id: 'TEST-CLI-INSTANCE-LEGACY-SHELL-ISSUER-DROPPED',
+    },
+  ],
+})
+
 export const CLI_CONNECTION_CALLABLE_ISSUER_REMEMBERED = defineLaw({
   id: 'CLI-CONNECTION-CALLABLE-ISSUER-REMEMBERED',
   statement:

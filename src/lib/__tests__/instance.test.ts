@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  bookmarkExchangeDomain,
   findBookmarkTrustConflicts,
   InstanceStoreSchema,
-  managedShellDomainIssuer,
+  managedShellOrigin,
   normalizeInstanceKernelUrl,
   sanitizeStore,
 } from '../instance'
@@ -101,15 +102,31 @@ describe('InstanceStoreSchema', () => {
     )
   })
 
-  test('resolves the trusted Shell issuer only for managed public routes', () => {
-    expect(managedShellDomainIssuer('https://bryan.eu.beta.astrale.ai/api')).toBe(
-      'https://shell.beta.astrale.ai',
-    )
-    expect(managedShellDomainIssuer('https://bryan.eu.astrale.ai/api')).toBe(
-      'https://shell.astrale.ai',
-    )
-    expect(managedShellDomainIssuer('https://kernel.example.com/api')).toBeUndefined()
-    expect(managedShellDomainIssuer('http://bryan.eu.beta.astrale.ai/api')).toBeUndefined()
+  test('exchanges managed public routes through the installed Shell, never a route-derived issuer', () => {
+    expect(managedShellOrigin('https://bryan.eu.beta.astrale.ai/api')).toBe('shell.astrale.ai')
+    expect(managedShellOrigin('https://bryan.eu.astrale.ai/api')).toBe('shell.astrale.ai')
+    expect(managedShellOrigin('https://kernel.example.com/api')).toBeUndefined()
+    expect(managedShellOrigin('http://bryan.eu.beta.astrale.ai/api')).toBeUndefined()
+  })
+
+  test('a managed bookmark names the Shell origin and ignores a stored issuer; others keep theirs', () => {
+    const url = 'https://bryan.eu.beta.astrale.ai/api'
+    expect(
+      bookmarkExchangeDomain(
+        { slug: 'bryan', name: 'bryan', domainIssuer: 'https://shell.beta.astrale.ai' },
+        url,
+      ),
+    ).toEqual({ domainOrigin: 'shell.astrale.ai' })
+    expect(
+      bookmarkExchangeDomain({ name: 'bryan', domainIssuer: 'https://crm.example' }, url),
+    ).toEqual({ domainIssuer: 'https://crm.example' })
+    expect(bookmarkExchangeDomain({ name: 'bryan' }, url)).toEqual({})
+    expect(
+      bookmarkExchangeDomain(
+        { slug: 'local', name: 'local', domainIssuer: 'http://shell.localhost' },
+        'http://localhost:8080/api',
+      ),
+    ).toEqual({ domainIssuer: 'http://shell.localhost' })
   })
 })
 
@@ -157,7 +174,7 @@ describe('sanitizeStore — read must not rewrite', () => {
     expect(changed).toBe(false)
   })
 
-  test('repairs a managed bookmark with its trusted Shell issuer on ordinary reads', () => {
+  test('stores no Shell issuer for a managed bookmark', () => {
     const store = {
       active: 'bryan',
       instances: {
@@ -171,10 +188,53 @@ describe('sanitizeStore — read must not rewrite', () => {
       },
     }
 
-    const { store: repaired, changed } = sanitizeStore(store)
+    const { store: retained, changed } = sanitizeStore(store)
+
+    expect(changed).toBe(false)
+    expect(retained.instances.bryan).not.toHaveProperty('domainIssuer')
+  })
+
+  /** @evidence TEST-CLI-INSTANCE-LEGACY-SHELL-ISSUER-DROPPED */
+  test('reads and drops the route-derived Shell issuer an earlier release stored', () => {
+    const store = {
+      active: 'bryan',
+      instances: {
+        bryan: {
+          url: 'https://bryan.eu.beta.astrale.ai/api',
+          issuer: 'https://bryan.eu.beta.astrale.ai/api',
+          domainIssuer: 'https://shell.beta.astrale.ai',
+          slug: 'bryan',
+          name: 'bryan',
+          kind: 'bookmark' as const,
+          organizationId: 'org_123',
+        },
+      },
+    }
+
+    const { store: repaired, changed } = sanitizeStore(InstanceStoreSchema.parse(store))
 
     expect(changed).toBe(true)
-    expect(repaired.instances.bryan.domainIssuer).toBe('https://shell.beta.astrale.ai')
+    expect(repaired.instances.bryan).not.toHaveProperty('domainIssuer')
+    expect(repaired.instances.bryan).toMatchObject({ slug: 'bryan', organizationId: 'org_123' })
+  })
+
+  test('keeps an explicit Domain issuer on a bookmark that is not a managed Instance', () => {
+    const store = {
+      active: 'crm',
+      instances: {
+        crm: {
+          url: 'https://crm.eu.astrale.ai/api',
+          domainIssuer: 'https://crm-domain.example',
+          name: 'crm',
+          kind: 'bookmark' as const,
+        },
+      },
+    }
+
+    const { store: retained, changed } = sanitizeStore(store)
+
+    expect(changed).toBe(false)
+    expect(retained.instances.crm.domainIssuer).toBe('https://crm-domain.example')
   })
 
   test('does not infer a Shell issuer for an ordinary bookmark on an official hostname', () => {

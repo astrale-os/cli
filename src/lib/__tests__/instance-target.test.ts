@@ -30,6 +30,12 @@ const store: InstanceStore = {
       slug: 'bryan',
       name: 'bryan',
     },
+    legacy: {
+      url: 'https://legacy.eu.astrale.ai/api',
+      slug: 'legacy',
+      name: 'legacy',
+      domainIssuer: 'https://shell.astrale.ai',
+    },
   },
 }
 
@@ -127,21 +133,30 @@ describe('resolveInstanceTarget', () => {
       source: 'managed',
       url: 'https://bryan.eu.astrale.ai/api',
       kernelIssuer: 'https://bryan.eu.astrale.ai/api',
-      domainIssuer: 'https://shell.astrale.ai',
+      domainOrigin: 'shell.astrale.ai',
     })
   })
 
-  test('resolves a pre-exchange managed bookmark through the trusted route profile', async () => {
-    await expect(
-      resolveInstanceTarget(
-        { source: 'name', name: 'bryan' },
-        { config: DEFAULT_CONFIG, instances: store },
-      ),
-    ).resolves.toMatchObject({
+  test('exchanges a managed bookmark through the installed Shell, never a route-derived issuer', async () => {
+    const resolved = await resolveInstanceTarget(
+      { source: 'name', name: 'bryan' },
+      { config: DEFAULT_CONFIG, instances: store },
+    )
+    expect(resolved).toMatchObject({
       source: 'bookmark',
       kernelIssuer: 'https://bryan.eu.beta.astrale.ai/api',
-      domainIssuer: 'https://shell.beta.astrale.ai',
+      domainOrigin: 'shell.astrale.ai',
     })
+    expect(resolved).not.toHaveProperty('domainIssuer')
+  })
+
+  test('ignores the Shell issuer an earlier release stored on a managed bookmark', async () => {
+    const resolved = await resolveInstanceTarget(
+      { source: 'name', name: 'legacy' },
+      { config: DEFAULT_CONFIG, instances: store },
+    )
+    expect(resolved).toMatchObject({ source: 'bookmark', domainOrigin: 'shell.astrale.ai' })
+    expect(resolved).not.toHaveProperty('domainIssuer')
   })
 
   test('unknown slugs surface the original instance-not-found error', async () => {

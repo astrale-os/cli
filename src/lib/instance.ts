@@ -6,6 +6,7 @@ import type { AstraleConfig } from './config'
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
 import { atomicWrite, withFileLock } from '../state/files'
 import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
+import { withoutManagedShellIssuer } from './legacy/managed-shell-issuer'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -60,7 +61,10 @@ export type ResolvedInstance = {
   kind: InstanceKind | 'managed'
   url: string
   issuer?: string
+  /** Exact Domain issuer the bookmark's users are exchanged at. */
   domainIssuer?: string
+  /** Installed Domain the bookmark's users are exchanged through; the Kernel pin names its issuer. */
+  domainOrigin?: string
   createdAt?: string
   defaultIdentity?: string
   caFile?: string
@@ -92,16 +96,14 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
-    const domainIssuer =
-      entry.domainIssuer ??
-      (entry.slug !== undefined && entry.name !== undefined
-        ? managedShellDomainIssuer(normalizedUrl)
-        : undefined)
+    const current =
+      managedBookmarkShell(entry, normalizedUrl) === undefined
+        ? entry
+        : withoutManagedShellIssuer(entry)
     const next: InstanceEntry = {
-      ...entry,
+      ...current,
       url: normalizedUrl,
       issuer: normalizedIssuer,
-      domainIssuer,
       kind: 'bookmark',
     }
     // VALUE comparison only. The old `next !== entry` (object identity) was
@@ -114,7 +116,7 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
       entry.kind !== 'bookmark' ||
       normalizedUrl !== entry.url ||
       normalizedIssuer !== entry.issuer ||
-      domainIssuer !== entry.domainIssuer
+      current.domainIssuer !== entry.domainIssuer
     ) {
       changed = true
     }
@@ -328,7 +330,6 @@ export async function upsertManagedBookmark(
   const store = await readInstances()
   const previousUrl = store.instances[input.key]?.url
   const url = normalizeInstanceKernelUrl(input.url)
-  const domainIssuer = managedShellDomainIssuer(url)
   const { entry } = await upsertInstance(
     input.key,
     {
@@ -338,7 +339,6 @@ export async function upsertManagedBookmark(
       name: input.slug,
       kind: 'bookmark',
       mode: 'remote',
-      ...(domainIssuer === undefined ? {} : { domainIssuer }),
       ...(input.organizationId ? { organizationId: input.organizationId } : {}),
       ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
     },
@@ -350,18 +350,43 @@ export async function upsertManagedBookmark(
   }
 }
 
-/** Resolve the trusted Shell issuer for an Astrale-managed public Instance route. */
-export function managedShellDomainIssuer(input: string): string | undefined {
+/** Origin of the Shell Domain, the same on every Astrale-managed Instance. */
+export const SHELL_ORIGIN = 'shell.astrale.ai'
+
+/**
+ * The Domain an Astrale-managed public Instance route exchanges its users through: the installed
+ * Shell. Only its origin is fixed; its issuer is whatever the Kernel pin names.
+ */
+export function managedShellOrigin(input: string): typeof SHELL_ORIGIN | undefined {
   let url: URL
   try {
     url = new URL(input)
   } catch {
     return undefined
   }
-  if (url.protocol !== 'https:') return undefined
-  if (url.hostname.endsWith('.beta.astrale.ai')) return 'https://shell.beta.astrale.ai'
-  if (url.hostname.endsWith('.astrale.ai')) return 'https://shell.astrale.ai'
-  return undefined
+  return url.protocol === 'https:' && url.hostname.endsWith('.astrale.ai')
+    ? SHELL_ORIGIN
+    : undefined
+}
+
+/**
+ * Where a bookmark's users are exchanged: through the installed Shell for a bookmark `instance use`
+ * wrote for a managed route, otherwise at the bookmark's explicit Domain issuer, if any.
+ */
+export function bookmarkExchangeDomain(
+  entry: Pick<InstanceEntry, 'slug' | 'name' | 'domainIssuer'>,
+  url: string,
+): Readonly<{ domainOrigin?: string; domainIssuer?: string }> {
+  const shell = managedBookmarkShell(entry, url)
+  if (shell !== undefined) return { domainOrigin: shell }
+  return entry.domainIssuer === undefined ? {} : { domainIssuer: entry.domainIssuer }
+}
+
+function managedBookmarkShell(
+  entry: Pick<InstanceEntry, 'slug' | 'name'>,
+  url: string,
+): typeof SHELL_ORIGIN | undefined {
+  return entry.slug !== undefined && entry.name !== undefined ? managedShellOrigin(url) : undefined
 }
 
 export async function removeInstance(key: string): Promise<void> {
@@ -456,12 +481,13 @@ export async function resolveInstance(
         `  Or pass --url <kernel-url> directly.`,
     )
   }
+  const url = normalizeInstanceKernelUrl(entry.url)
   return {
     name: key,
     kind: 'bookmark',
-    url: normalizeInstanceKernelUrl(entry.url),
+    url,
     issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer,
-    domainIssuer: entry.domainIssuer,
+    ...bookmarkExchangeDomain(entry, url),
     createdAt: entry.createdAt,
     defaultIdentity: entry.defaultIdentity,
     caFile: entry.caFile,

@@ -98,6 +98,23 @@ describe('connection target', () => {
       slug: 'remote',
     })
 
+    expect(
+      await resolveConnectionTarget({ instance: 'bryan' }, config, {
+        instances,
+        managed: async (slug) => ({
+          id: 'managed-id',
+          slug,
+          url: `https://${slug}.eu.beta.astrale.ai`,
+          state: 'ready',
+        }),
+      }),
+    ).toEqual({
+      url: 'https://bryan.eu.beta.astrale.ai/api',
+      kernelIssuer: issuer.accept('https://bryan.eu.beta.astrale.ai/api'),
+      domainOrigin: 'shell.astrale.ai',
+      slug: 'bryan',
+    })
+
     expect(await resolveConnectionTarget({ instance: 'control' }, config, { instances })).toEqual({
       url: 'https://admin.example/api',
       kernelIssuer: issuer.accept('https://admin.example/issuer'),

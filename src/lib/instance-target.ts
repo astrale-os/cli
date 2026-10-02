@@ -9,8 +9,9 @@ import {
   type ResolvedAdminTarget,
 } from './admin-target'
 import {
+  bookmarkExchangeDomain,
   getActive,
-  managedShellDomainIssuer,
+  managedShellOrigin,
   normalizeInstanceKernelUrl,
   resolveInstance,
   resolveInstanceKey,
@@ -29,7 +30,13 @@ export type ResolvedInstanceTarget = {
   source: 'bookmark' | 'managed' | 'admin' | 'url'
   url: string
   kernelIssuer: string
+  /** Exact Domain issuer the selected identity is exchanged at. */
   domainIssuer?: string
+  /**
+   * Installed Domain the selected identity is exchanged through; the Kernel pin names its issuer.
+   * Never set together with `domainIssuer`.
+   */
+  domainOrigin?: string
   defaultIdentity?: string
   caFile?: string
 }
@@ -100,13 +107,13 @@ async function resolveNamedInstanceTarget(
   }
 
   const url = normalizeInstanceKernelUrl(managed.url)
-  const domainIssuer = managedShellDomainIssuer(url)
+  const domainOrigin = managedShellOrigin(url)
   return {
     name: managed.slug,
     source: 'managed',
     url,
     kernelIssuer: url,
-    ...(domainIssuer === undefined ? {} : { domainIssuer }),
+    ...(domainOrigin === undefined ? {} : { domainOrigin }),
   }
 }
 
@@ -124,11 +131,7 @@ async function resolveBookmarkedInstanceTarget(
       source: 'bookmark',
       url,
       kernelIssuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : url,
-      domainIssuer:
-        entry.domainIssuer ??
-        (entry.slug !== undefined && entry.name !== undefined
-          ? managedShellDomainIssuer(url)
-          : undefined),
+      ...bookmarkExchangeDomain(entry, url),
       defaultIdentity: entry.defaultIdentity,
       caFile: entry.caFile,
     }
@@ -140,7 +143,8 @@ async function resolveBookmarkedInstanceTarget(
     source: 'bookmark',
     url: resolved.url,
     kernelIssuer: resolved.issuer ?? resolved.url,
-    domainIssuer: resolved.domainIssuer,
+    ...(resolved.domainIssuer === undefined ? {} : { domainIssuer: resolved.domainIssuer }),
+    ...(resolved.domainOrigin === undefined ? {} : { domainOrigin: resolved.domainOrigin }),
     defaultIdentity: resolved.defaultIdentity,
     caFile: resolved.caFile,
   }

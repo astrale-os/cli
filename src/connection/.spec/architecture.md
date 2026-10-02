@@ -6,8 +6,8 @@ credentials for an explicit anonymous selection or resolves fresh source-Kernel 
 Call, binds Graph and Auth helpers, and closes every owned Client resource when the command action
 terminates.
 
-When a target also names an exact Domain issuer, the connection owner obtains a Domain token through
-the Kernel Client's `session.exchange(issuer)`, which runs the
+When a target also names an exact Domain issuer, or the origin of an installed Domain, the connection
+owner obtains a Domain token through the Kernel Client's `session.exchange(issuer)`, which runs the
 `whoami -> delegate(attenuation) -> issuer exchange` journey and admits the Domain response. The
 connection owner keeps only what outlives one Client call: the persisted cache, the command-timeout
 lifetime rules, retry of a delegation whose outcome is unknown, and the mapping of each Client
@@ -39,6 +39,19 @@ issuer and subject metadata from the selected persisted IdP identity may select 
 cryptographically admitted exchange entry before source-token refresh. Missing, unreadable, or
 mismatched metadata falls through to ordinary source resolution. Cache misses alone resolve the
 registered Kernel User and perform delegation plus Domain exchange.
+An Astrale-managed Instance exchanges its users through its installed Shell, named by origin
+(`shell.astrale.ai`) and never by an issuer derived from the route: the Shell's issuer is whatever
+the source Kernel's pin names, and a reinstall from an immutable deployment changes it. The
+exchange reads that pin with `schema.inspect` through the same Client Session that already
+authenticates the selected identity for `whoami` and `delegate`, so no issuer is needed before the
+Kernel is reached. One session reads it once. The state owner remembers it per source Kernel and
+origin, but a remembered issuer only selects a credential an earlier command exchanged: every fresh
+exchange uses an issuer read in this session. An exchange that fails as a moved issuer would (the
+issuer no longer serves discovery or exchange, or the Domain refuses with 2002) makes the session
+read the pin once more and, only when the pin now names another issuer, exchange there once. A
+command whose credential the Kernel rejects with 2002 forgets the remembered issuer. A pin that
+cannot be read fails with `TOKEN_EXCHANGE_ISSUER_UNRESOLVED` naming its cause; there is no fallback
+issuer, and a Domain the Kernel hosts keeps the caller.
 A callable command needs the issuer of its declaring Domain before it can exchange. The state owner
 remembers that installation fact per source Kernel and origin, so only the first command reads the
 installed Publication through a discovery Session. The remembered issuer is not authority: a stale
