@@ -57,10 +57,17 @@ export interface SchemaSdk {
   }
   readonly schema: {
     resolve(input: any): ResolvedSchemaDomain
-    compareDependencyMeaning(
-      source: CanonicalDomainSchemaV1,
-      target: CanonicalDomainSchemaV1,
-    ): { readonly footprint: readonly unknown[] }
+    readonly compatibility: {
+      compareMeaning(request: {
+        readonly scope: { readonly kind: 'dependency'; readonly dependent: any }
+        readonly target: any
+      }): {
+        readonly entries: readonly {
+          readonly subject: { readonly key: unknown }
+          readonly observations: readonly { readonly before?: unknown }[]
+        }[]
+      }
+    }
   }
   readonly ClassKey: {
     is(input: unknown): input is IrClassKey
@@ -208,8 +215,15 @@ function projectImports(
   // The DSL computes the exact reachable footprint. Studio no longer recurses
   // through JSON Schemas, policies, Views, and Core declarations to rediscover it.
   for (const dependency of closure) {
-    const footprint = sdk.schema.compareDependencyMeaning(domain.source, dependency).footprint
-    for (const candidate of footprint) {
+    // The footprint is every dependency Key with a source meaning; an entry holding only a
+    // target addition is not used by the dependent.
+    const comparison = sdk.schema.compatibility.compareMeaning({
+      scope: { kind: 'dependency', dependent: domain.source },
+      target: dependency,
+    })
+    for (const { subject, observations } of comparison.entries) {
+      if (!observations.some(({ before }) => before !== undefined)) continue
+      const candidate = subject.key
       if (!sdk.ClassKey.is(candidate)) continue
       const ref = sdk.ClassKey.ref(candidate)
       const definition = domain.definition(ref)
