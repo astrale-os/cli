@@ -5,6 +5,7 @@ import { issuer } from '@astrale-os/sdk/auth'
 import { ResponseError, TransportError } from '@astrale-os/sdk/client'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { pack } from 'msgpackr'
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -333,20 +334,34 @@ describe('Shell exchange at the installed issuer', () => {
   )
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-INSPECT-DECODED */
-  test('reads the pin with schema.inspect and decodes the DomainInfo the Kernel encodes', async () => {
-    const net = network({ [DEPLOYMENT]: 'live' }, { kernel: { kind: 'up', pin: () => DEPLOYMENT } })
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => sourceToken('user-1') },
-      net.fetch,
-      5_000,
-      credentials,
-      createInstalledIssuer(KERNEL, SHELL),
-    )
+  test.each([
+    ['a deployment issuer', DEPLOYMENT, HOST_DOMAIN_INFO_SHA256.deployment],
+    ['the stable issuer', LEGACY_SHELL, HOST_DOMAIN_INFO_SHA256.legacy],
+    ['no publication', null, HOST_DOMAIN_INFO_SHA256.kernelHosted],
+  ] as const)(
+    'reads the pin with schema.inspect and decodes the DomainInfo every supported Host encodes (%s)',
+    async (_case, pin, hostBytes) => {
+      // The fake Kernel answers exactly the bytes Host releases 0.12.0-beta.113 to .126 encode.
+      expect(sha256(pack(domainInfo(SHELL, pin)))).toBe(hostBytes)
+      const net = network(
+        { [DEPLOYMENT]: 'live', [LEGACY_SHELL]: 'live' },
+        { kernel: { kind: 'up', pin: () => pin } },
+      )
+      const resolver = createExchangeCredentialResolver(
+        TARGET,
+        { resolve: async () => sourceToken('user-1') },
+        net.fetch,
+        5_000,
+        credentials,
+        createInstalledIssuer(KERNEL, SHELL),
+      )
 
-    await expect(resolver.resolve(KERNEL, live())).resolves.toBe(exchanged(DEPLOYMENT))
-    expect(net.requests[0]).toBe(`kernel ${INVOCATION} inspect ${SHELL} as source`)
-  })
+      await expect(resolver.resolve(KERNEL, live())).resolves.toBe(
+        pin === null ? sourceToken('user-1') : exchanged(pin),
+      )
+      expect(net.requests[0]).toBe(`kernel ${INVOCATION} inspect ${SHELL} as source`)
+    },
+  )
 
   test.each([
     ['no publication', null],
@@ -569,12 +584,20 @@ function refusal(
 }
 
 /**
- * The binary `schema.inspect` answer of a Kernel whose pin names `pinnedIssuer`: the DomainInfo
- * wire encoding, byte for byte what the Kernel protocol encoder produces for these values.
+ * SHA-256 of the DomainInfo each Host release from 0.12.0-beta.113 to 0.12.0-beta.126 encodes, in
+ * its own image, for `domainInfo(SHELL, issuer)`: the oldest Host still serving managed Instances
+ * answers these bytes.
  */
-function introspection(requestId: unknown, origin: string, pinnedIssuer: string | null): Response {
+const HOST_DOMAIN_INFO_SHA256 = {
+  deployment: '71e17ffc54e25ffb100b2482353d3b0121d063708112458e81aeac7cc89dce8f',
+  legacy: '7e055e973d4712de1ddd853555d00a53dc590e934fd32e653e97974212e9e6e1',
+  kernelHosted: '0af1e689db279a0727dba10c0e37344e7747ec74cee0bfc4f88ac68a7fb38bf0',
+} as const
+
+/** The DomainInfo of a Kernel whose pin for `origin` names `pinnedIssuer`, or no publication. */
+function domainInfo(origin: string, pinnedIssuer: string | null) {
   const revision = `sha256:${'a'.repeat(64)}`
-  const domain = {
+  return {
     origin,
     revision,
     generation: `sha256:${'b'.repeat(64)}`,
@@ -591,7 +614,11 @@ function introspection(requestId: unknown, origin: string, pinnedIssuer: string 
     capabilities: { requested: {}, materialized: {} },
     bindings: { callables: [], views: [] },
   }
-  return new Response(new Uint8Array(pack(domain)), {
+}
+
+/** The binary `schema.inspect` answer of a Kernel whose pin names `pinnedIssuer`. */
+function introspection(requestId: unknown, origin: string, pinnedIssuer: string | null): Response {
+  return new Response(new Uint8Array(pack(domainInfo(origin, pinnedIssuer))), {
     headers: {
       'content-type': 'application/vnd.astrale.schema-introspection.v2+msgpack',
       'cache-control': 'no-store',
@@ -600,6 +627,10 @@ function introspection(requestId: unknown, origin: string, pinnedIssuer: string 
       'x-astrale-invocation': `${encodeURIComponent(KERNEL)};call-${requestId}`,
     },
   })
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
 }
 
 function json(value: unknown, status = 200, contentType = 'application/json'): Response {
