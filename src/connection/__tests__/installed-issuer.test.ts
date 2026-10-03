@@ -303,12 +303,24 @@ describe('Shell exchange at the installed issuer', () => {
   test.each([
     [{ kind: 'refuses', code: 2002 } as const, 2002],
     [{ kind: 'refuses', code: 5001 } as const, 5001],
-    // A 1003 that rejects the read's own input says nothing about the installation.
+    // A 1003 that rejects the read's own input says nothing about the installation. This is the
+    // reason the Kernel's rejectInput answers for a non-canonical origin.
     [
       {
         kind: 'refuses',
         code: 1003,
-        reason: { code: 'INTROSPECTION_ORIGIN_INVALID', details: { path: '/origin' } },
+        reason: {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: {
+            issues: [
+              {
+                code: 'ORIGIN_INVALID',
+                path: '/origin',
+                message: 'Installation origin must be canonical.',
+              },
+            ],
+          },
+        },
       } as const,
       1003,
     ],
