@@ -5,6 +5,7 @@ import type { Path } from '@astrale-os/sdk/graph/path'
 import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
+import type { ExchangeTarget } from './exchange'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
@@ -84,7 +85,10 @@ function sourceBoundDelegationTtl(input: string, requestedTtlSeconds: number): n
   }
 }
 
-/** Bind CLI identity state and Core Auth delegation to one Session auth capability. */
+/**
+ * Bind CLI identity state and Core Auth delegation to one Session auth capability. A target that
+ * names an installed Domain by origin reads its issuer from the Kernel pin once for this session.
+ */
 export function createCliCredential(
   target: ConnectionTarget,
   options: ConnectionOptions,
@@ -102,10 +106,11 @@ export function createCliCredential(
   }
   validateCredentialSelection(options)
   if (options.anonymous === true) return undefined
-  const useDomainPrincipal =
-    target.domainIssuer !== undefined &&
-    options.creds === undefined &&
-    intent.principal !== 'caller'
+  const exchange =
+    options.creds === undefined && intent.principal !== 'caller'
+      ? exchangeTarget(target)
+      : undefined
+  const useDomainPrincipal = exchange !== undefined
   const ttlSeconds =
     intent.nestedTtlSeconds === undefined
       ? options.creds === undefined
@@ -136,15 +141,20 @@ export function createCliCredential(
       return credential
     },
   }
-  const effective = useDomainPrincipal
-    ? createExchangeCredentialResolver(
-        { ...target, domainIssuer: target.domainIssuer },
-        source,
-        fetch,
-        timeoutMs,
-      )
-    : source
+  const effective =
+    exchange !== undefined
+      ? createExchangeCredentialResolver(exchange, source, fetch, timeoutMs)
+      : source
   return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
+}
+
+/** The Domain a target's identity is exchanged at: its exact issuer, else its installed origin. */
+function exchangeTarget(target: ConnectionTarget): ExchangeTarget | undefined {
+  if (target.domainIssuer !== undefined) return { ...target, domainIssuer: target.domainIssuer }
+  if (target.domainOrigin !== undefined) {
+    return { ...target, domainIssuer: undefined, domainOrigin: target.domainOrigin }
+  }
+  return undefined
 }
 
 /** Reject contradictory explicit credential selections before identity or network access. */

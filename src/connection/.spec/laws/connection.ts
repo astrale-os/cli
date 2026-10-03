@@ -224,6 +224,62 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
   ],
 })
 
+export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
+  id: 'CLI-CONNECTION-INSTALLED-SHELL-ISSUER',
+  statement:
+    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller, once per session and held for that session only: a consented reinstall changes it within one installation, so the installation cache, unlike for a callable's declaring Domain, never records or serves it, and a persisted Domain credential is selected only under an exact issuer or an issuer this session read, so no session presents a credential exchanged at an issuer the pin no longer named when it read it. No issuer is derived from the route: in a bookmark registry an earlier release wrote, which carries no format label, the route-derived Shell issuer it stored on a managed bookmark is dropped on read; every bookmark write rewrites the registry with the label, and in a labelled registry every explicit exact issuer wins, whatever its value. A fresh exchange at the issuer this session read that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and this session's read when the pin cannot be read again. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
+  tests: [
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-DEPLOYMENT-ISSUER',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-RECOVERS-ONCE',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-LEGACY-ISSUER-UNCHANGED',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-ISSUER-UNRESOLVED',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-READ-FAILURE-KEEPS-CLASSIFICATION',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-REINSTALL-NEXT-COMMAND-READS-PIN',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-NOT-REMEMBERED',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-INSPECT-DECODED',
+    },
+    {
+      file: '../lib/__tests__/instance.test.ts',
+      id: 'TEST-CLI-INSTANCE-LEGACY-SHELL-ISSUER-DROPPED',
+    },
+    {
+      file: '../lib/__tests__/instance.test.ts',
+      id: 'TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT',
+    },
+    {
+      file: '../lib/__tests__/instance-concurrency.test.ts',
+      id: 'TEST-CLI-INSTANCE-REGISTRY-LABELLED-ON-WRITE',
+    },
+    {
+      file: '../lib/__tests__/admin-target.test.ts',
+      id: 'TEST-CLI-ADMIN-LEGACY-SHELL-ISSUER-IGNORED',
+    },
+  ],
+})
+
 export const CLI_CONNECTION_CALLABLE_ISSUER_REMEMBERED = defineLaw({
   id: 'CLI-CONNECTION-CALLABLE-ISSUER-REMEMBERED',
   statement:

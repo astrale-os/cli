@@ -6,6 +6,7 @@ import type { AstraleConfig } from './config'
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
 import { atomicWrite, withFileLock } from '../state/files'
 import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
+import { withoutRouteDerivedShellIssuer } from './legacy/managed-shell-issuer'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -34,7 +35,15 @@ export const InstanceEntrySchema = z.object({
   organizationId: z.string().optional(),
 })
 
+/**
+ * Format of the bookmark registry this release writes. A registry without it was written by a
+ * release that derived the Shell issuer from the route (`legacy/managed-shell-issuer.ts`); every
+ * write rewrites the whole registry in this format.
+ */
+export const INSTANCE_STORE_VERSION = 1 as const
+
 export const InstanceStoreSchema = z.object({
+  version: z.literal(INSTANCE_STORE_VERSION).optional(),
   active: z.string(),
   instances: z.record(z.string(), InstanceEntrySchema),
 })
@@ -60,7 +69,10 @@ export type ResolvedInstance = {
   kind: InstanceKind | 'managed'
   url: string
   issuer?: string
+  /** Exact Domain issuer the bookmark's users are exchanged at. */
   domainIssuer?: string
+  /** Installed Domain the bookmark's users are exchanged through; the Kernel pin names its issuer. */
+  domainOrigin?: string
   createdAt?: string
   defaultIdentity?: string
   caFile?: string
@@ -77,9 +89,16 @@ function seed(): InstanceStore {
   return { active: '', instances: {} }
 }
 
+/**
+ * Normalize a parsed registry into this release's model. `changed` reports normalized content; the
+ * returned store carries no format label, which only an encoded registry holds.
+ */
 export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
   let changed = false
   const instances: Record<string, InstanceEntry> = {}
+  // Read-old, deleted with `legacy/managed-shell-issuer.ts`: only a registry an earlier release
+  // wrote can hold a Shell issuer derived from the route.
+  const routeDerivedShellIssuers = store.version === undefined
 
   for (const [key, entry] of Object.entries(store.instances)) {
     if (key === 'manager') {
@@ -92,16 +111,13 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
-    const domainIssuer =
-      entry.domainIssuer ??
-      (entry.slug !== undefined && entry.name !== undefined
-        ? managedShellDomainIssuer(normalizedUrl)
-        : undefined)
+    const current = routeDerivedShellIssuers
+      ? withoutLegacyShellIssuer(entry, normalizedUrl)
+      : entry
     const next: InstanceEntry = {
-      ...entry,
+      ...current,
       url: normalizedUrl,
       issuer: normalizedIssuer,
-      domainIssuer,
       kind: 'bookmark',
     }
     // VALUE comparison only. The old `next !== entry` (object identity) was
@@ -114,7 +130,7 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
       entry.kind !== 'bookmark' ||
       normalizedUrl !== entry.url ||
       normalizedIssuer !== entry.issuer ||
-      domainIssuer !== entry.domainIssuer
+      current.domainIssuer !== entry.domainIssuer
     ) {
       changed = true
     }
@@ -181,10 +197,20 @@ async function mutateInstances<Value>(transition: (store: InstanceStore) => Valu
     const store =
       raw === undefined ? seed() : sanitizeStore(InstanceStoreSchema.parse(JSON.parse(raw))).store
     const value = transition(store)
-    await atomicWrite(INSTANCES_PATH, `${JSON.stringify(store, null, 2)}\n`)
+    await atomicWrite(INSTANCES_PATH, encodeInstanceStore(store))
     instancesMemo = store
     return value
   })
+}
+
+/** Every write publishes the whole registry in this release's format. */
+function encodeInstanceStore(store: InstanceStore): string {
+  const encoded: InstanceStore = {
+    version: INSTANCE_STORE_VERSION,
+    active: store.active,
+    instances: store.instances,
+  }
+  return `${JSON.stringify(encoded, null, 2)}\n`
 }
 
 function collectIdentifiers(store: InstanceStore, skipKey?: string): Map<string, string> {
@@ -279,7 +305,11 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
 export async function upsertInstance(
   key: string,
   opts: AddInstanceOpts = {},
-  behavior: Readonly<{ activateWhenEmpty?: boolean }> = {},
+  behavior: Readonly<{
+    activateWhenEmpty?: boolean
+    /** Drop the exact Domain issuer the existing bookmark carries before applying `opts`. */
+    dropDomainIssuer?: boolean
+  }> = {},
 ): Promise<{ entry: InstanceEntry; created: boolean }> {
   validateName(key, 'Instance')
   if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
@@ -291,12 +321,16 @@ export async function upsertInstance(
     assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[], key)
 
     const existing = store.instances[key]
+    const kept =
+      behavior.dropDomainIssuer === true && existing !== undefined
+        ? withoutDomainIssuer(existing)
+        : existing
     const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
     const normalizedDomainIssuer = opts.domainIssuer
       ? normalizeIssuerUrl(opts.domainIssuer)
       : undefined
     const entry: InstanceEntry = {
-      ...existing,
+      ...kept,
       ...definedEntry(opts),
       url: normalizedUrl,
       ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
@@ -328,7 +362,6 @@ export async function upsertManagedBookmark(
   const store = await readInstances()
   const previousUrl = store.instances[input.key]?.url
   const url = normalizeInstanceKernelUrl(input.url)
-  const domainIssuer = managedShellDomainIssuer(url)
   const { entry } = await upsertInstance(
     input.key,
     {
@@ -338,11 +371,14 @@ export async function upsertManagedBookmark(
       name: input.slug,
       kind: 'bookmark',
       mode: 'remote',
-      ...(domainIssuer === undefined ? {} : { domainIssuer }),
       ...(input.organizationId ? { organizationId: input.organizationId } : {}),
       ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
     },
-    { activateWhenEmpty: input.activateWhenEmpty },
+    {
+      activateWhenEmpty: input.activateWhenEmpty,
+      // A managed route exchanges through its installed Shell: `instance use` resets any issuer.
+      dropDomainIssuer: managedShellOrigin(url) !== undefined,
+    },
   )
   return {
     entry,
@@ -350,18 +386,58 @@ export async function upsertManagedBookmark(
   }
 }
 
-/** Resolve the trusted Shell issuer for an Astrale-managed public Instance route. */
-export function managedShellDomainIssuer(input: string): string | undefined {
+/** Origin of the Shell Domain, the same on every Astrale-managed Instance. */
+export const SHELL_ORIGIN = 'shell.astrale.ai'
+
+/**
+ * The Domain an Astrale-managed public Instance route exchanges its users through: the installed
+ * Shell. Only its origin is fixed; its issuer is whatever the Kernel pin names.
+ */
+export function managedShellOrigin(input: string): typeof SHELL_ORIGIN | undefined {
   let url: URL
   try {
     url = new URL(input)
   } catch {
     return undefined
   }
-  if (url.protocol !== 'https:') return undefined
-  if (url.hostname.endsWith('.beta.astrale.ai')) return 'https://shell.beta.astrale.ai'
-  if (url.hostname.endsWith('.astrale.ai')) return 'https://shell.astrale.ai'
-  return undefined
+  return url.protocol === 'https:' && url.hostname.endsWith('.astrale.ai')
+    ? SHELL_ORIGIN
+    : undefined
+}
+
+/**
+ * Where a bookmark's users are exchanged: at its explicit exact Domain issuer when it names one,
+ * otherwise through the installed Shell for a bookmark `instance use` wrote for a managed route.
+ */
+export function bookmarkExchangeDomain(
+  entry: Pick<InstanceEntry, 'slug' | 'name' | 'domainIssuer'>,
+  url: string,
+): Readonly<{ domainOrigin?: string; domainIssuer?: string }> {
+  if (entry.domainIssuer !== undefined) return { domainIssuer: entry.domainIssuer }
+  const shell = managedBookmarkShell(entry, url)
+  return shell === undefined ? {} : { domainOrigin: shell }
+}
+
+/**
+ * Read-old: a managed bookmark in a registry an earlier release wrote drops the Shell issuer that
+ * release derived from its route (`lib/legacy/managed-shell-issuer.ts`).
+ */
+function withoutLegacyShellIssuer(entry: InstanceEntry, url: string): InstanceEntry {
+  return managedBookmarkShell(entry, url) === undefined
+    ? entry
+    : withoutRouteDerivedShellIssuer(entry)
+}
+
+function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {
+  const { domainIssuer: _replaced, ...rest } = entry
+  return rest
+}
+
+function managedBookmarkShell(
+  entry: Pick<InstanceEntry, 'slug' | 'name'>,
+  url: string,
+): typeof SHELL_ORIGIN | undefined {
+  return entry.slug !== undefined && entry.name !== undefined ? managedShellOrigin(url) : undefined
 }
 
 export async function removeInstance(key: string): Promise<void> {
@@ -456,12 +532,13 @@ export async function resolveInstance(
         `  Or pass --url <kernel-url> directly.`,
     )
   }
+  const url = normalizeInstanceKernelUrl(entry.url)
   return {
     name: key,
     kind: 'bookmark',
-    url: normalizeInstanceKernelUrl(entry.url),
+    url,
     issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer,
-    domainIssuer: entry.domainIssuer,
+    ...bookmarkExchangeDomain(entry, url),
     createdAt: entry.createdAt,
     defaultIdentity: entry.defaultIdentity,
     caFile: entry.caFile,

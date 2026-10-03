@@ -176,9 +176,10 @@ export function startViewServer(
         }
         // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
         if (view.route.issuer !== target.kernelIssuer && kernel.creds === undefined) {
+          const { domainOrigin: _bookmarkDomain, ...source } = target
           const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
             { ...kernel, ...(identity === undefined ? {} : { as: identity }) },
-            { ...target, domainIssuer: view.route.issuer },
+            { ...source, domainIssuer: view.route.issuer },
           )
           return { ...exchanged, kind: 'exchanged' as const }
         }
