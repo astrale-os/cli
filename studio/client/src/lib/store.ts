@@ -36,6 +36,8 @@ const NO_CHAT = ''
 
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
+/** Where the agent's chat tabs sit: a strip of marks on top, or a column of titles on the left. */
+export type ChatTabsSide = 'top' | 'left'
 
 /** How every canvas draws a relationship: a curve between the cards, or right-angled traces. */
 export type EdgeStyle = WorkspaceUiState['edgeStyle']
@@ -94,6 +96,8 @@ interface UIState {
   resolvedTheme: 'light' | 'dark'
   /** edge drawing preference, persisted in this workspace's machine-side UI state */
   edgeStyle: EdgeStyle
+  /** chat tab placement, persisted in this browser */
+  chatTabsSide: ChatTabsSide
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
@@ -174,6 +178,7 @@ interface UIState {
   probePolicy: string | null
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
+  setChatTabsSide: (side: ChatTabsSide) => void
   /** Go to Tests with this policy selected — the way Process and the detail panel hand one over. */
   openPolicy: (policy: string, domainId?: string) => void
   setProbePolicy: (policy: string | null) => void
@@ -255,6 +260,7 @@ export const useUI = create<UIState>((set) => ({
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
   edgeStyle: 'curved',
+  chatTabsSide: loadStored('studio.chatTabs', ['top', 'left'] as const, 'top'),
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
   panelOpen: false,
@@ -300,6 +306,10 @@ export const useUI = create<UIState>((set) => ({
     set({ theme, resolvedTheme: paintTheme(theme) })
   },
   setEdgeStyle: (edgeStyle) => set({ edgeStyle }),
+  setChatTabsSide: (chatTabsSide) => {
+    storeBrowserPreference('studio.chatTabs', chatTabsSide)
+    set({ chatTabsSide })
+  },
   setSection: (section) => {
     // Schema and Core are two canvases over the same domain with DISJOINT selection
     // namespaces (`class.X` vs a core path), so crossing between them starts clean —

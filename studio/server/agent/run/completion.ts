@@ -13,6 +13,9 @@ import { recordToolCall, settleToolCalls } from './tool-calls'
 import { persistRun } from './transcript'
 import { recordRun } from './usage'
 
+/** How long streamed text gathers before it is sent on. */
+const DRAFT_BATCH_MS = 60
+
 function stripMachineState(text: string): string {
   return text
     .replace(/```(?:json)?\s*[\s\S]*?```/g, (block) =>
@@ -83,6 +86,41 @@ export async function completeRun(
   const stateRoot = workspace.stateRoot
   const emitEvent = (event: AgentEvent) =>
     emitStudioEvent(notify, { type: 'agent-event', chatId: chat.id, runId: run.id, event })
+
+  // The message being written streams to the reader in small batches - a frame per
+  // token would flood the event stream for nothing the eye can tell apart.
+  let unsent = ''
+  let unsentAt = 0
+  let draftTimer: ReturnType<typeof setTimeout> | undefined
+  const sendDraft = () => {
+    if (draftTimer) clearTimeout(draftTimer)
+    draftTimer = undefined
+    if (!unsent || !run.draft) return
+    emitStudioEvent(notify, {
+      type: 'agent-draft',
+      chatId: chat.id,
+      runId: run.id,
+      id: run.draft.id,
+      offset: unsentAt,
+      text: unsent,
+    })
+    unsent = ''
+  }
+  const onDelta = (text: string) => {
+    if (!text) return
+    if (!run.draft) run.draft = { id: randomUUID(), text: '' }
+    if (!unsent) unsentAt = run.draft.text.length
+    run.draft.text += text
+    unsent += text
+    draftTimer ??= setTimeout(sendDraft, DRAFT_BATCH_MS)
+  }
+  // the message is written: what streamed of it becomes the event that carries its id
+  const settleDraft = (): string | undefined => {
+    sendDraft()
+    const id = run.draft?.id
+    run.draft = undefined
+    return id
+  }
   // where each tool call's step sits in the transcript, by the harness's call id
   const callSteps = new Map<string, number>()
   const pushEvent = ({
@@ -90,7 +128,9 @@ export async function completeRun(
     ...event
   }: Omit<AgentEvent, 'id' | 'ts' | 'status' | 'revision'> & Pick<AgentStreamEvent, 'call'>) => {
     let text = event.text
+    let draftId: string | undefined
     if (event.kind === 'message') {
+      draftId = settleDraft()
       text = stripMachineState(text)
       if (!text) return
     }
@@ -113,7 +153,7 @@ export async function completeRun(
       return
     }
     const stored: AgentEvent = {
-      id: randomUUID(),
+      id: draftId ?? randomUUID(),
       ts: new Date().toISOString(),
       ...event,
       text,
@@ -158,6 +198,16 @@ export async function completeRun(
         env: harnessEnv,
         signal: controller.signal,
         onEvent: pushEvent,
+        onDelta,
+        onContext: (context) => {
+          run.context = context
+          emitStudioEvent(notify, {
+            type: 'agent-context',
+            chatId: chat.id,
+            runId: run.id,
+            context,
+          })
+        },
       })
     }
 
@@ -168,6 +218,8 @@ export async function completeRun(
     if (resume && result.resumeRejected && !controller.signal.aborted) {
       clearChatSession(stateRoot, chat.id)
       conversationTurns = 0
+      // a new conversation starts with nothing in its window
+      run.context = undefined
       run.sessionId = undefined
       run.resumed = false
       const observableActivity =
@@ -201,6 +253,7 @@ export async function completeRun(
     run.sessionId = result.sessionId ?? run.sessionId
     run.costUsd = result.costUsd
     run.tokens = result.tokens
+    run.context = result.context ?? run.context
     run.numTurns = result.numTurns
     run.liveReplies = bridgeReplies
     if (bridgeReplies > 0 && !controller.signal.aborted)
@@ -255,6 +308,7 @@ export async function completeRun(
     run.error = String(error?.message ?? error)
     pushEvent({ kind: 'error', text: run.error })
   } finally {
+    settleDraft()
     run.finishedAt = new Date().toISOString()
     releaseController(chat.id, controller)
     bridge.dispose()

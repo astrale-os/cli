@@ -32,6 +32,7 @@ import { briefedDomains, buildResumePrompt, buildTurnPrompt } from '../prompts/t
 import { studioSessionId } from '../telemetry'
 import { handoffPreamble } from '../transfer'
 import { domainOrigin, domainRelativePath } from '../workspace'
+import { currentRun } from './live-state'
 
 /**
  * Which open threads a turn carries. None unless asked: an open thread is the
@@ -238,6 +239,10 @@ export async function prepareRun(
     access: settings.agentAccess,
     mcpTools: bridge.mcpServers.flatMap((server) => server.enabledTools ?? []),
   })
+  // The window does not empty between turns of one conversation: until the agent
+  // reports again, it is as full as the last turn left it.
+  const previous = resume ? currentRun(chat.id) : undefined
+  const context = previous?.sessionId === resume ? previous?.context : undefined
   const run: AgentRun = {
     id: randomUUID(),
     chatId: chat.id,
@@ -258,6 +263,7 @@ export async function prepareRun(
     sessionId: resume,
     resumed: !!resume,
     prompt: promptSnapshot(resume, !resume),
+    ...(context ? { context } : {}),
   }
 
   return {

@@ -2,7 +2,7 @@ import * as acp from '@agentclientprotocol/sdk'
 import { accessSync, constants, readFileSync } from 'node:fs'
 import { delimiter, isAbsolute, resolve } from 'node:path'
 
-import type { AgentToolCall, AgentToolContent } from '../../../../shared/types'
+import type { AgentContextUsage, AgentToolCall, AgentToolContent } from '../../../../shared/types'
 import type {
   AgentTurnImage,
   AgentTurnInput,
@@ -37,6 +37,7 @@ interface ExecutionResult {
   text: string
   tokens?: number
   costUsd?: number
+  context?: AgentContextUsage
   isError: boolean
   errorMessage?: string
   resumeRejected?: boolean
@@ -303,11 +304,13 @@ function permissionResponse(params: acp.RequestPermissionRequest): acp.RequestPe
 function transcript(
   onEvent: AgentTurnInput['onEvent'] | undefined,
   onDelta: AskInput['onDelta'] | undefined,
+  onContext?: AgentTurnInput['onContext'],
 ) {
   let text = ''
   let pendingMessage = ''
   let lastMessageId: string | undefined
   let costUsd: number | undefined
+  let context: AgentContextUsage | undefined
   const toolCalls = new Map<string, AcpToolCallState>()
   const shown = new Set<string>()
 
@@ -372,9 +375,15 @@ function transcript(
         if (plan) onEvent?.({ kind: 'status', text: plan })
         return
       }
-      case 'usage_update':
+      case 'usage_update': {
         if (update.cost?.currency.toUpperCase() === 'USD') costUsd = update.cost.amount
+        const reported = contextUsage(update)
+        if (reported) {
+          context = reported
+          onContext?.(reported)
+        }
         return
+      }
       default:
         return
     }
@@ -389,7 +398,20 @@ function transcript(
     get costUsd() {
       return costUsd
     },
+    get context() {
+      return context
+    },
   }
+}
+
+/** A usage report's context occupancy, when it names a window to measure against. */
+export function contextUsage(update: {
+  used: number
+  size: number
+}): AgentContextUsage | undefined {
+  const { used, size } = update
+  if (!Number.isFinite(used) || !Number.isFinite(size) || used < 0 || size <= 0) return undefined
+  return { used: Math.round(used), size: Math.round(size) }
 }
 
 async function executeAcp(
@@ -446,7 +468,11 @@ async function executeAcp(
   }
 
   const onEvent = 'onEvent' in input ? input.onEvent : undefined
-  const reply = transcript(onEvent, 'onDelta' in input ? input.onDelta : undefined)
+  const reply = transcript(
+    onEvent,
+    'onDelta' in input ? input.onDelta : undefined,
+    'onContext' in input ? input.onContext : undefined,
+  )
 
   let connection: acp.ClientConnection | undefined
   let context: acp.ClientContext | undefined
@@ -614,6 +640,7 @@ async function executeAcp(
       text: reply.text.trim(),
       tokens: promptResponse.usage?.totalTokens,
       costUsd: reply.costUsd,
+      context: reply.context,
       isError: !stoppedCleanly,
       errorMessage: stoppedCleanly
         ? undefined
@@ -631,6 +658,7 @@ async function executeAcp(
       sessionId: activeSessionId,
       text: reply.text.trim(),
       costUsd: reply.costUsd,
+      context: reply.context,
       isError: true,
       errorMessage: message,
       resumeRejected:
@@ -675,6 +703,7 @@ export async function runAcpTurn(
     costUsd: result.costUsd,
     numTurns: result.isError && !result.text ? undefined : 1,
     tokens: result.tokens,
+    context: result.context,
     isError: result.isError,
     errorMessage: result.errorMessage,
     resumeRejected: result.resumeRejected,

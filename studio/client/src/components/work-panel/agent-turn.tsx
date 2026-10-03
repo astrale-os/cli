@@ -10,7 +10,7 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { AgentErrorChip } from './agent-error'
-import { AgentSteps, splitTurn } from './agent-steps'
+import { AgentSteps, splitTurn, visibleDraft } from './agent-steps'
 import { MessageImages } from './images'
 
 export { activityLabel, compactTarget } from './agent-steps'
@@ -71,6 +71,7 @@ export function AgentTurn({
   const setPanelTab = useUI((state) => state.setPanelTab)
   const authFailure = agentAuthFailure(run)
   const images = run.attachments ?? []
+  const draft = visibleDraft(run)
 
   return (
     <div className="space-y-2.5">
@@ -96,6 +97,13 @@ export function AgentTurn({
             {messages.map((message) => (
               <Markdown key={message.id} text={message.text} />
             ))}
+            {/* the message as it is being written, with a caret where the next word lands */}
+            {draft && (
+              <Markdown
+                text={draft}
+                className="[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:animate-pulse [&>:last-child]:after:text-primary [&>:last-child]:after:content-['▍']"
+              />
+            )}
             {!active && run.error && !authFailure && <AgentErrorChip run={run} onRetry={onRetry} />}
             {!active && authFailure && (
               <AuthFailureNotice failure={authFailure} onRetry={onRetry} />
