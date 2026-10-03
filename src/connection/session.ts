@@ -6,7 +6,7 @@ import type {
   SessionRouteStore,
 } from '@astrale-os/sdk/client/session'
 
-import { createGraph } from '@astrale-os/sdk/client'
+import { createGraph, ResponseError } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { AstraleConfig } from '../lib/config'
@@ -182,7 +182,11 @@ async function runResolvedClientSession<Value>(
       : createInstalledIssuer(target.kernelIssuer, target.domainOrigin, installations)
   const connection = open(target, timeoutMs, options, config, credential, installed)
   try {
-    return await action(connection.context)
+    return await action(
+      installed === undefined
+        ? connection.context
+        : reportingRefusedCredentials(connection.context, installed),
+    )
   } catch (error) {
     // A remembered issuer is re-read after any failure, so a reinstalled Domain heals in one step.
     if (remembered !== undefined) {
@@ -194,6 +198,72 @@ async function runResolvedClientSession<Value>(
   } finally {
     connection.close()
   }
+}
+
+/** The Kernel code of a credential it does not accept (AUTH_INVALID). */
+const CREDENTIAL_REFUSED = 2002
+
+/** The Session members that are Kernel call capabilities rather than Session methods. */
+const SESSION_APIS: ReadonlySet<PropertyKey> = new Set(['schema', 'graph', 'auth', 'content'])
+
+/**
+ * The context of a connection whose credential an installed issuer serves.
+ *
+ * A Kernel call made through it that the Kernel refuses with 2002 tells `installed` before the
+ * failure reaches the action. A command that recovers from its own calls' failures, such as the
+ * Studio's per-Class queries, then still forgets a remembered issuer the Kernel no longer accepts:
+ * whether the remembered issuer is forgotten follows the Kernel's verdict on the credential, not
+ * how the action ends.
+ */
+function reportingRefusedCredentials(
+  context: ConnectionContext,
+  installed: InstalledIssuer,
+): ConnectionContext {
+  const report = (pending: unknown): unknown =>
+    pending instanceof Promise
+      ? pending.catch(async (cause: unknown) => {
+          if (cause instanceof ResponseError && cause.code === CREDENTIAL_REFUSED) {
+            await installed.failed()
+          }
+          throw cause
+        })
+      : pending
+  const reporting = <Api extends object>(api: Api): Api =>
+    Object.freeze(
+      Object.fromEntries(
+        Object.entries(api).map(([key, member]) => [
+          key,
+          typeof member === 'function'
+            ? (...args: unknown[]) => report(Reflect.apply(member, api, args))
+            : member,
+        ]),
+      ),
+    ) as Api
+  const apis = new Map<PropertyKey, object>()
+  const methods = new Map<PropertyKey, unknown>()
+  // A Proxy, because ClientSession is a class: its schema, graph, auth and content capabilities
+  // dispatch through the Session itself, so each one is wrapped where the action reads it.
+  const session = new Proxy(context.session, {
+    get(target, key) {
+      const member: unknown = Reflect.get(target, key, target)
+      if (SESSION_APIS.has(key) && typeof member === 'object' && member !== null) {
+        if (!apis.has(key)) apis.set(key, reporting(member))
+        return apis.get(key)
+      }
+      if (typeof member !== 'function') return member
+      if (!methods.has(key)) {
+        methods.set(key, (...args: unknown[]) => report(Reflect.apply(member, target, args)))
+      }
+      return methods.get(key)
+    },
+  })
+  return Object.freeze({
+    ...context,
+    session,
+    graph: reporting(context.graph),
+    // The Session's own Auth API stays the context's Auth API.
+    auth: context.auth === context.session.auth ? session.auth : reporting(context.auth),
+  })
 }
 
 /** A cache that cannot be read is a miss: installation state must never fail a command. */

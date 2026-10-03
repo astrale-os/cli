@@ -36,8 +36,9 @@ const INSTALLATION_ABSENCE_REASONS: ReadonlySet<string> = new Set([
 /** Where a target that names an installed Domain by origin exchanges, across commands. */
 export interface InstalledIssuer extends ExchangeIssuer {
   /**
-   * The command this issuer served failed. An issuer it served from the installation cache, not
-   * from a pin it read, is forgotten, so the next command reads the pin and never relies on it again.
+   * The command this issuer served failed, or the Kernel refused (2002) a credential it served,
+   * even one the command recovered from. An issuer it served from the installation cache, not from
+   * a pin it read, is forgotten, so the next command reads the pin and never relies on it again.
    */
   failed(): Promise<void>
 }

@@ -63,10 +63,13 @@ old issuer outside the Kernel's acceptance window fails once, and its retry succ
 read the pin itself keeps the record when it fails.
 A session observes no reinstall after it chose its issuer. A command that already presented its
 credential keeps it: if a reinstall lands during the command, its later Kernel calls are refused with
-2002 once the Kernel no longer accepts the previous issuer, the command fails, and the next command
-reads the new pin. Connection does not replay a call the Kernel refused: the Client reports no call
-outcome to the credential it resolved, and no command keeps calling on one connection after a 2002
-(`logs --follow` ends on it; the View server and studio open one connection per mint or batch).
+2002 once the Kernel no longer accepts the previous issuer, and the next command reads the new pin.
+Whether the remembered issuer is forgotten follows the Kernel's verdict, not how the command ends.
+The Client reports no call outcome to the credential it resolved, so the connection lifecycle hands
+the action a context whose Kernel calls (the Session's own calls and its Schema, Graph, Auth and
+content capabilities) report a 2002 to the installed issuer before the failure reaches the action:
+a command that recovers from its calls' failures, such as the Studio's per-Class queries, still
+forgets a remembered issuer the Kernel refused. Connection does not replay a call the Kernel refused.
 An exchange that fails as a moved issuer would (the issuer no longer serves discovery or exchange,
 or the Domain refuses with 2002) makes the session read the pin once more and, only when the pin
 now names another issuer, exchange there once; when the pin cannot be read again, the exchange
