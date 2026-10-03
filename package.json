@@ -49,6 +49,7 @@
   "scripts": {
     "prepare": "husky",
     "assets:ensure": "bun scripts/build-embedded-assets.ts",
+    "agents:pin": "bun scripts/pin-agent-binaries.ts",
     "build": "bun scripts/build.ts",
     "prepack": "pnpm run package:check",
     "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs && node scripts/verify-public-dependency-boundary.mjs",
@@ -57,7 +58,7 @@
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
     "format:check": "pnpm exec oxfmt --check .",
-    "test": "pnpm run assets:ensure && node scripts/qualification/source-boundary.mjs --target && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
+    "test": "pnpm run assets:ensure && node scripts/qualification/source-boundary.mjs --target && bun scripts/pin-agent-binaries.ts --check && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
     "test:skills-e2e": "pnpm run assets:ensure && node scripts/qualification/skills-update-e2e.mjs",
     "test:studio": "pnpm --dir studio test",
     "test:watch": "pnpm run assets:ensure && bun test --watch src",

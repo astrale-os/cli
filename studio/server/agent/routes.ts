@@ -86,6 +86,7 @@ async function harnessPresence(id: string): Promise<HarnessPresence> {
     bin: health.bin ?? harness.id,
     ok: health.ok,
     version: health.version,
+    ...(health.cli ? { cli: health.cli } : {}),
     message: health.ok
       ? (health.detail ?? `Detected${health.version ? ` — ${health.version}` : ''}`)
       : (health.detail ?? `${harness.label} is not detected. Is it installed and on your PATH?`),

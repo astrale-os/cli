@@ -29,8 +29,12 @@ Domain Studio embeds these ACP components:
 The Claude adapter also contains `@anthropic-ai/claude-agent-sdk` 0.3.232.
 Copyright © Anthropic PBC; all rights reserved. Its use is subject to Anthropic's
 [legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance).
-Studio points the adapter at the user's separately installed and authenticated
-Claude Code executable.
+
+Neither agent CLI is embedded in the executable. On first use, Studio downloads
+the platform package pinned by its lockfile from the npm registry
+(`@anthropic-ai/claude-agent-sdk-<platform>` for Claude Code, `@openai/codex`
+for Codex), verifies its integrity, and runs it with the user's own
+authentication. Those packages remain subject to their publishers' terms.
 
 ## skills (agent registry compatibility)
 
