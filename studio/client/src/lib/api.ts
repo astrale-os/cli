@@ -211,6 +211,9 @@ export const api = {
     }),
   selectChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'select', chatId }),
   closeChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'close', chatId }),
+  /** arrange the tabs; tabs `order` leaves out keep their place after the named ones */
+  reorderChats: (order: string[]) =>
+    post<ChatList>('/api/agent/chats', { action: 'reorder', order }),
   updateChat: (
     chatId: string,
     patch: { title?: string; model?: string; effort?: string; fastMode?: boolean },

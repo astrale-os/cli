@@ -572,6 +572,7 @@ describe('ACP harness adapter', () => {
     const root = temporaryRoot('studio-acp-codex-')
     const log = join(root, 'acp.jsonl')
     const events: string[] = []
+    const contexts: unknown[] = []
     const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
 
     const result = await harness.run({
@@ -596,13 +597,17 @@ describe('ACP harness adapter', () => {
       env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex' },
       signal: new AbortController().signal,
       onEvent: (event) => events.push(`${event.kind}:${event.text}`),
+      onContext: (context) => contexts.push(context),
     })
 
+    // the window's occupancy is reported as it arrives, and kept on the result
+    expect(contexts).toEqual([{ used: 12, size: 200000 }])
     expect(result).toMatchObject({
       sessionId: 'new-session',
       finalText: 'Hello world',
       tokens: 12,
       costUsd: 0.01,
+      context: { used: 12, size: 200000 },
       numTurns: 1,
       isError: false,
     })

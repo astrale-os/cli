@@ -37,6 +37,7 @@ import {
   moveQueued,
   openChat,
   removeAttachment,
+  reorderChats,
   selectChat,
   sendQueuedNow,
   setSessionId,
@@ -183,6 +184,12 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
           return chatJson(selectChat(chatBody ?? ''))
         case 'close':
           return chatJson(closeChat(chatBody ?? ''))
+        case 'reorder': {
+          // every window shows the same strip, so the others are told to resync
+          const result = reorderChats(idList(body.order) ?? [])
+          if (result.ok) emitStudioEvent(notify, { type: 'chats' })
+          return chatJson(result)
+        }
         case 'update':
           return chatJson(
             updateChat(chatBody ?? '', {

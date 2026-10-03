@@ -10,6 +10,7 @@
  */
 import type {
   AgentAccess,
+  AgentContextUsage,
   AgentEffort,
   AgentEventKind,
   AgentToolCall,
@@ -83,6 +84,10 @@ export interface AgentTurnInput {
   signal: AbortSignal
   /** called for every normalized activity event */
   onEvent: (e: AgentStreamEvent) => void
+  /** called with each chunk of the agent's message text as it streams in */
+  onDelta?: (text: string) => void
+  /** called whenever the agent reports how full its context window is */
+  onContext?: (context: AgentContextUsage) => void
 }
 
 export interface AgentTurnResult {
@@ -94,6 +99,8 @@ export interface AgentTurnResult {
   numTurns?: number
   /** total token usage reported by the harness */
   tokens?: number
+  /** the context window's occupancy as last reported during the turn */
+  context?: AgentContextUsage
   isError: boolean
   errorMessage?: string
   /** the resume sessionId we passed was rejected by the harness (the conversation

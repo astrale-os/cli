@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils'
 
 import type { ChatTone } from './chat-tone'
 
+import { actionCount } from './agent-steps'
+
 /**
  * What the agent is, and how long this turn has run — the resting bar's whole
  * report. It says WHICH agent because a domain runs several: the mark is the one
@@ -41,6 +43,11 @@ export function DockActivity({
     >
       <WorkingMark harness={harness} tone={tone} />
       <RunElapsed run={run} />
+      {run && actionCount(run) > 0 && (
+        <span className="tabular-nums" title="Actions taken so far">
+          · {actionCount(run)}
+        </span>
+      )}
     </span>
   )
 }

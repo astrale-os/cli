@@ -83,6 +83,22 @@ export function useChatMutations() {
     },
     onError: (error) => toast.error(`Could not close the chat — ${String(error)}`),
   })
+  const reorder = useMutation({
+    mutationFn: (order: string[]) => api.reorderChats(order),
+    // A dropped tab has to stay where it was dropped, not jump back for a round trip.
+    onMutate: (order) => {
+      const current = queryClient.getQueryData<ChatList>(qk.chats)
+      if (!current) return
+      const rank = new Map(order.map((id, index) => [id, index]))
+      const place = (chat: ChatInfo) => rank.get(chat.id) ?? order.length
+      setList({ ...current, chats: [...current.chats].sort((a, b) => place(a) - place(b)) })
+    },
+    onSuccess: setList,
+    onError: (error) => {
+      refresh()
+      toast.error(`Could not move the chat: ${String(error)}`)
+    },
+  })
   const update = useMutation({
     mutationFn: (input: {
       chatId: string
@@ -115,7 +131,7 @@ export function useChatMutations() {
     onError: (error) => toast.error(`Could not delete the transferred context — ${String(error)}`),
   })
 
-  return { open, select, close, update, switchHarness, forgetOrigin }
+  return { open, select, close, reorder, update, switchHarness, forgetOrigin }
 }
 
 /**

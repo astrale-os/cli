@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRun, StudioEvent } from '@shared/types'
+import type { AgentContextUsage, AgentEvent, AgentRun, StudioEvent } from '@shared/types'
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
@@ -16,6 +16,15 @@ export type StudioEventEffect =
   | { type: 'invalidate-chats' }
   | { type: 'invalidate-datasets'; domainId: string }
   | { type: 'put-agent-event'; chatId: string; runId: string; event: AgentEvent }
+  | { type: 'put-agent-context'; chatId: string; runId: string; context: AgentContextUsage }
+  | {
+      type: 'put-agent-draft'
+      chatId: string
+      runId: string
+      id: string
+      offset: number
+      text: string
+    }
   | { type: 'synchronize-agent-run'; run: AgentRun }
 
 /** Pure policy table for translating one server event into client synchronizations. */
@@ -40,6 +49,26 @@ export function studioEventEffects(event: StudioEvent): StudioEventEffect[] {
           chatId: event.chatId,
           runId: event.runId,
           event: event.event,
+        },
+      ]
+    case 'agent-draft':
+      return [
+        {
+          type: 'put-agent-draft',
+          chatId: event.chatId,
+          runId: event.runId,
+          id: event.id,
+          offset: event.offset,
+          text: event.text,
+        },
+      ]
+    case 'agent-context':
+      return [
+        {
+          type: 'put-agent-context',
+          chatId: event.chatId,
+          runId: event.runId,
+          context: event.context,
         },
       ]
     case 'agent-run': {
@@ -81,6 +110,8 @@ export function useStudioEventSync(): void {
   const invalidateDomain = useInvalidateDomain()
   const setRun = useAgentLive((state) => state.setRun)
   const putEvent = useAgentLive((state) => state.putEvent)
+  const putContext = useAgentLive((state) => state.putContext)
+  const putDraft = useAgentLive((state) => state.putDraft)
 
   const onEvent = useCallback(
     (event: StudioEvent) => {
@@ -111,13 +142,19 @@ export function useStudioEventSync(): void {
           case 'put-agent-event':
             putEvent(effect.chatId, effect.runId, effect.event)
             break
+          case 'put-agent-draft':
+            putDraft(effect.chatId, effect.runId, effect.id, effect.offset, effect.text)
+            break
+          case 'put-agent-context':
+            putContext(effect.chatId, effect.runId, effect.context)
+            break
           case 'synchronize-agent-run':
             setRun(effect.run)
             break
         }
       }
     },
-    [invalidateDomain, putEvent, queryClient, setRun],
+    [invalidateDomain, putContext, putDraft, putEvent, queryClient, setRun],
   )
 
   useEventStream(onEvent)

@@ -5,7 +5,7 @@
  * CLI-owned update reports. It does not define schema or persisted workspace state.
  */
 
-import type { AgentAccess, AgentEvent, AgentRun } from './agent'
+import type { AgentAccess, AgentContextUsage, AgentEvent, AgentRun } from './agent'
 
 export type IntrospectionPriority = 'reader' | 'background'
 export type IntrospectionPhase =
@@ -56,6 +56,14 @@ export type StudioEvent =
    *  added, reordered, edited or dropped in one window, seen in every other */
   | { type: 'chats' }
   | { type: 'agent-event'; chatId: string; runId: string; event: AgentEvent }
+  /**
+   * More of the message the agent is writing: `text` goes at `offset` in the
+   * draft `id` (an offset past the end means a frame was missed - the next
+   * snapshot repairs it)
+   */
+  | { type: 'agent-draft'; chatId: string; runId: string; id: string; offset: number; text: string }
+  /** the agent reported how full its context window is, mid-turn */
+  | { type: 'agent-context'; chatId: string; runId: string; context: AgentContextUsage }
   | { type: 'hello'; domains: string[] }
   | { type: 'workspace'; domains: string[] }
 
