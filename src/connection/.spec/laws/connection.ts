@@ -227,7 +227,7 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
 export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
   id: 'CLI-CONNECTION-INSTALLED-SHELL-ISSUER',
   statement:
-    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller. The installation cache remembers what the pin named per source Kernel, so a later command exchanges there, or selects the Domain credential persisted under that issuer before resolving the source credential, without reading the pin again. A consented reinstall changes the issuer within one installation, so the record is healed, never trusted: a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and what the session holds when the pin cannot be read again; any failure of a command that relied on the remembered issuer forgets it, so the next command reads the pin and no command sends a stale remembered issuer after one has failed; a command that read the pin itself keeps the record. No issuer is derived from the route: in a bookmark registry an earlier release wrote, which carries no format label, the route-derived Shell issuer it stored on a managed bookmark is dropped on read; every bookmark write rewrites the registry with the label, and in a labelled registry every explicit exact issuer wins, whatever its value. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
+    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller. The installation cache remembers what the pin named per source Kernel, so a later command exchanges there, or selects the Domain credential persisted under that issuer before resolving the source credential, without reading the pin again. A consented reinstall changes the issuer within one installation, so the record is healed, never trusted: a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and what the session holds when the pin cannot be read again; any failure of a command that relied on the remembered issuer forgets it, and so does any Kernel call of that command the Kernel refuses with 2002, even one the command recovers from, so the next command reads the pin and no command sends a stale remembered issuer after one has failed; a command that read the pin itself keeps the record. No issuer is derived from the route: in a bookmark registry an earlier release wrote, which carries no format label, the route-derived Shell issuer it stored on a managed bookmark is dropped on read; every bookmark write rewrites the registry with the label, and in a labelled registry every explicit exact issuer wins, whatever its value. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
   tests: [
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -260,6 +260,10 @@ export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
     {
       file: '__tests__/installed-issuer.test.ts',
       id: 'TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-NEVER-SENT-TWICE',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-RECOVERED-REFUSAL-FORGETS',
     },
     {
       file: '__tests__/installed-issuer.test.ts',

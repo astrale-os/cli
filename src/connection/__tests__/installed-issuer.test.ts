@@ -2,7 +2,8 @@ import type { Fetch } from '@astrale-os/sdk/client'
 import type { DomainInfo } from '@astrale-os/sdk/client/schema'
 
 import { issuer } from '@astrale-os/sdk/auth'
-import { ResponseError, TransportError } from '@astrale-os/sdk/client'
+import { createGraph, ResponseError, TransportError } from '@astrale-os/sdk/client'
+import { ClientSession } from '@astrale-os/sdk/client/session'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { pack } from 'msgpackr'
 import { createHash } from 'node:crypto'
@@ -14,12 +15,15 @@ import type { AstraleConfig } from '../../lib/config'
 import type { InstalledDomainReader } from '../installed-issuer'
 import type { ConnectionContext, ConnectionFactory } from '../session'
 
+import { prepareQuery } from '../../graph'
 import { ExchangeCredentialCache } from '../../state/exchange-credentials'
 import { InstallationCache } from '../../state/installations'
+import { createPathCall } from '../call'
+import { createConnectionCredential } from '../credential'
 import { createExchangeCredentialResolver } from '../exchange'
 import { classifyFailure } from '../failure/classify'
 import { createInstalledIssuer } from '../installed-issuer'
-import { withResolvedClientSession } from '../session'
+import { createClientSessionOptions, withResolvedClientSession } from '../session'
 
 const KERNEL = issuer.accept('https://kernel.example')
 const INVOCATION = `${KERNEL}/invoke`
@@ -32,6 +36,13 @@ const NEXT_DEPLOYMENT = issuer.accept('https://shell-beta-fedcba9876543210.deplo
 const TARGET = { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainOrigin: SHELL }
 const EXPIRES_AT = Math.floor(Date.now() / 1_000) + 500
 const SOURCE_EXPIRES_AT = Math.floor(Date.now() / 1_000) + 600
+/** A Studio per-Class query, and a Kernel callable answered without a Domain. */
+const QUERY = prepareQuery({
+  sources: [],
+  class: '/:kernel.astrale.ai:class.Identity',
+  limit: '1',
+}).ast
+const WHOAMI = '/:kernel.astrale.ai:class.Identity:whoami'
 const INVOCATION_ID = { source: KERNEL, id: 'inspect' } as ConstructorParameters<
   typeof ResponseError
 >[2]
@@ -40,7 +51,12 @@ type IssuerState = 'live' | 'retired' | 'refuses'
 
 /** How the fake source Kernel answers: as each caller, refusing every call, or unreachable. */
 type KernelState =
-  | { readonly kind: 'up'; readonly pin?: () => string | null }
+  | {
+      readonly kind: 'up'
+      readonly pin?: () => string | null
+      /** Whether the Kernel accepts a credential other than the source caller's; else 2002. */
+      readonly admits?: (credential: string) => boolean
+    }
   | { readonly kind: 'refuses'; readonly code: number; readonly reason?: unknown }
   | { readonly kind: 'down' }
 
@@ -266,19 +282,82 @@ describe('Shell exchange at the installed issuer', () => {
     expect(shell.inspects()).toHaveLength(1)
   })
 
+  /** @evidence TEST-CLI-INSTALLED-SHELL-RECOVERED-REFUSAL-FORGETS */
+  test.each([
+    ['graph', (context: ConnectionContext) => context.graph.query(QUERY, { page: { size: 1 } })],
+    ['session', (context: ConnectionContext) => context.session.call(createPathCall(WHOAMI, {}))],
+    ['schema', (context: ConnectionContext) => context.session.schema.inspect(SHELL)],
+    ['auth', (context: ConnectionContext) => context.auth.whoami()],
+  ] as const)(
+    'forgets a remembered issuer the Kernel refuses even when the command recovers from every refusal (%s)',
+    async (_surface, query) => {
+      // The Studio's per-Class queries: each failure is reported in the result and the command
+      // ends normally.
+      const batch: ShellAction = (context) =>
+        Promise.all(
+          [query, query].map((each) =>
+            each(context).then(
+              () => 'ok',
+              (error: unknown) => (error instanceof ResponseError ? error.code : 'other'),
+            ),
+          ),
+        )
+      // The old deployment is retained and still exchanges; the Kernel no longer admits what it issues.
+      await installations.set(KERNEL, SHELL, { issuer: DEPLOYMENT })
+      const shell = shellCommand(
+        { [DEPLOYMENT]: 'live', [NEXT_DEPLOYMENT]: 'live' },
+        () => NEXT_DEPLOYMENT,
+      )
+
+      await expect(shell.run('user-1', batch)).resolves.toEqual([2002, 2002])
+      expect(await installations.get(KERNEL, SHELL)).toBeUndefined()
+      const stale = shell.presented().length
+
+      // The next command reads the pin (once per concurrent first call, as C0 did); no later
+      // command reads it again or presents the old issuer.
+      await expect(shell.run('user-1', batch)).resolves.toEqual(['ok', 'ok'])
+      const reads = shell.inspects().length
+      expect(reads).toBeGreaterThan(0)
+      for (let command = 0; command < 3; command += 1) {
+        await expect(shell.run('user-1', batch)).resolves.toEqual(['ok', 'ok'])
+      }
+      expect(shell.presented().slice(0, stale)).toEqual([DEPLOYMENT, DEPLOYMENT])
+      expect(shell.presented().slice(stale)).not.toContain(DEPLOYMENT)
+      expect(shell.inspects()).toHaveLength(reads)
+      expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: NEXT_DEPLOYMENT })
+    },
+  )
+
+  test('keeps the remembered issuer when the command recovers from a refusal that is not 2002', async () => {
+    const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
+    await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
+    const recovered: ShellAction = (context) =>
+      context.session
+        .call(createPathCall(WHOAMI, { forbidden: true }))
+        .then(undefined, (error: unknown) => (error as ResponseError).code)
+
+    await expect(shell.run('user-1', recovered)).resolves.toBe(2004)
+    expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: DEPLOYMENT })
+    expect(shell.inspects()).toHaveLength(1)
+  })
+
   test('forgets the remembered issuer after any failure of a command that relied on it', async () => {
     const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
     await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
 
     // A failure the Shell's issuer did not cause still forgets it: one more read is the cost.
-    await expect(shell.run('user-1', new Error('query failed'))).rejects.toThrow('query failed')
+    await expect(shell.run('user-1', shell.failing(new Error('query failed')))).rejects.toThrow(
+      'query failed',
+    )
     expect(await installations.get(KERNEL, SHELL)).toBeUndefined()
     await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
     expect(shell.inspects()).toHaveLength(2)
 
     // A command that read the pin itself keeps what it read when it fails.
     await installations.delete(KERNEL, SHELL)
-    await expect(shell.run('user-1', new Error('query failed'))).rejects.toThrow('query failed')
+    await expect(shell.run('user-1', shell.failing(new Error('query failed')))).rejects.toThrow(
+      'query failed',
+    )
     expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: DEPLOYMENT })
   })
 
@@ -467,21 +546,34 @@ function shellResolver(fetch: Fetch, read: InstalledDomainReader, users = ['user
   )
 }
 
-type ShellContext = ConnectionContext & { readonly present: () => Promise<string> }
+/** What one command does with its connection: by default one Kernel call it lets fail. */
+type ShellAction = (context: ConnectionContext) => Promise<unknown>
 
 /**
- * Commands as fresh processes do them: each one a new resolver over the on-disk caches, run through
- * the connection lifecycle with the on-disk installation cache, which hands the factory the
- * installed issuer. The pin is read with the production reader from a fake Kernel answering the
- * Host-encoded DomainInfo for the issuer `installed()` names, and the Kernel admits only a
- * credential that issuer issued, rejecting any other with 2002.
+ * Commands as fresh processes do them: each one a new resolver over the on-disk caches and a real
+ * Client Session, run through the connection lifecycle with the on-disk installation cache, which
+ * hands the factory the installed issuer. The pin is read with the production reader from a fake
+ * Kernel answering the Host-encoded DomainInfo for the issuer `installed()` names, and the Kernel
+ * admits only a credential that issuer issued, refusing any other with 2002.
  */
 function shellCommand(issuers: Record<string, IssuerState>, initial: () => string) {
   let installed = initial
   const state = { ...issuers }
-  const net = network(state, { kernel: { kind: 'up', pin: () => installed() } })
   const presented: string[] = []
-  const command = (user: string, failure?: Error): ConnectionFactory => {
+  let admitted: string | undefined
+  const net = network(state, {
+    kernel: {
+      kind: 'up',
+      pin: () => installed(),
+      admits(credential) {
+        presented.push(String(credentialIssuer(credential)))
+        if (credentialIssuer(credential) !== installed()) return false
+        admitted = credential
+        return true
+      },
+    },
+  })
+  const command = (user: string): ConnectionFactory => {
     return (target, _timeoutMs, _options, _config, _credential, issuer) => {
       const resolver = createExchangeCredentialResolver(
         TARGET,
@@ -494,37 +586,55 @@ function shellCommand(issuers: Record<string, IssuerState>, initial: () => strin
         credentials,
         issuer,
       )
-      const context = {
+      const session = new ClientSession(
+        createClientSessionOptions(
+          target,
+          net.fetch,
+          createConnectionCredential(KERNEL, resolver, 240),
+          5_000,
+          { read: () => undefined, write: () => undefined },
+        ),
+      )
+      const context: ConnectionContext = Object.freeze({
+        session,
+        graph: createGraph((call, request) => session.call(call, request)),
+        auth: session.auth,
+        self: async () => ({ id: user }),
         target,
-        async present() {
-          const credential = await resolver.resolve(KERNEL, live())
-          presented.push(String(credentialIssuer(credential)))
-          if (credentialIssuer(credential) !== installed()) {
-            throw new ResponseError(2002, 'Credential is invalid.', INVOCATION_ID)
-          }
-          if (failure !== undefined) throw failure
-          return credential
-        },
-      }
-      return { context: context as unknown as ShellContext, close() {} }
+      })
+      return { context, close: () => session.close() }
     }
   }
+  /** One Kernel call; resolves to the credential the Kernel admitted for it. */
+  const call: ShellAction = async (context) => {
+    admitted = undefined
+    await context.auth.whoami()
+    return admitted
+  }
   return {
-    run: (user = 'user-1', failure?: Error) =>
+    run: (user = 'user-1', action: ShellAction = call) =>
       withResolvedClientSession(
         TARGET,
         {},
         {} as AstraleConfig,
-        (context) => (context as ShellContext).present(),
-        command(user, failure),
+        action,
+        command(user),
         {},
         installations,
       ),
+    /** A call followed by a failure of the command itself, not of any Kernel call. */
+    failing: (failure: Error) => async (context: ConnectionContext) => {
+      await call(context)
+      throw failure
+    },
     reinstall(next: string, issuers: Record<string, IssuerState>) {
       installed = () => next
       Object.assign(state, issuers)
     },
-    inspects: () => net.requests.filter((request) => request.includes(' inspect ')),
+    inspects: () =>
+      net.requests.filter(
+        (request) => request.includes(' inspect ') && request.endsWith(' source'),
+      ),
     exchanges: () =>
       net.requests.filter((request) => request.endsWith('/.well-known/astrale/token')),
     presented: () => presented,
@@ -576,6 +686,14 @@ function network(
       if (kernel.kind === 'refuses') {
         return answered(url, refusal(body.requestId, kernel.code, contentType, kernel.reason))
       }
+      if (
+        kernel.admits !== undefined &&
+        !body.credential.startsWith(SOURCE_HEADER) &&
+        !kernel.admits(body.credential)
+      ) {
+        return answered(url, refusal(body.requestId, 2002, contentType))
+      }
+      if (call?.forbidden === true) return answered(url, refusal(body.requestId, 2004, contentType))
       if (inspected !== '' && kernel.pin !== undefined) {
         return answered(url, introspection(body.requestId, String(call!.origin), kernel.pin()))
       }
@@ -585,7 +703,9 @@ function network(
           body.requestId,
           call && Object.keys(call).length === 0
             ? { id: user }
-            : `kernel-destination-envelope:${user}`,
+            : call?.ast !== undefined
+              ? { result: { kind: 'nodes', nodes: [] }, page: {} }
+              : `kernel-destination-envelope:${user}`,
           contentType,
         ),
       )
