@@ -13,6 +13,10 @@
  * where every tab has the room to carry the start of its title - for when you
  * keep enough chats open that telling them apart by colour stops working.
  *
+ * Tabs are yours to arrange: drag one along the strip (or Alt+arrow on a focused
+ * tab) and the server keeps that order, for every window. Any tab can be renamed
+ * by double-clicking it, or with F2: in the strip, that opens its title in place.
+ *
  * `+` asks nothing: a new tab opens on the domain's starred model, or continues
  * with the agent you are already working with when nothing is starred. Changing
  * agent is not a thing you do when OPENING a conversation — it is picking a model
@@ -51,10 +55,11 @@ export function ChatTabs({
   /** a column of titled tabs on the conversation's left, rather than a strip of marks above it */
   vertical?: boolean
 }) {
-  const { open, select, close, update } = useChatMutations()
+  const { open, select, close, reorder, update } = useChatMutations()
   const strip = useRef<HTMLDivElement>(null)
   const edges = useSideScroll(strip, chats.length, !vertical)
   const tones = chatTones(chats)
+  const arrange = useArrange(chats, reorder.mutate)
 
   const tabs = chats.map((chat, index) => (
     <Tab
@@ -67,6 +72,8 @@ export function ChatTabs({
       onSelect={() => select.mutate(chat.id)}
       onRename={(title) => update.mutate({ chatId: chat.id, title })}
       onClose={chats.length > 1 ? () => close.mutate(chat.id) : undefined}
+      drag={chats.length > 1 ? arrange.dragOf(chat.id) : undefined}
+      onMove={chats.length > 1 ? (delta) => arrange.step(chat.id, delta) : undefined}
     />
   ))
 
@@ -83,7 +90,10 @@ export function ChatTabs({
           </span>
           <NewChatButton disabled={open.isPending} onClick={() => open.mutate(undefined)} />
         </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 pb-2">
+        <div
+          className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 pb-2"
+          onDragLeave={arrange.leave}
+        >
           {tabs}
         </div>
       </nav>
@@ -96,6 +106,7 @@ export function ChatTabs({
         // native scrollbar hidden on purpose: the strip is one row high, and a
         // 10px gutter under it would cost more than the tabs themselves
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onDragLeave={arrange.leave}
         style={{
           maskImage: `linear-gradient(to right, transparent 0, black ${edges.left ? FADE : 0}px, black calc(100% - ${edges.right ? FADE : 0}px), transparent 100%)`,
         }}
@@ -121,6 +132,84 @@ function NewChatButton({ disabled, onClick }: { disabled: boolean; onClick: () =
       <Plus className="h-3.5 w-3.5" />
     </button>
   )
+}
+
+/** Which side of a tab a dragged one would land on. */
+type DropSide = 'before' | 'after'
+
+/** What one tab needs to take part in a drag. */
+interface TabDrag {
+  /** this tab is the one being carried */
+  carried: boolean
+  /** where the carried tab would land, when it is over this one */
+  side?: DropSide
+  start: () => void
+  over: (side: DropSide) => void
+  drop: () => void
+  end: () => void
+}
+
+/**
+ * Drag a tab to another place in the strip, or step it one place with the keyboard.
+ *
+ * Native drag and drop, scoped to this strip: a drag only counts while one of
+ * its tabs is being carried, so a file dropped on the panel is none of its business.
+ */
+function useArrange(chats: ChatInfo[], reorder: (order: string[]) => void) {
+  const [carried, setCarried] = useState<string>()
+  const [target, setTarget] = useState<{ id: string; side: DropSide }>()
+  // a tab moved by the keyboard is re-inserted by React, and the DOM drops focus
+  // from a node it moves, so the moved tab takes it back once it has landed
+  const refocus = useRef<string>(undefined)
+  useEffect(() => {
+    const id = refocus.current
+    if (!id) return
+    refocus.current = undefined
+    document.querySelector<HTMLElement>(`[data-chat-tab="${CSS.escape(id)}"]`)?.focus()
+  }, [chats])
+
+  const ids = chats.map((chat) => chat.id)
+  const commit = (order: string[]) => {
+    if (order.some((id, index) => id !== ids[index])) reorder(order)
+  }
+  const reset = () => {
+    setCarried(undefined)
+    setTarget(undefined)
+  }
+
+  return {
+    dragOf: (id: string): TabDrag => ({
+      carried: carried === id,
+      ...(target?.id === id && carried && carried !== id ? { side: target.side } : {}),
+      start: () => setCarried(id),
+      over: (side) => {
+        if (carried && (target?.id !== id || target.side !== side)) setTarget({ id, side })
+      },
+      drop: () => {
+        if (carried && carried !== id) {
+          const order = ids.filter((entry) => entry !== carried)
+          const at = order.indexOf(id) + (target?.side === 'after' ? 1 : 0)
+          order.splice(at, 0, carried)
+          commit(order)
+        }
+        reset()
+      },
+      end: reset,
+    }),
+    /** a drag that wanders off the strip lands nowhere */
+    leave: (event: React.DragEvent) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setTarget(undefined)
+    },
+    step: (id: string, delta: -1 | 1) => {
+      const from = ids.indexOf(id)
+      const to = from + delta
+      if (from < 0 || to < 0 || to >= ids.length) return
+      const order = [...ids]
+      order.splice(to, 0, order.splice(from, 1)[0]!)
+      refocus.current = id
+      commit(order)
+    },
+  }
 }
 
 /**
@@ -176,6 +265,8 @@ function Tab({
   onSelect,
   onRename,
   onClose,
+  drag,
+  onMove,
 }: {
   chat: ChatInfo
   active: boolean
@@ -185,6 +276,10 @@ function Tab({
   onSelect: () => void
   onRename: (title: string) => void
   onClose?: () => void
+  /** absent when there is nothing to arrange: a single tab */
+  drag?: TabDrag
+  /** step this tab one place along the strip */
+  onMove?: (delta: -1 | 1) => void
 }) {
   const [editing, setEditing] = useState(false)
   const unread = useAgentUnread((state) => state.receipts[chat.id]?.unread ?? false)
@@ -201,8 +296,6 @@ function Tab({
 
   const named = chat.title !== DEFAULT_CHAT_TITLE
   const name = named ? chat.title : harnessLabel
-  // standing in a column, every tab has its title in view and can be renamed in place
-  const renamable = active || vertical
   const busy = isBusy(chat)
   const failed = chat.status === 'failed'
   const commit = () => {
@@ -221,12 +314,52 @@ function Tab({
           onClose()
         }
       }}
+      // a title being typed is text to select, not a tab to carry
+      draggable={!!drag && !editing}
+      onDragStart={(event) => {
+        if (!drag) return
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', name)
+        drag.start()
+      }}
+      onDragOver={(event) => {
+        if (!drag || drag.carried) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        const box = event.currentTarget.getBoundingClientRect()
+        const past = vertical
+          ? event.clientY > box.top + box.height / 2
+          : event.clientX > box.left + box.width / 2
+        drag.over(past ? 'after' : 'before')
+      }}
+      onDrop={(event) => {
+        if (!drag) return
+        event.preventDefault()
+        drag.drop()
+      }}
+      onDragEnd={() => drag?.end()}
+      data-dragging={drag?.carried || undefined}
       className={cn(
-        'flex h-7 shrink-0 items-center rounded-md transition-colors',
+        'relative flex h-7 shrink-0 items-center rounded-md transition-colors',
         vertical && 'group w-full',
         active ? tone.surface : 'hover:bg-accent/60',
+        drag?.carried && 'opacity-40',
       )}
     >
+      {/* where the carried tab would land: a bar on that edge, inside the tab so a
+          scrolling strip cannot clip it */}
+      {drag?.side && (
+        <span
+          aria-hidden
+          data-drop-side={drag.side}
+          className={cn(
+            'pointer-events-none absolute rounded-full bg-primary',
+            vertical
+              ? cn('inset-x-1 h-0.5', drag.side === 'before' ? 'top-0' : 'bottom-0')
+              : cn('inset-y-1 w-0.5', drag.side === 'before' ? 'left-0' : 'right-0'),
+          )}
+        />
+      )}
       {editing ? (
         <input
           ref={field}
@@ -246,15 +379,30 @@ function Tab({
       ) : (
         <button
           type="button"
+          data-chat-tab={chat.id}
           onClick={onSelect}
-          // renaming needs the title in view, and only the open tab shows one
-          onDoubleClick={() => renamable && setEditing(true)}
+          // the first click already opened the tab, so its title is in view to edit
+          onDoubleClick={() => setEditing(true)}
+          onKeyDown={(event) => {
+            if (event.key === 'F2') {
+              event.preventDefault()
+              onSelect()
+              setEditing(true)
+              return
+            }
+            if (!onMove || !event.altKey) return
+            const back = vertical ? 'ArrowUp' : 'ArrowLeft'
+            const forth = vertical ? 'ArrowDown' : 'ArrowRight'
+            if (event.key !== back && event.key !== forth) return
+            event.preventDefault()
+            onMove(event.key === back ? -1 : 1)
+          }}
           aria-current={active ? 'page' : undefined}
           // the spin is the only thing that says "working", and it says nothing
           // to a screen reader or to anyone who turned motion off
           aria-busy={busy || undefined}
           aria-label={name}
-          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${busy ? ' — running' : ''}${unread ? ' — unread reply' : ''}${renamable ? ' — double-click to rename' : ''}`}
+          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${busy ? ' — running' : ''}${unread ? ' — unread reply' : ''} · double-click to rename${onMove ? ', drag to move' : ''}`}
           className={cn('flex h-full min-w-0 items-center gap-1.5 px-2', vertical && 'flex-1')}
         >
           <span className="relative grid h-3.5 w-3.5 shrink-0 place-items-center">

@@ -41,6 +41,7 @@ import {
   requeueChatMessage,
   resolveChat,
   setActiveChat,
+  setChatOrder,
   setChatEffort,
   setChatFastMode,
   setChatModel,
@@ -245,6 +246,12 @@ export function switchChatHarness(
 export function selectChat(chatId: string): ChatResult<ChatList> {
   const workspace = agentWorkspace()
   if (!setActiveChat(workspace.stateRoot, chatId, workspace.uiRoot)) return unknownChat(chatId)
+  return { ok: true, value: listChats() }
+}
+
+/** Arrange the tabs; ids no tab holds are ignored, and unnamed tabs keep their place after. */
+export function reorderChats(order: string[]): ChatResult<ChatList> {
+  setChatOrder(agentWorkspace().stateRoot, order)
   return { ok: true, value: listChats() }
 }
 
