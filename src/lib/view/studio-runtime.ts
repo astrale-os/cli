@@ -1,28 +1,13 @@
 import type { ViewOpts } from '../../commands/view'
 import type { ViewSessionRecord } from './session'
 
-import { withClientSession } from '../../connection'
-import { prepareQuery } from '../../graph'
 import { getActive, resetInstancesMemo } from '../instance'
 import { closeSession, listSessions } from './session'
 
 const RELEASE_TIMEOUT_MS = 2_000
 
-export interface StudioViewTargetQuery {
-  definition: string
-  limit: number
-}
-
-export interface StudioViewTargetQueryResult {
-  definition: string
-  ok: boolean
-  value: unknown | null
-  detail: string
-}
-
 export interface OpenStudioViewSessionInput {
   viewPath: string
-  targetRef?: string
   instance: string
   timeoutMs: number
   allowIdentity?: readonly string[]
@@ -57,44 +42,6 @@ export async function studioActiveInstanceName(
   }
 }
 
-/** Query every target Class through one authenticated Client session. */
-export async function queryStudioViewTargets(
-  instance: string,
-  queries: readonly StudioViewTargetQuery[],
-  timeoutMs: number,
-): Promise<StudioViewTargetQueryResult[]> {
-  if (queries.length === 0) return []
-  resetInstancesMemo()
-  try {
-    return await withClientSession(
-      { instance, timeout: String(timeoutMs), ci: true },
-      async (context) =>
-        Promise.all(
-          queries.map(async ({ definition, limit }) => {
-            try {
-              const prepared = prepareQuery({
-                sources: [],
-                class: definition,
-                limit: String(limit),
-              })
-              const response = await context.graph.query(prepared.ast, { page: prepared.page })
-              return {
-                definition,
-                ok: true,
-                value: response.result,
-                detail: '',
-              } satisfies StudioViewTargetQueryResult
-            } catch (error) {
-              return failedTargetQuery(definition, error)
-            }
-          }),
-        ),
-    )
-  } catch (error) {
-    return queries.map(({ definition }) => failedTargetQuery(definition, error))
-  }
-}
-
 /** Resolve and start one canonical CLI View session without another CLI process. */
 export async function openStudioViewSession(
   input: OpenStudioViewSessionInput,
@@ -107,7 +54,6 @@ export async function openStudioViewSession(
   const options: ViewOpts = {
     instance: input.instance,
     timeout: String(input.timeoutMs),
-    target: input.targetRef,
     allowIdentity: input.allowIdentity ? [...input.allowIdentity] : undefined,
     ...(input.idleMs === undefined ? {} : { idleMs: input.idleMs }),
     open: false,
@@ -144,16 +90,4 @@ export async function releaseStudioViewSession(sessionId: string, page?: string)
     // Unreachable or wedged; the hard close below is the remaining lever.
   }
   await closeSession(session)
-}
-
-function failedTargetQuery(definition: string, error: unknown): StudioViewTargetQueryResult {
-  return {
-    definition,
-    ok: false,
-    value: null,
-    detail:
-      error instanceof Error && error.message.trim()
-        ? error.message
-        : 'The active instance could not be queried for view targets.',
-  }
 }
