@@ -1,9 +1,4 @@
-import type {
-  StudioSchemaBundle,
-  ViewInfo,
-  ViewSessionResult,
-  ViewTargetCandidate,
-} from '../../shared/types'
+import type { StudioSchemaBundle, ViewInfo, ViewSessionResult } from '../../shared/types'
 
 import {
   openStudioViewSession,
@@ -13,7 +8,6 @@ import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
 import { assertOrigin } from './model'
 import { readViewPreparation } from './preparation'
-import { rememberTarget } from './selection-repository'
 
 export { conciseCliFailure } from '../cli'
 
@@ -44,7 +38,6 @@ interface OpenedViewPayload {
 
 export function readyViewSession(
   opened: OpenedViewPayload | null,
-  target: ViewTargetCandidate | null,
 ): Extract<ViewSessionResult, { status: 'ready' }> | null {
   const session = opened?.session
   const viewUrl = session?.view?.route?.href
@@ -54,7 +47,6 @@ export function readyViewSession(
     sessionId: session.id,
     pageUrl: session.pageUrl,
     viewUrl,
-    target,
   }
 }
 
@@ -63,7 +55,7 @@ export async function launchViewSession(
   origin: string,
   view: ViewInfo,
   _bundle: StudioSchemaBundle | null,
-  request: { preparationId?: unknown; targetId?: unknown },
+  request: { preparationId?: unknown },
   timeoutMs: number,
   dependencies: Partial<ViewSessionDependencies> = {},
 ): Promise<ViewSessionResult> {
@@ -90,23 +82,6 @@ export async function launchViewSession(
     }
   }
 
-  let target: ViewTargetCandidate | null = null
-  if (preparation.targetRequired) {
-    const targetId = typeof request.targetId === 'string' ? request.targetId.trim() : ''
-    if (!targetId) return { status: 'unavailable', reason: 'Select a target before opening.' }
-    const targets = preparation.targets
-    if (targets.status !== 'available') {
-      return { status: 'unavailable', reason: targets.reason ?? 'Targets could not be queried.' }
-    }
-    target = targets.items.find((item) => item.id === targetId) ?? null
-    if (!target) {
-      return {
-        status: 'unavailable',
-        reason: 'That target no longer exists or is no longer visible. Choose another target.',
-      }
-    }
-  }
-
   let opened: OpenedViewPayload | null = null
   try {
     // The View opens on the identity this instance is bound to, the one every
@@ -116,7 +91,6 @@ export async function launchViewSession(
     opened = {
       session: await (dependencies.open ?? openStudioViewSession)({
         viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
-        ...(target ? { targetRef: target.ref } : {}),
         instance,
         idleMs: STUDIO_VIEW_IDLE_MS,
         timeoutMs: Math.max(20_000, timeoutMs + 12_000),
@@ -132,12 +106,11 @@ export async function launchViewSession(
           : '`astrale view` could not start the preview session.',
     }
   }
-  const session = readyViewSession(opened, target)
+  const session = readyViewSession(opened)
   if (!session) {
     return { status: 'unavailable', reason: '`astrale view` returned an invalid session.' }
   }
 
-  if (target) rememberTarget(root, instance, view.slug, target)
   return session
 }
 
