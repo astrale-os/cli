@@ -4,9 +4,10 @@
  * Those releases wrote, and repaired on every read, `domainIssuer` on the bookmark of an
  * Astrale-managed Instance (`instance use`): `https://shell.beta.astrale.ai` for a
  * `*.beta.astrale.ai` route, else `https://shell.astrale.ai`. It was never the user's choice, and a
- * Shell reinstalled from an immutable deployment no longer answers at it. Only these exact values
- * are dropped, and only from a managed bookmark: any other `domainIssuer` is an explicit exact
- * issuer and the canonical resolver honours it.
+ * Shell reinstalled from an immutable deployment no longer answers at it. They wrote the registry
+ * without a format label, so only an unlabelled registry can hold such a value. Only these exact
+ * values are dropped, and only from a managed bookmark: any other `domainIssuer` is an explicit
+ * exact issuer and the canonical resolver honours it.
  */
 const ROUTE_DERIVED_SHELL_ISSUERS: ReadonlySet<string> = new Set([
   'https://shell.astrale.ai',
@@ -14,24 +15,20 @@ const ROUTE_DERIVED_SHELL_ISSUERS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Read a managed bookmark written before the pin read: drop the route-derived Shell issuer, so the
- * bookmark exchanges through the installed Shell whose issuer the Kernel pin names. The caller
- * applies it to managed bookmarks only, on every read and to the entry every bookmark write stores.
- *
- * The write side is part of the same read-old rule, not a rule of the canonical model: a read
- * cannot tell these values from the ones an earlier release stored, so a value stored now, even one
- * given explicitly with `--domain-issuer`, would be dropped by the next read. The write drops it at
- * once instead, and `instance bookmark` warns that it was not stored.
+ * Read a managed bookmark of a registry an earlier release wrote (no `version`): drop the
+ * route-derived Shell issuer, so the bookmark exchanges through the installed Shell whose issuer the
+ * Kernel pin names. The caller applies it to managed bookmarks of an unlabelled registry only.
+ * Reads never persist the drop; the next bookmark write rewrites the whole registry with
+ * `version: 1`, where every `domainIssuer` is explicit and kept, these two values included.
  *
  * @deprecated The installed Shell's issuer is read from the Kernel pin (`schema.inspect` of
- * `shell.astrale.ai`, see `connection/installed-issuer.ts`). Delete only together with a bookmark
- * store migration that rewrites every store, or a breaking release that refuses a store still
- * carrying one of these values. Reads never persist this drop and only a bookmark write rewrites a
- * store, so a store an earlier release wrote can keep the value however recent the CLI is; without
- * this check the canonical resolver would take it for an explicit issuer and exchange both Instance
- * and Admin calls at the route-derived Shell issuer. Deleting it also ends the write-side drop: a
- * bookmark write then stores these values like any explicit exact issuer, which is the intended
- * behaviour once no store can still carry one an earlier release wrote.
+ * `shell.astrale.ai`, see `connection/installed-issuer.ts`), and this release labels the registry
+ * it writes (`INSTANCE_STORE_VERSION`). Delete, with the unlabelled-registry branch of
+ * `sanitizeStore`, once both hold: no supported CLI release writes an unlabelled registry (every
+ * release before this one does, since it drops the label it does not know), and no unlabelled
+ * registry holding a managed bookmark is read any more, which a breaking release enforces by
+ * refusing such a registry or a migration by rewriting it. Both are checkable: the first from the
+ * release support window, the second from the registry's own `version`.
  */
 export function withoutRouteDerivedShellIssuer<Entry extends { readonly domainIssuer?: string }>(
   entry: Entry,

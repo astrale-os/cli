@@ -88,14 +88,6 @@ export default {
         defaultIdentity: opts.as,
       })
       log.success(`${created ? 'Bookmarked' : 'Updated bookmark'} "${name}" → ${entry.url}`)
-      if (opts.domainIssuer !== undefined && entry.domainIssuer === undefined) {
-        log.warn(
-          `--domain-issuer ${opts.domainIssuer} is not stored on managed Instance "${name}": ` +
-            'earlier releases stored this route-derived Shell issuer automatically, so a stored ' +
-            'value would be read as theirs and ignored. The Instance exchanges through its ' +
-            'installed Shell at the issuer its Kernel pin names.',
-        )
-      }
       if (opts.as) log.dim(`  default identity: ${opts.as}`)
       if (opts.use) {
         await setActive(name)

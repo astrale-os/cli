@@ -35,7 +35,15 @@ export const InstanceEntrySchema = z.object({
   organizationId: z.string().optional(),
 })
 
+/**
+ * Format of the bookmark registry this release writes. A registry without it was written by a
+ * release that derived the Shell issuer from the route (`legacy/managed-shell-issuer.ts`); every
+ * write rewrites the whole registry in this format.
+ */
+export const INSTANCE_STORE_VERSION = 1 as const
+
 export const InstanceStoreSchema = z.object({
+  version: z.literal(INSTANCE_STORE_VERSION).optional(),
   active: z.string(),
   instances: z.record(z.string(), InstanceEntrySchema),
 })
@@ -81,9 +89,16 @@ function seed(): InstanceStore {
   return { active: '', instances: {} }
 }
 
+/**
+ * Normalize a parsed registry into this release's model. `changed` reports normalized content; the
+ * returned store carries no format label, which only an encoded registry holds.
+ */
 export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
   let changed = false
   const instances: Record<string, InstanceEntry> = {}
+  // Read-old, deleted with `legacy/managed-shell-issuer.ts`: only a registry an earlier release
+  // wrote can hold a Shell issuer derived from the route.
+  const routeDerivedShellIssuers = store.version === undefined
 
   for (const [key, entry] of Object.entries(store.instances)) {
     if (key === 'manager') {
@@ -96,7 +111,9 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
-    const current = withoutLegacyShellIssuer(entry, normalizedUrl)
+    const current = routeDerivedShellIssuers
+      ? withoutLegacyShellIssuer(entry, normalizedUrl)
+      : entry
     const next: InstanceEntry = {
       ...current,
       url: normalizedUrl,
@@ -180,10 +197,20 @@ async function mutateInstances<Value>(transition: (store: InstanceStore) => Valu
     const store =
       raw === undefined ? seed() : sanitizeStore(InstanceStoreSchema.parse(JSON.parse(raw))).store
     const value = transition(store)
-    await atomicWrite(INSTANCES_PATH, `${JSON.stringify(store, null, 2)}\n`)
+    await atomicWrite(INSTANCES_PATH, encodeInstanceStore(store))
     instancesMemo = store
     return value
   })
+}
+
+/** Every write publishes the whole registry in this release's format. */
+function encodeInstanceStore(store: InstanceStore): string {
+  const encoded: InstanceStore = {
+    version: INSTANCE_STORE_VERSION,
+    active: store.active,
+    instances: store.instances,
+  }
+  return `${JSON.stringify(encoded, null, 2)}\n`
 }
 
 function collectIdentifiers(store: InstanceStore, skipKey?: string): Map<string, string> {
@@ -302,7 +329,7 @@ export async function upsertInstance(
     const normalizedDomainIssuer = opts.domainIssuer
       ? normalizeIssuerUrl(opts.domainIssuer)
       : undefined
-    const merged: InstanceEntry = {
+    const entry: InstanceEntry = {
       ...kept,
       ...definedEntry(opts),
       url: normalizedUrl,
@@ -311,9 +338,6 @@ export async function upsertInstance(
       kind: 'bookmark',
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     }
-    // Read-old guard, deleted with it: every read drops a route-derived Shell issuer from a managed
-    // bookmark as what an earlier release stored, so a write stores what the next read will see.
-    const entry = withoutLegacyShellIssuer(merged, normalizedUrl)
     store.instances[key] = entry
     if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
     return { entry, created: !existing }
@@ -395,8 +419,8 @@ export function bookmarkExchangeDomain(
 }
 
 /**
- * Read-old: a managed bookmark drops the Shell issuer an earlier release derived from its route, on
- * every read and in the entry every bookmark write stores (`lib/legacy/managed-shell-issuer.ts`).
+ * Read-old: a managed bookmark in a registry an earlier release wrote drops the Shell issuer that
+ * release derived from its route (`lib/legacy/managed-shell-issuer.ts`).
  */
 function withoutLegacyShellIssuer(entry: InstanceEntry, url: string): InstanceEntry {
   return managedBookmarkShell(entry, url) === undefined
