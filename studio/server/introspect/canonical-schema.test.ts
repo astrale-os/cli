@@ -60,7 +60,7 @@ const schema = defineSchema('docs.example.dev', {
   functions: {
     search: func({ input: string, output: output.stream(string), auth: 'authenticated' }),
   },
-  views: { documents: view({ target: Document }) },
+  views: { documents: view({ description: 'Browse documents.' }) },
   core: { nodes: { primary }, edges: [primaryLink] },
 })
 const namedRef = { origin: dependency.origin, kind: 'class', name: 'Named' } as const
@@ -139,9 +139,9 @@ describe('canonical Schema projection', () => {
       auth: 'authenticated',
       output: { mode: 'stream' },
     })
-    expect(extraction.ir.views.documents.target).toEqual({
-      kind: 'definition',
-      definitions: [documentRef],
+    expect(extraction.ir.views.documents).toEqual({
+      name: 'documents',
+      description: 'Browse documents.',
     })
     expect(extraction.ir.dependencies).toEqual([
       { origin: dependency.origin, revision: sdk.schema.revision(dependency) },

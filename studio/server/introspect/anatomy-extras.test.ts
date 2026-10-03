@@ -86,7 +86,6 @@ const schemaInput = {
   classes: {},
   views: {
     issue: view({
-      target: [Issue, Group],
       description: 'Inspect an issue.',
     }),
   },
@@ -112,13 +111,6 @@ export const frontend = defineFrontend({
       issue: {
         name: 'issue',
         description: 'Inspect an issue.',
-        target: {
-          kind: 'definition',
-          definitions: [
-            { origin: 'issues.example.dev', kind: 'class', name: 'Issue' },
-            { origin: 'accounts.example.dev', kind: 'class', name: 'Group' },
-          ],
-        },
       },
     }),
   ).toEqual([
@@ -127,7 +119,6 @@ export const frontend = defineFrontend({
       kind: 'spa',
       mount: '/ui/issues/:id',
       url: undefined,
-      viewFor: ['Issue', 'Group'],
       file: 'views/routes.ts',
       description: 'Inspect an issue.',
     },
@@ -142,7 +133,7 @@ test('discovers Vite frontend default routes from canonical View names', () => {
   writeFileSync(
     join(root, 'schema', 'index.ts'),
     `export const schema = defineSchema('generated.example.dev', {
-  views: { summary: view({ target: 'domain' }) },
+  views: { summary: view({}) },
 })
 `,
   )
@@ -161,7 +152,6 @@ export const frontend = defineFrontend({
     buildViews(root, 'schema', {
       summary: {
         name: 'summary',
-        target: { kind: 'domain' },
       },
     }),
   ).toEqual([
@@ -191,9 +181,9 @@ export default defineProject({ application, environments: { development: { deplo
     join(root, 'schema', 'index.ts'),
     `export const schema = defineSchema('static.invalid', {
   views: {
-    account: view({ target: WrongTarget, description: 'Static guess.' }),
-    sourceOnly: view({ target: WrongTarget, description: 'Static guess.' }),
-    invented: view({ target: 'domain' }),
+    account: view({ description: 'Static guess.' }),
+    sourceOnly: view({ description: 'Static guess.' }),
+    invented: view({}),
   },
 })`,
   )
@@ -214,15 +204,10 @@ export default defineProject({ application, environments: { development: { deplo
       account: {
         name: 'account',
         description: 'Admitted account view.',
-        target: {
-          kind: 'definition',
-          definitions: [{ origin: 'accounts.example.dev', kind: 'class', name: 'Account' }],
-        },
       },
       sourceOnly: {
         name: 'sourceOnly',
         description: 'Admitted source-only view.',
-        target: { kind: 'domain' },
       },
     }),
   ).toEqual([
@@ -230,7 +215,6 @@ export default defineProject({ application, environments: { development: { deplo
       slug: 'account',
       kind: 'spa',
       description: 'Admitted account view.',
-      viewFor: 'Account',
       url: 'https://shell.example.dev/account',
       file: 'application.ts',
     },

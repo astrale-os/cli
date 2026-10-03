@@ -36,10 +36,10 @@ describe('in-place View refresh', () => {
         },
         target: { url: config.proxy.kernelUrl, kernelIssuer: config.proxy.issuer },
       } as never)
-    await expect(refreshViewPlacement(config, connect)).rejects.toThrow('no longer applicable')
+    await expect(refreshViewPlacement(config, connect)).rejects.toThrow('no longer published')
   })
 
-  test('re-resolves the same target, retains its URL, and notifies the existing page', async () => {
+  test('re-resolves the same View in its Domain, retains its URL, and notifies the existing page', async () => {
     const config = fixture()
     const updated = { ...config.session.view.route, href: 'https://app.test/new' }
     const viewsFor = mock(async () => ({ views: [updated] }))
@@ -64,14 +64,14 @@ describe('in-place View refresh', () => {
       expect(after).toMatchObject({
         sessionId: before.sessionId,
         revision: 1,
-        view: { target: '@item', route: { href: 'https://app.test/new' } },
+        view: { target: '/:app.test', route: { href: 'https://app.test/new' } },
       })
-      expect(viewsFor).toHaveBeenCalledWith('@item')
+      expect(viewsFor).toHaveBeenCalledWith('/:app.test')
       expect(persist).toHaveBeenCalledWith(
         expect.objectContaining({
           id: config.session.id,
           pageUrl: config.session.pageUrl,
-          view: { target: '@item', route: updated },
+          view: { target: '/:app.test', route: updated },
         }),
       )
       const heartbeat = await fetch(`${base}status`, {
@@ -118,7 +118,7 @@ function fixture(identities?: boolean, external = true): ViewServeConfig {
       ...(identities === undefined ? {} : { identity: 'alice' }),
       createdAt: '2026-09-05T00:00:00.000Z',
       view: {
-        target: '@item' as ViewServeConfig['session']['view']['target'],
+        target: '/:app.test' as ViewServeConfig['session']['view']['target'],
         route: {
           key: 'app.test:view.item',
           href: 'https://app.test/old',
@@ -129,12 +129,7 @@ function fixture(identities?: boolean, external = true): ViewServeConfig {
           etag: `sha256:${'a'.repeat(64)}`,
           revision:
             `sha256:${'b'.repeat(64)}` as ViewServeConfig['session']['view']['route']['revision'],
-          declaration: {
-            target: {
-              kind: 'definition',
-              definitions: [{ origin: 'app.test', kind: 'class', name: 'Item' }],
-            },
-          },
+          declaration: { target: { kind: 'domain' } },
         },
       },
     },

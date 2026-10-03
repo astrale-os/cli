@@ -305,13 +305,8 @@ function projectFunction(name: string, value: unknown): IrFunction {
 
 function projectView(name: string, value: unknown): IrView {
   const declaration = asRecord(value) ?? {}
-  const target = asRecord(declaration.target)
   return {
     name,
-    target:
-      target?.kind === 'definition'
-        ? { kind: 'definition', definitions: refsOf(target.definitions) }
-        : { kind: 'domain' },
     ...(typeof declaration.description === 'string'
       ? { description: declaration.description }
       : {}),

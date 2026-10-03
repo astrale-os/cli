@@ -22,6 +22,10 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
     'frontendArtifact',
     'viteFrontend',
     'viewFor',
+    'useTargetPath',
+    'useViewsFor',
+    'setTarget',
+    'pickView',
     'createInlineStep',
     'defineCore',
     'definePolicy',
@@ -30,6 +34,7 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
     assert.doesNotMatch(source, new RegExp(`\\b${removed}\\b`), removed)
   }
   assert.doesNotMatch(source, /from ['"]@astrale-os\/kernel-(?:core|dsl)/)
+  assert.doesNotMatch(source, /view\(\{[^}]*\btarget\s*:/, 'class-targeted View')
   assert.doesNotMatch(source, /auth:\s*['"](?:required|optional|public)['"]/, 'removed auth mode')
   assert.doesNotMatch(
     source,

@@ -1,16 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 
-import type { ViewTargetResult } from '../../shared/types'
-
 import { clearViewPreparations, readViewPreparation, rememberViewPreparation } from './preparation'
-
-const targets: ViewTargetResult = {
-  status: 'available',
-  items: [],
-  selected: null,
-  stale: null,
-  truncated: false,
-}
 
 afterEach(clearViewPreparations)
 
@@ -21,8 +11,6 @@ test('binds a preparation to the exact workspace, Domain, and View route', () =>
       origin: 'issues.example.dev',
       slug: 'issue-detail',
       instance: 'staging',
-      targetRequired: true,
-      targets,
     },
     1000,
   )
@@ -44,15 +32,13 @@ test('binds a preparation to the exact workspace, Domain, and View route', () =>
   ).toBeNull()
 })
 
-test('expires old launch context instead of reusing stale target candidates', () => {
+test('expires old launch context instead of reusing a stale instance', () => {
   const preparation = rememberViewPreparation(
     {
       root: '/workspace',
       origin: 'issues.example.dev',
       slug: 'issue-detail',
       instance: 'staging',
-      targetRequired: true,
-      targets,
     },
     1000,
   )
