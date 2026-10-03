@@ -49,31 +49,30 @@ managed bookmarks (`lib/legacy/managed-shell-issuer.ts`); every bookmark write r
 registry with the label, and in a labelled registry every `domainIssuer` is the user's.
 The exchange reads the pin with `schema.inspect` through the same Client Session that already
 authenticates the selected identity for `whoami` and `delegate`, so no issuer is needed before the
-Kernel is reached. One session reads it once and holds it for that session only, and a persisted
-Domain credential is selected only under the issuer this session read: after a Shell reinstall the
-next command exchanges at the new issuer and never presents a credential exchanged at the old one.
-The cost is one Kernel round trip, with the source credential it needs, on every command that
-exchanges through the Shell, a warm one included.
-The Shell's issuer is not remembered across commands as a callable's declaring Domain issuer is,
-because the state owner's installation cache records only facts fixed for the life of an
-installation. A callable Domain's issuer is one while Domains keep their issuer until they are
-uninstalled. The Shell's is not: it is reinstalled from immutable deployments with a consented
-issuer change, within the same installation, and every command on every managed Instance exchanges
-through it, so a remembered issuer would fail the next command of every user after each reinstall.
-A Domain reinstalled the same way loses that property too, and its callable memory then needs this
-rule.
-A session observes no reinstall after its read. A command that already presented its credential
-keeps it: if a reinstall lands during the command, its later Kernel calls are refused with 2002
-once the Kernel no longer accepts the previous issuer, the command fails, and the next command reads
-the new pin. Connection does not re-read the pin on a Kernel refusal: the Client reports no call
+Kernel is reached. The state owner's installation cache remembers what the pin named per source
+Kernel and origin, the same record a callable of the Shell Domain reads and writes, so a later
+command exchanges at the remembered issuer, or selects the Domain credential persisted under it
+before source-token refresh, without reading the pin, as the route-derived issuer needed no read.
+The Shell is reinstalled from immutable deployments with a consented issuer change, within the same
+installation, so the remembered issuer is healed rather than trusted. A stale one fails closed: the
+retired issuer no longer serves an exchange, or the Kernel rejects with 2002 the credential it
+issued once it no longer accepts the previous issuer. Any failure of a command that relied on the
+remembered issuer forgets it, as for a callable, so the next command reads the new pin and exchanges
+there: after a reinstall, the first command of each user that presents a credential exchanged at the
+old issuer outside the Kernel's acceptance window fails once, and its retry succeeds. A command that
+read the pin itself keeps the record when it fails.
+A session observes no reinstall after it chose its issuer. A command that already presented its
+credential keeps it: if a reinstall lands during the command, its later Kernel calls are refused with
+2002 once the Kernel no longer accepts the previous issuer, the command fails, and the next command
+reads the new pin. Connection does not replay a call the Kernel refused: the Client reports no call
 outcome to the credential it resolved, and no command keeps calling on one connection after a 2002
 (`logs --follow` ends on it; the View server and studio open one connection per mint or batch).
 An exchange that fails as a moved issuer would (the issuer no longer serves discovery or exchange,
 or the Domain refuses with 2002) makes the session read the pin once more and, only when the pin
 now names another issuer, exchange there once; when the pin cannot be read again, the exchange
-failure and this session's read stand. A pin the Kernel refuses to read (the Domain is absent or not
-ready, 1003 with `SCHEMA_NOT_FOUND` or `SCHEMA_NOT_READY`; the caller may not read it; or the Kernel
-does not serve the read) or answers with invalid evidence fails with
+failure and the issuer the session holds stand. A pin the Kernel refuses to read (the Domain is
+absent or not ready, 1003 with `SCHEMA_NOT_FOUND` or `SCHEMA_NOT_READY`; the caller may not read it;
+or the Kernel does not serve the read) or answers with invalid evidence fails with
 `TOKEN_EXCHANGE_ISSUER_UNRESOLVED` naming its cause; any other read failure, a 1003 against the
 read's own input included, keeps its own classification, as the source caller's first Kernel call
 always reported it. There is no fallback issuer, and a Domain the Kernel hosts keeps the caller.
@@ -81,7 +80,8 @@ A callable command needs the issuer of its declaring Domain before it can exchan
 remembers that installation fact per source Kernel and origin, so only the first command reads the
 installed Publication through a discovery Session. The remembered issuer is not authority: a stale
 issuer yields a credential the Kernel rejects, and any failure of a command that relied on it
-forgets the entry so the next command reads the installation again.
+forgets the entry so the next command reads the installation again. A Domain reinstalled from an
+immutable deployment heals the same way as the Shell.
 Exchange and destination-carrier authority cover the selected command timeout plus one bounded
 receipt margin, never outlive the current source credential, and retain the existing one-minute
 floor for short commands. A cached or freshly exchanged credential that cannot cover that lifetime

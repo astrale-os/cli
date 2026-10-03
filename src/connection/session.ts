@@ -36,6 +36,7 @@ import {
   type CredentialIntent,
   validateCredentialSelection,
 } from './credential'
+import { createInstalledIssuer, type InstalledIssuer } from './installed-issuer'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -69,6 +70,7 @@ export type ConnectionFactory = (
   options: ConnectionOptions,
   config: AstraleConfig,
   credential?: CredentialIntent,
+  installed?: InstalledIssuer,
 ) => OwnedConnection
 
 /** Resolve one ordinary target, run a command action, then close terminally. */
@@ -174,7 +176,11 @@ async function runResolvedClientSession<Value>(
         target.domainIssuer === undefined ? { principal: 'caller' } : { principal: 'domain' }
     }
   }
-  const connection = open(target, timeoutMs, options, config, credential)
+  const installed =
+    target.domainOrigin === undefined
+      ? undefined
+      : createInstalledIssuer(target.kernelIssuer, target.domainOrigin, installations)
+  const connection = open(target, timeoutMs, options, config, credential, installed)
   try {
     return await action(connection.context)
   } catch (error) {
@@ -182,6 +188,7 @@ async function runResolvedClientSession<Value>(
     if (remembered !== undefined) {
       await installations?.delete(target.kernelIssuer, remembered).catch(() => undefined)
     }
+    await installed?.failed()
     if (error instanceof Error) (error as Error & { url?: string }).url = target.url
     throw error
   } finally {
@@ -226,9 +233,19 @@ function openConnection(
   options: ConnectionOptions,
   config: AstraleConfig,
   credential: CredentialIntent = {},
+  installed?: InstalledIssuer,
 ): OwnedConnection {
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
-  const auth = createCliCredential(target, options, config, fetch, timeoutMs, credential)
+  const auth = createCliCredential(
+    target,
+    options,
+    config,
+    fetch,
+    timeoutMs,
+    credential,
+    undefined,
+    installed,
+  )
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
   return {
