@@ -160,6 +160,14 @@ export interface AgentRun {
   numTurns?: number
   /** total token usage reported by the harness for this turn */
   tokens?: number
+  /** how full the conversation's context window is, as the agent last reported it */
+  context?: AgentContextUsage
+  /**
+   * The message the agent is writing right now, as it streams in. Live only: it
+   * becomes the `message` event that carries the same `id` once the agent stops
+   * writing it (it calls a tool, or the turn ends), and is never stored.
+   */
+  draft?: AgentDraft
   error?: string
   /** how many threads the agent answered live via the bridge tools this turn */
   liveReplies?: number
@@ -167,6 +175,25 @@ export interface AgentRun {
   merge?: MergeResult
   /** exact prompt inputs sent to the harness for this turn */
   prompt?: AgentPromptSnapshot
+}
+
+/**
+ * How much of the model's context window the conversation occupies - ACP's
+ * `usage_update`. Reported by the agent as the turn goes, so it moves mid-turn
+ * and carries over to the next turn of the same conversation.
+ */
+export interface AgentContextUsage {
+  /** tokens currently in context */
+  used: number
+  /** the context window's total size, in tokens */
+  size: number
+}
+
+/** A message still being written - see `AgentRun.draft`. */
+export interface AgentDraft {
+  /** the id the finished message event will carry */
+  id: string
+  text: string
 }
 
 /**

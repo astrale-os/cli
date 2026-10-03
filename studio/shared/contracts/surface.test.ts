@@ -13,6 +13,8 @@ const TARGET_BARREL_EXPORTS = [
   'AGENT_EFFORT_LEVELS',
   'AGENT_TOOL_STATUSES',
   'AgentAccess',
+  'AgentContextUsage',
+  'AgentDraft',
   'AgentEffort',
   'AgentModelPreference',
   'AgentEvent',

@@ -239,6 +239,37 @@ describe.serial('agent runner invariants', () => {
     expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(false)
   })
 
+  test('the message streams in as it is written, then lands under the same id', async () => {
+    useMock()
+    const handle = fixture()
+    const frames: StudioEvent[] = []
+    await submitRun((event) => frames.push(event), { message: 'stream it' })
+    const run = await waitForTerminal(handle.id)
+
+    const message = run.events.findLast((event) => event.kind === 'message')!
+    const pieces = frames.flatMap((frame) => (frame.type === 'agent-draft' ? [frame] : []))
+    expect(pieces.length).toBeGreaterThan(0)
+    // one draft, assembled in order, that became the message itself
+    expect(new Set(pieces.map((piece) => piece.id))).toEqual(new Set([message.id]))
+    let text = ''
+    for (const piece of pieces) {
+      expect(piece.offset).toBe(text.length)
+      text += piece.text
+    }
+    expect(text).toBe(message.text)
+    // the draft is live only: it never outlives its turn
+    expect(run.draft).toBeUndefined()
+    // and the window's occupancy rode along, then stayed on the run
+    expect(frames.some((frame) => frame.type === 'agent-context')).toBe(true)
+    expect(run.context).toEqual({ used: 42_000, size: 200_000 })
+
+    // the next turn of the same conversation starts as full as this one left it
+    const next = await submitRun(() => {}, { message: 'and again' })
+    expect(next.run?.resumed).toBe(true)
+    expect(next.run?.context).toEqual({ used: 42_000, size: 200_000 })
+    await waitForTerminal(handle.id)
+  })
+
   test('refuses an image the chat does not hold, and a file that is not an image', async () => {
     useMock()
     fixture()

@@ -3,7 +3,7 @@ import type { AgentEvent, AgentRun } from '@shared/types'
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { latestNote, splitTurn } from './agent-steps'
+import { latestNote, splitTurn, visibleDraft } from './agent-steps'
 import { activityLabel, AgentTurn, agentAuthFailure, compactTarget } from './agent-turn'
 
 const event = (
@@ -200,7 +200,7 @@ test('a finished turn shows its answer under a folded count of the steps behind 
   )
 
   expect(html).toContain('The Users page is in place.')
-  expect(html).toContain('2 steps')
+  expect(html).toContain('2 actions')
   expect(html).toContain('1m 30s')
   expect(html).not.toContain('I read the guides first.')
 })
@@ -259,4 +259,41 @@ test('the toggle sits right after the words it folds, running or done', () => {
     expect(trigger.trimEnd()).toMatch(/lucide-chevron-right[^>]*><path[^>]*><\/path><\/svg>$/)
     expect(trigger).not.toContain('ml-auto')
   }
+})
+
+test('a running turn says how many actions it took and for how long', () => {
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={run([
+        event('tool', 'Read', { tool: 'Read', target: 'a.ts' }),
+        event('tool', 'Edit', { tool: 'Edit', target: 'b.ts' }),
+        event('tool', 'Bash', { tool: 'Bash', target: 'pnpm test' }),
+      ])}
+    />,
+  )
+  expect(html).toContain('3 actions')
+  expect(html).toContain('data-testid="agent-progress"')
+})
+
+test('the message being written streams in, without the machine block it ends with', () => {
+  const writing = {
+    ...run([event('tool', 'Edit', { tool: 'Edit' })]),
+    draft: { id: 'd1', text: 'Added the **field**.\n\n```json\n{ "schemaVersion": "x"' },
+  }
+  expect(visibleDraft(writing)).toBe('Added the **field**.')
+  const html = renderToStaticMarkup(<AgentTurn run={writing} />)
+  expect(html).toContain('>field</strong>')
+  expect(html).toContain('Writing…')
+  expect(html).not.toContain('schemaVersion')
+  // a fence just opened cannot say yet what it holds
+  expect(visibleDraft({ ...writing, draft: { id: 'd1', text: 'Done.\n```json\n' } })).toBe('Done.')
+  // a real code block stays
+  expect(
+    visibleDraft({ ...writing, draft: { id: 'd1', text: 'Run:\n```sh\npnpm test\n```' } }),
+  ).toContain('pnpm test')
+  // once written out as a message, or once the turn is over, the draft is gone
+  expect(
+    visibleDraft({ ...writing, events: [event('message', 'x', { id: 'd1' })] }),
+  ).toBeUndefined()
+  expect(visibleDraft({ ...writing, status: 'succeeded' })).toBeUndefined()
 })

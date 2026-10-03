@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
 import { ScrollArea } from '@/components/ui/misc'
 import {
+  conversationContext,
   type HarnessLink,
   harnessLink,
   isRunActive,
@@ -36,6 +37,7 @@ import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
 import { CommentPicker, useAttachedComments } from './comment-picker'
+import { ContextRing } from './context-ring'
 import { DockActivity } from './dock-activity'
 import { AttachButton, DocumentChips } from './documents'
 import { HandoffChip } from './handoff-chip'
@@ -176,23 +178,24 @@ export function AgentTranscript() {
   useReadAgentReplies(activeId, turns)
   const run = useDisplayRun(activeId)
   const scroller = useRef<HTMLDivElement>(null)
+  const tabsLeft = useUI((state) => state.chatTabsSide === 'left')
 
   // follow the conversation: a new turn, a new message or a new activity line all
   // move the bottom, and the bottom is what you are reading. The scrollable element
   // is ScrollArea's own viewport, not the Root we hold.
-  const signature = `${turns.length}:${run?.events.length ?? 0}:${run?.status ?? ''}`
+  const signature = `${turns.length}:${run?.events.length ?? 0}:${run?.status ?? ''}:${run?.draft?.text.length ?? 0}`
   useLayoutEffect(() => {
     const viewport = scroller.current?.querySelector('[data-radix-scroll-area-viewport]')
     if (viewport) viewport.scrollTop = viewport.scrollHeight
   }, [signature])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ChatTabs chats={openChats} activeId={activeId} harness={harness} />
+    <div className={cn('flex min-h-0 flex-1', tabsLeft ? 'flex-row' : 'flex-col')}>
+      <ChatTabs chats={openChats} activeId={activeId} harness={harness} vertical={tabsLeft} />
 
       {/* type=scroll: the bar shows while scrolling and fades out — a chat should not
           carry a permanent gutter down its side. */}
-      <ScrollArea ref={scroller} type="scroll" className="min-h-0 flex-1">
+      <ScrollArea ref={scroller} type="scroll" className="min-h-0 min-w-0 flex-1">
         <div className="space-y-4 px-3 py-3">
           {chat?.newDomain ? <NewDomainChip domain={chat.newDomain} /> : null}
           {origin && (
@@ -341,6 +344,8 @@ export function AgentComposer({
   const { data: harness } = useHarness()
   const run = useDisplayRun(chats?.activeId)
   const chatId = chat?.id
+  const turns = useAgentTurns(chatId)
+  const context = conversationContext(turns, !!chat?.sessionId)
   // The draft lives in the store, keyed by chat: re-docking the panel unmounts the
   // composer and a half-written message must survive that — and a message is written
   // TO an agent, so it stays on the tab it was written on. Switching tabs therefore
@@ -750,6 +755,8 @@ export function AgentComposer({
                 tone={toneOf(openChats, chatId, chat?.harness)}
               />
             )}
+            {/* resting, the ring only shows once there is something to measure */}
+            {(!resting || context) && <ContextRing context={context} />}
             {/* the meter sits before the model, in reading order: how hard, on what */}
             {!resting && <ChatFastToggle chat={chat} />}
             {!resting && <ChatEffortPicker chat={chat} harness={harness} />}
@@ -776,6 +783,7 @@ export function AgentComposer({
         <div className="flex items-center gap-1 px-2 pb-2">
           <AttachButton onPicked={() => field.current?.focus()} />
           <div className="ml-auto flex items-center gap-1.5">
+            <ContextRing context={context} />
             <ChatFastToggle chat={chat} />
             {/* the meter sits before the model, in reading order: how hard, on what */}
             <ChatEffortPicker chat={chat} harness={harness} />

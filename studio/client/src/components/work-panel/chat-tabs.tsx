@@ -9,6 +9,10 @@
  * belongs to the tab you are actually in. That keeps a tab about 28 pixels wide,
  * so a domain can carry a row of them; past that the strip scrolls sideways.
  *
+ * Settings can stand the strip up instead: a column on the conversation's left,
+ * where every tab has the room to carry the start of its title - for when you
+ * keep enough chats open that telling them apart by colour stops working.
+ *
  * `+` asks nothing: a new tab opens on the domain's starred model, or continues
  * with the agent you are already working with when nothing is starred. Changing
  * agent is not a thing you do when OPENING a conversation — it is picking a model
@@ -39,15 +43,51 @@ export function ChatTabs({
   chats,
   activeId,
   harness,
+  vertical = false,
 }: {
   chats: ChatInfo[]
   activeId?: string
   harness?: HarnessStatus
+  /** a column of titled tabs on the conversation's left, rather than a strip of marks above it */
+  vertical?: boolean
 }) {
   const { open, select, close, update } = useChatMutations()
   const strip = useRef<HTMLDivElement>(null)
-  const edges = useSideScroll(strip, chats.length)
+  const edges = useSideScroll(strip, chats.length, !vertical)
   const tones = chatTones(chats)
+
+  const tabs = chats.map((chat, index) => (
+    <Tab
+      key={chat.id}
+      chat={chat}
+      active={chat.id === activeId}
+      tone={tones[index]!}
+      harnessLabel={labelOf(harness, chat.harness)}
+      vertical={vertical}
+      onSelect={() => select.mutate(chat.id)}
+      onRename={(title) => update.mutate({ chatId: chat.id, title })}
+      onClose={chats.length > 1 ? () => close.mutate(chat.id) : undefined}
+    />
+  ))
+
+  if (vertical)
+    return (
+      <nav
+        aria-label="Chats"
+        className="flex w-40 shrink-0 flex-col border-r"
+        data-chat-tabs="left"
+      >
+        <div className="flex shrink-0 items-center justify-between px-2.5 pb-1 pt-2">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Chats
+          </span>
+          <NewChatButton disabled={open.isPending} onClick={() => open.mutate(undefined)} />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 pb-2">
+          {tabs}
+        </div>
+      </nav>
+    )
 
   return (
     <div className="flex shrink-0 items-center gap-1 border-b px-1.5 py-1">
@@ -60,31 +100,26 @@ export function ChatTabs({
           maskImage: `linear-gradient(to right, transparent 0, black ${edges.left ? FADE : 0}px, black calc(100% - ${edges.right ? FADE : 0}px), transparent 100%)`,
         }}
       >
-        {chats.map((chat, index) => (
-          <Tab
-            key={chat.id}
-            chat={chat}
-            active={chat.id === activeId}
-            tone={tones[index]!}
-            harnessLabel={labelOf(harness, chat.harness)}
-            onSelect={() => select.mutate(chat.id)}
-            onRename={(title) => update.mutate({ chatId: chat.id, title })}
-            onClose={chats.length > 1 ? () => close.mutate(chat.id) : undefined}
-          />
-        ))}
+        {tabs}
       </div>
 
-      <button
-        type="button"
-        title="New chat"
-        aria-label="New chat"
-        disabled={open.isPending}
-        onClick={() => open.mutate(undefined)}
-        className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-      >
-        <Plus className="h-3.5 w-3.5" />
-      </button>
+      <NewChatButton disabled={open.isPending} onClick={() => open.mutate(undefined)} />
     </div>
+  )
+}
+
+function NewChatButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title="New chat"
+      aria-label="New chat"
+      disabled={disabled}
+      onClick={onClick}
+      className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+    >
+      <Plus className="h-3.5 w-3.5" />
+    </button>
   )
 }
 
@@ -98,12 +133,13 @@ export function ChatTabs({
 function useSideScroll(
   ref: React.RefObject<HTMLDivElement | null>,
   count: number,
+  enabled = true,
 ): { left: boolean; right: boolean } {
   const [edges, setEdges] = useState({ left: false, right: false })
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
+    if (!el || !enabled) return
     const measure = () =>
       setEdges({
         left: el.scrollLeft > 1,
@@ -126,7 +162,7 @@ function useSideScroll(
       el.removeEventListener('scroll', measure)
       observer.disconnect()
     }
-  }, [ref, count])
+  }, [ref, count, enabled])
 
   return edges
 }
@@ -136,6 +172,7 @@ function Tab({
   active,
   tone,
   harnessLabel,
+  vertical,
   onSelect,
   onRename,
   onClose,
@@ -144,6 +181,7 @@ function Tab({
   active: boolean
   tone: ChatTone
   harnessLabel: string
+  vertical: boolean
   onSelect: () => void
   onRename: (title: string) => void
   onClose?: () => void
@@ -163,6 +201,8 @@ function Tab({
 
   const named = chat.title !== DEFAULT_CHAT_TITLE
   const name = named ? chat.title : harnessLabel
+  // standing in a column, every tab has its title in view and can be renamed in place
+  const renamable = active || vertical
   const busy = isBusy(chat)
   const failed = chat.status === 'failed'
   const commit = () => {
@@ -183,6 +223,7 @@ function Tab({
       }}
       className={cn(
         'flex h-7 shrink-0 items-center rounded-md transition-colors',
+        vertical && 'group w-full',
         active ? tone.surface : 'hover:bg-accent/60',
       )}
     >
@@ -197,21 +238,24 @@ function Tab({
             if (event.key === 'Enter') commit()
             if (event.key === 'Escape') setEditing(false)
           }}
-          className="h-full w-[150px] min-w-0 bg-transparent px-2 text-[12px] outline-none"
+          className={cn(
+            'h-full min-w-0 bg-transparent px-2 text-[12px] outline-none',
+            vertical ? 'w-full' : 'w-[150px]',
+          )}
         />
       ) : (
         <button
           type="button"
           onClick={onSelect}
           // renaming needs the title in view, and only the open tab shows one
-          onDoubleClick={() => active && setEditing(true)}
+          onDoubleClick={() => renamable && setEditing(true)}
           aria-current={active ? 'page' : undefined}
           // the spin is the only thing that says "working", and it says nothing
           // to a screen reader or to anyone who turned motion off
           aria-busy={busy || undefined}
           aria-label={name}
-          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${busy ? ' — running' : ''}${unread ? ' — unread reply' : ''}${active ? ' — double-click to rename' : ''}`}
-          className="flex h-full min-w-0 items-center gap-1.5 px-2"
+          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${busy ? ' — running' : ''}${unread ? ' — unread reply' : ''}${renamable ? ' — double-click to rename' : ''}`}
+          className={cn('flex h-full min-w-0 items-center gap-1.5 px-2', vertical && 'flex-1')}
         >
           <span className="relative grid h-3.5 w-3.5 shrink-0 place-items-center">
             {/* a running turn spins the MARK itself — a spinner ring on top of it
@@ -248,19 +292,38 @@ function Tab({
               />
             )}
           </span>
-          {active && named && (
-            <span className="max-w-[150px] truncate text-[12px] text-foreground">{chat.title}</span>
+          {vertical ? (
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-left text-[12px]',
+                active ? 'text-foreground' : 'text-muted-foreground',
+                unread && !active && 'font-medium text-foreground',
+              )}
+            >
+              {name}
+            </span>
+          ) : (
+            active &&
+            named && (
+              <span className="max-w-[150px] truncate text-[12px] text-foreground">
+                {chat.title}
+              </span>
+            )
           )}
         </button>
       )}
       {/* only on the open tab: an ✕ on every tab would double the width of each */}
-      {active && !editing && onClose && (
+      {/* in a column there is width to spare: every tab offers it, on hover */}
+      {(active || vertical) && !editing && onClose && (
         <button
           type="button"
           onClick={onClose}
           title="Close this chat"
           aria-label={`Close ${name}`}
-          className="mr-1 grid h-4 w-4 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+          className={cn(
+            'mr-1 grid h-4 w-4 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground',
+            vertical && !active && 'invisible group-hover:visible group-focus-within:visible',
+          )}
         >
           <X className="h-3 w-3" />
         </button>
