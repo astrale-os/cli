@@ -481,7 +481,9 @@ session/installations.json
 `session/routes.json` holds learned Domain routes and their short-lived carriers;
 `session/installations.json` remembers each Domain's installed issuer per Kernel.
 All three are owner-private caches: deleting them only costs a re-read or a new exchange, never
-access.
+access. After a Shell reinstall, one command on a managed Instance can fail once with 2002 while it
+still presents a credential from the previous Shell issuer; rerunning it reads the new issuer and
+succeeds (deleting `session/installations.json` has the same effect).
 
 Optional roots are `ASTRALE_HOME`, `ASTRALE_KEYS_DIR`, and
 `ASTRALE_DATA_DIR`.
