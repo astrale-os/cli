@@ -20,12 +20,17 @@ const inspectInstalledDomain: InstalledDomainReader = (session, origin, signal) 
   session.schema.inspect(origin, { signal })
 
 /**
- * Kernel refusals of the installation read itself: the Domain is absent or not ready (1003
- * VALIDATION_ERROR with a SCHEMA_NOT_FOUND or SCHEMA_NOT_READY reason), the caller may not read it
- * (2004), or the Kernel does not serve the read (3001, 3002). Any other refusal, such as an
- * invalid or expired source login or an unavailable backend, is not about the installation.
+ * Kernel refusals of the installation read itself: the caller may not read it (2004), or the
+ * Kernel does not serve the read (3001, 3002). Any other refusal, such as an invalid or expired
+ * source login or an unavailable backend, is not about the installation.
  */
-const INSTALLATION_READ_REFUSALS: ReadonlySet<number> = new Set([1003, 2004, 3001, 3002])
+const INSTALLATION_READ_REFUSALS: ReadonlySet<number> = new Set([2004, 3001, 3002])
+
+/** The 1003 VALIDATION_ERROR reasons that say the Domain is absent or not ready. */
+const INSTALLATION_ABSENCE_REASONS: ReadonlySet<string> = new Set([
+  'SCHEMA_NOT_FOUND',
+  'SCHEMA_NOT_READY',
+])
 
 /**
  * The issuer at which the CLI exchanges for the Domain installed under one origin on one Kernel.
@@ -99,7 +104,11 @@ async function installedIssuer(
 
 /** Whether a failed read says something about the installation rather than the way to reach it. */
 function aboutInstallation(cause: unknown): boolean {
-  if (cause instanceof ResponseError) return INSTALLATION_READ_REFUSALS.has(cause.code)
+  if (cause instanceof ResponseError) {
+    // Any other 1003 rejects the read's own input, which names a constant origin.
+    if (cause.code === 1003) return INSTALLATION_ABSENCE_REASONS.has(cause.reason?.code ?? '')
+    return INSTALLATION_READ_REFUSALS.has(cause.code)
+  }
   // Decoders and `issuer.accept` (AuthValueError) report invalid evidence as TypeError.
   return cause instanceof TypeError
 }

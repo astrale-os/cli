@@ -40,7 +40,7 @@ type IssuerState = 'live' | 'retired' | 'refuses'
 /** How the fake source Kernel answers: as each caller, refusing every call, or unreachable. */
 type KernelState =
   | { readonly kind: 'up'; readonly pin?: () => string | null }
-  | { readonly kind: 'refuses'; readonly code: number }
+  | { readonly kind: 'refuses'; readonly code: number; readonly reason?: unknown }
   | { readonly kind: 'down' }
 
 let directory: string
@@ -280,6 +280,15 @@ describe('Shell exchange at the installed issuer', () => {
       hint: 'The Kernel refused the installation read with 1003 (SCHEMA_NOT_FOUND): Domain was not found.',
       cause: refused,
     })
+    const notReady = new ResponseError(1003, 'Domain is not ready.', INVOCATION_ID, {
+      code: 'SCHEMA_NOT_READY',
+      details: { origin: SHELL },
+    })
+    await expect(
+      shellResolver(net.fetch, async () => {
+        throw notReady
+      }).resolve(KERNEL, live()),
+    ).rejects.toMatchObject({ code: 'TOKEN_EXCHANGE_ISSUER_UNRESOLVED', cause: notReady })
     await expect(
       shellResolver(net.fetch, pinned('not an issuer').read).resolve(KERNEL, live()),
     ).rejects.toMatchObject({
@@ -293,6 +302,15 @@ describe('Shell exchange at the installed issuer', () => {
   test.each([
     [{ kind: 'refuses', code: 2002 } as const, 2002],
     [{ kind: 'refuses', code: 5001 } as const, 5001],
+    // A 1003 that rejects the read's own input says nothing about the installation.
+    [
+      {
+        kind: 'refuses',
+        code: 1003,
+        reason: { code: 'INTROSPECTION_ORIGIN_INVALID', details: { path: '/origin' } },
+      } as const,
+      1003,
+    ],
     [{ kind: 'down' } as const, 'TRANSPORT_ERROR'],
   ])(
     'keeps a read failure that is not about the installation as the Kernel reported it (%o)',
@@ -330,11 +348,16 @@ describe('Shell exchange at the installed issuer', () => {
     expect(net.requests[0]).toBe(`kernel ${INVOCATION} inspect ${SHELL} as source`)
   })
 
-  test('keeps the caller when the Kernel hosts the Domain itself', async () => {
+  test.each([
+    ['no publication', null],
+    ['the source Kernel as its issuer', KERNEL],
+  ])('keeps the caller when the Kernel hosts the Domain itself (%s)', async (_case, answer) => {
     const net = network({})
-    await expect(shellResolver(net.fetch, pinned(null).read).resolve(KERNEL, live())).resolves.toBe(
+    const pin = pinned(answer)
+    await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).resolves.toBe(
       sourceToken('user-1'),
     )
+    expect(pin.reads).toEqual([SHELL])
     expect(net.requests.filter((request) => request.startsWith('domain'))).toEqual([])
   })
 })
@@ -447,7 +470,7 @@ function network(
       )
       const contentType = new Headers(init?.headers).get('accept')!
       if (kernel.kind === 'refuses') {
-        return answered(url, refusal(body.requestId, kernel.code, contentType))
+        return answered(url, refusal(body.requestId, kernel.code, contentType, kernel.reason))
       }
       if (inspected !== '' && kernel.pin !== undefined) {
         return answered(url, introspection(body.requestId, String(call!.origin), kernel.pin()))
@@ -525,12 +548,21 @@ function invocation(requestId: unknown, result: unknown, contentType: string): R
   )
 }
 
-function refusal(requestId: unknown, code: number, contentType: string): Response {
+function refusal(
+  requestId: unknown,
+  code: number,
+  contentType: string,
+  reason?: unknown,
+): Response {
   return new Response(
     JSON.stringify({
       requestId,
       invocation: { source: KERNEL, id: `call-${requestId}` },
-      error: { code, message: 'Refused by the Kernel.' },
+      error: {
+        code,
+        message: 'Refused by the Kernel.',
+        ...(reason === undefined ? {} : { data: reason }),
+      },
     }),
     { headers: { 'content-type': contentType, 'cache-control': 'no-store' } },
   )
