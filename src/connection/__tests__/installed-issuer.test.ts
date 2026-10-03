@@ -126,7 +126,8 @@ describe('Shell exchange at the installed issuer', () => {
       const net = network(state)
       const pin = pinned(DEPLOYMENT, NEXT_DEPLOYMENT)
       // A second user of the same session has no credential yet, so it exchanges afresh at the
-      // issuer this session read; a later command reads the pin afresh (the reinstall case below).
+      // issuer this session read. This resolver has no installation cache; what a later command
+      // does is shown by the READ-ONCE-PER-BOOKMARK and REINSTALL-HEALS-IN-ONE-RETRY cases.
       const resolver = shellResolver(net.fetch, pin.read, ['user-1', 'user-2'])
       await expect(resolver.resolve(KERNEL, live())).resolves.toBe(exchanged(DEPLOYMENT))
 
@@ -341,6 +342,7 @@ describe('Shell exchange at the installed issuer', () => {
     expect(shell.inspects()).toHaveLength(1)
   })
 
+  /** @evidence TEST-CLI-INSTALLED-SHELL-FAILURE-FORGETS-REMEMBERED-ONLY */
   test('forgets the remembered issuer after any failure of a command that relied on it', async () => {
     const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
     await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
@@ -391,7 +393,7 @@ describe('Shell exchange at the installed issuer', () => {
     expect(pin.reads).toEqual([SHELL])
     expect(net.requests).toEqual([`kernel ${INVOCATION} as source`])
 
-    // Later commands read the pin no more, as the route-derived issuer needed no read.
+    // Later commands read the pin no more: the installation cache remembers the issuer it named.
     await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).resolves.toBe(
       exchanged(LEGACY_SHELL),
     )

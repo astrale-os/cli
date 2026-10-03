@@ -267,6 +267,14 @@ export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
     },
     {
       file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-FAILURE-FORGETS-REMEMBERED-ONLY',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-INSTALLED-ISSUER-SERVES-EXCHANGE',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
       id: 'TEST-CLI-INSTALLED-SHELL-INSPECT-DECODED',
     },
     {

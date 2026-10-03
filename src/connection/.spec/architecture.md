@@ -52,7 +52,7 @@ authenticates the selected identity for `whoami` and `delegate`, so no issuer is
 Kernel is reached. The state owner's installation cache remembers what the pin named per source
 Kernel and origin, the same record a callable of the Shell Domain reads and writes, so a later
 command exchanges at the remembered issuer, or selects the Domain credential persisted under it
-before source-token refresh, without reading the pin, as the route-derived issuer needed no read.
+before source-token refresh, without reading the pin again.
 The Shell is reinstalled from immutable deployments with a consented issuer change, within the same
 installation, so the remembered issuer is healed rather than trusted. A stale one fails closed: the
 retired issuer no longer serves an exchange, or the Kernel rejects with 2002 the credential it
