@@ -10,23 +10,23 @@ components. Components whose license requires attribution are listed below.
 
 Domain Studio embeds these ACP components:
 
-- **Package:** `@agentclientprotocol/sdk` 1.4.0
+- **Package:** `@agentclientprotocol/sdk` 1.7.0
   - **License:** Apache License 2.0
   - **Copyright:** © 2025 Zed Industries, Inc. and contributors
   - **Source:** https://github.com/agentclientprotocol/typescript-sdk
-- **Package:** `@agentclientprotocol/codex-acp` 1.6.2
+- **Package:** `@agentclientprotocol/codex-acp` 2.1.1
   - **License:** Apache License 2.0
   - **Copyright:** © 2025 JetBrains s.r.o.
   - **Source:** https://github.com/agentclientprotocol/codex-acp
-- **Package:** `@agentclientprotocol/claude-agent-acp` 0.70.0
+- **Package:** `@agentclientprotocol/claude-agent-acp` 0.85.1
   - **License:** Apache License 2.0
   - **Copyright:** © 2025 Zed Industries, Inc. and contributors
   - **Source:** https://github.com/agentclientprotocol/claude-agent-acp
-- **Transitive package:** `@openai/codex` 0.148.0
+- **Transitive package:** `@openai/codex` 0.159.3
   - **License:** Apache License 2.0
   - **Source:** https://github.com/openai/codex
 
-The Claude adapter also contains `@anthropic-ai/claude-agent-sdk` 0.3.232.
+The Claude adapter also contains `@anthropic-ai/claude-agent-sdk` 0.3.286.
 Copyright © Anthropic PBC; all rights reserved. Its use is subject to Anthropic's
 [legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance).
 

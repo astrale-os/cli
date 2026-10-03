@@ -2,106 +2,106 @@
 export const PINNED_AGENT_BINARIES = {
   claude: {
     label: 'Claude Code',
-    version: '2.1.232',
-    source: '@anthropic-ai/claude-agent-sdk@0.3.232',
+    version: '2.1.286',
+    source: '@anthropic-ai/claude-agent-sdk@0.3.286',
     platforms: {
       'darwin-arm64': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.286.tgz',
         integrity:
-          'sha512-+/4PX+dwmQAjlOlooocwa3kClulZfMo133xQH3LYDlK7D5bzze16lwlDGPVAYGEarpvXg7G5JK8QjfWAJ2HYbg==',
+          'sha512-gkxWcJ+Z23UxwghI1V3dL09PkELIZmB2vPelR8XsdfhS+yP1KvoW7FThvRLojcxXb3fj0ddYawjQSQYIkXFbxw==',
         entry: 'package/claude',
       },
       'darwin-x64': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-x64/-/claude-agent-sdk-darwin-x64-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-x64/-/claude-agent-sdk-darwin-x64-0.3.286.tgz',
         integrity:
-          'sha512-EHZ1Y3aGyZ2mFZ6QLR1bM3/HiIn2cLrPjU+k3/oCIW6omJFodfzf410aWjDPSnMj7CE4d6t7MSjBWekMUbcv0g==',
+          'sha512-eMdni7sy1ud2IISI4QSsfVBCxotzSe62zCGdXISejL9MxDIwcRgEGZpO5OV+j7t8mNGMTe6Opl1t/3Z/1RUJaQ==',
         entry: 'package/claude',
       },
       'linux-arm64': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-arm64/-/claude-agent-sdk-linux-arm64-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-arm64/-/claude-agent-sdk-linux-arm64-0.3.286.tgz',
         integrity:
-          'sha512-wW2opwA5s7gLghjU6B2ADMAtoc7bAZMevUzi4g+1PXMJ8MGcPvbnx92EDYJrVDcZmAl1+fz19XyPsaShlisTzw==',
+          'sha512-3h+WWGek9beZ6i1qbIjjwYEFbs46D6qumjSBc6cLsEvnufcoi7mc0iBwbFSh9yRb3upxoi4ZTJdl53T3gLTdUQ==',
         entry: 'package/claude',
       },
       'linux-arm64-musl': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-arm64-musl/-/claude-agent-sdk-linux-arm64-musl-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-arm64-musl/-/claude-agent-sdk-linux-arm64-musl-0.3.286.tgz',
         integrity:
-          'sha512-XkLcb9UT/l42Rtw7KBApzgxUe/kwoWJ9KCPcVEnYojzIvVR+AwBCl/QReNU5+6c72w48dYBMmLebI64gQbN0tg==',
+          'sha512-fG8Cqx53jkFyEL86ETA0tdLH3p06yFQKHcoxnMpiU+VmJ5g6uGFhsUZbJ6gFvuT3EgyMcNI2kZwhCCDF/DTnpQ==',
         entry: 'package/claude',
       },
       'linux-x64': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-x64/-/claude-agent-sdk-linux-x64-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-x64/-/claude-agent-sdk-linux-x64-0.3.286.tgz',
         integrity:
-          'sha512-6Px1xDiwQyLkSxwRQ34/kPA8WMXQ2rHYGkwockND7+9yMw+ShI3AfLkyi9G7JtJHObWFT6B82eSHjDS/Fy+9hQ==',
+          'sha512-kNczbWhWJ1G8sPRZd4Nsx/Ozr/kx16lT2NGp/EEmTV4Hn732xfLkUOlg+tFcS78i6lOPBknjDB/cz/J5Ha4wDQ==',
         entry: 'package/claude',
       },
       'linux-x64-musl': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-x64-musl/-/claude-agent-sdk-linux-x64-musl-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-x64-musl/-/claude-agent-sdk-linux-x64-musl-0.3.286.tgz',
         integrity:
-          'sha512-L1x2ge9NpXMLTczmT44TKPQ88PHE+gsCakQMVEOa8rXFvfBoqvcpxM0DT8wrqYWUHhQEYR8NXxQTP9a1NVRj8Q==',
+          'sha512-WeO/wG2uPh95BhOQi1IsIECdW5gJgC1Q9xtGw4RjV04it1fBMAbUe7aVwP4DQgH8PHnmduA7dRnLtbnZnrGsjg==',
         entry: 'package/claude',
       },
       'win32-arm64': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-win32-arm64/-/claude-agent-sdk-win32-arm64-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-win32-arm64/-/claude-agent-sdk-win32-arm64-0.3.286.tgz',
         integrity:
-          'sha512-fDiuwL5dm1elOy7fNp4Qmdor8so4R8npj2pUGQA1G/xKfJhaK236aTWezvZid3L/O7cRdFeN9IVofOAlWLQcsw==',
+          'sha512-N4p7Gw5Qg3q9+Y5sEht1cIHHZkmBAUfWXJnqfmDD7N8twqF3XNVK3w65hDLqli4i0ttuZu79bGmRGkgNGm9Imw==',
         entry: 'package/claude.exe',
       },
       'win32-x64': {
         tarball:
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-win32-x64/-/claude-agent-sdk-win32-x64-0.3.232.tgz',
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-win32-x64/-/claude-agent-sdk-win32-x64-0.3.286.tgz',
         integrity:
-          'sha512-Hc/9uy1BI9mqKVyB1b/zoUnm3MFgtVNzQY6p5zgaq9DaIjCKDpR4a4L1aDZM4lMqUcWFMZM+u7juOhh+m39NBQ==',
+          'sha512-pg35GRPBKyviod0i8Z3EVMzDnTiiiucuWUbyH1bVIFFN0UWCQQ+PRUJ15qrPKjL6+vlFxOX2ei9FfsWYjGYZwA==',
         entry: 'package/claude.exe',
       },
     },
   },
   codex: {
     label: 'Codex',
-    version: '0.148.0',
-    source: '@openai/codex@0.148.0',
+    version: '0.159.3',
+    source: '@openai/codex@0.159.3',
     platforms: {
       'darwin-arm64': {
-        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-darwin-arm64.tgz',
+        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-darwin-arm64.tgz',
         integrity:
-          'sha512-xgBPFiF1fHUlRS7HE6wGB56LjBJh16kGD7b4TTbwdVBZNB4QDkTok+vdkAGrfpVkfKcwGNhPSKDgCw+KMZOVug==',
+          'sha512-aI4UY14YURYxJxnRK+AE4QU+aek0mgtyyo7Rw9rNbCQUYETRQ0NYdJzU9ytljERGpPlht3dHHI1u4NhqHoDJDQ==',
         entry: 'package/vendor/aarch64-apple-darwin/bin/codex',
       },
       'darwin-x64': {
-        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-darwin-x64.tgz',
+        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-darwin-x64.tgz',
         integrity:
-          'sha512-qepQolhJutfOp+e9i7L3xsi8aoWeCUiiRq274WMWqRj50rKTrXxsuAgkAwDbqEfT3G5VynhYZuQvDsW37JgdNQ==',
+          'sha512-KTOQOD184DMXpR3TqnDUnLsgad14WJn+x3XmjBaXRHchKYGttjREwqrwzC61xQYFeh6VkogAceybR+SMbbgvYQ==',
         entry: 'package/vendor/x86_64-apple-darwin/bin/codex',
       },
       'linux-arm64': {
-        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-linux-arm64.tgz',
+        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-linux-arm64.tgz',
         integrity:
-          'sha512-51DCd+izzk6n4mMh4w2utWj3lTLhSTnCOEJQfRh0LS9nBDkcYZcK3iSKOST6fByRIlLSXuLO33LlYYA1VPot6A==',
+          'sha512-84C1yhAI+i0hqh77Akp/Ma09Z4d5oLKcZKqW1WZpEDh8bKbNvvbNEd6pE+GMUe2Kwg7jCbuvkRNH1zgK+SCM3Q==',
         entry: 'package/vendor/aarch64-unknown-linux-musl/bin/codex',
       },
       'linux-x64': {
-        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-linux-x64.tgz',
+        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-linux-x64.tgz',
         integrity:
-          'sha512-uDT9s7AfMr9xLuJX3ZLVWHgHkUpCnZ33CZjZEdVQhrYCIErkDHsCW5TG290nNjaKngK0WxGt5uCcxeUHv9MWWA==',
+          'sha512-xlHydfOksnNt/qz4BEVFvjMWunweaVSNtha/DkVUwWZnVZxbqiJwsXSl2iZDk04b6k/g0OI7jU06XqzHB2s5og==',
         entry: 'package/vendor/x86_64-unknown-linux-musl/bin/codex',
       },
       'win32-arm64': {
-        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-win32-arm64.tgz',
+        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-win32-arm64.tgz',
         integrity:
-          'sha512-a8iOwLzs8UdnlWDHjgK3W/YSBBsUImG8X5XLBjengp3XGJRruhiIsQtUDUOYimCmotKPM4aX7Ub6zjl/KPxMQQ==',
+          'sha512-4C+EuH1zE4rO5w1MsrnS98Tvq6Ff4+zeNr3pVeR/UsQ+VrTY5BCA9nZuXuCXNLKak1tLOw81b+fQM4jKGFCeDA==',
         entry: 'package/vendor/aarch64-pc-windows-msvc/bin/codex.exe',
       },
       'win32-x64': {
-        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-win32-x64.tgz',
+        tarball: 'https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-win32-x64.tgz',
         integrity:
-          'sha512-/Jg8eYw0BqTGNUpnrzzWlK2kbu29NWg7t6pnUDEfxqpTUf+mK8r3okXQn60Zjbk9InYZ4d8SwSjrtOa+i5hSPw==',
+          'sha512-h8w5nslfQyoYbonZaRlLwvPKFS9Mcxz5vUeCeoHKF5SsZUP9jSBH7hxUdc8RWJffJtfbV2qxdnImVAj9zy2fwA==',
         entry: 'package/vendor/x86_64-pc-windows-msvc/bin/codex.exe',
       },
     },

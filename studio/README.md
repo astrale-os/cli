@@ -138,11 +138,11 @@ configuration, applies Studio's optional model override, and deletes the session
 without sending a prompt. Studio does not infer unavailable inventories such as
 skills, MCP servers, tools, or subagents.
 
-Claude's ACP server advertises `session/fork`, so **Ask** inherits its parent
-conversation and deletes the ephemeral fork afterward. The current Codex ACP
-server does not advertise fork yet; Codex Ask therefore uses a fresh ephemeral
-ACP session and still leaves the main conversation untouched. Capability
-detection will use a fork automatically when the Codex server adds it.
+Both ACP servers advertise `session/fork`, so **Ask** inherits its parent
+conversation and deletes the ephemeral fork afterward, leaving the main
+conversation untouched. Capability detection decides this per server: one that
+does not advertise fork gets a fresh ephemeral ACP session instead, and so does
+an Ask whose fork fails before answering.
 
 Settings → Details still owns the access level. **Workspace** uses the harness's
 workspace-write sandbox. **Full automation** preserves the existing deploy/install
