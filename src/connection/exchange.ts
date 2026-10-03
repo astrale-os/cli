@@ -50,7 +50,7 @@ export type ExchangeTarget = ConnectionTarget &
 export interface ExchangeIssuer {
   /**
    * The issuer a persisted credential may be selected with before any network I/O: an exact
-   * issuer, or one this session already read; never an issuer remembered across commands.
+   * issuer, or the issuer an installed Domain's pin named when it was last read.
    */
   known(): Promise<IssuerId | undefined>
   /** The issuer to exchange at; null when the Domain runs on the Kernel and the caller stays itself. */
@@ -71,8 +71,8 @@ export interface ExchangeIssuer {
  *
  * The Client owns the exchange itself (`session.exchange`). The CLI keeps what outlives one
  * process: the persisted cache, the command-timeout lifetime rules, and its error codes. A target
- * naming an installed Domain by origin exchanges at the issuer its pin names, read once per session
- * by `installed`; an exact issuer ignores `installed`.
+ * naming an installed Domain by origin exchanges at the issuer its pin names, as `installed` holds
+ * it (without one, the pin is read once for this resolver); an exact issuer ignores `installed`.
  */
 export function createExchangeCredentialResolver(
   target: ExchangeTarget,
