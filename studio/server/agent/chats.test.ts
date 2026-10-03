@@ -26,6 +26,7 @@ import {
   setActiveChat,
   setChatModel,
   setChatFastMode,
+  setChatOrder,
   setChatSession,
   takeQueuedMessage,
   titleChatFromMessage,
@@ -109,6 +110,37 @@ describe('chat tabs', () => {
     deleteChat(dir, first.id)
     expect(resolveChat(dir, 'claude', third.id)?.tone).toBe(2)
     expect(createChat(dir, { harness: 'claude' }).tone).toBe(0)
+  })
+
+  test('keeps the order tabs were arranged in, new ones last', () => {
+    const dir = root()
+    // three tabs opened a second apart, as chats opened within one millisecond tie
+    for (const [index, id] of ['a', 'b', 'c'].entries())
+      writeJson(dir, `chats/${id}.json`, {
+        id,
+        title: 'New chat',
+        harness: 'claude',
+        tone: index,
+        turns: 0,
+        createdAt: `2026-09-01T00:00:0${index}.000Z`,
+        updatedAt: `2026-09-01T00:00:0${index}.000Z`,
+      })
+    const [first, second, third] = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+    const ids = () => ensureChats(dir, 'claude').chats.map((chat) => chat.id)
+    expect(ids()).toEqual([first.id, second.id, third.id])
+
+    // an unknown id is ignored, and a tab the caller did not name keeps its place after
+    setChatOrder(dir, [third.id, 'gone', first.id])
+    expect(ids()).toEqual([third.id, first.id, second.id])
+
+    const fourth = createChat(dir, { harness: 'claude' })
+    expect(ids()).toEqual([third.id, first.id, second.id, fourth.id])
+
+    deleteChat(dir, first.id)
+    expect(ids()).toEqual([third.id, second.id, fourth.id])
+    expect(readJson(dir, 'chat-order.json', (value) => value, undefined)).toEqual({
+      order: [third.id, second.id],
+    })
   })
 
   test('chats saved before tones existed get one once, and keep it', () => {

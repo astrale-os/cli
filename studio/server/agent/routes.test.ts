@@ -159,6 +159,32 @@ test('fast mode can be toggled on a chat without starting or stopping a turn', a
   expect(await patch(false)).toMatchObject({ fastMode: false, status: 'idle' })
 })
 
+test('reordering the tabs persists and tells every window', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  fixture()
+  const url = new URL('http://127.0.0.1/api/agent/chats')
+  const post = async (body: JsonRecord, notify: (event: StudioEvent) => void = () => {}) =>
+    (await (
+      await handleAgentRoute({
+        req: new Request(url, { method: 'POST' }),
+        url,
+        rest: '/agent/chats',
+        body,
+        notify,
+      })
+    )?.json()) as { id: string; chats: { id: string }[] }
+  const first = listChats().activeId
+  const second = (await post({ action: 'open' })).id
+  const events: StudioEvent[] = []
+
+  const list = await post({ action: 'reorder', order: [second, first] }, (event) =>
+    events.push(event),
+  )
+  expect(list.chats.map((chat) => chat.id)).toEqual([second, first])
+  expect(listChats().chats.map((chat) => chat.id)).toEqual([second, first])
+  expect(events).toContainEqual({ type: 'chats' })
+})
+
 test('a new chat resolves and exposes the domain its creation brief targets', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   const handle = fixture()
