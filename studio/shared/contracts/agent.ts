@@ -339,6 +339,23 @@ export interface HarnessCapabilities {
   gateway: 'anthropic' | 'responses' | 'none'
 }
 
+/**
+ * The agent CLI the ACP server drives. Studio pins the build each adapter was
+ * written for and installs it on first use (`managed`); a `custom` executable is
+ * one the environment forced, held to that pin only by a warning.
+ */
+export interface HarnessCli {
+  source: 'managed' | 'custom'
+  /** managed: the pinned build; custom: what `--version` reported, when it did */
+  version?: string
+  /** false until a managed build has been downloaded — it is on first use */
+  installed: boolean
+  /** custom: why Studio is not running its own build */
+  reason?: string
+  /** custom: why this version may not work with the bundled adapter */
+  warning?: string
+}
+
 /** One local agent, probed over ACP: is it here, and which server answered. */
 export interface HarnessPresence {
   id: string
@@ -348,6 +365,8 @@ export interface HarnessPresence {
   ok: boolean
   /** the ACP agent server's version — not the CLI's own */
   version?: string
+  /** the agent CLI behind that server */
+  cli?: HarnessCli
   /** human message — the ACP handshake, or install / PATH guidance when not ok */
   message: string
   capabilities: HarnessCapabilities

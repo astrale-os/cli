@@ -117,7 +117,18 @@ assert.equal(
 assert.equal(workspaceConfig.trustLockfile, false, 'CLI must verify lock entries against policy')
 assert.deepEqual(
   workspaceConfig.minimumReleaseAgeExclude,
-  ['@astrale-os/*', '@astrale-domains/*', '@astrale/*', '@jsr/astrale__*', 'create-astrale-domain'],
+  [
+    '@astrale-os/*',
+    '@astrale-domains/*',
+    '@astrale/*',
+    '@jsr/astrale__*',
+    'create-astrale-domain',
+    // Studio's agent stack: the ACP adapters and the agent CLI builds they pin.
+    '@agentclientprotocol/*',
+    '@anthropic-ai/claude-agent-sdk',
+    '@anthropic-ai/claude-agent-sdk-*',
+    '@openai/codex',
+  ],
   'CLI must use only the approved release-age exceptions',
 )
 assert.equal(

@@ -61,6 +61,7 @@ const TARGET_BARREL_EXPORTS = [
   'FileChange',
   'HandlerLink',
   'HarnessCapabilities',
+  'HarnessCli',
   'HarnessEffortOption',
   'HarnessGatewayAuth',
   'HarnessGatewayConfig',
