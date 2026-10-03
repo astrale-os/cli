@@ -194,9 +194,12 @@ describe('canonical Schema projection', () => {
           calls.push('schema.resolve')
           return sdk.schema.resolve(value)
         },
-        compareDependencyMeaning(source: typeof schema, target: typeof dependency) {
-          calls.push('schema.compareDependencyMeaning')
-          return sdk.schema.compareDependencyMeaning(source, target)
+        compatibility: {
+          ...sdk.schema.compatibility,
+          compareMeaning(request: Parameters<typeof sdk.schema.compatibility.compareMeaning>[0]) {
+            calls.push('schema.compatibility.compareMeaning')
+            return sdk.schema.compatibility.compareMeaning(request)
+          },
         },
       },
     } as unknown as typeof sdk
@@ -206,7 +209,7 @@ describe('canonical Schema projection', () => {
       'bundle.create',
       'bundle.accept',
       'schema.resolve',
-      'schema.compareDependencyMeaning',
+      'schema.compatibility.compareMeaning',
     ])
   })
 })
