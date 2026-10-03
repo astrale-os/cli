@@ -391,10 +391,23 @@ astrale call /:blog.example:class.Author:list limit=10
 astrale call /:blog.example:class.Author:create \
   --data '{"name":"Ada"}' --json
 astrale call /:assets.example:class.Asset:render id=123 --output asset.png
+astrale call @<service>::services.astrale.ai:class.CloudflareWorker.method.setSecret \
+  -d @secret.json
+astrale call '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances' \
+  --admin --json
 ```
 
 Top-level `key=value` values coerce booleans, null, numbers, arrays, and
-objects. Use `--data` for nested or digits-only string values.
+objects. Use `--data` for nested or digits-only string values. `--data` also
+takes `-` (read the JSON from stdin) or `@<file>`, parsed like inline JSON; pass
+secrets only in those forms so their values never sit in argv or shell history.
+
+`--admin [<bookmark>]` or `--admin-url <url>` (with `--domain-issuer <url>`) runs
+the call on the Admin kernel, selected exactly like `domain` commands select it.
+`-i` and `--url` are refused with them (usage error, exit 2). The call itself is
+unchanged: it exchanges at its callable's declaring Domain as the Admin kernel's
+installation names it. Put `key=value` params before `--admin`, or write
+`--admin=<bookmark>`.
 
 ## Journal
 

@@ -86,6 +86,21 @@ describe('command DX suggestions', () => {
     expect(rendered.detail).not.toContain('Did you mean:')
   })
 
+  test('prints a conflicting-option refusal with its command usage, never suggestions', async () => {
+    const program = await buildProgram()
+    const error = new CommanderError(
+      2,
+      'commander.conflictingOption',
+      'error: -i/--instance cannot be used with --admin\n-i/--instance selects an instance; --admin selects the Admin kernel.',
+    )
+    const rendered = dx(program, error, ['call', '/:x', '--admin', '-i', 'staging'])
+
+    expect(rendered.message).toBe('error: -i/--instance cannot be used with --admin')
+    expect(rendered.detail).toContain('--admin selects the Admin kernel.')
+    expect(rendered.detail).toContain('Usage:\n  astrale call <path> [params...]')
+    expect(rendered.detail).not.toContain('Did you mean:')
+  })
+
   test('suggests nearest command for typo paths', async () => {
     const program = await buildProgram()
     const error = new CommanderError(
