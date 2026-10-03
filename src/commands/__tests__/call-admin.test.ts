@@ -52,6 +52,8 @@ describe('call --admin target selection', () => {
       { admin: 'ops-admin', domainIssuer: 'https://admin.test' },
       '--domain-issuer requires --admin-url',
     ],
+    [{ admin: 'limit=10' }, '--admin took the param "limit=10" as its bookmark'],
+    [{ admin: 'name=API_TOKEN' }, '--admin took the param "name=API_TOKEN" as its bookmark'],
   ] as const)('refuses %o as a usage error (exit 2)', (opts, message) => {
     let refusal: unknown
     try {
@@ -62,6 +64,12 @@ describe('call --admin target selection', () => {
     expect(refusal).toBeInstanceOf(CommanderError)
     expect(refusal).toMatchObject({ exitCode: 2, code: 'commander.conflictingOption' })
     expect((refusal as Error).message.split('\n')[0]).toBe(`error: ${message}`)
+  })
+
+  test('keeps a bookmark that is not shaped like a key=value param', () => {
+    for (const admin of ['ops-admin', 'ops admin=x', 'ops.admin=x', '1ops=x', '=ops']) {
+      expect(adminCallTarget({ admin })).toEqual({ admin })
+    }
   })
 
   test('refuses the selection before reading --data or opening a connection', async () => {
@@ -152,6 +160,19 @@ describe('call --data sources', () => {
     expect(stderr).toContain('--data provided, ignoring key=value params')
   })
 
+  test('refuses -d - when stdin is a terminal instead of waiting for EOF', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY')
+    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true })
+    try {
+      await expect(parseParams([], '-')).rejects.toThrow(
+        new TypeError('--data - reads JSON from piped stdin, but stdin is a terminal'),
+      )
+    } finally {
+      if (descriptor === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY
+      else Object.defineProperty(process.stdin, 'isTTY', descriptor)
+    }
+  })
+
   test('names a file or stdin that holds no JSON without echoing its contents', async () => {
     const root = await temporaryRoot('astrale-call-data-invalid-')
     const file = join(root, 'secret.json')
@@ -175,6 +196,7 @@ describe('call --admin against a fake Admin kernel', () => {
     [['--admin', 'ops-admin', '--url', 'OBSERVER'], '--url cannot be used with --admin'],
     [['--admin-url', 'OBSERVER', '-i', 'staging'], '-i/--instance cannot be used with --admin-url'],
     [['--domain-issuer', 'OBSERVER'], '--domain-issuer requires --admin-url'],
+    [['--admin', 'limit=10'], '--admin took the param "limit=10" as its bookmark'],
   ])('astrale call %p exits 2 before any connection', async (flags, message) => {
     const root = await temporaryRoot('astrale-call-admin-usage-')
     const observer = await observeConnections()

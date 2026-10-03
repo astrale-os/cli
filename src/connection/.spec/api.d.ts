@@ -50,9 +50,9 @@ export interface ConnectionTarget {
  * itself, or a callable's declaring Domain read from the source Kernel's installation.
  */
 export type CredentialIntent =
-  | Readonly<{ principal?: 'domain' }>
+  | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
   | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
-  | Readonly<{ principal: 'callable'; path: Path }>
+  | Readonly<{ principal: 'callable'; path: Path; nestedTtlSeconds?: never }>
 
 /** Stable local identity-registration key for the exact selected source Kernel. */
 export function registrationKeyForTarget(target: ConnectionTarget): string

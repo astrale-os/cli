@@ -148,11 +148,23 @@ export function adminCallTarget(opts: CallOpts): AdminTargetSelection | undefine
       `${selected} ${selectors.length > 1 ? 'select' : 'selects'} an instance; ${flag} selects the Admin kernel.`,
     )
   }
+  if (typeof opts.admin === 'string' && looksLikeParam(opts.admin)) {
+    throw usageError(
+      `--admin took the param "${opts.admin}" as its bookmark`,
+      'Put key=value params before --admin, or write --admin= for the configured Admin kernel.',
+    )
+  }
   return Object.freeze({
     ...(typeof opts.admin === 'string' ? { admin: opts.admin } : {}),
     ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
     ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
   })
+}
+
+/** `--admin [bookmark]` takes an optional value, so a key=value param written after it lands there. */
+function looksLikeParam(value: string): boolean {
+  const eqIdx = value.indexOf('=')
+  return eqIdx > 0 && PARAM_KEY_RE.test(value.slice(0, eqIdx))
 }
 
 function usageError(message: string, hint: string): CommanderError {
@@ -211,7 +223,12 @@ export async function parseParams(
  * and shell history, so their contents are parsed like inline JSON but never echoed in an error.
  */
 async function parseData(data: string): Promise<Record<string, unknown>> {
-  if (data === '-') return parseJson(await readStdin(), 'Invalid JSON from stdin (--data -)')
+  if (data === '-') {
+    if (process.stdin.isTTY) {
+      throw new TypeError('--data - reads JSON from piped stdin, but stdin is a terminal')
+    }
+    return parseJson(await readStdin(), 'Invalid JSON from stdin (--data -)')
+  }
   if (!data.startsWith('@')) return parseJson(data, `Invalid JSON in --data: ${data}`)
   const file = data.slice(1)
   if (file === '') throw new TypeError('--data @<file> requires a file path')
@@ -289,8 +306,8 @@ export default {
 Behavior:
   Param priority (highest wins): --data > key=value > stdin > {}. If
   both --data and key=value are given, key=value is ignored (warned).
-  --data takes inline JSON, - (read stdin) or @<file>; pass secrets as
-  -d - or -d @<file> so their values never sit in argv or shell history.
+  --data takes inline JSON, - (read piped stdin) or @<file>; pass secrets
+  as -d - or -d @<file> so their values never sit in argv or shell history.
   Otherwise stdin is read only when piped and no --data/key=value is
   present (ignored on a TTY). --dry-run admits the Path and prints the call
   input offline without resolving an instance; @self still requires
@@ -317,16 +334,18 @@ Admin kernel:
   kernel, selected exactly like \`domain\` commands select it: the configured
   Admin target, an Admin bookmark, or a URL with its Admin Domain issuer
   (--domain-issuer). -i and --url select an instance and are refused with
-  them (usage error, exit 2). The call itself is unchanged: it exchanges at
-  its callable's declaring Domain as the Admin kernel's installation names
-  it. Put key=value params before --admin, or write --admin=<bookmark>.
+  them (usage error, exit 2), as are --admin with --admin-url and
+  --domain-issuer without --admin-url. The call itself is unchanged: it
+  exchanges at its callable's declaring Domain as the Admin kernel's
+  installation names it; the Admin Domain issuer only completes the Admin
+  target. Put key=value params before --admin, or write --admin=<bookmark>.
 
 Examples:
   $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale call /:blog.acme.com:class.Author:list limit=10
   $ astrale call '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances' --admin
   $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
-  $ astrale call @<service>::services.astrale.ai:class.CloudflareWorker.method.setSecret -d @secret.json
+  $ astrale call /:blog.acme.com:class.Author:create -d @author.json
 `,
   arguments: [
     {
@@ -347,7 +366,8 @@ Examples:
     { flags: '--admin-url <url>', description: 'Call on the Admin kernel at this URL' },
     {
       flags: '--domain-issuer <url>',
-      description: 'Admin Domain issuer of the --admin-url kernel (as for domain commands)',
+      description:
+        'Admin Domain issuer of the --admin-url kernel; completes the Admin target as for domain commands',
     },
   ],
   action: async (path, params, opts) => {
