@@ -77,6 +77,11 @@ does not serve the read) or answers with invalid evidence fails with
 `TOKEN_EXCHANGE_ISSUER_UNRESOLVED` naming its cause; any other read failure, a 1003 against the
 read's own input included, keeps its own classification, as the source caller's first Kernel call
 always reported it. There is no fallback issuer, and a Domain the Kernel hosts keeps the caller.
+A command can also run on the Admin kernel (`call --admin [<bookmark>]` or `--admin-url <url>`):
+the target is resolved exactly as for Admin Domain operations, and only the source Kernel changes.
+A callable credential still selects the callable's declaring Domain from that kernel's
+installation, so a Services Method hosted there is exchanged at Services and an Admin Method at
+Admin; the Admin Domain issuer a direct Admin URL carries is part of the target, not a fallback.
 A callable command needs the issuer of its declaring Domain before it can exchange. The state owner
 remembers that installation fact per source Kernel and origin, so only the first command reads the
 installed Publication through a discovery Session. The remembered issuer is not authority: a stale

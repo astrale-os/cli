@@ -12,6 +12,22 @@ export const CLI_CONNECTION_TARGET = defineLaw({
   ],
 })
 
+export const CLI_CONNECTION_ADMIN_CALL = defineLaw({
+  id: 'CLI-CONNECTION-ADMIN-CALL',
+  statement:
+    'A command run on the Admin kernel resolves it exactly like Admin Domain operations (configured target, Admin bookmark, or URL with its Admin Domain issuer), never from -i/--url or the active instance, and selects a callable credential as on any other target: the declaring Domain issuer the Admin kernel installation names.',
+  tests: [
+    {
+      file: '../commands/__tests__/call-admin.test.ts',
+      id: 'TEST-CLI-CALL-ADMIN-SET-SECRET',
+    },
+    {
+      file: '../commands/__tests__/call-admin.test.ts',
+      id: 'TEST-CLI-CALL-ADMIN-REFUSES-INSTANCE-SELECTORS',
+    },
+  ],
+})
+
 export const CLI_CONNECTION_DOMAIN_EXCHANGE = defineLaw({
   id: 'CLI-CONNECTION-DOMAIN-EXCHANGE',
   statement:

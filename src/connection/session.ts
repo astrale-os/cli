@@ -97,17 +97,31 @@ export async function withClientSession<Value>(
   )
 }
 
-/** Resolve the configured Admin Domain target under the same terminal lifecycle. */
+/**
+ * Resolve the configured Admin Domain target under the same terminal lifecycle. A callable
+ * credential selects the callable's declaring Domain from the Admin kernel's installation, as on
+ * any other target.
+ */
 export async function withAdminClientSession<Value>(
   options: AdminConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
+  credential: CredentialIntent = {},
 ): Promise<Value> {
   validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
   const config = await readConfig()
   const target = await resolveAdminConnectionTarget(options, config)
   options = await bindCredentialIdentity(options, target)
-  return runResolvedClientSession(target, timeoutMs, options, config, action, openConnection)
+  return runResolvedClientSession(
+    target,
+    timeoutMs,
+    options,
+    config,
+    action,
+    openConnection,
+    credential,
+    INSTALLATION_CACHE,
+  )
 }
 
 /** Owner-private seam used to prove validation order and cleanup without network I/O. */
