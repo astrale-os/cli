@@ -1,6 +1,8 @@
 import { Path } from '@astrale-os/sdk/graph/path'
+import { CommanderError } from 'commander'
+import { readFile } from 'node:fs/promises'
 
-import type { ConnectionContext, KernelCommandOpts } from '../connection'
+import type { AdminTargetSelection, ConnectionContext, KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
@@ -13,6 +15,10 @@ type CallOpts = KernelCommandOpts & {
   data?: string
   dryRun?: boolean
   output?: string
+  /** `true` (`--admin` alone) selects the configured Admin kernel; a string names its bookmark. */
+  admin?: string | true
+  adminUrl?: string
+  domainIssuer?: string
 }
 
 type CallDependencies = {
@@ -45,6 +51,7 @@ export async function callCommand(
   opts: CallOpts,
   adapters: CallDependencies = dependencies,
 ): Promise<void> {
+  const admin = adminCallTarget(opts)
   let params: Record<string, unknown>
   try {
     Path.parse(path)
@@ -66,6 +73,7 @@ export async function callCommand(
   >({
     opts,
     label: path,
+    ...(admin === undefined ? {} : { admin }),
     credential: opts.dryRun
       ? { principal: 'caller' }
       : { principal: 'callable', path: Path.parse(path) },
@@ -109,6 +117,48 @@ function requiresSelfExpansion(path: string, params: Readonly<Record<string, unk
   )
 }
 
+/**
+ * The Admin kernel this call runs on, selected like `domain` commands select it, or undefined for
+ * the instance -i/--url/active select. A contradictory selection is a usage error (exit 2),
+ * refused before stdin, a --data file or any Kernel is read.
+ */
+export function adminCallTarget(opts: CallOpts): AdminTargetSelection | undefined {
+  if (opts.domainIssuer !== undefined && opts.adminUrl === undefined) {
+    throw usageError(
+      '--domain-issuer requires --admin-url',
+      'It names the Admin Domain issuer of an explicit Admin kernel URL.',
+    )
+  }
+  if (opts.admin === undefined && opts.adminUrl === undefined) return undefined
+  if (opts.admin !== undefined && opts.adminUrl !== undefined) {
+    throw usageError(
+      '--admin cannot be used with --admin-url',
+      'Select the Admin kernel by bookmark (--admin [<bookmark>]) or by URL (--admin-url <url>).',
+    )
+  }
+  const selectors = [
+    opts.instance === undefined ? null : '-i/--instance',
+    opts.url === undefined ? null : '--url',
+  ].filter((selector): selector is string => selector !== null)
+  if (selectors.length > 0) {
+    const flag = opts.admin === undefined ? '--admin-url' : '--admin'
+    const selected = selectors.join(' and ')
+    throw usageError(
+      `${selected} cannot be used with ${flag}`,
+      `${selected} ${selectors.length > 1 ? 'select' : 'selects'} an instance; ${flag} selects the Admin kernel.`,
+    )
+  }
+  return Object.freeze({
+    ...(typeof opts.admin === 'string' ? { admin: opts.admin } : {}),
+    ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
+    ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
+  })
+}
+
+function usageError(message: string, hint: string): CommanderError {
+  return new CommanderError(2, 'commander.conflictingOption', `error: ${message}\n${hint}`)
+}
+
 /** Drain a session-backed stream before the command-scoped Client Session closes. */
 export async function materializeCallResult(
   result: CallResultInput,
@@ -136,18 +186,15 @@ export async function parseParams(
     if (rawParams.length > 0) {
       log.warn('--data provided, ignoring key=value params')
     }
-    try {
-      return JSON.parse(dataFlag)
-    } catch {
-      throw new TypeError(`Invalid JSON in --data: ${dataFlag}`)
-    }
+    return parseData(dataFlag)
   }
 
   if (rawParams.length > 0) {
     return parseKeyValue(rawParams)
   }
 
-  const stdin = await readStdin()
+  if (process.stdin.isTTY) return {}
+  const stdin = (await readStdin()).trim()
   if (stdin) {
     try {
       return JSON.parse(stdin)
@@ -159,14 +206,39 @@ export async function parseParams(
   return {}
 }
 
-async function readStdin(): Promise<string | null> {
-  if (process.stdin.isTTY) return null
+/**
+ * `--data` holds inline JSON, `-` (read stdin) or `@<file>`. The last two keep a value out of argv
+ * and shell history, so their contents are parsed like inline JSON but never echoed in an error.
+ */
+async function parseData(data: string): Promise<Record<string, unknown>> {
+  if (data === '-') return parseJson(await readStdin(), 'Invalid JSON from stdin (--data -)')
+  if (!data.startsWith('@')) return parseJson(data, `Invalid JSON in --data: ${data}`)
+  const file = data.slice(1)
+  if (file === '') throw new TypeError('--data @<file> requires a file path')
+  let text: string
+  try {
+    text = await readFile(file, 'utf-8')
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    throw new TypeError(`Cannot read --data file ${file}${code === undefined ? '' : ` (${code})`}`)
+  }
+  return parseJson(text, `Invalid JSON in --data file ${file}`)
+}
+
+function parseJson(text: string, failure: string): Record<string, unknown> {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new TypeError(failure)
+  }
+}
+
+async function readStdin(): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of process.stdin) {
     chunks.push(chunk)
   }
-  const text = Buffer.concat(chunks).toString('utf-8').trim()
-  return text || null
+  return Buffer.concat(chunks).toString('utf-8')
 }
 
 // Top-level param keys are identifier-shaped: letters, digits, underscore,
@@ -217,8 +289,10 @@ export default {
 Behavior:
   Param priority (highest wins): --data > key=value > stdin > {}. If
   both --data and key=value are given, key=value is ignored (warned).
-  Stdin is read only when piped and no --data/key=value is present
-  (ignored on a TTY). --dry-run admits the Path and prints the call
+  --data takes inline JSON, - (read stdin) or @<file>; pass secrets as
+  -d - or -d @<file> so their values never sit in argv or shell history.
+  Otherwise stdin is read only when piped and no --data/key=value is
+  present (ignored on a TTY). --dry-run admits the Path and prints the call
   input offline without resolving an instance; @self still requires
   authenticated expansion. Remote-bound functions auto-mint a
   worker-scoped credential from the callable Domain's installed Publication,
@@ -238,11 +312,21 @@ Self-reference:
 
   Callable input/output lives on astrale introspect <path>.
 
+Admin kernel:
+  --admin [<bookmark>] or --admin-url <url> runs the call on the Admin
+  kernel, selected exactly like \`domain\` commands select it: the configured
+  Admin target, an Admin bookmark, or a URL with its Admin Domain issuer
+  (--domain-issuer). -i and --url select an instance and are refused with
+  them (usage error, exit 2). The call itself is unchanged: it exchanges at
+  its callable's declaring Domain as the Admin kernel's installation names
+  it. Put key=value params before --admin, or write --admin=<bookmark>.
+
 Examples:
   $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale call /:blog.acme.com:class.Author:list limit=10
-  $ astrale call '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances'
+  $ astrale call '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances' --admin
   $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
+  $ astrale call @<service>::services.astrale.ai:class.CloudflareWorker.method.setSecret -d @secret.json
 `,
   arguments: [
     {
@@ -253,9 +337,18 @@ Examples:
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
   options: [
-    { flags: '-d, --data <json>', description: 'Params as JSON string' },
+    { flags: '-d, --data <json>', description: 'Params as JSON: inline, - (stdin), or @<file>' },
     { flags: '-o, --output <file>', description: 'Write binary/raw output to a file' },
     { flags: '--dry-run', description: 'Show what would be sent without executing' },
+    {
+      flags: '--admin [bookmark]',
+      description: 'Call on the Admin kernel: the configured one, or this Admin bookmark',
+    },
+    { flags: '--admin-url <url>', description: 'Call on the Admin kernel at this URL' },
+    {
+      flags: '--domain-issuer <url>',
+      description: 'Admin Domain issuer of the --admin-url kernel (as for domain commands)',
+    },
   ],
   action: async (path, params, opts) => {
     await callCommand(path as string, params as string[], opts)
