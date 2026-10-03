@@ -3,6 +3,19 @@
 Schema names the View; Application frontend composition owns its URL, document, and handshake.
 The React host owns the session, not the business Domain's runtime.
 
+## Domain Views and internal routing
+
+- Every View belongs to its own Domain. The Shell opens it by declaration path
+  (`/:<origin>:view.<name>`) or as the Domain entrypoint, never for a Class or a node. Declare
+  `view({ description? })`; a View declaration names no Class.
+- A screen about one node (an issue, an invoice) is an internal route of the Domain frontend, such as
+  `/issues/$issue`. Read the node from the router (`useParams`, `useSearch`) and pass it to the named
+  Query. The Shell hands the View no node to render and cannot tell which View renders a node.
+- Link to another screen of the same Domain with the router. Open another Domain's View with
+  `openView({ view: '/:<origin>:view.<name>' })` (or its Domain entrypoint) and let that View route
+  internally; never pass it a node to render.
+- The handshake's `targetNodeId` is deprecated and always the Domain path; do not branch on it.
+
 ## Declare the surface
 
 ```ts
@@ -96,7 +109,7 @@ See `policies.md` for both authority planes and `debugging.md` for exchange mech
   or a fabricated `BoundNode`. Validate only genuinely untrusted raw values entering that boundary.
 - After a successful call, refresh affected observations. Start with supported invalidation options,
   then narrow costly refreshes; optimistic UI does not prove persistence and must recover on refusal.
-- Distinguish loading, empty, missing target, auth failure, expected error, and pending mutation.
+- Distinguish loading, empty, missing routed record, auth failure, expected error, and pending mutation.
   Preserve editable input on failure; show safe actionable refusal details, not transport internals.
 - Keep IDs, digests, SHAs, and technical Paths out of product labels and fallback text; show business
   names or a meaningful unavailable state. Reserve technical coordinates for explicitly developer-facing diagnostics.
@@ -127,7 +140,7 @@ astrale identity list --json
 astrale get @self -i staging --as alice --json
 astrale introspect /:issues.example:class.Issue:close -i staging --as alice
 astrale view /:issues.example:view.application -i staging --as alice
-astrale view @issue-id --list -i staging --as alice
+astrale view issues.example --list -i staging --as alice
 astrale logs -i staging --as alice --topic-prefix op:function. --limit 20
 astrale view --sessions
 astrale view --close <session-id>
