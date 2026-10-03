@@ -87,7 +87,8 @@ function sourceBoundDelegationTtl(input: string, requestedTtlSeconds: number): n
 
 /**
  * Bind CLI identity state and Core Auth delegation to one Session auth capability. A target that
- * names an installed Domain by origin exchanges where `installed` says its Kernel pin names.
+ * names an installed Domain by origin exchanges at the issuer `installed` holds for the Kernel pin;
+ * without one, the pin is read once for this credential.
  */
 export function createCliCredential(
   target: ConnectionTarget,
