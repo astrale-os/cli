@@ -5,7 +5,7 @@ import { ResponseError } from '@astrale-os/sdk/client'
 import { describe, expect, test } from 'bun:test'
 
 import { AstraleError } from '../../../errors'
-import { RegistryError } from '../../registry/model'
+import { RegistryError } from '../../registry'
 import { connectAdminFleet, MAXIMUM_RELEASE_FILTER, releaseFilter } from '../installations'
 
 const ORIGIN = 'issues.astrale.ai'

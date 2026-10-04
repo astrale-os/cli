@@ -89,7 +89,7 @@ describe('astrale __domain-registry installations (CT24 over CT37)', () => {
       error: {
         code: 'REGISTRY_UNAVAILABLE',
         message: expect.any(String),
-        details: { status: 5001 },
+        details: { status: 5001, retryable: true },
       },
     })
   })

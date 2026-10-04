@@ -13,8 +13,7 @@ import type {
 
 import { AstraleError } from '../../errors'
 import { AdminContract } from '../contract'
-import { registryFailure } from '../registry/failure'
-import { RegistryError } from '../registry/model'
+import { RegistryError, registryFailure } from '../registry'
 import { FLEET_UNREACHABLE_REASONS } from './model'
 
 /** The static Method of CT37, addressed on Admin's Fleet Class without schema discovery. */
