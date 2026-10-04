@@ -1,11 +1,10 @@
-import type { InstallRequest, InstallResult } from '@astrale-os/sdk/client/schema'
-
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
+import type { UrlInstallOpts } from './release-install'
 
-import { runKernelCommand, withAdminClientSession } from '../../connection'
+import { withAdminClientSession } from '../../connection'
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
 import {
@@ -19,76 +18,17 @@ import {
   type OwnedInstanceInfo,
 } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { fetchDomainPublication } from '../../lib/domain-publication'
 import { getActive } from '../../lib/instance'
 import { canPrompt } from '../../lib/interactive'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
-import { dangerPanel } from '../../lib/panel'
-import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
-import { isHttpUrl } from '../../lib/validation'
-import { acceptDomainOperationId, createDomainOperationId } from './operation'
-
-export function directInstallCallInput(
-  url: string,
-  operation: string,
-  token?: string,
-): InstallRequest {
-  const domain = Object.freeze({
-    publication: Object.freeze({
-      url,
-      ...(token === undefined ? {} : { token }),
-    }),
-  })
-  return Object.freeze({
-    operation: acceptOperationId(operation),
-    domains: Object.freeze([domain] as const),
-  })
-}
-
-export interface DirectInstallPresentation {
-  readonly operation: string
-  readonly origin: string
-  readonly revision: string
-  readonly status: 'installed' | 'already current'
-}
-
-/** Stable CLI presentation derived from the canonical binary install result. */
-export function directInstallPresentation(
-  result: InstallResult,
-  requestedOperation: string,
-): DirectInstallPresentation {
-  if (result.changed) {
-    const installed = result.receipt.transitions[0]?.intent
-    if (!installed) throw new Error('Kernel install returned no committed Domain transition.')
-    if (!installed.generation) {
-      throw new Error('Kernel install returned a committed transition without a Domain generation.')
-    }
-    return Object.freeze({
-      operation: result.receipt.operation,
-      origin: installed.origin,
-      revision: installed.generation.revision,
-      status: 'installed' as const,
-    })
-  }
-  const installed = result.domains[0]
-  return Object.freeze({
-    operation: requestedOperation,
-    origin: installed.origin,
-    revision: installed.revision,
-    status: 'already current' as const,
-  })
-}
-
-const acceptOperationId = (input: unknown) => acceptDomainOperationId(input, 'install')
-const createOperationId = () => createDomainOperationId('install')
+import { promptText, selectFrom } from '../../lib/prompt'
+import { installByUrl, validateInstallUrl } from './release-install'
 
 type InstallOpts = KernelCommandOpts &
-  AdminTargetCommandOpts & {
+  AdminTargetCommandOpts &
+  UrlInstallOpts & {
     direct?: boolean
-    operation?: string
-    token?: string
-    allowIdentityOverride?: boolean
     // Programmatic opt-out for callers that drive this command as a function.
     // The matching CLI flags are read from argv by `canPrompt` — Commander
     // keeps root options out of a subcommand's action arguments.
@@ -96,40 +36,60 @@ type InstallOpts = KernelCommandOpts &
     noPrompt?: boolean
   }
 
+/**
+ * A URL reference is one that starts with `https://` or `http://` (a local Host): it names one
+ * deployment and goes to the instance Kernel. Anything else is a Fleet catalog origin.
+ */
+export function isUrlReference(reference: string): boolean {
+  return reference.startsWith('https://') || reference.startsWith('http://')
+}
+
 export default {
   name: 'install',
-  description: 'Install a domain on an instance (via the admin catalog, or --direct from a url)',
+  description: 'Install one or more domains on an instance in one atomic Kernel operation',
   afterHelpText: `
 Behavior:
-  Default: installs a PUBLISHED domain through the admin control plane
-  (DomainEntry.install). Address it by its catalog \`origin\` (the unique
-  registry key) or by its \`url\`; run it bare to pick from the catalog
-  interactively. The target instance is the active one, or -i <slug>; it must be
-  admin-managed (otherwise the command fails loudly and points you at --direct).
+  URL references (https://, or http:// for a local Host) go straight to the
+  instance Kernel through the public install syscall, on any instance you can
+  authenticate to (managed, bookmarked, or local), with your own authority.
+  Several URLs install together in ONE atomic Kernel operation: either every
+  Domain moves, or none does. Use it when Domains depend on each other.
 
-  --direct: installs a url through the public Kernel install syscall,
-  bypassing the admin catalog. Works on any instance you can authenticate to
-  (managed, bookmarked, or local), using your own authority. This is the only
-  mode that runs the identity-override consent gate: when the domain's declared
+  Before installing, the CLI reads what each URL serves (release.json, else the
+  legacy domain.json), refuses two references to the same origin, and pins the
+  exact release digest it read, so the Kernel refuses anything else. After the
+  install, it reads the installed releases back and verifies each pin. A
+  deployment that answers 503 (not serving yet) is retried for up to 60 s.
+
+  The identity-override consent gate runs for each URL: when a Domain's declared
   origin differs from its serving host, it requires explicit consent (an
   interactive DANGER prompt, or --allow-identity-override in scripts).
 
+  A bare origin installs one PUBLISHED domain from the Fleet catalog through the
+  admin control plane (DomainEntry.install); run the command bare to pick from
+  the catalog interactively. The target instance must then be admin-managed.
+
   A fresh, strong operation id is generated automatically. Use --operation
-  only to retry or recover the exact same direct install after an outcome-unknown
+  only to retry or recover the exact same URL install after an outcome-unknown
   timeout or disconnect.
 
+  --direct is accepted for scripts written before URL installs always went to
+  the Kernel; it changes nothing.
+
 Examples:
-  $ astrale domain install crm.acme.dev -i staging          # by origin, via admin
-  $ astrale domain install https://crm.acme.dev             # by url, via admin
-  $ astrale domain install                                   # interactive: pick domain + instance
-  $ astrale domain install https://crm.workers.dev --direct # straight to the instance kernel
-  $ astrale domain install http://localhost:8787 --direct --token "$INSTALL_TOKEN"
+  $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel
+  $ astrale domain install https://agencies.example https://employees.example -i staging  # grouped, atomic
+  $ astrale domain install http://localhost:8787 --token "$INSTALL_TOKEN" # private Domain on a local Host
+  $ astrale domain install crm.acme.dev -i staging                         # by origin, from the Fleet catalog
+  $ astrale domain install                                                 # interactive: pick domain + instance
 `,
   arguments: [
     {
-      name: 'target',
-      description: 'Domain origin or url (omit to pick from the catalog interactively)',
+      name: 'references',
+      description:
+        'Deployment URLs to install together, or one catalog origin (omit to pick from the catalog interactively)',
       required: false,
+      variadic: true,
     },
   ],
   options: [
@@ -137,37 +97,58 @@ Examples:
     {
       flags: '--direct',
       description:
-        'Install a url straight onto the instance kernel, bypassing the admin catalog (any instance; runs the identity-override gate)',
+        'Accepted for older scripts: URL references always install straight onto the instance kernel',
     },
     {
       flags: '--token <token>',
-      description: 'Bearer token for private domain install endpoints (--direct only)',
+      description: 'Bearer token for a private domain delivery endpoint (one URL reference only)',
     },
     {
       flags: '--operation <uuid>',
-      description: 'Reuse an exact direct-install operation id for explicit retry/recovery',
+      description: 'Reuse an exact URL-install operation id for explicit retry/recovery',
     },
     {
       flags: '--allow-identity-override',
-      description: 'Consent to a domain whose origin differs from its serving host (--direct only)',
+      description:
+        'Consent to a domain whose origin differs from its serving host (URL references)',
     },
   ],
-  action: async (target: string | undefined, opts: InstallOpts) => {
-    if (opts.operation !== undefined && !opts.direct) {
-      fatal(
-        new AstraleError(
-          'INVALID_FLAG',
-          '--operation is valid only with --direct.',
-          'Ordinary direct installs generate a fresh operation id automatically.',
-        ),
-        opts,
-      )
-    }
-    if (opts.direct) {
-      await installDirect(target, opts)
+  action: async (references: string[] | undefined, opts: InstallOpts) => {
+    const named = references ?? []
+    const urls = named.filter(isUrlReference)
+    if (named.length > 0 && urls.length === named.length) {
+      await installByUrl(named as [string, ...string[]], opts)
       return
     }
-    await installViaAdmin(target, opts)
+    try {
+      if (named.length > 1) {
+        throw new AstraleError(
+          'MIXED_REFERENCES',
+          'A catalog origin installs alone; only deployment URLs install together.',
+          'Install the catalog origin on its own, or name every Domain by its deployment URL.',
+        )
+      }
+      if (opts.direct) {
+        if (named[0] === undefined) {
+          throw new AstraleError(
+            'MISSING_ARG',
+            '--direct requires a domain url.',
+            'e.g. astrale domain install https://crm.acme.dev --direct',
+          )
+        }
+        validateInstallUrl(named[0])
+      }
+      if (opts.operation !== undefined) {
+        throw new AstraleError(
+          'INVALID_FLAG',
+          '--operation is valid only with URL references.',
+          'URL installs generate a fresh operation id automatically.',
+        )
+      }
+    } catch (error) {
+      fatal(error, opts)
+    }
+    await installViaAdmin(named[0], opts)
   },
 } satisfies CommandDefinition
 
@@ -175,7 +156,8 @@ Examples:
 
 /**
  * Install a published domain through the admin control plane. The domain is
- * addressed by `origin` (catalog key) or `url`; the target instance is the
+ * addressed by its catalog `origin` (the registry key); a deployment URL goes to
+ * the instance Kernel instead (`installByUrl`). The target instance is the
  * active one or `-i <slug>` and must be admin-managed.
  *
  * `-i` here means the INSTALL TARGET, not the admin target — so it is stripped
@@ -195,7 +177,7 @@ export async function installViaAdmin(
       new AstraleError(
         'MISSING_ARG',
         'No domain given and no TTY for interactive selection.',
-        'Pass an origin or url, e.g. astrale domain install crm.acme.dev — or use --direct <url>.',
+        'Pass a catalog origin or a deployment URL, e.g. astrale domain install crm.acme.dev',
       ),
     )
   }
@@ -221,7 +203,7 @@ export async function installViaAdmin(
         throw new AstraleError(
           'INSTANCE_NOT_MANAGED',
           `Instance "${slug}" is not available through Admin.`,
-          `Install the url directly onto it instead: astrale domain install <url> --direct -i ${slug}`,
+          `Install the deployment URL onto it instead: astrale domain install <url> -i ${slug}`,
         )
       }
       assertInstallTargetReady(match)
@@ -268,15 +250,6 @@ function assertInstallTargetReady(instance: OwnedInstanceInfo): void {
   )
 }
 
-/**
- * Classify the positional install target for the admin path: an http(s) URL
- * installs by `url`, anything else is treated as a catalog `origin` (the unique
- * registry key). The admin method accepts either.
- */
-export function domainRefFromTarget(target: string): { origin?: string; url?: string } {
-  return isHttpUrl(target) ? { url: target } : { origin: target }
-}
-
 /** Resolve the domain to install: the positional `target`, or an interactive pick. */
 async function resolveDomain(
   catalog: readonly DomainInfo[],
@@ -284,10 +257,7 @@ async function resolveDomain(
   interactive: boolean,
 ): Promise<DomainInfo> {
   if (target) {
-    const ref = domainRefFromTarget(target)
-    const found = catalog.find((domain) =>
-      ref.origin === undefined ? domain.url === ref.url : domain.origin === ref.origin,
-    )
+    const found = catalog.find((domain) => domain.origin === target)
     if (found !== undefined) return found
     throw new AstraleError(
       'DOMAIN_NOT_FOUND',
@@ -373,193 +343,6 @@ async function activeSlug(): Promise<string | undefined> {
     const a = await getActive()
     return a.slug ?? a.name
   } catch {
-    return undefined
-  }
-}
-
-// ── Direct path (--direct) ────────────────────────────────────────────────────
-
-/**
- * Install a url through the public Kernel install syscall,
- * bypassing the admin catalog, with the identity-override
- * consent gate. Works on any instance the caller can authenticate to.
- */
-interface DirectInstallDependencies {
-  readonly acceptOperationId: (input: unknown) => string
-  readonly createOperationId: () => string
-  readonly runKernelCommand: typeof runKernelCommand
-}
-
-const defaultDirectInstallDependencies: DirectInstallDependencies = Object.freeze({
-  acceptOperationId,
-  createOperationId,
-  runKernelCommand,
-})
-
-export async function installDirect(
-  target: string | undefined,
-  opts: InstallOpts,
-  dependencies: Partial<DirectInstallDependencies> = {},
-): Promise<void> {
-  const direct = { ...defaultDirectInstallDependencies, ...dependencies }
-  let host = ''
-  let consentedOrigin: string | undefined
-  let operation: string
-  try {
-    if (!target) {
-      throw new AstraleError(
-        'MISSING_ARG',
-        '--direct requires a domain url.',
-        'e.g. astrale domain install https://crm.acme.dev --direct',
-      )
-    }
-    host = validateInstallUrl(target)
-    operation =
-      opts.operation === undefined
-        ? direct.createOperationId()
-        : direct.acceptOperationId(opts.operation)
-    consentedOrigin = await ensureIdentityOverrideConsent(
-      target,
-      host,
-      opts.allowIdentityOverride ?? false,
-      isMachine(opts),
-    )
-  } catch (e) {
-    fatal(e, opts)
-  }
-  const url = target as string
-  const retry = directInstallRetry(url, operation, opts)
-
-  await direct.runKernelCommand<InstallResult>({
-    opts,
-    label: `Installing domain from ${url} (operation ${operation})`,
-    recovery: { operation, retry },
-    credential: { principal: 'caller' },
-    fn: async ({ session }) =>
-      session.schema.install(directInstallCallInput(url, operation, opts.token)),
-    format: (result, fmtOpts, isRaw) => {
-      if (isRaw) {
-        output(result, fmtOpts)
-        return
-      }
-      const installed = directInstallPresentation(result, operation)
-      log.success(`Domain ${installed.status}: ${installed.origin}@${installed.revision}`)
-      log.dim(`  operation:   ${installed.operation}`)
-      // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
-      // aliases the host and the pre-install gate never consented to THAT
-      // origin (lying or unavailable Publication), say so loudly after the fact.
-      if (isIdentityOverride(installed.origin, host) && installed.origin !== consentedOrigin) {
-        if (!isMachine(fmtOpts)) {
-          log.warn(
-            `Installed origin "${installed.origin}" differs from the serving host "${host}" ` +
-              `and was not confirmed before install (the worker Publication was unavailable). ` +
-              `Every ${installed.origin}/* call on this instance now routes to ${host}.`,
-          )
-        }
-      }
-    },
-  })
-}
-
-function directInstallRetry(url: string, operation: string, opts: InstallOpts): string {
-  const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
-  return `astrale domain install ${url} --direct --operation ${operation}${instance}`
-}
-
-function validateInstallUrl(value: string): string {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new AstraleError(
-      'INVALID_DOMAIN_URL',
-      `Domain install source must be an http(s) URL, got "${value}".`,
-      'Run or deploy the domain service, then install its base URL, for example: astrale domain install https://contract.astrale.ai --direct',
-    )
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new AstraleError(
-      'INVALID_DOMAIN_URL',
-      `Domain install URL must use http or https, got "${url.protocol}".`,
-    )
-  }
-  return url.hostname
-}
-
-/** An override = the declared origin and the serving host name differ. */
-export function isIdentityOverride(origin: string, host: string): boolean {
-  return origin.toLowerCase() !== host.toLowerCase()
-}
-
-/**
- * The §5 identity-override gate (spec: CREATE_ASTRALE_DOMAIN_DX). A domain's
- * `origin` is its addressing identity on the instance: every `<origin>/*` call
- * — including other domains' `requires` — routes to the installed URL.
- * Claiming an origin that differs from the serving host is an explicit actAs
- * and needs typed consent (or `--allow-identity-override` in scripts).
- *
- * The pre-install check reads the worker's canonical Publication origin,
- * so it is consent UX, not enforcement — a hostile worker can lie here, and
- * the kernel anchors the cryptographic identity (`iss`) on the real URL
- * regardless. When the Publication is unreachable or invalid, the gate
- * degrades to a warning and the kernel-confirmed origin is re-checked after
- * install (see `format` above).
- *
- * Returns the origin the user consented to (or `undefined` when no override
- * was detected / verifiable pre-install).
- */
-async function ensureIdentityOverrideConsent(
-  url: string,
-  host: string,
-  allow: boolean,
-  machine: boolean,
-): Promise<string | undefined> {
-  const origin = await probeDeclaredOrigin(url)
-  if (origin === undefined) {
-    if (!machine) {
-      log.warn(
-        `Could not read a declared origin from ` +
-          `${new URL('/.well-known/astrale/domain.json', url).href} — ` +
-          `skipping the pre-install identity check (the installed origin is verified after install).`,
-      )
-    }
-    return undefined
-  }
-  if (!isIdentityOverride(origin, host)) return undefined
-
-  if (allow) {
-    if (!machine) {
-      log.warn(`Identity override consented via --allow-identity-override: ${origin} ← ${host}`)
-    }
-    return origin
-  }
-
-  const banner = dangerPanel('IDENTITY OVERRIDE', [
-    `deployed   ${host}`,
-    `origin     ${chalk.bold(origin)}   ${chalk.red('(≠)')}`,
-    '',
-    `Every call to ${origin}/* on this instance —`,
-    `including from other domains — will hit ${host}.`,
-    `Only proceed if you trust ${host}.`,
-  ])
-  const confirmed = await confirmWithInput(banner, origin)
-  if (!confirmed) {
-    throw new AstraleError(
-      'IDENTITY_OVERRIDE_REJECTED',
-      `Install aborted: the domain at ${host} declares origin "${origin}" (identity override) and it was not confirmed.`,
-      'Re-run interactively and type the origin to confirm, or pass --allow-identity-override in scripts.',
-    )
-  }
-  return origin
-}
-
-/** Best-effort read of the worker's origin from its admitted canonical Publication. */
-export async function probeDeclaredOrigin(url: string): Promise<string | undefined> {
-  try {
-    return (await fetchDomainPublication(url, AbortSignal.timeout(10_000))).origin
-  } catch {
-    // An unreachable or invalid Publication is not fatal here: the caller warns
-    // and the install itself will surface a dead worker with its own error.
     return undefined
   }
 }
