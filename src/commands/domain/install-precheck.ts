@@ -342,7 +342,7 @@ export async function precheckInstall(
  * (`declaredBy`, `runtime/schema/installation/dependencies.ts`): a root already installed at the
  * same revision with the same declaration of a dependency that the install does not replace keeps
  * the answer its installation got, so its declaration judges nothing there. The Kernel compares
- * the dependency's installed registration with the generation the install leaves active, so the
+ * the dependency's installed registration with the revision the install leaves active, so the
  * installed revision is read for builtin and local installations too, which the listing omits. It
  * reads the held declaration from its catalog record; the CLI reads the one introspection shows.
  */
