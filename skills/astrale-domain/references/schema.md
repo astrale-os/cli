@@ -112,5 +112,8 @@ allocate a new ID, so consumers should resolve the ref rather than cache an inst
 
 ## Views
 
-Schema Views declare semantic view identities. Frontend routing and Shell handshake belong to the SDK
-frontend composition, not to Class properties or callable handlers.
+Schema Views declare semantic view identities of the Domain: `view({ description? })`. Every View
+belongs to its own Domain and opens on it; never declare a `target` (Class-bound Views are
+deprecated and will be removed). A screen about one node is an internal route of the Domain
+frontend. Frontend routing and Shell handshake belong to the SDK frontend composition, not to Class
+properties or callable handlers.

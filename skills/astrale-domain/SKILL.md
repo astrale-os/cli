@@ -58,7 +58,8 @@ order and load a reference only when its phase begins.
 3. **Callables:** Before implementing callables, read `references/runtime.md` and
    `references/policies.md`. If an external system is involved, also read `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
-   implementing it. Views are Schema declarations, not fields on the SDK Domain definition.
+   implementing it. Views are Schema declarations, not fields on the SDK Domain definition. Every View
+   belongs to its Domain; node screens are internal routes of its frontend, not Class-bound Views.
 5. **Demo data:** For a Domain with a meaningful sample graph, author a small Dataset under `tests/`,
    referenced from `astrale.config.ts`. Read `references/datasets.md` first; do not invent graph data
    for an API-only Domain or expand a focused edit into unrelated demo work.
