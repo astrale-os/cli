@@ -108,7 +108,7 @@ settings:
 overrides:
   '@astrale-os/kernel-client': 0.6.0-beta.84
   '@astrale-os/kernel-core': 0.9.0-beta.63
-  '@astrale-os/kernel-dsl': 0.2.0-beta.45
+  '@astrale-os/kernel-dsl': file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz
   '@astrale-os/kernel-protocol': 0.5.0-beta.69
   '@astrale-os/kernel-server': 0.5.0-beta.71
 
@@ -460,8 +460,9 @@ packages:
     peerDependencies:
       zod: ^4.4.3
 
-  '@astrale-os/kernel-dsl@0.2.0-beta.45':
-    resolution: {integrity: sha512-HTCzrm9TOD7gaxBP29tdNz3YEP13GZJo1qiOgFm7bHCWkDWNbLHTLkFk6ZD3OCZGCqvoTvGfWtPEvZz8fmeEGQ==, tarball: https://registry.npmjs.org/@astrale-os/kernel-dsl/-/kernel-dsl-0.2.0-beta.45.tgz}
+  '@astrale-os/kernel-dsl@file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz':
+    resolution: {integrity: sha512-aUh7o0AtXybB6dcsy8jYMCd1boEfRtSKUXkiU0b4ZKkTf6wyp3ZCMCQKC5JpSyoJGk/+tUsio6FBB8Kw2tjBOQ==, tarball: file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz}
+    version: 0.2.0-beta.45.c6.aac183517
 
   '@astrale-os/kernel-protocol@0.5.0-beta.69':
     resolution: {integrity: sha512-hFcL6HTIFnZMoq+htAywS/TWLE2B3NWnt7/WXRMwtpVuhkEepHyJJNiNe2ZYBLVuGlU0YSheoOd6zHq2RAHxbA==, tarball: https://registry.npmjs.org/@astrale-os/kernel-protocol/-/kernel-protocol-0.5.0-beta.69.tgz}
@@ -4139,7 +4140,7 @@ snapshots:
   '@astrale-os/kernel-client@0.6.0-beta.84(zod@4.4.3)':
     dependencies:
       '@astrale-os/kernel-core': 0.9.0-beta.63(zod@4.4.3)
-      '@astrale-os/kernel-dsl': 0.2.0-beta.45
+      '@astrale-os/kernel-dsl': file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz
       '@astrale-os/kernel-protocol': 0.5.0-beta.69(zod@4.4.3)
       '@tanstack/pacer': 0.20.1
     transitivePeerDependencies:
@@ -4147,13 +4148,13 @@ snapshots:
 
   '@astrale-os/kernel-core@0.9.0-beta.63(zod@4.4.3)':
     dependencies:
-      '@astrale-os/kernel-dsl': 0.2.0-beta.45
+      '@astrale-os/kernel-dsl': file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz
       '@noble/hashes': 2.3.0
       '@types/json-schema': 7.0.15
       dequal: 2.0.3
       zod: 4.4.3
 
-  '@astrale-os/kernel-dsl@0.2.0-beta.45':
+  '@astrale-os/kernel-dsl@file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz':
     dependencies:
       '@noble/hashes': 2.3.0
       jsonc-parser: 3.3.1
@@ -4162,7 +4163,7 @@ snapshots:
   '@astrale-os/kernel-protocol@0.5.0-beta.69(zod@4.4.3)':
     dependencies:
       '@astrale-os/kernel-core': 0.9.0-beta.63(zod@4.4.3)
-      '@astrale-os/kernel-dsl': 0.2.0-beta.45
+      '@astrale-os/kernel-dsl': file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz
       '@noble/hashes': 2.3.0
     transitivePeerDependencies:
       - zod
@@ -4170,7 +4171,7 @@ snapshots:
   '@astrale-os/kernel-server@0.5.0-beta.71(zod@4.4.3)':
     dependencies:
       '@astrale-os/kernel-core': 0.9.0-beta.63(zod@4.4.3)
-      '@astrale-os/kernel-dsl': 0.2.0-beta.45
+      '@astrale-os/kernel-dsl': file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz
       '@astrale-os/kernel-protocol': 0.5.0-beta.69(zod@4.4.3)
       hono: 4.13.2
     transitivePeerDependencies:
@@ -4185,7 +4186,7 @@ snapshots:
     dependencies:
       '@astrale-os/kernel-client': 0.6.0-beta.84(zod@4.4.3)
       '@astrale-os/kernel-core': 0.9.0-beta.63(zod@4.4.3)
-      '@astrale-os/kernel-dsl': 0.2.0-beta.45
+      '@astrale-os/kernel-dsl': file:../../../../../../../private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz
       '@astrale-os/kernel-protocol': 0.5.0-beta.69(zod@4.4.3)
       '@astrale-os/kernel-server': 0.5.0-beta.71(zod@4.4.3)
       '@lucide/icons': 1.34.0
