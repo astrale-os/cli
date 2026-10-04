@@ -1,4 +1,4 @@
-import { publication } from '@astrale-os/sdk/publication'
+import { legacy as publication } from '@astrale-os/sdk/release'
 
 const MAXIMUM_PUBLICATION_BYTES = 1024 * 1024
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>

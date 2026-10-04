@@ -1,4 +1,4 @@
-import { publication } from '@astrale-os/sdk/publication'
+import { legacy as publication } from '@astrale-os/sdk/release'
 import { defineSchema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 

@@ -42,12 +42,14 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > workspace root) for semantic schema rendering; source-only anatomy remains
 > available when they are missing.
 > Projects are discovered exclusively through the default-exported `defineProject`
-> in `astrale.config.ts`. Studio follows the Project's `application` binding
-> to a `defineApplication` module, then its `schema` binding to authored source.
+> in `astrale.config.ts`. Studio follows the Project's `domain` binding
+> to a `defineDomain` module, then its `schema` binding to authored source.
+> Projects on an SDK older than 0.6.0-beta.11 (`application` / `defineApplication`)
+> are still read, through `studio/server/legacy/application-project.ts`.
 > Deployment targets belong to `environments`; Studio does not execute the adapters.
 > Test datasets come from the same Project's `tests: tests({ datasets: [...] })`.
-> Module filenames are unrestricted; there is no conventional-file or legacy
-> `defineDomain` fallback. Existing projects must migrate to `defineProject`.
+> Module filenames are unrestricted; there is no conventional-file fallback.
+> Existing projects must migrate to `defineProject`.
 > Configuration is analyzed statically without executing adapters or runtime code;
 > local bindings and SDK import aliases are supported, dynamic construction is not.
 
@@ -272,7 +274,7 @@ workspace canvases.
 
 Schema parsing delegates admission, semantic resolution, revisioning and exact
 dependency reachability to the Astrale DSL installed by the domain. Studio resolves
-the Application's `schema` binding statically, then a Bun subprocess imports only
+the Domain definition's `schema` binding statically, then a Bun subprocess imports only
 that module; Studio keeps a deliberately lossy render projection and derives Core
 from the same admitted root. A ts-morph overlay is limited to information absent
 from the DSL (handler-file links, source spans and JSDoc).

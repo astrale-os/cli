@@ -6,7 +6,7 @@ deliberately installed Astrale Application.
 ## Ownership sequence
 
 1. Inspect and test the source.
-2. Build the canonical SDK Application and Cloudflare artifact.
+2. Build the canonical SDK Domain definition and Cloudflare artifact.
 3. Deploy provider compute through Services.
 4. Admit the returned provider evidence and prove Services performed no Kernel installation.
 5. If the user requested a managed deploy, let `@astrale-os/adapter-astrale` wait for readiness and

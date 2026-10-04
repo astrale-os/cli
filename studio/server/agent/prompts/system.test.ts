@@ -7,7 +7,7 @@ test('embedded agents receive the current SDK and frontend skill contracts', () 
 
   expect(prompt).toContain('modular Actions and Workflows')
   expect(prompt).toContain('astrale-frontend-design')
-  expect(prompt).toContain('Runtime/Application entries')
+  expect(prompt).toContain('Runtime/Domain definition entries')
   expect(prompt).toContain(
     '"@$ASTRALE_ISSUES_PROJECT_ID::issues.astrale.ai:class.Project.method.createIssue"',
   )
