@@ -530,10 +530,11 @@ async function installReleases(
     return { error, render: 'input' }
   }
   // The pre-check informs the operator's issuer consent, so it is shown before that prompt.
+  // Advisory: a defect anywhere in it reports every root failed and the install is still sent.
   const precheck = await precheckReferences(context.session, roots, before, opts, deps, {
     changes,
     overridden,
-  })
+  }).catch(() => failedPrecheck(roots))
   if (!machine) presentPrecheck(precheck)
   try {
     await admitIssuerChanges(
@@ -718,16 +719,7 @@ async function precheckReferences(
     evaluated = await precheckInstall(checked, before, session.schema)
   } catch {
     // Advisory: a defect of the pre-check never stops an install the Kernel would admit.
-    evaluated = Object.freeze({
-      compared: 0,
-      dependencies: [],
-      dependents: [],
-      skipped: roots.map(({ source }) =>
-        Object.freeze({ reference: source.reference, reason: 'failed' as const }),
-      ),
-      unevaluated: [],
-      indirect: new Map(),
-    })
+    return failedPrecheck(roots)
   }
   const { indirect, ...verdict } = evaluated
   if (verdict.dependents.length === 0) return Object.freeze({ ...verdict, proposals: [] })
@@ -772,6 +764,20 @@ async function precheckReferences(
     ...verdict,
     proposals,
     ...(command === undefined ? {} : { command }),
+  })
+}
+
+/** The pre-check of an install it could not run: every root is reported failed, nothing predicted. */
+function failedPrecheck(roots: readonly PlannedRoot[]): InstallPrecheck {
+  return Object.freeze({
+    compared: 0,
+    dependencies: [],
+    dependents: [],
+    skipped: roots.map(({ source }) =>
+      Object.freeze({ reference: source.reference, reason: 'failed' as const }),
+    ),
+    unevaluated: [],
+    proposals: [],
   })
 }
 
