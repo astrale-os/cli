@@ -59,6 +59,14 @@ virtualStoreType: project
 overrides:
   '@astrale-os/kernel-client': '0.6.0-beta.84'
   '@astrale-os/kernel-core': '0.9.0-beta.63'
-  '@astrale-os/kernel-dsl': '0.2.0-beta.45'
+  # TEMPORARY (install pre-check): the pre-check runs the Kernel's compatibility engine, so its
+  # kernel-dsl must carry astrale-os/kernel#1149 and #1146, which no Kernel release has yet. This
+  # pack is kernel-dsl from astrale-os/kernel aac183517 (#1149 rebased on main dfe83d4a1, which
+  # holds #1146), re-versioned 0.2.0-beta.45.c6.aac183517 so that it is never taken for the
+  # published 0.2.0-beta.45. Its path is local to the machine that proves this branch: the commit
+  # never merges as is. Before merge, replace it by the Kernel release that carries both, pinning
+  # all five Kernel packages of this block to that release's cohort; the whole block goes with the
+  # SDK release that pins the cohort.
+  '@astrale-os/kernel-dsl': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c6/packs/astrale-os-kernel-dsl-0.2.0-beta.45.c6.aac183517.tgz'
   '@astrale-os/kernel-protocol': '0.5.0-beta.69'
   '@astrale-os/kernel-server': '0.5.0-beta.71'
