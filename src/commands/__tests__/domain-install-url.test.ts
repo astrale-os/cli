@@ -859,6 +859,64 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     })
   })
 
+  test('a Kernel that lists releases but takes no consent refuses it as input: KERNEL_RELEASE_UNSUPPORTED', async () => {
+    const run = harness({
+      served: { [A2]: async () => servedRelease('agencies.test', A2, '2') },
+      listing: async () => [installedFrom(servedRelease('agencies.test', A1, '1'), A1)],
+      install: async () => {
+        // The answer of a Host built from Kernel main + K10/K11a/K14 without K11b (C2 R2-only check).
+        throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: {
+            issues: [
+              {
+                code: 'VALUE_SCHEMA_INSTANCE_INVALID',
+                message:
+                  'Value does not satisfy its complete V1 schema at anyOf: Value satisfies no anyOf branch.',
+                path: '/domains/0',
+              },
+            ],
+          },
+        })
+      },
+    })
+
+    await expect(
+      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toHaveLength(1)
+    expect(JSON.parse(stderr)).toMatchObject({
+      error: 'KERNEL_RELEASE_UNSUPPORTED',
+      details: { code: 1003, reason: { code: 'FUNCTION_INPUT_INVALID' } },
+    })
+  })
+
+  test('another input refusal of a consented install stays the Kernel refusal', async () => {
+    const run = harness({
+      served: { [A2]: async () => servedRelease('agencies.test', A2, '2') },
+      listing: async () => [installedFrom(servedRelease('agencies.test', A1, '1'), A1)],
+      install: async () => {
+        throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: {
+            issues: [
+              {
+                code: 'INVALID',
+                message: 'Release URL is invalid.',
+                path: '/domains/0/release/url',
+              },
+            ],
+          },
+        })
+      },
+    })
+
+    await expect(
+      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(JSON.parse(stderr)).toMatchObject({ error: 'RESPONSE_ERROR', code: 1003 })
+  })
+
   test('prints the consent beside the root line for humans', async () => {
     const run = moving(A1, A2)
     const { lines, warnings } = await human(() =>
