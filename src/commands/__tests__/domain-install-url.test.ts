@@ -3,6 +3,7 @@ import type { InstalledRelease, InstallRequest, InstallResult } from '@astrale-o
 import { ResponseError } from '@astrale-os/sdk/client'
 import { defineSchema, schema } from '@astrale-os/sdk/schema'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { stripVTControlCharacters } from 'node:util'
 
 import type { ServedDeployment } from '../../lib/domain-release'
 import type { UrlInstallDependencies } from '../domain/release-install'
@@ -257,6 +258,39 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     await expect(installByUrl([A, `${A}/`], CONSENTED, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.credentials).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'DUPLICATE_ORIGIN' })
+  })
+
+  test('prints one line per root Domain for humans', async () => {
+    const a = servedRelease('agencies.test', A, '1')
+    const b = servedRelease('employees.test', B, '2')
+    const previousB = { ...installedFrom(b, B), pin: { ...b.pin, release: digest('9') } }
+    const run = harness({
+      served: { [A]: async () => a, [B]: async () => b },
+      listing: async (call) =>
+        call === 0 ? [installedFrom(a, A), previousB] : [installedFrom(a, A), installedFrom(b, B)],
+      install: async () => committed(['employees.test']),
+    })
+    const lines: string[] = []
+    const original = console.log
+    const tty = process.stdout.isTTY
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map(String).join(' '))
+    }
+    // A terminal on stdout is what makes the output human (no --json).
+    process.stdout.isTTY = true
+    try {
+      await installByUrl([A, B], { allowIdentityOverride: true }, run.deps)
+    } finally {
+      console.log = original
+      process.stdout.isTTY = tty
+    }
+
+    const text = stripVTControlCharacters(lines.join('\n'))
+    expect(text).toContain(`Domains installed (operation ${GENERATED})`)
+    expect(text).toContain('  agencies.test   unchanged  release sha256:111111111111\n')
+    expect(text).toContain(
+      '  employees.test  replaced   release sha256:222222222222 (was release sha256:999999999999)',
+    )
   })
 
   test('installs a legacy source by URL without a digest and verifies its legacy pin', async () => {
