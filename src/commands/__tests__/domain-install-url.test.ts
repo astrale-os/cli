@@ -11,7 +11,7 @@ import type { UrlInstallDependencies } from '../domain/release-install'
 import { releaseFor } from '../../__tests__/fixtures/publication'
 import { transportFailure } from '../../connection/__tests__/failure-fixtures'
 import { DeploymentReadError } from '../../lib/domain-release'
-import { installByUrl, NOT_YET_ACTIVE_WINDOW_MS } from '../domain/release-install'
+import { installByUrl, NOT_YET_ACTIVE_WINDOW_MS, rootStatus } from '../domain/release-install'
 
 const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
 const RETRY = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
@@ -45,7 +45,11 @@ function installedFrom(served: ServedDeployment, url: string): InstalledRelease 
   } as unknown as InstalledRelease
 }
 
-function committed(origins: readonly string[], operation = GENERATED): InstallResult {
+function committed(
+  origins: readonly string[],
+  operation = GENERATED,
+  replaced: readonly string[] = [],
+): InstallResult {
   return {
     changed: true,
     receipt: {
@@ -55,7 +59,9 @@ function committed(origins: readonly string[], operation = GENERATED): InstallRe
           transition: `transition-${index}`,
           operation,
           origin,
-          previous: null,
+          previous: replaced.includes(origin)
+            ? { origin, revision: REVISION, generation: digest('f') }
+            : null,
           generation: { origin, revision: REVISION, generation: digest(String(index)) },
         },
         phase: 'cutover',
@@ -65,16 +71,28 @@ function committed(origins: readonly string[], operation = GENERATED): InstallRe
   } as unknown as InstallResult
 }
 
+function current(origins: readonly string[]): InstallResult {
+  return {
+    changed: false,
+    domains: origins.map((origin) => ({ origin, revision: REVISION })),
+  } as unknown as InstallResult
+}
+
 const unsupportedListing = () =>
   new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
     code: 'FUNCTION_INPUT_INVALID',
     details: { issues: [{ code: 'invalid_union', path: '/kind', message: 'Invalid input' }] },
   })
 
-const notYetActive = () =>
+/**
+ * The Kernel's refusal when its own read of a deployment fails, a 503 included: the shape a Host
+ * built from Kernel main + K10/K11a/K14 answered in the C1 F4 proof (step III.03). Its public
+ * details are empty, as for a backend failure, so the CLI cannot tell a 503 from it.
+ */
+const backendUnavailable = () =>
   new ResponseError(5001 as never, 'Schema backend is unavailable.', INVOCATION, {
     code: 'SCHEMA_BACKEND_FAILED',
-    details: { phase: 'release', status: 503 },
+    details: {},
   })
 
 /** URL installs below consent to the identity override every deployment URL carries. */
@@ -268,7 +286,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       served: { [A]: async () => a, [B]: async () => b },
       listing: async (call) =>
         call === 0 ? [installedFrom(a, A), previousB] : [installedFrom(a, A), installedFrom(b, B)],
-      install: async () => committed(['employees.test']),
+      install: async () => committed(['employees.test'], GENERATED, ['employees.test']),
     })
     const lines: string[] = []
     const original = console.log
@@ -291,6 +309,36 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     expect(text).toContain(
       '  employees.test  replaced   release sha256:222222222222 (was release sha256:999999999999)',
     )
+  })
+
+  test('takes each root status from the Kernel receipt when the listing is not readable', async () => {
+    const a = servedRelease('agencies.test', A, '1')
+    const b = servedRelease('employees.test', B, '2')
+    const run = harness({
+      served: { [A]: async () => a, [B]: async () => b },
+      // A caller who cannot read the Domain directory lists nothing, before and after.
+      listing: async () => [],
+      install: async () =>
+        committed(['agencies.test', 'employees.test'], GENERATED, ['employees.test']),
+    })
+    const lines: string[] = []
+    const original = console.log
+    const tty = process.stdout.isTTY
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map(String).join(' '))
+    }
+    process.stdout.isTTY = true
+    try {
+      await installByUrl([A, B], { allowIdentityOverride: true }, run.deps)
+    } finally {
+      console.log = original
+      process.stdout.isTTY = tty
+    }
+
+    const text = stripVTControlCharacters(lines.join('\n'))
+    expect(text).toContain('  agencies.test   installed  release sha256:111111111111\n')
+    expect(text).toContain('  employees.test  replaced   release sha256:222222222222')
+    expect(text).not.toContain('(was')
   })
 
   test('installs a legacy source by URL without a digest and verifies its legacy pin', async () => {
@@ -329,7 +377,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     })
   })
 
-  test('waits for a deployment that is not serving yet, reads and install alike', async () => {
+  test('reads a deployment that is not serving yet again, then installs it once', async () => {
     const a = servedRelease('agencies.test', A, '1')
     let reads = 0
     const run = harness({
@@ -342,39 +390,55 @@ describe('install by URL on a Kernel that lists installed releases', () => {
           return a
         },
       },
-      install: async (_request, call) => {
-        if (call === 1) throw notYetActive()
-        return committed(['agencies.test'])
-      },
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
     await installByUrl([A], CONSENTED, run.deps)
 
     expect(reads).toBe(3)
-    expect(run.requests).toHaveLength(2)
-    expect(run.requests[1]).toEqual(run.requests[0])
-    expect(String(run.requests[0]!.operation)).toBe(GENERATED)
-    expect(run.sleeps.slice(0, 2)).toEqual([2_000, 2_000])
+    expect(run.sleeps).toEqual([2_000, 2_000])
+    expect(run.requests).toEqual([
+      { operation: GENERATED, domains: [{ release: { url: A, digest: digest('1') } }] } as never,
+    ])
   })
 
-  test('stops waiting once the window is spent and lets the Kernel refusal stand', async () => {
+  test('stops reading once the window is spent and installs without a digest', async () => {
+    const a = servedRelease('agencies.test', A, '1')
     let clock = 0
     const run = harness({
-      served: { [A]: async () => servedRelease('agencies.test', A, '1') },
+      served: {
+        [A]: async () => {
+          clock += NOT_YET_ACTIVE_WINDOW_MS / 2
+          throw new DeploymentReadError('GET → 503', { status: 503 })
+        },
+      },
       now: () => clock,
+      listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
+    })
+
+    await installByUrl([A], CONSENTED, run.deps)
+
+    expect(run.sleeps.length).toBeGreaterThan(0)
+    expect(run.sleeps.length).toBeLessThanOrEqual(2)
+    expect(run.requests[0]!.domains).toEqual([{ release: { url: A } }])
+    expect(JSON.parse(stdout).references[0]).toMatchObject({ pin: null, installed: { pin: a.pin } })
+  })
+
+  test('never sends again an install the Kernel refused, a failed read of its own included', async () => {
+    const run = harness({
+      served: { [A]: async () => servedRelease('agencies.test', A, '1') },
       install: async () => {
-        clock += NOT_YET_ACTIVE_WINDOW_MS / 2
-        throw notYetActive()
+        throw backendUnavailable()
       },
     })
 
     await expect(installByUrl([A], CONSENTED, run.deps)).rejects.toBeInstanceOf(ExitError)
-    expect(run.requests.length).toBeGreaterThan(1)
-    expect(run.requests.length).toBeLessThanOrEqual(3)
+    expect(run.requests).toHaveLength(1)
+    expect(run.sleeps).toEqual([])
     expect(JSON.parse(stderr.trim().split('\n').at(-1)!)).toMatchObject({
       error: 'RESPONSE_ERROR',
-      reason: { code: 'SCHEMA_BACKEND_FAILED', details: { status: 503 } },
+      code: 5001,
+      reason: { code: 'SCHEMA_BACKEND_FAILED', details: {} },
     })
   })
 
@@ -515,6 +579,18 @@ describe('install by URL on a Kernel without the installed listing (pre-release 
     await expect(installByUrl([A], { json: true }, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'RESPONSE_ERROR', code: 2002 })
+  })
+})
+
+describe('root status from the Kernel result', () => {
+  test('reads installed, replaced and unchanged from the receipt, unknown without an origin', () => {
+    const result = committed(['agencies.test', 'employees.test'], GENERATED, ['employees.test'])
+    expect(rootStatus(result, 'agencies.test')).toBe('installed')
+    expect(rootStatus(result, 'employees.test')).toBe('replaced')
+    expect(rootStatus(result, 'crm.test')).toBe('unchanged')
+    expect(rootStatus(result, null)).toBe('unknown')
+    expect(rootStatus(current(['agencies.test']), 'agencies.test')).toBe('unchanged')
+    expect(rootStatus(current(['agencies.test']), null)).toBe('unchanged')
   })
 })
 

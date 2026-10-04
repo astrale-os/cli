@@ -12,7 +12,7 @@ import { parseReference } from '@astrale-os/sdk/versioning'
 import chalk from 'chalk'
 
 import type { ConnectionContext, KernelCommandOpts } from '../../connection'
-import type { InstallFailure } from './install-call'
+import type { InstallFailure, UrlSource } from './install-call'
 
 import { withClientSession } from '../../connection'
 import { reasonCode } from '../../connection/reasons'
@@ -27,10 +27,15 @@ import { fatal, log } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { consentToDeclaredOrigin, warnUnconfirmedOverride } from './identity-override'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
-import { installPublications, type PublicationSource } from './legacy/publication-install'
+import { installPublications } from './legacy/publication-install'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
-/** How long a deployment that answers 503 (not serving yet) is waited for, reads and install together. */
+/**
+ * How long the CLI's read of a deployment that answers 503 (not serving yet) is retried. Only that
+ * read is retried: the Kernel refuses its own failed read as SCHEMA_BACKEND_FAILED with empty
+ * details, the code it also gives backend failures, so a refused install is never sent again
+ * (AM-97).
+ */
 export const NOT_YET_ACTIVE_WINDOW_MS = 60_000
 
 export type UrlInstallOpts = KernelCommandOpts & {
@@ -93,12 +98,12 @@ export async function installByUrl(
   dependencies: Partial<UrlInstallDependencies> = {},
 ): Promise<void> {
   const deps = { ...defaultDependencies, ...dependencies }
-  let sources: readonly [PublicationSource, ...PublicationSource[]]
+  let sources: readonly [UrlSource, ...UrlSource[]]
   let operation: string
   try {
     sources = references.map((url) => ({ url, host: validateInstallUrl(url) })) as [
-      PublicationSource,
-      ...PublicationSource[],
+      UrlSource,
+      ...UrlSource[],
     ]
     refuseRepeatedUrls(references)
     if (opts.token !== undefined && references.length > 1) {
@@ -226,7 +231,7 @@ export function pinMismatches(
 
 async function installReleases(
   context: ConnectionContext,
-  sources: readonly [PublicationSource, ...PublicationSource[]],
+  sources: readonly [UrlSource, ...UrlSource[]],
   before: readonly InstalledRelease[],
   operation: string,
   opts: UrlInstallOpts,
@@ -272,7 +277,7 @@ async function installReleases(
         : `Installing ${references.length} domains (operation ${operation})`,
     recovery: { operation, retry: releaseInstallRetry(references, operation, opts) },
     call: async () => {
-      const result = await installWithRetry(context.session, request, retry)
+      const result = await context.session.schema.install(request)
       return { result, after: await installedAfter(context.session, machine) }
     },
     format: ({ result, after }, raw) => {
@@ -306,7 +311,7 @@ async function installReleases(
 }
 
 /**
- * The deadline shared by every wait on a deployment that is not serving yet: it opens at the
+ * The deadline shared by the reads of every reference that is not serving yet: it opens at the
  * first 503 and closes {@link NOT_YET_ACTIVE_WINDOW_MS} later.
  */
 interface RetryWindow {
@@ -357,34 +362,6 @@ async function readWithRetry(
       return undefined
     }
   }
-}
-
-async function installWithRetry(
-  session: ClientSession,
-  request: InstallRequest,
-  retry: RetryWindow,
-): Promise<InstallResult> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await session.schema.install(request)
-    } catch (error) {
-      // The same operation is sent again: a refused install retains nothing under its id.
-      if (notYetActive(error) && (await retry.wait(undefined, attempt))) continue
-      throw error
-    }
-  }
-}
-
-/** The Kernel's refusal when a deployment answered 503 while it read it (FETCH_FAILED). */
-function notYetActive(error: unknown): boolean {
-  if (!(error instanceof ResponseError)) return false
-  if (reasonCode(error.reason) !== 'SCHEMA_BACKEND_FAILED') return false
-  const details = (error.reason as { readonly details?: unknown } | undefined)?.details
-  return (
-    details !== null &&
-    typeof details === 'object' &&
-    (details as { readonly status?: unknown }).status === 503
-  )
 }
 
 async function installedAfter(
@@ -478,6 +455,25 @@ function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError
   )
 }
 
+/** What the install did to one root, as the Kernel's result says. */
+export type RootStatus = 'installed' | 'replaced' | 'unchanged' | 'unknown'
+
+/**
+ * The status of the root installed from `origin`, read from the Kernel's result alone: a committed
+ * transition without a previous generation installed it, one with a previous generation replaced
+ * it, and a root without a transition did not move. `unknown` when the origin was not readable.
+ */
+export function rootStatus(result: InstallResult, origin: string | null): RootStatus {
+  if (!result.changed) return 'unchanged'
+  if (origin === null) return 'unknown'
+  const intent = result.receipt.transitions.find(
+    (transition) => transition.intent.origin === origin,
+  )?.intent
+  if (intent === undefined) return 'unchanged'
+  if (intent.previous === null) return 'installed'
+  return intent.previous.generation === intent.generation?.generation ? 'unchanged' : 'replaced'
+}
+
 function presentReferences(
   references: readonly InstallReference[],
   operation: string,
@@ -491,13 +487,9 @@ function presentReferences(
   )
   for (const reference of references) {
     const installed = reference.installed
-    const status =
-      reference.previous === null
-        ? 'installed'
-        : installed !== null && samePin(reference.previous.pin, installed.pin)
-          ? 'unchanged'
-          : 'replaced'
+    const status = rootStatus(result, reference.origin)
     const pin = installed?.pin ?? reference.pin
+    // The listings only detail a replacement: the Kernel's result alone decides the status.
     const was =
       status === 'replaced' && reference.previous !== null
         ? chalk.dim(` (was ${pinLabel(reference.previous.pin)})`)
@@ -527,7 +519,7 @@ export function validateInstallUrl(value: string): string {
     throw new AstraleError(
       'INVALID_DOMAIN_URL',
       `Domain install source must be an http(s) URL, got "${value}".`,
-      'Run or deploy the domain service, then install its base URL, for example: astrale domain install https://contract.astrale.ai --direct',
+      'Run or deploy the domain service, then install its base URL, for example: astrale domain install https://contract.astrale.ai',
     )
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
