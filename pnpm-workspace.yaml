@@ -48,3 +48,21 @@ allowBuilds:
 # A machine-level global virtual store relocates them outside it and silently
 # breaks type resolution, so pin the per-project store for this workspace.
 virtualStoreType: project
+
+# TEMPORARY (install pre-check) until an SDK release pins a Kernel cohort whose kernel-dsl carries
+# astrale-os/kernel#1149 and #1146: the pre-check runs the Kernel's compatibility engine
+# (schema.compatibility.compareStructure, reached through @astrale-os/sdk/schema), so its verdicts
+# agree with the Kernel's only if it carries the same engine. Kernel release #1145 (98b62c498,
+# kernel-host 0.12.0-beta.129) published both as kernel-dsl 0.2.0-beta.46 with this cohort, while
+# @astrale-os/sdk 0.6.0-beta.15 still pins the beta.128 cohort (kernel-dsl 0.2.0-beta.45, which
+# predates both). Override the SDK's five Kernel dependencies to that published cohort, so the
+# lock resolves one copy of each. The commit never merges as is:
+# scripts/verify-public-dependency-boundary.mjs refuses overrides. When an SDK release pins a
+# cohort with both, drop this block, pin that SDK in the four workspace manifests and rerun the
+# pre-check proofs.
+overrides:
+  '@astrale-os/kernel-client': '0.6.0-beta.85'
+  '@astrale-os/kernel-core': '0.9.0-beta.64'
+  '@astrale-os/kernel-dsl': '0.2.0-beta.46'
+  '@astrale-os/kernel-protocol': '0.5.0-beta.70'
+  '@astrale-os/kernel-server': '0.5.0-beta.72'
