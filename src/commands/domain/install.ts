@@ -131,7 +131,7 @@ Behavior:
 
 Examples:
   $ astrale domain install issues.astrale.ai@1.5 -i acme-prod            # highest stable 1.5.x
-  $ astrale domain install agencies.1pact.com@1.5.0 https://employees.example -i staging  # mixed, atomic
+  $ astrale domain install crm.acme.dev@1.5.0 https://employees.example -i staging  # mixed, atomic
   $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel
   $ astrale domain install https://agencies.example https://employees.example -i staging  # grouped, atomic
   $ astrale domain install <new-deployment-url> --allow-issuer-change -i staging   # same line

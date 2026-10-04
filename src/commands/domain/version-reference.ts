@@ -10,7 +10,7 @@ import {
 
 import type { AdminRegistryApi, PublicationSummaryV1 } from '../../admin/registry'
 
-import { RegistryError } from '../../admin/registry'
+import { RegistryError, registryOrigin } from '../../admin/registry'
 import { AstraleError } from '../../errors'
 
 /**
@@ -30,7 +30,7 @@ export interface VersionReference {
   readonly selector: VersionSelector
 }
 
-/** The Publication one version reference resolved to (CT24 `version`, `yanked`). */
+/** The Publication one version reference resolved to: the install report's `version` and `yanked`. */
 export interface ResolvedVersion {
   readonly reference: string
   readonly origin: string
@@ -48,7 +48,7 @@ export type VersionUnresolvedReason = 'unknown-version' | 'no-stable-match' | 'y
 /**
  * Whether a reference names a version rather than a deployment ([.78896], the syntax decides):
  * `<origin>@<version>` has no scheme and an `@`, which no Domain origin holds. A deployment URL
- * starts with `https://` or `http://` (AM-58); anything else is a Fleet catalog origin.
+ * starts with `https://`, or `http://` for a local Host; anything else is a Fleet catalog origin.
  */
 export function isVersionReference(reference: string): boolean {
   return (
@@ -58,10 +58,14 @@ export function isVersionReference(reference: string): boolean {
 
 /**
  * Admit one version reference with the parser installs share (`parseReference`): an exact version
- * or a minor line, never a major (`@1`), a range or build metadata. Throws
- * PUBLICATION_VERSION_INVALID, the registry's code for a version it does not admit.
+ * or a minor line, never a major (`@1`), a range or build metadata. The part before the first `@`
+ * is checked as an origin first, as every registry command checks it (`registryOrigin`), so a
+ * malformed origin (INVALID_ARGUMENT) is told apart from a malformed version
+ * (PUBLICATION_VERSION_INVALID, the registry's code for a version it does not admit).
  */
 export function admitVersionReference(reference: string): VersionReference {
+  const at = reference.indexOf('@')
+  if (at !== -1) registryOrigin(reference.slice(0, at))
   let parsed: Reference
   try {
     parsed = parseReference(reference)
@@ -75,15 +79,16 @@ export function admitVersionReference(reference: string): VersionReference {
 /**
  * Translate every version reference with one index read per origin (Résolution [.78020]): an exact
  * reference names any published version, a pre-release or a yanked one included; a line names its
- * highest stable version that is not yanked ([.78086]). The first reference that resolves to
- * nothing is refused with VERSION_UNRESOLVED; a registry refusal (an unreadable Domain reads as an
- * absent one, [.79495]) passes through. Nothing is installed before every reference resolved.
+ * highest stable version that is not yanked ([.78086]). The references name distinct origins
+ * ({@link refuseRepeatedOrigins} runs at admission, before the registry is opened). The first
+ * reference that resolves to nothing is refused with VERSION_UNRESOLVED; a registry refusal (an
+ * unreadable Domain reads as an absent one, [.79495]) passes through. Nothing is installed before
+ * every reference resolved.
  */
 export async function resolveVersionReferences(
   references: readonly VersionReference[],
   registry: Pick<AdminRegistryApi, 'index'>,
 ): Promise<readonly ResolvedVersion[]> {
-  refuseRepeatedOrigins(references)
   const indexes = await Promise.all(
     references.map((reference) => registry.index(reference.selector.origin)),
   )
@@ -95,7 +100,7 @@ export async function resolveVersionReferences(
       try {
         resolved = resolveVersion(published, reference.selector)
       } catch (cause) {
-        // AM-56: a reference the module refuses is a refused reference, never a guess.
+        // A reference the resolution module refuses is refused, never guessed.
         throw versionInvalid(reference.reference, cause)
       }
       if (resolved.kind === 'unresolved') {
@@ -114,7 +119,7 @@ export function exactReference(resolved: ResolvedVersion): string {
   return `${resolved.origin}@${resolved.version}`
 }
 
-/** A version reference that names no published version readable by the caller (CT24). */
+/** A version reference that names no published version readable by the caller. */
 export class VersionUnresolvedError extends AstraleError {
   constructor(reference: VersionReference, reason: VersionUnresolvedReason) {
     const { origin } = reference.selector
@@ -135,7 +140,7 @@ export class VersionUnresolvedError extends AstraleError {
  * The Publication a reference resolved to, as the install will name it again. Its deployment URL
  * and its exact version are rebuilt from Admin data into references (the URL the Kernel installs,
  * the exact version a retry names): each must read back through `parseReference` and resolve to
- * this same Publication, else the reference is refused, never installed from a guess (AM-56).
+ * this same Publication, else the reference is refused, never installed from a guess.
  */
 function resolvedVersion(
   reference: VersionReference,
@@ -204,7 +209,12 @@ function rebuilt(input: string | undefined): Reference | undefined {
   }
 }
 
-function refuseRepeatedOrigins(references: readonly VersionReference[]): void {
+/**
+ * One install pins one release per origin: two version references to one origin are refused at
+ * admission, before Admin is opened, since the syntax alone names their origin. A URL names its
+ * origin only once it is read, so a URL and a version of one origin are refused after that read.
+ */
+export function refuseRepeatedOrigins(references: readonly VersionReference[]): void {
   const seen = new Map<string, string>()
   for (const reference of references) {
     const { origin } = reference.selector
