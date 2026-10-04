@@ -1,4 +1,3 @@
-import type { OwnedInstanceInfo } from '../../../admin/instance'
 /**
  * The CLI's Fleet catalog journeys over one Admin session: list a Fleet's catalog, publish an entry
  * (and its install-by-default flag), and install one entry on an Admin-managed Instance.
@@ -14,6 +13,7 @@ import type { OwnedInstanceInfo } from '../../../admin/instance'
  * installs by bare origin, in a breaking CLI release with `catalog-publish.ts`,
  * `catalog-list.ts`, `catalog-install.ts`, `catalog-deprecation.ts` and `src/admin/legacy/catalog`.
  */
+import type { OwnedInstanceInfo } from '../../../admin/instance'
 import type { AdminConnectionOptions, ConnectionContext } from '../../../connection'
 
 import {
