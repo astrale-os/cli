@@ -140,9 +140,11 @@ Behavior:
                v2/v3 Publication pin; "unknown" when nothing names it.
     AVAILABLE  the highest stable, non-yanked version above the installed
                one (or above the release a preview was built after).
-  Versions come from the Admin registry, read with the caller's credential
-  (--admin/--admin-url choose it); it is opened only when a release pin
-  needs a version, and a registry that cannot be read fails the command.
+  Versions come from the Admin registry, read as the caller (--as, or the
+  default identity; --admin/--admin-url choose the Admin kernel). --creds
+  and --anonymous authenticate the instance only and never reach Admin.
+  The registry is opened only when a release pin needs a version, and a
+  registry that cannot be read fails the command.
   The listing is partial by nature: built-in and local Domains are never
   listed, nor Domains the caller cannot read, so an absent origin is
   unknown, not "not installed". --json, --ci or a pipe print one

@@ -57,6 +57,13 @@ export type CredentialIntent =
 /** Stable local identity-registration key for the exact selected source Kernel. */
 export function registrationKeyForTarget(target: ConnectionTarget): string
 
+/**
+ * The options of an Admin session opened beside a command's own target: the Admin selection, the
+ * caller's identity (--as) and the session settings. Never -i/--url, --creds or --anonymous, which
+ * select and authenticate that target.
+ */
+export function adminSessionOptions(options: AdminConnectionOptions): AdminConnectionOptions
+
 /** Narrow capabilities available during one scoped CLI connection. */
 export interface ConnectionContext {
   readonly session: ClientSession
