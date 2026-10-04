@@ -5,6 +5,7 @@ import { defineSchema, schema } from '@astrale-os/sdk/schema'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { stripVTControlCharacters } from 'node:util'
 
+import type { withAdminClientSession } from '../../connection'
 import type { ServedDeployment } from '../../lib/domain-release'
 import type { ReferenceInstallDependencies } from '../domain/release-install'
 
@@ -20,14 +21,14 @@ import {
 import { transportFailure } from '../../connection/__tests__/failure-fixtures'
 import { DeploymentReadError } from '../../lib/domain-release'
 import { installsOnKernel } from '../domain/install'
-import { installByReference } from '../domain/release-install'
+import { installByReference, openInstallRegistry } from '../domain/release-install'
 import { isVersionReference } from '../domain/version-reference'
 
 /**
  * Résolution (V2): `install <origin>@<version>` reads the Domain's Publications in Admin with the
  * caller's credential, picks one, and installs its deployment URL guarded by its release digest.
- * Admin is the fake registry of the C4 tests (CT26/CT27 read rules); the instance Kernel is a fake
- * session that records every request.
+ * Admin is the fake registry of src/admin/registry/__tests__ (Admin's read rules: an unreadable
+ * Domain reads as absent); the instance Kernel is a fake session that records every request.
  */
 
 const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
@@ -282,7 +283,6 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
         origin: ORIGIN,
         url: releases.v151.url,
         version: '1.5.1',
-        yanked: false,
         pin: v151.pin,
         previous: null,
         installed: { revision: REVISION, pin: v151.pin, issuer: releases.v151.url },
@@ -299,7 +299,10 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
     expect(install.requests[0]!.domains).toEqual([
       { release: { url: releases.v200rc.url, digest: releases.v200rc.releaseDigest } },
     ] as never)
-    expect(JSON.parse(stdout).references[0]).toMatchObject({ version: '2.0.0-rc.1', yanked: false })
+    const reference = JSON.parse(stdout).references[0]
+    expect(reference).toMatchObject({ version: '2.0.0-rc.1' })
+    // `yanked` is present only on a yanked version.
+    expect(reference).not.toHaveProperty('yanked')
   })
 
   test('a yanked version installs only when named exactly, with a warning ([.79339])', async () => {
@@ -394,6 +397,27 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
         error: 'PUBLICATION_VERSION_INVALID',
         details: { reference: `${ORIGIN}${selector}` },
       })
+    },
+  )
+
+  test.each([
+    'Agencies.test@1.5',
+    'agencies@1.5.0',
+    '@1.5',
+    'agencies_test@1.5',
+    'HTTPS://agencies.test@1.5',
+  ])(
+    '%s: the part before @ is not an origin, refused before Admin is opened (INVALID_ARGUMENT)',
+    async (reference) => {
+      const install = run({})
+
+      await expect(
+        installByReference([reference], JSON_OUTPUT, install.deps),
+      ).rejects.toBeInstanceOf(ExitError)
+
+      expect(install.registries).toBe(0)
+      expect(install.sessions).toBe(0)
+      expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_ARGUMENT' })
     },
   )
 
@@ -558,7 +582,17 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
       installByReference([`${ORIGIN}@1.5`, `${ORIGIN}@1.4.0`], JSON_OUTPUT, twice.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stderr)).toMatchObject({ error: 'DUPLICATE_ORIGIN' })
+    expect(twice.registries).toBe(0)
     expect(twice.sessions).toBe(0)
+
+    // Admin down does not hide the local refusal: the registry is never opened for it.
+    stderr = ''
+    const down = run({ registry: 'down' })
+    await expect(
+      installByReference([`${ORIGIN}@1.5`, `${ORIGIN}@1.4.0`], JSON_OUTPUT, down.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(JSON.parse(stderr)).toMatchObject({ error: 'DUPLICATE_ORIGIN' })
+    expect(down.registries).toBe(0)
 
     stderr = ''
     const other = release('agencies-url')
@@ -592,7 +626,7 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_FLAG' })
   })
 
-  test('a Publication whose deployment URL is not a reference is refused, never installed (AM-56)', async () => {
+  test('a Publication whose deployment URL is not a reference is refused, never installed', async () => {
     const queried = { ...releases.v151, url: `${releases.v151.url}/?preview=1` }
     const install = run({
       domains: [domain([publication('151', '1.5.1', queried)])],
@@ -609,7 +643,7 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
     })
   })
 
-  test('an http:// deployment URL is installed as Admin wrote it (AM-58)', async () => {
+  test('an http:// deployment URL is installed as Admin wrote it', async () => {
     const local = { ...releases.v151, url: 'http://agencies-local-0123456789abcdef.localhost:8787' }
     const deployment = served(local)
     const install = run({
@@ -645,6 +679,90 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
         consent: { issuer: { from: releases.v150.url, to: releases.v151.url } },
       },
     ] as never)
+  })
+})
+
+describe('the registry is read on the Admin target with the caller identity ([.79495])', () => {
+  /** The Admin session seam: records the options it is opened with, then serves the fake Admin. */
+  function adminSession(): {
+    readonly options: unknown[]
+    readonly open: typeof withAdminClientSession
+  } {
+    const admin = fakeAdmin({ caller: INSTALLER, domains: [domain()] })
+    const options: unknown[] = []
+    const open = (async (selected: unknown, action: (context: never) => Promise<unknown>) => {
+      options.push(selected)
+      return action(admin.context as never)
+    }) as unknown as typeof withAdminClientSession
+    return { options, open }
+  }
+
+  test.each([
+    {
+      name: '-i with --as, --admin-url, --domain-issuer, --timeout and --ci',
+      opts: {
+        instance: 'acme-prod',
+        as: INSTALLER,
+        adminUrl: 'https://admin.test/api',
+        domainIssuer: 'https://admin.test',
+        timeout: '5000',
+        ci: true,
+      },
+      admin: {
+        adminUrl: 'https://admin.test/api',
+        domainIssuer: 'https://admin.test',
+        timeout: '5000',
+        as: INSTALLER,
+        ci: true,
+      },
+    },
+    {
+      name: '--url with --creds and --admin',
+      opts: {
+        url: 'https://kernel.test',
+        creds: 'raw-instance-credential',
+        admin: 'staging-admin',
+      },
+      admin: { admin: 'staging-admin' },
+    },
+    {
+      name: 'the configured Admin target',
+      opts: { instance: 'acme-prod', anonymous: true },
+      admin: {},
+    },
+  ])('$name: only the Admin selection reaches the registry session', async ({ opts, admin }) => {
+    const session = adminSession()
+    const v151 = served(releases.v151)
+    const install = run({ served: { [releases.v151.url]: async () => v151 } })
+
+    await installByReference(
+      [`${ORIGIN}@1.5`],
+      { ...JSON_OUTPUT, ...opts },
+      {
+        ...install.deps,
+        openRegistry: (selected, work) => openInstallRegistry(selected, work, session.open),
+      },
+    )
+
+    // Never the instance target (-i, --url), its raw credential (--creds) or --anonymous.
+    expect(session.options).toEqual([admin])
+    expect(install.requests[0]!.domains).toEqual([
+      { release: { url: releases.v151.url, digest: releases.v151.releaseDigest } },
+    ] as never)
+  })
+
+  test('a URL-only install never opens the Admin session', async () => {
+    const session = adminSession()
+    const v151 = served(releases.v151)
+    const install = run({ served: { [releases.v151.url]: async () => v151 } })
+
+    await installByReference([releases.v151.url], JSON_OUTPUT, {
+      ...install.deps,
+      openRegistry: (selected, work) => openInstallRegistry(selected, work, session.open),
+    })
+
+    expect(session.options).toEqual([])
+    expect(install.requests).toHaveLength(1)
   })
 })
 
