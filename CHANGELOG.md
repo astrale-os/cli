@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.0.0-beta.126](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.125...cli/v1.0.0-beta.126) (2026-10-04)
+
+
+### Features
+
+* **commands:** call Domain functions on the Admin instance ([#579](https://github.com/astrale-os/cli/issues/579)) ([134c5d6](https://github.com/astrale-os/cli/commit/134c5d6c380a5295151f1efe4d609cca59ad1903))
+* **studio:** drop agent builds no live Studio holds and prefetch them on update ([#588](https://github.com/astrale-os/cli/issues/588)) ([5d43aac](https://github.com/astrale-os/cli/commit/5d43aacd57040750cf1529204ff2c4b5a7570be0))
+* **studio:** lead the running agent line with time and actions, then its words ([#590](https://github.com/astrale-os/cli/issues/590)) ([62f3c3f](https://github.com/astrale-os/cli/commit/62f3c3f18600a4af329226cecb46a6bbd60df0c2))
+
+
+### Bug Fixes
+
+* **deps:** build the CLI on SDK 0.6.0-beta.11 and its Domain definition ([#581](https://github.com/astrale-os/cli/issues/581)) ([80bb2a5](https://github.com/astrale-os/cli/commit/80bb2a539a4823f880e7ec0fae5a864f879af380))
+* **studio:** one clear Continue for any turn that stopped short ([#591](https://github.com/astrale-os/cli/issues/591)) ([422673d](https://github.com/astrale-os/cli/commit/422673d681b1094d67c2399a5cce656c43b6da92))
+
+
+### Performance Improvements
+
+* **lib:** remember the installed Shell issuer per bookmark and heal on refusal ([#580](https://github.com/astrale-os/cli/issues/580)) ([13a0387](https://github.com/astrale-os/cli/commit/13a0387c358b799affea72bb521101006b8fb8af))
+
 ## [1.0.0-beta.125](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.124...cli/v1.0.0-beta.125) (2026-10-04)
 
 
