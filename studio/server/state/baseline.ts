@@ -61,7 +61,7 @@ export const ANATOMY_GLOBS = {
     'client/src',
   ],
   files: [
-    'application.ts',
+    'domain.ts',
     'runtime.ts',
     'index.ts',
     'core.ts',
@@ -111,7 +111,7 @@ function walkFiles(dir: string, out: string[]): void {
 export function hashAnatomyFiles(
   root: string,
   schemaDirName: string,
-  applicationFile?: string,
+  domainFile?: string,
 ): Record<string, string> {
   const r = resolve(root)
   const absFiles: string[] = []
@@ -130,9 +130,10 @@ export function hashAnatomyFiles(
     if (entryKind(abs) === 'file') absFiles.push(abs)
   }
 
-  // A config-selected Application may live below the domain root. It is the
-  // composition source of truth and must participate in cache/change identity.
-  if (applicationFile && entryKind(applicationFile) === 'file') absFiles.push(applicationFile)
+  // A config-selected Domain definition (or the `application.ts` of a Project on an SDK
+  // before 0.6.0-beta.11) may live below the domain root. It is the composition source of
+  // truth and must participate in cache/change identity.
+  if (domainFile && entryKind(domainFile) === 'file') absFiles.push(domainFile)
 
   const hashes: Record<string, string> = {}
   for (const abs of new Set(absFiles)) {

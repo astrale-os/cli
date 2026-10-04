@@ -25,11 +25,9 @@ const legacy = []
 const interfaceEra = []
 const auditPath = 'scripts/qualification/source-boundary.mjs'
 
-const legacySpecifiers = new Set([
-  '@astrale-os/sdk/domain',
-  '@astrale-os/sdk/graph/model',
-  '@astrale-os/sdk/schema/kernel',
-])
+// `@astrale-os/sdk/domain` is no longer listed: since @astrale-os/sdk 0.6.0-beta.11
+// (astrale-os/sdk#603) it is the canonical Domain definition entry, not the pre-V1 facade.
+const legacySpecifiers = new Set(['@astrale-os/sdk/graph/model', '@astrale-os/sdk/schema/kernel'])
 const legacyTokens = [
   ['ClassPath', /\bClassPath\b/u],
   ['Domain.fromSchema', /\bDomain\.fromSchema\b/u],

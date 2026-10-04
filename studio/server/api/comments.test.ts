@@ -26,7 +26,7 @@ test('comment entries are immutable through the HTTP API', async () => {
     id: 'orders',
     root,
     configFile: join(root, 'astrale.config.ts'),
-    applicationFile: join(root, 'application.ts'),
+    domainFile: join(root, 'domain.ts'),
     schemaDirName: 'schema',
     schemaDir: join(root, 'schema'),
     schemaIndex: join(root, 'schema/index.ts'),

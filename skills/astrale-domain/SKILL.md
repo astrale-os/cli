@@ -51,7 +51,7 @@ order and load a reference only when its phase begins.
 
 1. **Foundation:** Inspect the workspace first. When no public scaffold exists, read
    `references/development.md`; read `references/domains.md` only when deciding whether to reuse a
-   native Domain. When the workspace already declares the SDK, deployment adapter, Application, and
+   native Domain. When the workspace already declares the SDK, deployment adapter, Domain definition, and
    Runtime, keep that plumbing and move directly to Schema.
 2. **Schema:** Before authoring the schema, read `references/schema.md`; for sign-in users and groups,
    also read `references/users.md` before inventing identity or onboarding vocabulary.

@@ -41,8 +41,8 @@ providers/          environment-backed implementations
 routes/             optional native HTTP-to-callable declarations
 views/ and ui/      client orchestration and presentation
 runtime.ts          integrations, initialize, functions
-application.ts      schema, runtime, frontend, optional routes, requirements
-astrale.config.ts   defineProject: application, environments, optional tests
+domain.ts           schema, runtime, frontend, optional routes, requirements
+astrale.config.ts   defineProject: domain, environments, optional tests
 ```
 
 - Create only applicable layers and business owners. Keep curated `#` facades and one meaningful
@@ -63,11 +63,11 @@ export default defineRuntime<typeof schema>()({
   functions,
 })
 
-// application.ts
-import { defineApplication, requirements } from '@astrale-os/sdk/application'
+// domain.ts
+import { defineDomain, requirements } from '@astrale-os/sdk/domain'
 import { K } from '@astrale-os/sdk/schema'
 // Import schema as a value here, plus runtime and frontend from their composition owners.
-export const application = defineApplication({
+export const domain = defineDomain({
   schema, runtime, frontend,
   requirements: requirements({ functions: [K.functions.query, K.functions.mutate] }),
 })
@@ -75,7 +75,7 @@ export const application = defineApplication({
 
 - Initialize Providers once from admitted environment. No Provider I/O at module scope and no handlers,
   authorization, or deployment effects in composition roots.
-- Requirements are inert Application composition, not a top-level `requirements/` layer. Schema
+- Requirements are inert Domain definition composition, not a top-level `requirements/` layer. Schema
   dependencies pin definitions; installation requirements grant exact protected callable capabilities.
 
 ## defineProject and environments
@@ -84,10 +84,10 @@ export const application = defineApplication({
 // astrale.config.ts
 import { astrale } from '@astrale-os/adapter-astrale'
 import { defineProject } from '@astrale-os/sdk/project'
-import { application } from './application.js'
+import { domain } from './domain.js'
 
 export default defineProject({
-  application,
+  domain,
   environments: {
     development: {
       deployment: astrale({
@@ -113,7 +113,7 @@ export default defineProject({
   `--deploy-only` skips installation for one command without changing the configured deployment target.
 - When changing a shared Schema dependency, do not let each project's watcher install independently.
   Stage candidates deploy-only and install the coherent root set together; follow `migration.md`.
-- Application already contains Runtime and frontend. `entrypoints.runtime` only overrides the
+- The Domain definition already contains Runtime and frontend. `entrypoints.runtime` only overrides the
   conventional loadable Runtime file; do not repeat those definitions in Project or adapter options.
 - Keep the Domain signing identity stable and gitignored; it is distinct from the human CLI identity.
   Keep secret files beside their owning config, or use explicit paths; never copy secrets into source.

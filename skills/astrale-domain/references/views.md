@@ -1,6 +1,6 @@
 # Views
 
-Schema names the View; Application frontend composition owns its URL, document, and handshake.
+Schema names the View; the Domain definition's frontend composition owns its URL, document, and handshake.
 The React host owns the session, not the business Domain's runtime.
 
 ## Domain Views and internal routing

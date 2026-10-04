@@ -44,7 +44,7 @@ const discoveryMs = Math.round((performance.now() - discoveryStarted) * 10) / 10
 if (!domains.length) {
   console.error(`\n  ✗ No Astrale domains found at ${target}`)
   console.error(
-    '    (looking for: astrale.config.ts + an Application whose schema binding resolves to authored source)\n',
+    '    (looking for: astrale.config.ts + a Domain definition whose schema binding resolves to authored source)\n',
   )
   process.exit(1)
 }
