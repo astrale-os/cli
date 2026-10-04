@@ -26,3 +26,15 @@ test('embedded agents keep immutable thread replies brief and move detail to con
   expect(prompt).toContain('Thread entries are immutable')
   expect(prompt).toContain('Correct or clarify it by appending a new reply')
 })
+
+test('embedded agents deploy without installing, then install the printed URL', () => {
+  const prompt = buildSystemPrompt({ bridge: false })
+
+  expect(prompt).not.toContain('pnpm prod')
+  expect(prompt).not.toContain('managed deploy + install')
+  expect(prompt).toContain('`pnpm run deploy <environment>` deploys and prints')
+  expect(prompt).toContain(
+    'never installs; then `astrale domain install <url> --direct -i <instance>`',
+  )
+  expect(prompt).toContain('/.well-known/astrale/release.json')
+})
