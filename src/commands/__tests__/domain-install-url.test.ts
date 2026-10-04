@@ -264,6 +264,15 @@ describe('install by URL on a Kernel that lists installed releases', () => {
           installed: { revision: REVISION, pin: a.pin, issuer: A },
         },
       ],
+      // This fixture serves a release pin without its document, so the pre-check reads no bundle.
+      precheck: {
+        compared: 0,
+        dependencies: [],
+        dependents: [],
+        proposals: [],
+        skipped: [{ reference: A, reason: 'release-unread' }],
+        unevaluated: [],
+      },
     })
   })
 
