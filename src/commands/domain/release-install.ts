@@ -15,7 +15,7 @@ import type { ConnectionContext, KernelCommandOpts } from '../../connection'
 import type { InstallFailure, UrlSource } from './install-call'
 
 import { withClientSession } from '../../connection'
-import { reasonCode } from '../../connection/reasons'
+import { functionInputIssues, reasonCode } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
 import {
   DeploymentReadError,
@@ -408,9 +408,43 @@ async function installReleases(
       }
     },
   })
-  if (failure !== undefined) return failure
+  if (failure !== undefined) {
+    const unsupported = consentRefusedAsInput(failure.error, changes)
+    return unsupported === undefined ? failure : { error: unsupported, render: 'input' }
+  }
   if (mismatched.length > 0) return { error: pinMismatchError(mismatched), render: 'input' }
   return undefined
+}
+
+/**
+ * A Kernel that lists installed releases but predates issuer consent refuses a consented root as
+ * a release request it cannot read: FUNCTION_INPUT_INVALID with issues at `/domains/<i>` itself,
+ * the root, never inside it. Nothing was installed; the refusal is KERNEL_RELEASE_UNSUPPORTED.
+ */
+function consentRefusedAsInput(
+  error: unknown,
+  changes: readonly (IssuerChange | undefined)[],
+): AstraleError | undefined {
+  if (!(error instanceof ResponseError) || reasonCode(error.reason) !== 'FUNCTION_INPUT_INVALID') {
+    return undefined
+  }
+  const consented = new Set(
+    changes.flatMap((change, index) => (change === undefined ? [] : [`/domains/${index}`])),
+  )
+  const issues = functionInputIssues(error.reason)
+  if (consented.size === 0 || issues.length === 0) return undefined
+  if (!issues.every((issue) => issue.path !== undefined && consented.has(issue.path))) {
+    return undefined
+  }
+  const origins = changes.flatMap((change) => (change === undefined ? [] : [change.origin]))
+  const unsupported = new AstraleError(
+    'KERNEL_RELEASE_UNSUPPORTED',
+    `This Kernel lists installed releases but takes no issuer consent: it refused the consent of ${origins.join(', ')} as invalid input, and nothing was installed.`,
+    'Upgrade the Host to a release that accepts issuer consent, or uninstall the origin and install it again.',
+    { cause: error },
+  )
+  unsupported.details = Object.freeze({ code: error.code, reason: error.reason })
+  return unsupported
 }
 
 /** What the install call gives the presentation: the Kernel result and the listing read after it. */
