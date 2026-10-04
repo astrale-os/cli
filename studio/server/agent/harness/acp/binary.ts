@@ -14,10 +14,16 @@ import type { ReadableStream as WebReadableStream } from 'node:stream/web'
  *
  * `DOMAIN_STUDIO_CLAUDE_BIN` / `DOMAIN_STUDIO_CODEX_BIN` opt back into a local
  * executable; Studio then only warns when its version strays from the pin.
+ *
+ * Every process that runs a build leases it (its pid under `.leases/`). Any
+ * other build no live process holds is dropped as soon as a Studio starts or
+ * installs one: a Studio still open on an older release keeps its build for as
+ * long as it runs, since each turn spawns the CLI afresh. Conversations live in
+ * the agents' own homes, never here, so dropping a build loses none.
  */
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { createWriteStream } from 'node:fs'
+import { createWriteStream, unlinkSync } from 'node:fs'
 import {
   access,
   chmod,
@@ -26,8 +32,8 @@ import {
   readFile,
   rename,
   rm,
+  rmdir,
   stat,
-  utimes,
   writeFile,
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -73,8 +79,10 @@ const OVERRIDES: Record<AcpProvider, string> = {
 }
 
 const MARKER = '.complete'
-/** A version no Studio has run for this long is dropped when a newer one lands. */
-const UNUSED_VERSION_MS = 14 * 24 * 60 * 60_000
+/** One empty file per process running the build, named by its pid. */
+const LEASES = '.leases'
+/** A build installed before leases only says when a Studio last started on it. */
+const LEGACY_UNUSED_MS = 14 * 24 * 60 * 60_000
 /** A staging directory this old belongs to an install that died. */
 const ABANDONED_STAGING_MS = 24 * 60 * 60_000
 const VERSION_TIMEOUT_MS = 10_000
@@ -130,9 +138,8 @@ export function agentBinary(
       reason: explicit?.trim() ? 'set by the harness' : `set by ${variable}`,
     }
 
-  const platforms: Record<string, PinnedArtifact> = pinned.platforms
-  const key = keys.find((candidate) => platforms[candidate])
-  if (!key)
+  const location = managedLocation(provider, keys, root)
+  if (!location)
     return {
       ...base,
       path: provider,
@@ -140,8 +147,7 @@ export function agentBinary(
       reason: `Studio ships no ${pinned.label} build for ${keys[0]}`,
     }
 
-  const artifact = platforms[key]
-  const directory = join(root, provider, pinned.version, key)
+  const { artifact, directory } = location
   return {
     ...base,
     path: join(directory, ...artifact.entry.split('/')),
@@ -150,6 +156,20 @@ export function agentBinary(
     directory,
     reason: 'pinned by Studio',
   }
+}
+
+/** Where this release's build of `provider` lives for this machine, if it ships one. */
+function managedLocation(
+  provider: AcpProvider,
+  keys: string[],
+  root: string,
+): { artifact: PinnedArtifact; directory: string } | undefined {
+  const pinned = PINNED_AGENT_BINARIES[provider]
+  const platforms: Record<string, PinnedArtifact> = pinned.platforms
+  const key = keys.find((candidate) => platforms[candidate])
+  return key
+    ? { artifact: platforms[key], directory: join(root, provider, pinned.version, key) }
+    : undefined
 }
 
 export async function isAgentBinaryInstalled(binary: AgentBinary): Promise<boolean> {
@@ -169,7 +189,34 @@ async function installed(directory: string, artifact: PinnedArtifact): Promise<b
 }
 
 const inFlight = new Map<string, { done: Promise<void>; listeners: Set<(text: string) => void> }>()
-const touched = new Set<string>()
+const leased = new Set<string>()
+
+/**
+ * Record that this process runs the build in `directory`, so no other Studio
+ * prunes it from under a turn. Released on exit; a lease whose process died
+ * without releasing it counts for nothing.
+ */
+async function lease(directory: string): Promise<void> {
+  if (leased.has(directory)) return
+  await writeLease(directory)
+  if (!leased.size) process.once('exit', releaseLeases)
+  leased.add(directory)
+}
+
+async function writeLease(directory: string): Promise<void> {
+  await mkdir(join(directory, LEASES), { recursive: true })
+  await writeFile(join(directory, LEASES, String(process.pid)), '')
+}
+
+function releaseLeases(): void {
+  for (const directory of leased) {
+    try {
+      unlinkSync(join(directory, LEASES, String(process.pid)))
+    } catch {
+      // the build is already gone
+    }
+  }
+}
 
 /**
  * Make sure `binary` exists on disk, installing it if it is managed and missing.
@@ -186,7 +233,7 @@ export async function ensureAgentBinary(
   const artifact = binary.artifact!
   if (options.signal?.aborted) throw new Error('canceled')
   if (await installed(directory, artifact)) {
-    await markUsed(directory)
+    await lease(directory).catch(() => undefined)
     return
   }
 
@@ -231,14 +278,6 @@ export async function ensureAgentBinary(
   } finally {
     if (listener) install.listeners.delete(listener)
   }
-}
-
-/** Refresh the marker once per process, so pruning can tell a version still in use. */
-async function markUsed(directory: string): Promise<void> {
-  if (touched.has(directory)) return
-  touched.add(directory)
-  const now = new Date()
-  await utimes(join(directory, MARKER), now, now).catch(() => undefined)
 }
 
 function formatBytes(bytes: number): string {
@@ -304,10 +343,13 @@ export async function installAgentArtifact(
     })
     await chmod(executable, 0o755)
     await writeFile(join(staging, MARKER), `${artifact.integrity}\n`)
+    // born leased, so no pruner sees it unheld between the rename and our lease
+    await writeLease(staging)
 
     await publish(staging, directory, artifact)
+    await lease(directory).catch(() => undefined)
     progress(`${options.label} installed`)
-    await pruneUnusedVersions(directory).catch(() => undefined)
+    await pruneAgentBuilds(join(directory, '..', '..'), directory).catch(() => undefined)
   } finally {
     await rm(staging, { recursive: true, force: true }).catch(() => undefined)
   }
@@ -336,7 +378,7 @@ function untar(archive: string, destination: string): Promise<void> {
 }
 
 async function publish(staging: string, directory: string, artifact: PinnedArtifact) {
-  await mkdir(join(directory, '..'), { recursive: true })
+  // The staging directory sits beside `directory`, so no pruner empties their parent.
   try {
     await rename(staging, directory)
     return
@@ -352,35 +394,59 @@ async function publish(staging: string, directory: string, artifact: PinnedArtif
 }
 
 /**
- * Drop the other versions of this agent that no Studio has run for two weeks,
- * plus staging left behind by an install that died. `directory` is
- * `<root>/<provider>/<version>/<platform>`.
+ * Drop every build of `provider` but this release's own and the ones a live
+ * process still runs — called when a Studio starts and after each install.
  */
-async function pruneUnusedVersions(directory: string): Promise<void> {
-  const versionDirectory = join(directory, '..')
-  const providerDirectory = join(versionDirectory, '..')
-  const now = Date.now()
-  for (const version of await readdir(providerDirectory)) {
-    const candidate = join(providerDirectory, version)
-    if (candidate === versionDirectory) continue
-    const lastUse = await newestMarker(candidate)
-    if (lastUse !== undefined ? now - lastUse > UNUSED_VERSION_MS : await olderThan(candidate))
-      await rm(candidate, { recursive: true, force: true })
-  }
-  for (const entry of await readdir(versionDirectory)) {
-    const candidate = join(versionDirectory, entry)
-    if (entry.includes('.staging-') && (await olderThan(candidate)))
-      await rm(candidate, { recursive: true, force: true })
+export async function pruneAgentBinaries(
+  provider: AcpProvider,
+  root = agentBinaryRoot(),
+  keys = platformKeys(),
+): Promise<void> {
+  await pruneAgentBuilds(join(root, provider), managedLocation(provider, keys, root)?.directory)
+}
+
+/** `providerDirectory` holds `<version>/<platform>` builds; `keep` is never touched. */
+async function pruneAgentBuilds(providerDirectory: string, keep?: string): Promise<void> {
+  for (const version of await readdir(providerDirectory).catch(() => [] as string[])) {
+    const versionDirectory = join(providerDirectory, version)
+    for (const entry of await readdir(versionDirectory).catch(() => [] as string[])) {
+      const candidate = join(versionDirectory, entry)
+      if (candidate !== keep && (await disposable(candidate, entry)))
+        await rm(candidate, { recursive: true, force: true })
+    }
+    // only succeeds once nothing is left in it
+    await rmdir(versionDirectory).catch(() => undefined)
   }
 }
 
-async function newestMarker(versionDirectory: string): Promise<number | undefined> {
-  let newest: number | undefined
-  for (const platform of await readdir(versionDirectory).catch(() => [])) {
-    const marker = await stat(join(versionDirectory, platform, MARKER)).catch(() => undefined)
-    if (marker) newest = Math.max(newest ?? 0, marker.mtimeMs)
+async function disposable(path: string, name: string): Promise<boolean> {
+  const staging = /\.staging-(\d+)-/.exec(name)
+  if (staging) return !processAlive(Number(staging[1])) || (await olderThan(path))
+  if (name.includes('.staging-')) return olderThan(path)
+
+  const holders = await readdir(join(path, LEASES)).catch(() => undefined)
+  if (holders === undefined) {
+    // Installed before leases: only its marker says when a Studio last started on it.
+    const marker = await stat(join(path, MARKER)).catch(() => undefined)
+    return marker ? Date.now() - marker.mtimeMs > LEGACY_UNUSED_MS : olderThan(path)
   }
-  return newest
+  let held = false
+  for (const holder of holders) {
+    if (processAlive(Number(holder))) held = true
+    else await rm(join(path, LEASES, holder), { force: true }).catch(() => undefined)
+  }
+  return !held
+}
+
+function processAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // it exists, it just is not ours to signal
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
 }
 
 async function olderThan(path: string, ageMs = ABANDONED_STAGING_MS): Promise<boolean> {
@@ -434,12 +500,12 @@ export function versionWarning(
 
 /** What Settings says about the executable, before and after it ran. */
 export async function describeAgentBinary(binary: AgentBinary): Promise<HarnessCli> {
-  if (binary.source === 'managed')
-    return {
-      source: 'managed',
-      version: binary.pinnedVersion,
-      installed: await isAgentBinaryInstalled(binary),
-    }
+  if (binary.source === 'managed') {
+    const installed = await isAgentBinaryInstalled(binary)
+    // a health probe is about to run it
+    if (installed) await lease(binary.directory!).catch(() => undefined)
+    return { source: 'managed', version: binary.pinnedVersion, installed }
+  }
   const version = await readBinaryVersion(binary.path)
   const warning = versionWarning(binary.provider, version)
   return {

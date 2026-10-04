@@ -121,7 +121,13 @@ platform package from the npm registry, verifies it against the lockfile's
 integrity, and unpacks it under `$ASTRALE_HOME/cache/agents` (about 90 MB to
 download for Claude Code, 110 MB for Codex); the chat shows the progress. Logins
 and configuration are shared with your own install (`~/.claude`, `~/.codex`).
-Versions no Studio has used for two weeks are removed when a newer one lands.
+Every process running a build leases it, and any other build no live process
+holds is removed as soon as a Studio starts or installs one: a Studio still open
+on an older release keeps its build until it exits. Conversations live in the
+agents' own homes, so removing a build loses none. After replacing the CLI,
+`astrale update` starts the new release in the background to download its pinned
+builds of the agents Studio already installed, so the first chat after an update
+does not wait on the download.
 
 `DOMAIN_STUDIO_CLAUDE_BIN` / `DOMAIN_STUDIO_CODEX_BIN` run a local executable
 instead (`DOMAIN_STUDIO_CODEX_BIN=codex` for the one on PATH). Settings → Agent

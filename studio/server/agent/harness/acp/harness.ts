@@ -10,7 +10,13 @@ import type {
 } from '../adapter'
 import type { AcpProviderOptions } from './provider'
 
-import { agentBinary, describeAgentBinary, ensureAgentBinary, type AgentBinary } from './binary'
+import {
+  agentBinary,
+  describeAgentBinary,
+  ensureAgentBinary,
+  pruneAgentBinaries,
+  type AgentBinary,
+} from './binary'
 import { runAcpAsk, runAcpTurn } from './client'
 import { acpAgentCommand, type AcpProvider } from './command'
 import { probeAcpHealth, probeAcpLoadout } from './probe'
@@ -41,6 +47,7 @@ export abstract class AcpHarness implements AgentHarness {
   private healthCache?: { at: number; health: HarnessHealth }
   private healthInFlight?: Promise<HarnessHealth>
   private loadoutCache?: { at: number; key: string; data: HarnessLoadout }
+  private pruned = false
 
   /** `bin` pins the executable, bypassing both the environment and Studio's own build. */
   protected constructor(
@@ -74,6 +81,12 @@ export abstract class AcpHarness implements AgentHarness {
   }
 
   private async probeHealth(signal?: AbortSignal): Promise<HarnessHealth> {
+    // Once per process, as Studio starts: drop the builds no live Studio runs. A
+    // harness handed its own executable (tests, embedders) leaves the cache alone.
+    if (!this.pruned && this.bin === undefined) {
+      this.pruned = true
+      void pruneAgentBinaries(this.provider).catch(() => undefined)
+    }
     const binary = this.binary()
     const cli = await describeAgentBinary(binary)
     if (!cli.installed)
