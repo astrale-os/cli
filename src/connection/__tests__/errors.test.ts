@@ -48,6 +48,34 @@ describe('formatKernelError', () => {
     expect(writes[0]).not.toContain('ECONNREFUSED')
   })
 
+  test('keeps the release acquisition resource of a v4 Host read', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        transportFailure('Release discovery request failed.', 'connect', {
+          kind: 'acquisition',
+          resource: 'release',
+        }),
+        true,
+        'https://localhost:8443/kernel/host',
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toMatchObject({
+      error: 'CONNECTION_ERROR',
+      message: 'Release discovery request failed.',
+      phase: 'connect',
+      transport: { kind: 'acquisition', resource: 'release' },
+    })
+  })
+
   test('retains operation recovery only for outcome-unknown transport failure', async () => {
     const writes: string[] = []
     const original = process.stderr.write
