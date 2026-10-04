@@ -6,10 +6,10 @@ import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { PropertyKey } from '@astrale-os/sdk/schema'
 import { describe, expect, mock, test } from 'bun:test'
 
-import type { AdminGraphApi } from '../../graph'
+import type { AdminGraphApi } from '../../../graph'
 
-import { adminSession } from '../../__tests__/fixture'
-import { AdminContract } from '../../contract'
+import { adminSession } from '../../../__tests__/fixture'
+import { AdminContract } from '../../../contract'
 import { connectAdminCatalog } from '../client'
 import { AdminCatalogOriginConflictError } from '../model'
 import { fakeAdmin, type FakeAdminInput } from './fake-admin'

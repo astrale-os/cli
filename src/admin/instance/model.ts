@@ -23,15 +23,6 @@ export interface OwnedInstanceInfo extends InstanceInfo {
   readonly state: InstanceState
 }
 
-export interface DomainInstallReceipt {
-  readonly domain: string
-  readonly instance: string
-  readonly origin: string
-  readonly ok: boolean
-  readonly installedRevision?: string
-  readonly error?: string
-}
-
 export interface RootIdentityRecipient {
   readonly kty: 'EC'
   readonly crv: 'P-256'

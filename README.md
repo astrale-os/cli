@@ -326,6 +326,18 @@ It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
 
+## Fleet catalog (deprecated)
+
+`astrale domain publish`, the catalog listing of `astrale domain list` and the bare-origin
+`astrale domain install <origin>` read and write the Admin Fleet catalog, which now only keeps a
+Fleet's default Domains (what every new Instance of the Fleet receives) until provisioning by
+version replaces it. They still work, unchanged for scripts, and warn a person that they are
+deprecated. Publish a version with `astrale-domain publish <environment>` in the Domain's project,
+list a Domain's versions with `astrale domain versions <origin>`, and install one with
+`astrale domain install <origin>@<version>` or by its deployment URL. The commands are removed in a
+later breaking release, once provisioning by version ships and no supported SDK installs by bare
+origin.
+
 ## Fleet selection
 
 An explicit `--fleet <path>` keeps that exact target; authorization failure never falls back.

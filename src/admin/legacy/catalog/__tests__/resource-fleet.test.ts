@@ -4,8 +4,8 @@ import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { type QueryAST } from '@astrale-os/sdk/query'
 import { expect, mock, test } from 'bun:test'
 
-import { listAdminDomainsInContext } from '../../lib/admin-domain'
-import { AdminContract } from '../contract'
+import { listAdminDomainsInContext } from '../../../../commands/domain/legacy/fleet-catalog'
+import { AdminContract } from '../../../contract'
 import { resourceFleet } from '../resource-fleet'
 
 const fleet = {

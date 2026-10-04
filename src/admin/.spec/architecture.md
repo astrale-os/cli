@@ -6,9 +6,11 @@ and Method paths through Kernel Client. They do not download, inspect, bind, or 
 schema. Strict local decoders admit every untrusted Admin result. The adapter does not import Admin
 implementation code, call Host directly, or persist remote graph truth.
 
-`instance` owns create/list/status/delete/install projection and explicitly excludes the reserved
-Admin Host from consumer placement. `catalog` owns Domain inventory, publication, and default-set
-configuration. `graph` is their bounded cursor helper and is not re-exported by the aggregate.
+`instance` owns create/list/status/delete projection and explicitly excludes the reserved Admin
+Host from consumer placement. `registry` owns the Domain version registry. `legacy/catalog` keeps the
+deprecated Fleet catalog (Domain inventory, publication, default-set configuration and the catalog
+install through `Instance.installDomain`) for its short-term consumers, outside the aggregate.
+`graph` is their bounded cursor helper and is not re-exported by the aggregate.
 
 Commander grammar, help text, output shapes, bookmark behavior, and current interactive host
 selection remain owned by the existing command surface; these adapters change only its remote

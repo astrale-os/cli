@@ -7,10 +7,10 @@ import { NodeId } from '@astrale-os/sdk/graph/node'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { mock } from 'bun:test'
 
-import type { AdminGraphApi } from '../../graph'
+import type { AdminGraphApi } from '../../../graph'
 
-import { adminSession } from '../../__tests__/fixture'
-import { AdminContract } from '../../contract'
+import { adminSession } from '../../../__tests__/fixture'
+import { AdminContract } from '../../../contract'
 
 /** The catalog relations of Admin #446: one Domain per origin, contained or listed by Fleets. */
 export type FakeRelation =
