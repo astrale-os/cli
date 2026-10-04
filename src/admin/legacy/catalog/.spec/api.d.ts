@@ -1,5 +1,12 @@
+/**
+ * The API of the Admin Fleet catalog adapters: catalog entries, their publication and the
+ * install-by-default flag, and the catalog install on an Admin-managed Instance.
+ *
+ * Deprecated: the successor is the Domain version registry (`../../../registry/.spec/api.d.ts`).
+ * Short-term consumers and removal (D15): see `../client.ts`.
+ */
+
 import type { ClientSession } from '@astrale-os/sdk/client/session'
-/** @deprecated The Admin Fleet catalog; successor: the Domain version registry. */
 import type { Path } from '@astrale-os/sdk/graph/path'
 
 import type { AdminGraphApi } from '../../../graph/.spec/api.js'
@@ -70,6 +77,7 @@ export interface AdminCatalogDependencies {
   readonly operationId?: (kind: 'publish' | 'configure-default') => string
 }
 
+/** @deprecated Successor: `connectAdminRegistry` (`../../../registry`). Removal: D15. */
 export function connectAdminCatalog(
   context: AdminCatalogContext,
   dependencies?: AdminCatalogDependencies,
@@ -79,7 +87,12 @@ export interface CatalogInstallDependencies {
   readonly operationId?: () => string
 }
 
-/** Resolve the caller-visible Instance, then invoke its `installDomain` receiver. */
+/**
+ * Resolve the caller-visible Instance, then invoke its `installDomain` receiver.
+ *
+ * @deprecated Successor: a URL or `<origin>@<version>` install through the instance Kernel.
+ * Removal: D15.
+ */
 export function installCatalogDomain(
   context: AdminInstanceContext,
   instance: string,
@@ -87,5 +100,9 @@ export function installCatalogDomain(
   dependencies?: CatalogInstallDependencies,
 ): Promise<DomainInstallReceipt>
 
-/** The one Fleet that contains a resource, whose catalog a bare-origin install reads. */
+/**
+ * The one Fleet that contains a resource, whose catalog a bare-origin install reads.
+ *
+ * @deprecated Only the Fleet catalog install reads it. Removal: D15.
+ */
 export function resourceFleet(context: AdminInstanceContext, resource: string): Promise<Path>
