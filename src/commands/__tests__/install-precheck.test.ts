@@ -725,7 +725,8 @@ function install(options: {
   readonly installed: readonly Built[]
   readonly served: readonly Built[]
   readonly install?: (request: InstallRequest) => Promise<InstallResult>
-  readonly registry?: 'down'
+  /** `defective`: the registry answers without a proposal for a broken dependent. */
+  readonly registry?: 'down' | 'defective'
   /** Installed Domains the Kernel does not show the caller. */
   readonly hidden?: readonly string[]
 }) {
@@ -763,6 +764,7 @@ function install(options: {
     openRegistry: async (_opts, work) => {
       registries += 1
       if (options.registry === 'down') throw new TypeError('Admin answered nonsense.')
+      if (options.registry === 'defective') return [] as never
       return work(connectAdminRegistry(admin.context))
     },
     readDeployment: async (url: string) => {
@@ -1084,6 +1086,37 @@ describe('install pre-check in the install command ([.69634])', () => {
       { origin: CRM, kind: 'unread', code: 'REGISTRY_UNAVAILABLE' },
     ])
     expect(document.precheck.command).toBeUndefined()
+    expect(run.requests).toHaveLength(1)
+  })
+
+  test('a defect in the pre-check reports every root failed and the install is still sent', async () => {
+    const run = install({
+      installed: [deployments.shell1, deployments.crm1],
+      served: [deployments.shell2],
+      registry: 'defective',
+    })
+
+    await expect(
+      installByReference(
+        [deployments.shell2.url],
+        { json: true, allowIssuerChange: [SHELL] },
+        run.deps,
+      ),
+    ).rejects.toThrow('process.exit(1)')
+
+    const document = JSON.parse(stderr.trim().split('\n').at(-1)!) as {
+      reason: { code: string }
+      precheck: unknown
+    }
+    expect(document.reason.code).toBe('SCHEMA_DEPENDENTS_INCOMPATIBLE')
+    expect(document.precheck).toEqual({
+      compared: 0,
+      dependencies: [],
+      dependents: [],
+      skipped: [{ reference: deployments.shell2.url, reason: 'failed' }],
+      unevaluated: [],
+      proposals: [],
+    })
     expect(run.requests).toHaveLength(1)
   })
 })
