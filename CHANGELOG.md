@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.125](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.124...cli/v1.0.0-beta.125) (2026-10-04)
+
+
+### Features
+
+* **studio:** pin Claude Code and Codex to the builds the ACP adapters were written for ([#577](https://github.com/astrale-os/cli/issues/577)) ([67a687d](https://github.com/astrale-os/cli/commit/67a687d6a4bcdfa13f4696d8b097d87109511c14))
+* **studio:** rename and reorder agent chat tabs ([#576](https://github.com/astrale-os/cli/issues/576)) ([478802c](https://github.com/astrale-os/cli/commit/478802ca1b9cc8a8b299da18e96f5d6bc2bafc26))
+
+
+### Bug Fixes
+
+* adopt compact durable SDK and recover Studio imports ([f73e2ea](https://github.com/astrale-os/cli/commit/f73e2ead1cb0610ae2cd1b495f8801a9848a506a))
+* **lib:** exchange at the installed Shell's issuer ([#573](https://github.com/astrale-os/cli/issues/573)) ([6299b2f](https://github.com/astrale-os/cli/commit/6299b2fb9699d491d94bc6fc0ec44b3db1599aa3))
+
 ## [1.0.0-beta.124](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.123...cli/v1.0.0-beta.124) (2026-09-28)
 
 
