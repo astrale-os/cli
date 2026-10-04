@@ -1,6 +1,6 @@
 import { defineLayout } from '@astrale-os/spec/authoring'
 
 export default defineLayout({
-  entries: ['catalog/', 'fleet/', 'graph/', 'index.ts', 'instance/', 'registry/'],
+  entries: ['__tests__/', 'index.ts', 'installations.ts', 'model.ts', 'tsconfig.json'],
   exact: true,
 })
