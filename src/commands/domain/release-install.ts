@@ -93,7 +93,7 @@ export interface ReferenceConsent {
 }
 
 /**
- * What one reference installed (CT24): the reference as written, the deployment URL it names (for
+ * What one reference installed: the reference as written, the deployment URL it names (for
  * a version, the URL its Publication names), the pin the install expected, the installation
  * before and after as the caller can read it (null when absent or not readable), and the issuer
  * consent its root carried, present only when the install changed its issuer. The expected pin of
