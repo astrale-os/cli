@@ -150,6 +150,7 @@ describe('program composition', () => {
       '',
       '__domain-registry',
       '__domain-registry bundle',
+      '__domain-registry installations',
       '__domain-registry publish',
       '__domain-registry yank',
       '__view-serve',

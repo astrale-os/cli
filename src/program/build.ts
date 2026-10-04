@@ -143,13 +143,15 @@ export async function buildProgram(): Promise<Command> {
   })
 
   // Machine plumbing of the Domain version registry (CT29), driven by `astrale-domain diff`,
-  // `publish` and `yank`; hidden from help like `__view-serve`.
+  // `publish` and `yank`, and of Fleet installations (CT37), read by `astrale-domain list`;
+  // hidden from help like `__view-serve`.
   registerGroup(program, {
     name: '__domain-registry',
     description: 'Read and write the Domain version registry (machine plumbing, JSON only)',
     hidden: true,
     commands: [
       withKernelOptions((await import('../commands/domain-registry/bundle')).default),
+      withKernelOptions((await import('../commands/domain-registry/installations')).default),
       withKernelOptions((await import('../commands/domain-registry/publish')).default),
       withKernelOptions((await import('../commands/domain-registry/yank')).default),
     ],
