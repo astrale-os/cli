@@ -17,8 +17,7 @@ import type { AdminTargetCommandOpts } from '../../lib/admin-target'
 import type { InstallFailure, UrlSource } from './install-call'
 import type { ResolvedVersion, VersionReference } from './version-reference'
 
-import { connectAdminRegistry, RegistryError } from '../../admin/registry'
-import { registryFailure } from '../../admin/registry/failure'
+import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
 import { withAdminClientSession, withClientSession } from '../../connection'
 import { reasonCode } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
@@ -49,6 +48,7 @@ import {
   admitVersionReference,
   exactReference,
   isVersionReference,
+  refuseRepeatedOrigins,
   resolveVersionReferences,
 } from './version-reference'
 
@@ -95,15 +95,15 @@ export interface ReferenceConsent {
  * consent its root carried, present only when the install changed its issuer. The expected pin of
  * a version is the release its Publication names; for a URL it is the pin read from what the URL
  * serves before the install, null when the CLI could not read it. A version reference also names
- * the version it resolved to and whether that version is yanked, which only an exact reference
- * installs ([.79339]).
+ * the version it resolved to, and carries `yanked: true` when that version is yanked, which only an
+ * exact reference installs ([.79339]); a URL reference carries neither.
  */
 export interface InstallReference {
   readonly reference: string
   readonly origin: string | null
   readonly url: string
   readonly version?: string
-  readonly yanked?: boolean
+  readonly yanked?: true
   readonly pin: InstalledPin | null
   readonly previous: InstalledState | null
   readonly installed: InstalledState | null
@@ -179,12 +179,15 @@ export async function installByReference(
 ): Promise<void> {
   const deps = { ...defaultDependencies, ...dependencies }
   let written: readonly WrittenReference[]
+  let versions: readonly VersionReference[]
   let operation: string
   let consent: IssuerChangeConsent
   try {
     consent = issuerChangeConsent(opts.allowIssuerChange, opts.revokePrevious)
     written = references.map(admitWrittenReference)
+    versions = written.flatMap((entry) => (entry.kind === 'version' ? [entry.version] : []))
     refuseRepeatedUrls(written.flatMap((entry) => (entry.kind === 'url' ? [entry.source.url] : [])))
+    refuseRepeatedOrigins(versions)
     if (opts.token !== undefined && (written.length > 1 || written[0]!.kind !== 'url')) {
       throw new AstraleError(
         'INVALID_FLAG',
@@ -200,7 +203,6 @@ export async function installByReference(
     fatal(error, opts)
   }
 
-  const versions = written.flatMap((entry) => (entry.kind === 'version' ? [entry.version] : []))
   let resolved: readonly ResolvedVersion[] = []
   if (versions.length > 0) {
     try {
@@ -291,13 +293,15 @@ function releaseSources(
 /**
  * The Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
  * configuration), read with the caller's own identity ([.79495]): never the install target that
- * `-i`/`--url` select, and never `--creds`, the raw credential of that target.
+ * `-i`/`--url` select, and never `--creds`, the raw credential of that target. `open` is the
+ * Admin session seam the tests stub.
  */
-function openInstallRegistry<Value>(
+export function openInstallRegistry<Value>(
   opts: ReferenceInstallOpts,
   work: (registry: Pick<AdminRegistryApi, 'index'>) => Promise<Value>,
+  open: typeof withAdminClientSession = withAdminClientSession,
 ): Promise<Value> {
-  return withAdminClientSession(
+  return open(
     {
       ...(opts.admin === undefined ? {} : { admin: opts.admin }),
       ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
@@ -411,9 +415,8 @@ export function installReferences(
       reference: source.reference,
       origin,
       url: source.url,
-      ...(publication === undefined
-        ? {}
-        : { version: publication.version, yanked: publication.yanked }),
+      ...(publication === undefined ? {} : { version: publication.version }),
+      ...(publication?.yanked === true ? { yanked: true as const } : {}),
       pin: expected,
       previous: state(before),
       installed: state(after),
@@ -467,7 +470,7 @@ async function installReleases(
       sources.map((source) => readWithRetry(source, retry, deps, machine)),
     )
     // The served release is checked before anything is sent; the Kernel checks it again.
-    refuseUnpublishedReleases(sources, served)
+    refuseReleaseMismatches(sources, served)
     roots = plannedRoots(sources, served)
     refuseDuplicateOrigins(roots)
     refuseUnknownConsentOrigins(consent, roots)
@@ -616,7 +619,7 @@ function installedOrigin(installed: readonly InstalledRelease[], origin: string)
  * is refused before anything is sent. A deployment the CLI cannot read is left to the Kernel,
  * which receives the Publication's release digest and refuses any other release.
  */
-function refuseUnpublishedReleases(
+function refuseReleaseMismatches(
   sources: readonly ReleaseSource[],
   served: readonly (ServedDeployment | undefined)[],
 ): void {
