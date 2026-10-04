@@ -8,9 +8,31 @@ import { RegistryError } from './model'
 const UNREACHABLE_REASONS = new Set(['release-absent', 'bundle-absent'])
 
 /**
+ * The `BACKEND_UNAVAILABLE` reasons that say nothing ran, so nothing changed: the Kernel's
+ * admission refusals (kernel `protocol/errors/retry.ts` `RETRY_REASONS`), and its submission-phase
+ * refusals (kernel `ports/mutation/backend.port.ts` `MutationSubmissionFailureCode`), which Admin
+ * returns as the reason of its own `BACKEND_UNAVAILABLE` (CT27, AM-199 (3)).
+ */
+const NOTHING_RAN_REASONS = new Set([
+  'CAPACITY_EXHAUSTED',
+  'SERVER_DRAINING',
+  'MUTATION_CAPACITY_EXHAUSTED',
+  'MUTATION_BACKEND_UNAVAILABLE',
+  'MUTATION_CANCELLED',
+  'MUTATION_DEADLINE_EXCEEDED',
+])
+
+/** The Kernel's `BACKEND_UNAVAILABLE`: the backend refuses now and may answer later. */
+const BACKEND_UNAVAILABLE = 5001
+
+const MAY_HAVE_APPLIED = 'the change may have applied. Rerun the same command: it is idempotent.'
+
+/**
  * Translate one failure of a registry read or change into the CT29 vocabulary. Admin's declared
  * refusals (CT27, as A4/A5 ship them) keep their details; Kernel protocol refusals keep their
- * numeric code in `details.status`. CLI errors (target, credential, input) pass through unchanged.
+ * numeric code in `details.status`. CLI errors (target, credential, input, local files) pass
+ * through unchanged. Rerunning a command after REGISTRY_UNAVAILABLE is always safe; it can help
+ * only when `details.retryable` is true.
  */
 export function registryFailure(error: unknown, action: 'read' | 'change'): AstraleError {
   if (error instanceof AstraleError) return error
@@ -19,9 +41,14 @@ export function registryFailure(error: unknown, action: 'read' | 'change'): Astr
     return new RegistryError(
       'REGISTRY_UNAVAILABLE',
       action === 'change' && delivery === 'unknown'
-        ? 'Admin did not answer; the change may have applied. Rerun the same command: it is idempotent.'
+        ? `Admin did not answer; ${MAY_HAVE_APPLIED}`
         : 'Admin did not answer.',
-      { reason: 'transport', phase: error.phase, ...(delivery === undefined ? {} : { delivery }) },
+      {
+        reason: 'transport',
+        phase: error.phase,
+        ...(delivery === undefined ? {} : { delivery }),
+        retryable: true,
+      },
       { cause: error },
     )
   }
@@ -30,7 +57,7 @@ export function registryFailure(error: unknown, action: 'read' | 'change'): Astr
     'REGISTRY_UNAVAILABLE',
     error instanceof TypeError
       ? `Admin answered something this CLI cannot read: ${error.message}`
-      : 'The registry call failed before Admin answered.',
+      : `The registry command failed in this CLI: ${error instanceof Error ? error.message : String(error)}`,
     { reason: error instanceof TypeError ? 'response-invalid' : 'client' },
     { cause: error },
   )
@@ -123,7 +150,43 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
       options,
     )
   }
+  if (error.code >= 5000 && error.code < 6000) return serverFailure(error, action)
   return unavailable(error)
+}
+
+/**
+ * A Kernel server-side refusal. On a change it is one of two cases: nothing ran (the call was not
+ * admitted, or the Kernel refused the commit before sending it), or the outcome is unknown (Admin
+ * could not settle a lost commit, A4/A5 `unsettledCommit`), which only a rerun settles. A read may
+ * be retried on 5001.
+ */
+function serverFailure(error: ResponseError, action: 'read' | 'change'): RegistryError {
+  const reason = error.reason?.code
+  const status = { status: error.code, ...(reason === undefined ? {} : { reason }) }
+  if (action === 'read') {
+    return error.code === BACKEND_UNAVAILABLE
+      ? new RegistryError(
+          'REGISTRY_UNAVAILABLE',
+          'Admin cannot answer now; rerun the same command.',
+          { ...status, retryable: true },
+          { cause: error },
+        )
+      : unavailable(error)
+  }
+  if (error.code === BACKEND_UNAVAILABLE && NOTHING_RAN_REASONS.has(reason ?? '')) {
+    return new RegistryError(
+      'REGISTRY_UNAVAILABLE',
+      'Admin could not make the change now; nothing changed. Rerun the same command.',
+      { ...status, retryable: true },
+      { cause: error },
+    )
+  }
+  return new RegistryError(
+    'REGISTRY_UNAVAILABLE',
+    `Admin failed (${error.code}); ${MAY_HAVE_APPLIED}`,
+    { ...status, delivery: 'unknown', retryable: true },
+    { cause: error },
+  )
 }
 
 function unavailable(error: ResponseError, reason?: string): RegistryError {
