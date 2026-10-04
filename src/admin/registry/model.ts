@@ -129,10 +129,11 @@ export const REGISTRY_ERROR_CODES = [
 
 export type RegistryErrorCode = (typeof REGISTRY_ERROR_CODES)[number]
 
-/** One refusal of the registry plumbing, printed as `{ error: { code, message, details? } }`. */
+/**
+ * One refusal of the registry plumbing, printed as `{ error: { code, message, details? } }`. Its
+ * details are the CLI error's own (`AstraleError.details`), frozen.
+ */
 export class RegistryError extends AstraleError {
-  readonly details?: Readonly<Record<string, unknown>>
-
   constructor(
     code: RegistryErrorCode,
     message: string,
