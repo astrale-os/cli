@@ -44,7 +44,7 @@ import {
   switchChatHarness,
   updateChat,
 } from './coordinator'
-import { isRunActive } from './live-state'
+import { currentRun, isRunActive, setCurrentRun } from './live-state'
 import { persistRun, readRunHistory } from './transcript'
 
 const roots: string[] = []
@@ -237,6 +237,48 @@ describe.serial('agent runner invariants', () => {
     expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(true)
     unwrap(closeChat(chat))
     expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(false)
+  })
+
+  test('Continue sends a first turn again when it stopped before any session existed', async () => {
+    useMock('error')
+    const handle = fixture()
+    const failed = (await submitRun(() => {}, { message: 'build the billing domain' })).run!
+    expect((await waitForTerminal(handle.id)).status).toBe('failed')
+    expect(failed.sessionId).toBeUndefined()
+
+    // nothing for the agent to remember: the very same message goes again, with a
+    // note that part of the work may already be on disk
+    useMock()
+    const resumed = await submitRun(() => {}, { resume: true })
+    expect(resumed.error).toBeUndefined()
+    expect(resumed.run).toMatchObject({ instruction: 'build the billing domain', resumed: false })
+    expect(resumed.run?.prompt?.turnPrompt).toContain('build the billing domain')
+    expect(resumed.run?.prompt?.turnPrompt).toContain('A previous attempt at this message')
+    expect((await waitForTerminal(handle.id)).status).toBe('succeeded')
+
+    // a turn that finished leaves nothing to continue
+    expect((await submitRun(() => {}, { resume: true })).error).toContain('nothing to continue')
+  })
+
+  test('Continue resumes the same session once the agent had taken the turn up', async () => {
+    useMock()
+    const handle = fixture()
+    await submitRun(() => {}, { message: 'first' })
+    await waitForTerminal(handle.id)
+    await submitRun(() => {}, { message: 'second' })
+    const second = await waitForTerminal(handle.id)
+    // the studio went down mid-turn, after the agent had started working
+    setCurrentRun({ ...second, status: 'interrupted', error: 'the studio restarted' })
+
+    const resumed = (await submitRun(() => {}, { resume: true })).run!
+    expect(resumed).toMatchObject({ resumed: true, sessionId: 'mock-session' })
+    expect(resumed.instruction).toBeUndefined()
+    expect(resumed.summary).toBe('continue where it stopped')
+    expect(resumed.prompt?.turnPrompt).toContain('Resuming the SAME session')
+    expect(resumed.prompt?.turnPrompt).toContain('Domain Studio restarted')
+    expect(resumed.prompt?.turnPrompt).not.toContain('second')
+    await waitForTerminal(handle.id)
+    expect(currentRun(chatId(handle))?.status).toBe('succeeded')
   })
 
   test('the message streams in as it is written, then lands under the same id', async () => {

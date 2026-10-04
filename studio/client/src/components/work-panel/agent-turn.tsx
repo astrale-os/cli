@@ -9,7 +9,7 @@ import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { AgentErrorChip } from './agent-error'
+import { isStopped, StoppedTurnNotice } from './agent-error'
 import { AgentSteps, splitTurn, visibleDraft } from './agent-steps'
 import { MessageImages } from './images'
 
@@ -58,12 +58,11 @@ export function answeredThreads(run: AgentRun): number {
  */
 export function AgentTurn({
   run,
-  onResume,
-  onRetry,
+  onContinue,
 }: {
   run: AgentRun
-  onResume?: () => void
-  onRetry?: () => void
+  /** offered on the last turn only: picks it up where it stopped */
+  onContinue?: () => void
 }) {
   const { steps, answer: messages } = splitTurn(run)
   const active = isRunActive(run)
@@ -90,7 +89,7 @@ export function AgentTurn({
         </div>
       )}
 
-      {(messages.length > 0 || steps.length > 0 || active || run.error) && (
+      {(messages.length > 0 || steps.length > 0 || active || !!run.error || isStopped(run)) && (
         <div className="flex">
           <div className="min-w-0 flex-1 space-y-2 text-[13px]">
             <AgentSteps run={run} steps={steps} />
@@ -104,18 +103,10 @@ export function AgentTurn({
                 className="[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:animate-pulse [&>:last-child]:after:text-primary [&>:last-child]:after:content-['▍']"
               />
             )}
-            {!active && run.error && !authFailure && <AgentErrorChip run={run} onRetry={onRetry} />}
-            {!active && authFailure && (
-              <AuthFailureNotice failure={authFailure} onRetry={onRetry} />
-            )}
-            {run.status === 'interrupted' && onResume && (
-              <button
-                type="button"
-                onClick={onResume}
-                className="text-[12px] font-medium text-primary transition-opacity hover:opacity-80"
-              >
-                Continue
-              </button>
+            {!active && authFailure ? (
+              <AuthFailureNotice failure={authFailure} onContinue={onContinue} />
+            ) : (
+              isStopped(run) && <StoppedTurnNotice run={run} onContinue={onContinue} />
             )}
             {/* The count, never the replies themselves: a turn that answered threads says
                 so from the moment the first reply lands — reading them is one click away. */}
@@ -129,10 +120,8 @@ export function AgentTurn({
                 Answered {answered} comment {answered === 1 ? 'thread' : 'threads'}
               </button>
             )}
-            {!active && messages.length === 0 && !run.error && answered === 0 && (
-              <p className="text-[12px] text-muted-foreground">
-                {run.status === 'canceled' ? 'Stopped.' : 'Done — no message.'}
-              </p>
+            {run.status === 'succeeded' && messages.length === 0 && answered === 0 && (
+              <p className="text-[12px] text-muted-foreground">Done — no message.</p>
             )}
           </div>
         </div>
@@ -144,10 +133,10 @@ export function AgentTurn({
 /** A turn the agent could not run because its CLI is signed out: how to sign back in. */
 function AuthFailureNotice({
   failure,
-  onRetry,
+  onContinue,
 }: {
   failure: AgentAuthFailure
-  onRetry?: () => void
+  onContinue?: () => void
 }) {
   return (
     <div
@@ -159,7 +148,7 @@ function AuthFailureNotice({
         <div className="min-w-0 space-y-1">
           <p className="font-medium text-foreground">{failure.title}</p>
           <p className="text-[12px] leading-relaxed text-muted-foreground">
-            Sign in again from a terminal. Your conversation is saved, so you can retry this turn
+            Sign in again from a terminal. Your conversation is saved, so you can continue this turn
             without losing your work.
           </p>
         </div>
@@ -177,9 +166,9 @@ function AuthFailureNotice({
           <Copy />
           Copy command
         </Button>
-        {onRetry && (
-          <Button type="button" size="xs" onClick={onRetry}>
-            I’ve signed in — retry
+        {onContinue && (
+          <Button type="button" size="xs" onClick={onContinue}>
+            I’ve signed in, continue
           </Button>
         )}
       </div>

@@ -218,8 +218,7 @@ export function readLastRun(root: string, chat: StoredChat): AgentRun | null {
   if (last.status === 'running' || last.status === 'queued') {
     last.status = 'interrupted'
     last.finishedAt = last.finishedAt ?? new Date().toISOString()
-    last.error =
-      'the studio restarted during this turn — your conversation is preserved; submit again to continue'
+    last.error = 'the studio restarted during this turn'
     persistRun(root, last, true)
   }
   return last

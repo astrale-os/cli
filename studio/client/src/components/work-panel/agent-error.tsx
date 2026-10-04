@@ -1,12 +1,13 @@
 import type { AgentEvent, AgentRun } from '@shared/types'
 import type { ReactNode } from 'react'
 
-import { ChevronRight, CircleAlert, Copy, RotateCcw } from 'lucide-react'
+import { ChevronRight, CircleAlert, CirclePause, CircleStop, Copy, Play } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 
 /** Wrappers that name the transport, never the cause - a headline reads past them. */
 const NOISE_PREFIX = /^(?:internal error|error|agent error|uncaught exception)\s*:\s*/i
@@ -124,18 +125,63 @@ export function errorDiagnostic(run: AgentRun): string {
   ].join('\n')
 }
 
+/** A turn that ended before it finished, and could be picked back up. */
+export type StoppedStatus = 'interrupted' | 'failed' | 'canceled'
+
+export function isStopped(run: AgentRun): run is AgentRun & { status: StoppedStatus } {
+  return run.status === 'interrupted' || run.status === 'failed' || run.status === 'canceled'
+}
+
+/** How each way of stopping reads: a crash is not an error, and a stop is not either. */
+const STOPPED: Record<
+  StoppedStatus,
+  { icon: typeof CircleAlert; title: string; detail: string; frame: string; tone: string }
+> = {
+  interrupted: {
+    icon: CirclePause,
+    title: 'Interrupted',
+    detail: 'Studio restarted during this turn',
+    frame: 'border-warning/30 bg-warning/[0.07]',
+    tone: 'text-warning',
+  },
+  failed: {
+    icon: CircleAlert,
+    title: 'Failed',
+    detail: '',
+    frame: 'border-destructive/20 bg-destructive/[0.06]',
+    tone: 'text-destructive',
+  },
+  canceled: {
+    icon: CircleStop,
+    title: 'Stopped',
+    detail: 'You stopped this turn',
+    frame: 'border-border bg-muted/50',
+    tone: 'text-muted-foreground',
+  },
+}
+
 /**
- * A failed turn, at two depths. In the conversation: one quiet chip with the cause,
- * readable at a glance and never taller than a line. One click deeper: the whole
- * failure - raw error, the run's context, the steps that led to it - with a copy
- * that carries all of it, so investigating never starts by re-running the turn.
+ * A turn that stopped short, however it stopped: what happened in one line, and
+ * the one way forward - Continue, which picks the work up where it stopped (the
+ * server resends the turn when the agent never kept it). A failure opens one
+ * click deeper: the raw error, the run's context and the steps that led to it,
+ * with a copy that carries all of it, so investigating never starts by re-running.
  */
-export function AgentErrorChip({ run, onRetry }: { run: AgentRun; onRetry?: () => void }) {
+export function StoppedTurnNotice({
+  run,
+  onContinue,
+}: {
+  run: AgentRun & { status: StoppedStatus }
+  onContinue?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const error = run.error ?? ''
   const headline = errorHeadline(error)
   const activity = trailingActivity(run)
   const context = errorContext(run)
+  const look = STOPPED[run.status]
+  const Icon = look.icon
+  const failed = run.status === 'failed'
 
   const copy = async () => {
     try {
@@ -146,32 +192,53 @@ export function AgentErrorChip({ run, onRetry }: { run: AgentRun; onRetry?: () =
     }
   }
 
+  const summary = (
+    <>
+      <Icon className={cn('h-3.5 w-3.5 shrink-0', look.tone)} />
+      <span className={cn('shrink-0 font-medium', look.tone)}>{look.title}</span>
+      <span className="min-w-0 truncate text-muted-foreground">
+        {failed ? headline : look.detail}
+      </span>
+    </>
+  )
+
   return (
     <>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          title="See what went wrong"
-          data-testid="agent-error-chip"
-          className="group inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-destructive/20 bg-destructive/[0.06] py-1 pl-2 pr-1.5 text-[12px] transition-colors hover:border-destructive/35 hover:bg-destructive/10"
-        >
-          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
-          <span className="shrink-0 font-medium text-destructive">Failed</span>
-          <span className="min-w-0 truncate text-muted-foreground">{headline}</span>
-          <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-        </button>
-        {onRetry && (
+      <div
+        role="status"
+        data-testid="stopped-turn"
+        data-status={run.status}
+        className={cn(
+          'flex w-fit min-w-0 max-w-full items-center gap-2 rounded-lg border py-1 pl-2.5 pr-1 text-[12px]',
+          look.frame,
+          !onContinue && 'pr-2.5',
+        )}
+      >
+        {failed ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            title="See what went wrong"
+            data-testid="agent-error-chip"
+            className="group inline-flex min-w-0 cursor-pointer items-center gap-1.5 py-0.5 text-left"
+          >
+            {summary}
+            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </button>
+        ) : (
+          <span className="inline-flex min-w-0 items-center gap-1.5 py-0.5">{summary}</span>
+        )}
+        {onContinue && (
           <Button
             type="button"
-            variant="ghost"
             size="xs"
-            onClick={onRetry}
-            title="Run this turn again"
-            className="shrink-0 text-muted-foreground"
+            onClick={onContinue}
+            title="Pick the work up where it stopped"
+            data-testid="continue-turn"
+            className="h-6 shrink-0 gap-1 px-2"
           >
-            <RotateCcw />
-            Retry
+            <Play className="size-2.5 fill-current" />
+            Continue
           </Button>
         )}
       </div>
@@ -241,17 +308,17 @@ export function AgentErrorChip({ run, onRetry }: { run: AgentRun; onRetry?: () =
               <Copy />
               Copy diagnostic
             </Button>
-            {onRetry && (
+            {onContinue && (
               <Button
                 type="button"
                 size="sm"
                 onClick={() => {
                   setOpen(false)
-                  onRetry()
+                  onContinue()
                 }}
               >
-                <RotateCcw />
-                Retry
+                <Play className="fill-current" />
+                Continue
               </Button>
             )}
           </div>
