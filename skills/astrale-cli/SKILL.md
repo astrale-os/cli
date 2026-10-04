@@ -253,6 +253,18 @@ origin):
   every unconsented change in `details.origins` (`origin`, `installed`,
   `replacement`, `line`) before anything is sent; `--json` reports each
   consent as `references[].consent` (`from`, `to`, `previous`).
+- Before the install is sent, an advisory pre-check runs the Kernel's
+  compatibility engine on what the caller can read, both ways: each installed
+  root must find what it uses in its dependencies as the install leaves them,
+  and each installed Domain the install does not name must still find what it
+  uses in every upgraded dependency. For each broken dependent it proposes the
+  highest stable, non-yanked published version built against the new revision
+  (an Admin registry read, also for URL installs) and the grouped install;
+  unreadable Domains are reported as not evaluated. The install is still sent
+  and the Kernel decides. `--json` carries it as `precheck` (`compared`,
+  `dependencies`, `dependents`, `proposals`, `command?`, `skipped`,
+  `unevaluated`) in the report, and beside a SCHEMA_DEPENDENCY_INCOMPATIBLE or
+  SCHEMA_DEPENDENTS_INCOMPATIBLE refusal.
 - A source that serves only the legacy `domain.json`, and every URL install
   on a Kernel without the installed-release listing, keep the
   identity-override prompt (`--allow-identity-override` in scripts) when the
