@@ -7,6 +7,7 @@ import type { StudioSchemaBundle } from '../shared/types'
 
 import { decodeBundleCacheEntry, getAnatomy, getBundle, invalidate, stillStands } from './cache'
 import { registerDomain, unregisterDomain } from './domain'
+import { readState, writeJson } from './state/store'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -198,6 +199,54 @@ export const schema = {}
   domainIds.push(handle.id)
   return { id: handle.id, root, schemaIndex }
 }
+
+test('an upgraded Studio rebuilds a persisted successful preview from the old admission generation', async () => {
+  const domain = temporaryDomain()
+  writeFileSync(
+    domain.schemaIndex,
+    `import { classIcon, defineSchema, nodeClass, valueSchema } from '@astrale-os/sdk/schema'
+const Shared = nodeClass({ icon: classIcon.neutral, properties: { title: valueSchema<string>()({ type: 'string' }) } })
+const dependency = defineSchema('cache-dependency.studio.test', { classes: { Shared } })
+export const schema = defineSchema('cache-upgrade.studio.test', {
+  dependencies: { dependency },
+  classes: { Document: nodeClass({ icon: classIcon.neutral, extends: [Shared] }) },
+})
+`,
+  )
+  const original = await getBundle(domain.id)
+  expect(original?.error).toBeNull()
+  expect(original?.schemaMode).toBe('canonical-admitted')
+  expect(original?.ir?.importsByKey?.['cache-dependency.studio.test:class.Shared']).toBeDefined()
+  const persisted = JSON.parse(readState(domain.root, '.cache/schema-bundle.json')!)
+  // Match the current key deliberately: a standalone binary cannot hash tool
+  // sources, so the semantic generation must retire even a successful preview.
+  writeJson(domain.root, '.cache/schema-bundle.json', {
+    ...persisted,
+    version: 9,
+    bundle: {
+      ...persisted.bundle,
+      schemaMode: 'canonical-preview',
+      schemaRevision: undefined,
+      renderFingerprint: 'old-admission-preview',
+      error: null,
+      ir: { ...persisted.bundle.ir, importsByKey: {}, importedClassesByKey: {} },
+    },
+  })
+  invalidate(domain.id, 'all')
+
+  const upgraded = await getBundle(domain.id)
+  expect(upgraded?.schemaMode).toBe('canonical-admitted')
+  expect(upgraded?.renderFingerprint).not.toBe('old-admission-preview')
+  expect(upgraded?.ir?.importsByKey?.['cache-dependency.studio.test:class.Shared']).toBeDefined()
+  const current = JSON.parse(readState(domain.root, '.cache/schema-bundle.json')!)
+  expect(current.version).toBeGreaterThan(9)
+
+  // A current admitted disk cache remains reusable without another extraction.
+  current.bundle.extractedAt = '2000-01-01T00:00:00.000Z'
+  writeJson(domain.root, '.cache/schema-bundle.json', current)
+  invalidate(domain.id, 'all')
+  expect((await getBundle(domain.id))?.extractedAt).toBe(current.bundle.extractedAt)
+}, 30_000)
 
 test('anatomy follows a bundle that heals after a temporary extraction failure', async () => {
   const domain = temporaryDomain()
