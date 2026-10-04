@@ -217,11 +217,11 @@ exact deployment and optional installation targets; they do not use the CLI's ac
   instance Kernel through the public install syscall, on any instance you can
   authenticate to. Several URLs install in ONE atomic Kernel operation (every
   Domain moves or none does), which is how dependent Domains move together.
-  The CLI reads what each URL serves first, refuses two references to one
-  origin, pins the release digest it read, and verifies the installed pins
-  afterwards. It owns the explicit identity-override consent prompt
-  (`--allow-identity-override` in scripts). `--direct` is still accepted and
-  changes nothing.
+  The CLI reads what each URL serves first (a 503 is read again for up to
+  60 s), refuses two references to one origin, pins the release digest it
+  read, and verifies the installed pins afterwards. It owns the explicit
+  identity-override consent prompt (`--allow-identity-override` in scripts).
+  `--direct` is deprecated: still accepted, it changes nothing.
 - One bare origin installs that published catalog Domain through the admin
   control plane onto an admin-managed instance.
 
