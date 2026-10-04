@@ -15,7 +15,7 @@ import type { ConnectionContext, KernelCommandOpts } from '../../connection'
 import type { InstallFailure, UrlSource } from './install-call'
 
 import { withClientSession } from '../../connection'
-import { functionInputIssues, reasonCode } from '../../connection/reasons'
+import { reasonCode } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
 import {
   DeploymentReadError,
@@ -27,7 +27,7 @@ import { fatal, log } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
 import {
-  admitIssuerChange,
+  admitIssuerChanges,
   asksIssuerConsent,
   firstInstallNotice,
   issuerChangeConsent,
@@ -35,7 +35,6 @@ import {
   plannedIssuerChange,
   type IssuerChange,
   type IssuerChangeConsent,
-  type IssuerChangeLine,
   type IssuerConsentRequest,
 } from './issuer-consent'
 import { consentToDeclaredOrigin, warnUnconfirmedOverride } from './legacy/identity-override'
@@ -66,11 +65,15 @@ export interface InstalledState {
   readonly issuer: string
 }
 
-/** The issuer consent one reference's root carried (CT9), with the line class it was admitted as. */
+/**
+ * The issuer consent one reference's root carried (CT24): the installed issuer it replaced, the
+ * issuer that replaced it, and what happens to the replaced one (the Kernel default, `drain`, or
+ * `revoke` with --revoke-previous).
+ */
 export interface ReferenceConsent {
-  readonly issuer: { readonly from: string; readonly to: string }
+  readonly from: string
+  readonly to: string
   readonly previous: 'drain' | 'revoke'
-  readonly line: IssuerChangeLine
 }
 
 /**
@@ -89,8 +92,19 @@ export interface InstallReference {
   readonly consent?: ReferenceConsent
 }
 
-/** `--json` of an install by URL: the Kernel result, unchanged, plus one entry per reference. */
-export type InstallReport = InstallResult & { readonly references: readonly InstallReference[] }
+/** A Kernel refusal of a request whose install had already committed (AM-81). */
+export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
+
+/**
+ * `--json` of an install by URL: the Kernel result, unchanged, plus one entry per reference. When
+ * the Kernel refused the request but every reference is already installed as requested (AM-81),
+ * the result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
+ * refusal, so a consumer can tell it from a Kernel replay.
+ */
+export type InstallReport = InstallResult & {
+  readonly references: readonly InstallReference[]
+  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
+}
 
 export interface UrlInstallDependencies {
   readonly acceptOperationId: (input: unknown) => string
@@ -252,9 +266,9 @@ export function installReferences(
         ? {}
         : {
             consent: Object.freeze({
-              issuer: Object.freeze({ from: change.from, to: change.to }),
+              from: change.from,
+              to: change.to,
               previous: consent?.revokePrevious === true ? ('revoke' as const) : ('drain' as const),
-              line: change.line,
             }),
           }),
     })
@@ -318,16 +332,25 @@ async function installReleases(
             )
           : undefined,
       )
-      const change = changes[index]
-      if (change !== undefined) await admitIssuerChange(change, consent, machine)
-      else if (deployment !== undefined && !machine && !installedOrigin(before, deployment)) {
+      if (
+        changes[index] === undefined &&
+        deployment !== undefined &&
+        !machine &&
+        !installedOrigin(before, deployment)
+      ) {
         const notice = firstInstallNotice(deployment, source.url)
         if (notice !== undefined) log.warn(notice)
       }
     }
+    await admitIssuerChanges(
+      changes.filter((change): change is IssuerChange => change !== undefined),
+      consent,
+      machine,
+    )
   } catch (error) {
     return { error, render: 'input' }
   }
+  if (!machine) warnUnreadableConsentOrigins(consent, served, before)
   if (!machine && consent.revokePrevious && changes.every((change) => change === undefined)) {
     log.dim('  --revoke-previous: no installed issuer changes, so there is nothing to revoke.')
   }
@@ -356,36 +379,43 @@ async function installReleases(
         const result = await context.session.schema.install(request)
         return { result, after: await installedAfter(context.session, machine) }
       } catch (error) {
-        const held = await committedEarlier(error, context.session, references, served)
-        if (held !== undefined) return held
+        const recovered = await recoverCommittedInstall(error, context.session, references, served)
+        if (recovered !== undefined) return recovered
         throw error
       }
     },
-    format: ({ result, after, committedEarlier: refusal }, raw) => {
+    format: ({ result, after, recovered }, raw) => {
       const report = installReferences(
         references,
         served,
         before,
         after,
-        refusal === undefined ? changes : [],
+        recovered === undefined ? changes : [],
         consent,
       )
       mismatched = pinMismatches(report, after)
       if (raw) {
-        output({ ...result, references: report } satisfies InstallReport, opts)
+        output(
+          {
+            ...result,
+            references: report,
+            ...(recovered === undefined ? {} : { recovered }),
+          } satisfies InstallReport,
+          opts,
+        )
         return
       }
       presentReferences(report, operation, result)
-      if (refusal !== undefined) {
+      if (recovered !== undefined) {
         log.dim(
-          `  The Kernel refused this install (${refusal}), but every Domain is installed as requested: an earlier install already committed it.`,
+          `  The Kernel refused this install (${recovered.refusal}), but every Domain is installed as requested: an earlier install already committed it.`,
         )
       }
-      for (const reference of report) {
+      for (const [index, reference] of report.entries()) {
         if (reference.consent !== undefined) {
           log.dim(
-            `  ${reference.origin}: issuer ${reference.consent.issuer.from} -> ${reference.consent.issuer.to} ` +
-              `(${reference.consent.line === 'same' ? 'same line' : 'another line'}; ` +
+            `  ${reference.origin}: issuer ${reference.consent.from} -> ${reference.consent.to} ` +
+              `(${changes[index]?.line === 'same' ? 'same line' : 'another line'}; ` +
               `the previous issuer ${reference.consent.previous === 'revoke' ? 'is revoked' : 'drains'})`,
           )
         }
@@ -408,51 +438,17 @@ async function installReleases(
       }
     },
   })
-  if (failure !== undefined) {
-    const unsupported = consentRefusedAsInput(failure.error, changes)
-    return unsupported === undefined ? failure : { error: unsupported, render: 'input' }
-  }
+  if (failure !== undefined) return failure
   if (mismatched.length > 0) return { error: pinMismatchError(mismatched), render: 'input' }
   return undefined
-}
-
-/**
- * A Kernel that lists installed releases but predates issuer consent refuses a consented root as
- * a release request it cannot read: FUNCTION_INPUT_INVALID with issues at `/domains/<i>` itself,
- * the root, never inside it. Nothing was installed; the refusal is KERNEL_RELEASE_UNSUPPORTED.
- */
-function consentRefusedAsInput(
-  error: unknown,
-  changes: readonly (IssuerChange | undefined)[],
-): AstraleError | undefined {
-  if (!(error instanceof ResponseError) || reasonCode(error.reason) !== 'FUNCTION_INPUT_INVALID') {
-    return undefined
-  }
-  const consented = new Set(
-    changes.flatMap((change, index) => (change === undefined ? [] : [`/domains/${index}`])),
-  )
-  const issues = functionInputIssues(error.reason)
-  if (consented.size === 0 || issues.length === 0) return undefined
-  if (!issues.every((issue) => issue.path !== undefined && consented.has(issue.path))) {
-    return undefined
-  }
-  const origins = changes.flatMap((change) => (change === undefined ? [] : [change.origin]))
-  const unsupported = new AstraleError(
-    'KERNEL_RELEASE_UNSUPPORTED',
-    `This Kernel lists installed releases but takes no issuer consent: it refused the consent of ${origins.join(', ')} as invalid input, and nothing was installed.`,
-    'Upgrade the Host to a release that accepts issuer consent, or uninstall the origin and install it again.',
-    { cause: error },
-  )
-  unsupported.details = Object.freeze({ code: error.code, reason: error.reason })
-  return unsupported
 }
 
 /** What the install call gives the presentation: the Kernel result and the listing read after it. */
 interface InstallOutcome {
   readonly result: InstallResult
   readonly after: readonly InstalledRelease[] | undefined
-  /** The Kernel refusal of a request whose install had already committed (AM-81). */
-  readonly committedEarlier?: string
+  /** Present when the Kernel refused a request whose install had already committed (AM-81). */
+  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
 }
 
 function installedOrigin(
@@ -484,14 +480,36 @@ function refuseUnknownConsentOrigins(
 }
 
 /**
+ * An origin named by `--allow-issuer-change=<origin>` that this install serves but whose
+ * installation the caller cannot read gets no consent: the CLI plans consents from the installed
+ * listing only and never builds one from a Kernel refusal. Either the origin is not installed (a
+ * first install needs no consent) or the listing hides it; the operator is told before the send.
+ */
+function warnUnreadableConsentOrigins(
+  consent: IssuerChangeConsent,
+  served: readonly (ServedDeployment | undefined)[],
+  before: readonly InstalledRelease[],
+): void {
+  for (const origin of consent.origins) {
+    const named = served.some((deployment) => deployment?.origin === origin)
+    if (!named || before.some((entry) => entry.origin === origin)) continue
+    log.warn(
+      `--allow-issuer-change=${origin}: ${origin} is not among the installations this identity can read, so no consent is sent. ` +
+        'If it is installed, consenting to its issuer change needs read access to its installation.',
+    )
+  }
+}
+
+/**
  * AM-81: an issuer consent sent after its install committed is refused, under a new operation id as
  * SCHEMA_INPUT_INVALID at `/domains/<i>/consent` (the Domain no longer changes issuer), under the
  * same id as SCHEMA_OPERATION_CONFLICT (a retry planned from the moved listing carries no consent).
  * Before such a refusal is reported, the installations are read back: when every reference is
  * installed from its URL with the pin read before the install, the install asked for holds, and
- * the command reports it as already current with the installed Domains as the Kernel describes them.
+ * the command reports it as already current with the installed Domains as the Kernel describes them,
+ * marked `recovered` with the Kernel refusal it recovered from.
  */
-async function committedEarlier(
+async function recoverCommittedInstall(
   error: unknown,
   session: ClientSession,
   references: readonly string[],
@@ -530,13 +548,13 @@ async function committedEarlier(
   return Object.freeze({
     result: Object.freeze({ changed: false, domains }) as InstallResult,
     after,
-    committedEarlier: refusal,
+    recovered: Object.freeze({ refusal }),
   })
 }
 
 type CurrentDomains = Extract<InstallResult, { readonly changed: false }>['domains']
 
-function committedConsentRefusal(error: unknown): string | undefined {
+function committedConsentRefusal(error: unknown): CommittedInstallRefusal | undefined {
   if (!(error instanceof ResponseError)) return undefined
   const code = reasonCode(error.reason)
   if (code === 'SCHEMA_OPERATION_CONFLICT') return code

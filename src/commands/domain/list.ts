@@ -116,7 +116,7 @@ Examples:
           if (!opts.check) return filtered as DomainRow[]
           // Reachability is a direct client-side Publication fetch per entry, in
           // parallel — no admin round-trip, and version-independent of the
-          // admin worker (mirrors `domain install`'s probeDeclaredOrigin).
+          // admin worker (mirrors probeDeclaredOrigin of `domain/legacy/identity-override.ts`).
           return Promise.all(filtered.map(probe))
         },
       )

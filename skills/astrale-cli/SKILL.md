@@ -230,6 +230,11 @@ exact deployment and optional installation targets; they do not use the CLI's ac
   terminal. The replaced issuer keeps working while its in-flight work
   drains; `--revoke-previous` cuts it at the activation. A first install from
   a deployment URL needs no consent; the CLI notes the unverified claim.
+  The origin is given only after `=`: a bare `--allow-issuer-change` never
+  takes the next argument. Without consent, ISSUER_CHANGE_NOT_CONSENTED lists
+  every unconsented change in `details.origins` (`origin`, `installed`,
+  `replacement`, `line`) before anything is sent; `--json` reports each
+  consent as `references[].consent` (`from`, `to`, `previous`).
 - A source that serves only the legacy `domain.json`, and every URL install
   on a Kernel without the installed-release listing, keep the
   identity-override prompt (`--allow-identity-override` in scripts) when the
