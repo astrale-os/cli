@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { stripVTControlCharacters } from 'node:util'
 
 import type { ServedDeployment } from '../../lib/domain-release'
-import type { UrlInstallDependencies } from '../domain/release-install'
+import type { ReferenceInstallDependencies } from '../domain/release-install'
 
 import { releaseFor } from '../../__tests__/fixtures/publication'
 import { transportFailure } from '../../connection/__tests__/failure-fixtures'
 import { DeploymentReadError } from '../../lib/domain-release'
-import { installByUrl, NOT_YET_ACTIVE_WINDOW_MS, rootStatus } from '../domain/release-install'
+import { installByReference, NOT_YET_ACTIVE_WINDOW_MS, rootStatus } from '../domain/release-install'
 
 const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
 const RETRY = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
@@ -148,7 +148,7 @@ interface Harness {
   readonly credentials: unknown[]
   readonly listings: number
   readonly sleeps: number[]
-  readonly deps: Partial<UrlInstallDependencies>
+  readonly deps: Partial<ReferenceInstallDependencies>
 }
 
 function harness(options: {
@@ -190,7 +190,7 @@ function harness(options: {
       ) => {
         credentials.push(credential)
         return action({ session } as never)
-      }) as unknown as UrlInstallDependencies['withClientSession'],
+      }) as unknown as ReferenceInstallDependencies['withClientSession'],
       readDeployment: async (url: string) => {
         const read = options.served?.[url]
         if (read === undefined) throw new DeploymentReadError(`GET ${url} failed.`)
@@ -200,7 +200,7 @@ function harness(options: {
       sleep: async (ms: number) => {
         sleeps.push(ms)
       },
-    } satisfies Partial<UrlInstallDependencies>,
+    } satisfies Partial<ReferenceInstallDependencies>,
   }
   return state
 }
@@ -246,7 +246,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], JSON_OUTPUT, run.deps)
+    await installByReference([A], JSON_OUTPUT, run.deps)
 
     expect(run.credentials).toEqual([{ principal: 'caller' }])
     expect(run.requests).toEqual([
@@ -278,7 +278,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       install: async () => committed(['agencies.test', 'employees.test']),
     })
 
-    await installByUrl([B, A], JSON_OUTPUT, run.deps)
+    await installByReference([B, A], JSON_OUTPUT, run.deps)
 
     expect(run.requests).toHaveLength(1)
     expect(run.requests[0]!.domains).toEqual([
@@ -306,14 +306,16 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       },
     })
 
-    await expect(installByUrl([A, B], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByReference([A, B], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(
+      ExitError,
+    )
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'DUPLICATE_ORIGIN' })
   })
 
   test('refuses the same deployment named twice before connecting', async () => {
     const run = harness({})
-    await expect(installByUrl([A, `${A}/`], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(
+    await expect(installByReference([A, `${A}/`], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(
       ExitError,
     )
     expect(run.credentials).toEqual([])
@@ -339,7 +341,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     // A terminal on stdout is what makes the output human (no --json).
     process.stdout.isTTY = true
     try {
-      await installByUrl([A, B], {}, run.deps)
+      await installByReference([A, B], {}, run.deps)
     } finally {
       console.log = original
       process.stdout.isTTY = tty
@@ -371,7 +373,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     }
     process.stdout.isTTY = true
     try {
-      await installByUrl([A, B], {}, run.deps)
+      await installByReference([A, B], {}, run.deps)
     } finally {
       console.log = original
       process.stdout.isTTY = tty
@@ -397,7 +399,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       install: async () => committed(['crm.test']),
     })
 
-    await installByUrl(['https://crm.test'], JSON_OUTPUT, run.deps)
+    await installByReference(['https://crm.test'], JSON_OUTPUT, run.deps)
 
     expect(run.requests[0]!.domains).toEqual([{ release: { url: 'https://crm.test' } }])
     expect(JSON.parse(stdout).references[0].installed.pin).toEqual(served.pin)
@@ -409,7 +411,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], JSON_OUTPUT, run.deps)
+    await installByReference([A], JSON_OUTPUT, run.deps)
 
     expect(run.requests[0]!.domains).toEqual([{ release: { url: A } }])
     expect(JSON.parse(stdout).references[0]).toMatchObject({
@@ -435,7 +437,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], JSON_OUTPUT, run.deps)
+    await installByReference([A], JSON_OUTPUT, run.deps)
 
     expect(reads).toBe(3)
     expect(run.sleeps).toEqual([2_000, 2_000])
@@ -458,7 +460,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], JSON_OUTPUT, run.deps)
+    await installByReference([A], JSON_OUTPUT, run.deps)
 
     expect(run.sleeps.length).toBeGreaterThan(0)
     expect(run.sleeps.length).toBeLessThanOrEqual(2)
@@ -474,7 +476,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       },
     })
 
-    await expect(installByUrl([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByReference([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toHaveLength(1)
     expect(run.sleeps).toEqual([])
     expect(JSON.parse(stderr.trim().split('\n').at(-1)!)).toMatchObject({
@@ -492,7 +494,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
         call === 0 ? [] : [{ ...installedFrom(a, A), pin: { ...a.pin, release: digest('7') } }],
     })
 
-    await expect(installByUrl([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByReference([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stdout).references[0].installed.pin.release).toBe(digest('7'))
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INSTALLED_PIN_MISMATCH' })
   })
@@ -504,7 +506,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], JSON_OUTPUT, run.deps)
+    await installByReference([A], JSON_OUTPUT, run.deps)
 
     expect(run.requests).toEqual([
       { operation: GENERATED, domains: [{ release: { url: A, digest: digest('1') } }] } as never,
@@ -518,7 +520,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       served: { [A]: async () => a },
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
-    const { warnings } = await human(() => installByUrl([A], {}, run.deps))
+    const { warnings } = await human(() => installByReference([A], {}, run.deps))
 
     expect(warnings).toContain(`origin agencies.test claimed by unverified deployment ${A}`)
     expect(run.requests).toHaveLength(1)
@@ -527,7 +529,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
   test('keeps the identity-override gate for a legacy domain.json source that serves another origin', async () => {
     const run = harness({ served: { [A]: async () => servedLegacy('agencies.test', A) } })
 
-    await expect(installByUrl([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByReference([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'IDENTITY_OVERRIDE_REJECTED' })
   })
@@ -535,7 +537,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
   test('refuses a URL not written as the Kernel reads it before any install', async () => {
     const run = harness({})
     await expect(
-      installByUrl(['https://CRM.example.test'], JSON_OUTPUT, run.deps),
+      installByReference(['https://CRM.example.test'], JSON_OUTPUT, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_DOMAIN_URL' })
@@ -550,7 +552,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       install: async () => committed(['agencies.test'], RETRY),
     })
 
-    await installByUrl(
+    await installByReference(
       [A],
       { ...JSON_OUTPUT, operation: RETRY, instance: 'staging' },
       {
@@ -601,7 +603,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
   test('refuses a same-line change without consent before any install is sent', async () => {
     const run = moving(A1, A2)
 
-    await expect(installByUrl([A2], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByReference([A2], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({
       error: 'ISSUER_CHANGE_NOT_CONSENTED',
@@ -614,7 +616,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
   test('sends the consent of a same-line change with --allow-issuer-change and reports it', async () => {
     const run = moving(A1, A2)
 
-    await installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+    await installByReference([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
 
     expect(run.requests).toEqual([
       {
@@ -636,7 +638,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     const run = moving(A1, A_OTHER_LINE)
 
     await expect(
-      installByUrl([A_OTHER_LINE], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+      installByReference([A_OTHER_LINE], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({
@@ -648,7 +650,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
   test('the origin-scoped flag consents to another line, and --revoke-previous revokes', async () => {
     const run = moving(A1, A_OTHER_LINE)
 
-    await installByUrl(
+    await installByReference(
       [A_OTHER_LINE],
       { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'], revokePrevious: true },
       run.deps,
@@ -671,14 +673,18 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     const run = moving(A_LEGACY, A1)
 
     await expect(
-      installByUrl([A1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+      installByReference([A1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stderr)).toMatchObject({
       details: { origins: [{ installed: A_LEGACY, replacement: A1, line: 'cross' }] },
     })
 
     stderr = ''
-    await installByUrl([A1], { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] }, run.deps)
+    await installByReference(
+      [A1],
+      { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] },
+      run.deps,
+    )
     expect(run.requests[0]!.domains[0]).toMatchObject({
       consent: { issuer: { from: A_LEGACY, to: A1 } },
     })
@@ -688,18 +694,22 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     const run = moving(A1, A_LEGACY, servedLegacy('agencies.test', A_LEGACY))
 
     await expect(
-      installByUrl([A_LEGACY], { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] }, run.deps),
+      installByReference(
+        [A_LEGACY],
+        { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] },
+        run.deps,
+      ),
     ).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stderr)).toMatchObject({ error: 'IDENTITY_OVERRIDE_REJECTED' })
 
     stderr = ''
     await expect(
-      installByUrl([A_LEGACY], { ...JSON_OUTPUT, allowIdentityOverride: true }, run.deps),
+      installByReference([A_LEGACY], { ...JSON_OUTPUT, allowIdentityOverride: true }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stderr)).toMatchObject({ error: 'ISSUER_CHANGE_NOT_CONSENTED' })
     expect(run.requests).toEqual([])
 
-    await installByUrl(
+    await installByReference(
       [A_LEGACY],
       { ...JSON_OUTPUT, allowIdentityOverride: true, allowIssuerChange: ['agencies.test'] },
       run.deps,
@@ -730,7 +740,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
         ]),
     })
 
-    await installByUrl([A2, B2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+    await installByReference([A2, B2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
 
     expect(run.requests).toHaveLength(1)
     expect(
@@ -752,9 +762,9 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       ],
     })
 
-    await expect(installByUrl([A2, B_OTHER_LINE], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(
-      ExitError,
-    )
+    await expect(
+      installByReference([A2, B_OTHER_LINE], JSON_OUTPUT, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({
       error: 'ISSUER_CHANGE_NOT_CONSENTED',
@@ -769,7 +779,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     // The bare flag consents to A's same-line change only: B alone is still refused.
     stderr = ''
     await expect(
-      installByUrl([A2, B_OTHER_LINE], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+      installByReference([A2, B_OTHER_LINE], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr).details.origins).toEqual([
@@ -791,7 +801,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
         committed(['agencies.test', 'employees.test'], GENERATED, ['agencies.test']),
     })
 
-    await installByUrl([A2, B1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+    await installByReference([A2, B1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
 
     expect(run.requests[0]!.domains).toEqual([
       { release: { url: A2, digest: digest('2') }, consent: { issuer: { from: A1, to: A2 } } },
@@ -810,7 +820,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     })
 
     const { warnings } = await human(() =>
-      installByUrl([A2], { allowIssuerChange: ['agencies.test'] }, run.deps),
+      installByReference([A2], { allowIssuerChange: ['agencies.test'] }, run.deps),
     )
 
     expect(run.requests[0]!.domains).toEqual([
@@ -824,7 +834,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
   test('sends no consent when the issuer does not change, whatever the flags', async () => {
     const run = moving(A2, A2)
 
-    await installByUrl(
+    await installByReference(
       [A2],
       { ...JSON_OUTPUT, allowIssuerChange: ['', 'agencies.test'], revokePrevious: true },
       run.deps,
@@ -840,7 +850,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     const run = moving(A1, A2)
 
     await expect(
-      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: ['crm.test'] }, run.deps),
+      installByReference([A2], { ...JSON_OUTPUT, allowIssuerChange: ['crm.test'] }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_FLAG' })
@@ -859,7 +869,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     })
 
     await expect(
-      installByUrl(
+      installByReference(
         [A_OTHER_LINE],
         {
           ...JSON_OUTPUT,
@@ -890,7 +900,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       },
     })
 
-    await installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+    await installByReference([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
 
     expect(run.requests).toHaveLength(1)
     const report = JSON.parse(stdout)
@@ -916,7 +926,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       },
     })
 
-    await installByUrl(
+    await installByReference(
       [A2],
       { ...JSON_OUTPUT, operation: RETRY },
       { ...run.deps, acceptOperationId: () => RETRY },
@@ -930,7 +940,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
   test('a Kernel answer is never marked recovered', async () => {
     const run = moving(A1, A2)
 
-    await installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+    await installByReference([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
     expect(JSON.parse(stdout)).not.toHaveProperty('recovered')
   })
 
@@ -944,7 +954,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     })
 
     await expect(
-      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+      installByReference([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stderr)).toMatchObject({
       error: 'RESPONSE_ERROR',
@@ -975,7 +985,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     })
 
     await expect(
-      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+      installByReference([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toHaveLength(1)
     expect(JSON.parse(stderr)).toMatchObject({
@@ -988,7 +998,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
   test('prints the consent beside the root line for humans', async () => {
     const run = moving(A1, A2)
     const { lines, warnings } = await human(() =>
-      installByUrl([A2], { allowIssuerChange: [''] }, run.deps),
+      installByReference([A2], { allowIssuerChange: [''] }, run.deps),
     )
 
     expect(warnings).toContain(
@@ -1015,7 +1025,7 @@ describe('install by URL on a Kernel without the installed listing (pre-release 
       install: async () => committed(['crm.test']),
     })
 
-    await installByUrl(
+    await installByReference(
       ['https://crm.test'],
       { json: true, direct: true, allowIdentityOverride: true } as never,
       { ...run.deps, readDeployment: read },
@@ -1045,7 +1055,7 @@ describe('install by URL on a Kernel without the installed listing (pre-release 
     })
 
     await expect(
-      installByUrl(['https://crm.test'], { json: true, instance: 'legacy' }, run.deps),
+      installByReference(['https://crm.test'], { json: true, instance: 'legacy' }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toHaveLength(1)
     expect(JSON.parse(stderr)).toMatchObject({
@@ -1063,7 +1073,7 @@ describe('install by URL on a Kernel without the installed listing (pre-release 
       install: async () => committed(['crm.example.test']),
     })
 
-    await installByUrl(['https://CRM.example.test'], { json: true }, run.deps)
+    await installByReference(['https://CRM.example.test'], { json: true }, run.deps)
     expect(run.requests[0]!.domains).toEqual([{ publication: { url: 'https://CRM.example.test' } }])
   })
 
@@ -1077,7 +1087,7 @@ describe('install by URL on a Kernel without the installed listing (pre-release 
     for (const flags of [{ allowIssuerChange: [''] }, { revokePrevious: true }]) {
       stderr = ''
       await expect(
-        installByUrl(['https://crm.test'], { json: true, ...flags }, run.deps),
+        installByReference(['https://crm.test'], { json: true, ...flags }, run.deps),
       ).rejects.toBeInstanceOf(ExitError)
       expect(JSON.parse(stderr)).toMatchObject({ error: 'KERNEL_RELEASE_UNSUPPORTED' })
     }
@@ -1095,7 +1105,9 @@ describe('install by URL on a Kernel without the installed listing (pre-release 
       },
     })
 
-    await expect(installByUrl([A], { json: true }, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByReference([A], { json: true }, run.deps)).rejects.toBeInstanceOf(
+      ExitError,
+    )
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'RESPONSE_ERROR', code: 2002 })
   })
@@ -1117,7 +1129,7 @@ describe('install by URL argument admission', () => {
   test('rejects a non-UUID operation before metadata or Kernel transport', async () => {
     const run = harness({})
     await expect(
-      installByUrl([A], { json: true, operation: 'guessable-operation' }, run.deps),
+      installByReference([A], { json: true, operation: 'guessable-operation' }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.credentials).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_FLAG' })
@@ -1126,7 +1138,7 @@ describe('install by URL argument admission', () => {
   test('sends a delivery token to one URL reference only', async () => {
     const run = harness({})
     await expect(
-      installByUrl([A, B], { json: true, token: 'secret' }, run.deps),
+      installByReference([A, B], { json: true, token: 'secret' }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.credentials).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_FLAG' })
