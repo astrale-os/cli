@@ -51,11 +51,12 @@ test('the headline is the first meaningful line, past transport wrappers', () =>
 test('the conversation shows a compact chip, never the raw dump', () => {
   const raw =
     'Internal error (JSON-RPC -32603)\n{"details":"model overloaded"}\n\nstderr (tail):\nsecret-stack-trace'
-  const html = renderToStaticMarkup(<AgentTurn run={failed(raw)} onRetry={() => {}} />)
+  const html = renderToStaticMarkup(<AgentTurn run={failed(raw)} onContinue={() => {}} />)
 
   expect(html).toContain('agent-error-chip')
   expect(html).toContain('Failed')
-  expect(html).toContain('Retry')
+  expect(html).toContain('Continue')
+  expect(html).not.toContain('Retry')
   expect(html).not.toContain('secret-stack-trace')
   expect(html).not.toContain('model overloaded')
 })

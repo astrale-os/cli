@@ -64,35 +64,22 @@ function countDocuments(groups: { documents?: readonly unknown[] }[]): number {
   return groups.reduce((total, group) => total + (group.documents?.length ?? 0), 0)
 }
 
-/** Run the last turn again, as it was first sent. */
-function retryTurn(turn: AgentRun, chatId: string | undefined, qc: QueryClient): void {
-  void api
-    .agentSubmit(
-      turn.instruction,
-      chatId,
-      turn.targetCommentIds,
-      turn.attachments?.map((attachment) => attachment.id),
-    )
-    .then(
-      (result) => {
-        if (result.run) useAgentLive.getState().setRun(result.run)
-        if (result.error) toast.error(`Could not retry — ${result.error}`)
-        qc.invalidateQueries({ queryKey: qk.agent(chatId) })
-        qc.invalidateQueries({ queryKey: qk.agentHistory(chatId) })
-      },
-      (error) => toast.error(`Could not retry — ${String(error)}`),
-    )
-}
-
-/** Pick an interrupted turn back up. */
-function resumeTurn(chatId: string | undefined): void {
-  // a refused resume answers 200 with an error field; without
+/**
+ * Pick the last turn back up, however it stopped. One action, never a choice to
+ * get wrong: the server resumes the session when the agent had taken the turn
+ * up, and sends it again as it was when it had not.
+ */
+function continueTurn(chatId: string | undefined, qc: QueryClient): void {
+  // a refused continue answers 200 with an error field; without
   // this the button would look like it did nothing at all
   void api.agentResume(chatId).then(
     (result) => {
-      if (result.error) toast.error(`Could not continue — ${result.error}`)
+      if (result.run) useAgentLive.getState().setRun(result.run)
+      if (result.error) toast.error(`Could not continue: ${result.error}`)
+      qc.invalidateQueries({ queryKey: qk.agent(chatId) })
+      qc.invalidateQueries({ queryKey: qk.agentHistory(chatId) })
     },
-    (error) => toast.error(`Could not continue — ${String(error)}`),
+    (error) => toast.error(`Could not continue: ${String(error)}`),
   )
 }
 
@@ -212,10 +199,9 @@ export function AgentTranscript() {
               {needsDivider(turns[index - 1], turn) && <TurnDivider at={turn.createdAt} />}
               <AgentTurn
                 run={turn}
-                onRetry={
-                  index === turns.length - 1 ? () => retryTurn(turn, activeId, qc) : undefined
+                onContinue={
+                  index === turns.length - 1 ? () => continueTurn(activeId, qc) : undefined
                 }
-                onResume={() => resumeTurn(activeId)}
               />
             </div>
           ))}
