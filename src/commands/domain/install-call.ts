@@ -24,8 +24,9 @@ export interface InstallFailure {
   readonly render: 'input' | 'kernel'
   readonly recovery?: OperationRecovery
   /**
-   * The pre-check that predicted this Kernel refusal: `--json` carries it beside the error, and a
-   * human sees its proposed grouped install again under the refusal.
+   * The pre-check of an install the Kernel refused for dependency or dependent compatibility:
+   * `--json` carries it beside the error, and a human sees its proposed grouped install again
+   * under the refusal.
    */
   readonly precheck?: InstallPrecheck
 }

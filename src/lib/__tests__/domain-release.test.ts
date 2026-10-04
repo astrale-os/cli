@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test'
 import { deploymentReleaseFor, releaseFor } from '../../__tests__/fixtures/publication'
 import {
   DeploymentReadError,
+  MAXIMUM_BUNDLE_BYTES,
   readReleaseBundle,
   readServedDeployment,
   samePin,
@@ -148,21 +149,67 @@ describe('deployment pre-read', () => {
 
 describe('release bundle read (install pre-check)', () => {
   const bundlePath = new URL(release.schema.bundle.href).pathname
+  const mediaType = release.schema.bundle.ref.mediaType
+  const bundleResponse = (bytes: Uint8Array<ArrayBuffer> = bundleBytes, type: string = mediaType) =>
+    new Response(bytes, { headers: { 'content-type': type } })
 
   test('reads the bundle the release names, from its own origin, without redirects', async () => {
-    const { seen, fetch } = serve({ [bundlePath]: () => new Response(bundleBytes) })
+    const { seen, fetch } = serve({ [bundlePath]: () => bundleResponse() })
 
     const read = await readReleaseBundle(release, URL_V4, undefined, fetch)
 
     expect(read.root.origin).toBe('crm.example.test')
-    expect(seen).toEqual([{ url: release.schema.bundle.href, accept: null, redirect: 'error' }])
+    // The Kernel asks for the descriptor's media type, so a negotiating deployment answers both alike.
+    expect(seen).toEqual([
+      { url: release.schema.bundle.href, accept: mediaType, redirect: 'error' },
+    ])
+  })
+
+  test('accepts the media type as the Kernel compares it: case and spaces aside', async () => {
+    const { fetch } = serve({
+      [bundlePath]: () => bundleResponse(bundleBytes, mediaType.toUpperCase().replace(';', ' ; ')),
+    })
+
+    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).resolves.toMatchObject({
+      root: { origin: 'crm.example.test' },
+    })
+  })
+
+  test('refuses a bundle served under another media type than its release names', async () => {
+    const { fetch } = serve({ [bundlePath]: () => bundleResponse(bundleBytes, 'application/json') })
+
+    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toThrow(
+      `is not served as ${mediaType}`,
+    )
+  })
+
+  test('reads no more than the Kernel admits, whatever size the release declares', async () => {
+    const declared = MAXIMUM_BUNDLE_BYTES + 10
+    const oversized = {
+      ...release,
+      schema: {
+        ...release.schema,
+        bundle: {
+          ...release.schema.bundle,
+          ref: { ...release.schema.bundle.ref, size: declared },
+        },
+      },
+    } as typeof release
+    const { fetch } = serve({
+      [bundlePath]: () => bundleResponse(new Uint8Array(MAXIMUM_BUNDLE_BYTES + 1)),
+    })
+
+    await expect(readReleaseBundle(oversized, URL_V4, undefined, fetch)).rejects.toMatchObject({
+      name: 'DeploymentReadError',
+      message: expect.stringContaining(`exceeded ${MAXIMUM_BUNDLE_BYTES} bytes`),
+    })
   })
 
   test('refuses bytes that are not the bundle the release names', async () => {
     // Same size, one byte flipped: the digest the descriptor names no longer matches.
     const tampered = bundleBytes.slice()
     tampered[tampered.length - 2] = tampered[tampered.length - 2]! ^ 1
-    const { fetch } = serve({ [bundlePath]: () => new Response(tampered) })
+    const { fetch } = serve({ [bundlePath]: () => bundleResponse(tampered) })
 
     await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toBeInstanceOf(
       DeploymentReadError,
@@ -171,7 +218,7 @@ describe('release bundle read (install pre-check)', () => {
 
   test('refuses more bytes than the descriptor declares', async () => {
     const { fetch } = serve({
-      [bundlePath]: () => new Response(new Uint8Array(release.schema.bundle.ref.size + 1)),
+      [bundlePath]: () => bundleResponse(new Uint8Array(release.schema.bundle.ref.size + 1)),
     })
 
     await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toMatchObject({
