@@ -1,7 +1,8 @@
 # Development
 
 Start from the generated project and the installed SDK's public exports, not remembered syntax.
-The SDK owns building/deploying the Domain; the Astrale CLI owns instances, identities, and live calls.
+The SDK owns building, deploying, and publishing the Domain; the Astrale CLI owns instances, installs,
+identities, and live calls.
 
 Use the adapter and SDK session abstractions; do not configure a parallel token or endpoint pipeline.
 Issuer, Publication, and redirect internals belong in `debugging.md` when the normal path fails.
@@ -90,55 +91,49 @@ export default defineProject({
   domain,
   environments: {
     development: {
-      deployment: astrale({
-        signingIdentity: '.astrale/identity.json',
-        secrets: '.env.dev',
-      }),
-      installation: { instance: 'development' },
+      deployment: astrale({ secrets: '.env.dev' }),
     },
     production: {
-      deployment: astrale({
-        signingIdentity: '.astrale/identity.json',
-        secrets: '.env.prod',
-      }),
-      installation: { instance: 'production' },
+      deployment: astrale({ organization: '<Identity id>', secrets: '.env.prod' }),
     },
   },
 })
 ```
 
-- An Environment selects provider deployment plus optional Kernel installation. With Astrale, Services
-  uses `installation.instance` by default; this is not the CLI's active-instance fallback.
-- For deploy-only, omit `installation` and set `astrale({ instance: 'services-host', ... })`.
-  `--deploy-only` skips installation for one command without changing the configured deployment target.
-- When changing a shared Schema dependency, do not let each project's watcher install independently.
-  Stage candidates deploy-only and install the coherent root set together; follow `migration.md`.
+- An Environment says how to deploy and with which secrets; it names no instance. Which instance runs
+  which release is the operator's choice at `astrale domain install -i <instance>`: a deploy never
+  installs. Deploy, install, versions, and secret rotation are in `release.md`.
+- `organization` names the Identity on the Admin instance (a User, or a Shell Group whose members and
+  CI deploy for it) that holds the Environment's deployment line. Every Environment but `development`
+  names one; a `development` Environment without one deploys on a line of the deploying identity.
+- When changing a shared Schema dependency, deploy every affected Domain, then install the coherent
+  root set together in one grouped install; follow `migration.md`.
 - The Domain definition already contains Runtime and frontend. `entrypoints.runtime` only overrides the
   conventional loadable Runtime file; do not repeat those definitions in Project or adapter options.
-- Keep the Domain signing identity stable and gitignored; it is distinct from the human CLI identity.
-  Keep secret files beside their owning config, or use explicit paths; never copy secrets into source.
+- Each deployment gets its own signing key, generated at deploy: there is no key file to keep or
+  distribute, and the Domain's key is distinct from the human CLI identity. Keep secret files beside
+  their owning config, or use explicit paths; never copy secrets into source.
 - Run commands from the owning project directory. Relative secret paths resolve there, not at a
   parent monorepo root; environment names alone do not isolate deliberately shared provider resources.
 
-## Managed development loop
+## Development loop
 
 ```sh
 astrale auth login
 astrale instance list --json
-pnpm dev                         # Generated script defaults to development.
-pnpm dev development --as developer
-pnpm run deploy production
+pnpm run deploy development                                   # prints the deployment URL; installs nothing
+astrale domain install <url> --allow-issuer-change -i <dev-instance>
 ```
 
-- Prefer the Astrale adapter for managed deployment: it uses the CLI session and Services, with no
-  Cloudflare account needed. Select another adapter only when the user needs that provider directly.
-- Current `dev` builds locally, deploys remotely, verifies Publication, reconciles installation, and
-  opens an applicable View. It watches source; configuration changes need a restart.
-- The SDK CLI requires an explicit Environment for `dev`/`deploy`; the generated script supplies its
-  default. Use a disposable development instance for iteration, not production by convenience.
-- Stopping ends local orchestration/View, not remote deployment or installation. Build failure does
-  not replace the candidate; a provider-side failure is not proof of automatic remote rollback.
-- Session locks prevent competing local updates to the same project/environment or installation target.
+- Prefer the Astrale adapter for managed deployment: it deploys on the Admin instance's Services
+  through the CLI session (`astrale call --admin`), with no Cloudflare account needed. Select another
+  adapter only when the user needs that provider directly.
+- There is no watch loop: iterate with the same two commands, by hand or by an agent. Each changed
+  build is a new preview at its own URL; installing it over the previous one is an issuer change on
+  the same line, which `--allow-issuer-change` consents to (at a terminal, typing the origin does).
+- The SDK CLI requires an explicit Environment for `deploy`. Iterate on a development instance you
+  own (one owner per instance, see `release.md`), not on production by convenience.
+- A failed build or deploy changes no instance, and a deployment nobody installs runs nowhere.
   Domain development needs no local Kernel or hand-managed tunnel; do not add one without a real need.
 
 ## Verification and handoff
@@ -153,10 +148,12 @@ astrale get /:issues.example -i development --as operator --schema --json
 astrale introspect /:issues.example -i development --as operator
 ```
 
-- Typecheck/lint/build prove source boundaries, not installed behavior. Observe exact Publication,
-  installed Schema revision, and representative calls before claiming deployment/integration success.
-- Build, deployment, and installation are separate stages. `astrale domain install <url> --direct -i ...`
-  installs an already-deployed Domain; do not reinstall merely because a serving URL's implementation changed.
+- Typecheck/lint/build prove source boundaries, not installed behavior. Observe the exact release the
+  deployment serves (`/.well-known/astrale/release.json`), the installed Schema revision, and
+  representative calls before claiming deployment/integration success.
+- Build, deployment, and installation are separate stages. `astrale domain install <url> -i ...`
+  installs an already-deployed release; a deployment URL never serves other code, so new code reaches
+  an instance only by installing its new URL or version.
 - Retain exact SDK/adapter/CLI versions and relevant source/deployment revisions, not only manifest
   ranges. Keep durable regression tests with code and ephemeral qualification output outside delivery.
 - Run checks on the tree actually built and deployed. Do not hide files, weaken typechecking, or forge

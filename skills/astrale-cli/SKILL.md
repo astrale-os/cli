@@ -209,19 +209,35 @@ Use an authorized human identity for the import; `development-root` is available
 Instance calls after recovery. Root success proves execution, not an application user's access Policy.
 
 The CLI is connect-only: it does not build or run domains. The SDK's
-`astrale-domain` binary owns `dev`, `build`, `deploy`, `lint`, `package`, and test workflows. Project Environments select
-exact deployment and optional installation targets; they do not use the CLI's active instance.
+`astrale-domain` binary owns `build`, `deploy`, `publish`, `diff`, `yank`, `list`, `lint`,
+`package`, and test workflows; a deploy or a publish never installs. Project Environments say how to
+deploy and with which secrets; they name no instance and do not use the CLI's active instance. Only
+`astrale domain install` changes what an instance runs.
 
-`astrale domain install` takes deployment URLs or one catalog origin:
+`astrale domain install` takes deployment URLs, versions, or one catalog origin:
 
 - Deployment URLs (`https://`, or `http://` for a local Host) go to the
   instance Kernel through the public install syscall, on any instance you can
-  authenticate to. Several URLs install in ONE atomic Kernel operation (every
-  Domain moves or none does), which is how dependent Domains move together.
+  authenticate to. Several references install in ONE atomic Kernel operation
+  (every Domain moves or none does), which is how dependent Domains move together.
   The CLI reads what each URL serves first (a 503 is read again for up to
   60 s), refuses two references to one origin, pins the release digest it
   read, and verifies the installed pins afterwards.
-  `--direct` is deprecated: still accepted, it changes nothing.
+- A version reference, `<origin>@1.5.0` (or `@2.0.0-rc.1`) for exactly that
+  version, a pre-release or a yanked one included (a yanked one warns), or
+  `<origin>@1.5` for the highest stable 1.5.x that is not yanked, is resolved
+  in the Admin registry with your own identity (`--admin` / `--admin-url`, or
+  the configured Admin target). A private Domain needs `domain_installer`,
+  directly or through a Group; one you cannot read is REGISTRY_DOMAIN_NOT_FOUND.
+  The version becomes its Publication's deployment URL and release digest; the
+  CLI checks the deployment still serves that release
+  (PUBLICATION_RELEASE_MISMATCH otherwise) and the Kernel refuses any other.
+  A major alone (`@1`), a range or build metadata is refused; an unresolvable
+  version is VERSION_UNRESOLVED. Versions and URLs mix in one install. A Kernel
+  without the installed-release listing takes no version
+  (KERNEL_RELEASE_UNSUPPORTED): install the deployment URL there.
+- `--direct`, which the SDK's printed hint and old scripts still pass, is
+  deprecated: it is accepted and changes nothing. Do not add it.
 - An issuer change is never silent. When a URL serves another issuer than
   the one its origin is installed under, the install needs consent, recorded
   by the Kernel in the installation: `--allow-issuer-change` for a new
@@ -247,6 +263,8 @@ exact deployment and optional installation targets; they do not use the CLI's ac
 ```bash
 astrale domain install https://crm.example -i staging
 astrale domain install https://agencies.example https://employees.example -i staging
+astrale domain install crm.example@1.5 -i production
+astrale domain install agencies.example@1.5.0 https://employees.example --allow-issuer-change -i staging
 astrale domain install <new-deployment-url> --allow-issuer-change -i staging
 astrale domain install <deployment-url> --allow-issuer-change=crm.example -i staging
 astrale domain install crm.example -i staging
@@ -304,8 +322,9 @@ JWKS with that exact CA. If two bookmarks point to the same normalized URL with
 different CA settings, the CLI warns and `instance list --bookmarked --json`
 shows each bookmark's `caFile`, issuer, and default identity.
 
-A deployment-only Publication change does not require reinstalling the Domain.
-Reinstall only when installation or Schema intent changes.
+A deploy never changes what an instance runs: each deployment URL serves one
+release for good, so new code reaches an instance only when it installs the new
+URL or version. Reinstalling the URL an instance already runs changes nothing.
 
 ## Identity And Delegation
 
@@ -474,6 +493,17 @@ with `--admin-url` and `--domain-issuer` without `--admin-url`. The call itself
 is unchanged: it exchanges at its callable's declaring Domain as the Admin
 kernel's installation names it; the Admin Domain issuer only completes the Admin
 target. Put `key=value` params before `--admin`, or write `--admin=<bookmark>`.
+
+Rotating one secret of one deployment the Admin instance's Services host is
+such a call: the deployment's `setSecret`, with the input in a private file or
+piped, never in argv (`astrale-domain list --json` gives each deployment's
+`callTarget.path`). The deployment keeps its URL, issuer and key, so nothing is
+reinstalled; the new value is served about 4 s later.
+
+```bash
+astrale call "@$ID::services.astrale.ai:class.CloudflareDeployment.method.setSecret" \
+  --admin -d @rotate.json --json
+```
 
 ## Journal
 
