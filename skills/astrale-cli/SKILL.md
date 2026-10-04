@@ -226,6 +226,21 @@ astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive -i staging
 ```
 
+`astrale domain versions <origin>` lists the Domain's published versions from the Admin
+registry, read with your own credential: you need `domain_installer` or `domain_admin` on the
+Domain, directly or through a Group. Pre-releases and yanked versions are listed; a yanked
+version is never chosen by a line such as `@1.5`. An absent Domain and one you cannot read give
+the same `REGISTRY_DOMAIN_NOT_FOUND`. `--json` prints one `astrale.registry-index` document;
+refusals print `{ "error": { "code", "message", "details" } }` on stdout and exit 1.
+
+```bash
+astrale domain versions issues.astrale.ai
+astrale domain versions issues.astrale.ai --json --as ci
+```
+
+The hidden `astrale __domain-registry bundle|publish|yank` commands are JSON plumbing for
+`astrale-domain diff`, `publish` and `yank`; do not call them by hand.
+
 A replacement cannot change an installed Domain issuer. If that identity
 change is intentional, uninstall the origin first and then install it again.
 Uninstall accepts one or more origins and removes the complete selected set atomically, so

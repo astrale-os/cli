@@ -57,7 +57,9 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
  * one level of nested subgroups via `group.subgroups`.
  */
 export function registerGroup(parent: Command, group: CommandGroup): void {
-  const sub = parent.command(group.name).description(group.description)
+  const sub = parent
+    .command(group.name, { hidden: group.hidden ?? false })
+    .description(group.description)
   if (group.summary) sub.summary(group.summary)
   for (const def of group.commands) {
     registerCommand(sub, def)
