@@ -39,7 +39,7 @@ impose a production rollout on every experiment, or treat production data as dis
   installs can fail in either order; do not uninstall B or discard data to bypass revision coherence.
 
 ```sh
-astrale domain install "$URL_A" "$URL_B" -i staging                      # previews, by URL
+astrale domain install "$URL_A" "$URL_B" --allow-issuer-change -i staging  # previews, by URL
 astrale domain install a.example@2.1.0 b.example@3.0.0 --allow-issuer-change -i production
 ```
 

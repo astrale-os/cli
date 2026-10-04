@@ -5,7 +5,7 @@ The SDK owns building, deploying, and publishing the Domain; the Astrale CLI own
 identities, and live calls.
 
 Use the adapter and SDK session abstractions; do not configure a parallel token or endpoint pipeline.
-Issuer, Publication, and redirect internals belong in `debugging.md` when the normal path fails.
+Issuer, served release, and redirect internals belong in `debugging.md` when the normal path fails.
 
 ## Scaffold and dependencies
 

@@ -481,9 +481,10 @@ const INSTALLS: Readonly<
     consent: 'same',
   },
   // migration.md
-  'astrale domain install "$URL_A" "$URL_B" -i staging': {
-    before: [],
+  'astrale domain install "$URL_A" "$URL_B" --allow-issuer-change -i staging': {
+    before: [D.agenciesStgPrevious, D.employeesStgPrevious],
     after: [D.agenciesStgNext, D.employeesStgNext],
+    consent: 'same',
   },
   'astrale domain install a.example@2.1.0 b.example@3.0.0 --allow-issuer-change -i production': {
     before: [D.a200, D.b200],

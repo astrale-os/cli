@@ -105,13 +105,16 @@ astrale-domain publish production    # deploys, verifies, then creates the versi
    effect; naming another release it is refused: a published version never changes, raise it.
 3. Compares with the highest stable version below it and refuses a version too low, naming each
    change that requires more.
-4. Deploys the release, or reuses its deployment, and verifies that it serves the sealed release.
+4. Deploys the release, or reuses its deployment, and verifies within 60 seconds that it serves
+   the sealed release.
 5. Asks Admin for the Publication, under the Domain's lock. A version published meanwhile with
    another release is refused, and this deployment stays a preview.
 
-A failure leaves at most a deployment without a version: rerun `publish`, which reuses it. With
-Admin unavailable, or a Domain absent from the registry, nothing is deployed. Publishing never
-installs.
+A failure leaves at most a deployment without a version, and says whether a rerun can help. When
+it can, rerun `publish`, which reuses the deployment; an answer that was lost may already have
+created the Publication, and the rerun settles it. A refusal Admin would repeat, such as a missing
+`domain_admin` right or a release Admin will not name, names its cause instead. With Admin
+unavailable, or a Domain absent from the registry, nothing is deployed. Publishing never installs.
 
 - Semver without channels. Code only or an equivalent meaning: patch; additions only: minor; a
   member removed or changed: major; below 1.0.0 a breaking change raises the minor. `diff` gives a

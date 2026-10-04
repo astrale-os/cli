@@ -7,7 +7,7 @@ source Schema and Runtime
   -> Build
   -> Release and Addressing
   -> provider deployment
-  -> Publication/JWKS/Bundle
+  -> served release (release.json)/JWKS/Bundle
   -> Kernel installation and active revision
   -> authenticated invocation
   -> graph/View observation
@@ -35,10 +35,12 @@ use SDK bindings rather than reconstruct these coordinates.
   Derive Kernel protocol endpoints through SDK helpers, not a separately configurable invocation URL.
 - Keep independent URLs for bundles, external discovery, provider routes, callbacks, and probes.
   A Router may proxy a Kernel without changing its canonical issuer.
-- Authentication identifies an exact `(iss, sub)` pair, not a Domain origin. The verified Publication
-  binds semantic origin, issuer/subject, and concrete endpoints; compare those rather than hostnames alone.
+- Authentication identifies an exact `(iss, sub)` pair, not a Domain origin. The verified release
+  (`/.well-known/astrale/release.json`; `domain.json` for a legacy direct-mode Worker or a Host before
+  v4) binds semantic origin, issuer/subject, and concrete endpoints; compare those rather than
+  hostnames alone.
 - One Kernel can publish intrinsic `kernel.astrale.ai` and host installed `projects.example` at the same
-  issuer. Select the installed product by its Domain origin, not the intrinsic Publication's origin.
+  issuer. Select the installed product by its Domain origin, not the intrinsic release's origin.
 
 ## Follow an invocation only when diagnosing transport
 
@@ -62,7 +64,7 @@ installed-Domain binding → source Kernel → local result
   failure can trigger bounded source recovery; business refusals and arbitrary timeouts are not retry signals.
 - Kernel admission uses the installed Registry contract while the serving SDK validates the handler against
   its deployed Release. A mismatch requires coherent installation/deployment, not stripped revision checks;
-  compare safe route and Publication metadata without logging credentials.
+  compare safe route and release metadata without logging credentials.
 
 ## Classify admission failures
 
@@ -109,9 +111,9 @@ not transaction evidence.
 
 ## Deployment and installation
 
-Fetch deployed Publication, discovery/JWKS, and Bundle rather than trusting intended Addressing. Then
-inspect Kernel installation state. If a Worker cannot reach a local Kernel tunnel, prove public health
-and Worker-to-Kernel reachability separately.
+Fetch the deployment's release (release.json), discovery/JWKS, and Bundle rather than trusting
+intended Addressing. Then inspect Kernel installation state. If a Worker cannot reach a local Kernel
+tunnel, prove public health and Worker-to-Kernel reachability separately.
 
 ## Package drift
 
