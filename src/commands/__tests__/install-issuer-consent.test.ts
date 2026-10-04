@@ -6,10 +6,9 @@ import { Command } from 'commander'
 import type { ServedDeployment } from '../../lib/domain-release'
 
 import { AstraleError } from '../../errors'
-import { registerCommand } from '../../program/registry'
-import { splitIssuerChangeValues } from '../domain/install'
+import { bindOptionalValuesByEquals, registerCommand } from '../../program/registry'
 import {
-  admitIssuerChange,
+  admitIssuerChanges,
   consentedByFlags,
   deploymentLineOf,
   firstInstallNotice,
@@ -73,41 +72,57 @@ describe('issuer-change consent flags', () => {
     }
   })
 
-  test('a URL written after the flag goes back to the references', () => {
-    expect(splitIssuerChangeValues(['https://b.test'], ['https://a.test', 'crm.test'])).toEqual({
-      references: ['https://a.test', 'https://b.test'],
-      values: ['', 'crm.test'],
-    })
-    expect(splitIssuerChangeValues(['https://b.test'], undefined)).toEqual({
-      references: ['https://b.test'],
-      values: undefined,
-    })
-  })
-
-  test('the command collects every occurrence, a bare one as the empty string', async () => {
+  async function parse(argv: readonly string[]) {
     const program = new Command().exitOverride()
-    let seen: unknown
+    let seen: { references: string[]; values: unknown } | undefined
     registerCommand(program, {
       name: 'install',
       description: 'test',
       arguments: [{ name: 'references', description: 'refs', required: false, variadic: true }],
       options: [{ flags: '--allow-issuer-change [origin]', description: 'test', repeatable: true }],
-      action: (async (_references: string[], opts: { allowIssuerChange?: string[] }) => {
-        seen = opts.allowIssuerChange
+      action: (async (references: string[], opts: { allowIssuerChange?: string[] }) => {
+        seen = { references, values: opts.allowIssuerChange }
       }) as never,
     })
-    await program.parseAsync(
-      [
-        'install',
+    await program.parseAsync(['install', ...argv], { from: 'user' })
+    return seen
+  }
+
+  test('the command collects every occurrence, the origin only after =, a bare one as the empty string', async () => {
+    expect(
+      await parse([
         '--allow-issuer-change',
+        'https://a.test',
         '--allow-issuer-change=a.test',
         'https://x.test',
         '--allow-issuer-change',
         'b.test',
-      ],
-      { from: 'user' },
-    )
-    expect(seen).toEqual(['', 'a.test', 'b.test'])
+      ]),
+    ).toEqual({
+      references: ['https://a.test', 'https://x.test', 'b.test'],
+      values: ['', 'a.test', ''],
+    })
+  })
+
+  test('a URL written with = stays the flag value, refused as no origin; nothing joins the references', async () => {
+    const seen = await parse(['https://a.test', '--allow-issuer-change=https://b.test'])
+    expect(seen).toEqual({ references: ['https://a.test'], values: ['https://b.test'] })
+    expect(() => issuerChangeConsent(seen!.values as string[], false)).toThrow(AstraleError)
+  })
+
+  test('only bare occurrences before a -- literal are bound by =', () => {
+    expect(
+      bindOptionalValuesByEquals(
+        ['--allow-issuer-change', 'x', '--allow-issuer-change=y', '--', '--allow-issuer-change'],
+        ['--allow-issuer-change'],
+      ),
+    ).toEqual([
+      '--allow-issuer-change=',
+      'x',
+      '--allow-issuer-change=y',
+      '--',
+      '--allow-issuer-change',
+    ])
   })
 })
 
@@ -202,18 +217,32 @@ describe('admitting an issuer change', () => {
     line: 'cross',
   }
 
+  const same: IssuerChange = {
+    origin: 'crm.acme.dev',
+    reference: S2,
+    from: S1,
+    to: S2,
+    line: 'same',
+  }
+  const other: IssuerChange = { ...cross, origin: 'billing.acme.dev' }
+
   test('a typed confirmation at a terminal consents to a cross-line change', async () => {
     const asked: string[] = []
-    await admitIssuerChange(cross, issuerChangeConsent([''], false), true, async (_, expected) => {
-      asked.push(expected)
-      return true
-    })
+    await admitIssuerChanges(
+      [cross],
+      issuerChangeConsent([''], false),
+      true,
+      async (_, expected) => {
+        asked.push(expected)
+        return true
+      },
+    )
     expect(asked).toEqual(['shell.astrale.ai'])
   })
 
-  test('without a covering flag or a confirmation the change is refused with its line', async () => {
-    const refusal = admitIssuerChange(
-      cross,
+  test('without a covering flag or a confirmation the change is refused with its line (CT24)', async () => {
+    const refusal = admitIssuerChanges(
+      [cross],
       issuerChangeConsent([''], false),
       true,
       async () => false,
@@ -222,18 +251,64 @@ describe('admitting an issuer change', () => {
     await expect(refusal).rejects.toMatchObject({
       code: 'ISSUER_CHANGE_NOT_CONSENTED',
       details: {
-        origin: 'shell.astrale.ai',
-        line: 'cross',
-        installedIssuer: S1,
-        replacementIssuer: OTHER_LINE,
+        origins: [
+          { origin: 'shell.astrale.ai', installed: S1, replacement: OTHER_LINE, line: 'cross' },
+        ],
+      },
+    })
+  })
+
+  test('one refusal names every unconsented change of the install, flags first', async () => {
+    const asked: string[] = []
+    const refusal = admitIssuerChanges(
+      [cross, same, other],
+      issuerChangeConsent([''], false),
+      true,
+      async (_, expected) => {
+        asked.push(expected)
+        return false
+      },
+    )
+    await expect(refusal).rejects.toMatchObject({
+      details: {
+        origins: [
+          { origin: 'shell.astrale.ai', installed: S1, replacement: OTHER_LINE, line: 'cross' },
+          { origin: 'billing.acme.dev', installed: S1, replacement: OTHER_LINE, line: 'cross' },
+        ],
+      },
+      hint: expect.stringContaining(
+        'Pass --allow-issuer-change=shell.astrale.ai --allow-issuer-change=billing.acme.dev,',
+      ) as unknown as string,
+    })
+    // The same-line change is consented by the bare flag; the first decline ends the questions.
+    expect(asked).toEqual(['shell.astrale.ai'])
+  })
+
+  test('a declined change refuses it with every change not asked yet, never those confirmed', async () => {
+    const refusal = admitIssuerChanges(
+      [cross, other],
+      issuerChangeConsent([], false),
+      true,
+      async (_, expected) => expected === 'shell.astrale.ai',
+    )
+    await expect(refusal).rejects.toMatchObject({
+      details: {
+        origins: [
+          { origin: 'billing.acme.dev', installed: S1, replacement: OTHER_LINE, line: 'cross' },
+        ],
       },
     })
   })
 
   test('a covering flag never asks', async () => {
-    await admitIssuerChange(cross, issuerChangeConsent(['shell.astrale.ai'], false), true, () => {
-      throw new Error('asked')
-    })
+    await admitIssuerChanges(
+      [cross, same],
+      issuerChangeConsent(['', 'shell.astrale.ai'], false),
+      true,
+      () => {
+        throw new Error('asked')
+      },
+    )
   })
 })
 

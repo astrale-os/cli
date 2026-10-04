@@ -606,10 +606,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     expect(JSON.parse(stderr)).toMatchObject({
       error: 'ISSUER_CHANGE_NOT_CONSENTED',
       details: {
-        origin: 'agencies.test',
-        line: 'same',
-        installedIssuer: A1,
-        replacementIssuer: A2,
+        origins: [{ origin: 'agencies.test', installed: A1, replacement: A2, line: 'same' }],
       },
     })
   })
@@ -631,7 +628,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       origin: 'agencies.test',
       previous: { issuer: A1 },
       installed: { issuer: A2 },
-      consent: { issuer: { from: A1, to: A2 }, previous: 'drain', line: 'same' },
+      consent: { from: A1, to: A2, previous: 'drain' },
     })
   })
 
@@ -644,7 +641,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({
       error: 'ISSUER_CHANGE_NOT_CONSENTED',
-      details: { line: 'cross' },
+      details: { origins: [{ origin: 'agencies.test', line: 'cross' }] },
     })
   })
 
@@ -664,9 +661,9 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       },
     ] as never)
     expect(JSON.parse(stdout).references[0].consent).toEqual({
-      issuer: { from: A1, to: A_OTHER_LINE },
+      from: A1,
+      to: A_OTHER_LINE,
       previous: 'revoke',
-      line: 'cross',
     })
   })
 
@@ -676,7 +673,9 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     await expect(
       installByUrl([A1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
-    expect(JSON.parse(stderr)).toMatchObject({ details: { line: 'cross' } })
+    expect(JSON.parse(stderr)).toMatchObject({
+      details: { origins: [{ installed: A_LEGACY, replacement: A1, line: 'cross' }] },
+    })
 
     stderr = ''
     await installByUrl([A1], { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] }, run.deps)
@@ -737,6 +736,89 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     expect(
       run.requests[0]!.domains.map((domain) => (domain as { consent?: unknown }).consent),
     ).toEqual([{ issuer: { from: A1, to: A2 } }, { issuer: { from: B1, to: B2 } }])
+  })
+
+  test('one refusal names every unconsented change of a grouped install, before any send', async () => {
+    const B1 = `https://employees-eeeeeeeeeeeeeeee-bbbbbbbbbbbbbbbb.deployments.test`
+    const B_OTHER_LINE = `https://employees-ffffffffffffffff-cccccccccccccccc.deployments.test`
+    const run = harness({
+      served: {
+        [A2]: async () => servedRelease('agencies.test', A2, '2'),
+        [B_OTHER_LINE]: async () => servedRelease('employees.test', B_OTHER_LINE, '3'),
+      },
+      listing: async () => [
+        installedFrom(servedRelease('agencies.test', A1, '1'), A1),
+        installedFrom(servedRelease('employees.test', B1, '4'), B1),
+      ],
+    })
+
+    await expect(installByUrl([A2, B_OTHER_LINE], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(
+      ExitError,
+    )
+    expect(run.requests).toEqual([])
+    expect(JSON.parse(stderr)).toMatchObject({
+      error: 'ISSUER_CHANGE_NOT_CONSENTED',
+      details: {
+        origins: [
+          { origin: 'agencies.test', installed: A1, replacement: A2, line: 'same' },
+          { origin: 'employees.test', installed: B1, replacement: B_OTHER_LINE, line: 'cross' },
+        ],
+      },
+    })
+
+    // The bare flag consents to A's same-line change only: B alone is still refused.
+    stderr = ''
+    await expect(
+      installByUrl([A2, B_OTHER_LINE], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toEqual([])
+    expect(JSON.parse(stderr).details.origins).toEqual([
+      { origin: 'employees.test', installed: B1, replacement: B_OTHER_LINE, line: 'cross' },
+    ])
+  })
+
+  test('a grouped install consents only the root whose issuer changes', async () => {
+    const B1 = `https://employees-eeeeeeeeeeeeeeee-bbbbbbbbbbbbbbbb.deployments.test`
+    const a = servedRelease('agencies.test', A2, '2')
+    const b = servedRelease('employees.test', B1, '4')
+    const run = harness({
+      served: { [A2]: async () => a, [B1]: async () => b },
+      listing: async (call) =>
+        call === 0
+          ? [installedFrom(servedRelease('agencies.test', A1, '1'), A1), installedFrom(b, B1)]
+          : [installedFrom(a, A2), installedFrom(b, B1)],
+      install: async () =>
+        committed(['agencies.test', 'employees.test'], GENERATED, ['agencies.test']),
+    })
+
+    await installByUrl([A2, B1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+
+    expect(run.requests[0]!.domains).toEqual([
+      { release: { url: A2, digest: digest('2') }, consent: { issuer: { from: A1, to: A2 } } },
+      { release: { url: B1, digest: digest('4') } },
+    ] as never)
+    const references = JSON.parse(stdout).references
+    expect(references[0].consent).toEqual({ from: A1, to: A2, previous: 'drain' })
+    expect(references[1]).not.toHaveProperty('consent')
+  })
+
+  test('an origin-scoped consent for an installation the caller cannot read is said, never planned', async () => {
+    // The listing is partial: this identity cannot read agencies.test's installation.
+    const run = harness({
+      served: { [A2]: async () => servedRelease('agencies.test', A2, '2') },
+      listing: async () => [],
+    })
+
+    const { warnings } = await human(() =>
+      installByUrl([A2], { allowIssuerChange: ['agencies.test'] }, run.deps),
+    )
+
+    expect(run.requests[0]!.domains).toEqual([
+      { release: { url: A2, digest: digest('2') } },
+    ] as never)
+    expect(warnings).toContain(
+      '--allow-issuer-change=agencies.test: agencies.test is not among the installations this identity can read, so no consent is sent.',
+    )
   })
 
   test('sends no consent when the issuer does not change, whatever the flags', async () => {
@@ -816,6 +898,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       changed: false,
       domains: [{ origin: 'agencies.test' }],
       references: [{ origin: 'agencies.test', installed: { issuer: A2, pin: a2.pin } }],
+      recovered: { refusal: 'SCHEMA_INPUT_INVALID' },
     })
     expect(report.references[0]).not.toHaveProperty('consent')
   })
@@ -838,7 +921,17 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       { ...JSON_OUTPUT, operation: RETRY },
       { ...run.deps, acceptOperationId: () => RETRY },
     )
-    expect(JSON.parse(stdout)).toMatchObject({ changed: false })
+    expect(JSON.parse(stdout)).toMatchObject({
+      changed: false,
+      recovered: { refusal: 'SCHEMA_OPERATION_CONFLICT' },
+    })
+  })
+
+  test('a Kernel answer is never marked recovered', async () => {
+    const run = moving(A1, A2)
+
+    await installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+    expect(JSON.parse(stdout)).not.toHaveProperty('recovered')
   })
 
   test('reports the refusal when the installations do not hold what was asked', async () => {
@@ -859,7 +952,7 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     })
   })
 
-  test('a Kernel that lists releases but takes no consent refuses it as input: KERNEL_RELEASE_UNSUPPORTED', async () => {
+  test('a Kernel that lists releases but predates issuer consent: its input refusal is shown as is (COMPAT R7)', async () => {
     const run = harness({
       served: { [A2]: async () => servedRelease('agencies.test', A2, '2') },
       listing: async () => [installedFrom(servedRelease('agencies.test', A1, '1'), A1)],
@@ -886,35 +979,10 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toHaveLength(1)
     expect(JSON.parse(stderr)).toMatchObject({
-      error: 'KERNEL_RELEASE_UNSUPPORTED',
-      details: { code: 1003, reason: { code: 'FUNCTION_INPUT_INVALID' } },
+      error: 'RESPONSE_ERROR',
+      code: 1003,
+      reason: { code: 'FUNCTION_INPUT_INVALID' },
     })
-  })
-
-  test('another input refusal of a consented install stays the Kernel refusal', async () => {
-    const run = harness({
-      served: { [A2]: async () => servedRelease('agencies.test', A2, '2') },
-      listing: async () => [installedFrom(servedRelease('agencies.test', A1, '1'), A1)],
-      install: async () => {
-        throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
-          code: 'FUNCTION_INPUT_INVALID',
-          details: {
-            issues: [
-              {
-                code: 'INVALID',
-                message: 'Release URL is invalid.',
-                path: '/domains/0/release/url',
-              },
-            ],
-          },
-        })
-      },
-    })
-
-    await expect(
-      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
-    ).rejects.toBeInstanceOf(ExitError)
-    expect(JSON.parse(stderr)).toMatchObject({ error: 'RESPONSE_ERROR', code: 1003 })
   })
 
   test('prints the consent beside the root line for humans', async () => {

@@ -26,8 +26,9 @@ export interface CommandOption {
   readonly choices?: string[]
   readonly hidden?: boolean
   /**
-   * Collect every occurrence of the option, in order, into a string array. An occurrence of an
-   * option whose value is optional (`--flag [value]`) written without its value collects `''`.
+   * Collect every occurrence of the option, in order, into a string array. An option whose value
+   * is optional (`--flag [value]`) takes it only written `--flag=value`: written bare, the
+   * occurrence collects `''` and the next argument stays an argument of the command.
    */
   readonly repeatable?: boolean
 }
