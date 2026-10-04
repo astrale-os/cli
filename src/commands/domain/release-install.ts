@@ -17,7 +17,12 @@ import type { AdminRegistryApi } from '../../admin/registry'
 import type { ConnectionContext, KernelCommandOpts } from '../../connection'
 import type { AdminTargetCommandOpts } from '../../lib/admin-target'
 import type { InstallFailure, UrlSource } from './install-call'
-import type { DependentProposal, InstallPrecheck, PrecheckRoot } from './install-precheck'
+import type {
+  DependentProposal,
+  InstallPrecheck,
+  PrecheckRoot,
+  PrecheckVerdict,
+} from './install-precheck'
 import type { ResolvedVersion, VersionReference } from './version-reference'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
@@ -179,7 +184,8 @@ export interface ReleaseSource extends UrlSource {
  * reference (`<origin>@<major>.<minor>.<patch>[-<pre>]` or `<origin>@<major>.<minor>`) is first
  * translated, once, into the deployment URL and release of one Publication the caller may read in
  * Admin (Résolution [.78020] [.78086]). An Admin that cannot answer fails the version references
- * only, before any Kernel is contacted, and an install of URLs alone never reads Admin.
+ * only, before any Kernel is contacted. An install of URLs alone reads Admin only to propose a
+ * compatible version of an installed dependent the pre-check finds broken ([.69634]).
  *
  * A Kernel that lists installed releases receives the `release` request, guarded by the release
  * digest each root must serve (the Publication's for a version, the one read from the URL
@@ -516,6 +522,16 @@ async function installReleases(
         if (notice !== undefined) log.warn(notice)
       }
     }
+  } catch (error) {
+    return { error, render: 'input' }
+  }
+  // The pre-check informs the operator's issuer consent, so it is shown before that prompt.
+  const precheck = await precheckReferences(context.session, roots, before, opts, deps, {
+    changes,
+    overridden,
+  })
+  if (!machine) presentPrecheck(precheck)
+  try {
     await admitIssuerChanges(
       changes.filter((change): change is IssuerChange => change !== undefined),
       consent,
@@ -528,11 +544,6 @@ async function installReleases(
   if (!machine && consent.revokePrevious && changes.every((change) => change === undefined)) {
     log.dim('  --revoke-previous: no installed issuer changes, so there is nothing to revoke.')
   }
-  const precheck = await precheckReferences(context.session, roots, before, opts, deps, {
-    changes,
-    overridden,
-  })
-  if (!machine) presentPrecheck(precheck)
 
   const request = releaseInstallInput(
     urls,
@@ -617,14 +628,34 @@ async function installReleases(
       }
     },
   })
-  if (failure !== undefined) return predicted(precheck) ? { ...failure, precheck } : failure
+  if (failure !== undefined)
+    return compatibilityRefusal(failure) ? { ...failure, precheck } : failure
   if (mismatched.length > 0) return { error: pinMismatchError(mismatched), render: 'input' }
   return undefined
 }
 
-/** Whether the pre-check predicted a refusal: the Kernel's refusal is then shown beside it. */
+/** Whether the pre-check predicted a refusal. */
 function predicted(precheck: InstallPrecheck): boolean {
   return precheck.dependencies.length > 0 || precheck.dependents.length > 0
+}
+
+/** The Kernel refusals the pre-check predicts. */
+const COMPATIBILITY_REFUSALS: ReadonlySet<string> = new Set([
+  'SCHEMA_DEPENDENCY_INCOMPATIBLE',
+  'SCHEMA_DEPENDENTS_INCOMPATIBLE',
+])
+
+/**
+ * Whether the install failed on a Kernel refusal of the kind the pre-check predicts: only then is
+ * the pre-check shown beside the refusal. A transport failure or an unknown outcome is resent with
+ * its own operation id, never replaced by the proposed install.
+ */
+function compatibilityRefusal(failure: InstallFailure): boolean {
+  return (
+    failure.render === 'kernel' &&
+    failure.error instanceof ResponseError &&
+    COMPATIBILITY_REFUSALS.has(reasonCode(failure.error.reason) ?? '')
+  )
 }
 
 /**
@@ -677,12 +708,12 @@ async function precheckReferences(
       }
     }),
   )
-  let verdict: Awaited<ReturnType<typeof precheckInstall>>
+  let evaluated: PrecheckVerdict
   try {
-    verdict = await precheckInstall(checked, before, session.schema)
+    evaluated = await precheckInstall(checked, before, session.schema)
   } catch {
     // Advisory: a defect of the pre-check never stops an install the Kernel would admit.
-    verdict = Object.freeze({
+    evaluated = Object.freeze({
       compared: 0,
       dependencies: [],
       dependents: [],
@@ -690,20 +721,35 @@ async function precheckReferences(
         Object.freeze({ reference: source.reference, reason: 'failed' as const }),
       ),
       unevaluated: [],
+      indirect: new Map(),
     })
   }
+  const { indirect, ...verdict } = evaluated
   if (verdict.dependents.length === 0) return Object.freeze({ ...verdict, proposals: [] })
-  let proposals: readonly DependentProposal[]
-  try {
-    proposals = await deps.openRegistry(opts, (registry) =>
-      proposeDependentVersions(verdict.dependents, registry),
-    )
-  } catch (error) {
-    const { code } = registryFailure(error, 'read')
-    proposals = [...new Set(verdict.dependents.map(({ domain }) => domain.origin))].map((origin) =>
-      Object.freeze({ origin, kind: 'unread' as const, code }),
-    )
+  // A dependent that breaks on a dependency it reaches only through another Domain has no answer
+  // in the registry, so only the others open it.
+  const direct = verdict.dependents.filter(({ domain }) => !indirect.has(domain.origin))
+  let registered: readonly DependentProposal[] = []
+  if (direct.length > 0) {
+    try {
+      registered = await deps.openRegistry(opts, (registry) =>
+        proposeDependentVersions(direct, before, registry),
+      )
+    } catch (error) {
+      const { code } = registryFailure(error, 'read')
+      registered = [...new Set(direct.map(({ domain }) => domain.origin))].map((origin) =>
+        Object.freeze({ origin, kind: 'unread' as const, code }),
+      )
+    }
   }
+  const proposals = [...new Set(verdict.dependents.map(({ domain }) => domain.origin))].map(
+    (origin): DependentProposal => {
+      const through = indirect.get(origin)
+      return through === undefined
+        ? registered.find((proposal) => proposal.origin === origin)!
+        : Object.freeze({ origin, kind: 'indirect' as const, dependencies: Object.freeze(through) })
+    },
+  )
   const versions = proposals.flatMap((proposal) =>
     proposal.kind === 'version' ? [`${proposal.origin}@${proposal.version}`] : [],
   )
@@ -744,9 +790,17 @@ function presentPrecheck(precheck: InstallPrecheck): void {
   for (const proposal of precheck.proposals) {
     if (proposal.kind === 'none') {
       log.warn(`  No compatible published version of ${proposal.origin}.`)
+    } else if (proposal.kind === 'indirect') {
+      log.warn(
+        `  No version of ${proposal.origin} is proposed: it reaches ${proposal.dependencies.join(', ')} only through another Domain, and Publications list their direct dependencies only.`,
+      )
     } else if (proposal.kind === 'unread') {
       log.dim(
         `  ${proposal.origin}: the registry could not be read (${proposal.code}), so no version is proposed.`,
+      )
+    } else if (proposal.issuer !== undefined) {
+      log.dim(
+        `  ${proposal.origin}@${proposal.version} changes its issuer (${proposal.issuer.from} -> ${proposal.issuer.to}): the install asks for that consent, or name it with --allow-issuer-change=${proposal.origin}.`,
       )
     }
   }
@@ -754,9 +808,11 @@ function presentPrecheck(precheck: InstallPrecheck): void {
   for (const { reference, reason } of precheck.skipped) {
     log.dim(`  Pre-check skipped ${reference}: ${SKIPPED[reason]}`)
   }
-  for (const origin of precheck.unevaluated) {
+  if (precheck.unevaluated.length > 0) {
+    const count = precheck.unevaluated.length
     log.dim(
-      `  Pre-check could not evaluate ${origin}: its installed schema or bindings are not readable here, or the engine could not compare them.`,
+      `  Pre-check could not evaluate ${count === 1 ? '1 Domain' : `${count} Domains`} (${precheck.unevaluated.join(', ')}): ` +
+        `${count === 1 ? 'its' : 'their'} installed schema or bindings are not readable here, or the engine could not compare them.`,
     )
   }
   if (predicted(precheck)) {

@@ -143,11 +143,19 @@ function served(release: DomainRelease): ServedDeployment {
 }
 
 /**
- * Read the Schema Bundle one release names, the way the Kernel reads it at install: from the
- * bundle `href` the release declares, which must stay on the origin that serves the release, with
- * no redirect and no more bytes than its descriptor declares. `decodeBundle` checks the bytes
- * against the descriptor's digest and the release's inventory, so the Bundle is the one the
- * Kernel would accept, its root carrying the exact dependency closure it was built against.
+ * The most Schema Bundle bytes the CLI reads: the Kernel's production profile admits no larger
+ * bundle (`maximumBundleBytes`, astrale-os/kernel `host/kernel/profiles/falkordb/production.ts`).
+ */
+export const MAXIMUM_BUNDLE_BYTES = 1_000_000
+
+/**
+ * Read the Schema Bundle one release names, the way the Kernel reads it at install
+ * (astrale-os/kernel `runtime/schema/installation/source/retrieval.ts`): from the bundle `href`
+ * the release declares, which must stay on the origin that serves the release, with no redirect,
+ * asking for and requiring the descriptor's media type, and reading no more bytes than its
+ * descriptor declares nor than the Kernel admits. `decodeBundle` checks the bytes against the
+ * descriptor's digest and the release's inventory, so the Bundle is the one the Kernel would
+ * accept, its root carrying the exact dependency closure it was built against.
  */
 export async function readReleaseBundle(
   release: DomainRelease,
@@ -166,6 +174,7 @@ export async function readReleaseBundle(
   try {
     response = await fetchImpl(bundleUrl, {
       redirect: 'error',
+      headers: { accept: descriptor.ref.mediaType },
       ...(signal === undefined ? {} : { signal }),
     })
   } catch (cause) {
@@ -178,9 +187,19 @@ export async function readReleaseBundle(
       retryAfter: response.headers.get('retry-after') ?? undefined,
     })
   }
+  if (!hasMediaType(response, descriptor.ref.mediaType)) {
+    await cancel(response.body)
+    throw new DeploymentReadError(
+      `GET ${bundleUrl.href} is not served as ${descriptor.ref.mediaType}, the media type its release names.`,
+    )
+  }
   let bytes: Uint8Array
   try {
-    bytes = await readBounded(response, bundleUrl, descriptor.ref.size)
+    bytes = await readBounded(
+      response,
+      bundleUrl,
+      Math.min(descriptor.ref.size, MAXIMUM_BUNDLE_BYTES),
+    )
   } catch (cause) {
     throw new DeploymentReadError(
       cause instanceof Error ? cause.message : `GET ${bundleUrl.href} failed.`,
