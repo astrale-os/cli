@@ -2,18 +2,21 @@ import { defineSchema } from '@astrale-os/sdk/schema'
 import { afterAll, describe, expect, test } from 'bun:test'
 
 import { releaseFor } from '../../__tests__/fixtures/publication'
-import { domainRefFromTarget, isIdentityOverride, probeDeclaredOrigin } from '../domain/install'
+import { isIdentityOverride, probeDeclaredOrigin } from '../domain/identity-override'
+import { isUrlReference } from '../domain/install'
 
-describe('admin-path target classification', () => {
-  test('an http(s) url installs by url', () => {
-    expect(domainRefFromTarget('https://crm.acme.dev')).toEqual({ url: 'https://crm.acme.dev' })
-    expect(domainRefFromTarget('http://localhost:8787')).toEqual({ url: 'http://localhost:8787' })
+describe('install reference classification', () => {
+  test('a reference starting with https:// or http:// is a deployment URL', () => {
+    expect(isUrlReference('https://crm.acme.dev')).toBe(true)
+    expect(isUrlReference('http://localhost:8787')).toBe(true)
   })
 
-  test('a bare origin installs by catalog origin (the unique registry key)', () => {
-    expect(domainRefFromTarget('crm.acme.dev')).toEqual({ origin: 'crm.acme.dev' })
-    // A host:port that is not a url is still an origin, not a url.
-    expect(domainRefFromTarget('example.astrale.ai')).toEqual({ origin: 'example.astrale.ai' })
+  test('anything else is a catalog origin (the unique registry key)', () => {
+    expect(isUrlReference('crm.acme.dev')).toBe(false)
+    expect(isUrlReference('example.astrale.ai')).toBe(false)
+    // A URL is recognized by its written scheme only (AM-58).
+    expect(isUrlReference('http:crm.acme.dev')).toBe(false)
+    expect(isUrlReference('HTTPS://crm.acme.dev')).toBe(false)
   })
 })
 
