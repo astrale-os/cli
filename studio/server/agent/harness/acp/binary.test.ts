@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   chmodSync,
@@ -22,6 +22,7 @@ import {
   installAgentArtifact,
   isAgentBinaryInstalled,
   platformKeys,
+  pruneAgentBinaries,
   versionWarning,
   type AgentBinary,
   type PinnedArtifact,
@@ -185,6 +186,8 @@ describe('agent binary installation', () => {
     expect(existsSync(join(binary.directory!, 'package.tgz'))).toBe(false)
     expect(progress[0]).toMatch(/^Installing Codex 9\.9\.9/)
     expect(progress.at(-1)).toBe('Codex 9.9.9 installed')
+    // this process now holds it, so no other Studio prunes it from under a turn
+    expect(existsSync(join(binary.directory!, '.leases', String(process.pid)))).toBe(true)
   })
 
   test('concurrent callers share one download', async () => {
@@ -244,25 +247,92 @@ describe('agent binary installation', () => {
     expect(await isAgentBinaryInstalled(binary)).toBe(true)
   })
 
-  test('drops versions no Studio has used for two weeks', async () => {
+  test('drops every other build no live process holds as soon as a new one lands', async () => {
     const root = temporaryRoot('studio-agent-prune-')
-    const stale = join(root, 'codex', '0.1.0', 'linux-x64')
-    const recent = join(root, 'codex', '0.2.0', 'linux-x64')
-    for (const directory of [stale, recent]) {
+    const sleeper = spawn('sleep', ['30'])
+    const dead = spawnSync('true').pid
+    const build = (version: string, holders?: number[], markerAgeDays = 0) => {
+      const directory = join(root, 'codex', version, 'linux-x64')
       mkdirSync(directory, { recursive: true })
       writeFileSync(join(directory, '.complete'), 'sha512-old\n')
+      const at = new Date(Date.now() - markerAgeDays * 24 * 60 * 60_000)
+      utimesSync(join(directory, '.complete'), at, at)
+      if (holders) {
+        mkdirSync(join(directory, '.leases'))
+        for (const pid of holders) writeFileSync(join(directory, '.leases', String(pid)), '')
+      }
+      return directory
     }
-    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60_000)
-    utimesSync(join(stale, '.complete'), monthAgo, monthAgo)
+    try {
+      const unheld = build('0.1.0', [])
+      const heldByTheDead = build('0.2.0', [dead])
+      const heldByALiveStudio = build('0.3.0', [sleeper.pid!])
+      // installed before leases: judged by when a Studio last started on it
+      const legacyRecent = build('0.4.0')
+      const legacyStale = build('0.5.0', undefined, 30)
+      const abandonedStaging = join(root, 'codex', '0.6.0', `linux-x64.staging-${dead}-x`)
+      mkdirSync(abandonedStaging, { recursive: true })
 
+      const { bytes, integrity } = packTarball()
+      const artifact = {
+        tarball: serve('/prune.tgz', bytes),
+        integrity,
+        entry: 'package/bin/agent',
+      }
+      await installAgentArtifact(artifact, join(root, 'codex', '9.9.9', 'linux-x64'), {
+        label: 'Codex 9.9.9',
+      })
+
+      expect(existsSync(unheld)).toBe(false)
+      expect(existsSync(heldByTheDead)).toBe(false)
+      expect(existsSync(legacyStale)).toBe(false)
+      expect(existsSync(abandonedStaging)).toBe(false)
+      // emptied version directories go with their last build
+      expect(existsSync(join(root, 'codex', '0.1.0'))).toBe(false)
+      expect(existsSync(join(root, 'codex', '0.6.0'))).toBe(false)
+      expect(existsSync(heldByALiveStudio)).toBe(true)
+      expect(existsSync(legacyRecent)).toBe(true)
+      expect(existsSync(join(root, 'codex', '9.9.9', 'linux-x64', '.complete'))).toBe(true)
+    } finally {
+      sleeper.kill()
+    }
+  })
+
+  test('a process releases its lease when it exits', async () => {
+    const root = temporaryRoot('studio-agent-release-')
     const { bytes, integrity } = packTarball()
-    const artifact = { tarball: serve('/prune.tgz', bytes), integrity, entry: 'package/bin/agent' }
-    await installAgentArtifact(artifact, join(root, 'codex', '9.9.9', 'linux-x64'), {
-      label: 'Codex 9.9.9',
-    })
+    const artifact = {
+      tarball: serve('/release.tgz', bytes),
+      integrity,
+      entry: 'package/bin/agent',
+    }
+    const directory = join(root, 'codex', '9.9.9', 'linux-x64')
+    const script = `
+      const { installAgentArtifact } = await import(${JSON.stringify(join(import.meta.dir, 'binary.ts'))})
+      await installAgentArtifact(${JSON.stringify(artifact)}, ${JSON.stringify(directory)}, { label: 'Codex' })
+      console.log(process.pid)
+    `
+    const child = Bun.spawn([process.execPath, '-e', script], { stdout: 'pipe' })
+    const pid = (await new Response(child.stdout).text()).trim()
+    expect(await child.exited).toBe(0)
 
-    expect(existsSync(join(root, 'codex', '0.1.0'))).toBe(false)
-    expect(existsSync(recent)).toBe(true)
-    expect(existsSync(join(root, 'codex', '9.9.9', 'linux-x64', '.complete'))).toBe(true)
+    expect(pid).toMatch(/^\d+$/)
+    expect(existsSync(join(directory, '.leases'))).toBe(true)
+    expect(existsSync(join(directory, '.leases', pid))).toBe(false)
+  })
+
+  test('a starting Studio keeps its own pinned build even before anything holds it', async () => {
+    const root = temporaryRoot('studio-agent-startup-prune-')
+    const pinned = PINNED_AGENT_BINARIES.claude.version
+    for (const version of [pinned, '0.0.1']) {
+      const directory = join(root, 'claude', version, 'darwin-arm64')
+      mkdirSync(join(directory, '.leases'), { recursive: true })
+      writeFileSync(join(directory, '.complete'), 'sha512-x\n')
+    }
+
+    await pruneAgentBinaries('claude', root, ['darwin-arm64'])
+
+    expect(existsSync(join(root, 'claude', pinned, 'darwin-arm64'))).toBe(true)
+    expect(existsSync(join(root, 'claude', '0.0.1'))).toBe(false)
   })
 })
