@@ -1,6 +1,9 @@
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+/** @deprecated The Admin Fleet catalog; successor: the Domain version registry. */
+import type { Path } from '@astrale-os/sdk/graph/path'
 
-import type { AdminGraphApi } from '../../graph/.spec/api.js'
+import type { AdminGraphApi } from '../../../graph/.spec/api.js'
+import type { AdminInstanceContext } from '../../../instance/.spec/api.js'
 
 export interface DomainInfo {
   readonly id: string
@@ -36,7 +39,17 @@ export interface InstallDomainResult {
   readonly error?: string | null
 }
 
+export interface DomainInstallReceipt {
+  readonly domain: string
+  readonly instance: string
+  readonly origin: string
+  readonly ok: boolean
+  readonly installedRevision?: string
+  readonly error?: string
+}
+
 export interface AdminCatalogContext {
+  readonly fleet?: string
   readonly session: ClientSession
   readonly graph: AdminGraphApi
 }
@@ -61,3 +74,18 @@ export function connectAdminCatalog(
   context: AdminCatalogContext,
   dependencies?: AdminCatalogDependencies,
 ): Promise<AdminCatalogApi>
+
+export interface CatalogInstallDependencies {
+  readonly operationId?: () => string
+}
+
+/** Resolve the caller-visible Instance, then invoke its `installDomain` receiver. */
+export function installCatalogDomain(
+  context: AdminInstanceContext,
+  instance: string,
+  domain: string,
+  dependencies?: CatalogInstallDependencies,
+): Promise<DomainInstallReceipt>
+
+/** The one Fleet that contains a resource, whose catalog a bare-origin install reads. */
+export function resourceFleet(context: AdminInstanceContext, resource: string): Promise<Path>
