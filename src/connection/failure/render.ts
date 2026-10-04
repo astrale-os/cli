@@ -100,6 +100,11 @@ function renderResponse(
   if (upgrade?.issue === 'issuer-changed') {
     log.dim(`  installed issuer: ${upgrade.installedIssuer}`)
     log.dim(`  replacement issuer: ${upgrade.replacementIssuer}`)
+    if (upgrade.consented !== undefined) {
+      log.dim(`  consented: ${upgrade.consented.from} -> ${upgrade.consented.to}`)
+    }
+  } else if (upgrade?.issue === 'in-flight-limit') {
+    log.dim(`  replaced issuers in flight: ${upgrade.inFlight}`)
   }
   if (hint) log.dim(`  ${hint}`)
 }
