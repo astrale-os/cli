@@ -1,6 +1,14 @@
 import type { InstalledPin } from '@astrale-os/sdk/client/schema'
+import type { bundle } from '@astrale-os/sdk/schema'
 
-import { accept, legacy, MEDIA_TYPE, PATH, type DomainRelease } from '@astrale-os/sdk/release'
+import {
+  accept,
+  decodeBundle,
+  legacy,
+  MEDIA_TYPE,
+  PATH,
+  type DomainRelease,
+} from '@astrale-os/sdk/release'
 
 import {
   cancel,
@@ -21,6 +29,8 @@ export interface ServedDeployment {
   readonly issuer: string
   readonly revision: string
   readonly pin: InstalledPin
+  /** The admitted `DomainRelease` v4 itself, present exactly when `pin` is a release pin. */
+  readonly release?: DomainRelease
 }
 
 /**
@@ -128,7 +138,65 @@ function served(release: DomainRelease): ServedDeployment {
       release: release.digest,
       build: release.build.digest,
     }),
+    release,
   })
+}
+
+/**
+ * Read the Schema Bundle one release names, the way the Kernel reads it at install: from the
+ * bundle `href` the release declares, which must stay on the origin that serves the release, with
+ * no redirect and no more bytes than its descriptor declares. `decodeBundle` checks the bytes
+ * against the descriptor's digest and the release's inventory, so the Bundle is the one the
+ * Kernel would accept, its root carrying the exact dependency closure it was built against.
+ */
+export async function readReleaseBundle(
+  release: DomainRelease,
+  url: string,
+  signal?: AbortSignal,
+  fetchImpl: FetchLike = globalThis.fetch,
+): Promise<bundle.Bundle> {
+  const descriptor = release.schema.bundle
+  const bundleUrl = new URL(descriptor.href)
+  if (bundleUrl.origin !== new URL(url).origin) {
+    throw new DeploymentReadError(
+      `The release served by ${new URL(url).origin} names its bundle on another origin (${bundleUrl.origin}).`,
+    )
+  }
+  let response: Response
+  try {
+    response = await fetchImpl(bundleUrl, {
+      redirect: 'error',
+      ...(signal === undefined ? {} : { signal }),
+    })
+  } catch (cause) {
+    throw new DeploymentReadError(`GET ${bundleUrl.href} failed.`, { cause })
+  }
+  if (response.status !== 200) {
+    await cancel(response.body)
+    throw new DeploymentReadError(`GET ${bundleUrl.href} → ${response.status}`, {
+      status: response.status,
+      retryAfter: response.headers.get('retry-after') ?? undefined,
+    })
+  }
+  let bytes: Uint8Array
+  try {
+    bytes = await readBounded(response, bundleUrl, descriptor.ref.size)
+  } catch (cause) {
+    throw new DeploymentReadError(
+      cause instanceof Error ? cause.message : `GET ${bundleUrl.href} failed.`,
+      { cause },
+    )
+  }
+  try {
+    return decodeBundle(release, bytes)
+  } catch (cause) {
+    throw new DeploymentReadError(
+      `GET ${bundleUrl.href} returned another bundle than the release names.`,
+      {
+        cause,
+      },
+    )
+  }
 }
 
 function servedLegacy(publication: legacy.Publication): ServedDeployment {

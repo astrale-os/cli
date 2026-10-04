@@ -18,9 +18,10 @@ export function renderFailure(
   machine: boolean,
   url: string,
   recovery: OperationRecovery | undefined,
+  fields: Readonly<Record<string, unknown>> = {},
 ): void {
   if (failure.kind === 'transport') return renderTransport(failure, machine, url, recovery)
-  if (failure.kind === 'response') return renderResponse(failure, machine)
+  if (failure.kind === 'response') return renderResponse(failure, machine, fields)
   if (machine)
     return writeRaw({ error: failure.code, message: failure.message, hint: failure.hint })
   log.error(`${chalk.bold(failure.code)}: ${failure.message}`)
@@ -56,6 +57,7 @@ function renderTransport(
 function renderResponse(
   failure: Extract<FailureDiagnostic, { kind: 'response' }>,
   machine: boolean,
+  fields: Readonly<Record<string, unknown>>,
 ): void {
   const code = reasonCode(failure.reason)
   const issues = functionInputIssues(failure.reason)
@@ -73,6 +75,7 @@ function renderResponse(
       : (removalHint ?? (upgrade ? schemaUpgradeHint(upgrade) : undefined))
   if (machine) {
     writeRaw({
+      ...fields,
       error: 'RESPONSE_ERROR',
       code: failure.code,
       message,
