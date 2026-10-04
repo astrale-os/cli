@@ -160,9 +160,10 @@ astrale instance forget staging
 ```
 
 Use explicit `-i <instance>` in scripts. `-i` and `--url` always select the instance a command
-acts on; they never select the Admin kernel, and Admin operations (`domain list`, `domain publish`,
-`instance list`, …) reject them. Choose the Admin kernel with `--admin <bookmark>` or
-`--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
+acts on; they never select the Admin kernel, and Admin operations (`domain publish`,
+`instance list`, …) reject them; `domain list -i <instance>` lists what runs on that instance,
+and `domain list` without them reads the Admin catalog. Choose the Admin kernel with
+`--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
 removes only the local bookmark.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
@@ -265,6 +266,23 @@ the same command is always safe; it can help only when `details.retryable` is `t
 ```bash
 astrale domain versions issues.astrale.ai
 astrale domain versions issues.astrale.ai --json --as ci
+```
+
+`astrale domain list -i <instance>` (or `--url <kernel>`) shows what runs on that instance: each
+installation its Kernel pins to a deployment that you can read, with the release digest from the
+Kernel pin, the version from the Admin registry (the version naming that exact release, else the
+one naming the same build from the same issuer, as `1.5.0 · staging`; a build digest alone never
+names a version), else the name the deployment's public record gives a preview
+(`1.4.2 + 7 commits · a1b2c3d · staging`, printed as computed), `legacy` for a v2/v3 pin, and
+the highest stable version available above it. The list is partial by nature: built-in and local
+Domains, and Domains you cannot read, never appear, so an absent origin is unknown, not "not
+installed". `--json` prints one `astrale.installed-list` document. A Kernel that does not list
+installed releases answers `KERNEL_RELEASE_UNSUPPORTED`; read one Domain there with
+`astrale introspect <origin> -i <instance>`.
+
+```bash
+astrale domain list -i staging
+astrale domain list -i staging --json
 ```
 
 The hidden `astrale __domain-registry bundle|publish|yank` commands are JSON plumbing for
