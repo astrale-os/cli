@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { AstraleError } from '../../../errors'
 import { connectAdminRegistry } from '../client'
 import { RegistryError } from '../model'
 import {
@@ -42,6 +43,16 @@ function domain(over: Partial<FakeDomain> = {}): FakeDomain {
     ],
     ...over,
   }
+}
+
+async function thrownBy(promise: Promise<unknown>): Promise<AstraleError> {
+  try {
+    await promise
+  } catch (error) {
+    expect(error).toBeInstanceOf(AstraleError)
+    return error as AstraleError
+  }
+  throw new Error('expected a refusal')
 }
 
 async function refusalOf(promise: Promise<unknown>): Promise<RegistryError> {
@@ -151,7 +162,42 @@ describe('registry index (Résolution [.78020] [.79495])', () => {
     }
     const error = await refusalOf(connectAdminRegistry(context as never).index(ORIGIN))
     expect(error.code).toBe('REGISTRY_UNAVAILABLE')
-    expect(error.details).toEqual({ reason: 'transport', phase: 'connect', delivery: 'not-sent' })
+    expect(error.details).toEqual({
+      reason: 'transport',
+      phase: 'connect',
+      delivery: 'not-sent',
+      retryable: true,
+    })
+  })
+
+  test('a read refused with 5001 may be retried; another server refusal may not', async () => {
+    const cases: Array<[ResponseError, Record<string, unknown>]> = [
+      [
+        declared(5001, 'CAPACITY_EXHAUSTED', { retryAfterMs: 1_000 }),
+        {
+          status: 5001,
+          reason: 'CAPACITY_EXHAUSTED',
+          retryable: true,
+        },
+      ],
+      [new ResponseError(5000 as never, 'internal', 'inv' as never), { status: 5000 }],
+    ]
+    for (const [cause, details] of cases) {
+      const admin = fakeAdmin({ caller: 'installer', domains: [domain()] })
+      const context = {
+        ...admin.context,
+        graph: {
+          query: async () => {
+            throw cause
+          },
+        },
+      }
+      const error = await refusalOf(connectAdminRegistry(context as never).index(ORIGIN))
+      expect({ code: error.code, details: error.details }).toEqual({
+        code: 'REGISTRY_UNAVAILABLE',
+        details,
+      })
+    }
   })
 })
 
@@ -260,12 +306,30 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
         // whose reason is the Kernel's submission code; nothing was written.
         declared(5001, 'MUTATION_CAPACITY_EXHAUSTED', {}),
         'REGISTRY_UNAVAILABLE',
-        { status: 5001, reason: 'MUTATION_CAPACITY_EXHAUSTED' },
+        { status: 5001, reason: 'MUTATION_CAPACITY_EXHAUSTED', retryable: true },
       ],
       [
+        // A call the Kernel did not admit: nothing ran.
+        declared(5001, 'SERVER_DRAINING', { retryAfterMs: 1_000 }),
+        'REGISTRY_UNAVAILABLE',
+        { status: 5001, reason: 'SERVER_DRAINING', retryable: true },
+      ],
+      [
+        // Any other server refusal of a change, such as a lost commit Admin could not settle.
         new ResponseError(5001 as never, 'down', 'inv' as never),
         'REGISTRY_UNAVAILABLE',
-        { status: 5001 },
+        { status: 5001, delivery: 'unknown', retryable: true },
+      ],
+      [
+        new ResponseError(5000 as never, 'outcome is unknown', 'inv' as never),
+        'REGISTRY_UNAVAILABLE',
+        { status: 5000, delivery: 'unknown', retryable: true },
+      ],
+      [
+        // A request this CLI built and the Kernel refused: a rerun cannot help.
+        new ResponseError(4001 as never, 'invalid', 'inv' as never),
+        'REGISTRY_UNAVAILABLE',
+        { status: 4001 },
       ],
     ]
     for (const [cause, code, details] of cases) {
@@ -277,6 +341,17 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
       const error = await refusalOf(connectAdminRegistry(admin.context).publish(request('1.6.0')))
       expect({ code: error.code, details: error.details }).toEqual({ code, details })
     }
+  })
+
+  test('a change whose outcome Admin cannot settle says it may have applied', async () => {
+    const admin = fakeAdmin({
+      caller: 'publisher',
+      domains: [domain({ publications: [] })],
+      publishRefusal: () => new ResponseError(5000 as never, 'outcome is unknown', 'inv' as never),
+    })
+    const error = await refusalOf(connectAdminRegistry(admin.context).publish(request('1.6.0')))
+    expect(error.message).toContain('the change may have applied')
+    expect(error.message).toContain('Rerun the same command')
   })
 
   test('a deployment Admin cannot find is PUBLICATION_RELEASE_UNREACHABLE', async () => {
@@ -300,7 +375,12 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
     const error = await refusalOf(connectAdminRegistry(context as never).publish(request('1.6.0')))
     expect(error.code).toBe('REGISTRY_UNAVAILABLE')
     expect(error.message).toContain('Rerun the same command')
-    expect(error.details).toEqual({ reason: 'transport', phase: 'receive', delivery: 'unknown' })
+    expect(error.details).toEqual({
+      reason: 'transport',
+      phase: 'receive',
+      delivery: 'unknown',
+      retryable: true,
+    })
   })
 })
 
@@ -379,6 +459,25 @@ describe('registry bundle (tech [.119544])', () => {
     expect(error.details?.reason).toBe('bundle-mismatch')
     expect(existsSync(file)).toBe(false)
     expect(readdirSync(join(file, '..'))).toEqual([])
+  })
+
+  test("an output that cannot be written is the caller's error, found before any download", async () => {
+    const admin = fakeAdmin({ caller: 'installer', domains: [domain()], download: true })
+    const registry = connectAdminRegistry(admin.context)
+    const root = mkdtempSync(join(tmpdir(), 'astrale-registry-bundle-'))
+
+    const missing = await thrownBy(registry.bundle(ORIGIN, '1.5.0', join(root, 'none', 'b.json')))
+    expect(missing).toBeInstanceOf(AstraleError)
+    expect(missing).not.toBeInstanceOf(RegistryError)
+    expect(missing.code).toBe('FILE_WRITE_FAILED')
+    expect(missing.message).toContain('(ENOENT)')
+
+    const directory = await thrownBy(registry.bundle(ORIGIN, '1.5.0', root))
+    expect(directory.code).toBe('FILE_WRITE_FAILED')
+    expect(directory.message).toContain('(EISDIR)')
+
+    expect(admin.downloads).toEqual([])
+    expect(readdirSync(root)).toEqual([])
   })
 
   test('a refused download writes nothing and is REGISTRY_FORBIDDEN', async () => {

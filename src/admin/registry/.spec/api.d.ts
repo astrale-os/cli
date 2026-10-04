@@ -120,4 +120,5 @@ export function exactPublicationReference(input: string): {
 }
 export function publicationVersion(input: unknown, reference?: string): string
 export function registryOrigin(input: string): string
+export function registryFailure(error: unknown, action: 'read' | 'change'): AstraleError
 export function compareVersions(left: string, right: string): number

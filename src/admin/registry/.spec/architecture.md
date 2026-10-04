@@ -20,7 +20,14 @@ compare-and-swap makes a rerun safe: the same version and release digest answer 
 
 A bundle download goes through the Kernel `download` syscall on the Publication's `bundle` Property
 and is written to the output file only after its byte count and sha256 digest match the
-Publication's descriptor; a partial file never takes the output name.
+Publication's descriptor; a partial file never takes the output name. The output is checked and its
+partial file created before the download starts, and a local file failure is the caller's
+`FILE_WRITE_FAILED`, never a registry refusal.
+
+Failures are translated once, in `failure.ts`, into the CT29 vocabulary. `REGISTRY_UNAVAILABLE`
+always allows a rerun of the same command, and says a rerun can help only with
+`details.retryable: true`; on a change, `details.delivery: 'unknown'` says the change may have
+applied, which the rerun settles.
 
 Strict local decoders admit every field the adapter reads and ignore fields Admin adds later, so an
 additive Admin release never breaks a published CLI. Versions are admitted by
