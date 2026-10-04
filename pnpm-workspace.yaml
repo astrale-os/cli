@@ -48,3 +48,17 @@ allowBuilds:
 # A machine-level global virtual store relocates them outside it and silently
 # breaks type resolution, so pin the per-project store for this workspace.
 virtualStoreType: project
+
+# TEMPORARY until an SDK release pins the Kernel release that carries K10 (astrale-os/kernel#1116),
+# K11a (#1121) and K14 (#1122): kernel#1142 (3955451e4) published them, with K11b (#1124) and K17
+# (#1126), as kernel-client 0.6.0-beta.84 and its cohort, while @astrale-os/sdk 0.6.0-beta.11 still
+# pins the R1 cohort (kernel-client 0.6.0-beta.83). Override the SDK's five Kernel dependencies to
+# those published versions. When an SDK release pins them, drop this block, pin that SDK in the
+# four workspace manifests and run scripts/verify-public-dependency-boundary.mjs, which refuses
+# these overrides until then.
+overrides:
+  '@astrale-os/kernel-client': '0.6.0-beta.84'
+  '@astrale-os/kernel-core': '0.9.0-beta.63'
+  '@astrale-os/kernel-dsl': '0.2.0-beta.45'
+  '@astrale-os/kernel-protocol': '0.5.0-beta.69'
+  '@astrale-os/kernel-server': '0.5.0-beta.71'
