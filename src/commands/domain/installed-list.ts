@@ -5,11 +5,11 @@ import { acceptVersion, deploymentName } from '@astrale-os/sdk/versioning'
 import chalk from 'chalk'
 
 import type { AdminRegistryApi, PublicationSummaryV1 } from '../../admin/registry'
-import type { ConnectionContext, KernelCommandOpts } from '../../connection'
+import type { AdminConnectionOptions, ConnectionContext, KernelCommandOpts } from '../../connection'
 import type { AdminTargetCommandOpts } from '../../lib/admin-target'
 
 import { compareVersions, connectAdminRegistry, RegistryError } from '../../admin/registry'
-import { withAdminClientSession, withClientSession } from '../../connection'
+import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
 import { AstraleError } from '../../errors'
 import { mapBounded } from '../../lib/concurrency'
 import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment-record'
@@ -181,9 +181,12 @@ export interface InstalledListDependencies {
     readonly kernel: string
     readonly releases: readonly InstalledRelease[] | undefined
   }>
-  /** Open the Admin registry with the caller's credential. */
+  /**
+   * Open the Admin registry as the caller, with the options `adminSessionOptions` keeps: never the
+   * instance target, its `--creds` or `--anonymous`.
+   */
   readonly registry: <Value>(
-    opts: KernelCommandOpts & AdminTargetCommandOpts,
+    opts: AdminConnectionOptions,
     work: (registry: AdminRegistryApi) => Promise<Value>,
   ) => Promise<Value>
   readonly record: (installation: RecordedInstallation) => Promise<DeploymentRecordV1 | undefined>
@@ -196,7 +199,7 @@ const defaultDependencies: InstalledListDependencies = Object.freeze({
       releases: await installedReleases(context.session),
     })),
   registry: <Value>(
-    opts: KernelCommandOpts & AdminTargetCommandOpts,
+    opts: AdminConnectionOptions,
     work: (registry: AdminRegistryApi) => Promise<Value>,
   ) => withAdminClientSession(opts, async (context) => work(connectAdminRegistry(context))),
   record: (installation: RecordedInstallation) => readDeploymentRecord(installation),
@@ -225,7 +228,7 @@ export async function listInstalled(
   const [publications, records] = await Promise.all([
     origins.length === 0
       ? new Map<string, readonly PublicationSummaryV1[]>()
-      : deps.registry(adminOptions(opts), (registry) => readPublications(registry, origins)),
+      : deps.registry(adminSessionOptions(opts), (registry) => readPublications(registry, origins)),
     mapBounded(pinned, RECORD_READS, async (entry) => [entry, await deps.record(entry)] as const),
   ])
   const recordOf = new Map<InstalledRelease, DeploymentRecordV1 | undefined>(records)
@@ -257,14 +260,6 @@ async function readPublications(
     }
   })
   return new Map(indexes)
-}
-
-/** `-i`/`--url` select the instance; the Admin registry is chosen by --admin/--admin-url only. */
-function adminOptions(
-  opts: KernelCommandOpts & AdminTargetCommandOpts,
-): KernelCommandOpts & AdminTargetCommandOpts {
-  const { instance: _instance, url: _url, ...admin } = opts
-  return admin
 }
 
 function listingUnsupported(): AstraleError {

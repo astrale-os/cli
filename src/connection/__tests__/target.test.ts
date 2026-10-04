@@ -5,6 +5,7 @@ import type { AstraleConfig } from '../../lib/config'
 import type { InstanceStore } from '../../lib/instance'
 
 import {
+  adminSessionOptions,
   registrationKeyForTarget,
   resolveAdminConnectionTarget,
   resolveConnectionTarget,
@@ -128,5 +129,35 @@ describe('connection target', () => {
       domainIssuer: issuer.accept('https://admin-domain.example'),
       slug: 'control',
     })
+  })
+
+  test('an Admin session beside an instance target keeps the caller, never the target or its credential', () => {
+    const options = adminSessionOptions({
+      instance: 'acme-stg',
+      url: 'https://acme.example/api',
+      creds: 'INSTANCE-TOKEN',
+      anonymous: true,
+      fleet: '@fleet',
+      admin: 'control',
+      adminUrl: 'https://admin.example/api',
+      domainIssuer: 'https://admin-domain.example',
+      timeout: '10s',
+      as: 'operator',
+      ci: true,
+    })
+    expect(options).toEqual({
+      admin: 'control',
+      adminUrl: 'https://admin.example/api',
+      domainIssuer: 'https://admin-domain.example',
+      timeout: '10s',
+      as: 'operator',
+      ci: true,
+    })
+    expect(Object.isFrozen(options)).toBe(true)
+    // Only a raw credential or --anonymous given for the target: Admin gets the default identity.
+    expect(
+      adminSessionOptions({ url: 'https://acme.example/api', creds: 'INSTANCE-TOKEN' }),
+    ).toEqual({})
+    expect(adminSessionOptions({ instance: 'acme-stg', anonymous: true })).toEqual({})
   })
 })

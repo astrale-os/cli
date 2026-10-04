@@ -106,6 +106,25 @@ export function adminLookupOptions(options: AdminConnectionOptions): AdminTarget
   }
 }
 
+/**
+ * The options of an Admin session that a command opens beside its own target, such as reading the
+ * Admin registry for the instance that -i/--url select. The session keeps the Admin selection
+ * (--admin, --admin-url, --domain-issuer), the caller's identity (--as, else the default) and the
+ * session settings (--timeout, --ci). It drops the command's own target (-i/--url) and how that
+ * target is authenticated (--creds, --anonymous), so the target's raw credential never reaches
+ * Admin and the caller is never read as Public there.
+ */
+export function adminSessionOptions(options: AdminConnectionOptions): AdminConnectionOptions {
+  return Object.freeze({
+    ...(options.admin === undefined ? {} : { admin: options.admin }),
+    ...(options.adminUrl === undefined ? {} : { adminUrl: options.adminUrl }),
+    ...(options.domainIssuer === undefined ? {} : { domainIssuer: options.domainIssuer }),
+    ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+    ...(options.as === undefined ? {} : { as: options.as }),
+    ...(options.ci === undefined ? {} : { ci: options.ci }),
+  })
+}
+
 function connectionTarget(
   resolved: ResolvedInstanceTarget,
   urlOverride?: string,

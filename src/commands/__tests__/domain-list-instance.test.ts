@@ -283,6 +283,36 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
       expect(request.headers.get('authorization')).toBeNull()
   })
 
+  test('--creds and --anonymous authenticate the instance only: Admin is opened as the caller', async () => {
+    const withCreds = fixture()
+    await listInstalled(
+      {
+        url: KERNEL,
+        creds: 'INSTANCE-TOKEN',
+        admin: 'admin-local',
+        timeout: '10s',
+        ci: true,
+        json: true,
+      },
+      withCreds.dependencies,
+    )
+    expect(withCreds.opened).toEqual([{ admin: 'admin-local', timeout: '10s', ci: true }])
+    expect(JSON.stringify(withCreds.opened)).not.toContain('INSTANCE-TOKEN')
+
+    const anonymous = fixture()
+    await listInstalled(
+      { instance: 'acme-stg', anonymous: true, adminUrl: 'https://admin.example/api' },
+      anonymous.dependencies,
+    )
+    expect(anonymous.opened).toEqual([{ adminUrl: 'https://admin.example/api' }])
+    for (const opts of [...withCreds.opened, ...anonymous.opened]) {
+      expect(opts).not.toHaveProperty('creds')
+      expect(opts).not.toHaveProperty('anonymous')
+      expect(opts).not.toHaveProperty('instance')
+      expect(opts).not.toHaveProperty('url')
+    }
+  })
+
   test('a Kernel without the installed listing is refused before Admin or any deployment', async () => {
     let registry = 0
     let records = 0

@@ -274,7 +274,9 @@ names a version), else the name the deployment's public record gives a preview
 (`1.4.2 + 7 commits · a1b2c3d · staging`, printed as computed), `legacy` for a v2/v3 pin, and
 the highest stable version available above it. The list is partial by nature: built-in and local
 Domains, and Domains you cannot read, never appear, so an absent origin is unknown, not "not
-installed". `--json` prints one `astrale.installed-list` document. A Kernel that does not list
+installed". The registry is read as you (`--as` or your default identity) on the Admin kernel;
+`--creds` and `--anonymous` apply to the instance only. `--json` prints one
+`astrale.installed-list` document. A Kernel that does not list
 installed releases answers `KERNEL_RELEASE_UNSUPPORTED`; read one Domain there with
 `astrale introspect <origin> -i <instance>`.
 
