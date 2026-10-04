@@ -4,7 +4,7 @@
  *
  * A *harness* is whatever local AI agent does the edits (Claude Code, Codex, …).
  * The studio never talks to a model API directly; it shells out to the harness
- * the user already has running locally (no cloud API key of our own). Each
+ * CLI, signed in as the user (no cloud API key of our own). Each
  * harness maps its native streaming output onto `AgentStreamEvent`s and returns
  * a final text blob (which carries the machine-state reply block).
  */
@@ -15,6 +15,7 @@ import type {
   AgentEventKind,
   AgentToolCall,
   HarnessCapabilities,
+  HarnessCli,
   HarnessLoadout,
 } from '../../../shared/types'
 
@@ -147,6 +148,8 @@ export interface HarnessHealth {
   bin?: string
   /** human-readable reason when not ok */
   detail?: string
+  /** the agent CLI the ACP server drives */
+  cli?: HarnessCli
 }
 
 export interface HarnessLoadoutOptions {

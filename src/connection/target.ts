@@ -27,6 +27,12 @@ export interface AdminConnectionOptions extends ConnectionOptions {
   readonly domainIssuer?: string
 }
 
+/** The Admin kernel a command runs on: a bookmark, a URL with its Admin Domain issuer, or neither (the configured Admin target). */
+export type AdminTargetSelection = Pick<
+  AdminConnectionOptions,
+  'admin' | 'adminUrl' | 'domainIssuer'
+>
+
 export interface ConnectionTarget {
   readonly url: string
   readonly kernelIssuer: IssuerId

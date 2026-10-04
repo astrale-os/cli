@@ -375,6 +375,32 @@ describe('ACP harness adapter', () => {
     })
   }
 
+  test('a pinned agent not yet installed is available without downloading or spawning it', async () => {
+    const root = temporaryRoot('studio-acp-managed-health-')
+    const log = join(root, 'acp.jsonl')
+    const previous = {
+      home: process.env.ASTRALE_HOME,
+      bin: process.env.DOMAIN_STUDIO_CODEX_BIN,
+    }
+    process.env.ASTRALE_HOME = root
+    delete process.env.DOMAIN_STUDIO_CODEX_BIN
+    try {
+      const health = await new AcpCodexHarness(undefined, fakeAcpAgent(root, log)).health()
+      expect(health).toMatchObject({
+        ok: true,
+        cli: { source: 'managed', installed: false },
+      })
+      expect(health.bin?.startsWith(join(root, 'cache', 'agents', 'codex'))).toBe(true)
+      expect(health.detail).toContain('is installed by Studio on first use')
+      expect(existsSync(log)).toBe(false)
+      expect(existsSync(join(root, 'cache'))).toBe(false)
+    } finally {
+      if (previous.home === undefined) delete process.env.ASTRALE_HOME
+      else process.env.ASTRALE_HOME = previous.home
+      if (previous.bin !== undefined) process.env.DOMAIN_STUDIO_CODEX_BIN = previous.bin
+    }
+  })
+
   test('probes agent and model diagnostics through a disposable ACP session without prompting', async () => {
     const root = temporaryRoot('studio-acp-probe-')
     const log = join(root, 'acp.jsonl')

@@ -6,7 +6,7 @@ import type {
   SessionRouteStore,
 } from '@astrale-os/sdk/client/session'
 
-import { createGraph } from '@astrale-os/sdk/client'
+import { createGraph, ResponseError } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { AstraleConfig } from '../lib/config'
@@ -36,6 +36,7 @@ import {
   type CredentialIntent,
   validateCredentialSelection,
 } from './credential'
+import { createInstalledIssuer, type InstalledIssuer } from './installed-issuer'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -69,6 +70,7 @@ export type ConnectionFactory = (
   options: ConnectionOptions,
   config: AstraleConfig,
   credential?: CredentialIntent,
+  installed?: InstalledIssuer,
 ) => OwnedConnection
 
 /** Resolve one ordinary target, run a command action, then close terminally. */
@@ -97,17 +99,31 @@ export async function withClientSession<Value>(
   )
 }
 
-/** Resolve the configured Admin Domain target under the same terminal lifecycle. */
+/**
+ * Resolve the configured Admin Domain target under the same terminal lifecycle. A callable
+ * credential selects the callable's declaring Domain from the Admin kernel's installation, as on
+ * any other target.
+ */
 export async function withAdminClientSession<Value>(
   options: AdminConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
+  credential: CredentialIntent = {},
 ): Promise<Value> {
   validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
   const config = await readConfig()
   const target = await resolveAdminConnectionTarget(options, config)
   options = await bindCredentialIdentity(options, target)
-  return runResolvedClientSession(target, timeoutMs, options, config, action, openConnection)
+  return runResolvedClientSession(
+    target,
+    timeoutMs,
+    options,
+    config,
+    action,
+    openConnection,
+    credential,
+    INSTALLATION_CACHE,
+  )
 }
 
 /** Owner-private seam used to prove validation order and cleanup without network I/O. */
@@ -174,19 +190,94 @@ async function runResolvedClientSession<Value>(
         target.domainIssuer === undefined ? { principal: 'caller' } : { principal: 'domain' }
     }
   }
-  const connection = open(target, timeoutMs, options, config, credential)
+  const installed =
+    target.domainOrigin === undefined
+      ? undefined
+      : createInstalledIssuer(target.kernelIssuer, target.domainOrigin, installations)
+  const connection = open(target, timeoutMs, options, config, credential, installed)
   try {
-    return await action(connection.context)
+    return await action(
+      installed === undefined
+        ? connection.context
+        : reportingRefusedCredentials(connection.context, installed),
+    )
   } catch (error) {
     // A remembered issuer is re-read after any failure, so a reinstalled Domain heals in one step.
     if (remembered !== undefined) {
       await installations?.delete(target.kernelIssuer, remembered).catch(() => undefined)
     }
+    await installed?.failed()
     if (error instanceof Error) (error as Error & { url?: string }).url = target.url
     throw error
   } finally {
     connection.close()
   }
+}
+
+/** The Kernel code of a credential it does not accept (AUTH_INVALID). */
+const CREDENTIAL_REFUSED = 2002
+
+/** The Session members that are Kernel call capabilities rather than Session methods. */
+const SESSION_APIS: ReadonlySet<PropertyKey> = new Set(['schema', 'graph', 'auth', 'content'])
+
+/**
+ * The context of a connection whose credential an installed issuer serves.
+ *
+ * A Kernel call made through it that the Kernel refuses with 2002 tells `installed` before the
+ * failure reaches the action. A command that recovers from its own calls' failures, such as the
+ * Studio's per-Class queries, then still forgets a remembered issuer the Kernel no longer accepts:
+ * whether the remembered issuer is forgotten follows the Kernel's verdict on the credential, not
+ * how the action ends.
+ */
+function reportingRefusedCredentials(
+  context: ConnectionContext,
+  installed: InstalledIssuer,
+): ConnectionContext {
+  const report = (pending: unknown): unknown =>
+    pending instanceof Promise
+      ? pending.catch(async (cause: unknown) => {
+          if (cause instanceof ResponseError && cause.code === CREDENTIAL_REFUSED) {
+            await installed.failed()
+          }
+          throw cause
+        })
+      : pending
+  const reporting = <Api extends object>(api: Api): Api =>
+    Object.freeze(
+      Object.fromEntries(
+        Object.entries(api).map(([key, member]) => [
+          key,
+          typeof member === 'function'
+            ? (...args: unknown[]) => report(Reflect.apply(member, api, args))
+            : member,
+        ]),
+      ),
+    ) as Api
+  const apis = new Map<PropertyKey, object>()
+  const methods = new Map<PropertyKey, unknown>()
+  // A Proxy, because ClientSession is a class: its schema, graph, auth and content capabilities
+  // dispatch through the Session itself, so each one is wrapped where the action reads it.
+  const session = new Proxy(context.session, {
+    get(target, key) {
+      const member: unknown = Reflect.get(target, key, target)
+      if (SESSION_APIS.has(key) && typeof member === 'object' && member !== null) {
+        if (!apis.has(key)) apis.set(key, reporting(member))
+        return apis.get(key)
+      }
+      if (typeof member !== 'function') return member
+      if (!methods.has(key)) {
+        methods.set(key, (...args: unknown[]) => report(Reflect.apply(member, target, args)))
+      }
+      return methods.get(key)
+    },
+  })
+  return Object.freeze({
+    ...context,
+    session,
+    graph: reporting(context.graph),
+    // The Session's own Auth API stays the context's Auth API.
+    auth: context.auth === context.session.auth ? session.auth : reporting(context.auth),
+  })
 }
 
 /** A cache that cannot be read is a miss: installation state must never fail a command. */
@@ -226,9 +317,19 @@ function openConnection(
   options: ConnectionOptions,
   config: AstraleConfig,
   credential: CredentialIntent = {},
+  installed?: InstalledIssuer,
 ): OwnedConnection {
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
-  const auth = createCliCredential(target, options, config, fetch, timeoutMs, credential)
+  const auth = createCliCredential(
+    target,
+    options,
+    config,
+    fetch,
+    timeoutMs,
+    credential,
+    undefined,
+    installed,
+  )
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
   return {

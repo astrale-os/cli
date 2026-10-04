@@ -245,6 +245,15 @@ test('the open dock resizes from its edges and stays centred', async ({ page }) 
   await page.setViewportSize({ width: 1400, height: 900 })
   await goBottom(page)
   await openDock(page)
+  // Measure the opened conversation, rather than a frame of its height transition.
+  const conversation = dock(page).locator(':scope > div[style*="height:"]')
+  const openedHeight = await conversation.evaluate((el) =>
+    parseFloat((el as HTMLElement).style.height),
+  )
+  expect(openedHeight).toBeGreaterThan(0)
+  await expect
+    .poll(async () => Math.round((await conversation.boundingBox())!.height))
+    .toBe(openedHeight)
   const box = async () => (await dock(page).boundingBox())!
   const centre = (rect: { x: number; width: number }) => Math.round(rect.x + rect.width / 2)
   const before = await box()

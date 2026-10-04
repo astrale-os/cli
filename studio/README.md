@@ -106,10 +106,27 @@ Studio detects both local harnesses. `--harness` (or `DOMAIN_STUDIO_HARNESS`)
 locks the whole Studio process to one harness; the composer then offers only its
 models, and Settings says what is holding the lock.
 
-- **Claude Code:** install `claude` and authenticate normally. Studio can also
+- **Claude Code:** authenticate normally (`claude /login`). Studio can also
   route this harness through its Anthropic-compatible model-gateway settings.
-- **Codex:** install `codex` and run `codex login`; Codex keeps using that local
-  binary, login, and configuration.
+- **Codex:** run `codex login`; Codex keeps using that login and configuration.
+
+Studio does not run whatever `claude` or `codex` your PATH holds. Each bundled
+ACP adapter speaks a private protocol to its CLI (the Claude Agent SDK's control
+stream, Codex's experimental app-server API) and neither checks the version it
+talks to, so Studio runs the exact build the adapter was written for. The
+versions come from `pnpm-lock.yaml` (`pnpm run agents:pin` regenerates
+`server/agent/harness/acp/pinned-binaries.ts`; `pnpm test` fails while it is
+stale). The first turn, Ask, or loadout probe that needs an agent downloads its
+platform package from the npm registry, verifies it against the lockfile's
+integrity, and unpacks it under `$ASTRALE_HOME/cache/agents` (about 90 MB to
+download for Claude Code, 110 MB for Codex); the chat shows the progress. Logins
+and configuration are shared with your own install (`~/.claude`, `~/.codex`).
+Versions no Studio has used for two weeks are removed when a newer one lands.
+
+`DOMAIN_STUDIO_CLAUDE_BIN` / `DOMAIN_STUDIO_CODEX_BIN` run a local executable
+instead (`DOMAIN_STUDIO_CODEX_BIN=codex` for the one on PATH). Settings → Agent
+then shows its `--version` and warns when it strays from the pinned build: an
+older Claude Code, or a Codex from another minor release.
 
 Both execution paths go through Studio's shared **Agent Client Protocol (ACP)**
 adapter. The standalone CLI embeds the official Claude and Codex ACP agent
@@ -121,11 +138,11 @@ configuration, applies Studio's optional model override, and deletes the session
 without sending a prompt. Studio does not infer unavailable inventories such as
 skills, MCP servers, tools, or subagents.
 
-Claude's ACP server advertises `session/fork`, so **Ask** inherits its parent
-conversation and deletes the ephemeral fork afterward. The current Codex ACP
-server does not advertise fork yet; Codex Ask therefore uses a fresh ephemeral
-ACP session and still leaves the main conversation untouched. Capability
-detection will use a fork automatically when the Codex server adds it.
+Both ACP servers advertise `session/fork`, so **Ask** inherits its parent
+conversation and deletes the ephemeral fork afterward, leaving the main
+conversation untouched. Capability detection decides this per server: one that
+does not advertise fork gets a fresh ephemeral ACP session instead, and so does
+an Ask whose fork fails before answering.
 
 Settings → Details still owns the access level. **Workspace** uses the harness's
 workspace-write sandbox. **Full automation** preserves the existing deploy/install

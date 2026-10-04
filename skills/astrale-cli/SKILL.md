@@ -391,10 +391,25 @@ astrale call /:blog.example:class.Author:list limit=10
 astrale call /:blog.example:class.Author:create \
   --data '{"name":"Ada"}' --json
 astrale call /:assets.example:class.Asset:render id=123 --output asset.png
+astrale call /:blog.example:class.Author:create -d @author.json
+astrale call '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances' \
+  --admin --json
 ```
 
 Top-level `key=value` values coerce booleans, null, numbers, arrays, and
-objects. Use `--data` for nested or digits-only string values.
+objects. Use `--data` for nested or digits-only string values. `--data` also
+takes `-` (read the JSON from stdin) or `@<file>`, parsed like inline JSON; pass
+secrets only in those forms so their values never sit in argv or shell history.
+
+`--data -` reads piped stdin only; on a terminal it is refused.
+
+`--admin [<bookmark>]` or `--admin-url <url>` (with `--domain-issuer <url>`) runs
+the call on the Admin kernel, selected exactly like `domain` commands select it.
+`-i` and `--url` are refused with them (usage error, exit 2), as are `--admin`
+with `--admin-url` and `--domain-issuer` without `--admin-url`. The call itself
+is unchanged: it exchanges at its callable's declaring Domain as the Admin
+kernel's installation names it; the Admin Domain issuer only completes the Admin
+target. Put `key=value` params before `--admin`, or write `--admin=<bookmark>`.
 
 ## Journal
 
@@ -484,7 +499,9 @@ session/installations.json
 `session/routes.json` holds learned Domain routes and their short-lived carriers;
 `session/installations.json` remembers each Domain's installed issuer per Kernel.
 All three are owner-private caches: deleting them only costs a re-read or a new exchange, never
-access.
+access. After a Shell reinstall, one command on a managed Instance can fail once with 2002 while it
+still presents a credential from the previous Shell issuer; rerunning it reads the new issuer and
+succeeds (deleting `session/installations.json` has the same effect).
 
 Optional roots are `ASTRALE_HOME`, `ASTRALE_KEYS_DIR`, and
 `ASTRALE_DATA_DIR`.

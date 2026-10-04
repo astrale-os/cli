@@ -6,4 +6,9 @@ export type { SelfExpansionMeta } from './self'
 export { withAdminClientSession, withClientSession, type ConnectionContext } from './session'
 export type { CredentialIntent } from './credential'
 export { registrationKeyForTarget } from './target'
-export type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'
+export type {
+  AdminConnectionOptions,
+  AdminTargetSelection,
+  ConnectionOptions,
+  ConnectionTarget,
+} from './target'
