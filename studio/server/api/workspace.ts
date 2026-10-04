@@ -2,7 +2,7 @@ import { agentWorkspace } from '../agent/workspace'
 /** Workspace-wide routes that do not require a DomainHandle. */
 import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
-import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
+import { listInstances, setActiveInstance } from '../instances/active'
 import { asJsonRecord, asString } from '../json'
 import { updateSettings } from '../state/settings'
 import { readWorkspaceUiState, updateWorkspaceUiState } from '../state/workspace-ui'
@@ -69,7 +69,7 @@ export async function handleWorkspaceRoute(
 
   if (path === '/api/workspace/create' && req.method === 'POST') {
     const body = await readJsonRecord(req)
-    const result = await createDomain(asString(body.name) ?? '', await activeInstanceName())
+    const result = await createDomain(asString(body.name) ?? '')
     if (result.ok) notify({ type: 'workspace', domains: allDomains().map((domain) => domain.id) })
     return json(result)
   }
