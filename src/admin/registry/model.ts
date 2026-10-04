@@ -94,7 +94,11 @@ export const REGISTRY_ERROR_CODES = [
   'PUBLICATION_NOT_FOUND',
   /** Admin refused the caller (no `domain_admin` for a change, or a credential refusal). */
   'REGISTRY_FORBIDDEN',
-  /** Admin did not give a usable answer; a rerun of the same command is safe. */
+  /**
+   * Admin did not give a usable answer. A rerun of the same command is always safe (reads, and
+   * idempotent publish and yank); it can help only when `details.retryable` is true. On a change,
+   * `details.delivery === 'unknown'` says the change may have applied.
+   */
   'REGISTRY_UNAVAILABLE',
   /** The version already names another release. `details.existing` is that Publication. */
   'PUBLICATION_VERSION_CONFLICT',

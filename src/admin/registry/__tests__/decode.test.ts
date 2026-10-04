@@ -97,6 +97,14 @@ describe('exact references', () => {
     }
   })
 
+  test('a malformed origin is told apart from a malformed version', () => {
+    for (const input of ['Issues.astrale.ai@1.2.3', 'issues@1.2.3', '@1.2.3'])
+      expect(thrown(() => exactPublicationReference(input)).code).toBe('INVALID_ARGUMENT')
+    expect(thrown(() => exactPublicationReference('issues.astrale.ai@1.2')).code).toBe(
+      'PUBLICATION_VERSION_INVALID',
+    )
+  })
+
   test('an origin is a lower-case DNS name', () => {
     expect(registryOrigin('issues.astrale.ai')).toBe('issues.astrale.ai')
     for (const input of ['Issues.astrale.ai', 'issues', 'issues.astrale.ai@1.5.0', 'https://a.b'])
