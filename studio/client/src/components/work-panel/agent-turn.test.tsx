@@ -181,7 +181,8 @@ test('a running turn folds its work into one line naming what it does now', () =
   )
 
   expect(html).toContain('I write the User class.')
-  expect(html).toContain('Edit · schema/user.ts')
+  // the agent's own words say it: the raw call it stands behind adds nothing
+  expect(html).not.toContain('Edit · schema/user.ts')
   expect(html).toContain('aria-expanded="false"')
   // folded: the step list is not rendered until asked for
   expect(html).not.toContain('data-testid="agent-steps"')
@@ -273,6 +274,29 @@ test('a running turn says how many actions it took and for how long', () => {
   )
   expect(html).toContain('3 actions')
   expect(html).toContain('data-testid="agent-progress"')
+  // no words from the agent yet: the call it is making stands in for them
+  expect(html).toContain('Bash · pnpm test')
+})
+
+test('a running line reads loader, time, actions, then what the agent is doing', () => {
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={run([
+        event('tool', 'Read', { tool: 'Read', target: 'a.ts' }),
+        event('message', 'All green, deploying now.'),
+        event('tool', 'Bash', { tool: 'Bash', target: 'astrale deploy' }),
+      ])}
+    />,
+  )
+  const order = [
+    'animate-spin',
+    'Working time so far',
+    '2 actions',
+    'All green, deploying now.',
+  ].map((text) => html.indexOf(text))
+  expect(order.every((index) => index >= 0)).toBe(true)
+  expect(order).toEqual([...order].sort((a, b) => a - b))
+  expect(html).not.toContain('astrale deploy')
 })
 
 test('the message being written streams in, without the machine block it ends with', () => {
