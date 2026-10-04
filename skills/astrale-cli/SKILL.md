@@ -259,7 +259,8 @@ registry, read with your own credential: you need `domain_installer` or `domain_
 Domain, directly or through a Group. Pre-releases and yanked versions are listed; a yanked
 version is never chosen by a line such as `@1.5`. An absent Domain and one you cannot read give
 the same `REGISTRY_DOMAIN_NOT_FOUND`. `--json` prints one `astrale.registry-index` document;
-refusals print `{ "error": { "code", "message", "details" } }` on stdout and exit 1.
+refusals print `{ "error": { "code", "message", "details" } }` on stdout and exit 1. Rerunning
+the same command is always safe; it can help only when `details.retryable` is `true`.
 
 ```bash
 astrale domain versions issues.astrale.ai

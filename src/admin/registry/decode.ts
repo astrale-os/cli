@@ -28,6 +28,8 @@ export interface ObservedPublication {
   readonly summary: PublicationSummaryV1
 }
 
+/** A deployment URL reference, which `parseReference` reads before any `<origin>@` split. */
+const URL_SCHEME = /^https?:\/\//u
 const DIGEST = /^sha256:[0-9a-f]{64}$/u
 const COMMIT = /^[0-9a-f]{40}$/u
 const COMMIT_INPUT = /^[0-9A-Fa-f]{40}$/u
@@ -147,12 +149,15 @@ export function publishRequest(input: unknown): PublishRequestV1 {
 /**
  * Read `<origin>@<version>` as one exact version reference, with the parser installs use
  * (`parseReference` of `@astrale-os/sdk/versioning`). A line (`@1.5`), a range or a URL names no
- * single Publication.
+ * single Publication. The part before the first `@` is checked as an origin first, as
+ * `registryOrigin` checks it, so a malformed origin is told apart from a malformed version.
  */
 export function exactPublicationReference(input: string): {
   readonly origin: string
   readonly version: string
 } {
+  const at = input.indexOf('@')
+  if (at !== -1 && !URL_SCHEME.test(input)) registryOrigin(input.slice(0, at))
   let reference: Reference
   try {
     reference = parseReference(input)

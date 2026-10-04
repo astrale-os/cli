@@ -1,11 +1,12 @@
 import type { ClientSession, ContentApi } from '@astrale-os/sdk/client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
+import type { FileHandle } from 'node:fs/promises'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Property, Query } from '@astrale-os/sdk/query'
 import { MethodKey } from '@astrale-os/sdk/schema'
 import { createHash, randomUUID } from 'node:crypto'
-import { open, rename, rm } from 'node:fs/promises'
+import { open, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 
 import type { ObservedPublication } from './decode'
@@ -17,6 +18,7 @@ import type {
   YankResultV1,
 } from './model'
 
+import { AstraleError } from '../../errors'
 import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import { observedPublication, publicationFromAdmin, publishedFromAdmin } from './decode'
@@ -147,6 +149,10 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
       const expected = publication.summary.bundle
       const target = resolve(output)
       const partial = join(dirname(target), `.${basename(target)}.${randomUUID()}.partial`)
+      // The output is checked and its partial file created before the download starts, so an
+      // unwritable --output costs no transfer and is reported as the caller's error.
+      const file = await openOutput(target, partial)
+      let closed = false
       try {
         const download = await context.session.content.download({
           node: publication.node,
@@ -154,20 +160,17 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
         })
         const hash = createHash('sha256')
         let size = 0
-        const file = await open(partial, 'wx', 0o644)
-        try {
-          const chunks: AsyncIterable<Uint8Array> | readonly Uint8Array[] =
-            download.body instanceof Uint8Array ? [download.body] : download.body
-          for await (const chunk of chunks) {
-            size += chunk.byteLength
-            if (size > expected.size) break
-            hash.update(chunk)
-            await file.write(chunk)
-          }
-          await file.sync()
-        } finally {
-          await file.close()
+        const chunks: AsyncIterable<Uint8Array> | readonly Uint8Array[] =
+          download.body instanceof Uint8Array ? [download.body] : download.body
+        for await (const chunk of chunks) {
+          size += chunk.byteLength
+          if (size > expected.size) break
+          hash.update(chunk)
+          await written(target, file.write(chunk))
         }
+        await written(target, file.sync())
+        closed = true
+        await written(target, file.close())
         const served = `sha256:${hash.digest('hex')}`
         if (size !== expected.size || served !== expected.digest) {
           throw new RegistryError(
@@ -182,8 +185,9 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
             },
           )
         }
-        await rename(partial, target)
+        await written(target, rename(partial, target))
       } catch (error) {
+        if (!closed) await file.close().catch(() => undefined)
         await rm(partial, { force: true })
         throw registryFailure(error, 'read')
       }
@@ -281,4 +285,39 @@ function domainNotFound(origin: string): RegistryError {
 
 function responseInvalid(message: string): RegistryError {
   return new RegistryError('REGISTRY_UNAVAILABLE', message, { reason: 'response-invalid' })
+}
+
+/** Refuse an output that is a directory, then create the partial file next to it. */
+async function openOutput(target: string, partial: string): Promise<FileHandle> {
+  let existing
+  try {
+    existing = await stat(target)
+  } catch (error) {
+    if (fileErrorCode(error) !== 'ENOENT') throw outputFailure(target, error)
+  }
+  if (existing?.isDirectory() === true) throw outputFailure(target, undefined, 'EISDIR')
+  return written(target, open(partial, 'wx', 0o644))
+}
+
+/** One local file operation of the download: its failure is the caller's, not Admin's. */
+async function written<Value>(target: string, operation: Promise<Value>): Promise<Value> {
+  try {
+    return await operation
+  } catch (error) {
+    throw outputFailure(target, error)
+  }
+}
+
+function outputFailure(target: string, cause: unknown, code = fileErrorCode(cause)): AstraleError {
+  return new AstraleError(
+    'FILE_WRITE_FAILED',
+    `Cannot write --output ${target}${code === undefined ? '' : ` (${code})`}.`,
+    'Name a file in an existing, writable directory; nothing took the output name.',
+    cause === undefined ? undefined : { cause },
+  )
+}
+
+function fileErrorCode(error: unknown): string | undefined {
+  const code = (error as { readonly code?: unknown } | null)?.code
+  return typeof code === 'string' ? code : undefined
 }

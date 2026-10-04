@@ -5,6 +5,7 @@ export {
   publishRequest,
   registryOrigin,
 } from './decode'
+export { registryFailure } from './failure'
 export {
   REGISTRY_ERROR_CODES,
   RegistryError,

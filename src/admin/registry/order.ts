@@ -3,6 +3,9 @@
  * `@astrale-os/sdk/versioning` admits them: no leading `v`, no build metadata. It orders the
  * registry index only; which version a reference or a bump selects stays in the SDK module.
  * Returns a negative number when `left` precedes `right`.
+ *
+ * Local until `@astrale-os/sdk/versioning` exports a precedence compare (0.6.0-beta.11 exports
+ * none): delete this module and use the SDK's once a CLI-pinned SDK release does (CT29 precision).
  */
 export function compareVersions(left: string, right: string): number {
   const a = split(left)
