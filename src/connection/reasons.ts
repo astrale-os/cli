@@ -15,6 +15,7 @@ export type QueryInputRepair =
       path?: string
     }>
 
+/** The public details of a Kernel upgrade refusal (CT10). */
 export type SchemaUpgradeDetails =
   | {
       readonly origin?: string
@@ -25,6 +26,13 @@ export type SchemaUpgradeDetails =
       readonly issue: 'issuer-changed'
       readonly installedIssuer: string
       readonly replacementIssuer: string
+      /** The issuers a consent named when it did not match the installed and served ones. */
+      readonly consented?: { readonly from: string; readonly to: string }
+    }
+  | {
+      readonly origin: string
+      readonly issue: 'in-flight-limit'
+      readonly inFlight: number
     }
 
 const JSON_POINTER = /^(?:\/(?:[^~/]|~[01])*)*$/u
@@ -127,25 +135,56 @@ export function schemaUpgradeDetails(reason: unknown): SchemaUpgradeDetails | un
     typeof details.installedIssuer === 'string' &&
     typeof details.replacementIssuer === 'string'
   ) {
+    const consented = record(details.consented) ? details.consented : undefined
     return {
       origin,
       issue: details.issue,
       installedIssuer: details.installedIssuer,
       replacementIssuer: details.replacementIssuer,
+      ...(typeof consented?.from === 'string' && typeof consented.to === 'string'
+        ? { consented: { from: consented.from, to: consented.to } }
+        : {}),
     }
+  }
+  if (
+    details.issue === 'in-flight-limit' &&
+    origin !== undefined &&
+    Number.isSafeInteger(details.inFlight)
+  ) {
+    return { origin, issue: details.issue, inFlight: details.inFlight as number }
   }
   return origin === undefined ? {} : { origin }
 }
 
 export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   const target = details.origin ?? '<origin>'
-  const explanation =
-    details.issue === 'issuer-changed'
-      ? 'A replacement cannot change an installed Domain issuer.'
-      : 'The replacement changes an immutable part of the installed Domain.'
+  if (details.issue === 'issuer-changed') {
+    if (details.consented !== undefined) {
+      return (
+        `The consent named ${details.consented.from} -> ${details.consented.to}, but ${target} ` +
+        `is installed under ${details.installedIssuer} and the URL serves ` +
+        `${details.replacementIssuer}: the installation changed after it was read. Run the ` +
+        'install again to plan it from the current installation.'
+      )
+    }
+    return (
+      `Installing it changes the issuer of ${target}. Consent by installing its deployment URL ` +
+      `with --allow-issuer-change=${target} (--allow-issuer-change covers a new deployment of ` +
+      'the same line), or confirm it at a terminal. A Kernel that takes no issuer consent needs ' +
+      `\`astrale domain uninstall ${target}\` first, then the install again; safe uninstall ` +
+      'refuses surviving dependents or owned data.'
+    )
+  }
+  if (details.issue === 'in-flight-limit') {
+    return (
+      `${target} already keeps ${details.inFlight} replaced issuers in flight. Wait until their ` +
+      'durable runs end, or install again with --revoke-previous to cut the replaced issuer at ' +
+      'the activation instead of draining it.'
+    )
+  }
   return (
-    `${explanation} If this change is intentional, first run ` +
-    `\`astrale domain uninstall ${target}\`, then install it again. ` +
+    'The replacement changes an immutable part of the installed Domain. If this change is ' +
+    `intentional, first run \`astrale domain uninstall ${target}\`, then install it again. ` +
     `Safe uninstall refuses surviving dependents or owned data. Use ` +
     `\`astrale domain uninstall ${target} --destructive\` only if that owned data should be deleted; ` +
     'surviving dependents and foreign references still block it.'

@@ -45,6 +45,24 @@ export function isUrlReference(reference: string): boolean {
 }
 
 /**
+ * `--allow-issuer-change [origin]` takes an optional value, so a URL written right after the flag
+ * lands in it. A URL never names an origin: it goes back to the references, and the occurrence
+ * stands for the flag without an origin.
+ */
+export function splitIssuerChangeValues(
+  references: readonly string[],
+  values: readonly string[] | undefined,
+): { readonly references: readonly string[]; readonly values: readonly string[] | undefined } {
+  if (values === undefined) return { references, values }
+  const moved = values.filter(isUrlReference)
+  if (moved.length === 0) return { references, values }
+  return {
+    references: [...moved, ...references],
+    values: values.map((value) => (isUrlReference(value) ? '' : value)),
+  }
+}
+
+/**
  * Whether the references go to the instance Kernel: every reference is a URL, or the deprecated
  * `--direct` names that route, so even a URL the reference grammar does not read (an upper-case
  * scheme) never reaches the Fleet catalog; `installByUrl` then admits or refuses it.
@@ -71,9 +89,25 @@ Behavior:
   deployment that answers 503 (not serving yet) to that read is read again for
   up to 60 s; a Kernel refusal of the install itself is never resent.
 
-  The identity-override consent gate runs for each URL: when a Domain's declared
-  origin differs from its serving host, it requires explicit consent (an
-  interactive DANGER prompt, or --allow-identity-override in scripts).
+  An issuer change is never silent. When a URL serves another issuer than the
+  one its origin is installed under, the install needs consent, which the
+  Kernel records in the installation:
+    - a new deployment of the same line (same <line>- prefix and routing
+      domain): --allow-issuer-change;
+    - any other change, a legacy issuer moving to its first deployment
+      included: --allow-issuer-change=<origin>;
+    - or, at a terminal, typing the origin to confirm.
+  The replaced issuer keeps working while its in-flight work drains;
+  --revoke-previous cuts it at the activation instead. The first install of an
+  origin from a deployment URL needs no consent: the CLI notes that the
+  deployment claims the origin, unverified.
+
+  A source that serves only the legacy domain.json, and every URL install on a
+  Kernel that does not list installed releases, keep the identity-override
+  gate: when a Domain's declared origin differs from its serving host, it
+  requires explicit consent (an interactive DANGER prompt, or
+  --allow-identity-override in scripts). Such a Kernel takes no issuer
+  consent: --allow-issuer-change is refused there before any install.
 
   A bare origin installs one PUBLISHED domain from the Fleet catalog through the
   admin control plane (DomainEntry.install); run the command bare to pick from
@@ -90,6 +124,8 @@ Behavior:
 Examples:
   $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel
   $ astrale domain install https://agencies.example https://employees.example -i staging  # grouped, atomic
+  $ astrale domain install <new-deployment-url> --allow-issuer-change -i staging   # same line
+  $ astrale domain install <deployment-url> --allow-issuer-change=crm.acme.dev -i staging  # other line
   $ astrale domain install http://localhost:8787 --token "$INSTALL_TOKEN" # private Domain on a local Host
   $ astrale domain install crm.acme.dev -i staging                         # by origin, from the Fleet catalog
   $ astrale domain install                                                 # interactive: pick domain + instance
@@ -124,15 +160,34 @@ Examples:
       description: 'Reuse an exact URL-install operation id for explicit retry/recovery',
     },
     {
+      flags: '--allow-issuer-change [origin]',
+      description:
+        'Consent to an issuer change: without a value, every new deployment of the same line; =<origin> any change of that origin (repeatable)',
+      repeatable: true,
+    },
+    {
+      flags: '--revoke-previous',
+      description:
+        'With an issuer change, cut the replaced issuer at the activation instead of draining it',
+    },
+    // @deprecated (legacy, plan C2): the identity-override gate of `legacy/identity-override.ts`,
+    // for sources that serve only domain.json and Kernels without the `installed` listing. Short-term
+    // consumer: 1Pact developer machines (sdk 0.6.0-beta.0 `reconcile` passes it against the beta.117
+    // Host). Removal: D15.
+    {
       flags: '--allow-identity-override',
       description:
-        'Consent to a domain whose origin differs from its serving host (URL references)',
+        'Consent to a legacy domain.json source whose origin differs from its serving host',
     },
   ],
   action: async (references: string[] | undefined, opts: InstallOpts) => {
-    const named = references ?? []
+    const split = splitIssuerChangeValues(references ?? [], opts.allowIssuerChange)
+    const named = split.references
     if (installsOnKernel(named, opts.direct === true)) {
-      await installByUrl(named as [string, ...string[]], opts)
+      await installByUrl(named as [string, ...string[]], {
+        ...opts,
+        ...(split.values === undefined ? {} : { allowIssuerChange: split.values }),
+      })
       return
     }
     try {
@@ -155,6 +210,13 @@ Examples:
           'INVALID_FLAG',
           '--operation is valid only with URL references.',
           'URL installs generate a fresh operation id automatically.',
+        )
+      }
+      if (opts.allowIssuerChange !== undefined || opts.revokePrevious === true) {
+        throw new AstraleError(
+          'INVALID_FLAG',
+          '--allow-issuer-change and --revoke-previous are valid only with URL references.',
+          'Install the deployment URL to consent to an issuer change, e.g. astrale domain install https://… --allow-issuer-change=<origin>',
         )
       }
     } catch (error) {

@@ -34,6 +34,42 @@ function servedRelease(origin: string, url: string, seed: string): ServedDeploym
   }
 }
 
+function servedLegacy(origin: string, url: string, seed = '6'): ServedDeployment {
+  return {
+    origin,
+    issuer: url,
+    revision: REVISION,
+    pin: { kind: 'legacy', document: 3, etag: digest(seed) },
+  }
+}
+
+/** Run a command for humans: a terminal on stdout, console output captured. */
+async function human(run: () => Promise<void>): Promise<{ lines: string; warnings: string }> {
+  const lines: string[] = []
+  const warnings: string[] = []
+  const originalLog = console.log
+  const originalError = console.error
+  const tty = process.stdout.isTTY
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(' '))
+  }
+  console.error = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '))
+  }
+  process.stdout.isTTY = true
+  try {
+    await run()
+  } finally {
+    console.log = originalLog
+    console.error = originalError
+    process.stdout.isTTY = tty
+  }
+  return {
+    lines: stripVTControlCharacters(lines.join('\n')),
+    warnings: stripVTControlCharacters(warnings.join('\n')),
+  }
+}
+
 function installedFrom(served: ServedDeployment, url: string): InstalledRelease {
   return {
     origin: served.origin,
@@ -95,8 +131,11 @@ const backendUnavailable = () =>
     details: {},
   })
 
-/** URL installs below consent to the identity override every deployment URL carries. */
-const CONSENTED = { json: true, allowIdentityOverride: true } as const
+/**
+ * Machine output. A deployment that serves a release needs no identity-override consent: the
+ * explicit reference authorizes its first install (AM-19).
+ */
+const JSON_OUTPUT = { json: true } as const
 
 class ExitError extends Error {
   constructor(readonly code: number | string | null | undefined) {
@@ -132,6 +171,7 @@ function harness(options: {
           requests.length,
         )
       },
+      inspect: async (origin: string) => ({ origin, revision: REVISION, generation: digest('e') }),
     },
   }
   const state = {
@@ -206,7 +246,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], CONSENTED, run.deps)
+    await installByUrl([A], JSON_OUTPUT, run.deps)
 
     expect(run.credentials).toEqual([{ principal: 'caller' }])
     expect(run.requests).toEqual([
@@ -238,7 +278,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       install: async () => committed(['agencies.test', 'employees.test']),
     })
 
-    await installByUrl([B, A], CONSENTED, run.deps)
+    await installByUrl([B, A], JSON_OUTPUT, run.deps)
 
     expect(run.requests).toHaveLength(1)
     expect(run.requests[0]!.domains).toEqual([
@@ -266,14 +306,16 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       },
     })
 
-    await expect(installByUrl([A, B], CONSENTED, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByUrl([A, B], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'DUPLICATE_ORIGIN' })
   })
 
   test('refuses the same deployment named twice before connecting', async () => {
     const run = harness({})
-    await expect(installByUrl([A, `${A}/`], CONSENTED, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByUrl([A, `${A}/`], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(
+      ExitError,
+    )
     expect(run.credentials).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'DUPLICATE_ORIGIN' })
   })
@@ -297,7 +339,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     // A terminal on stdout is what makes the output human (no --json).
     process.stdout.isTTY = true
     try {
-      await installByUrl([A, B], { allowIdentityOverride: true }, run.deps)
+      await installByUrl([A, B], {}, run.deps)
     } finally {
       console.log = original
       process.stdout.isTTY = tty
@@ -329,7 +371,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     }
     process.stdout.isTTY = true
     try {
-      await installByUrl([A, B], { allowIdentityOverride: true }, run.deps)
+      await installByUrl([A, B], {}, run.deps)
     } finally {
       console.log = original
       process.stdout.isTTY = tty
@@ -355,7 +397,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       install: async () => committed(['crm.test']),
     })
 
-    await installByUrl(['https://crm.test'], CONSENTED, run.deps)
+    await installByUrl(['https://crm.test'], JSON_OUTPUT, run.deps)
 
     expect(run.requests[0]!.domains).toEqual([{ release: { url: 'https://crm.test' } }])
     expect(JSON.parse(stdout).references[0].installed.pin).toEqual(served.pin)
@@ -367,7 +409,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], CONSENTED, run.deps)
+    await installByUrl([A], JSON_OUTPUT, run.deps)
 
     expect(run.requests[0]!.domains).toEqual([{ release: { url: A } }])
     expect(JSON.parse(stdout).references[0]).toMatchObject({
@@ -393,7 +435,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], CONSENTED, run.deps)
+    await installByUrl([A], JSON_OUTPUT, run.deps)
 
     expect(reads).toBe(3)
     expect(run.sleeps).toEqual([2_000, 2_000])
@@ -416,7 +458,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
     })
 
-    await installByUrl([A], CONSENTED, run.deps)
+    await installByUrl([A], JSON_OUTPUT, run.deps)
 
     expect(run.sleeps.length).toBeGreaterThan(0)
     expect(run.sleeps.length).toBeLessThanOrEqual(2)
@@ -432,7 +474,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
       },
     })
 
-    await expect(installByUrl([A], CONSENTED, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByUrl([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toHaveLength(1)
     expect(run.sleeps).toEqual([])
     expect(JSON.parse(stderr.trim().split('\n').at(-1)!)).toMatchObject({
@@ -450,15 +492,42 @@ describe('install by URL on a Kernel that lists installed releases', () => {
         call === 0 ? [] : [{ ...installedFrom(a, A), pin: { ...a.pin, release: digest('7') } }],
     })
 
-    await expect(installByUrl([A], CONSENTED, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await expect(installByUrl([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stdout).references[0].installed.pin.release).toBe(digest('7'))
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INSTALLED_PIN_MISMATCH' })
   })
 
-  test('keeps the identity-override gate for a deployment URL that serves another origin', async () => {
-    const run = harness({ served: { [A]: async () => servedRelease('agencies.test', A, '1') } })
+  test('installs a release that claims another origin than its host without the identity-override gate', async () => {
+    const a = servedRelease('agencies.test', A, '1')
+    const run = harness({
+      served: { [A]: async () => a },
+      listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
+    })
 
-    await expect(installByUrl([A], { json: true }, run.deps)).rejects.toBeInstanceOf(ExitError)
+    await installByUrl([A], JSON_OUTPUT, run.deps)
+
+    expect(run.requests).toEqual([
+      { operation: GENERATED, domains: [{ release: { url: A, digest: digest('1') } }] } as never,
+    ])
+    expect(JSON.parse(stdout).references[0]).not.toHaveProperty('consent')
+  })
+
+  test('notes for humans that a first install trusts the deployment claim, without asking', async () => {
+    const a = servedRelease('agencies.test', A, '1')
+    const run = harness({
+      served: { [A]: async () => a },
+      listing: async (call) => (call === 0 ? [] : [installedFrom(a, A)]),
+    })
+    const { warnings } = await human(() => installByUrl([A], {}, run.deps))
+
+    expect(warnings).toContain(`origin agencies.test claimed by unverified deployment ${A}`)
+    expect(run.requests).toHaveLength(1)
+  })
+
+  test('keeps the identity-override gate for a legacy domain.json source that serves another origin', async () => {
+    const run = harness({ served: { [A]: async () => servedLegacy('agencies.test', A) } })
+
+    await expect(installByUrl([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'IDENTITY_OVERRIDE_REJECTED' })
   })
@@ -466,7 +535,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
   test('refuses a URL not written as the Kernel reads it before any install', async () => {
     const run = harness({})
     await expect(
-      installByUrl(['https://CRM.example.test'], CONSENTED, run.deps),
+      installByUrl(['https://CRM.example.test'], JSON_OUTPUT, run.deps),
     ).rejects.toBeInstanceOf(ExitError)
     expect(run.requests).toEqual([])
     expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_DOMAIN_URL' })
@@ -483,7 +552,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
 
     await installByUrl(
       [A],
-      { ...CONSENTED, operation: RETRY, instance: 'staging' },
+      { ...JSON_OUTPUT, operation: RETRY, instance: 'staging' },
       {
         ...run.deps,
         createOperationId: create,
@@ -497,6 +566,312 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     expect(create).not.toHaveBeenCalled()
     expect(accepted).toEqual([RETRY])
     expect(String(run.requests[0]!.operation)).toBe(RETRY)
+  })
+})
+
+const LINE = 'agencies-aaaaaaaaaaaaaaaa'
+/** Immutable deployments of one line, of another line, and a legacy issuer of the same origin. */
+const A1 = `https://${LINE}-bbbbbbbbbbbbbbbb.deployments.test`
+const A2 = `https://${LINE}-cccccccccccccccc.deployments.test`
+const A_OTHER_LINE = 'https://agencies-dddddddddddddddd-bbbbbbbbbbbbbbbb.deployments.test'
+const A_LEGACY = 'https://agencies-v3.legacy.test'
+
+/** The Kernel refusal of a consent whose Domain no longer changes issuer (AM-81). */
+const consentOnUnchangedRoot = () =>
+  new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
+    code: 'SCHEMA_INPUT_INVALID',
+    details: { phase: 'input', path: '/domains/0/consent', issue: 'invalid' },
+  })
+
+describe('issuer changes (D7): consent planned from the installed listing', () => {
+  /** agencies.test installed from `from` until an install commits, the install reading `to`. */
+  function moving(from: string, to: string, served = servedRelease('agencies.test', to, '2')) {
+    const installed = installedFrom(servedRelease('agencies.test', from, '1'), from)
+    let moved = false
+    return harness({
+      served: { [to]: async () => served },
+      listing: async () => (moved ? [installedFrom(served, to)] : [installed]),
+      install: async () => {
+        moved = true
+        return committed(['agencies.test'], GENERATED, ['agencies.test'])
+      },
+    })
+  }
+
+  test('refuses a same-line change without consent before any install is sent', async () => {
+    const run = moving(A1, A2)
+
+    await expect(installByUrl([A2], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toEqual([])
+    expect(JSON.parse(stderr)).toMatchObject({
+      error: 'ISSUER_CHANGE_NOT_CONSENTED',
+      details: {
+        origin: 'agencies.test',
+        line: 'same',
+        installedIssuer: A1,
+        replacementIssuer: A2,
+      },
+    })
+  })
+
+  test('sends the consent of a same-line change with --allow-issuer-change and reports it', async () => {
+    const run = moving(A1, A2)
+
+    await installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+
+    expect(run.requests).toEqual([
+      {
+        operation: GENERATED,
+        domains: [
+          { release: { url: A2, digest: digest('2') }, consent: { issuer: { from: A1, to: A2 } } },
+        ],
+      } as never,
+    ])
+    expect(JSON.parse(stdout).references[0]).toMatchObject({
+      origin: 'agencies.test',
+      previous: { issuer: A1 },
+      installed: { issuer: A2 },
+      consent: { issuer: { from: A1, to: A2 }, previous: 'drain', line: 'same' },
+    })
+  })
+
+  test('--allow-issuer-change alone does not cover another line', async () => {
+    const run = moving(A1, A_OTHER_LINE)
+
+    await expect(
+      installByUrl([A_OTHER_LINE], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toEqual([])
+    expect(JSON.parse(stderr)).toMatchObject({
+      error: 'ISSUER_CHANGE_NOT_CONSENTED',
+      details: { line: 'cross' },
+    })
+  })
+
+  test('the origin-scoped flag consents to another line, and --revoke-previous revokes', async () => {
+    const run = moving(A1, A_OTHER_LINE)
+
+    await installByUrl(
+      [A_OTHER_LINE],
+      { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'], revokePrevious: true },
+      run.deps,
+    )
+
+    expect(run.requests[0]!.domains).toEqual([
+      {
+        release: { url: A_OTHER_LINE, digest: digest('2') },
+        consent: { issuer: { from: A1, to: A_OTHER_LINE }, previous: 'revoke' },
+      },
+    ] as never)
+    expect(JSON.parse(stdout).references[0].consent).toEqual({
+      issuer: { from: A1, to: A_OTHER_LINE },
+      previous: 'revoke',
+      line: 'cross',
+    })
+  })
+
+  test('moving a legacy issuer to its first deployment is a cross-line change', async () => {
+    const run = moving(A_LEGACY, A1)
+
+    await expect(
+      installByUrl([A1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(JSON.parse(stderr)).toMatchObject({ details: { line: 'cross' } })
+
+    stderr = ''
+    await installByUrl([A1], { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] }, run.deps)
+    expect(run.requests[0]!.domains[0]).toMatchObject({
+      consent: { issuer: { from: A_LEGACY, to: A1 } },
+    })
+  })
+
+  test('rolling back to a legacy domain.json source needs the consent and the identity-override gate', async () => {
+    const run = moving(A1, A_LEGACY, servedLegacy('agencies.test', A_LEGACY))
+
+    await expect(
+      installByUrl([A_LEGACY], { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(JSON.parse(stderr)).toMatchObject({ error: 'IDENTITY_OVERRIDE_REJECTED' })
+
+    stderr = ''
+    await expect(
+      installByUrl([A_LEGACY], { ...JSON_OUTPUT, allowIdentityOverride: true }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(JSON.parse(stderr)).toMatchObject({ error: 'ISSUER_CHANGE_NOT_CONSENTED' })
+    expect(run.requests).toEqual([])
+
+    await installByUrl(
+      [A_LEGACY],
+      { ...JSON_OUTPUT, allowIdentityOverride: true, allowIssuerChange: ['agencies.test'] },
+      run.deps,
+    )
+    expect(run.requests[0]!.domains).toEqual([
+      { release: { url: A_LEGACY }, consent: { issuer: { from: A1, to: A_LEGACY } } },
+    ] as never)
+  })
+
+  test('moves grouped Domains to new deployments with one consent per changed root', async () => {
+    const B1 = `https://employees-eeeeeeeeeeeeeeee-bbbbbbbbbbbbbbbb.deployments.test`
+    const B2 = `https://employees-eeeeeeeeeeeeeeee-cccccccccccccccc.deployments.test`
+    const a = servedRelease('agencies.test', A2, '2')
+    const b = servedRelease('employees.test', B2, '3')
+    const run = harness({
+      served: { [A2]: async () => a, [B2]: async () => b },
+      listing: async (call) =>
+        call === 0
+          ? [
+              installedFrom(servedRelease('agencies.test', A1, '1'), A1),
+              installedFrom(servedRelease('employees.test', B1, '4'), B1),
+            ]
+          : [installedFrom(a, A2), installedFrom(b, B2)],
+      install: async () =>
+        committed(['agencies.test', 'employees.test'], GENERATED, [
+          'agencies.test',
+          'employees.test',
+        ]),
+    })
+
+    await installByUrl([A2, B2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+
+    expect(run.requests).toHaveLength(1)
+    expect(
+      run.requests[0]!.domains.map((domain) => (domain as { consent?: unknown }).consent),
+    ).toEqual([{ issuer: { from: A1, to: A2 } }, { issuer: { from: B1, to: B2 } }])
+  })
+
+  test('sends no consent when the issuer does not change, whatever the flags', async () => {
+    const run = moving(A2, A2)
+
+    await installByUrl(
+      [A2],
+      { ...JSON_OUTPUT, allowIssuerChange: ['', 'agencies.test'], revokePrevious: true },
+      run.deps,
+    )
+
+    expect(run.requests[0]!.domains).toEqual([
+      { release: { url: A2, digest: digest('2') } },
+    ] as never)
+    expect(JSON.parse(stdout).references[0]).not.toHaveProperty('consent')
+  })
+
+  test('refuses an origin-scoped consent that names no Domain of the install', async () => {
+    const run = moving(A1, A2)
+
+    await expect(
+      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: ['crm.test'] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toEqual([])
+    expect(JSON.parse(stderr)).toMatchObject({ error: 'INVALID_FLAG' })
+  })
+
+  test('the retry command of an outcome-unknown install repeats its consents', async () => {
+    const unknown = harness({
+      served: { [A_OTHER_LINE]: async () => servedRelease('agencies.test', A_OTHER_LINE, '2') },
+      listing: async () => [installedFrom(servedRelease('agencies.test', A1, '1'), A1)],
+      install: async () => {
+        throw transportFailure('Invocation outcome is unknown.', 'unknown', {
+          kind: 'invocation',
+          delivery: 'unknown',
+        })
+      },
+    })
+
+    await expect(
+      installByUrl(
+        [A_OTHER_LINE],
+        {
+          ...JSON_OUTPUT,
+          allowIssuerChange: ['agencies.test'],
+          revokePrevious: true,
+          instance: 'staging',
+        },
+        unknown.deps,
+      ),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(JSON.parse(stderr)).toMatchObject({
+      operation: GENERATED,
+      retry: `astrale domain install ${A_OTHER_LINE} --operation ${GENERATED} --allow-issuer-change=agencies.test --revoke-previous -i staging`,
+    })
+  })
+
+  test('a consent refused because its install already committed is reported as already current (AM-81)', async () => {
+    const a2 = servedRelease('agencies.test', A2, '2')
+    const run = harness({
+      served: { [A2]: async () => a2 },
+      // The listing read before the install is stale: another run committed the move since.
+      listing: async (call) =>
+        call === 0
+          ? [installedFrom(servedRelease('agencies.test', A1, '1'), A1)]
+          : [installedFrom(a2, A2)],
+      install: async () => {
+        throw consentOnUnchangedRoot()
+      },
+    })
+
+    await installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps)
+
+    expect(run.requests).toHaveLength(1)
+    const report = JSON.parse(stdout)
+    expect(report).toMatchObject({
+      changed: false,
+      domains: [{ origin: 'agencies.test' }],
+      references: [{ origin: 'agencies.test', installed: { issuer: A2, pin: a2.pin } }],
+    })
+    expect(report.references[0]).not.toHaveProperty('consent')
+  })
+
+  test('a retry under the same operation that conflicts is checked against the installations too', async () => {
+    const a2 = servedRelease('agencies.test', A2, '2')
+    const run = harness({
+      served: { [A2]: async () => a2 },
+      listing: async () => [installedFrom(a2, A2)],
+      install: async () => {
+        throw new ResponseError(4009 as never, 'Operation conflict.', INVOCATION, {
+          code: 'SCHEMA_OPERATION_CONFLICT',
+          details: { operation: RETRY },
+        })
+      },
+    })
+
+    await installByUrl(
+      [A2],
+      { ...JSON_OUTPUT, operation: RETRY },
+      { ...run.deps, acceptOperationId: () => RETRY },
+    )
+    expect(JSON.parse(stdout)).toMatchObject({ changed: false })
+  })
+
+  test('reports the refusal when the installations do not hold what was asked', async () => {
+    const run = harness({
+      served: { [A2]: async () => servedRelease('agencies.test', A2, '2') },
+      listing: async () => [installedFrom(servedRelease('agencies.test', A1, '1'), A1)],
+      install: async () => {
+        throw consentOnUnchangedRoot()
+      },
+    })
+
+    await expect(
+      installByUrl([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(JSON.parse(stderr)).toMatchObject({
+      error: 'RESPONSE_ERROR',
+      reason: { code: 'SCHEMA_INPUT_INVALID', details: { path: '/domains/0/consent' } },
+    })
+  })
+
+  test('prints the consent beside the root line for humans', async () => {
+    const run = moving(A1, A2)
+    const { lines, warnings } = await human(() =>
+      installByUrl([A2], { allowIssuerChange: [''] }, run.deps),
+    )
+
+    expect(warnings).toContain(
+      `Issuer change consented via --allow-issuer-change: agencies.test ${A1} -> ${A2}`,
+    )
+    expect(lines).toContain('agencies.test  replaced')
+    expect(lines).toContain(
+      `agencies.test: issuer ${A1} -> ${A2} (same line; the previous issuer drains)`,
+    )
   })
 })
 
@@ -564,6 +939,24 @@ describe('install by URL on a Kernel without the installed listing (pre-release 
 
     await installByUrl(['https://CRM.example.test'], { json: true }, run.deps)
     expect(run.requests[0]!.domains).toEqual([{ publication: { url: 'https://CRM.example.test' } }])
+  })
+
+  test('refuses issuer consent before any install: such a Kernel takes none', async () => {
+    const run = harness({
+      listing: async () => {
+        throw unsupportedListing()
+      },
+    })
+
+    for (const flags of [{ allowIssuerChange: [''] }, { revokePrevious: true }]) {
+      stderr = ''
+      await expect(
+        installByUrl(['https://crm.test'], { json: true, ...flags }, run.deps),
+      ).rejects.toBeInstanceOf(ExitError)
+      expect(JSON.parse(stderr)).toMatchObject({ error: 'KERNEL_RELEASE_UNSUPPORTED' })
+    }
+    expect(run.listings).toBe(2)
+    expect(run.requests).toEqual([])
   })
 
   test('propagates any other probe failure without installing', async () => {
