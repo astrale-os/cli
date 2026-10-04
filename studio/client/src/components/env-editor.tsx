@@ -27,6 +27,10 @@ function rowStatus(r: EnvVarRow, value: string): { dot: string; label: string; t
 
 const ENVS: EnvName[] = ['dev', 'prod']
 
+/** How a managed (adapter-astrale) deploy uses the prod file: a deploy binds it, never installs. */
+const MANAGED_PROD_SECRETS =
+  '· managed prod → bound by `pnpm run deploy <environment>` to the deployment it makes or reuses'
+
 export function EnvEditor({ domainId }: { domainId?: string }) {
   const [env, setEnv] = useState<EnvName>('dev')
   const { data, isLoading } = useEnv(domainId, env)
@@ -92,9 +96,7 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
           <span className="font-mono">{data.file}</span>
           {!data.exists && <span>· new on save</span>}
           {!data.configured && <span className="text-warning">· not wired in astrale.config</span>}
-          {env === 'prod' && data.adapter === 'astrale' && (
-            <span>· managed prod → platform store on `pnpm prod`</span>
-          )}
+          {env === 'prod' && data.adapter === 'astrale' && <span>{MANAGED_PROD_SECRETS}</span>}
           {data.requiredMissing > 0 && (
             <span className="font-medium text-destructive">
               · {data.requiredMissing} required missing
