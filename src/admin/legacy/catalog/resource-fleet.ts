@@ -1,10 +1,16 @@
+/**
+ * The one Fleet that contains a resource, whose catalog a bare-origin install reads.
+ *
+ * @deprecated Only the Fleet catalog install reads it. Short-term consumers and removal: see
+ * `./client.ts`.
+ */
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
-import type { AdminInstanceContext } from './instance/client'
+import type { AdminInstanceContext } from '../../instance/client'
 
-import { AdminContract } from './contract'
-import { readAllNodes } from './graph'
+import { AdminContract } from '../../contract'
+import { readAllNodes } from '../../graph'
 
 export async function resourceFleet(
   context: AdminInstanceContext,
