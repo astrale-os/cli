@@ -49,9 +49,10 @@ allowBuilds:
 # breaks type resolution, so pin the per-project store for this workspace.
 virtualStoreType: project
 
-# TEMPORARY until the SDK release R6b (carrying S4a, astrale-os/sdk#592) and the Kernel release R1
-# are published: consume their packed candidates (program/c1a/packs-r1-mf1/SOURCE.txt and
-# program/c1a/sdk-pack/SOURCE.txt in the release program's scratchpad). At R6b, drop this block
+# TEMPORARY until the SDK release R6b (carrying S4a, astrale-os/sdk#592) and the Kernel release R2
+# (K11a astrale-os/kernel#1121, K14 #1122) are published: consume their packed candidates
+# (program/c1/packs-k14/SOURCE.txt and program/c1a/sdk-pack/SOURCE.txt in the release program's
+# scratchpad). At R2, pin the Kernel packages the R6b SDK resolves to R2 or later. At R6b, drop this block
 # and peerDependencyRules below; pin @astrale-os/sdk to the R6b version in package.json,
 # studio/package.json, studio/e2e/fixture/package.json and studio/e2e/fixture/peer/package.json
 # (verify-public-dependency-boundary requires the CLI, Studio and the Studio browser fixture to pin
@@ -59,11 +60,11 @@ virtualStoreType: project
 # scripts/verify-public-dependency-boundary.mjs.
 overrides:
   '@astrale-os/sdk': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1a/sdk-pack/astrale-os-sdk-0.6.0-beta.9.tgz'
-  '@astrale-os/kernel-client': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1a/packs-r1-mf1/astrale-os-kernel-client-0.6.0-beta.83.tgz'
-  '@astrale-os/kernel-core': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1a/packs-r1-mf1/astrale-os-kernel-core-0.9.0-beta.62.tgz'
-  '@astrale-os/kernel-dsl': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1a/packs-r1-mf1/astrale-os-kernel-dsl-0.2.0-beta.44.tgz'
-  '@astrale-os/kernel-protocol': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1a/packs-r1-mf1/astrale-os-kernel-protocol-0.5.0-beta.68.tgz'
-  '@astrale-os/kernel-server': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1a/packs-r1-mf1/astrale-os-kernel-server-0.5.0-beta.70.tgz'
+  '@astrale-os/kernel-client': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1/packs-k14/astrale-os-kernel-client-0.6.0-beta.82.tgz'
+  '@astrale-os/kernel-core': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1/packs-k14/astrale-os-kernel-core-0.9.0-beta.61.tgz'
+  '@astrale-os/kernel-dsl': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1/packs-k14/astrale-os-kernel-dsl-0.2.0-beta.43.tgz'
+  '@astrale-os/kernel-protocol': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1/packs-k14/astrale-os-kernel-protocol-0.5.0-beta.67.tgz'
+  '@astrale-os/kernel-server': 'file:/private/tmp/claude-501/-Users-bryandjafer-Documents-astrale/c41ded60-7156-4abc-abf0-4e7a7d0c2519/scratchpad/program/c1/packs-k14/astrale-os-kernel-server-0.5.0-beta.69.tgz'
 # A `file:` SDK has no semver version, so @astrale-os/shell's `@astrale-os/sdk` peer range cannot
 # match it; the R6b pin satisfies that range again.
 peerDependencyRules:
