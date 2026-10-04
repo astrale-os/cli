@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "dependencies": {
-    "@astrale-os/adapter-cloudflare": "0.5.0-beta.139",
-    "@astrale-os/sdk": "0.6.0-beta.2"
+    "@astrale-os/adapter-cloudflare": "0.5.0-beta.165",
+    "@astrale-os/sdk": "0.6.0-beta.10"
   }
 }
