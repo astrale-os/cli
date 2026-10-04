@@ -14,6 +14,8 @@
 export class AstraleError extends Error {
   code: string
   hint?: string
+  /** Machine-readable facts of the failure, printed beside the code in JSON output. */
+  details?: Readonly<Record<string, unknown>>
 
   constructor(code: string, message: string, hint?: string, options?: ErrorOptions) {
     if (message.trim() === '') throw new TypeError('CLI error message must be non-blank.')

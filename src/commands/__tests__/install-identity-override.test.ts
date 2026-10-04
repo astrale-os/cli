@@ -2,8 +2,8 @@ import { defineSchema } from '@astrale-os/sdk/schema'
 import { afterAll, describe, expect, test } from 'bun:test'
 
 import { releaseFor } from '../../__tests__/fixtures/publication'
-import { isIdentityOverride, probeDeclaredOrigin } from '../domain/identity-override'
 import { installsOnKernel, isUrlReference } from '../domain/install'
+import { isIdentityOverride, probeDeclaredOrigin } from '../domain/legacy/identity-override'
 
 describe('install reference classification', () => {
   test('a reference starting with https:// or http:// is a deployment URL', () => {

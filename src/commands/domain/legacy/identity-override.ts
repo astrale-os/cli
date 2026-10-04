@@ -1,10 +1,25 @@
+/**
+ * The identity-override gate: consent to a Domain whose declared origin differs from the host that
+ * serves it, read from its legacy v2/v3 Publication (`domain.json`).
+ *
+ * @deprecated Successor: the issuer consent of `../issuer-consent.ts` (D7) and the non-blocking
+ * first-install notice (AM-19). Every deployment URL that serves a `DomainRelease` v4 differs from
+ * its origin by design, so the gate does not apply to it: the explicit reference authorizes a first
+ * install, and an issuer change needs the operator's consent. The gate runs only for sources that
+ * serve `domain.json` alone and for every URL install on a Kernel without the `installed` listing.
+ * Short-term consumers: 1Pact developer machines, whose sdk 0.6.0-beta.0 `reconcile` execs
+ * `domain install <url> --direct --allow-identity-override -i <instance>` against the beta.117
+ * Host; consented rollbacks to the legacy shell-v3 / services-v2 URLs, whose origin is not their
+ * host. Removal (D15): once no supported Kernel lacks the `installed` listing and no install
+ * source serves only `domain.json`, in a breaking CLI release with `--allow-identity-override`.
+ */
 import chalk from 'chalk'
 
-import { AstraleError } from '../../errors'
-import { fetchDomainPublication } from '../../lib/domain-publication'
-import { log } from '../../lib/log'
-import { dangerPanel } from '../../lib/panel'
-import { confirmWithInput } from '../../lib/prompt'
+import { AstraleError } from '../../../errors'
+import { fetchDomainPublication } from '../../../lib/domain-publication'
+import { log } from '../../../lib/log'
+import { dangerPanel } from '../../../lib/panel'
+import { confirmWithInput } from '../../../lib/prompt'
 
 /** An override = the declared origin and the serving host name differ. */
 export function isIdentityOverride(origin: string, host: string): boolean {
