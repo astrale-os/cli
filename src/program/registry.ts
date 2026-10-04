@@ -26,7 +26,18 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
 
   if (def.options) {
     for (const opt of def.options) {
-      if (opt.hidden) {
+      if (opt.repeatable) {
+        const o = new Option(opt.flags, opt.description)
+        // Commander stores `true` for an optional value written bare, replacing what was
+        // collected before; a preset value keeps every occurrence in the array.
+        if (o.optional) o.preset('')
+        o.argParser((value: string, previous: unknown) => [
+          ...(Array.isArray(previous) ? (previous as string[]) : []),
+          value,
+        ])
+        if (opt.hidden) o.hideHelp()
+        cmd.addOption(o)
+      } else if (opt.hidden) {
         const o = new Option(opt.flags, opt.description)
         if (opt.choices) o.choices(opt.choices)
         if (opt.default !== undefined) o.default(opt.default)
