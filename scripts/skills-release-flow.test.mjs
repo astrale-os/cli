@@ -64,7 +64,25 @@ test('no skill says a deploy installs, or teaches the removed development sessio
     assert.doesNotMatch(source, /reconciles installation/i, file)
     assert.doesNotMatch(source, /Session locks/, file)
     assert.doesNotMatch(source, /deployment-only Publication change/i, file)
+    // A deployment serves its release; a Publication is the registry entry for a version.
+    assert.doesNotMatch(
+      source,
+      /Publication\/JWKS|deployed Publication|intrinsic Publication/,
+      file,
+    )
   }
+})
+
+test('the CLI README says a deploy never installs and names no installation target', () => {
+  const readme = readFileSync(join(cliRoot, 'README.md'), 'utf8')
+  assert.doesNotMatch(readme, /\bpnpm (?:run )?(?:dev|prod)\b/)
+  assert.doesNotMatch(readme, /installation target/i)
+  assert.doesNotMatch(readme, /deployment and installation alive/i)
+  assert.match(
+    readme,
+    /`pnpm run deploy <environment>` makes one immutable deployment, prints its URL\s+and never installs/,
+  )
+  assert.match(readme, /`astrale domain install <url> -i <instance>`/)
 })
 
 test('the release guide is routed and states the three commands and their effects', () => {
