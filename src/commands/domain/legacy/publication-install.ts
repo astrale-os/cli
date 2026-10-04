@@ -15,18 +15,12 @@ import type { InstallRequest, InstallResult } from '@astrale-os/sdk/client/schem
 
 import type { KernelCommandOpts } from '../../../connection'
 import type { ConnectionContext } from '../../../connection'
-import type { InstallFailure } from '../install-call'
+import type { InstallFailure, UrlSource } from '../install-call'
 
 import { log } from '../../../lib/log'
 import { isMachine, output } from '../../../lib/output'
 import { ensureIdentityOverrideConsent, warnUnconfirmedOverride } from '../identity-override'
 import { runInstallCall } from '../install-call'
-
-/** One URL to install, as written, beside the host name that serves it. */
-export interface PublicationSource {
-  readonly url: string
-  readonly host: string
-}
 
 type PublicationInstallOpts = KernelCommandOpts & {
   readonly instance?: string
@@ -111,7 +105,7 @@ export function publicationInstallRetry(
  */
 export async function installPublications(
   context: ConnectionContext,
-  sources: readonly [PublicationSource, ...PublicationSource[]],
+  sources: readonly [UrlSource, ...UrlSource[]],
   operation: string,
   opts: PublicationInstallOpts,
 ): Promise<InstallFailure | undefined> {

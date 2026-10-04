@@ -23,7 +23,7 @@ import { canPrompt } from '../../lib/interactive'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { promptText, selectFrom } from '../../lib/prompt'
-import { installByUrl, validateInstallUrl } from './release-install'
+import { installByUrl } from './release-install'
 
 type InstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts &
@@ -44,6 +44,15 @@ export function isUrlReference(reference: string): boolean {
   return reference.startsWith('https://') || reference.startsWith('http://')
 }
 
+/**
+ * Whether the references go to the instance Kernel: every reference is a URL, or the deprecated
+ * `--direct` names that route, so even a URL the reference grammar does not read (an upper-case
+ * scheme) never reaches the Fleet catalog; `installByUrl` then admits or refuses it.
+ */
+export function installsOnKernel(references: readonly string[], direct: boolean): boolean {
+  return references.length > 0 && (direct || references.every(isUrlReference))
+}
+
 export default {
   name: 'install',
   description: 'Install one or more domains on an instance in one atomic Kernel operation',
@@ -59,7 +68,8 @@ Behavior:
   legacy domain.json), refuses two references to the same origin, and pins the
   exact release digest it read, so the Kernel refuses anything else. After the
   install, it reads the installed releases back and verifies each pin. A
-  deployment that answers 503 (not serving yet) is retried for up to 60 s.
+  deployment that answers 503 (not serving yet) to that read is read again for
+  up to 60 s; a Kernel refusal of the install itself is never resent.
 
   The identity-override consent gate runs for each URL: when a Domain's declared
   origin differs from its serving host, it requires explicit consent (an
@@ -73,8 +83,9 @@ Behavior:
   only to retry or recover the exact same URL install after an outcome-unknown
   timeout or disconnect.
 
-  --direct is accepted for scripts written before URL installs always went to
-  the Kernel; it changes nothing.
+  --direct is deprecated and changes nothing: URL references always go to the
+  instance Kernel. It is still accepted for scripts written before, and is
+  removed in a later breaking release.
 
 Examples:
   $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel
@@ -94,10 +105,15 @@ Examples:
   ],
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    // @deprecated (legacy, plan C1): `--direct` names the route URL references always take now.
+    // Short-term consumer: 1Pact developer machines running the newest global CLI, whose sdk
+    // 0.6.0-beta.0 `reconcile` execs `domain install <url> --direct --allow-identity-override -i
+    // <instance>`. Removal: D13, with `legacy/publication-install.ts` (this option, the MISSING_ARG
+    // branch below and the `direct` term of `installsOnKernel`).
     {
       flags: '--direct',
       description:
-        'Accepted for older scripts: URL references always install straight onto the instance kernel',
+        'Deprecated: URL references always install onto the instance kernel; accepted for older scripts',
     },
     {
       flags: '--token <token>',
@@ -115,28 +131,24 @@ Examples:
   ],
   action: async (references: string[] | undefined, opts: InstallOpts) => {
     const named = references ?? []
-    const urls = named.filter(isUrlReference)
-    if (named.length > 0 && urls.length === named.length) {
+    if (installsOnKernel(named, opts.direct === true)) {
       await installByUrl(named as [string, ...string[]], opts)
       return
     }
     try {
+      if (opts.direct) {
+        throw new AstraleError(
+          'MISSING_ARG',
+          '--direct requires a domain url.',
+          'e.g. astrale domain install https://crm.acme.dev',
+        )
+      }
       if (named.length > 1) {
         throw new AstraleError(
           'MIXED_REFERENCES',
           'A catalog origin installs alone; only deployment URLs install together.',
           'Install the catalog origin on its own, or name every Domain by its deployment URL.',
         )
-      }
-      if (opts.direct) {
-        if (named[0] === undefined) {
-          throw new AstraleError(
-            'MISSING_ARG',
-            '--direct requires a domain url.',
-            'e.g. astrale domain install https://crm.acme.dev --direct',
-          )
-        }
-        validateInstallUrl(named[0])
       }
       if (opts.operation !== undefined) {
         throw new AstraleError(

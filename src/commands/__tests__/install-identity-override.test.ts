@@ -3,7 +3,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 
 import { releaseFor } from '../../__tests__/fixtures/publication'
 import { isIdentityOverride, probeDeclaredOrigin } from '../domain/identity-override'
-import { isUrlReference } from '../domain/install'
+import { installsOnKernel, isUrlReference } from '../domain/install'
 
 describe('install reference classification', () => {
   test('a reference starting with https:// or http:// is a deployment URL', () => {
@@ -17,6 +17,18 @@ describe('install reference classification', () => {
     // A URL is recognized by its written scheme only (AM-58).
     expect(isUrlReference('http:crm.acme.dev')).toBe(false)
     expect(isUrlReference('HTTPS://crm.acme.dev')).toBe(false)
+  })
+
+  test('URL references, and every reference passed with --direct, go to the instance Kernel', () => {
+    expect(installsOnKernel(['https://a.dev', 'http://localhost:8787'], false)).toBe(true)
+    // --direct never lets a reference fall through to the Fleet catalog; the URL install admits
+    // or refuses it (an upper-case scheme reached the Kernel before installs were grouped).
+    expect(installsOnKernel(['HTTPS://crm.acme.dev'], true)).toBe(true)
+    expect(installsOnKernel(['crm.acme.dev'], true)).toBe(true)
+    expect(installsOnKernel(['HTTPS://crm.acme.dev'], false)).toBe(false)
+    expect(installsOnKernel(['https://a.dev', 'crm.acme.dev'], false)).toBe(false)
+    expect(installsOnKernel([], true)).toBe(false)
+    expect(installsOnKernel([], false)).toBe(false)
   })
 })
 

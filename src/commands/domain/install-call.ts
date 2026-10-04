@@ -7,6 +7,12 @@ import { formatElapsed } from '../../lib/format'
 import { fatal, spinner } from '../../lib/log'
 import { isMachine } from '../../lib/output'
 
+/** One deployment URL to install, as written, beside the host name that serves it. */
+export interface UrlSource {
+  readonly url: string
+  readonly host: string
+}
+
 /**
  * Why a URL install stopped, rendered once its Kernel session is closed: `input` failures (an
  * invalid reference, a refused consent) as command errors, `kernel` failures as Kernel command
