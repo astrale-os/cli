@@ -9,16 +9,29 @@ import { acceptVersion, compatibleDependentVersion } from '@astrale-os/sdk/versi
 import type { AdminRegistryApi } from '../../admin/registry'
 
 import { registryFailure } from '../../admin/registry/failure'
+import { mapBounded } from '../../lib/concurrency'
 
 /**
  * The install pre-check (Résolution [.78239], Installation [.69634]): before the install is sent,
- * the CLI evaluates both directions the Kernel checks at install ([.96185]) with the same engine
- * (`schema.compatibility.compareStructure`, capabilities included, CT13). Downward, each root's
- * dependencies, as the install leaves them active, must still hold what the root uses; upward,
- * each installed Domain the install does not name must still find, in every dependency the install
- * upgrades, what it uses. A finding has the shape of the Kernel refusal it predicts
+ * the CLI evaluates both directions the Kernel checks at install ([.96185]) with the same engine,
+ * `schema.compatibility.compareStructure` judged with the declared capabilities. Downward, each
+ * root's dependencies, as the install leaves them active, must still hold what the root uses;
+ * upward, each installed Domain the install does not name must still find, in every dependency the
+ * install upgrades, what it uses. A finding has the shape of the Kernel refusal it predicts
  * (SCHEMA_DEPENDENCY_INCOMPATIBLE, SCHEMA_DEPENDENTS_INCOMPATIBLE). It is a pre-check, not a
  * decision: the install is sent either way and the Kernel checks everything again.
+ *
+ * The engine is the Kernel's own (`@astrale-os/kernel-dsl`, through the SDK), so its known limits
+ * are the Kernel's too. The admission rules around the engine are mirrored, because the Kernel
+ * exports no derivation of them; each mirror names its source in astrale-os/kernel:
+ * - downward: `declaredBy`, `dependencyMeaning` and `transitiveCapabilities` in
+ *   `runtime/schema/installation/dependencies.ts`;
+ * - upward: `carriedDependents` and `carriedChanges` in `runtime/schema/cutover/plan/plan.ts`,
+ *   over the closure bindings `runtime/schema/installation/introspection.ts` lists;
+ * - the root's Schema Bundle: `runtime/schema/installation/source/retrieval.ts`, which
+ *   `readReleaseBundle` follows.
+ * A Kernel change to these rules is not seen here until it is mirrored. The pre-check stays
+ * advisory, so such a drift costs a wrong warning, never an install.
  */
 
 /** One meaning change the engine found, as the Kernel lists it in `changes`. */
@@ -57,12 +70,31 @@ export interface BrokenDependent {
 
 /**
  * What the registry offers for one broken dependent ([.69634]): the highest stable non-yanked
- * Publication built against every upgraded revision it breaks on (`compatibleDependentVersion`,
- * CT28), none, or no answer from the registry.
+ * Publication built against every upgraded revision it breaks on (`compatibleDependentVersion`),
+ * none, no answer the registry can give for it, or no answer from the registry.
  */
 export type DependentProposal =
-  | { readonly origin: string; readonly kind: 'version'; readonly version: string }
+  | {
+      readonly origin: string
+      readonly kind: 'version'
+      readonly version: string
+      /**
+       * Present when that version is served by another deployment than the installed one, whose
+       * URL is its issuer ([.60662]): installing it changes the dependent's issuer, which needs
+       * the operator's consent. The proposed command does not give that consent.
+       */
+      readonly issuer?: { readonly from: string; readonly to: string }
+    }
   | { readonly origin: string; readonly kind: 'none' }
+  | {
+      readonly origin: string
+      /**
+       * It breaks on an upgraded dependency it reaches only through another Domain. A Publication
+       * lists its direct dependencies only, so the registry cannot tell which version holds.
+       */
+      readonly kind: 'indirect'
+      readonly dependencies: readonly string[]
+    }
   | { readonly origin: string; readonly kind: 'unread'; readonly code: string }
 
 /** Why one root of the install was not compared. */
@@ -100,7 +132,13 @@ export interface InstallPrecheck {
 }
 
 /** The engine's verdict before the registry is read for proposals. */
-export type PrecheckVerdict = Omit<InstallPrecheck, 'proposals' | 'command'>
+export type PrecheckVerdict = Omit<InstallPrecheck, 'proposals' | 'command'> & {
+  /**
+   * For each broken dependent, the upgraded dependencies it breaks on but reaches only through
+   * another Domain (outside its direct dependencies). Not part of `--json`.
+   */
+  readonly indirect: ReadonlyMap<string, readonly string[]>
+}
 
 /** One root of the install as the pre-check sees it. */
 export type PrecheckRoot =
@@ -124,7 +162,15 @@ export type PrecheckRoot =
 /** The Kernel reads the pre-check makes, all under the caller's own authority. */
 export type PrecheckKernel = Pick<ClientSession['schema'], 'bundle' | 'dependencies' | 'inspect'>
 
-interface Generation {
+/**
+ * At most this many installed Domains are introspected at once for the upward check, the bound
+ * Admin keeps when it reads a fleet: Host execution admission is wait-bounded, so an unbounded
+ * burst on a busy Host would be refused and leave Domains unevaluated.
+ */
+export const INTROSPECTION_READS_AT_ONCE = 6
+
+/** The schema of one origin the install leaves active, and its revision. */
+interface ActiveSchema {
   readonly revision: string
   readonly schema: schema.DomainSchema
 }
@@ -154,16 +200,23 @@ export async function precheckInstall(
   let compared = 0
   const dependencies: BrokenDependency[] = []
   const dependents: BrokenDependent[] = []
+  const indirect = new Map<string, string[]>()
 
+  /**
+   * The revision of `origin` installed before the install. The Kernel reads every registration;
+   * the listing omits builtin and local installations, which introspection still shows.
+   */
+  const installedRevision = async (origin: string): Promise<string | undefined> =>
+    listed.get(origin)?.revision ?? (await reads.inspect(origin))?.revision
   /** The revision of `origin` the install leaves active: the requested root's, else the installed one. */
-  const activeAfter = async (origin: string): Promise<string | undefined> => {
+  const activeRevisionAfter = async (origin: string): Promise<string | undefined> => {
     const root = requested.get(origin)
     if (root !== undefined)
       return root.kind === 'release' ? root.release.schema.revision : root.revision
-    return listed.get(origin)?.revision ?? (await reads.inspect(origin))?.revision
+    return installedRevision(origin)
   }
   /** The schema of `origin` the install leaves active. */
-  const generationAfter = async (origin: string): Promise<Generation | undefined> => {
+  const activeSchemaAfter = async (origin: string): Promise<ActiveSchema | undefined> => {
     const root = requested.get(origin)
     if (root !== undefined) {
       return root.kind === 'release'
@@ -176,24 +229,25 @@ export async function precheckInstall(
       : { revision: installedBundle.domain.revision, schema: installedBundle.bundle.root }
   }
 
+  // Downward (Kernel `dependencyMeaning` and `transitiveCapabilities`).
   for (const root of [...roots].sort(byOrigin)) {
     if (root.kind !== 'release') continue
-    const declared = await declaredBy(root, listed, reads)
+    const declared = declaredBy(root, listed, reads, installedRevision)
     const direct = Object.values(root.bundle.root.dependencies).sort(byOrigin)
     for (const dependency of direct) {
-      const actual = await activeAfter(dependency.origin)
+      const actual = await activeRevisionAfter(dependency.origin)
       if (actual === undefined || actual === dependency.revision) continue
-      const generation = await generationAfter(dependency.origin)
-      if (generation === undefined) continue
-      const capabilities = declared(dependency.origin, generation.revision)
-      const changes = compareDependency(root.bundle.root, generation.schema, capabilities, false)
+      const active = await activeSchemaAfter(dependency.origin)
+      if (active === undefined) continue
+      const capabilities = await declared(dependency.origin, active.revision)
+      const changes = compareDependency(root.bundle.root, active.schema, capabilities, false)
       if (changes === undefined) {
         reads.unevaluated.add(root.origin)
         continue
       }
       compared += 1
       if (changes.length > 0) {
-        dependencies.push(broken(root.origin, dependency, generation.revision, changes))
+        dependencies.push(broken(root.origin, dependency, active.revision, changes))
       }
     }
     // A capability of an origin reached only through the exact closure is judged like a direct one.
@@ -201,13 +255,13 @@ export async function precheckInstall(
     for (const entry of root.bundle.closure) {
       const revision = schema.revision(entry)
       if (entry.origin === root.origin || directOrigins.has(entry.origin)) continue
-      const actual = await activeAfter(entry.origin)
+      const actual = await activeRevisionAfter(entry.origin)
       if (actual === undefined || actual === revision) continue
-      const capabilities = declared(entry.origin, actual)
+      const capabilities = await declared(entry.origin, actual)
       if (capabilities.length === 0) continue
-      const generation = await generationAfter(entry.origin)
-      if (generation === undefined) continue
-      const changes = compareDependency(root.bundle.root, generation.schema, capabilities, false)
+      const active = await activeSchemaAfter(entry.origin)
+      if (active === undefined) continue
+      const changes = compareDependency(root.bundle.root, active.schema, capabilities, false)
       if (changes === undefined) {
         reads.unevaluated.add(root.origin)
         continue
@@ -215,13 +269,14 @@ export async function precheckInstall(
       compared += 1
       if (changes.length > 0) {
         dependencies.push(
-          broken(root.origin, { origin: entry.origin, revision }, generation.revision, changes),
+          broken(root.origin, { origin: entry.origin, revision }, active.revision, changes),
         )
       }
     }
   }
 
-  // Upward: only a root that replaces an installed revision can change what a dependent uses.
+  // Upward (Kernel `carriedDependents`): only a root that replaces an installed revision can
+  // change what a dependent uses.
   const upgraded = new Map<string, Extract<PrecheckRoot, { kind: 'release' }>>()
   for (const root of roots) {
     const active = root.origin === undefined ? undefined : listed.get(root.origin)
@@ -234,8 +289,10 @@ export async function precheckInstall(
     const others = [...installed]
       .filter((entry) => !requested.has(entry.origin))
       .sort((left, right) => compareText(left.origin, right.origin))
-    const bindings = await Promise.all(
-      others.map(async (entry) => [entry, await reads.dependencies(entry.origin)] as const),
+    const bindings = await mapBounded(
+      others,
+      INTROSPECTION_READS_AT_ONCE,
+      async (entry) => [entry, await reads.dependencies(entry.origin)] as const,
     )
     for (const [entry, bound] of bindings) {
       if (bound === undefined) continue
@@ -251,17 +308,21 @@ export async function precheckInstall(
           continue
         }
         compared += 1
-        if (changes.length > 0) {
-          dependents.push(
-            Object.freeze({
-              domain: Object.freeze({ origin: entry.origin, revision: dependent.domain.revision }),
-              dependency: binding.origin,
-              expected: binding.pinned,
-              actual: root.release.schema.revision,
-              changes,
-            }),
-          )
-        }
+        if (changes.length === 0) continue
+        dependents.push(
+          Object.freeze({
+            domain: Object.freeze({ origin: entry.origin, revision: dependent.domain.revision }),
+            dependency: binding.origin,
+            expected: binding.pinned,
+            actual: root.release.schema.revision,
+            changes,
+          }),
+        )
+        const direct = Object.values(dependent.bundle.root.dependencies).some(
+          ({ origin }) => origin === binding.origin,
+        )
+        if (!direct)
+          indirect.set(entry.origin, [...(indirect.get(entry.origin) ?? []), binding.origin])
       }
     }
   }
@@ -272,37 +333,39 @@ export async function precheckInstall(
     dependents: Object.freeze(dependents),
     skipped: Object.freeze(skipped),
     unevaluated: Object.freeze([...reads.unevaluated].sort(compareText)),
+    indirect,
   })
 }
 
 /**
- * The capability Keys a root's declaration judges one binding with, as the Kernel derives them: a
- * root already installed at the same revision with the same declaration of a dependency that the
- * install does not replace keeps the answer its installation got, so its declaration judges
- * nothing there.
+ * The capability Keys a root's declaration judges one binding with, as the Kernel derives them
+ * (`declaredBy`, `runtime/schema/installation/dependencies.ts`): a root already installed at the
+ * same revision with the same declaration of a dependency that the install does not replace keeps
+ * the answer its installation got, so its declaration judges nothing there. The Kernel compares
+ * the dependency's installed registration with the generation the install leaves active, so the
+ * installed revision is read for builtin and local installations too, which the listing omits. It
+ * reads the held declaration from its catalog record; the CLI reads the one introspection shows.
  */
-async function declaredBy(
+function declaredBy(
   root: Extract<PrecheckRoot, { kind: 'release' }>,
   listed: ReadonlyMap<string, InstalledRelease>,
   reads: KernelReads,
-): Promise<(origin: string, revision: string) => readonly Key[]> {
+  installedRevision: (origin: string) => Promise<string | undefined>,
+): (origin: string, active: string) => Promise<readonly Key[]> {
   const keys = capabilityKeys(root.release.requirements.capabilities)
-  const active = listed.get(root.origin)
+  const installedRoot = listed.get(root.origin)
   const held =
-    active !== undefined && active.revision === root.release.schema.revision
-      ? await reads.inspect(root.origin)
-      : undefined
-  const heldKeys = held === undefined ? undefined : capabilityKeys(held.capabilities.requested)
-  return (origin, revision) => {
+    installedRoot !== undefined && installedRoot.revision === root.release.schema.revision
+      ? reads.inspect(root.origin)
+      : Promise.resolve(undefined)
+  return async (origin, active) => {
     const judged = keys.filter((key) => Key.origin(key) === origin)
-    if (
-      judged.length === 0 ||
-      heldKeys === undefined ||
-      listed.get(origin)?.revision !== revision
-    ) {
-      return judged
-    }
-    const kept = heldKeys.filter((key) => Key.origin(key) === origin)
+    if (judged.length === 0) return judged
+    const holding = await held
+    if (holding === undefined || (await installedRevision(origin)) !== active) return judged
+    const kept = capabilityKeys(holding.capabilities.requested).filter(
+      (key) => Key.origin(key) === origin,
+    )
     return kept.length === judged.length && kept.every((key, index) => key === judged[index])
       ? []
       : judged
@@ -310,9 +373,10 @@ async function declaredBy(
 }
 
 /**
- * The meaning changes that make `dependent` incompatible with `target`, as the Kernel lists them.
- * A declared capability the dependent's own retained source does not define is a missing Key,
- * which is how the Kernel names a carried dependent holding one.
+ * The meaning changes that make `dependent` incompatible with `target`, as the Kernel lists them
+ * (`carriedChanges`, `runtime/schema/cutover/plan/plan.ts`). A declared capability the dependent's
+ * own retained source does not define is a missing Key, which is how the Kernel names a carried
+ * dependent holding one.
  */
 function compareDependency(
   dependent: schema.DomainSchema,
@@ -419,13 +483,16 @@ class KernelReads {
 
 /**
  * For each broken dependent, read its Publications in the registry and pick the highest stable
- * non-yanked version built against every upgraded revision it breaks on ([.69634], R-F07). The
- * selection stays in `@astrale-os/sdk/versioning` (AM-18); a non-canonical index entry is never a
- * compatible dependent (AM-56). A Domain the caller cannot read in the registry has no published
- * version for it; any other registry failure leaves that dependent without a proposal.
+ * non-yanked version built against every upgraded revision it breaks on ([.69634]). The selection
+ * stays in `@astrale-os/sdk/versioning`, and an index entry whose version the SDK does not accept
+ * is never a compatible dependent. A Domain the caller cannot read in the registry has no published
+ * version for it; any other registry failure leaves that dependent without a proposal. Every
+ * dependent given here reaches what it breaks on directly: a Publication lists its direct
+ * dependencies only, so the caller answers the others as `indirect`.
  */
 export async function proposeDependentVersions(
   dependents: readonly BrokenDependent[],
+  installed: readonly InstalledRelease[],
   registry: Pick<AdminRegistryApi, 'index'>,
 ): Promise<readonly DependentProposal[]> {
   const targets = new Map<string, { origin: string; revision: Revision }[]>()
@@ -454,6 +521,7 @@ export async function proposeDependentVersions(
               {
                 version: acceptVersion(entry.version),
                 yanked: entry.yanked,
+                url: entry.url,
                 // The registry names revisions as text; the selection compares them exactly.
                 dependencies: entry.dependencies as readonly {
                   readonly origin: string
@@ -476,12 +544,43 @@ export async function proposeDependentVersions(
         )
         // Every dependent listed here has at least one upgraded dependency.
         const version = compatibleDependentVersion(holding, first!)
-        return version === undefined
-          ? Object.freeze({ origin, kind: 'none' as const })
-          : Object.freeze({ origin, kind: 'version' as const, version })
+        if (version === undefined) return Object.freeze({ origin, kind: 'none' as const })
+        const chosen = holding.find((candidate) => candidate.version === version)
+        const issuer = issuerChange(
+          installed.find((entry) => entry.origin === origin),
+          chosen?.url,
+        )
+        return Object.freeze({
+          origin,
+          kind: 'version' as const,
+          version,
+          ...(issuer === undefined ? {} : { issuer }),
+        })
       }),
     ),
   )
+}
+
+/**
+ * The issuer change installing a Publication served at `url` makes: each deployment is its own
+ * issuer, its URL ([.60662]), so another deployment than the installed issuer's changes it.
+ */
+function issuerChange(
+  current: InstalledRelease | undefined,
+  url: string | undefined,
+): { readonly from: string; readonly to: string } | undefined {
+  if (current === undefined || url === undefined) return undefined
+  const to = urlOrigin(url)
+  if (to === undefined || to === urlOrigin(current.issuer)) return undefined
+  return Object.freeze({ from: current.issuer, to })
+}
+
+function urlOrigin(input: string): string | undefined {
+  try {
+    return new URL(input).origin
+  } catch {
+    return undefined
+  }
 }
 
 function byOrigin(left: { readonly origin?: string }, right: { readonly origin?: string }): number {
