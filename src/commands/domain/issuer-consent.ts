@@ -174,45 +174,92 @@ export function consentedByFlags(change: IssuerChange, consent: IssuerChangeCons
   return change.line === 'same' && consent.sameLine
 }
 
-/** An issuer change that neither a flag nor the operator's confirmation consented to. */
+/** One change ISSUER_CHANGE_NOT_CONSENTED names (CT24): the installed and the replacement issuer. */
+export interface UnconsentedIssuerChange {
+  readonly origin: string
+  readonly installed: string
+  readonly replacement: string
+  readonly line: IssuerChangeLine
+}
+
+/**
+ * The issuer changes of one install that neither a flag nor the operator's confirmation consented
+ * to, all of them at once (CT24 `details.origins`), refused before any install is sent.
+ */
 export class IssuerChangeNotConsentedError extends AstraleError {
-  constructor(change: IssuerChange) {
+  constructor(changes: readonly [IssuerChange, ...IssuerChange[]]) {
+    const [first] = changes
+    const kind = (change: IssuerChange) =>
+      change.line === 'same' ? 'a new deployment of the same line' : 'another line'
+    const flags = [
+      ...(changes.some((change) => change.line === 'same') ? ['--allow-issuer-change'] : []),
+      ...changes
+        .filter((change) => change.line === 'cross')
+        .map((change) => `--allow-issuer-change=${change.origin}`),
+    ]
     super(
       'ISSUER_CHANGE_NOT_CONSENTED',
-      `Installing ${change.reference} changes the issuer of ${change.origin} from ${change.from} ` +
-        `to ${change.to} (${change.line === 'same' ? 'a new deployment of the same line' : 'another line'}), and no consent was given.`,
-      change.line === 'same'
-        ? `Pass --allow-issuer-change (or --allow-issuer-change=${change.origin}), or run interactively to confirm.`
-        : `Pass --allow-issuer-change=${change.origin}, or run interactively to confirm; --allow-issuer-change alone covers only a new deployment of the same line.`,
+      changes.length === 1
+        ? `Installing ${first.reference} changes the issuer of ${first.origin} from ${first.from} ` +
+            `to ${first.to} (${kind(first)}), and no consent was given.`
+        : `This install changes the issuer of ${changes.length} Domains without consent: ` +
+            changes
+              .map((change) => `${change.origin} ${change.from} -> ${change.to} (${kind(change)})`)
+              .join('; ') +
+            '.',
+      `Pass ${flags.join(' ')}, or run interactively to confirm` +
+        (changes.some((change) => change.line === 'cross')
+          ? '; --allow-issuer-change alone covers only a new deployment of the same line.'
+          : '.'),
     )
     this.details = Object.freeze({
-      origin: change.origin,
-      line: change.line,
-      installedIssuer: change.from,
-      replacementIssuer: change.to,
+      origins: Object.freeze(
+        changes.map((change): UnconsentedIssuerChange =>
+          Object.freeze({
+            origin: change.origin,
+            installed: change.from,
+            replacement: change.to,
+            line: change.line,
+          }),
+        ),
+      ),
     })
   }
 }
 
 /**
- * Admit one planned issuer change: by the flags, else by the operator typing the origin at a
- * terminal, else refused before any install is sent.
+ * Admit every planned issuer change of one install: first by the flags, then, for the rest, by
+ * the operator typing each origin at a terminal (`confirm` never asks without one, nor under
+ * --json, --ci or --no-prompt). Whatever stays unconsented, the declined change and every change
+ * not asked yet, is refused in one error before any install is sent.
  */
-export async function admitIssuerChange(
-  change: IssuerChange,
+export async function admitIssuerChanges(
+  changes: readonly IssuerChange[],
   consent: IssuerChangeConsent,
   machine: boolean,
   confirm: (banner: string, expected: string) => Promise<boolean> = confirmWithInput,
 ): Promise<void> {
-  if (consentedByFlags(change, consent)) {
-    if (!machine) {
+  const unconsented: IssuerChange[] = []
+  for (const change of changes) {
+    if (!consentedByFlags(change, consent)) {
+      unconsented.push(change)
+    } else if (!machine) {
       log.warn(
         `Issuer change consented via --allow-issuer-change: ${change.origin} ${change.from} -> ${change.to}`,
       )
     }
-    return
   }
-  const banner = dangerPanel('ISSUER CHANGE', [
+  for (const [index, change] of unconsented.entries()) {
+    if (!(await confirm(issuerChangeBanner(change, consent), change.origin))) {
+      throw new IssuerChangeNotConsentedError(
+        unconsented.slice(index) as [IssuerChange, ...IssuerChange[]],
+      )
+    }
+  }
+}
+
+function issuerChangeBanner(change: IssuerChange, consent: IssuerChangeConsent): string {
+  return dangerPanel('ISSUER CHANGE', [
     `origin     ${chalk.bold(change.origin)}`,
     `installed  ${change.from}`,
     `new        ${change.to}   ${chalk.red(change.line === 'same' ? '(same line)' : '(another line)')}`,
@@ -222,9 +269,6 @@ export async function admitIssuerChange(
       ? `${change.from} is cut at the activation (--revoke-previous).`
       : `${change.from} stays accepted while its in-flight work drains.`,
   ])
-  if (!(await confirm(banner, change.origin))) {
-    throw new IssuerChangeNotConsentedError(change)
-  }
 }
 
 /**

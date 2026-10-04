@@ -45,24 +45,6 @@ export function isUrlReference(reference: string): boolean {
 }
 
 /**
- * `--allow-issuer-change [origin]` takes an optional value, so a URL written right after the flag
- * lands in it. A URL never names an origin: it goes back to the references, and the occurrence
- * stands for the flag without an origin.
- */
-export function splitIssuerChangeValues(
-  references: readonly string[],
-  values: readonly string[] | undefined,
-): { readonly references: readonly string[]; readonly values: readonly string[] | undefined } {
-  if (values === undefined) return { references, values }
-  const moved = values.filter(isUrlReference)
-  if (moved.length === 0) return { references, values }
-  return {
-    references: [...moved, ...references],
-    values: values.map((value) => (isUrlReference(value) ? '' : value)),
-  }
-}
-
-/**
  * Whether the references go to the instance Kernel: every reference is a URL, or the deprecated
  * `--direct` names that route, so even a URL the reference grammar does not read (an upper-case
  * scheme) never reaches the Fleet catalog; `installByUrl` then admits or refuses it.
@@ -162,7 +144,7 @@ Examples:
     {
       flags: '--allow-issuer-change [origin]',
       description:
-        'Consent to an issuer change: without a value, every new deployment of the same line; =<origin> any change of that origin (repeatable)',
+        'Consent to an issuer change: bare, every new deployment of the same line; --allow-issuer-change=<origin>, any change of that origin (repeatable; the origin only after =)',
       repeatable: true,
     },
     {
@@ -177,17 +159,13 @@ Examples:
     {
       flags: '--allow-identity-override',
       description:
-        'Consent to a legacy domain.json source whose origin differs from its serving host',
+        '(deprecated, removal D15; see --allow-issuer-change) Consent to a legacy domain.json source whose origin differs from its serving host',
     },
   ],
   action: async (references: string[] | undefined, opts: InstallOpts) => {
-    const split = splitIssuerChangeValues(references ?? [], opts.allowIssuerChange)
-    const named = split.references
+    const named = references ?? []
     if (installsOnKernel(named, opts.direct === true)) {
-      await installByUrl(named as [string, ...string[]], {
-        ...opts,
-        ...(split.values === undefined ? {} : { allowIssuerChange: split.values }),
-      })
+      await installByUrl(named as [string, ...string[]], opts)
       return
     }
     try {
