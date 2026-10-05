@@ -30,7 +30,8 @@ export async function runBundle(
 
 export default {
   name: 'bundle',
-  description: "Download one Publication's stored bundle, digest verified (registry plumbing)",
+  description:
+    "Download one Publication's bundle from its deployment, digest verified (registry plumbing)",
   arguments: [
     {
       name: 'reference',

@@ -14,6 +14,7 @@ export {
   type PublicationSummaryV1,
   type PublishRequestV1,
   type PublishResultV1,
+  type PublishRetentionV1,
   type RegistryBundleV1,
   type RegistryDigest,
   type RegistryErrorCode,

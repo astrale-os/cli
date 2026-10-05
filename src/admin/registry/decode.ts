@@ -5,10 +5,10 @@ import { patterns } from '@astrale-os/sdk/schema'
 import { acceptVersion, parseReference, type Reference } from '@astrale-os/sdk/versioning'
 
 import type {
-  PublicationBundleV1,
   PublicationDependencyV1,
   PublicationSummaryV1,
   PublishRequestV1,
+  PublishRetentionV1,
   RegistryDigest,
 } from './model'
 
@@ -22,7 +22,7 @@ import { RegistryError } from './model'
  * Admin adds later are ignored, so an additive Admin release never breaks a published CLI.
  */
 
-/** One Publication Node, with the Node id its Methods and its bundle download are addressed by. */
+/** One Publication Node, with the Node id its Methods are addressed by. */
 export interface ObservedPublication {
   readonly node: string
   readonly summary: PublicationSummaryV1
@@ -34,7 +34,7 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/u
 const COMMIT = /^[0-9a-f]{40}$/u
 const COMMIT_INPUT = /^[0-9A-Fa-f]{40}$/u
 const MAXIMUM_DEPENDENCIES = 32
-const MAXIMUM_BUNDLE_BYTES = 16 * 1_024 * 1_024
+const RETENTIONS: ReadonlySet<unknown> = new Set(['marked', 'failed', 'not-applicable'])
 
 /** A Publication Node value read from Admin's graph. */
 export function observedPublication(node: Node): ObservedPublication {
@@ -48,7 +48,6 @@ export function observedPublication(node: Node): ObservedPublication {
       releaseDigest: props[keys.releaseDigest],
       buildDigest: props[keys.buildDigest],
       schemaRevision: props[keys.schemaRevision],
-      bundle: props[keys.bundle],
       dependencies: props[keys.dependencies],
       commit: props[keys.commit],
       dirty: props[keys.dirty],
@@ -78,7 +77,6 @@ export function publicationFromAdmin(input: unknown): ObservedPublication {
       releaseDigest: value.releaseDigest,
       buildDigest: value.buildDigest,
       schemaRevision: value.schemaRevision,
-      bundle: value.bundle,
       dependencies: value.dependencies,
       commit: value.commit,
       dirty: value.dirty,
@@ -92,12 +90,15 @@ export function publicationFromAdmin(input: unknown): ObservedPublication {
 export function publishedFromAdmin(input: unknown): {
   readonly publication: ObservedPublication
   readonly created: boolean
+  readonly retention: PublishRetentionV1
 } {
   const value = record(input, 'Admin publish result')
   if (typeof value.created !== 'boolean') throw invalid('Admin publish result created flag')
+  if (!RETENTIONS.has(value.retention)) throw invalid('Admin publish result retention')
   return Object.freeze({
     publication: publicationFromAdmin(value.publication),
     created: value.created,
+    retention: value.retention as PublishRetentionV1,
   })
 }
 
@@ -205,7 +206,6 @@ function summary(input: {
   readonly releaseDigest: unknown
   readonly buildDigest: unknown
   readonly schemaRevision: unknown
-  readonly bundle: unknown
   readonly dependencies: unknown
   readonly commit: unknown
   readonly dirty: unknown
@@ -232,30 +232,11 @@ function summary(input: {
     releaseDigest: digest(input.releaseDigest, 'Admin Publication release digest'),
     buildDigest: digest(input.buildDigest, 'Admin Publication build digest'),
     schemaRevision: string(input.schemaRevision, 'Admin Publication schema revision'),
-    bundle: bundle(input.bundle),
     dependencies: dependencies(input.dependencies),
     ...(input.commit === undefined ? {} : { commit: input.commit as string }),
     dirty: input.dirty === true,
     yanked: input.yankedAt !== undefined,
     publishedAt: string(input.createdAt, 'Admin Publication creation time'),
-  })
-}
-
-function bundle(input: unknown): PublicationBundleV1 {
-  const value = record(input, 'Admin Publication bundle')
-  const size = value.size
-  if (
-    typeof size !== 'number' ||
-    !Number.isSafeInteger(size) ||
-    size < 0 ||
-    size > MAXIMUM_BUNDLE_BYTES
-  ) {
-    throw invalid('Admin Publication bundle size')
-  }
-  return Object.freeze({
-    digest: digest(value.digest, 'Admin Publication bundle digest'),
-    mediaType: string(value.mediaType, 'Admin Publication bundle media type'),
-    size,
   })
 }
 

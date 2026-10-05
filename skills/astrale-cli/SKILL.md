@@ -255,7 +255,8 @@ astrale domain uninstall app.example shared.example --destructive -i staging
 
 `astrale domain versions <origin>` lists the Domain's published versions from the Admin
 registry, read with your own credential: you need `domain_installer` or `domain_admin` on the
-Domain, directly or through a Group. Pre-releases and yanked versions are listed; a yanked
+Domain, directly or through a Group (a Fleet catalog that lists the Domain shows it without its
+versions). Pre-releases and yanked versions are listed; a yanked
 version is never chosen by a line such as `@1.5`. An absent Domain and one you cannot read give
 the same `REGISTRY_DOMAIN_NOT_FOUND`. `--json` prints one `astrale.registry-index` document;
 refusals print `{ "error": { "code", "message", "details" } }` on stdout and exit 1. Rerunning

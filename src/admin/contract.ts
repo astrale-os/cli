@@ -16,7 +16,6 @@ const Fleet = classRef('Fleet')
 const Domain = classRef('Domain')
 const Instance = classRef('Instance')
 const Invitation = classRef('Invitation')
-const RegisteredDomain = classRef('RegisteredDomain')
 const Publication = classRef('Publication')
 
 export const AdminContract = Object.freeze({
@@ -27,7 +26,6 @@ export const AdminContract = Object.freeze({
     Domain,
     Instance,
     Invitation,
-    RegisteredDomain,
     Publication,
   }),
   edges: Object.freeze({
@@ -56,9 +54,6 @@ export const AdminContract = Object.freeze({
       createdAt: K.classes.Timestamped.properties.createdAt.key,
       updatedAt: K.classes.Timestamped.properties.updatedAt.key,
     }),
-    registeredDomain: Object.freeze({
-      origin: PropertyKey.of(RegisteredDomain, 'origin'),
-    }),
     publication: Object.freeze({
       version: PropertyKey.of(Publication, 'version'),
       deploymentUrl: PropertyKey.of(Publication, 'deploymentUrl'),
@@ -68,7 +63,6 @@ export const AdminContract = Object.freeze({
       dependencies: PropertyKey.of(Publication, 'dependencies'),
       commit: PropertyKey.of(Publication, 'commit'),
       dirty: PropertyKey.of(Publication, 'dirty'),
-      bundle: PropertyKey.of(Publication, 'bundle'),
       yankedAt: PropertyKey.of(Publication, 'yankedAt'),
       createdAt: K.classes.Timestamped.properties.createdAt.key,
     }),

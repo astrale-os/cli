@@ -10,8 +10,9 @@ const UNREACHABLE_REASONS = new Set(['release-absent', 'bundle-absent'])
 /**
  * The `BACKEND_UNAVAILABLE` reasons that say nothing ran, so nothing changed: the Kernel's
  * admission refusals (kernel `protocol/errors/retry.ts` `RETRY_REASONS`), and its submission-phase
- * refusals (kernel `ports/mutation/backend.port.ts` `MutationSubmissionFailureCode`), which Admin
- * returns as the reason of its own `BACKEND_UNAVAILABLE` (CT27, AM-199 (3)).
+ * refusals (kernel `ports/mutation/backend.port.ts` `MutationSubmissionFailureCode`): Admin answers
+ * a commit the Kernel did not submit with its own retryable `BACKEND_UNAVAILABLE` whose reason is
+ * that code (CT27).
  */
 const NOTHING_RAN_REASONS = new Set([
   'CAPACITY_EXHAUSTED',
@@ -29,7 +30,7 @@ const MAY_HAVE_APPLIED = 'the change may have applied. Rerun the same command: i
 
 /**
  * Translate one failure of a registry read or change into the CT29 vocabulary. Admin's declared
- * refusals (CT27, as A4/A5 ship them) keep their details; Kernel protocol refusals keep their
+ * refusals (CT27, as Admin's one `Domain` registry ships them) keep their details; Kernel protocol refusals keep their
  * numeric code in `details.status`. CLI errors (target, credential, input, local files) pass
  * through unchanged. Rerunning a command after REGISTRY_UNAVAILABLE is always safe; it can help
  * only when `details.retryable` is true.
@@ -119,8 +120,9 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
         { retryable: true, ...pick(details, ['reason']) },
         options,
       )
-    case 'REGISTERED_DOMAIN_CONFLICT':
-      // A concurrent change or a refused commit that left nothing behind: a rerun is safe.
+    case 'DOMAIN_CONFLICT':
+      // `changed-concurrently`, the only reason `publish`, `yank` and `unyank` declare: a
+      // concurrent change failed the one guarded commit, nothing changed and a rerun decides again.
       return new RegistryError(
         'REGISTRY_UNAVAILABLE',
         'Admin could not complete the change now; rerun the same command.',
@@ -145,7 +147,7 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
   if (error.code === 3002) {
     return new RegistryError(
       'REGISTRY_DOMAIN_NOT_FOUND',
-      'Admin knows no such Registered Domain or Publication for this caller.',
+      'Admin knows no such Domain or Publication for this caller.',
       { status: error.code },
       options,
     )
@@ -156,8 +158,8 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
 
 /**
  * A Kernel server-side refusal. On a change it is one of two cases: nothing ran (the call was not
- * admitted, or the Kernel refused the commit before sending it), or the outcome is unknown (Admin
- * could not settle a lost commit, A4/A5 `unsettledCommit`), which only a rerun settles. A read may
+ * admitted, or the Kernel refused the commit before sending it), or the outcome is unknown (the
+ * Kernel could not report the commit's outcome to Admin), which only a rerun settles. A read may
  * be retried on 5001.
  */
 function serverFailure(error: ResponseError, action: 'read' | 'change'): RegistryError {

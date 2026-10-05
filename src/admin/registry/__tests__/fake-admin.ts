@@ -5,6 +5,12 @@ import type { QueryAST } from '@astrale-os/sdk/query'
 import { ResponseError } from '@astrale-os/sdk/client'
 import { NodeId } from '@astrale-os/sdk/graph/node'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
+import {
+  BUNDLE_MEDIA_TYPE,
+  seal,
+  url as releaseUrl,
+  type DomainRelease,
+} from '@astrale-os/sdk/release'
 import { createHash } from 'node:crypto'
 
 import type { AdminRegistryContext } from '../client'
@@ -12,10 +18,12 @@ import type { AdminRegistryContext } from '../client'
 import { AdminContract } from '../../contract'
 
 /**
- * A fake Admin registry with the read and change rules A2-A5 ship (CT26/CT27): a Registered
- * Domain is read by its admins and installers (ObserveRegisteredDomain), a Publication by the
- * readers of its Domain (ReadPublication), `publish` and `yank`/`unyank` are domain_admin only,
- * a version is written once (same digest: created false; another digest: conflict).
+ * A fake Admin registry with the read and change rules of Admin's one `Domain` registry
+ * (CT26/CT27): a Domain is read by its admins and installers and by the members of a Fleet whose
+ * catalog lists it (ObserveDomain), a Publication by the Domain's admins and installers only
+ * (ReadPublication), `publish` and `yank`/`unyank` are domain_admin only, a version is written
+ * once (same digest: created false; another digest: conflict). Admin keeps no bundle: the fake
+ * deployments serve each release and its bundle, as a published deployment does.
  */
 export interface FakePublication {
   readonly id: string
@@ -27,7 +35,6 @@ export interface FakePublication {
   readonly dependencies: readonly { readonly origin: string; readonly revision: string }[]
   readonly commit?: string
   readonly dirty?: true
-  readonly bytes: Uint8Array
   readonly createdAt: string
   yankedAt?: string
   /** A field a later Admin release adds; the CLI must ignore it. */
@@ -39,17 +46,21 @@ export interface FakeDomain {
   readonly origin: string
   readonly admins: ReadonlySet<string>
   readonly installers: ReadonlySet<string>
+  /** Members of a Fleet whose catalog lists the Domain: they read it, not its Publications. */
+  readonly catalogReaders?: ReadonlySet<string>
   readonly publications: FakePublication[]
 }
 
+/** One immutable deployment: the `DomainRelease` v4 it serves and its Schema Bundle. */
 export interface FakeRelease {
   readonly url: string
   readonly releaseDigest: `sha256:${string}`
   readonly buildDigest: `sha256:${string}`
+  readonly document: DomainRelease
   readonly bytes: Uint8Array
 }
 
-export const BUNDLE_MEDIA_TYPE = 'application/vnd.astrale.domain-bundle+json;v=1'
+export { BUNDLE_MEDIA_TYPE }
 export const REVISION = `sha256:${'5'.repeat(64)}`
 
 export function digestOf(bytes: Uint8Array): `sha256:${string}` {
@@ -57,13 +68,29 @@ export function digestOf(bytes: Uint8Array): `sha256:${string}` {
 }
 
 export function release(name: string): FakeRelease {
+  const origin = 'issues.astrale.ai'
   const bytes = new TextEncoder().encode(JSON.stringify({ bundle: name }))
-  return {
-    url: `https://${name}.svc.registry-proof.test`,
-    releaseDigest: digestOf(new TextEncoder().encode(`release:${name}`)),
-    buildDigest: digestOf(new TextEncoder().encode(`build:${name}`)),
-    bytes,
-  }
+  const url = `https://${name}.svc.registry-proof.test`
+  const buildDigest = digestOf(new TextEncoder().encode(`build:${name}`))
+  const bundle = digestOf(bytes)
+  const document = seal({
+    format: 'astrale.domain.release',
+    version: 4,
+    origin,
+    identity: { issuer: url, subject: origin },
+    build: { digest: buildDigest },
+    schema: {
+      revision: REVISION,
+      bundle: {
+        href: `${url}/.well-known/astrale/bundle/${bundle.slice('sha256:'.length)}.json`,
+        ref: { digest: bundle, mediaType: BUNDLE_MEDIA_TYPE, size: bytes.length },
+      },
+    },
+    requirements: { capabilities: {} },
+    bindings: { callables: [], views: [] },
+    routes: [],
+  } as never)
+  return { url, releaseDigest: document.digest, buildDigest, document, bytes }
 }
 
 export function publication(
@@ -80,7 +107,6 @@ export function publication(
     buildDigest: source.buildDigest,
     schemaRevision: REVISION,
     dependencies: [{ origin: 'shell.astrale.ai', revision: REVISION }],
-    bytes: source.bytes,
     createdAt: '2026-10-04T10:00:00.000Z',
     ...extra,
   }
@@ -89,38 +115,46 @@ export function publication(
 export interface FakeAdminOptions {
   readonly caller: string
   readonly domains: FakeDomain[]
-  /** Releases Admin finds at their deployment URLs when it publishes. */
+  /** Deployments: what Admin finds when it publishes, and what `bundle` reads. */
   readonly releases?: readonly FakeRelease[]
-  /** Whether the caller holds the Kernel `download` grant (Shell Members do not today). */
-  readonly download?: boolean
   /** A refusal `publish` answers instead of reading the deployment. */
   readonly publishRefusal?: () => unknown
-  /** Bytes the download serves instead of the stored ones. */
+  /** What Admin's Services answered the retention mark of a publish. */
+  readonly retention?: 'marked' | 'failed' | 'not-applicable'
+  /** Bundle bytes the deployments serve instead of the ones their release describes. */
   readonly servedBytes?: Uint8Array
+  /** A release document the deployments serve instead of their own. */
+  readonly servedRelease?: unknown
+  /** An HTTP status every deployment GET answers instead of its document. */
+  readonly deploymentStatus?: number
 }
 
 export function fakeAdmin(options: FakeAdminOptions) {
   const queries: QueryAST[] = []
   const calls: Array<{ readonly target: string; readonly input: unknown }> = []
-  const downloads: Array<{ readonly node: string; readonly property: string }> = []
+  const fetches: Array<{ readonly url: string; readonly redirect?: RequestRedirect }> = []
   let caller = options.caller
   let nextPublication = 1_000
 
-  const readable = (domain: FakeDomain) =>
+  const versionsReadable = (domain: FakeDomain) =>
     domain.admins.has(caller) || domain.installers.has(caller)
+  const readable = (domain: FakeDomain) =>
+    versionsReadable(domain) || domain.catalogReaders?.has(caller) === true
 
   const query = async (ast: QueryAST) => {
     queries.push(ast)
-    const origin = propertyEqual(ast, AdminContract.properties.registeredDomain.origin)
+    const origin = propertyEqual(ast, AdminContract.properties.domain.origin)
     const domains = options.domains.filter((domain) => domain.origin === origin && readable(domain))
     const expands = ast.steps.some((step) => step.op === 'expand')
     const version = propertyEqual(ast, AdminContract.properties.publication.version)
     const nodes: Node[] = expands
-      ? domains.flatMap((domain) =>
-          domain.publications
-            .filter((entry) => version === undefined || entry.version === version)
-            .map(publicationNode),
-        )
+      ? domains
+          .filter(versionsReadable)
+          .flatMap((domain) =>
+            domain.publications
+              .filter((entry) => version === undefined || entry.version === version)
+              .map(publicationNode),
+          )
       : domains.map(domainNode)
     return {
       result: {
@@ -136,7 +170,7 @@ export function fakeAdmin(options: FakeAdminOptions) {
     calls.push({ target, input: request.input })
     const [receiver, method] = target.split('::')
     const id = receiver!.slice(1)
-    if (method === String(methodKey('RegisteredDomain', 'publish'))) {
+    if (method === String(methodKey('Domain', 'publish'))) {
       const domain = options.domains.find((entry) => entry.id === id)
       if (domain === undefined || !readable(domain)) throw refusal(3002, 'NOT_FOUND')
       if (!domain.admins.has(caller)) throw refusal(2004, 'ACCESS_DENIED')
@@ -150,7 +184,7 @@ export function fakeAdmin(options: FakeAdminOptions) {
       const existing = domain.publications.find((entry) => entry.version === input.version)
       if (existing !== undefined) {
         if (existing.releaseDigest === input.releaseDigest)
-          return { publication: summaryOf(existing), created: false }
+          return { publication: summaryOf(existing), created: false, retention }
         throw declared(4001, 'PUBLICATION_VERSION_CONFLICT', { existing: summaryOf(existing) })
       }
       if (options.publishRefusal !== undefined) throw options.publishRefusal()
@@ -167,7 +201,7 @@ export function fakeAdmin(options: FakeAdminOptions) {
         ...(input.dirty === true ? { dirty: true as const } : {}),
       })
       domain.publications.push(created)
-      return { publication: summaryOf(created), created: true }
+      return { publication: summaryOf(created), created: true, retention }
     }
     for (const name of ['yank', 'unyank'] as const) {
       if (method !== String(methodKey('Publication', name))) continue
@@ -175,7 +209,7 @@ export function fakeAdmin(options: FakeAdminOptions) {
         entry.publications.some((candidate) => candidate.id === id),
       )
       const entry = domain?.publications.find((candidate) => candidate.id === id)
-      if (domain === undefined || entry === undefined || !readable(domain))
+      if (domain === undefined || entry === undefined || !versionsReadable(domain))
         throw refusal(3002, 'NOT_FOUND')
       if (!domain.admins.has(caller)) throw refusal(2004, 'ACCESS_DENIED')
       if (name === 'yank') entry.yankedAt ??= '2026-10-04T12:00:00.000Z'
@@ -185,52 +219,60 @@ export function fakeAdmin(options: FakeAdminOptions) {
     throw refusal(3001, 'METHOD_NOT_FOUND')
   }
 
-  const download = async (location: { readonly node: string; readonly property: string }) => {
-    downloads.push(location)
-    if (options.download !== true) throw refusal(2004, 'ACCESS_DENIED')
-    const entry = options.domains
-      .filter(readable)
-      .flatMap((domain) => domain.publications)
-      .find((candidate) => candidate.id === location.node)
-    if (entry === undefined || location.property !== AdminContract.properties.publication.bundle)
-      throw refusal(3002, 'NOT_FOUND')
-    const bytes = options.servedBytes ?? entry.bytes
-    return {
-      body: (async function* () {
-        yield bytes.subarray(0, Math.floor(bytes.length / 2))
-        yield bytes.subarray(Math.floor(bytes.length / 2))
-      })(),
-      length: bytes.length,
-      mediaType: BUNDLE_MEDIA_TYPE,
+  const retention = options.retention ?? 'marked'
+
+  /** The deployments, as a published one serves them: anyone may read them, in place. */
+  const fetch = async (url: string, init: RequestInit): Promise<Response> => {
+    fetches.push({ url, ...(init.redirect === undefined ? {} : { redirect: init.redirect }) })
+    if (options.deploymentStatus !== undefined)
+      return new Response('unavailable', { status: options.deploymentStatus })
+    for (const served of options.releases ?? []) {
+      if (url === releaseUrl(served.url))
+        return Response.json(options.servedRelease ?? served.document)
+      if (url === served.document.schema.bundle.href) {
+        const bytes = options.servedBytes ?? served.bytes
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(bytes.subarray(0, Math.floor(bytes.length / 2)))
+              controller.enqueue(bytes.subarray(Math.floor(bytes.length / 2)))
+              controller.close()
+            },
+          }),
+          { headers: { 'content-type': BUNDLE_MEDIA_TYPE } },
+        )
+      }
     }
+    return new Response('not found', { status: 404 })
   }
 
   const context = {
-    session: { call, content: { download } },
+    session: { call },
     graph: { query },
+    deployment: { fetch, timeoutMs: 5_000 },
   } as unknown as AdminRegistryContext
 
   return {
     context,
     queries,
     calls,
-    downloads,
+    fetches,
     as(principal: string) {
       caller = principal
     },
   }
 }
 
-function methodKey(className: 'RegisteredDomain' | 'Publication', name: string): string {
+function methodKey(className: 'Domain' | 'Publication', name: string): string {
   return `admin.astrale.ai:class.${className}.method.${name}`
 }
 
 function domainNode(domain: FakeDomain): Node {
   return {
     id: NodeId(domain.id),
-    class: 'admin.astrale.ai:RegisteredDomain' as Node['class'],
+    class: 'admin.astrale.ai:Domain' as Node['class'],
     props: normalizeProperties({
-      [AdminContract.properties.registeredDomain.origin]: domain.origin,
+      [AdminContract.properties.domain.origin]: domain.origin,
     }),
   }
 }
@@ -249,11 +291,6 @@ function publicationNode(entry: FakePublication): Node {
       [keys.dependencies]: entry.dependencies.map((dependency) => ({ ...dependency })),
       ...(entry.commit === undefined ? {} : { [keys.commit]: entry.commit }),
       ...(entry.dirty === undefined ? {} : { [keys.dirty]: entry.dirty }),
-      [keys.bundle]: {
-        digest: digestOf(entry.bytes),
-        mediaType: BUNDLE_MEDIA_TYPE,
-        size: entry.bytes.length,
-      },
       ...(entry.yankedAt === undefined ? {} : { [keys.yankedAt]: entry.yankedAt }),
       [keys.createdAt]: entry.createdAt,
       'kernel.astrale.ai:class.Timestamped.property.updatedAt': entry.createdAt,
@@ -261,7 +298,7 @@ function publicationNode(entry: FakePublication): Node {
   }
 }
 
-/** The `PublicationSummary` Admin's Methods answer (CT27 as A4/A5 ship it). */
+/** The `PublicationSummary` Admin's Methods answer (CT27). */
 export function summaryOf(entry: FakePublication): Record<string, unknown> {
   return {
     id: `@${entry.id}`,
@@ -273,11 +310,6 @@ export function summaryOf(entry: FakePublication): Record<string, unknown> {
     dependencies: entry.dependencies.map((dependency) => ({ ...dependency })),
     ...(entry.commit === undefined ? {} : { commit: entry.commit }),
     ...(entry.dirty === undefined ? {} : { dirty: entry.dirty }),
-    bundle: {
-      digest: digestOf(entry.bytes),
-      mediaType: BUNDLE_MEDIA_TYPE,
-      size: entry.bytes.length,
-    },
     createdAt: entry.createdAt,
     ...(entry.yankedAt === undefined ? {} : { yankedAt: entry.yankedAt }),
     ...(entry.verifiedAt === undefined ? {} : { verifiedAt: entry.verifiedAt }),
