@@ -33,7 +33,7 @@ export interface FakeAdminInput {
   readonly instances?: ReadonlyArray<Readonly<{ id: string; slug: string }>>
   /** `[relation, source id, target id]`. */
   readonly edges?: ReadonlyArray<readonly [FakeRelation, string, string]>
-  /** Answer one row per Edge witness instead of one per selected Node. */
+  /** Break the Kernel's distinct Node selection: answer one row per Edge witness. */
   readonly witnesses?: boolean
 }
 

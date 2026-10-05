@@ -381,7 +381,6 @@ describe('one Domain per origin (admin #446)', () => {
 
   test('a Domain both contained and listed by the Fleet is listed once', async () => {
     const admin = merged({
-      witnesses: true,
       edges: [
         ['fleet_contains', 'tenant-fleet', 'shell-domain'],
         ['fleet_lists_domain', 'tenant-fleet', 'shell-domain'],
@@ -390,12 +389,22 @@ describe('one Domain per origin (admin #446)', () => {
 
     const listed = await (await connect(admin, '@tenant-fleet')).list()
 
+    // The Kernel selects each Node once (Query V2 law 9), as the fake Admin does.
     expect(listed.map((domain) => domain.id)).toEqual(['@shell-domain'])
-    // The Admin answered the Domain once per Edge; the CLI keeps it once.
-    const answered = (await admin.query.mock.results[0]!.value) as Awaited<
-      ReturnType<typeof admin.query>
-    >
-    expect(answered.result.nodes).toHaveLength(2)
+  })
+
+  test('a Domain Admin answers twice is refused, not silently kept once', async () => {
+    const admin = merged({
+      witnesses: true,
+      edges: [
+        ['fleet_contains', 'tenant-fleet', 'shell-domain'],
+        ['fleet_lists_domain', 'tenant-fleet', 'shell-domain'],
+      ],
+    })
+
+    await expect((await connect(admin, '@tenant-fleet')).list()).rejects.toThrow(
+      'Admin Domain catalog repeated a Node.',
+    )
   })
 
   test('a catalog Domain without a discovery URL is listed without one', async () => {

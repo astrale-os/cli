@@ -53,7 +53,8 @@ export async function connectAdminCatalog(
     if (observedFleet === undefined) return []
     const [nodes, defaultsPage] = await Promise.all([
       // A Fleet's catalog is the Domains it contains and the Domains it lists from another Fleet:
-      // one Domain per origin, shared by every Fleet that lists it.
+      // one Domain per origin, shared by every Fleet that lists it. The Kernel selects each Node
+      // once, so a repeat stays a refused anomaly.
       readAllNodes(
         context.graph,
         Query.from({ nodes: [observedFleet] })
@@ -70,7 +71,6 @@ export async function connectAdminCatalog(
           label: 'Admin Domain catalog',
           maximum: MAXIMUM_DOMAINS,
           maximumPages: MAXIMUM_PAGES,
-          deduplicate: true,
         },
       ),
       context.graph.neighbors(observedFleet, AdminContract.edges.fleetInstallsDomainByDefault, {
