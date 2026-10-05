@@ -10,7 +10,7 @@ Issuer, Publication, and redirect internals belong in `debugging.md` when the no
 
 ```sh
 npx create-astrale-domain@beta issues \
-  --yes --adapter astrale --frontend react --instance development \
+  --yes --adapter astrale --frontend react \
   --origin issues.example --dir issues --no-link
 ```
 

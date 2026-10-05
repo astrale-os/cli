@@ -211,7 +211,9 @@ button. Sending runs the whole order in one gesture —
 `create-astrale-domain <name> --yes` then `pnpm install` in the workspace root
 (on the scaffolder line that matches the SDK Studio reads — NOT `@latest`, whose
 last stable release is a generation behind and writes domains nothing here can
-render),
+render — from the first release whose managed scaffold names no instance: the
+active instance is never passed, an operator picks one when installing the URL
+a deploy prints),
 the staged files into the new domain's `.domain-studio/context/docs`, and the
 message to its agent as a first turn. That chat opens with a **New domain** chip
 naming the exact origin and repo path; the agent receives the same target plus
