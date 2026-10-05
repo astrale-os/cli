@@ -219,22 +219,42 @@ exact deployment and optional installation targets; they do not use the CLI's ac
   Domain moves or none does), which is how dependent Domains move together.
   The CLI reads what each URL serves first (a 503 is read again for up to
   60 s), refuses two references to one origin, pins the release digest it
-  read, and verifies the installed pins afterwards. It owns the explicit
-  identity-override consent prompt (`--allow-identity-override` in scripts).
+  read, and verifies the installed pins afterwards.
   `--direct` is deprecated: still accepted, it changes nothing.
+- An issuer change is never silent. When a URL serves another issuer than
+  the one its origin is installed under, the install needs consent, recorded
+  by the Kernel in the installation: `--allow-issuer-change` for a new
+  deployment of the same line (same `<line>-` prefix and routing domain),
+  `--allow-issuer-change=<origin>` for any other change (a legacy issuer
+  moving to its first deployment included), or typing the origin at a
+  terminal. The replaced issuer keeps working while its in-flight work
+  drains; `--revoke-previous` cuts it at the activation. A first install from
+  a deployment URL needs no consent; the CLI notes the unverified claim.
+  The origin is given only after `=`: a bare `--allow-issuer-change` never
+  takes the next argument. Without consent, ISSUER_CHANGE_NOT_CONSENTED lists
+  every unconsented change in `details.origins` (`origin`, `installed`,
+  `replacement`, `line`) before anything is sent; `--json` reports each
+  consent as `references[].consent` (`from`, `to`, `previous`).
+- A source that serves only the legacy `domain.json`, and every URL install
+  on a Kernel without the installed-release listing, keep the
+  identity-override prompt (`--allow-identity-override` in scripts) when the
+  declared origin differs from the serving host. Such a Kernel refuses
+  `--allow-issuer-change` (KERNEL_RELEASE_UNSUPPORTED) before any install.
 - One bare origin installs that published catalog Domain through the admin
   control plane onto an admin-managed instance.
 
 ```bash
 astrale domain install https://crm.example -i staging
 astrale domain install https://agencies.example https://employees.example -i staging
+astrale domain install <new-deployment-url> --allow-issuer-change -i staging
+astrale domain install <deployment-url> --allow-issuer-change=crm.example -i staging
 astrale domain install crm.example -i staging
 astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive -i staging
 ```
 
-A replacement cannot change an installed Domain issuer. If that identity
-change is intentional, uninstall the origin first and then install it again.
+On a Kernel that takes no issuer consent, a replacement cannot change an
+installed Domain issuer: uninstall the origin first and then install it again.
 Uninstall accepts one or more origins and removes the complete selected set atomically, so
 dependencies inside that set are allowed. Safe mode is the default and never deletes application
 data. `--destructive` deletes application facts whose concrete Class belongs to a selected Domain;

@@ -19,12 +19,12 @@ import type { InstallFailure, UrlSource } from '../install-call'
 
 import { log } from '../../../lib/log'
 import { isMachine, output } from '../../../lib/output'
+import { runInstallCall } from '../install-call'
 import {
   ensureIdentityOverrideConsent,
   isIdentityOverride,
   warnUnconfirmedOverride,
-} from '../identity-override'
-import { runInstallCall } from '../install-call'
+} from './identity-override'
 
 type PublicationInstallOpts = KernelCommandOpts & {
   readonly instance?: string

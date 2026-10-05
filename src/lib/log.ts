@@ -29,6 +29,7 @@ export function fatal(e: unknown, opts?: MachineOpts & { readonly debug?: boolea
   if (isMachine(opts)) {
     const payload: Record<string, unknown> = { error: code, message: msg }
     if (e instanceof AstraleError && e.hint) payload.hint = e.hint
+    if (e instanceof AstraleError && e.details) payload.details = e.details
     process.stderr.write(JSON.stringify(payload) + '\n')
   } else {
     // Same shape as `renderFailure` (connection/failure): bold code, then the

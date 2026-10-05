@@ -25,8 +25,21 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
   }
 
   if (def.options) {
+    const valuedByEquals: string[] = []
     for (const opt of def.options) {
-      if (opt.hidden) {
+      if (opt.repeatable) {
+        const o = new Option(opt.flags, opt.description)
+        // Commander stores `true` for an optional value written bare, replacing what was
+        // collected before; a preset value keeps every occurrence in the array.
+        if (o.optional) o.preset('')
+        o.argParser((value: string, previous: unknown) => [
+          ...(Array.isArray(previous) ? (previous as string[]) : []),
+          value,
+        ])
+        if (opt.hidden) o.hideHelp()
+        cmd.addOption(o)
+        if (o.optional && o.long !== undefined) valuedByEquals.push(o.long)
+      } else if (opt.hidden) {
         const o = new Option(opt.flags, opt.description)
         if (opt.choices) o.choices(opt.choices)
         if (opt.default !== undefined) o.default(opt.default)
@@ -43,6 +56,13 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
         cmd.option(opt.flags, opt.description)
       }
     }
+    if (valuedByEquals.length > 0) {
+      // Commander gives an optional value the next argument when it is not an option; these
+      // options take theirs only after `=`, so a bare occurrence is written `--flag=` (value '').
+      const parseOptions = cmd.parseOptions.bind(cmd)
+      cmd.parseOptions = (argv: string[]) =>
+        parseOptions(bindOptionalValuesByEquals(argv, valuedByEquals))
+    }
   }
 
   // CommandDefinition keeps each callback tuple opaque; Commander materializes
@@ -50,6 +70,20 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
   cmd.action(def.action as CommanderAction)
 
   if (def.afterHelpText) cmd.addHelpText('after', def.afterHelpText)
+}
+
+/**
+ * Rewrite each bare occurrence of the named long options, before a `--` literal, to `--flag=`, so
+ * Commander never binds the next argument to them.
+ */
+export function bindOptionalValuesByEquals(
+  argv: readonly string[],
+  longFlags: readonly string[],
+): string[] {
+  const end = argv.indexOf('--')
+  return argv.map((token, index) =>
+    (end === -1 || index < end) && longFlags.includes(token) ? `${token}=` : token,
+  )
 }
 
 /**

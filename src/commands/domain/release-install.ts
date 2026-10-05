@@ -25,8 +25,19 @@ import {
 } from '../../lib/domain-release'
 import { fatal, log } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
-import { consentToDeclaredOrigin, warnUnconfirmedOverride } from './identity-override'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
+import {
+  admitIssuerChanges,
+  asksIssuerConsent,
+  firstInstallNotice,
+  issuerChangeConsent,
+  issuerConsentRequest,
+  plannedIssuerChange,
+  type IssuerChange,
+  type IssuerChangeConsent,
+  type IssuerConsentRequest,
+} from './issuer-consent'
+import { consentToDeclaredOrigin, warnUnconfirmedOverride } from './legacy/identity-override'
 import { installPublications } from './legacy/publication-install'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
@@ -42,6 +53,13 @@ export type UrlInstallOpts = KernelCommandOpts & {
   readonly operation?: string
   readonly token?: string
   readonly allowIdentityOverride?: boolean
+  /** Every `--allow-issuer-change` occurrence: `''` without an origin, else the origin it names. */
+  readonly allowIssuerChange?: readonly string[]
+  readonly revokePrevious?: boolean
+  // Programmatic opt-out for callers that drive the install as a function; the CLI flags are read
+  // from argv by `canPrompt`.
+  readonly ci?: boolean
+  readonly noPrompt?: boolean
 }
 
 /** The pin, revision and issuer of one installation, as the installed listing reports them. */
@@ -52,9 +70,21 @@ export interface InstalledState {
 }
 
 /**
+ * The issuer consent one reference's root carried (CT24): the installed issuer it replaced, the
+ * issuer that replaced it, and what happens to the replaced one (the Kernel default, `drain`, or
+ * `revoke` with --revoke-previous).
+ */
+export interface ReferenceConsent {
+  readonly from: string
+  readonly to: string
+  readonly previous: 'drain' | 'revoke'
+}
+
+/**
  * What one reference installed: the deployment it names, the pin read from what it serves before
- * the install (null when the CLI could not read it), and the installation before and after, as the
- * caller can read it (null when absent or not readable).
+ * the install (null when the CLI could not read it), the installation before and after, as the
+ * caller can read it (null when absent or not readable), and the issuer consent its root carried,
+ * present only when the install changed its issuer.
  */
 export interface InstallReference {
   readonly reference: string
@@ -63,10 +93,22 @@ export interface InstallReference {
   readonly pin: InstalledPin | null
   readonly previous: InstalledState | null
   readonly installed: InstalledState | null
+  readonly consent?: ReferenceConsent
 }
 
-/** `--json` of an install by URL: the Kernel result, unchanged, plus one entry per reference. */
-export type InstallReport = InstallResult & { readonly references: readonly InstallReference[] }
+/** A Kernel refusal of a request whose install had already committed (AM-81). */
+export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
+
+/**
+ * `--json` of an install by URL: the Kernel result, unchanged, plus one entry per reference. When
+ * the Kernel refused the request but every reference is already installed as requested (AM-81),
+ * the result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
+ * refusal, so a consumer can tell it from a Kernel replay.
+ */
+export type InstallReport = InstallResult & {
+  readonly references: readonly InstallReference[]
+  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
+}
 
 export interface UrlInstallDependencies {
   readonly acceptOperationId: (input: unknown) => string
@@ -89,8 +131,9 @@ const defaultDependencies: UrlInstallDependencies = Object.freeze({
 /**
  * Install every URL reference in one atomic Kernel operation on the instance Kernel. A Kernel that
  * lists installed releases receives the `release` request, guarded by the release digest each URL
- * serves; a Kernel without that listing receives the pre-release `publication` request
- * (`legacy/publication-install.ts`).
+ * serves and carrying the operator's consent for each root whose issuer it changes (D7); a Kernel
+ * without that listing receives the pre-release `publication` request
+ * (`legacy/publication-install.ts`) and takes no issuer consent.
  */
 export async function installByUrl(
   references: readonly [string, ...string[]],
@@ -100,7 +143,9 @@ export async function installByUrl(
   const deps = { ...defaultDependencies, ...dependencies }
   let sources: readonly [UrlSource, ...UrlSource[]]
   let operation: string
+  let consent: IssuerChangeConsent
   try {
+    consent = issuerChangeConsent(opts.allowIssuerChange, opts.revokePrevious)
     sources = references.map((url) => ({ url, host: validateInstallUrl(url) })) as [
       UrlSource,
       ...UrlSource[],
@@ -127,8 +172,11 @@ export async function installByUrl(
       opts,
       async (context) => {
         const before = await installedReleases(context.session)
-        if (before === undefined) return installPublications(context, sources, operation, opts)
-        return installReleases(context, sources, before, operation, opts, deps)
+        if (before === undefined) {
+          if (asksIssuerConsent(consent)) return { error: releaseUnsupported(), render: 'input' }
+          return installPublications(context, sources, operation, opts)
+        }
+        return installReleases(context, sources, before, operation, consent, opts, deps)
       },
       { principal: 'caller' },
     )
@@ -156,21 +204,27 @@ export async function installedReleases(
   }
 }
 
-/** One `release` source per reference, guarded by the release digest read from it when it serves one. */
+/**
+ * One `release` source per reference, guarded by the release digest read from it when it serves
+ * one, and carrying the issuer consent of a root whose issuer the install changes.
+ */
 export function releaseInstallInput(
   references: readonly [string, ...string[]],
   served: readonly (ServedDeployment | undefined)[],
   operation: string,
   token?: string,
+  consents: readonly (IssuerConsentRequest | undefined)[] = [],
 ): InstallRequest {
   const domains = references.map((url, index): DomainRequest => {
     const pin = served[index]?.pin
+    const consent = consents[index]
     return Object.freeze({
       release: Object.freeze({
         url,
         ...(token === undefined ? {} : { token }),
         ...(pin?.kind === 'release' ? { digest: pin.release } : {}),
       }),
+      ...(consent === undefined ? {} : { consent }),
     })
   })
   return Object.freeze({
@@ -185,8 +239,11 @@ export function installReferences(
   served: readonly (ServedDeployment | undefined)[],
   before: readonly InstalledRelease[],
   after: readonly InstalledRelease[] | undefined,
+  changes: readonly (IssuerChange | undefined)[] = [],
+  consent: IssuerChangeConsent | undefined = undefined,
 ): readonly InstallReference[] {
   return references.map((reference, index) => {
+    const change = changes[index]
     const deployment = served[index]
     const url = new URL(reference).origin
     const origin =
@@ -209,6 +266,15 @@ export function installReferences(
       pin: deployment?.pin ?? null,
       previous: state(before),
       installed: state(after),
+      ...(change === undefined
+        ? {}
+        : {
+            consent: Object.freeze({
+              from: change.from,
+              to: change.to,
+              previous: consent?.revokePrevious === true ? ('revoke' as const) : ('drain' as const),
+            }),
+          }),
     })
   })
 }
@@ -234,6 +300,7 @@ async function installReleases(
   sources: readonly [UrlSource, ...UrlSource[]],
   before: readonly InstalledRelease[],
   operation: string,
+  consent: IssuerChangeConsent,
   opts: UrlInstallOpts,
   deps: UrlInstallDependencies,
 ): Promise<InstallFailure | undefined> {
@@ -241,66 +308,137 @@ async function installReleases(
   const references = sources.map((source) => source.url) as [string, ...string[]]
   const retry = notYetActiveWindow(deps)
   let served: readonly (ServedDeployment | undefined)[]
-  const consented: (string | undefined)[] = []
+  let changes: readonly (IssuerChange | undefined)[]
+  const overridden: (string | undefined)[] = []
   try {
     for (const reference of references) admitReference(reference)
     served = await Promise.all(
       references.map((reference) => readWithRetry(reference, retry, deps, machine)),
     )
     refuseDuplicateOrigins(references, served)
+    refuseUnknownConsentOrigins(consent, served)
+    changes = references.map((reference, index) => {
+      const deployment = served[index]
+      return deployment === undefined
+        ? undefined
+        : plannedIssuerChange(reference, deployment, before)
+    })
     for (const [index, source] of sources.entries()) {
       const deployment = served[index]
-      consented.push(
-        deployment === undefined
-          ? undefined
-          : await consentToDeclaredOrigin(
+      // The identity-override gate stays for a source that serves only domain.json (legacy).
+      overridden.push(
+        deployment?.pin.kind === 'legacy'
+          ? await consentToDeclaredOrigin(
               deployment.origin,
               source.host,
               opts.allowIdentityOverride ?? false,
               machine,
-            ),
+            )
+          : undefined,
       )
+      if (
+        changes[index] === undefined &&
+        deployment !== undefined &&
+        !machine &&
+        !installedOrigin(before, deployment)
+      ) {
+        const notice = firstInstallNotice(deployment, source.url)
+        if (notice !== undefined) log.warn(notice)
+      }
     }
+    await admitIssuerChanges(
+      changes.filter((change): change is IssuerChange => change !== undefined),
+      consent,
+      machine,
+      opts,
+    )
   } catch (error) {
     return { error, render: 'input' }
   }
+  if (!machine) warnUnreadableConsentOrigins(consent, served, before)
+  if (!machine && consent.revokePrevious && changes.every((change) => change === undefined)) {
+    log.dim('  --revoke-previous: no installed issuer changes, so there is nothing to revoke.')
+  }
 
-  const request = releaseInstallInput(references, served, operation, opts.token)
+  const request = releaseInstallInput(
+    references,
+    served,
+    operation,
+    opts.token,
+    changes.map((change) =>
+      change === undefined ? undefined : issuerConsentRequest(change, consent),
+    ),
+  )
   let mismatched: readonly InstallReference[] = []
-  const failure = await runInstallCall<{
-    readonly result: InstallResult
-    readonly after: readonly InstalledRelease[] | undefined
-  }>(opts, {
+  const failure = await runInstallCall<InstallOutcome>(opts, {
     label:
       references.length === 1
         ? `Installing domain from ${references[0]} (operation ${operation})`
         : `Installing ${references.length} domains (operation ${operation})`,
-    recovery: { operation, retry: releaseInstallRetry(references, operation, opts) },
-    call: async () => {
-      const result = await context.session.schema.install(request)
-      return { result, after: await installedAfter(context.session, machine) }
+    recovery: {
+      operation,
+      retry: releaseInstallRetry(references, operation, opts, changes, overridden),
     },
-    format: ({ result, after }, raw) => {
-      const report = installReferences(references, served, before, after)
+    call: async () => {
+      try {
+        const result = await context.session.schema.install(request)
+        return { result, after: await installedAfter(context.session, machine) }
+      } catch (error) {
+        const recovered = await recoverCommittedInstall(error, context.session, references, served)
+        if (recovered !== undefined) return recovered
+        throw error
+      }
+    },
+    format: ({ result, after, recovered }, raw) => {
+      const report = installReferences(
+        references,
+        served,
+        before,
+        after,
+        recovered === undefined ? changes : [],
+        consent,
+      )
       mismatched = pinMismatches(report, after)
       if (raw) {
-        output({ ...result, references: report } satisfies InstallReport, opts)
-      } else {
-        presentReferences(report, operation, result)
-        for (const [index, reference] of report.entries()) {
-          if (reference.origin !== null) {
-            warnUnconfirmedOverride(
-              reference.origin,
-              sources[index]!.host,
-              consented[index],
-              machine,
-            )
-          }
-          if (reference.installed === null && after !== undefined) {
-            log.warn(
-              `The installation of ${reference.origin ?? reference.reference} is not readable by this identity; its pin was not verified.`,
-            )
-          }
+        output(
+          {
+            ...result,
+            references: report,
+            ...(recovered === undefined ? {} : { recovered }),
+          } satisfies InstallReport,
+          opts,
+        )
+        return
+      }
+      presentReferences(report, operation, result)
+      if (recovered !== undefined) {
+        log.dim(
+          `  The Kernel refused this install (${recovered.refusal}), but every Domain is installed as requested: an earlier install already committed it.`,
+        )
+      }
+      for (const [index, reference] of report.entries()) {
+        if (reference.consent !== undefined) {
+          log.dim(
+            `  ${reference.origin}: issuer ${reference.consent.from} -> ${reference.consent.to} ` +
+              `(${changes[index]?.line === 'same' ? 'same line' : 'another line'}; ` +
+              `the previous issuer ${reference.consent.previous === 'revoke' ? 'is revoked' : 'drains'})`,
+          )
+        }
+      }
+      for (const [index, reference] of report.entries()) {
+        const pin = reference.pin ?? reference.installed?.pin
+        if (reference.origin !== null && pin?.kind === 'legacy') {
+          warnUnconfirmedOverride(
+            reference.origin,
+            sources[index]!.host,
+            overridden[index],
+            machine,
+          )
+        }
+        if (reference.installed === null && after !== undefined) {
+          log.warn(
+            `The installation of ${reference.origin ?? reference.reference} is not readable by this identity; its pin was not verified.`,
+          )
         }
       }
     },
@@ -308,6 +446,136 @@ async function installReleases(
   if (failure !== undefined) return failure
   if (mismatched.length > 0) return { error: pinMismatchError(mismatched), render: 'input' }
   return undefined
+}
+
+/** What the install call gives the presentation: the Kernel result and the listing read after it. */
+interface InstallOutcome {
+  readonly result: InstallResult
+  readonly after: readonly InstalledRelease[] | undefined
+  /** Present when the Kernel refused a request whose install had already committed (AM-81). */
+  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
+}
+
+function installedOrigin(
+  installed: readonly InstalledRelease[],
+  deployment: ServedDeployment,
+): boolean {
+  return installed.some((entry) => entry.origin === deployment.origin)
+}
+
+/**
+ * An origin named by `--allow-issuer-change=<origin>` must be one this install reads; a typo would
+ * otherwise consent to nothing. Unreadable references leave the check open.
+ */
+function refuseUnknownConsentOrigins(
+  consent: IssuerChangeConsent,
+  served: readonly (ServedDeployment | undefined)[],
+): void {
+  if (served.some((deployment) => deployment === undefined)) return
+  const origins = served.map((deployment) => deployment!.origin)
+  for (const origin of consent.origins) {
+    if (!origins.includes(origin)) {
+      throw new AstraleError(
+        'INVALID_FLAG',
+        `--allow-issuer-change=${origin} names no Domain of this install.`,
+        `The references serve ${origins.join(', ')}.`,
+      )
+    }
+  }
+}
+
+/**
+ * An origin named by `--allow-issuer-change=<origin>` that this install serves but whose
+ * installation the caller cannot read gets no consent: the CLI plans consents from the installed
+ * listing only and never builds one from a Kernel refusal. Either the origin is not installed (a
+ * first install needs no consent) or the listing hides it; the operator is told before the send.
+ */
+function warnUnreadableConsentOrigins(
+  consent: IssuerChangeConsent,
+  served: readonly (ServedDeployment | undefined)[],
+  before: readonly InstalledRelease[],
+): void {
+  for (const origin of consent.origins) {
+    const named = served.some((deployment) => deployment?.origin === origin)
+    if (!named || before.some((entry) => entry.origin === origin)) continue
+    log.warn(
+      `--allow-issuer-change=${origin}: ${origin} is not among the installations this identity can read, so no consent is sent. ` +
+        'If it is installed, consenting to its issuer change needs read access to its installation.',
+    )
+  }
+}
+
+/**
+ * AM-81: an issuer consent sent after its install committed is refused, under a new operation id as
+ * SCHEMA_INPUT_INVALID at `/domains/<i>/consent` (the Domain no longer changes issuer), under the
+ * same id as SCHEMA_OPERATION_CONFLICT (a retry planned from the moved listing carries no consent).
+ * Before such a refusal is reported, the installations are read back: when every reference is
+ * installed from its URL with the pin read before the install, the install asked for holds, and
+ * the command reports it as already current with the installed Domains as the Kernel describes them,
+ * marked `recovered` with the Kernel refusal it recovered from.
+ */
+async function recoverCommittedInstall(
+  error: unknown,
+  session: ClientSession,
+  references: readonly string[],
+  served: readonly (ServedDeployment | undefined)[],
+): Promise<InstallOutcome | undefined> {
+  const refusal = committedConsentRefusal(error)
+  if (refusal === undefined) return undefined
+  let after: readonly InstalledRelease[]
+  try {
+    after = await session.schema.installed()
+  } catch {
+    return undefined
+  }
+  const origins: string[] = []
+  for (const [index, reference] of references.entries()) {
+    const deployment = served[index]
+    const installed = after.find((entry) => entry.origin === deployment?.origin)
+    if (
+      deployment === undefined ||
+      installed === undefined ||
+      !samePin(deployment.pin, installed.pin) ||
+      installed.url !== new URL(reference).origin
+    ) {
+      return undefined
+    }
+    origins.push(deployment.origin)
+  }
+  let domains: CurrentDomains
+  try {
+    domains = (await Promise.all(
+      origins.map((origin) => session.schema.inspect(origin as never)),
+    )) as unknown as CurrentDomains
+  } catch {
+    return undefined
+  }
+  return Object.freeze({
+    result: Object.freeze({ changed: false, domains }) as InstallResult,
+    after,
+    recovered: Object.freeze({ refusal }),
+  })
+}
+
+type CurrentDomains = Extract<InstallResult, { readonly changed: false }>['domains']
+
+function committedConsentRefusal(error: unknown): CommittedInstallRefusal | undefined {
+  if (!(error instanceof ResponseError)) return undefined
+  const code = reasonCode(error.reason)
+  if (code === 'SCHEMA_OPERATION_CONFLICT') return code
+  if (code !== 'SCHEMA_INPUT_INVALID') return undefined
+  const details = (error.reason as { readonly details?: { readonly path?: unknown } }).details
+  return typeof details?.path === 'string' && /^\/domains\/\d+\/consent$/u.test(details.path)
+    ? code
+    : undefined
+}
+
+function releaseUnsupported(): AstraleError {
+  return new AstraleError(
+    'KERNEL_RELEASE_UNSUPPORTED',
+    'This Kernel does not list installed releases, so it takes no issuer consent: --allow-issuer-change and --revoke-previous are refused before any install.',
+    'Install without them: on this Kernel the identity-override gate (--allow-identity-override) still applies. Issuer consent needs a Host release whose Kernel lists installed releases and accepts consents.',
+  )
 }
 
 /**
@@ -435,11 +703,22 @@ function releaseInstallRetry(
   references: readonly string[],
   operation: string,
   opts: UrlInstallOpts,
+  changes: readonly (IssuerChange | undefined)[],
+  overridden: readonly (string | undefined)[],
 ): string {
   const url = opts.url === undefined ? '' : ` --url ${opts.url}`
   const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
   const identity = opts.as === undefined ? '' : ` --as ${opts.as}`
-  return `astrale domain install ${references.join(' ')} --operation ${operation}${url}${instance}${identity}`
+  // The same operation must carry the same consents: each change by its origin, never a prompt.
+  const consents = changes
+    .filter((change): change is IssuerChange => change !== undefined)
+    .map((change) => ` --allow-issuer-change=${change.origin}`)
+    .join('')
+  const revoke = opts.revokePrevious === true ? ' --revoke-previous' : ''
+  const override = overridden.some((origin) => origin !== undefined)
+    ? ' --allow-identity-override'
+    : ''
+  return `astrale domain install ${references.join(' ')} --operation ${operation}${consents}${revoke}${override}${url}${instance}${identity}`
 }
 
 function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError {
