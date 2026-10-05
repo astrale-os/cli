@@ -121,7 +121,7 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
         options,
       )
     case 'DOMAIN_CONFLICT':
-      // `changed-concurrently`, the only reason `publish`, `yank` and `unyank` declare: a
+      // `changed-concurrently`, the only reason `publish`, `yank` and `unyank` throw: a
       // concurrent change failed the one guarded commit, nothing changed and a rerun decides again.
       return new RegistryError(
         'REGISTRY_UNAVAILABLE',

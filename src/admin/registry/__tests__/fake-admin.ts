@@ -172,8 +172,9 @@ export function fakeAdmin(options: FakeAdminOptions) {
     const id = receiver!.slice(1)
     if (method === String(methodKey('Domain', 'publish'))) {
       const domain = options.domains.find((entry) => entry.id === id)
-      if (domain === undefined || !readable(domain)) throw refusal(3002, 'NOT_FOUND')
-      if (!domain.admins.has(caller)) throw refusal(2004, 'ACCESS_DENIED')
+      if (domain === undefined) throw refusal(3002, 'NOT_FOUND')
+      // A caller who cannot read the receiver is refused 2004, as the Kernel answers (#446).
+      if (!readable(domain) || !domain.admins.has(caller)) throw refusal(2004, 'ACCESS_DENIED')
       const input = request.input as {
         version: string
         deploymentUrl: string
@@ -209,9 +210,10 @@ export function fakeAdmin(options: FakeAdminOptions) {
         entry.publications.some((candidate) => candidate.id === id),
       )
       const entry = domain?.publications.find((candidate) => candidate.id === id)
-      if (domain === undefined || entry === undefined || !versionsReadable(domain))
-        throw refusal(3002, 'NOT_FOUND')
-      if (!domain.admins.has(caller)) throw refusal(2004, 'ACCESS_DENIED')
+      if (domain === undefined || entry === undefined) throw refusal(3002, 'NOT_FOUND')
+      // A caller who cannot read the receiver is refused 2004, as the Kernel answers (#446).
+      if (!versionsReadable(domain) || !domain.admins.has(caller))
+        throw refusal(2004, 'ACCESS_DENIED')
       if (name === 'yank') entry.yankedAt ??= '2026-10-04T12:00:00.000Z'
       else delete entry.yankedAt
       return summaryOf(entry)
