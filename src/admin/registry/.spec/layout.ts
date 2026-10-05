@@ -5,6 +5,7 @@ export default defineLayout({
     '__tests__/',
     'client.ts',
     'decode.ts',
+    'deployment.ts',
     'failure.ts',
     'index.ts',
     'model.ts',

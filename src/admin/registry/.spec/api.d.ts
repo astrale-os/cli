@@ -1,4 +1,4 @@
-import type { ClientSession, ContentApi } from '@astrale-os/sdk/client/session'
+import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { AstraleError } from '../../../errors.js'
 import type { AdminGraphQueryApi } from '../../graph/.spec/api.js'
@@ -22,7 +22,6 @@ export interface PublicationSummaryV1 {
   readonly releaseDigest: RegistryDigest
   readonly buildDigest: RegistryDigest
   readonly schemaRevision: string
-  readonly bundle: PublicationBundleV1
   readonly dependencies: readonly PublicationDependencyV1[]
   readonly commit?: string
   readonly dirty: boolean
@@ -57,11 +56,14 @@ export interface PublishRequestV1 {
   }
 }
 
+export type PublishRetentionV1 = 'marked' | 'failed' | 'not-applicable'
+
 export interface PublishResultV1 {
   readonly format: 'astrale.registry-publish-result'
   readonly version: 1
   readonly status: 'created' | 'unchanged'
   readonly publication: PublicationSummaryV1
+  readonly retention: PublishRetentionV1
 }
 
 export interface YankResultV1 {
@@ -94,11 +96,17 @@ export declare class RegistryError extends AstraleError {
   readonly details?: Readonly<Record<string, unknown>>
 }
 
+export type DeploymentFetch = (input: string, init: RequestInit) => Promise<Response>
+
+export interface DeploymentReader {
+  readonly fetch: DeploymentFetch
+  readonly timeoutMs: number
+}
+
 export interface AdminRegistryContext {
-  readonly session: Pick<ClientSession, 'call'> & {
-    readonly content: Pick<ContentApi, 'download'>
-  }
+  readonly session: Pick<ClientSession, 'call'>
   readonly graph: AdminGraphQueryApi
+  readonly deployment?: Partial<DeploymentReader>
 }
 
 export interface AdminRegistryApi {

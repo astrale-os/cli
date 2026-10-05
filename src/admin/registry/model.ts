@@ -9,7 +9,10 @@ import { AstraleError } from '../../errors'
 /** A `sha256:` digest as Admin stores it. */
 export type RegistryDigest = `sha256:${string}`
 
-/** The stored copy of a release's Schema Bundle, as Admin describes the blob. */
+/**
+ * A published release's Schema Bundle, as the release its deployment serves describes it
+ * (`release.json` `schema.bundle.ref`). Admin keeps no copy.
+ */
 export interface PublicationBundleV1 {
   readonly digest: RegistryDigest
   readonly mediaType: string
@@ -30,7 +33,6 @@ export interface PublicationSummaryV1 {
   readonly releaseDigest: RegistryDigest
   readonly buildDigest: RegistryDigest
   readonly schemaRevision: string
-  readonly bundle: PublicationBundleV1
   readonly dependencies: readonly PublicationDependencyV1[]
   /** The 40-hex commit the release was built from, lower case, when the publisher recorded it. */
   readonly commit?: string
@@ -49,7 +51,10 @@ export interface RegistryIndexV1 {
   readonly publications: readonly PublicationSummaryV1[]
 }
 
-/** The bundle of one Publication, written to a local file after its digest and size matched. */
+/**
+ * The bundle of one Publication, read from its deployment and written to a local file after its
+ * digest and size matched the descriptor of the release the Publication names.
+ */
 export interface RegistryBundleV1 {
   readonly format: 'astrale.registry-bundle'
   readonly version: 1
@@ -71,12 +76,21 @@ export interface PublishRequestV1 {
   }
 }
 
+/**
+ * Whether Admin's Services marked the published deployment retained: `marked`, `failed` (the
+ * Publication stands; rerunning the same publish marks again) or `not-applicable` (a deployment
+ * Admin's Services do not host).
+ */
+export type PublishRetentionV1 = 'marked' | 'failed' | 'not-applicable'
+
 export interface PublishResultV1 {
   readonly format: 'astrale.registry-publish-result'
   readonly version: 1
   /** `unchanged`: the version already named this release; nothing was written. */
   readonly status: 'created' | 'unchanged'
   readonly publication: PublicationSummaryV1
+  /** The retention mark of this run, on a created and an unchanged Publication alike. */
+  readonly retention: PublishRetentionV1
 }
 
 export interface YankResultV1 {
@@ -88,7 +102,7 @@ export interface YankResultV1 {
 }
 
 export const REGISTRY_ERROR_CODES = [
-  /** No Registered Domain of that origin is readable by the caller: absent or not permitted. */
+  /** No Domain of that origin is readable by the caller: absent or not permitted. */
   'REGISTRY_DOMAIN_NOT_FOUND',
   /** The Domain is readable but the caller holds no version of that number. */
   'PUBLICATION_NOT_FOUND',
@@ -102,9 +116,12 @@ export const REGISTRY_ERROR_CODES = [
   'REGISTRY_UNAVAILABLE',
   /** The version already names another release. `details.existing` is that Publication. */
   'PUBLICATION_VERSION_CONFLICT',
-  /** The deployment does not serve the named release, or serves no publishable release. */
+  /**
+   * The deployment does not serve the named release, serves no publishable release, or serves a
+   * bundle that does not match its release.
+   */
   'PUBLICATION_RELEASE_MISMATCH',
-  /** Admin could not read the deployment's release or bundle. */
+  /** Admin, or this CLI for `bundle`, could not read the deployment's release or bundle. */
   'PUBLICATION_RELEASE_UNREACHABLE',
   /** Not a canonical SemVer 2.0.0 version, or not one exact version where one is required. */
   'PUBLICATION_VERSION_INVALID',

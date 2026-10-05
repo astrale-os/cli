@@ -26,7 +26,7 @@ export function versionRows(index: RegistryIndexV1): Array<Record<string, string
 
 export function renderVersions(index: RegistryIndexV1): string {
   if (index.publications.length === 0)
-    return chalk.dim(`  ${index.origin} has no published version yet.`)
+    return chalk.dim(`  ${index.origin} has no published version readable by this caller.`)
   return renderTable(versionRows(index), {
     columns: [
       { key: 'version', header: 'VERSION', color: chalk.bold },
@@ -66,10 +66,12 @@ export default {
   afterHelpText: `
 Behavior:
   Reads every Publication of the Domain the caller may read from the Admin
-  registry, in one Query with the caller's own credential: a Domain is
-  readable by its domain_admin and domain_installer holders (a User or a
-  Group, CI included). Pre-releases and yanked versions are listed; a
-  yanked version is never chosen by a line reference such as @1.5.
+  registry, in one Query with the caller's own credential: versions are
+  readable by the Domain's domain_admin and domain_installer holders (a
+  User or a Group, CI included). A Fleet whose catalog lists the Domain
+  lets its members read the Domain, not its versions. Pre-releases and
+  yanked versions are listed; a yanked version is never chosen by a line
+  reference such as @1.5.
 
   A Domain that is absent and one the caller may not read are the same
   answer, REGISTRY_DOMAIN_NOT_FOUND. Nothing is installed or changed.

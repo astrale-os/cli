@@ -15,6 +15,7 @@ import {
   publication,
   release,
   REVISION,
+  type FakeAdminOptions,
   type FakeDomain,
 } from './fake-admin'
 
@@ -89,11 +90,6 @@ describe('registry index (Résolution [.78020] [.79495])', () => {
       releaseDigest: r150.releaseDigest,
       buildDigest: r150.buildDigest,
       schemaRevision: REVISION,
-      bundle: {
-        digest: digestOf(r150.bytes),
-        mediaType: BUNDLE_MEDIA_TYPE,
-        size: r150.bytes.length,
-      },
       dependencies: [{ origin: 'shell.astrale.ai', revision: REVISION }],
       commit: 'a'.repeat(40),
       dirty: false,
@@ -105,11 +101,13 @@ describe('registry index (Résolution [.78020] [.79495])', () => {
     expect(index.publications.find((entry) => entry.version === '2.0.0-rc.1')!.dirty).toBe(true)
   })
 
-  test('the Query walks RegisteredDomain -> publication_of_domain and never reads access edges (AM-53)', async () => {
+  test('the Query walks Domain -> publication_of_domain and never reads access edges (AM-53)', async () => {
     const admin = fakeAdmin({ caller: 'installer', domains: [domain()] })
     await connectAdminRegistry(admin.context).index(ORIGIN)
     const text = JSON.stringify(admin.queries)
-    expect(text).toContain('"name":"RegisteredDomain"')
+    expect(text).toContain('"name":"Domain"')
+    expect(text).toContain('"admin.astrale.ai:class.Domain.property.origin"')
+    expect(text).not.toContain('RegisteredDomain')
     expect(text).toContain('"name":"publication_of_domain"')
     expect(text).toContain('"direction":"incoming"')
     expect(text).not.toContain('domain_admin')
@@ -118,6 +116,16 @@ describe('registry index (Résolution [.78020] [.79495])', () => {
 
   test('a readable Domain without versions answers an empty index after one more Query', async () => {
     const admin = fakeAdmin({ caller: 'installer', domains: [domain({ publications: [] })] })
+    const index = await connectAdminRegistry(admin.context).index(ORIGIN)
+    expect(index.publications).toEqual([])
+    expect(admin.queries).toHaveLength(2)
+  })
+
+  test("a Fleet catalog's member reads the Domain but none of its versions", async () => {
+    const admin = fakeAdmin({
+      caller: 'fleet-member',
+      domains: [domain({ catalogReaders: new Set(['fleet-member']) })],
+    })
     const index = await connectAdminRegistry(admin.context).index(ORIGIN)
     expect(index.publications).toEqual([])
     expect(admin.queries).toHaveLength(2)
@@ -226,9 +234,10 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
     const created = await registry.publish(request('1.6.0', r150, { commit: 'B'.repeat(40) }))
     expect(created.format).toBe('astrale.registry-publish-result')
     expect(created.status).toBe('created')
+    expect(created.retention).toBe('marked')
     expect(created.publication.commit).toBe('b'.repeat(40))
     expect(admin.calls[0]).toEqual({
-      target: '@domain-issues::admin.astrale.ai:class.RegisteredDomain.method.publish',
+      target: '@domain-issues::admin.astrale.ai:class.Domain.method.publish',
       input: {
         version: '1.6.0',
         deploymentUrl: r150.url,
@@ -239,11 +248,39 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
 
     const again = await registry.publish(request('1.6.0', r150))
     expect(again.status).toBe('unchanged')
+    expect(again.retention).toBe('marked')
     expect(again.publication).toEqual(created.publication)
 
     const conflict = await refusalOf(registry.publish(request('1.6.0', r200)))
     expect(conflict.code).toBe('PUBLICATION_VERSION_CONFLICT')
     expect(conflict.details).toEqual({ existing: created.publication })
+  })
+
+  test("Admin's retention mark is passed through; an unknown one is never guessed", async () => {
+    for (const retention of ['failed', 'not-applicable'] as const) {
+      const admin = fakeAdmin({
+        caller: 'publisher',
+        domains: [domain({ publications: [] })],
+        releases: [r150],
+        retention,
+      })
+      const result = await connectAdminRegistry(admin.context).publish(request('1.6.0'))
+      expect({ status: result.status, retention: result.retention }).toEqual({
+        status: 'created',
+        retention,
+      })
+    }
+    const admin = fakeAdmin({
+      caller: 'publisher',
+      domains: [domain({ publications: [] })],
+      releases: [r150],
+      retention: 'pending' as never,
+    })
+    const error = await refusalOf(connectAdminRegistry(admin.context).publish(request('1.6.0')))
+    expect({ code: error.code, details: error.details }).toEqual({
+      code: 'REGISTRY_UNAVAILABLE',
+      details: { reason: 'response-invalid' },
+    })
   })
 
   test('a dirty build is sent as dirty: true', async () => {
@@ -297,13 +334,14 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
         { version: '1.6.0' },
       ],
       [
-        declared(4001, 'REGISTERED_DOMAIN_CONFLICT', { reason: 'commit-rejected' }),
+        // A concurrent change failed Admin's one guarded commit; a rerun decides again.
+        declared(4001, 'DOMAIN_CONFLICT', { reason: 'changed-concurrently' }),
         'REGISTRY_UNAVAILABLE',
-        { retryable: true, reason: 'commit-rejected' },
+        { retryable: true, reason: 'changed-concurrently' },
       ],
       [
-        // A commit the Kernel refused before submitting it (A4 review r1): BACKEND_UNAVAILABLE
-        // whose reason is the Kernel's submission code; nothing was written.
+        // A commit the Kernel did not submit: Admin's retryable BACKEND_UNAVAILABLE whose reason
+        // is the Kernel's submission code; nothing was written.
         declared(5001, 'MUTATION_CAPACITY_EXHAUSTED', {}),
         'REGISTRY_UNAVAILABLE',
         { status: 5001, reason: 'MUTATION_CAPACITY_EXHAUSTED', retryable: true },
@@ -423,11 +461,13 @@ describe('registry yank (Versioning [.74285] [.72368])', () => {
   })
 })
 
-describe('registry bundle (tech [.119544])', () => {
+describe('registry bundle: read from the published deployment (AM-241)', () => {
   const output = () => join(mkdtempSync(join(tmpdir(), 'astrale-registry-bundle-')), 'bundle.json')
+  const deployed = (over: Partial<FakeAdminOptions>) =>
+    fakeAdmin({ caller: 'installer', domains: [domain()], releases: [r150], ...over })
 
-  test('writes the stored bundle once its digest and size match the Publication', async () => {
-    const admin = fakeAdmin({ caller: 'installer', domains: [domain()], download: true })
+  test("writes the bundle the deployment's release describes once its digest matches", async () => {
+    const admin = deployed({})
     const file = output()
     const result = await connectAdminRegistry(admin.context).bundle(ORIGIN, '1.5.0', file)
     expect(result).toEqual({
@@ -441,28 +481,105 @@ describe('registry bundle (tech [.119544])', () => {
       },
     })
     expect(Buffer.from(readFileSync(file)).equals(Buffer.from(r150.bytes))).toBe(true)
-    expect(admin.downloads).toEqual([
-      { node: 'p150', property: 'admin.astrale.ai:class.Publication.property.bundle' },
+    // One Admin Query for the Publication, then the deployment's release and its bundle, in
+    // place: no Admin download, no redirect followed.
+    expect(admin.queries).toHaveLength(1)
+    expect(admin.calls).toEqual([])
+    expect(admin.fetches).toEqual([
+      { url: `${r150.url}/.well-known/astrale/release.json`, redirect: 'manual' },
+      { url: r150.document.schema.bundle.href, redirect: 'manual' },
     ])
+    expect(readdirSync(join(file, '..'))).toEqual(['bundle.json'])
   })
 
-  test('bytes that do not match never take the output name', async () => {
-    const admin = fakeAdmin({
-      caller: 'installer',
-      domains: [domain()],
-      download: true,
-      servedBytes: new TextEncoder().encode('tampered bundle bytes'),
-    })
+  test('bundle bytes whose digest does not match the release never take the output name', async () => {
+    const admin = deployed({ servedBytes: new TextEncoder().encode('{"bundle":"r15x"}') })
     const file = output()
     const error = await refusalOf(connectAdminRegistry(admin.context).bundle(ORIGIN, '1.5.0', file))
-    expect(error.code).toBe('REGISTRY_UNAVAILABLE')
-    expect(error.details?.reason).toBe('bundle-mismatch')
+    expect({ code: error.code, details: error.details }).toEqual({
+      code: 'PUBLICATION_RELEASE_MISMATCH',
+      details: {
+        reason: 'bundle-mismatch',
+        expected: { digest: digestOf(r150.bytes), size: r150.bytes.length },
+        served: { digest: digestOf(new TextEncoder().encode('{"bundle":"r15x"}')), size: 17 },
+      },
+    })
     expect(existsSync(file)).toBe(false)
     expect(readdirSync(join(file, '..'))).toEqual([])
   })
 
-  test("an output that cannot be written is the caller's error, found before any download", async () => {
-    const admin = fakeAdmin({ caller: 'installer', domains: [domain()], download: true })
+  test('bytes beyond the described size stop the read and are refused', async () => {
+    const admin = deployed({ servedBytes: new TextEncoder().encode('x'.repeat(4_096)) })
+    const file = output()
+    const error = await refusalOf(connectAdminRegistry(admin.context).bundle(ORIGIN, '1.5.0', file))
+    expect(error.code).toBe('PUBLICATION_RELEASE_MISMATCH')
+    expect(error.details).toMatchObject({ reason: 'bundle-mismatch', oversized: true })
+    expect(readdirSync(join(file, '..'))).toEqual([])
+  })
+
+  test('a deployment serving another release than the Publication names is refused before its bundle', async () => {
+    const admin = deployed({ servedRelease: r200.document })
+    const file = output()
+    const error = await refusalOf(connectAdminRegistry(admin.context).bundle(ORIGIN, '1.5.0', file))
+    expect({ code: error.code, details: error.details }).toEqual({
+      code: 'PUBLICATION_RELEASE_MISMATCH',
+      details: { expected: r150.releaseDigest, served: r200.releaseDigest },
+    })
+    expect(admin.fetches).toHaveLength(1)
+    expect(readdirSync(join(file, '..'))).toEqual([])
+  })
+
+  test("a deployment's other answers get publish's refusals", async () => {
+    const cases: Array<[Partial<FakeAdminOptions>, string, Record<string, unknown>]> = [
+      [{ releases: [] }, 'PUBLICATION_RELEASE_UNREACHABLE', { reason: 'release-absent' }],
+      [
+        { deploymentStatus: 503 },
+        'PUBLICATION_RELEASE_UNREACHABLE',
+        { reason: 'http-503', retryable: true },
+      ],
+      [
+        { deploymentStatus: 302 },
+        'PUBLICATION_RELEASE_MISMATCH',
+        { reason: 'release-document-invalid' },
+      ],
+      [
+        { servedRelease: { ...r150.document, digest: r200.releaseDigest } },
+        'PUBLICATION_RELEASE_MISMATCH',
+        { reason: 'release-document-invalid' },
+      ],
+    ]
+    for (const [over, code, details] of cases) {
+      const file = output()
+      const error = await refusalOf(
+        connectAdminRegistry(deployed(over).context).bundle(ORIGIN, '1.5.0', file),
+      )
+      expect({ code: error.code, details: error.details }).toEqual({ code, details })
+      expect(readdirSync(join(file, '..'))).toEqual([])
+    }
+  })
+
+  test('a deployment that does not answer may be retried', async () => {
+    const admin = deployed({})
+    const context = {
+      ...admin.context,
+      deployment: {
+        timeoutMs: 5_000,
+        fetch: async () => {
+          throw new TypeError('fetch failed')
+        },
+      },
+    }
+    const file = output()
+    const error = await refusalOf(connectAdminRegistry(context).bundle(ORIGIN, '1.5.0', file))
+    expect({ code: error.code, details: error.details }).toEqual({
+      code: 'PUBLICATION_RELEASE_UNREACHABLE',
+      details: { reason: 'network', retryable: true },
+    })
+    expect(readdirSync(join(file, '..'))).toEqual([])
+  })
+
+  test("an output that cannot be written is the caller's error, found before any read", async () => {
+    const admin = deployed({})
     const registry = connectAdminRegistry(admin.context)
     const root = mkdtempSync(join(tmpdir(), 'astrale-registry-bundle-'))
 
@@ -476,16 +593,25 @@ describe('registry bundle (tech [.119544])', () => {
     expect(directory.code).toBe('FILE_WRITE_FAILED')
     expect(directory.message).toContain('(EISDIR)')
 
-    expect(admin.downloads).toEqual([])
+    expect(admin.fetches).toEqual([])
     expect(readdirSync(root)).toEqual([])
   })
 
-  test('a refused download writes nothing and is REGISTRY_FORBIDDEN', async () => {
-    const admin = fakeAdmin({ caller: 'installer', domains: [domain()], download: false })
-    const file = output()
-    const error = await refusalOf(connectAdminRegistry(admin.context).bundle(ORIGIN, '1.5.0', file))
-    expect(error.code).toBe('REGISTRY_FORBIDDEN')
-    expect(error.message).toBe('Admin refused this caller the read.')
-    expect(readdirSync(join(file, '..'))).toEqual([])
+  test('only a reader of the Publication learns its deployment', async () => {
+    const outsider = deployed({ caller: 'outsider' })
+    const hidden = await refusalOf(
+      connectAdminRegistry(outsider.context).bundle(ORIGIN, '1.5.0', output()),
+    )
+    expect(hidden.code).toBe('REGISTRY_DOMAIN_NOT_FOUND')
+
+    const member = deployed({
+      caller: 'fleet-member',
+      domains: [domain({ catalogReaders: new Set(['fleet-member']) })],
+    })
+    const unread = await refusalOf(
+      connectAdminRegistry(member.context).bundle(ORIGIN, '1.5.0', output()),
+    )
+    expect(unread.code).toBe('PUBLICATION_NOT_FOUND')
+    expect([...outsider.fetches, ...member.fetches]).toEqual([])
   })
 })

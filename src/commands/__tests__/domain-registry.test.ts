@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { AdminRegistryApi, RegistryIndexV1 } from '../../admin/registry'
 import type { RegistryCommandDependencies } from '../domain-registry/shared'
 
 import { connectAdminRegistry } from '../../admin/registry'
 import {
+  digestOf,
   fakeAdmin,
   publication,
   release,
+  type FakeAdminOptions,
   type FakeDomain,
 } from '../../admin/registry/__tests__/fake-admin'
 import { runBundle } from '../domain-registry/bundle'
@@ -36,8 +41,12 @@ function domain(): FakeDomain {
 }
 
 /** A command run against the fake Admin: what it printed and whether it opened Admin at all. */
-function harness(caller: string, domains: FakeDomain[] = [domain()]) {
-  const admin = fakeAdmin({ caller, domains, releases: [r150] })
+function harness(
+  caller: string,
+  domains: FakeDomain[] = [domain()],
+  over: Partial<FakeAdminOptions> = {},
+) {
+  const admin = fakeAdmin({ caller, domains, releases: [r150], ...over })
   const written: string[] = []
   let opened = 0
   const dependencies: RegistryCommandDependencies = {
@@ -102,7 +111,9 @@ describe('astrale domain versions', () => {
     const plain = renderVersions(index).replace(/\[[0-9;]*m/gu, '')
     expect(plain.split('\n')).toHaveLength(3)
     expect(plain).toContain('1.4.2')
-    expect(renderVersions({ ...index, publications: [] })).toContain('has no published version yet')
+    expect(renderVersions({ ...index, publications: [] })).toContain(
+      'has no published version readable by this caller',
+    )
   })
 })
 
@@ -132,7 +143,9 @@ describe('astrale __domain-registry', () => {
       version: 1,
       status: 'created',
       publication: { version: '1.6.0', releaseDigest: r150.releaseDigest },
+      retention: 'marked',
     })
+    expect(run.stdout().publication).not.toHaveProperty('bundle')
   })
 
   test('a malformed request costs no Admin request', async () => {
@@ -161,6 +174,36 @@ describe('astrale __domain-registry', () => {
     const run = harness('publisher')
     expect(await runYank(`${ORIGIN}@1.4.2`, { undo: true }, run.dependencies)).toBe(0)
     expect(run.stdout()).toMatchObject({ status: 'changed', publication: { yanked: false } })
+  })
+
+  test('bundle writes the verified bundle from the deployment and prints its descriptor', async () => {
+    const run = harness('installer')
+    const output = join(mkdtempSync(join(tmpdir(), 'astrale-registry-command-')), 'bundle.json')
+    expect(await runBundle(`${ORIGIN}@1.5.0`, { output }, run.dependencies)).toBe(0)
+    expect(run.stdout()).toEqual({
+      format: 'astrale.registry-bundle',
+      version: 1,
+      publication: { origin: ORIGIN, version: '1.5.0' },
+      bundle: {
+        digest: digestOf(r150.bytes),
+        mediaType: 'application/vnd.astrale.domain-bundle+json;v=1',
+        size: r150.bytes.length,
+      },
+    })
+    expect(Buffer.from(readFileSync(output)).equals(Buffer.from(r150.bytes))).toBe(true)
+  })
+
+  test('bundle refuses bytes whose digest the release does not name, writing nothing', async () => {
+    const run = harness('installer', [domain()], {
+      servedBytes: new TextEncoder().encode('{"bundle":"r15x"}'),
+    })
+    const directory = mkdtempSync(join(tmpdir(), 'astrale-registry-command-'))
+    const output = join(directory, 'bundle.json')
+    expect(await runBundle(`${ORIGIN}@1.5.0`, { output }, run.dependencies)).toBe(1)
+    expect(run.stdout()).toMatchObject({
+      error: { code: 'PUBLICATION_RELEASE_MISMATCH', details: { reason: 'bundle-mismatch' } },
+    })
+    expect(readdirSync(directory)).toEqual([])
   })
 
   test('bundle requires --output before any request', async () => {

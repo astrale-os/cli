@@ -6,6 +6,7 @@ import type { AdminTargetCommandOpts } from '../../lib/admin-target'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
 import { withAdminClientSession } from '../../connection'
+import { resolveTimeoutMs } from '../../connection/session'
 import { AstraleError } from '../../errors'
 import { printFailureDebug } from '../../lib/failure-debug'
 import { log } from '../../lib/log'
@@ -110,7 +111,15 @@ function openRegistry<Value>(
   opts: RegistryCommandOpts,
   work: (registry: AdminRegistryApi) => Promise<Value>,
 ): Promise<Value> {
-  return withAdminClientSession(opts, async (context) => work(connectAdminRegistry(context)))
+  return withAdminClientSession(opts, async (context) =>
+    // `--timeout` bounds each read of a published deployment as it bounds each Admin request.
+    work(
+      connectAdminRegistry({
+        ...context,
+        deployment: { timeoutMs: resolveTimeoutMs(opts.timeout) },
+      }),
+    ),
+  )
 }
 
 function renderRegistryError(error: AstraleError): void {

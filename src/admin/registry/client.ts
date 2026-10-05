@@ -1,16 +1,18 @@
-import type { ClientSession, ContentApi } from '@astrale-os/sdk/client/session'
+import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
 import type { FileHandle } from 'node:fs/promises'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Property, Query } from '@astrale-os/sdk/query'
 import { MethodKey } from '@astrale-os/sdk/schema'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { open, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 
 import type { ObservedPublication } from './decode'
+import type { DeploymentReader } from './deployment'
 import type {
+  PublicationBundleV1,
   PublishRequestV1,
   PublishResultV1,
   RegistryBundleV1,
@@ -22,6 +24,7 @@ import { AstraleError } from '../../errors'
 import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import { observedPublication, publicationFromAdmin, publishedFromAdmin } from './decode'
+import { publishedRelease, readPublishedBundle } from './deployment'
 import { registryFailure } from './failure'
 import { RegistryError } from './model'
 import { byPrecedenceDescending } from './order'
@@ -29,20 +32,22 @@ import { byPrecedenceDescending } from './order'
 /** Bound of one Domain's index: far above any release cadence, small enough for one command. */
 const MAXIMUM_PUBLICATIONS = 10_000
 const MAXIMUM_PAGES = Math.ceil(MAXIMUM_PUBLICATIONS / 256) + 1
+/** The bound of each deployment GET when the caller names none (the CLI's default `--timeout`). */
+const DEPLOYMENT_TIMEOUT_MS = 30_000
 
 export interface AdminRegistryContext {
-  readonly session: Pick<ClientSession, 'call'> & {
-    readonly content: Pick<ContentApi, 'download'>
-  }
+  readonly session: Pick<ClientSession, 'call'>
   readonly graph: AdminGraphQueryApi
+  /** How `bundle` reads the published deployment: the global `fetch`, 30 s per GET, by default. */
+  readonly deployment?: Partial<DeploymentReader>
 }
 
 export interface AdminRegistryApi {
   /** Every Publication of one origin the caller may read, highest precedence first. */
   index(origin: string): Promise<RegistryIndexV1>
-  /** Download one Publication's stored bundle to `output`, digest and size verified. */
+  /** Download one Publication's bundle from its deployment to `output`, digest and size verified. */
   bundle(origin: string, version: string, output: string): Promise<RegistryBundleV1>
-  /** Ask Admin to name the release with the version (`RegisteredDomain.publish`). */
+  /** Ask Admin to name the release with the version (`Domain.publish`). */
   publish(request: PublishRequestV1): Promise<PublishResultV1>
   /** Take one version out of resolution, or put it back with `undo`. */
   yank(
@@ -54,30 +59,35 @@ export interface AdminRegistryApi {
 
 /**
  * The Domain version registry as the CLI reads and writes it. Reads are the caller's own Queries
- * on Admin's graph, so `ObserveRegisteredDomain` and `ReadPublication` decide what the caller sees
+ * on Admin's graph, so `ObserveDomain` and `ReadPublication` decide what the caller sees
  * (Résolution [.78020] [.79495]); changes are Admin Methods whose Policies decide who may make
  * them. No read lists who holds access (AM-53): a Domain the caller cannot read is reported
- * exactly like an absent one.
+ * exactly like an absent one. A bundle is read from the deployment its Publication names, never
+ * from Admin, which keeps no copy.
  */
 export function connectAdminRegistry(context: AdminRegistryContext): AdminRegistryApi {
-  const RegisteredDomain = AdminContract.classes.RegisteredDomain
+  const Domain = AdminContract.classes.Domain
   const Publication = AdminContract.classes.Publication
+  const deployment: DeploymentReader = Object.freeze({
+    fetch: context.deployment?.fetch ?? ((input, init) => globalThis.fetch(input, init)),
+    timeoutMs: context.deployment?.timeoutMs ?? DEPLOYMENT_TIMEOUT_MS,
+  })
 
   const domainOf = async (origin: string): Promise<string> => {
     const nodes = await readAllNodes(
       context.graph,
-      Query.from({ nodes: [RegisteredDomain] })
+      Query.from({ nodes: [Domain] })
         .filter({ predicate: originEquals(origin) })
         .select({ kind: 'nodes', projection: { kind: 'value' } }),
-      { label: 'Admin Registered Domain', maximum: 2, maximumPages: 2 },
+      { label: 'Admin Domain', maximum: 2, maximumPages: 2 },
     )
     if (nodes.length === 0) throw domainNotFound(origin)
-    if (nodes.length > 1) throw responseInvalid('Admin answered several Registered Domains.')
+    if (nodes.length > 1) throw responseInvalid('Admin answered several Domains of one origin.')
     return String(nodes[0]!.id)
   }
 
   const publicationsOf = (origin: string, version?: string): Promise<readonly Node[]> => {
-    const versions = Query.from({ nodes: [RegisteredDomain] })
+    const versions = Query.from({ nodes: [Domain] })
       .filter({ predicate: originEquals(origin) })
       .expand({ via: [AdminContract.edges.publicationOfDomain], direction: 'incoming' })
       .filter({ class: Publication })
@@ -146,45 +156,23 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
       } catch (error) {
         throw registryFailure(error, 'read')
       }
-      const expected = publication.summary.bundle
       const target = resolve(output)
       const partial = join(dirname(target), `.${basename(target)}.${randomUUID()}.partial`)
-      // The output is checked and its partial file created before the download starts, so an
+      // The output is checked and its partial file created before the deployment is read, so an
       // unwritable --output costs no transfer and is reported as the caller's error.
       const file = await openOutput(target, partial)
       let closed = false
+      let bundle: PublicationBundleV1
       try {
-        const download = await context.session.content.download({
-          node: publication.node,
-          property: AdminContract.properties.publication.bundle,
-        })
-        const hash = createHash('sha256')
-        let size = 0
-        const chunks: AsyncIterable<Uint8Array> | readonly Uint8Array[] =
-          download.body instanceof Uint8Array ? [download.body] : download.body
-        for await (const chunk of chunks) {
-          size += chunk.byteLength
-          if (size > expected.size) break
-          hash.update(chunk)
+        // The release is admitted only with the Publication's release digest, so its descriptor
+        // is the one Admin verified when it published the version.
+        const release = await publishedRelease(deployment, publication.summary)
+        bundle = await readPublishedBundle(deployment, release, async (chunk) => {
           await written(target, file.write(chunk))
-        }
+        })
         await written(target, file.sync())
         closed = true
         await written(target, file.close())
-        const served = `sha256:${hash.digest('hex')}`
-        if (size !== expected.size || served !== expected.digest) {
-          throw new RegistryError(
-            'REGISTRY_UNAVAILABLE',
-            'The downloaded bundle does not match its Publication; nothing was written.',
-            {
-              reason: 'bundle-mismatch',
-              expected: { digest: expected.digest, size: expected.size },
-              ...(size > expected.size
-                ? { oversized: true }
-                : { served: { digest: served, size } }),
-            },
-          )
-        }
         await written(target, rename(partial, target))
       } catch (error) {
         if (!closed) await file.close().catch(() => undefined)
@@ -195,7 +183,7 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
         format: 'astrale.registry-bundle',
         version: 1,
         publication: Object.freeze({ origin, version }),
-        bundle: expected,
+        bundle,
       })
     },
 
@@ -207,7 +195,7 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
           await callAdminMethod(
             context.session,
             Path.parse(`@${domain}`),
-            MethodKey.of(RegisteredDomain, 'publish'),
+            MethodKey.of(Domain, 'publish'),
             {
               version: publication.version,
               deploymentUrl: publication.url,
@@ -229,6 +217,7 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
           version: 1,
           status: published.created ? 'created' : 'unchanged',
           publication: summary,
+          retention: published.retention,
         })
       } catch (error) {
         throw registryFailure(error, 'change')
@@ -272,13 +261,13 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
 }
 
 function originEquals(origin: string) {
-  return Property(AdminContract.properties.registeredDomain.origin).equals(origin)
+  return Property(AdminContract.properties.domain.origin).equals(origin)
 }
 
 function domainNotFound(origin: string): RegistryError {
   return new RegistryError(
     'REGISTRY_DOMAIN_NOT_FOUND',
-    `No Registered Domain ${origin} is readable by this caller: it is absent, or the caller holds neither domain_installer nor domain_admin on it.`,
+    `No Domain ${origin} is readable by this caller: it is absent, or the caller holds neither domain_installer nor domain_admin on it.`,
     { origin },
   )
 }
