@@ -211,17 +211,24 @@ The CLI is connect-only: it does not build or run domains. The SDK's
 `astrale-domain` binary owns `dev`, `build`, `deploy`, `lint`, `package`, and test workflows. Project Environments select
 exact deployment and optional installation targets; they do not use the CLI's active instance.
 
-`astrale domain install` has two modes:
+`astrale domain install` takes deployment URLs or one catalog origin:
 
-- Default: install a published catalog origin or URL through the admin control
-  plane onto an admin-managed instance.
-- `--direct`: call the public Kernel install syscall with a running domain URL.
-  This works for any instance you can authenticate to and owns the explicit
-  identity-override consent prompt.
+- Deployment URLs (`https://`, or `http://` for a local Host) go to the
+  instance Kernel through the public install syscall, on any instance you can
+  authenticate to. Several URLs install in ONE atomic Kernel operation (every
+  Domain moves or none does), which is how dependent Domains move together.
+  The CLI reads what each URL serves first (a 503 is read again for up to
+  60 s), refuses two references to one origin, pins the release digest it
+  read, and verifies the installed pins afterwards. It owns the explicit
+  identity-override consent prompt (`--allow-identity-override` in scripts).
+  `--direct` is deprecated: still accepted, it changes nothing.
+- One bare origin installs that published catalog Domain through the admin
+  control plane onto an admin-managed instance.
 
 ```bash
+astrale domain install https://crm.example -i staging
+astrale domain install https://agencies.example https://employees.example -i staging
 astrale domain install crm.example -i staging
-astrale domain install https://crm.example --direct -i staging
 astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive -i staging
 ```

@@ -16,7 +16,7 @@ export async function fetchDomainPublication(
   })
   if (!response.ok) {
     await cancel(response.body)
-    throw new Error(`GET ${url.href} → ${response.status}`)
+    throw new DomainDocumentStatusError(url, response)
   }
   const bytes = await readBounded(response, url)
   try {
@@ -27,7 +27,23 @@ export async function fetchDomainPublication(
   }
 }
 
-async function readBounded(response: Response, url: URL): Promise<Uint8Array> {
+/** A deployment document request answered with a non-2xx status. */
+export class DomainDocumentStatusError extends Error {
+  readonly status: number
+  /** Raw `Retry-After` header, when the deployment sent one. */
+  readonly retryAfter?: string
+
+  constructor(url: URL, response: Response) {
+    super(`GET ${url.href} → ${response.status}`)
+    this.name = 'DomainDocumentStatusError'
+    this.status = response.status
+    const retryAfter = response.headers.get('retry-after')
+    if (retryAfter !== null) this.retryAfter = retryAfter
+  }
+}
+
+/** Read one deployment document body, refusing more than one MiB. */
+export async function readBounded(response: Response, url: URL): Promise<Uint8Array> {
   const declared = response.headers.get('content-length')
   if (
     declared !== null &&
@@ -76,7 +92,7 @@ function sizeError(url: URL): Error {
   return new Error(`GET ${url.href} exceeded ${MAXIMUM_PUBLICATION_BYTES} bytes`)
 }
 
-async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {
+export async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {
   if (body !== null) await body.cancel().catch(() => undefined)
 }
 
