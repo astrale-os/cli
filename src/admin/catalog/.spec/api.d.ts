@@ -53,6 +53,19 @@ export class AdminDomainNotFoundError extends Error {
   readonly identifier: string
 }
 
+/** Admin refused `Fleet.publishDomain` with its declared `CATALOG_ORIGIN_CONFLICT`. */
+export class AdminCatalogOriginConflictError extends Error {
+  constructor(
+    origin: string,
+    reason: 'not-in-fleet' | 'in-another-fleet' | undefined,
+    listed: boolean,
+    options?: ErrorOptions,
+  )
+  readonly code: 'CATALOG_ORIGIN_CONFLICT'
+  readonly origin: string
+  readonly reason: 'not-in-fleet' | 'in-another-fleet' | undefined
+}
+
 export interface AdminCatalogDependencies {
   readonly operationId?: (kind: 'publish' | 'configure-default') => string
 }

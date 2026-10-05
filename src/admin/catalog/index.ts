@@ -5,6 +5,7 @@ export {
   type AdminCatalogDependencies,
 } from './client'
 export {
+  AdminCatalogOriginConflictError,
   AdminDomainNotFoundError,
   type DomainInfo,
   type InstallDomainResult,

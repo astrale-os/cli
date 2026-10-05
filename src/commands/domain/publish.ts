@@ -62,6 +62,12 @@ Behavior:
   project's \`astrale-domain deploy <environment>\`, then publish its observed
   public URL with this command.
 
+  A Fleet's catalog is the domains it contains and those it lists from
+  another Fleet. Only the core Fleet catalogues a new origin. Another Fleet
+  can set --install-by-default (Fleet.configureDomainDefault) on a domain its
+  catalog lists, given its current name and url; Admin refuses any other
+  change with CATALOG_ORIGIN_CONFLICT.
+
   Run in a terminal with flags omitted and it PROMPTS for origin / name /
   public-url (origin defaults to the URL host, name to the origin's first
   label). With no TTY — or \`--ci\` / \`--no-prompt\` — those three are required
@@ -79,7 +85,7 @@ Examples:
     { flags: '--description <text>', description: 'Optional human description for the catalog' },
     {
       flags: '--install-by-default',
-      description: 'Mark the domain for install on every new instance',
+      description: 'Mark the domain for install on every new instance of the Fleet',
     },
   ],
   // No positional arguments → Commander passes (opts, command); `opts` is first.

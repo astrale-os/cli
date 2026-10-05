@@ -11,6 +11,11 @@ export interface ReadAllNodesOptions {
   readonly maximumPages: number
   /** Stop before one suffix boundary guaranteed by the Query's explicit total order. */
   readonly orderedBoundary?: (node: Node) => boolean
+  /**
+   * Keep the first value of a Node the Query reaches through several Edges instead of refusing it
+   * as a repeat. Repeated cursors are still refused.
+   */
+  readonly deduplicate?: boolean
 }
 
 /** Collect one explicitly bounded Node-value projection without hiding cursors. */
@@ -46,7 +51,10 @@ export async function readAllNodes(
         terminal = true
         break
       }
-      if (ids.has(String(node.id))) throw new TypeError(`${options.label} repeated a Node.`)
+      if (ids.has(String(node.id))) {
+        if (options.deduplicate === true) continue
+        throw new TypeError(`${options.label} repeated a Node.`)
+      }
       ids.add(String(node.id))
       nodes.push(node)
     }

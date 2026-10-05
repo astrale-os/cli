@@ -12,6 +12,8 @@ export interface ReadAllNodesOptions {
   readonly label: string
   readonly maximum: number
   readonly maximumPages: number
+  /** Keep the first value of a Node reached through several Edges instead of refusing the repeat. */
+  readonly deduplicate?: boolean
 }
 
 /** Collect one bounded Node selection and reject projection, cursor, or identity anomalies. */

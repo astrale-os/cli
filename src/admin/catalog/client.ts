@@ -1,6 +1,7 @@
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
 
+import { ResponseError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 import { MethodKey, PropertyKey } from '@astrale-os/sdk/schema'
@@ -10,6 +11,7 @@ import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import { resolveAdminFleet } from '../selection'
 import {
+  AdminCatalogOriginConflictError,
   AdminDomainNotFoundError,
   type DomainInfo,
   type PublishDomainInput,
@@ -50,10 +52,15 @@ export async function connectAdminCatalog(
     const observedFleet = await catalogFleet(context, await fleet())
     if (observedFleet === undefined) return []
     const [nodes, defaultsPage] = await Promise.all([
+      // A Fleet's catalog is the Domains it contains and the Domains it lists from another Fleet:
+      // one Domain per origin, shared by every Fleet that lists it.
       readAllNodes(
         context.graph,
         Query.from({ nodes: [observedFleet] })
-          .expand({ via: [AdminContract.edges.fleetContains], direction: 'outgoing' })
+          .expand({
+            via: [AdminContract.edges.fleetContains, AdminContract.edges.fleetListsDomain],
+            direction: 'outgoing',
+          })
           .filter({ class: AdminContract.classes.Domain })
           .select({
             kind: 'nodes',
@@ -63,6 +70,7 @@ export async function connectAdminCatalog(
           label: 'Admin Domain catalog',
           maximum: MAXIMUM_DOMAINS,
           maximumPages: MAXIMUM_PAGES,
+          deduplicate: true,
         },
       ),
       context.graph.neighbors(observedFleet, AdminContract.edges.fleetInstallsDomainByDefault, {
@@ -102,8 +110,9 @@ export async function connectAdminCatalog(
         existing.description !== description
       let entry = existing
       if (registryChanged) {
-        entry = domainFromSummary(
-          await callAdminMethod(
+        let published
+        try {
+          published = await callAdminMethod(
             context.session,
             await fleet(),
             MethodKey.of(AdminContract.classes.Fleet, 'publishDomain'),
@@ -114,9 +123,11 @@ export async function connectAdminCatalog(
               discoveryUrl: input.url,
               ...(description === undefined ? {} : { description }),
             },
-          ),
-          existing?.installByDefault === true,
-        )
+          )
+        } catch (error) {
+          throw originConflict(error, input.origin, existing !== undefined) ?? error
+        }
+        entry = domainFromSummary(published, existing?.installByDefault === true)
       }
       if (entry === undefined) throw new TypeError('Admin Domain publication returned no entry.')
 
@@ -124,13 +135,15 @@ export async function connectAdminCatalog(
         input.installByDefault !== undefined &&
         (entry.installByDefault ?? false) !== input.installByDefault
       if (defaultChanged) {
+        // Defaults are per Fleet: the Fleet names one Domain of its catalog.
         entry = domainFromSummary(
           await callAdminMethod(
             context.session,
-            Path.parse(entry.id),
-            MethodKey.of(AdminContract.classes.Domain, 'configureDefault'),
+            await fleet(),
+            MethodKey.of(AdminContract.classes.Fleet, 'configureDomainDefault'),
             {
               operationId: operationId('configure-default'),
+              domain: Path.parse(entry.id).raw,
               enabled: input.installByDefault,
             },
           ),
@@ -171,12 +184,38 @@ async function catalogFleet(
   return defaults[0] === undefined ? undefined : Path.id(defaults[0].id)
 }
 
+/**
+ * Admin's declared `Fleet.publishDomain` refusal: a Fleet other than the core Fleet changes only
+ * the Domains it contains, and the core Fleet catalogues an origin only when no Fleet holds it.
+ */
+function originConflict(
+  error: unknown,
+  origin: string,
+  listed: boolean,
+): AdminCatalogOriginConflictError | undefined {
+  if (!(error instanceof ResponseError) || error.reason?.code !== 'CATALOG_ORIGIN_CONFLICT')
+    return undefined
+  const details = error.reason.details
+  const reason =
+    typeof details === 'object' && details !== null && !Array.isArray(details)
+      ? (details as Readonly<Record<string, unknown>>).reason
+      : undefined
+  return new AdminCatalogOriginConflictError(
+    origin,
+    reason === 'not-in-fleet' || reason === 'in-another-fleet' ? reason : undefined,
+    listed,
+    { cause: error },
+  )
+}
+
 function domainFromNode(node: Node, installByDefault: boolean): DomainInfo {
+  // A Domain created in the registry alone has no discovery URL; no catalog installs it.
+  const { discoveryUrl } = optionalProperty(node, 'discoveryUrl')
   return Object.freeze({
     id: Path.id(node.id).raw,
     origin: requiredProperty(node, 'origin'),
     name: requiredProperty(node, 'name'),
-    url: requiredProperty(node, 'discoveryUrl'),
+    ...(discoveryUrl === undefined ? {} : { url: discoveryUrl }),
     ...optionalProperty(node, 'description'),
     ...(installByDefault ? { installByDefault: true } : {}),
     createdAt: requiredProperty(node, 'createdAt'),
@@ -190,7 +229,9 @@ function domainFromSummary(input: unknown, installByDefault: boolean): DomainInf
     id: requiredNodePath(value.id, 'Admin Domain id'),
     origin: requiredString(value.origin, 'Admin Domain origin'),
     name: requiredString(value.name, 'Admin Domain name'),
-    url: requiredString(value.discoveryUrl, 'Admin Domain discovery URL'),
+    ...(value.discoveryUrl === undefined
+      ? {}
+      : { url: requiredString(value.discoveryUrl, 'Admin Domain discovery URL') }),
     ...(value.description === undefined
       ? {}
       : { description: requiredString(value.description, 'Admin Domain description') }),
