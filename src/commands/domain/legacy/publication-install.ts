@@ -19,7 +19,11 @@ import type { InstallFailure, UrlSource } from '../install-call'
 
 import { log } from '../../../lib/log'
 import { isMachine, output } from '../../../lib/output'
-import { ensureIdentityOverrideConsent, warnUnconfirmedOverride } from '../identity-override'
+import {
+  ensureIdentityOverrideConsent,
+  isIdentityOverride,
+  warnUnconfirmedOverride,
+} from '../identity-override'
 import { runInstallCall } from '../install-call'
 
 type PublicationInstallOpts = KernelCommandOpts & {
@@ -100,6 +104,27 @@ export function publicationInstallRetry(
 }
 
 /**
+ * Origins a grouped install committed that no serving host names and no pre-install consent
+ * covered. A Kernel without the installed listing does not say which URL a root came from, so
+ * the post-install check of several URLs compares every root with every source.
+ */
+export function unconfirmedGroupedOrigins(
+  roots: readonly { readonly origin: string }[],
+  sources: readonly UrlSource[],
+  consented: readonly (string | undefined)[],
+): readonly string[] {
+  return roots
+    .map((root) => root.origin)
+    .filter(
+      (origin) =>
+        sources.every((source) => isIdentityOverride(origin, source.host)) &&
+        !consented.some(
+          (entry) => entry !== undefined && entry.toLowerCase() === origin.toLowerCase(),
+        ),
+    )
+}
+
+/**
  * Run the pre-release install in an open session: the identity-override gate for each URL, then
  * one `schema.install` of every URL.
  */
@@ -153,6 +178,15 @@ export async function installPublications(
       // say so loudly after the fact.
       if (sources.length === 1) {
         warnUnconfirmedOverride(first.origin, sources[0].host, consented[0], machine)
+      } else if (!machine) {
+        for (const origin of unconfirmedGroupedOrigins(roots, sources, consented)) {
+          log.warn(
+            `Installed origin "${origin}" matches none of the serving hosts ` +
+              `(${sources.map((source) => source.host).join(', ')}) and was not confirmed before ` +
+              `install (a worker Publication was unavailable or declared another origin). ` +
+              `Every ${origin}/* call on this instance now routes to one of them.`,
+          )
+        }
       }
     },
   })

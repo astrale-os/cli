@@ -7,6 +7,7 @@ import {
   publicationInstallInput,
   publicationInstallPresentation,
   publicationInstallRetry,
+  unconfirmedGroupedOrigins,
 } from '../domain/legacy/publication-install'
 
 const currentRevision = schema.revision(defineSchema('tasks.astrale.ai', {}))
@@ -156,5 +157,26 @@ describe('legacy publication install (Kernels without the installed listing)', (
     expect(() => publicationInstallPresentation(result, 'ignored')).toThrow(
       'Kernel install returned a committed transition without a Domain generation.',
     )
+  })
+
+  test('reports every grouped origin that no serving host names and no consent covered', () => {
+    const sources = [
+      { url: 'https://tasks.astrale.ai', host: 'tasks.astrale.ai' },
+      { url: 'http://localhost:8787', host: 'localhost:8787' },
+      { url: 'http://localhost:8788', host: 'localhost:8788' },
+    ]
+    const roots = [
+      { origin: 'tasks.astrale.ai' },
+      { origin: 'issues.astrale.ai' },
+      { origin: 'CRM.example' },
+    ]
+
+    expect(unconfirmedGroupedOrigins(roots, sources, [undefined, undefined, undefined])).toEqual([
+      'issues.astrale.ai',
+      'CRM.example',
+    ])
+    expect(
+      unconfirmedGroupedOrigins(roots, sources, [undefined, 'issues.astrale.ai', 'crm.example']),
+    ).toEqual([])
   })
 })
