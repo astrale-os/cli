@@ -52,11 +52,9 @@ describe('setup domain step', () => {
 
   // The floor: the last create-astrale-domain release that still requires --instance in
   // non-interactive managed mode, and the first that does not (the first release carrying sdk#598,
-  // S8). The first is published (0.3.0-beta.159 still requires the flag); the second is a
-  // placeholder until that release is cut: C10 merges only once both name published versions,
-  // SCAFFOLDER_RANGE starts at the second, and the merge gate confirms them on npm.
-  const LAST_REQUIRING_INSTANCE = '0.3.0-beta.159'
-  const FIRST_WITHOUT_INSTANCE = '0.3.0-beta.160'
+  // S8). Both are published; SCAFFOLDER_RANGE starts at the second.
+  const LAST_REQUIRING_INSTANCE = '0.3.0-beta.162'
+  const FIRST_WITHOUT_INSTANCE = '0.3.0-beta.163'
 
   test('the range starts at the first scaffolder whose managed scaffold names no instance', () => {
     expect(SCAFFOLDER_RANGE).toBe(`>=${FIRST_WITHOUT_INSTANCE}`)

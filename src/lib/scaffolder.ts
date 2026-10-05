@@ -7,9 +7,8 @@
  *
  * The floor is the first create-astrale-domain release that carries sdk#598 (S8): releases
  * before it require `--instance` in non-interactive managed mode, so a CLI that never passes the
- * flag must never resolve below it. That release is not cut yet (0.3.0-beta.159 still requires
- * the flag); until it is, the floor is a placeholder, and C10 merges only once it names that
- * release's exact version.
+ * flag must never resolve below it. That release is 0.3.0-beta.163 (sdk 0.6.0-beta.15);
+ * 0.3.0-beta.162 is the last that still requires the flag.
  *
  * NOT `@latest`: `latest` is the scaffolder's last STABLE release (0.2.x), a generation behind,
  * which writes a Domain against `@astrale-os/sdk` 0.4.x that nothing in Studio can read.
@@ -21,7 +20,7 @@
  * moved to another line (`0.3.1-beta.x`, `0.4.0-beta.x`) never matches, so moving it means
  * bumping this range in the same CLI release.
  */
-export const SCAFFOLDER_RANGE = '>=0.3.0-beta.160'
+export const SCAFFOLDER_RANGE = '>=0.3.0-beta.163'
 
 /** The npx package spec for {@link SCAFFOLDER_RANGE}. Quote it in a shell (`>=`). */
 export const SCAFFOLDER = `create-astrale-domain@${SCAFFOLDER_RANGE}`
