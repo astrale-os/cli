@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0-beta.127](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.126...cli/v1.0.0-beta.127) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** a URL reference no longer installs through the Admin catalog route; it always goes to the instance Kernel. A bare origin still uses the catalog.
+
+### Features
+
+* **commands:** consent to an issuer change on install ([#583](https://github.com/astrale-os/cli/issues/583)) ([d02e446](https://github.com/astrale-os/cli/commit/d02e4460c93bea119e2dc66e4b77d619fcb703b1))
+* **commands:** install several Domains in one atomic Kernel operation ([#582](https://github.com/astrale-os/cli/issues/582)) ([a239c9b](https://github.com/astrale-os/cli/commit/a239c9b33f5759af7e553b3cb21b85f4916cd9ce))
+
+
+### Bug Fixes
+
+* **studio:** scaffold Domains without the removed --instance flag ([#587](https://github.com/astrale-os/cli/issues/587)) ([cae2a61](https://github.com/astrale-os/cli/commit/cae2a61ec9b7c63bf3881554f6eebf54be92e18b))
+
 ## [1.0.0-beta.126](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.125...cli/v1.0.0-beta.126) (2026-10-04)
 
 
