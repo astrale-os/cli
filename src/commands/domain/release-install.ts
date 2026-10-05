@@ -795,7 +795,11 @@ function presentPrecheck(precheck: InstallPrecheck): void {
   }
   for (const proposal of precheck.proposals) {
     if (proposal.kind === 'none') {
-      log.warn(`  No compatible published version of ${proposal.origin}.`)
+      // The registry lists each Publication's exact dependency revisions; a version built against
+      // others may still hold, and the Kernel decides.
+      log.warn(
+        `  No published version of ${proposal.origin} is built against the revisions this install brings.`,
+      )
     } else if (proposal.kind === 'indirect') {
       log.warn(
         `  No version of ${proposal.origin} is proposed: it reaches ${proposal.dependencies.join(', ')} only through another Domain, and Publications list their direct dependencies only.`,
