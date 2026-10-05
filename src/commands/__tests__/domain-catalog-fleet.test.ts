@@ -105,7 +105,7 @@ describe('Fleet catalog commands on a merged Admin catalog', () => {
     })
   })
 
-  test('domain publish of a new origin on a non-core Fleet prints the refusal and exits 1', async () => {
+  test('domain publish of an origin a non-core Fleet does not contain prints the refusal and exits 1', async () => {
     await expect(
       publish({
         origin: 'crm.acme.dev',
@@ -118,8 +118,8 @@ describe('Fleet catalog commands on a merged Admin catalog', () => {
     expect(JSON.parse(stderr)).toEqual({
       error: 'CATALOG_ORIGIN_CONFLICT',
       message:
-        'Admin refused to catalogue crm.acme.dev in this Fleet: only the core Fleet catalogues a new origin.',
-      hint: 'Ask an Astrale operator to publish it in the core Fleet, or install it without the catalog: astrale domain install <url> --direct -i <instance>',
+        'Admin refused to catalogue crm.acme.dev in this Fleet: a Fleet other than the core Fleet changes only the Domains it contains.',
+      hint: 'Ask an Astrale operator, or install it without the catalog: astrale domain install <url> --direct -i <instance>',
     })
     expect(admin.calls.map(({ target }) => target)).toEqual([
       '@tenant-fleet::admin.astrale.ai:class.Fleet.method.publishDomain',

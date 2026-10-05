@@ -469,13 +469,13 @@ describe('one Domain per origin (admin #446)', () => {
 
   test.each([
     {
-      name: 'a new origin on a non-core Fleet',
+      name: 'an origin a non-core Fleet does not contain',
       fleet: '@tenant-fleet',
       origin: 'crm.acme.dev',
       reason: 'not-in-fleet',
       message:
-        'Admin refused to catalogue crm.acme.dev in this Fleet: only the core Fleet catalogues a new origin.',
-      hint: /astrale domain install <url> --direct -i <instance>/,
+        'Admin refused to catalogue crm.acme.dev in this Fleet: a Fleet other than the core Fleet changes only the Domains it contains.',
+      hint: 'Ask an Astrale operator, or install it without the catalog: astrale domain install <url> --direct -i <instance>',
     },
     {
       name: "a listed Domain's new URL on a non-core Fleet",
@@ -484,16 +484,25 @@ describe('one Domain per origin (admin #446)', () => {
       reason: 'not-in-fleet',
       message:
         "This Fleet lists shell.astrale.ai from another Fleet's catalog; only that Fleet changes its name, URL or description.",
-      hint: /current --name and --public-url/,
+      hint: 'Rerun with its current --name and --public-url to change only --install-by-default.',
     },
     {
-      name: 'an origin another Fleet holds, on the core Fleet',
+      name: 'an origin another Fleet contains, on the core Fleet',
       fleet: AdminContract.fleet.raw,
       origin: 'notes.acme.dev',
       reason: 'in-another-fleet',
       message:
-        'Admin refused to catalogue notes.acme.dev: another Fleet already holds its Domain, and Admin keeps one Domain per origin.',
-      hint: /Align or remove/,
+        'Admin refused to catalogue notes.acme.dev in the core Fleet: a Domain of this origin already exists, and Admin keeps one Domain per origin.',
+      hint: 'If another Fleet contains its Domain, rerun from that Fleet with `--fleet <path>`. A Domain that only the registry holds cannot be catalogued.',
+    },
+    {
+      name: 'a registry-only origin, on the core Fleet',
+      fleet: AdminContract.fleet.raw,
+      origin: 'registry.acme.dev',
+      reason: 'in-another-fleet',
+      message:
+        'Admin refused to catalogue registry.acme.dev in the core Fleet: a Domain of this origin already exists, and Admin keeps one Domain per origin.',
+      hint: 'If another Fleet contains its Domain, rerun from that Fleet with `--fleet <path>`. A Domain that only the registry holds cannot be catalogued.',
     },
   ])(
     'refuses $name as CATALOG_ORIGIN_CONFLICT',
@@ -502,6 +511,8 @@ describe('one Domain per origin (admin #446)', () => {
         domains: [
           { id: 'shell-domain', origin: 'shell.astrale.ai', discoveryUrl: SHELL },
           { id: 'notes-domain', origin: 'notes.acme.dev', discoveryUrl: 'https://notes.acme.dev' },
+          // Created in the registry alone: no Fleet contains or lists it.
+          { id: 'registry-domain', origin: 'registry.acme.dev' },
         ],
         edges: [
           ['fleet_contains', 'core-fleet', 'shell-domain'],
@@ -522,7 +533,7 @@ describe('one Domain per origin (admin #446)', () => {
 
       expect(refused).toBeInstanceOf(AdminCatalogOriginConflictError)
       expect(refused).toMatchObject({ code: 'CATALOG_ORIGIN_CONFLICT', origin, reason, message })
-      expect((refused as AdminCatalogOriginConflictError).hint).toMatch(hint)
+      expect((refused as AdminCatalogOriginConflictError).hint).toBe(hint)
       expect(admin.calls.map(({ target }) => target.split('::')[1])).toEqual([
         'admin.astrale.ai:class.Fleet.method.publishDomain',
       ])
