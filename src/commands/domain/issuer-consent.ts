@@ -6,6 +6,7 @@ import chalk from 'chalk'
 import type { ServedDeployment } from '../../lib/domain-release'
 
 import { AstraleError } from '../../errors'
+import { canPrompt, type PromptGate } from '../../lib/interactive'
 import { log } from '../../lib/log'
 import { dangerPanel } from '../../lib/panel'
 import { confirmWithInput } from '../../lib/prompt'
@@ -229,15 +230,21 @@ export class IssuerChangeNotConsentedError extends AstraleError {
 
 /**
  * Admit every planned issuer change of one install: first by the flags, then, for the rest, by
- * the operator typing each origin at a terminal (`confirm` never asks without one, nor under
- * --json, --ci or --no-prompt). Whatever stays unconsented, the declined change and every change
- * not asked yet, is refused in one error before any install is sent.
+ * the operator typing each origin at a terminal. Nothing is asked without one, nor in machine
+ * mode or when the command's `gate` opts out of prompts (--ci, --no-prompt, or their programmatic
+ * options). Whatever stays unconsented, the declined change and every change not asked yet, is
+ * refused in one error before any install is sent.
  */
 export async function admitIssuerChanges(
   changes: readonly IssuerChange[],
   consent: IssuerChangeConsent,
   machine: boolean,
-  confirm: (banner: string, expected: string) => Promise<boolean> = confirmWithInput,
+  gate: PromptGate = {},
+  confirm: (
+    banner: string,
+    expected: string,
+    gate: PromptGate,
+  ) => Promise<boolean> = confirmWithInput,
 ): Promise<void> {
   const unconsented: IssuerChange[] = []
   for (const change of changes) {
@@ -249,8 +256,12 @@ export async function admitIssuerChanges(
       )
     }
   }
+  const [first] = unconsented
+  if (first !== undefined && (machine || !canPrompt(gate))) {
+    throw new IssuerChangeNotConsentedError([first, ...unconsented.slice(1)])
+  }
   for (const [index, change] of unconsented.entries()) {
-    if (!(await confirm(issuerChangeBanner(change, consent), change.origin))) {
+    if (!(await confirm(issuerChangeBanner(change, consent), change.origin, gate))) {
       throw new IssuerChangeNotConsentedError(
         unconsented.slice(index) as [IssuerChange, ...IssuerChange[]],
       )

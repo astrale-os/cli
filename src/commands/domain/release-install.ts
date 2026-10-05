@@ -56,6 +56,10 @@ export type UrlInstallOpts = KernelCommandOpts & {
   /** Every `--allow-issuer-change` occurrence: `''` without an origin, else the origin it names. */
   readonly allowIssuerChange?: readonly string[]
   readonly revokePrevious?: boolean
+  // Programmatic opt-out for callers that drive the install as a function; the CLI flags are read
+  // from argv by `canPrompt`.
+  readonly ci?: boolean
+  readonly noPrompt?: boolean
 }
 
 /** The pin, revision and issuer of one installation, as the installed listing reports them. */
@@ -346,6 +350,7 @@ async function installReleases(
       changes.filter((change): change is IssuerChange => change !== undefined),
       consent,
       machine,
+      opts,
     )
   } catch (error) {
     return { error, render: 'input' }

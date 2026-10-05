@@ -225,13 +225,16 @@ describe('admitting an issuer change', () => {
     line: 'same',
   }
   const other: IssuerChange = { ...cross, origin: 'billing.acme.dev' }
+  // An operator at a terminal who did not opt out of prompts.
+  const TERMINAL = { tty: true, env: {}, argv: [] }
 
   test('a typed confirmation at a terminal consents to a cross-line change', async () => {
     const asked: string[] = []
     await admitIssuerChanges(
       [cross],
       issuerChangeConsent([''], false),
-      true,
+      false,
+      TERMINAL,
       async (_, expected) => {
         asked.push(expected)
         return true
@@ -244,7 +247,8 @@ describe('admitting an issuer change', () => {
     const refusal = admitIssuerChanges(
       [cross],
       issuerChangeConsent([''], false),
-      true,
+      false,
+      TERMINAL,
       async () => false,
     )
     await expect(refusal).rejects.toBeInstanceOf(IssuerChangeNotConsentedError)
@@ -263,7 +267,8 @@ describe('admitting an issuer change', () => {
     const refusal = admitIssuerChanges(
       [cross, same, other],
       issuerChangeConsent([''], false),
-      true,
+      false,
+      TERMINAL,
       async (_, expected) => {
         asked.push(expected)
         return false
@@ -288,7 +293,8 @@ describe('admitting an issuer change', () => {
     const refusal = admitIssuerChanges(
       [cross, other],
       issuerChangeConsent([], false),
-      true,
+      false,
+      TERMINAL,
       async (_, expected) => expected === 'shell.astrale.ai',
     )
     await expect(refusal).rejects.toMatchObject({
@@ -300,11 +306,43 @@ describe('admitting an issuer change', () => {
     })
   })
 
+  test('machine mode or a prompt opt-out refuses every unconsented change without asking', async () => {
+    const never = () => {
+      throw new Error('asked')
+    }
+    for (const [machine, gate] of [
+      [true, TERMINAL],
+      [false, { ...TERMINAL, noPrompt: true }],
+      [false, { ...TERMINAL, ci: true }],
+      [false, { ...TERMINAL, argv: ['--no-prompt'] }],
+      [false, { ...TERMINAL, tty: false }],
+    ] as const) {
+      await expect(
+        admitIssuerChanges(
+          [cross, same, other],
+          issuerChangeConsent([''], false),
+          machine,
+          gate,
+          never,
+        ),
+      ).rejects.toMatchObject({
+        code: 'ISSUER_CHANGE_NOT_CONSENTED',
+        details: {
+          origins: [
+            { origin: 'shell.astrale.ai', installed: S1, replacement: OTHER_LINE, line: 'cross' },
+            { origin: 'billing.acme.dev', installed: S1, replacement: OTHER_LINE, line: 'cross' },
+          ],
+        },
+      })
+    }
+  })
+
   test('a covering flag never asks', async () => {
     await admitIssuerChanges(
       [cross, same],
       issuerChangeConsent(['', 'shell.astrale.ai'], false),
       true,
+      {},
       () => {
         throw new Error('asked')
       },
