@@ -5,7 +5,7 @@ export { expandSelfInCall, expandSelfInPath, withSelfHint } from './self'
 export type { SelfExpansionMeta } from './self'
 export { withAdminClientSession, withClientSession, type ConnectionContext } from './session'
 export type { CredentialIntent } from './credential'
-export { registrationKeyForTarget } from './target'
+export { adminSessionOptions, registrationKeyForTarget } from './target'
 export type {
   AdminConnectionOptions,
   AdminTargetSelection,
