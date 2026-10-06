@@ -660,23 +660,39 @@ describe.serial('agent runner invariants', () => {
     ).toEqual([expect.objectContaining({ instruction: 'in the second tab' })])
   })
 
-  test('a new tab opens on the star, or continues with the agent already open', () => {
+  test('a new tab continues the tab in front of you: agent, model, effort and speed', () => {
     delete process.env.DOMAIN_STUDIO_HARNESS
     const handle = fixture()
     // nothing starred: the first tab is the agent this machine has
     expect(unwrap(openChat({})).harness).toBe('claude')
 
-    // move the live conversation elsewhere and the next tab follows it — the
-    // agent that was live, since nothing states where chats should start
+    // move the live conversation elsewhere and the next tab follows it
     expect(unwrap(openChat({ harness: 'mock' })).harness).toBe('mock')
     expect(unwrap(openChat({})).harness).toBe('mock')
 
-    // starring one IS that statement, and it outranks the tab you happen to be in
+    // what you set in this tab is what the next one opens with
+    const tuned = unwrap(
+      updateChat(listChats().activeId, { model: 'mock-large', effort: 'high', fastMode: true }),
+    )
+    expect(unwrap(openChat({}))).toMatchObject({
+      harness: 'mock',
+      model: 'mock-large',
+      effort: 'high',
+      fastMode: true,
+    })
+    expect(tuned.id).not.toBe(listChats().activeId)
+
+    // a star does not pull a new tab away from the work in front of you
     // Studio settings are global; point that global at this test's root.
     initWorkspaceState(handle.root)
     updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus[1m]' } })
     expect(getHarness().id).toBe('claude')
-    expect(unwrap(openChat({})).harness).toBe('claude')
+    expect(unwrap(openChat({}))).toMatchObject({ harness: 'mock', model: 'mock-large' })
+
+    // asking for another agent keeps the effort and speed, never the other agent's model
+    const other = unwrap(openChat({ harness: 'claude' }))
+    expect(other).toMatchObject({ harness: 'claude', effort: 'high', fastMode: true })
+    expect(other.model).toBeUndefined()
   })
 
   test('a chat opened for a fresh domain carries its exact target into the first prompt', async () => {

@@ -268,6 +268,12 @@ function readStore(root: string, activeRoot = root): ChatStore {
   return { activeId: readActiveId(activeRoot), chats: readChats(root) }
 }
 
+/** The tab in front of the user, read as it is: nothing is created or repaired. */
+export function peekActiveChat(root: string, activeRoot = root): StoredChat | undefined {
+  const store = readStore(root, activeRoot)
+  return store.chats.find((chat) => chat.id === store.activeId) ?? store.chats.at(-1)
+}
+
 /**
  * The store, guaranteed to hold at least one chat and a valid `activeId`.
  *
