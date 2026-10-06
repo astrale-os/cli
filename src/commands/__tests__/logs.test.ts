@@ -481,50 +481,61 @@ describe('follow output routing', () => {
   })
 
   /** @evidence TEST-CLI-LOGS-CALLER-SELF */
-  test('expands --caller @self once and keeps only that caller', async () => {
-    const inputs: unknown[] = []
-    let whoamiCalls = 0
-    let pages = 0
-    const records = [
-      { ...inputRecord, sequence: 3, caller: 'user-1' },
-      { ...inputRecord, sequence: 4, caller: 'user-2' },
-      { ...inputRecord, sequence: 5 },
-      { ...inputRecord, sequence: 6, principal: 'user-1' },
-    ]
-    const stdout = await captureStdout(true, () =>
-      followLogs(
-        { follow: true, json: true, caller: '@self' },
-        {
-          run: async (input) => {
-            await input.fn({
+  test('expands both @self filters once and keeps only that caller', async () => {
+    // Other command suites replace the connection barrel globally. A fresh process exercises
+    // the real self resolver regardless of Bun's test-file load order.
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        '-e',
+        `
+        import { followLogs } from ${JSON.stringify(new URL('../logs.ts', import.meta.url).pathname)}
+        const record = ${JSON.stringify(inputRecord)}
+        const inputs = []
+        let whoamiCalls = 0
+        let pages = 0
+        let stdout = ''
+        const write = process.stdout.write.bind(process.stdout)
+        process.stdout.write = (chunk) => { stdout += chunk; return true }
+        try {
+          await followLogs({ follow: true, json: true, caller: '@self', principal: '@self' }, {
+            run: async (input) => input.fn({
               target: {},
-              self: async () => {
-                whoamiCalls += 1
-                return { id: 'user-1' }
-              },
-              session: {
-                call: async (call: { readonly input?: unknown }) => {
-                  inputs.push(call.input)
-                  pages += 1
-                  if (pages === 1) return { records }
-                  throw new Error('end of controlled stream')
-                },
-              },
-            } as never)
-          },
-          pause: async () => {},
-        },
-      ),
+              self: async () => { whoamiCalls++; return { id: 'user-1' } },
+              session: { call: async (call) => {
+                inputs.push(call.input)
+                if (++pages > 1) throw new Error('end of controlled stream')
+                return { records: [
+                  { ...record, sequence: 3, caller: 'user-1' },
+                  { ...record, sequence: 4, caller: 'user-2' },
+                  { ...record, sequence: 5 },
+                  { ...record, sequence: 6, principal: 'user-1' },
+                ] }
+              } },
+            }),
+            pause: async () => {},
+          })
+        } catch (error) {
+          if (error.message !== 'end of controlled stream') throw error
+        }
+        write(JSON.stringify({ whoamiCalls, inputs, records: stdout.trim().split('\\n').map(JSON.parse) }))
+        `,
+      ],
+      { stdout: 'pipe', stderr: 'pipe' },
     )
-    expect(whoamiCalls).toBe(1)
-    expect(
-      stdout
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line).sequence),
-    ).toEqual([3, 6])
-    expect(inputs[0]).not.toHaveProperty('caller')
-  })
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    expect(stderr).toBe('')
+    expect(exitCode).toBe(0)
+    const result = JSON.parse(stdout)
+    expect(result.whoamiCalls).toBe(1)
+    expect(result.records.map((record: { sequence: number }) => record.sequence)).toEqual([3, 6])
+    expect(result.inputs[0]).not.toHaveProperty('caller')
+    expect(result.inputs[0].principal).toBe('user-1')
+  }, 10_000)
 
   test('rejects effective YAML before opening a Kernel session', async () => {
     let runCalls = 0
