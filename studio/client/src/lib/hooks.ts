@@ -54,6 +54,14 @@ const settled = (q: { data?: unknown; isError: boolean }) => q.data !== undefine
 export function useWorkspace() {
   return useQuery({ queryKey: qk.workspace, queryFn: api.workspace })
 }
+export function useStudioRuntime() {
+  return useQuery({
+    queryKey: qk.studioRuntime,
+    queryFn: api.studioRuntime,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  })
+}
 export function useCatalog() {
   return useQuery({ queryKey: qk.catalog, queryFn: api.catalog })
 }
