@@ -31,13 +31,15 @@ const digest = (seed: string) =>
   `sha256:${Buffer.from(seed).toString('hex').padEnd(64, '0').slice(0, 64)}` as `sha256:${string}`
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 
+/** What a Publication stores of its release (Admin keeps no bundle copy). */
+type PublishedRelease = Pick<FakeRelease, 'url' | 'releaseDigest' | 'buildDigest'>
+
 /** A Publication's release, as Admin stores it: its deployment URL is its issuer. */
-function served(url: string, release: string, build: string): FakeRelease {
+function served(url: string, release: string, build: string): PublishedRelease {
   return {
     url,
     releaseDigest: digest(`release:${release}`),
     buildDigest: digest(`build:${build}`),
-    bytes: new TextEncoder().encode(release),
   }
 }
 
@@ -74,8 +76,7 @@ const employeesProduction = {
   url: 'https://employees-production-eeee.deployments.records-proof.test',
   releaseDigest: digest('release:employees-1.5.0-production'),
   buildDigest: employeesBuild,
-  bytes: new TextEncoder().encode('employees'),
-} satisfies FakeRelease
+} satisfies PublishedRelease
 const employeesStaging = deploymentFixture({
   origin: 'employees.example.com',
   environment: 'staging',
@@ -413,13 +414,12 @@ describe('naming one installation (AM-41, AM-57, AM-73)', () => {
     release: shell091.releaseDigest,
     build: shell091.buildDigest,
   }
-  const summary = (version: string, source: FakeRelease, yanked = false) => ({
+  const summary = (version: string, source: PublishedRelease, yanked = false) => ({
     version,
     url: source.url,
     releaseDigest: source.releaseDigest,
     buildDigest: source.buildDigest,
     schemaRevision: REVISION,
-    bundle: { digest: digest('bundle'), mediaType: 'x', size: 1 },
     dependencies: [],
     dirty: false,
     yanked,

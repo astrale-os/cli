@@ -96,7 +96,7 @@ export function release(name: string): FakeRelease {
 export function publication(
   id: string,
   version: string,
-  source: FakeRelease,
+  source: Pick<FakeRelease, 'url' | 'releaseDigest' | 'buildDigest'>,
   extra: Partial<FakePublication> = {},
 ): FakePublication {
   return {
