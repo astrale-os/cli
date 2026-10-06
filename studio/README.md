@@ -20,8 +20,8 @@ astrale studio --harness codex # lock this process to Codex
 ```
 
 `astrale studio` resolves the studio shipped with the CLI, binds the first free
-loopback port in **4319–4338** (so a studio already running in another workspace
-just takes the next one), and prints its URL — it does **not** pop a browser by
+loopback port in **4319–4338** (so a studio or any other server already
+answering on `localhost` just pushes it to the next one), and prints its URL — it does **not** pop a browser by
 default (pass `--open` for that). Flags: `--port <n>` ·
 `--harness claude|codex` · `--open` · `--dev`.
 

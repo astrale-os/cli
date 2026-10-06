@@ -246,8 +246,9 @@ Behavior:
   any workspace. The production Studio and its Bun 1.4 runtime are embedded in
   the standalone Astrale executable; no separate Bun or Node install is needed.
 
-  Port: binds the first free loopback port in 4319-4338, so a studio already
-  running in another workspace simply takes the next port (4320, 4321, …). An
+  Port: binds the first free loopback port in 4319-4338, so a studio (or any
+  other server) already answering on localhost simply pushes it to the next port
+  (4320, 4321, …). An
   explicit --port is used as-is, or errors if busy (never silently relocated).
 
   By DEFAULT it serves the prebuilt client (fast, always works — this is what a
