@@ -104,6 +104,8 @@ export function startViewServer(
   /** Set once a host hands the session back; from then on the pages alone hold it. */
   let released = false
   let departure: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
+  let shutdownTask: Promise<void> | undefined
   const exit = dependencies.exit ?? ((code: number) => process.exit(code))
 
   async function switchIdentity(identity: string): Promise<void> {
@@ -439,7 +441,7 @@ export function startViewServer(
    * and so does the tab the operator popped the View out into.
    */
   function scheduleDeparture(): void {
-    if (!released || pages.size > 0 || departure !== undefined) return
+    if (disposed || !released || pages.size > 0 || departure !== undefined) return
     departure = setTimeout(() => {
       departure = undefined
       if (released && pages.size === 0) void shutdown(0)
@@ -452,15 +454,41 @@ export function startViewServer(
   }, IDLE_SWEEP_MS)
   idleTimer.unref()
 
-  async function shutdown(code: number): Promise<void> {
+  /** The returned HTTP server owns exactly these timers and signal subscriptions. */
+  function dispose(): void {
+    if (disposed) return
+    disposed = true
     clearInterval(idleTimer)
-    if (departure !== undefined) clearTimeout(departure)
-    server.close()
-    await removeSessionFiles(session.id)
-    exit(code)
+    if (departure !== undefined) {
+      clearTimeout(departure)
+      departure = undefined
+    }
+    process.off('SIGTERM', terminate)
+    process.off('SIGINT', interrupt)
   }
-  process.on('SIGTERM', () => void shutdown(0))
-  process.on('SIGINT', () => void shutdown(0))
+  // Stop owning background work as soon as close is requested, even if an in-flight HTTP request
+  // must finish before the close event. Closing a library-created server never exits its caller.
+  const closeHttpServer = server.close.bind(server)
+  server.close = (callback) => {
+    dispose()
+    return closeHttpServer(callback)
+  }
+  server.once('close', dispose)
+
+  function shutdown(code: number): Promise<void> {
+    if (shutdownTask !== undefined) return shutdownTask
+    if (disposed) return Promise.resolve()
+    shutdownTask = (async () => {
+      server.close()
+      await removeSessionFiles(session.id)
+      exit(code)
+    })()
+    return shutdownTask
+  }
+  const terminate = () => void shutdown(0)
+  const interrupt = () => void shutdown(0)
+  process.on('SIGTERM', terminate)
+  process.on('SIGINT', interrupt)
 
   server.listen(session.port, '127.0.0.1')
   return server
