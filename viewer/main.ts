@@ -94,6 +94,17 @@ function el(id: string): HTMLElement {
 
 function setStatus(state: string): void {
   el('status-dot').dataset.state = state
+  const label = el('status-label')
+  label.textContent =
+    {
+      connected: 'Connected',
+      plain: 'View loaded',
+      waiting: 'Connecting…',
+      refreshing: 'Renewing session…',
+      degraded: 'Session renewal failed',
+      expired: 'Session expired',
+      failed: 'Disconnected',
+    }[state] ?? state
 }
 
 function fail(error: unknown): void {
@@ -210,6 +221,51 @@ async function main(): Promise<void> {
 
   const container = el('frame')
   let mounted: MountedWindow | null = null
+  const sessionError = el('session-error')
+  const sessionMessage = el('session-message')
+  const sessionRetry = el('session-retry') as HTMLButtonElement
+
+  // Shell owns credential expiry, retry, and lifecycle. Project the selected Window's current
+  // snapshot; renewing its credential must never replace the frame or discard the user's input.
+  const showWindowStatus = () => {
+    if (mounted === null) return
+    const current = shell.windows.get(mounted.windowId)
+    const credential = current?.credential
+    let state: string
+    let message = ''
+    if (current === undefined || current.state === 'failed' || current.state === 'closed') {
+      state = 'failed'
+      message = 'View disconnected. Reopen the View to reconnect.'
+    } else if (current.state !== 'ready') {
+      state = 'waiting'
+    } else if (credential?.state === 'expired') {
+      state = 'expired'
+      message = 'Session expired. Reconnecting automatically, or retry now.'
+    } else if (credential?.state === 'degraded') {
+      state = 'degraded'
+      message = 'Session renewal failed. Reconnecting automatically.'
+    } else if (credential?.state === 'refreshing') {
+      state = credential.expiresAt > Date.now() ? 'refreshing' : 'expired'
+      if (state === 'expired') message = 'Session expired. Reconnecting…'
+    } else {
+      state = mounted.view.route.handshake === 'shell' ? 'connected' : 'plain'
+    }
+    setStatus(state)
+    sessionError.hidden = message === ''
+    sessionMessage.textContent = message
+    sessionRetry.hidden = state !== 'expired'
+    sessionRetry.disabled = credential?.state !== 'expired'
+    report(state === 'expired' ? 'failed' : state, message || undefined)
+  }
+  shell.onWindowChange(showWindowStatus)
+  sessionRetry.onclick = () => {
+    const credential =
+      mounted === null ? undefined : shell.windows.get(mounted.windowId)?.credential
+    if (credential?.state === 'expired') {
+      // The owner publishes both failure and recovery. Its background retry remains active.
+      void credential.retry().catch(() => {})
+    }
+  }
 
   const mount = async (view: ResolvedView): Promise<MountedWindow> => {
     const held = view.route.handshake === 'shell' ? await tokens!.acquire() : undefined
@@ -237,6 +293,7 @@ async function main(): Promise<void> {
     current: () => mounted,
     setCurrent: (next) => {
       mounted = next
+      showWindowStatus()
     },
     mount,
     opened: (selected) => {
@@ -255,13 +312,7 @@ async function main(): Promise<void> {
   // One placement means one mount attempt. Shell-handshake failures remain
   // failures; changing them to `none` would grant a different public contract.
   mounted = await mount(cfg.view)
-  if (route.handshake === 'shell') {
-    setStatus('connected')
-    report('connected')
-  } else {
-    setStatus('plain')
-    report('plain')
-  }
+  showWindowStatus()
   setInterval(() => report('alive'), HEARTBEAT_MS)
 }
 
