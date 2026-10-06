@@ -9,7 +9,7 @@ import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { isStopped, StoppedTurnNotice } from './agent-error'
+import { echoesError, isStopped, StoppedTurnNotice } from './agent-error'
 import { AgentSteps, splitTurn, visibleDraft } from './agent-steps'
 import { MessageImages } from './images'
 
@@ -64,8 +64,13 @@ export function AgentTurn({
   /** offered on the last turn only: picks it up where it stopped */
   onContinue?: () => void
 }) {
-  const { steps, answer: messages } = splitTurn(run)
+  const { steps, answer } = splitTurn(run)
   const active = isRunActive(run)
+  const stopped = isStopped(run)
+  // the stopped notice below says why the turn ended; a message saying the same is dropped
+  const messages = stopped
+    ? answer.filter((message) => !echoesError(message.text, run.error))
+    : answer
   const answered = answeredThreads(run)
   const setPanelTab = useUI((state) => state.setPanelTab)
   const authFailure = agentAuthFailure(run)
@@ -89,7 +94,7 @@ export function AgentTurn({
         </div>
       )}
 
-      {(messages.length > 0 || steps.length > 0 || active || !!run.error || isStopped(run)) && (
+      {(messages.length > 0 || steps.length > 0 || active || !!run.error || stopped) && (
         <div className="flex">
           <div className="min-w-0 flex-1 space-y-2 text-[13px]">
             <AgentSteps run={run} steps={steps} />
@@ -106,7 +111,7 @@ export function AgentTurn({
             {!active && authFailure ? (
               <AuthFailureNotice failure={authFailure} onContinue={onContinue} />
             ) : (
-              isStopped(run) && <StoppedTurnNotice run={run} onContinue={onContinue} />
+              stopped && <StoppedTurnNotice run={run} onContinue={onContinue} />
             )}
             {/* The count, never the replies themselves: a turn that answered threads says
                 so from the moment the first reply lands — reading them is one click away. */}
