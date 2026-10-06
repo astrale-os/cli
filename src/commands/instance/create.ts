@@ -25,7 +25,11 @@ export default {
 Behavior:
   Requests a new Instance from the configured Admin Domain. The caller must be
   logged in with WorkOS. Admin owns infrastructure placement. The new instance
-  becomes active after its owner access is finalized and verified. If finalization
+  is bookmarked after its owner access is finalized and verified. An existing
+  active target is preserved; with no active target, the new instance becomes active.
+  A bookmark name already pointing elsewhere is preserved and reported separately
+  from the successful creation, with a command to bookmark under an unused name.
+  To switch afterwards, run astrale instance use <bookmark-name>. If finalization
   is interrupted, rerun the same create command with the same Admin target options
   (--admin, --admin-url, --domain-issuer), Fleet (--fleet), operation (--operation)
   and creator's WorkOS identity (--as).
@@ -68,14 +72,25 @@ Examples:
         )
       }
 
-      const { created, access, selectionError } = await provisionInstance(id, opts)
+      const { created, access, bookmark } = await provisionInstance(id, opts)
 
-      if (created.state !== 'ready' || access?.status !== 'completed' || selectionError) {
+      if (
+        created.state !== 'ready' ||
+        access?.status !== 'completed' ||
+        bookmark?.status === 'pending'
+      ) {
         process.exitCode = 1
       }
 
       if (isMachine(opts)) {
-        output({ ...created, ...(access === undefined ? {} : { access }) }, opts)
+        output(
+          {
+            ...created,
+            ...(access === undefined ? {} : { access }),
+            ...(bookmark === undefined ? {} : { bookmark }),
+          },
+          opts,
+        )
         return
       }
     } catch (e) {

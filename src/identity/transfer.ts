@@ -46,7 +46,8 @@ export interface IdentityExport {
 export interface IdentityImportOptions extends IdentityFileOptions {
   readonly name?: string
   readonly issuer?: string
-  readonly replace?: boolean
+  /** Automatic recovery may replace only the same exact issuer claim. */
+  readonly replace?: boolean | 'same-issuer'
 }
 
 export function isEncryptedIdentityExport(raw: string): boolean {
@@ -154,6 +155,18 @@ export async function importIdentity(
   const imported = await updateIdentityStore(async (store) => {
     const existing = store.identities[name]
     if (existing && !options.replace) throw new Error(`Identity "${name}" already exists`)
+    const issuer = options.issuer ?? envelope.issuer
+    if (
+      existing &&
+      options.replace === 'same-issuer' &&
+      (existing.issuer === undefined || issuer === undefined || existing.issuer !== issuer)
+    ) {
+      throw new AstraleError(
+        'IDENTITY_ISSUER_CONFLICT',
+        `Identity "${name}" belongs to another Kernel issuer. Its identity and keys were preserved.`,
+        'Choose explicitly which root identity to recover with `astrale instance root import <instance>`.',
+      )
+    }
     if (existing && (existing.source ?? 'key') !== 'key') {
       throw new Error(`Identity "${name}" already exists and is IdP-backed`)
     }
@@ -165,7 +178,7 @@ export async function importIdentity(
       source: 'key',
       mode: envelope.mode,
       kid: envelope.kid ?? pair.kid,
-      issuer: options.issuer ?? envelope.issuer,
+      issuer,
     }
     return {
       next: { ...store, identities: { ...store.identities, [name]: identity } },

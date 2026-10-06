@@ -4,7 +4,12 @@ import { calculateJwkThumbprint } from 'jose'
 
 import type { OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
 import type { AdminConnectionOptions } from '../connection'
-import type { Identity, IdentityExport, RootIdentityRecipientContext } from '../identity'
+import type {
+  Identity,
+  IdentityExport,
+  IdentityImportOptions,
+  RootIdentityRecipientContext,
+} from '../identity'
 
 import { AstraleError, IssuerUnreachableError } from '../errors'
 import {
@@ -31,6 +36,7 @@ export interface ImportedInstanceRootIdentity {
 
 export interface ImportInstanceRootIdentityOptions {
   readonly bookmark?: boolean
+  readonly replace?: IdentityImportOptions['replace']
 }
 
 interface Retrieval {
@@ -101,7 +107,11 @@ export async function importInstanceRootIdentity(
   const name = `${retrieved.instance.slug}-root`
   const store = await deps.readIdentities()
   const replaced = store.identities[name] !== undefined
-  const identity = await deps.importIdentity(envelope, { name, issuer, replace: true })
+  const identity = await deps.importIdentity(envelope, {
+    name,
+    issuer,
+    replace: options.replace ?? true,
+  })
   await deps.clearCaches()
 
   let bookmarkError: unknown
