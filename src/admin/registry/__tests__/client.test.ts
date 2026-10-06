@@ -1,6 +1,7 @@
 import { ResponseError, TransportError } from '@astrale-os/sdk/client'
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { open, type FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -490,6 +491,35 @@ describe('registry bundle: read from the published deployment (AM-241)', () => {
       { url: r150.document.schema.bundle.href, redirect: 'manual' },
     ])
     expect(readdirSync(join(file, '..'))).toEqual(['bundle.json'])
+  })
+
+  test('a file that takes fewer bytes than it is given still receives the whole bundle', async () => {
+    // Every write takes at most 3 bytes: the bundle must still reach the file whole.
+    const probe = await open(join(mkdtempSync(join(tmpdir(), 'astrale-registry-probe-')), 'p'), 'w')
+    const handle = Object.getPrototypeOf(probe) as FileHandle
+    await probe.close()
+    const write = handle.write as (
+      this: FileHandle,
+      buffer: Uint8Array,
+      offset: number,
+      length: number,
+    ) => ReturnType<FileHandle['write']>
+    const short = spyOn(handle, 'write').mockImplementation(function (
+      this: FileHandle,
+      buffer: Uint8Array,
+      offset = 0,
+      length = buffer.byteLength - offset,
+    ) {
+      return write.call(this, buffer, offset, Math.min(length, 3))
+    } as FileHandle['write'])
+    try {
+      const file = output()
+      await connectAdminRegistry(deployed({}).context).bundle(ORIGIN, '1.5.0', file)
+      expect(Buffer.from(readFileSync(file)).equals(Buffer.from(r150.bytes))).toBe(true)
+      expect(short.mock.calls.length).toBeGreaterThan(2)
+    } finally {
+      short.mockRestore()
+    }
   })
 
   test('bundle bytes whose digest does not match the release never take the output name', async () => {

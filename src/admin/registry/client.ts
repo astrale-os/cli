@@ -168,7 +168,7 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
         // is the one Admin verified when it published the version.
         const release = await publishedRelease(deployment, publication.summary)
         bundle = await readPublishedBundle(deployment, release, async (chunk) => {
-          await written(target, file.write(chunk))
+          await written(target, writeFully(file, chunk))
         })
         await written(target, file.sync())
         closed = true
@@ -286,6 +286,19 @@ async function openOutput(target: string, partial: string): Promise<FileHandle> 
   }
   if (existing?.isDirectory() === true) throw outputFailure(target, undefined, 'EISDIR')
   return written(target, open(partial, 'wx', 0o644))
+}
+
+/**
+ * Write the whole chunk at the file's position: `write` may take fewer bytes than it is given, and
+ * the digest checked afterwards covers what was downloaded, not what reached the file.
+ */
+async function writeFully(file: FileHandle, chunk: Uint8Array): Promise<void> {
+  let offset = 0
+  while (offset < chunk.byteLength) {
+    const { bytesWritten } = await file.write(chunk, offset, chunk.byteLength - offset)
+    if (bytesWritten <= 0) throw new Error('The output file took no bytes.')
+    offset += bytesWritten
+  }
 }
 
 /** One local file operation of the download: its failure is the caller's, not Admin's. */
