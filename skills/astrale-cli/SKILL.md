@@ -214,7 +214,8 @@ The CLI is connect-only: it does not build or run domains. The SDK's
 deploy and with which secrets; they name no instance and do not use the CLI's active instance. Only
 `astrale domain install` changes what an instance runs.
 
-`astrale domain install` takes deployment URLs, versions, or one catalog origin:
+`astrale domain install` takes deployment URLs and versions (or, deprecated, one Fleet catalog
+origin):
 
 - Deployment URLs (`https://`, or `http://` for a local Host) go to the
   instance Kernel through the public install syscall, on any instance you can
@@ -257,8 +258,10 @@ deploy and with which secrets; they name no instance and do not use the CLI's ac
   identity-override prompt (`--allow-identity-override` in scripts) when the
   declared origin differs from the serving host. Such a Kernel refuses
   `--allow-issuer-change` (KERNEL_RELEASE_UNSUPPORTED) before any install.
-- One bare origin installs that published catalog Domain through the admin
-  control plane onto an admin-managed instance.
+- Deprecated: one bare origin installs that published Domain from the Fleet
+  catalog through the admin control plane onto an admin-managed instance.
+  Install a version (`<origin>@<version>`) or a deployment URL instead; the
+  Fleet catalog now only keeps a Fleet's default Domains.
 
 ```bash
 astrale domain install https://crm.example -i staging
@@ -267,7 +270,7 @@ astrale domain install crm.example@1.5 -i production
 astrale domain install agencies.example@1.5.0 https://employees.example --allow-issuer-change -i staging
 astrale domain install <new-deployment-url> --allow-issuer-change -i staging
 astrale domain install <deployment-url> --allow-issuer-change=crm.example -i staging
-astrale domain install crm.example -i staging
+astrale domain install crm.example -i staging   # deprecated: from the Fleet catalog
 astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive -i staging
 ```

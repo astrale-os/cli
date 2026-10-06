@@ -25,10 +25,16 @@ astrale domain install <url> -i acme-dev    # pin that release on the instance
   another variable or another set of secret names gives another URL. Earlier deployments keep
   serving at their own URLs.
 - A deployment without a version is a preview. It is never in the registry, it is installed by
-  URL, and it expires 30 days after its last call. Publish a release to keep it.
+  URL, and it expires 30 days after its activation or its last call, whichever is later. Publish a
+  release to keep it.
 - `deploy --json` prints one DeployResultV1 on stdout (its `url` is what install takes); progress
-  goes to stderr. `astrale-domain list` shows the deployments of the Project's Environments, with
-  their computed names (`1.4.2 + 7 commits · a1b2c3d · staging`), last calls and expiry.
+  goes to stderr. `astrale-domain list` shows the deployments of the Project's Environments, each
+  named by the registry's version of its release (`1.5.0`) or of its build (`1.5.0 · staging`), else
+  by a name computed from its commit (`1.4.2 + 7 commits · a1b2c3d · staging`), with its last call
+  and expiry. `--instance <name>` (repeatable) asks those instances what they run for its INSTALLED
+  ON column: `?` is unknown (an instance not asked, or one that cannot tell), `—` means every
+  instance asked listed all it runs and none runs it. A registry it cannot read fails the listing
+  (SDK 0.6.0-beta.17 and astrale CLI 1.0.0-beta.129 or newer; older SDKs show computed names only).
 - Install Domains that move together in ONE grouped install, which is atomic and mixes URLs and
   versions. Never chain one-Domain installs for a coherent set:
 
@@ -115,6 +121,9 @@ it can, rerun `publish`, which reuses the deployment; an answer that was lost ma
 created the Publication, and the rerun settles it. A refusal Admin would repeat, such as a missing
 `domain_admin` right or a release Admin will not name, names its cause instead. With Admin
 unavailable, or a Domain absent from the registry, nothing is deployed. Publishing never installs.
+When Admin created the version but could not keep its deployment from expiring, `publish` still
+exits 0 and warns on stderr with the exact request to send again; until then that deployment can
+expire like a preview.
 
 - Semver without channels. Code only or an equivalent meaning: patch; additions only: minor; a
   member removed or changed: major; below 1.0.0 a breaking change raises the minor. `diff` gives a
@@ -141,6 +150,12 @@ unavailable, or a Domain absent from the registry, nothing is deployed. Publishi
 4. On merge, the workflow that publishes the npm package runs `astrale-domain publish production`.
    The Domain's schema package carries the same number, from the same `package.json`.
 
+The SDK's composite GitHub Actions `domain-diff` and `domain-publish` (`actions/` in the
+`astrale-os/sdk` repository) run steps 1, 3 and 4. Give them two CI identities: one holding
+`domain_installer` for the diff on pull requests, one holding `domain_admin`, kept in a protected
+`production` GitHub Environment, for the publish after the release merge. release-please must open
+its PR with a token that starts workflows, or the diff never runs on it.
+
 ## Install a version, roll back, yank
 
 ```sh
@@ -160,7 +175,7 @@ astrale-domain yank 1.5.0                                                       
   held directly or through a Group, and one you cannot read is reported as not found. The version
   becomes its deployment URL and release digest; the CLI checks that the deployment still serves
   that release (else PUBLICATION_RELEASE_MISMATCH), and the Kernel refuses any other. If Admin
-  cannot answer, version references fail before any install; URLs still install.
+  cannot answer, a version reference fails before any install; URLs alone never read Admin.
 - A rollback is an install like any other: the old version's deployment still serves. The Kernel
   refuses it (DATA_MIGRATION_REQUIRED) when data written since cannot be carried back.
 - A fix reaches instances as a new version of the same Schema, installed on each instance; no code is
@@ -215,7 +230,10 @@ revoke the old value where it was issued.
 ## Older projects
 
 - `installation` in an Environment and `--deploy-only` are refused before any effect: deploy, then
-  install the printed URL. `signingIdentity` and `.astrale/identity.json` are gone.
+  install the printed URL. adapter-astrale's removed instance mode (`instance`, `signingIdentity`)
+  is refused at deploy with the configuration to write instead. A deployment gets its own key, so
+  there is no `.astrale/identity.json` to keep; only a legacy direct-mode Cloudflare Environment
+  still reads its `signingIdentity` file.
 - `astrale-domain dev` serves only legacy direct-mode Environments (adapter-cloudflare without
   `namespace`), which replace one stable Worker in place; iterate with `deploy` then `install`.
 - The SDK's printed install hint and old scripts may pass `--direct` to `astrale domain install`. It
