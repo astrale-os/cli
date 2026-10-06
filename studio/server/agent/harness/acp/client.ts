@@ -293,6 +293,25 @@ function permissionResponse(params: acp.RequestPermissionRequest): acp.RequestPe
     : { outcome: { outcome: 'cancelled' } }
 }
 
+/** codex-acp's own notices, which it also sends as unattributed reply text. */
+const CODEX_NOTICE = /^(?:Warning: |Config warning: |\*Context compacted)/
+
+/**
+ * Whether an agent message chunk may be codex-acp reporting the turn's terminal
+ * error. Without the JetBrains AIR extension, codex-acp turns a failed turn (a
+ * model the account cannot use, a rejected request) into reply text - one chunk
+ * with no `messageId`, ending in a blank line - and still answers `end_turn`.
+ * The model's own reply always carries its item id.
+ */
+function unattributedCodexText(update: acp.ContentChunk): boolean {
+  return (
+    !update.messageId &&
+    update.content.type === 'text' &&
+    update.content.text.endsWith('\n\n') &&
+    !CODEX_NOTICE.test(update.content.text)
+  )
+}
+
 /**
  * Folds the agent's `session/update` stream into Studio's activity events and the
  * reply text. A new `messageId` starts a new paragraph: the previous message is
@@ -300,14 +319,20 @@ function permissionResponse(params: acp.RequestPermissionRequest): acp.RequestPe
  *
  * A tool call is one event however many times it is reported: every update is
  * folded into what was already known and re-emitted under the same call id.
+ *
+ * With `holdUnattributed` (codex), text that may be the turn's terminal error is
+ * held back instead of shown: anything the agent does next proves the turn went
+ * on and releases it as reply text; a turn that ends on it failed with it.
  */
 function transcript(
   onEvent: AgentTurnInput['onEvent'] | undefined,
   onDelta: AskInput['onDelta'] | undefined,
   onContext?: AgentTurnInput['onContext'],
+  holdUnattributed = false,
 ) {
   let text = ''
   let pendingMessage = ''
+  let held = ''
   let lastMessageId: string | undefined
   let costUsd: number | undefined
   let context: AgentContextUsage | undefined
@@ -345,32 +370,51 @@ function transcript(
     })
   }
 
+  const append = (chunk: string, messageId: string | undefined) => {
+    if (messageId && lastMessageId && messageId !== lastMessageId) {
+      flush()
+      if (text && !text.endsWith('\n')) {
+        text += '\n\n'
+        onDelta?.('\n\n')
+      }
+    }
+    lastMessageId = messageId ?? lastMessageId
+    pendingMessage += chunk
+    text += chunk
+    onDelta?.(chunk)
+  }
+
+  const release = () => {
+    if (!held) return
+    const chunk = held
+    held = ''
+    append(chunk, undefined)
+  }
+
   const handle = (notification: acp.SessionNotification) => {
     const update = notification.update
     switch (update.sessionUpdate) {
       case 'agent_message_chunk':
         if (update.content.type !== 'text' || !update.content.text) return
-        if (update.messageId && lastMessageId && update.messageId !== lastMessageId) {
-          flush()
-          if (text && !text.endsWith('\n')) {
-            text += '\n\n'
-            onDelta?.('\n\n')
-          }
+        if (holdUnattributed && unattributedCodexText(update)) {
+          held += update.content.text
+          return
         }
-        lastMessageId = update.messageId ?? lastMessageId
-        pendingMessage += update.content.text
-        text += update.content.text
-        onDelta?.(update.content.text)
+        release()
+        append(update.content.text, update.messageId ?? undefined)
         return
       case 'agent_thought_chunk':
+        release()
         if (update.content.type === 'text' && update.content.text.trim())
           onEvent?.({ kind: 'thinking', text: update.content.text.trim() })
         return
       case 'tool_call':
       case 'tool_call_update':
+        release()
         reportTool(update)
         return
       case 'plan': {
+        release()
         const plan = planText(update.entries)
         if (plan) onEvent?.({ kind: 'status', text: plan })
         return
@@ -392,6 +436,12 @@ function transcript(
   return {
     handle,
     flush,
+    /** The text still held back when the turn ended: the turn's own error. */
+    takeHeld() {
+      const chunk = held.trim()
+      held = ''
+      return chunk || undefined
+    },
     get text() {
       return text
     },
@@ -472,6 +522,7 @@ async function executeAcp(
     onEvent,
     'onDelta' in input ? input.onDelta : undefined,
     'onContext' in input ? input.onContext : undefined,
+    options.provider === 'codex',
   )
 
   let connection: acp.ClientConnection | undefined
@@ -632,6 +683,7 @@ async function executeAcp(
       0,
     )
     reply.flush()
+    const turnError = reply.takeHeld()
 
     const stoppedCleanly = promptResponse.stopReason === 'end_turn'
     const canceled = input.signal.aborted || promptResponse.stopReason === 'cancelled'
@@ -641,9 +693,9 @@ async function executeAcp(
       tokens: promptResponse.usage?.totalTokens,
       costUsd: reply.costUsd,
       context: reply.context,
-      isError: !stoppedCleanly,
+      isError: !stoppedCleanly || turnError !== undefined,
       errorMessage: stoppedCleanly
-        ? undefined
+        ? turnError
         : canceled
           ? 'canceled'
           : `agent stopped: ${promptResponse.stopReason}`,
@@ -651,9 +703,12 @@ async function executeAcp(
     }
   } catch (error) {
     reply.flush()
+    const turnError = reply.takeHeld()
     const canceled = input.signal.aborted
     const stderr = agent.stderr
-    const message = canceled ? 'canceled' : errorText(error) + stderrSuffix(stderr)
+    const message = canceled
+      ? 'canceled'
+      : [turnError, errorText(error) + stderrSuffix(stderr)].filter(Boolean).join('\n\n')
     outcome = {
       sessionId: activeSessionId,
       text: reply.text.trim(),

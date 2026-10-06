@@ -252,6 +252,34 @@ function handle(message) {
         messageId: 'answer',
         content: { type: 'text', text: 'Hello' },
       })
+      if (mode === 'service-error') {
+        // codex-acp's report of a turn the service refused: unattributed text, then end_turn
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: "model 'gpt-6.1-sol' is not enabled\\n\\n" },
+        })
+        update(params.sessionId, { sessionUpdate: 'usage_update', used: 20, size: 200000 })
+        send({ id: message.id, result: { stopReason: 'end_turn' } })
+        return
+      }
+      if (mode === 'unattributed') {
+        // the same shape, followed by more of the turn: it was not the end after all
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Warning: config\\n\\n' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: ' and more\\n\\n' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'next',
+          content: { type: 'text', text: 'Done' },
+        })
+        send({ id: message.id, result: { stopReason: 'end_turn' } })
+        return
+      }
       if (mode === 'partial-fail') {
         send({ id: message.id, error: { code: -32000, message: 'late failure' } })
         return
@@ -863,6 +891,38 @@ describe('ACP harness adapter', () => {
     expect(ask.errorMessage).toContain('late failure')
     expect(deltas).toEqual(['Hello'])
     expect(readLog(askLog).filter((entry) => entry.type === 'boot')).toHaveLength(1)
+  })
+
+  test('a Codex turn the service refused fails with its message instead of replying it', async () => {
+    const root = temporaryRoot('studio-acp-service-error-')
+    const deltas: string[] = []
+    const events: AgentStreamEvent[] = []
+    const run = (mode: string) =>
+      new AcpCodexHarness('/opt/codex', fakeAcpAgent(root)).run({
+        root,
+        prompt: 'hello',
+        env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: mode },
+        signal: new AbortController().signal,
+        onEvent: (event) => events.push(event),
+        onDelta: (text) => deltas.push(text),
+      })
+
+    const refused = await run('service-error')
+    expect(refused).toMatchObject({
+      finalText: 'Hello',
+      isError: true,
+      errorMessage: "model 'gpt-6.1-sol' is not enabled",
+    })
+    expect(deltas.join('')).toBe('Hello')
+    expect(events.filter((event) => event.kind === 'message').map((event) => event.text)).toEqual([
+      'Hello',
+    ])
+
+    deltas.length = 0
+    const continued = await run('unattributed')
+    expect(continued).toMatchObject({ isError: false })
+    expect(continued.finalText).toBe('HelloWarning: config\n\n and more\n\nDone')
+    expect(deltas.join('')).toBe(continued.finalText)
   })
 
   test('cancellation sends session/cancel and kills the ACP process group', async () => {
