@@ -301,12 +301,15 @@ const INSTALLER = 'operator'
 const url = (line: string, content: string) =>
   `https://${line.repeat(16)}-${content.repeat(16)}.${ROUTING}`
 
-function deployment(name: string, address: string): FakeRelease {
+/** What a Publication names of a deployment; Admin keeps no bundle, and no example reads one. */
+function deployment(
+  name: string,
+  address: string,
+): Pick<FakeRelease, 'url' | 'releaseDigest' | 'buildDigest'> {
   return {
     url: address,
     releaseDigest: digestOf(new TextEncoder().encode(`release:${name}`)),
     buildDigest: digestOf(new TextEncoder().encode(`build:${name}`)),
-    bytes: new TextEncoder().encode(JSON.stringify({ bundle: name })),
   }
 }
 
