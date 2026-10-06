@@ -21,6 +21,9 @@ const MAXIMUM_RELEASE_BYTES = 2 * 1_024 * 1_024
 
 type Absent = 'release-absent' | 'bundle-absent'
 
+/** The release document is JSON (`release.json`). */
+const RELEASE_ACCEPT = 'application/json'
+
 /**
  * The release a Publication names, read where its deployment serves it (`release.json`). Only the
  * release whose digest is the Publication's release digest is admitted: a deployment is
@@ -40,7 +43,7 @@ export async function publishedRelease(
       reason: 'response-invalid',
     })
   }
-  const bytes = await get(reader, location, 'release-absent', (body) =>
+  const bytes = await get(reader, location, 'release-absent', RELEASE_ACCEPT, (body) =>
     readBounded(body, MAXIMUM_RELEASE_BYTES),
   )
   let release: DomainRelease
@@ -74,7 +77,9 @@ export async function readPublishedBundle(
   const { href, ref } = release.schema.bundle
   // The digest Admin verified pins this descriptor, which Admin bounded when it published.
   const expected = Object.freeze({ digest: ref.digest, mediaType: ref.mediaType, size: ref.size })
-  const served = await get(reader, href, 'bundle-absent', async (body) => {
+  // The bundle is asked for by its own media type, so a deployment that negotiates serves it.
+  const accept = `${ref.mediaType}, */*;q=0.1`
+  const served = await get(reader, href, 'bundle-absent', accept, async (body) => {
     const hash = createHash('sha256')
     let size = 0
     if (body === null) return { digest: `sha256:${hash.digest('hex')}`, size }
@@ -114,13 +119,14 @@ async function get<Value>(
   reader: DeploymentReader,
   location: string,
   absent: Absent,
+  accept: string,
   read: (body: ReadableStream<Uint8Array> | null) => Promise<Value>,
 ): Promise<Value> {
   const signal = AbortSignal.timeout(reader.timeoutMs)
   try {
     const response = await reader.fetch(location, {
       method: 'GET',
-      headers: { accept: 'application/json' },
+      headers: { accept },
       redirect: 'manual',
       signal,
     })

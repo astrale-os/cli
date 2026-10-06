@@ -133,6 +133,8 @@ export function fakeAdmin(options: FakeAdminOptions) {
   const queries: QueryAST[] = []
   const calls: Array<{ readonly target: string; readonly input: unknown }> = []
   const fetches: Array<{ readonly url: string; readonly redirect?: RequestRedirect }> = []
+  /** The `accept` header of each deployment GET, in order. */
+  const accepts: Array<string | null> = []
   let caller = options.caller
   let nextPublication = 1_000
 
@@ -226,6 +228,7 @@ export function fakeAdmin(options: FakeAdminOptions) {
   /** The deployments, as a published one serves them: anyone may read them, in place. */
   const fetch = async (url: string, init: RequestInit): Promise<Response> => {
     fetches.push({ url, ...(init.redirect === undefined ? {} : { redirect: init.redirect }) })
+    accepts.push(new Headers(init.headers).get('accept'))
     if (options.deploymentStatus !== undefined)
       return new Response('unavailable', { status: options.deploymentStatus })
     for (const served of options.releases ?? []) {
@@ -259,6 +262,7 @@ export function fakeAdmin(options: FakeAdminOptions) {
     queries,
     calls,
     fetches,
+    accepts,
     as(principal: string) {
       caller = principal
     },

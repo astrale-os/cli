@@ -490,6 +490,8 @@ describe('registry bundle: read from the published deployment (AM-241)', () => {
       { url: `${r150.url}/.well-known/astrale/release.json`, redirect: 'manual' },
       { url: r150.document.schema.bundle.href, redirect: 'manual' },
     ])
+    // The release is asked for as JSON, the bundle by its own media type.
+    expect(admin.accepts).toEqual(['application/json', `${BUNDLE_MEDIA_TYPE}, */*;q=0.1`])
     expect(readdirSync(join(file, '..'))).toEqual(['bundle.json'])
   })
 
