@@ -84,19 +84,33 @@ function continueTurn(chatId: string | undefined, qc: QueryClient): void {
 }
 
 /**
- * The agent half of the work panel: the chat tabs on top, the selected
- * conversation below with its composer pinned at the bottom.
+ * The agent half of the work panel: the chat tabs, and the selected conversation
+ * with its composer pinned at the bottom.
  *
  * The three pieces are exported apart because the bottom dock takes them apart:
- * there the composer is the resting state — a bar floating over the view — and
+ * there the composer is the resting state - a bar floating over the view - and
  * the transcript is what unfolds above it. Docked left or right they stack, and
- * this is that stack.
+ * this is that stack. With the tabs on the left, their column runs the panel's
+ * whole height, down beside the composer, rather than stopping short above it.
  */
 export function AgentTab() {
+  const tabsLeft = useUI((state) => state.chatTabsSide === 'left')
+  const { data: chats } = useChats()
+  const { data: harness } = useHarness()
+  if (!tabsLeft)
+    return (
+      <AgentDropZone className="relative flex h-full min-h-0 flex-col">
+        <AgentTranscript />
+        <AgentComposer />
+      </AgentDropZone>
+    )
   return (
-    <AgentDropZone className="relative flex h-full min-h-0 flex-col">
-      <AgentTranscript />
-      <AgentComposer />
+    <AgentDropZone className="relative flex h-full min-h-0 flex-row">
+      <ChatTabs chats={chats?.chats ?? []} activeId={chats?.activeId} harness={harness} vertical />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <AgentTranscript tabs={false} />
+        <AgentComposer />
+      </div>
     </AgentDropZone>
   )
 }
@@ -150,8 +164,13 @@ export function AgentDropZone({
   )
 }
 
-/** The chat tabs and the turns under them — everything but the composer. */
-export function AgentTranscript() {
+/** The chat tabs and the turns under them - everything but the composer. */
+export function AgentTranscript({
+  tabs = true,
+}: {
+  /** false when the caller lays the tabs out itself */
+  tabs?: boolean
+} = {}) {
   const qc = useQueryClient()
   const { data: chats } = useChats()
   const activeId = chats?.activeId
@@ -165,7 +184,8 @@ export function AgentTranscript() {
   useReadAgentReplies(activeId, turns)
   const run = useDisplayRun(activeId)
   const scroller = useRef<HTMLDivElement>(null)
-  const tabsLeft = useUI((state) => state.chatTabsSide === 'left')
+  const tabsSide = useUI((state) => state.chatTabsSide)
+  const tabsLeft = tabsSide === 'left'
 
   // follow the conversation: a new turn, a new message or a new activity line all
   // move the bottom, and the bottom is what you are reading. The scrollable element
@@ -178,7 +198,15 @@ export function AgentTranscript() {
 
   return (
     <div className={cn('flex min-h-0 flex-1', tabsLeft ? 'flex-row' : 'flex-col')}>
-      <ChatTabs chats={openChats} activeId={activeId} harness={harness} vertical={tabsLeft} />
+      {tabs && (
+        <ChatTabs
+          chats={openChats}
+          activeId={activeId}
+          harness={harness}
+          vertical={tabsLeft}
+          titled={tabsSide === 'top-titled'}
+        />
+      )}
 
       {/* type=scroll: the bar shows while scrolling and fades out — a chat should not
           carry a permanent gutter down its side. */}
