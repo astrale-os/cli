@@ -637,7 +637,7 @@ Examples:
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
     if (opts.refresh !== undefined) return refreshCommand(opts)
-    if (opts.close !== undefined) return closeCommand(opts)
+    if (opts.close !== undefined) return closeCommand(opts).catch((error) => fatal(error, opts))
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)
 
