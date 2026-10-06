@@ -10,6 +10,7 @@ import { settingsRoot, studioSettings } from '../studio-settings'
 import { buildCatalog } from '../workspace/catalog'
 import { createDomain } from '../workspace/create'
 import { detectGit } from '../workspace/git'
+import { getStudioRuntime } from '../workspace/runtime'
 import { badRequest, json, readJsonRecord, type Notify } from './http'
 
 export async function handleWorkspaceRoute(
@@ -17,6 +18,14 @@ export async function handleWorkspaceRoute(
   path: string,
   notify: Notify,
 ): Promise<Response | null> {
+  if (path === '/api/workspace/runtime' && req.method === 'GET') {
+    try {
+      return json(await getStudioRuntime())
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 502)
+    }
+  }
+
   if (path === '/api/workspace') {
     // The registry answers this, NOT the bundles. Every read of the studio is gated
     // on this list — it is what turns "Connecting to studio…" into an interface —

@@ -22,6 +22,7 @@ import { CommentModeOverlay } from '@/components/comment-mode'
 import { NewDomainDialog } from '@/components/create-domain'
 import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { StudioRuntimeNotice } from '@/components/studio-runtime-notice'
 import { Tour } from '@/components/tour'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
 import { UpdatesBadge } from '@/components/updates-badge'
@@ -213,6 +214,7 @@ export function App() {
           {/* what you are looking at — which DOMAIN is the rail's question, not this bar's */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <InstanceSwitcher />
+            <StudioRuntimeNotice />
             {scopedDomain ? (
               <UpdatesBadge domainId={scopedDomain.id} domainPath={scopedDomain.path} />
             ) : null}
