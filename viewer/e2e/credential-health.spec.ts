@@ -28,6 +28,7 @@ async function mount(page: Page, context: BrowserContext) {
   let available = true
   let tokens = 0
   let documents = 0
+  const reports: string[] = []
   await page.clock.install()
   await context.route('https://**/*', async (route) => {
     const url = new URL(route.request().url())
@@ -74,7 +75,11 @@ async function mount(page: Page, context: BrowserContext) {
         json: { token: `fixture-${tokens}`, expiresAt: now + 240_000, kind: 'minted' },
       })
     }
-    if (url.pathname === '/status') return route.fulfill({ json: { revision: 0 } })
+    if (url.pathname === '/status') {
+      const { state } = route.request().postDataJSON() as { state: string }
+      if (state !== 'alive') reports.push(state)
+      return route.fulfill({ json: { revision: 0 } })
+    }
     return route.fulfill({
       contentType: url.pathname === '/main.js' ? 'application/javascript' : 'text/html',
       body: url.pathname === '/main.js' ? hostScript : hostHtml,
@@ -92,6 +97,7 @@ async function mount(page: Page, context: BrowserContext) {
       available = value
     },
     tokens: () => tokens,
+    reports,
     preserved: async () => {
       expect(documents).toBe(1)
       await expect(page.locator('#frame iframe')).toHaveCount(1)
@@ -116,12 +122,15 @@ test('shows degraded and expired credentials, then automatically recovers the sa
   await page.clock.fastForward(61_000)
   await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'expired')
   await expect(page.getByRole('button', { name: 'Retry session' })).toBeEnabled()
+  await expect.poll(() => view.reports.at(-1)).toBe('expired')
+  expect(view.reports).not.toContain('failed')
   await view.preserved()
 
   view.available(true)
   await page.clock.fastForward(30_000)
   await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'connected')
   await expect(page.locator('#session-error')).toBeHidden()
+  await expect.poll(() => view.reports.at(-1)).toBe('connected')
   await expect(view.frame.locator('output')).not.toHaveAttribute('data-refreshes', '0')
   await view.preserved()
 })

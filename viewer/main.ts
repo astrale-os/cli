@@ -255,7 +255,7 @@ async function main(): Promise<void> {
     sessionMessage.textContent = message
     sessionRetry.hidden = state !== 'expired'
     sessionRetry.disabled = credential?.state !== 'expired'
-    report(state === 'expired' ? 'failed' : state, message || undefined)
+    report(state, message || undefined)
   }
   shell.onWindowChange(showWindowStatus)
   sessionRetry.onclick = () => {
