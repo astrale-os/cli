@@ -135,9 +135,23 @@ export async function buildProgram(): Promise<Command> {
     description: 'List, publish, install, and uninstall domains',
     commands: [
       withKernelOptions((await import('../commands/domain/list')).default),
+      withKernelOptions((await import('../commands/domain/versions')).default),
       withKernelOptions((await import('../commands/domain/publish')).default),
       withKernelOptions((await import('../commands/domain/install')).default),
       withKernelOptions((await import('../commands/domain/uninstall')).default),
+    ],
+  })
+
+  // Machine plumbing of the Domain version registry (CT29), driven by `astrale-domain diff`,
+  // `publish` and `yank`; hidden from help like `__view-serve`.
+  registerGroup(program, {
+    name: '__domain-registry',
+    description: 'Read and write the Domain version registry (machine plumbing, JSON only)',
+    hidden: true,
+    commands: [
+      withKernelOptions((await import('../commands/domain-registry/bundle')).default),
+      withKernelOptions((await import('../commands/domain-registry/publish')).default),
+      withKernelOptions((await import('../commands/domain-registry/yank')).default),
     ],
   })
 

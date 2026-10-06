@@ -148,6 +148,10 @@ describe('program composition', () => {
 
     expect(paths).toEqual([
       '',
+      '__domain-registry',
+      '__domain-registry bundle',
+      '__domain-registry publish',
+      '__domain-registry yank',
       '__view-serve',
       'admin',
       'admin status',
@@ -164,6 +168,7 @@ describe('program composition', () => {
       'domain list',
       'domain publish',
       'domain uninstall',
+      'domain versions',
       'get',
       'identity',
       'identity create',
