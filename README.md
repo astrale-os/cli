@@ -28,12 +28,14 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 The CLI is distributed only as this standalone executable; the npm package is
 deprecated.
 
-Generated Project Environments deploy remotely with either adapter. `pnpm dev`
-watches `development`; `pnpm dev staging` selects another Environment. The
-Environment declares its deployment and optional Kernel installation target.
-The Astrale adapter uses Services on the configured instance; the Cloudflare
-adapter uses the author's Cloudflare account. Domain development runs no local
-Worker or ingress. Stopping orchestration leaves deployment and installation alive.
+Generated Project Environments deploy remotely with either adapter.
+`pnpm run deploy <environment>` makes one immutable deployment, prints its URL
+and never installs; `astrale domain install <url> -i <instance>` pins that
+release on an instance. An Environment names no instance. The Astrale adapter
+deploys on the Admin instance's Services; the Cloudflare adapter deploys in the
+author's Cloudflare account. Domain development runs no local Worker or ingress.
+The astrale-domain skill's `references/release.md` describes deploy, install,
+publish and yank.
 
 ## Quickstart
 
