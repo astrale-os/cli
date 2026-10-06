@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.129](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.128...cli/v1.0.0-beta.129) (2026-10-06)
+
+
+### Features
+
+* **commands:** install origin@version ([#594](https://github.com/astrale-os/cli/issues/594)) ([d61ec0f](https://github.com/astrale-os/cli/commit/d61ec0f884b3fd89c8fde987f7e75a5d152f8847))
+* **commands:** show what runs on an instance ([#593](https://github.com/astrale-os/cli/issues/593)) ([25e0f95](https://github.com/astrale-os/cli/commit/25e0f95b7865bbd40f9d1e2a719adeaf3564434f))
+
 ## [1.0.0-beta.128](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.127...cli/v1.0.0-beta.128) (2026-10-06)
 
 
