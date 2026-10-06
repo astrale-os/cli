@@ -69,9 +69,10 @@ export default {
   description: 'List domains published in the admin catalog (DomainEntry.list)',
   afterHelpText: `
 Behavior:
-  Reads the admin catalog — every domain that has been \`publish\`ed
-  (origin → published worker URL). Listing only shows what is INSTALLABLE;
-  what is actually mounted where lives on each instance's own graph
+  Reads the Fleet's admin catalog — the domains it contains and those it
+  lists from another Fleet (origin → published worker URL), each once.
+  Listing only shows what is INSTALLABLE; what is actually mounted where
+  lives on each instance's own graph
   (\`astrale query\` against that instance).
 
   Default output is a NAME/ORIGIN/URL/DEFAULT table on a TTY, JSON when piped

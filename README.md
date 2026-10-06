@@ -344,6 +344,12 @@ No Fleet discovery callable or wrapper command is introduced. These readers requ
 Fleet-slug backfill; missing names or slugs fail explicitly. An explicit historical `core.fleet`
 catalogue path remains supported while that Core node exists.
 
+Admin keeps one Domain per origin. A Fleet's catalog is the Domains it contains and the Domains it
+lists from another Fleet: `domain list` and `domain install <origin>` read both, and
+`domain publish --install-by-default` sets the Fleet's own default with
+`Fleet.configureDomainDefault`. Only the core Fleet catalogues a new origin; Admin refuses it on
+another Fleet with `CATALOG_ORIGIN_CONFLICT`.
+
 An explicit target avoids Fleet discovery entirely. Implicit resolution reads each directory page
 once and checks `UseFleet` with at most eight requests in flight; instance creation reuses the
 resolved target for its inventory, mutation, and retries.

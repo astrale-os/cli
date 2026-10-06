@@ -28,6 +28,7 @@ export const AdminContract = Object.freeze({
   }),
   edges: Object.freeze({
     fleetContains: classRef('fleet_contains'),
+    fleetListsDomain: classRef('fleet_lists_domain'),
     fleetInstallsDomainByDefault: classRef('fleet_installs_domain_by_default'),
   }),
   properties: Object.freeze({
