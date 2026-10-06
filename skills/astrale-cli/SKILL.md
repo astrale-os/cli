@@ -189,7 +189,14 @@ retained exact evidence. Unreachable does not mean retired. Add `--admin-only` w
 should be omitted from the machine-readable envelope.
 
 `instance create` provisions through the configured Admin Domain with a WorkOS caller; Admin owns
-Host placement. Neither `instance create` nor `instance root import` accepts `--host`.
+Host placement. Creation preserves an existing active target, including a concurrent selection;
+with no active target it selects the first instance after verifying owner access. It never repoints
+an existing bookmark to a different endpoint. A conflict retains the ready receipt and verified
+access, reports `bookmark.status=pending` with a recovery command under an unused name, and skips
+automatic root import. Use `instance use <name>` to switch explicitly.
+Automatic root recovery starts only after verified access and completed bookmarking, and replaces
+an existing root alias only for the same exact issuer claim. Explicit root import keeps its recovery contract.
+Neither `instance create` nor `instance root import` accepts `--host`.
 
 `instance root import <slug-or-id>` retrieves the target owned Instance's root signing identity
 through Admin over an end-to-end encrypted, one-use transfer. It imports that identity locally as

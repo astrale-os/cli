@@ -57,8 +57,17 @@ Creation finalizes and verifies the selected WorkOS owner's access before bookma
 the instance. If interrupted, rerun your original `instance create` command with the same slug,
 Admin target options (`--admin`, `--admin-url`, `--domain-issuer`) and creator identity. Admin checks
 the original creation receipt and resumes the same Instance and reserved User. Existing bookmarks
-and selection remain untouched until human access succeeds. JSON separates provisioning `state`
-from `access.status`; unfinished creation/access returns a nonzero exit status. An explicit Admin
+and selection remain untouched until human access succeeds. Creation preserves the active target,
+including a selection made by another CLI process while creation runs. With no active target, it
+selects the first created instance. To switch explicitly, run `astrale instance use <slug>`.
+A bookmark already naming another endpoint is preserved; the ready receipt includes a pending
+`bookmark` outcome with a command to register the new endpoint under an unused name. Automatic root
+import starts only after verified owner access and completed bookmarking, and is skipped on a
+bookmark conflict to preserve any existing root identity. It replaces an existing root alias only
+for the same exact Kernel issuer claim; an identity for another issuer is preserved and reported.
+Explicit `instance root import` retains its recovery behavior.
+JSON separates provisioning `state`, `access.status`, and `bookmark.status`; an unfinished journey
+returns a nonzero exit status without changing a successful provisioning receipt. An explicit Admin
 `--creds` bearer cannot produce a child-audience proof: replace it with `--as <identity>` for the
 creator's WorkOS identity while retaining the same Admin target options.
 Root recovery is independent and never substitutes for the human owner's access.
