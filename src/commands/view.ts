@@ -383,13 +383,15 @@ async function startSessionLocked(
 
 type PageState = { state: string; error?: string }
 
-async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
+export async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
   const deadline = Date.now() + STATE_TIMEOUT_MS
   let last: PageState = { state: 'waiting' }
   while (Date.now() < deadline) {
     try {
       last = (await (await fetch(`${record.pageUrl}state`)).json()) as PageState
-      if (last.state === 'connected' || last.state === 'plain' || last.state === 'failed') {
+      if (
+        ['connected', 'plain', 'failed', 'refreshing', 'degraded', 'expired'].includes(last.state)
+      ) {
         return last
       }
     } catch {
@@ -442,6 +444,12 @@ function describeState(state: PageState): string {
       return `failed — ${state.error ?? 'unknown error'}`
     case 'mounting':
       return 'still mounting (check again with a snapshot)'
+    case 'refreshing':
+      return 'renewing the session (View remains mounted)'
+    case 'degraded':
+      return 'session renewal failed (reconnecting automatically)'
+    case 'expired':
+      return 'session expired (reconnecting automatically)'
     default:
       return 'page not loaded yet'
   }
