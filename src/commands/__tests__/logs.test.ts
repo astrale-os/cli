@@ -394,6 +394,26 @@ describe('selectCallerRecords', () => {
     expect(selectCallerRecords(page, '  ')).toBe(page)
   })
 
+  test('preserves the frontier and every gap when caller filtering empties the page', () => {
+    const frontier = { id: 'journal-1', first: 40, committed: 90, durable: 90 }
+    for (const gap of [
+      { kind: 'retention', frontier },
+      { kind: 'recovery', from: 41, through: 44, frontier },
+      { kind: 'generation', frontier },
+      { kind: 'cursor', reason: 'stale' },
+      { kind: 'cursor', reason: 'selection' },
+      { kind: 'cursor', reason: 'visibility' },
+    ] as const) {
+      const source = acceptJournalPage({ ...page, frontier, gap })
+      expect(selectCallerRecords(source, 'absent-caller')).toEqual({
+        records: [],
+        cursor: 'next-page',
+        frontier,
+        gap,
+      })
+    }
+  })
+
   /** @evidence TEST-CLI-LOGS-CALLER-DIRECT-CALL */
   test('matches a direct call, which the Kernel records without caller, by its principal', () => {
     const direct = acceptJournalPage({
@@ -635,6 +655,35 @@ describe('follow continuity', () => {
     expect(run.sequences).toEqual([1, 2, 3, 1, 2])
     expect(run.cursors).toEqual([undefined, 'journal-1-cursor', undefined, undefined])
     expect(JSON.parse(run.stderr)).toMatchObject({ gap: { kind: 'generation' } })
+  })
+
+  test('follows caller matches across empty pages and a recreated journal', async () => {
+    const recreated = frontier('journal-2', 1)
+    const run = await follow({ json: true, caller: 'user-1' }, [
+      {
+        records: [{ ...record(9), principal: 'domain-1', caller: 'user-1' }],
+        cursor: 'journal-1-cursor',
+        frontier: frontier('journal-1', 10),
+      },
+      {
+        records: [{ ...record(10), principal: 'other-user' }],
+        cursor: 'journal-1-tail',
+        frontier: frontier('journal-1', 11),
+      },
+      { records: [], frontier: recreated, gap: { kind: 'generation', frontier: recreated } },
+      { records: [{ ...record(1), principal: 'user-1' }], frontier: recreated },
+    ])
+
+    expect(run.sequences).toEqual([9, 1])
+    expect(run.cursors).toEqual([
+      undefined,
+      'journal-1-cursor',
+      'journal-1-tail',
+      undefined,
+      undefined,
+    ])
+    expect(JSON.parse(run.stderr)).toMatchObject({ gap: { kind: 'generation' } })
+    expect(run.error).toBeUndefined()
   })
 
   test('reports records lost during recovery and keeps the returned cursor', async () => {
