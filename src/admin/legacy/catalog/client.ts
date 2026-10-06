@@ -1,3 +1,17 @@
+/**
+ * The Admin Fleet catalog: the `Domain` entries a Fleet contains or lists (origin, name, discovery
+ * URL), their publication through `Fleet.publishDomain`, and the Fleet's install-by-default
+ * relation set through `Fleet.configureDomainDefault`.
+ *
+ * @deprecated Successor: the Domain version registry of `../../registry` (a Domain's
+ * Publications, read by `astrale domain versions` and `install <origin>@<version>`, written by
+ * `astrale-domain publish <environment>`). The Fleet catalog stays the only source of a Fleet's
+ * default Domains until catalogue and provisioning by version ship. Short-term consumers: operators
+ * who keep a Fleet's defaults (repointing its Shell default with `astrale domain publish --fleet`),
+ * and the bare-origin install of `../../../commands/domain/legacy/catalog-install.ts`. Removal
+ * (D15): once catalogue and provisioning by version ship and no supported 1Pact SDK installs by
+ * bare origin, in a breaking CLI release.
+ */
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
 
@@ -6,10 +20,11 @@ import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 import { MethodKey, PropertyKey } from '@astrale-os/sdk/schema'
 
-import { randomOperationId } from '../../lib/idempotency'
-import { AdminContract, callAdminMethod } from '../contract'
-import { readAllNodes, type AdminGraphApi } from '../graph'
-import { resolveAdminFleet } from '../selection'
+import { randomOperationId } from '../../../lib/idempotency'
+import { AdminContract, callAdminMethod } from '../../contract'
+import { readAllNodes, type AdminGraphApi } from '../../graph'
+import { resolveAdminFleet } from '../../selection'
+import { record, requiredNodePath, requiredString } from './decode'
 import {
   AdminCatalogOriginConflictError,
   AdminDomainNotFoundError,
@@ -251,27 +266,6 @@ function optionalProperty(
 ): Readonly<Record<string, string>> {
   const value = node.props[AdminContract.properties.domain[name]]
   return value === undefined ? {} : { [name]: requiredString(value, `Admin Domain.${name}`) }
-}
-
-function requiredString(input: unknown, label: string): string {
-  if (typeof input !== 'string' || input.length === 0) throw new TypeError(`${label} is invalid.`)
-  return input
-}
-
-function requiredNodePath(input: unknown, label: string): string {
-  const value = requiredString(input, label)
-  try {
-    return Path.parse(value).raw
-  } catch {
-    throw new TypeError(`${label} is invalid.`)
-  }
-}
-
-function record(input: unknown, label: string): Readonly<Record<string, unknown>> {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    throw new TypeError(`${label} is invalid.`)
-  }
-  return input as Readonly<Record<string, unknown>>
 }
 
 function defaultOperationId(kind: 'publish' | 'configure-default'): string {

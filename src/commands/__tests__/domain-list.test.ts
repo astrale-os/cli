@@ -2,10 +2,15 @@ import { defineSchema, schema as schemaApi } from '@astrale-os/sdk/schema'
 import { afterAll, describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 
-import type { DomainInfo } from '../../lib/admin-domain'
+import type { DomainInfo } from '../domain/legacy/fleet-catalog'
 
 import { releaseFor } from '../../__tests__/fixtures/publication'
-import { byDefaultThenName, domainProjection, probe, type DomainRow } from '../domain/list'
+import {
+  byDefaultThenName,
+  domainProjection,
+  probe,
+  type DomainRow,
+} from '../domain/legacy/catalog-list'
 
 const strip = (s: string): string => s.replace(/\[[0-9;]*m/g, '')
 
@@ -144,7 +149,7 @@ describe('domain list — command failures', () => {
       import { mock } from 'bun:test'
       import { ResponseError } from '@astrale-os/sdk/client'
       globalThis.fetch = async () => { throw new Error('Unexpected network access') }
-      mock.module(${JSON.stringify(fileURLToPath(new URL('../../lib/admin-domain.ts', import.meta.url)))}, () => ({
+      mock.module(${JSON.stringify(fileURLToPath(new URL('../domain/legacy/fleet-catalog.ts', import.meta.url)))}, () => ({
         listAdminDomains: async () => { throw ${failure} },
       }))
       const { default: command } = await import(${JSON.stringify(fileURLToPath(new URL('../domain/list.ts', import.meta.url)))})

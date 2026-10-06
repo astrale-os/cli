@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
-import { fakeAdmin } from '../../admin/catalog/__tests__/fake-admin'
+import { fakeAdmin } from '../../admin/legacy/catalog/__tests__/fake-admin'
 
 class ExitError extends Error {
   constructor(readonly code: string | number | null | undefined) {
@@ -73,7 +73,7 @@ afterEach(() => {
 })
 
 async function publish(opts: Record<string, unknown>): Promise<void> {
-  const { default: command } = await import('../domain/publish')
+  const { default: command } = await import('../domain/legacy/catalog-publish')
   await command.action({ fleet: '@tenant-fleet', json: true, noPrompt: true, ...opts } as never)
 }
 
@@ -128,7 +128,7 @@ describe('Fleet catalog commands on a merged Admin catalog', () => {
   })
 
   test('domain install <origin> -i installs the Domain a non-core Fleet lists', async () => {
-    const { installViaAdmin } = await import('../domain/install')
+    const { installViaAdmin } = await import('../domain/legacy/catalog-install')
     const instance = {
       id: '@tenant-app',
       slug: 'tenant-app',

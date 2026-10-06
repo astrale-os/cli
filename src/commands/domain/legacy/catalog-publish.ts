@@ -1,22 +1,34 @@
+/**
+ * `astrale domain publish`: register a deployed Domain in a Fleet's catalog (origin, name,
+ * discovery URL) and set its install-by-default flag.
+ *
+ * @deprecated Successor: `astrale-domain publish <environment>`, which deploys, verifies and
+ * publishes a version in the Domain version registry. The Fleet catalog stays the only source of a
+ * Fleet's default Domains until catalogue and provisioning by version ship. Short-term consumer:
+ * operators who keep a Fleet's defaults, e.g. repointing its Shell default with
+ * `astrale domain publish --fleet <fleet> --origin shell.astrale.ai ... --install-by-default`.
+ * Removal: see `./fleet-catalog.ts`.
+ */
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../../connection'
-import type { CommandDefinition } from '../../program/index'
+import type { KernelCommandOpts } from '../../../connection'
+import type { CommandDefinition } from '../../../program/index'
 
-import { formatKernelError } from '../../connection/errors'
-import { AstraleError } from '../../errors'
-import { publishAdminDomain } from '../../lib/admin-domain'
+import { formatKernelError } from '../../../connection/errors'
+import { AstraleError } from '../../../errors'
 import {
   ADMIN_TARGET_OPTIONS,
   FLEET_OPTION,
   type AdminTargetCommandOpts,
-} from '../../lib/admin-target'
-import { domainPublicationUrl } from '../../lib/domain-publication'
-import { canPrompt } from '../../lib/interactive'
-import { withSpinner } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
-import { promptText } from '../../lib/prompt'
-import { isHttpUrl, validateName, validateUrl } from '../../lib/validation'
+} from '../../../lib/admin-target'
+import { domainPublicationUrl } from '../../../lib/domain-publication'
+import { canPrompt } from '../../../lib/interactive'
+import { withSpinner } from '../../../lib/log'
+import { isMachine, output } from '../../../lib/output'
+import { promptText } from '../../../lib/prompt'
+import { isHttpUrl, validateName, validateUrl } from '../../../lib/validation'
+import { warnFleetCatalogDeprecated } from './catalog-deprecation'
+import { publishAdminDomain } from './fleet-catalog'
 
 type PublishOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -47,8 +59,15 @@ function hostOf(url?: string): string | undefined {
 
 export default {
   name: 'publish',
-  description: 'Register a deployed domain in the admin catalog (DomainEntry.publish)',
+  description:
+    'Deprecated: register a deployed domain in the Fleet catalog (publish versions with astrale-domain publish)',
   afterHelpText: `
+Deprecated:
+  The Fleet catalog now only keeps a Fleet's default Domains (what every new
+  instance of the Fleet receives), until provisioning by version replaces it.
+  To publish a version of a Domain, run \`astrale-domain publish <environment>\`
+  in its project; \`astrale domain install <origin>@<version>\` installs it.
+
 Behavior:
   Upserts a catalog entry on the configured admin kernel: a domain's addressing
   \`origin\`, registry \`name\`, and published \`url\` (no bytes, no version — the
@@ -90,6 +109,7 @@ Examples:
   ],
   // No positional arguments → Commander passes (opts, command); `opts` is first.
   action: async (opts: PublishOpts) => {
+    warnFleetCatalogDeprecated('publish', opts)
     try {
       // Interactive fill (TTY only): a human running this by hand is prompted for
       // any missing field. Automation passes every flag. No TTY / --ci /
