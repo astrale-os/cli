@@ -15,6 +15,8 @@ describe('exchange caller proof', () => {
     expect(exchangeCallerProof(caller())).toBe('caller-proof')
   })
 
+  // Since kernel#959 (single caller) the Kernel types no set algebra in a caller-authored
+  // expression; a grant that still carries one is refused all the same.
   test.each([
     ['bare self', self()],
     ['self and caller union', { kind: 'union', operands: [self(), caller()] }],
@@ -28,10 +30,7 @@ describe('exchange caller proof', () => {
     ],
     ['intersection', { kind: 'intersect', operands: [self(), caller()] }],
     ['exclusion', { kind: 'exclude', base: caller(), excluded: [self()] }],
-  ] satisfies ReadonlyArray<readonly [string, UnresolvedIdentityExpr]>)(
-    'rejects %s',
-    (_, value) => {
-      expect(exchangeCallerProof(value)).toBeUndefined()
-    },
-  )
+  ] satisfies ReadonlyArray<readonly [string, unknown]>)('rejects %s', (_, value) => {
+    expect(exchangeCallerProof(value as UnresolvedIdentityExpr)).toBeUndefined()
+  })
 })

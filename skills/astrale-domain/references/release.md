@@ -175,7 +175,8 @@ astrale-domain yank 1.5.0                                                       
   held directly or through a Group, and one you cannot read is reported as not found. The version
   becomes its deployment URL and release digest; the CLI checks that the deployment still serves
   that release (else PUBLICATION_RELEASE_MISMATCH), and the Kernel refuses any other. If Admin
-  cannot answer, a version reference fails before any install; URLs alone never read Admin.
+  cannot answer, a version reference fails before any install; URLs alone read Admin only to
+  propose a compatible version of a dependent the install pre-check finds broken.
 - A rollback is an install like any other: the old version's deployment still serves. The Kernel
   refuses it (DATA_MIGRATION_REQUIRED) when data written since cannot be carried back.
 - A fix reaches instances as a new version of the same Schema, installed on each instance; no code is

@@ -1,10 +1,11 @@
 import chalk from 'chalk'
 
 import type { KernelCommandOpts, OperationRecovery } from '../../connection'
+import type { InstallPrecheck } from './install-precheck'
 
 import { formatKernelError } from '../../connection/errors'
 import { formatElapsed } from '../../lib/format'
-import { fatal, spinner } from '../../lib/log'
+import { fatal, log, spinner } from '../../lib/log'
 import { isMachine } from '../../lib/output'
 
 /** One deployment URL to install, as written, beside the host name that serves it. */
@@ -22,6 +23,12 @@ export interface InstallFailure {
   readonly error: unknown
   readonly render: 'input' | 'kernel'
   readonly recovery?: OperationRecovery
+  /**
+   * The pre-check of an install the Kernel refused for dependency or dependent compatibility:
+   * `--json` carries it beside the error, and a human sees its proposed grouped install again
+   * under the refusal.
+   */
+  readonly precheck?: InstallPrecheck
 }
 
 /**
@@ -59,8 +66,13 @@ export async function exitWithInstallFailure(
   opts: KernelCommandOpts,
 ): Promise<never> {
   if (failure.render === 'input') fatal(failure.error, opts)
-  await formatKernelError(failure.error, isMachine(opts), undefined, opts.debug, {
+  const machine = isMachine(opts)
+  await formatKernelError(failure.error, machine, undefined, opts.debug, {
     recovery: failure.recovery,
+    ...(failure.precheck === undefined ? {} : { fields: { precheck: failure.precheck } }),
   })
+  if (!machine && failure.precheck?.command !== undefined) {
+    log.dim(`  The pre-check proposes: ${failure.precheck.command}`)
+  }
   process.exit(1)
 }

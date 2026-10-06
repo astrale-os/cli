@@ -3,12 +3,20 @@ import { defineSchema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
 import { deploymentReleaseFor, releaseFor } from '../../__tests__/fixtures/publication'
-import { DeploymentReadError, readServedDeployment, samePin } from '../domain-release'
+import {
+  DeploymentReadError,
+  MAXIMUM_BUNDLE_BYTES,
+  readReleaseBundle,
+  readServedDeployment,
+  samePin,
+} from '../domain-release'
 
 const URL_V4 = 'https://crm-production-0123456789abcdef.deployments.example.test'
 const URL_V3 = 'https://crm.example.test'
 const schema = defineSchema('crm.example.test', {})
-const release = deploymentReleaseFor(schema, URL_V4).document
+const deployment = deploymentReleaseFor(schema, URL_V4)
+const release = deployment.document
+const bundleBytes = deployment.build.schema.bundle.bytes().slice()
 const publication = releaseFor(schema, URL_V3).publication
 
 interface Seen {
@@ -44,6 +52,7 @@ describe('deployment pre-read', () => {
       issuer: URL_V4,
       revision: release.schema.revision,
       pin: { kind: 'release', release: release.digest, build: release.build.digest },
+      release,
     })
     expect(seen).toEqual([
       { url: `${URL_V4}/.well-known/astrale/release.json`, accept: MEDIA_TYPE, redirect: 'error' },
@@ -135,5 +144,95 @@ describe('deployment pre-read', () => {
     expect(samePin(legacy, { ...legacy })).toBe(true)
     expect(samePin(legacy, pin)).toBe(false)
     expect(samePin(pin, legacy)).toBe(false)
+  })
+})
+
+describe('release bundle read (install pre-check)', () => {
+  const bundlePath = new URL(release.schema.bundle.href).pathname
+  const mediaType = release.schema.bundle.ref.mediaType
+  const bundleResponse = (bytes: Uint8Array<ArrayBuffer> = bundleBytes, type: string = mediaType) =>
+    new Response(bytes, { headers: { 'content-type': type } })
+
+  test('reads the bundle the release names, from its own origin, without redirects', async () => {
+    const { seen, fetch } = serve({ [bundlePath]: () => bundleResponse() })
+
+    const read = await readReleaseBundle(release, URL_V4, undefined, fetch)
+
+    expect(read.root.origin).toBe('crm.example.test')
+    // The Kernel asks for the descriptor's media type, so a negotiating deployment answers both alike.
+    expect(seen).toEqual([
+      { url: release.schema.bundle.href, accept: mediaType, redirect: 'error' },
+    ])
+  })
+
+  test('accepts the media type as the Kernel compares it: case and spaces aside', async () => {
+    const { fetch } = serve({
+      [bundlePath]: () => bundleResponse(bundleBytes, mediaType.toUpperCase().replace(';', ' ; ')),
+    })
+
+    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).resolves.toMatchObject({
+      root: { origin: 'crm.example.test' },
+    })
+  })
+
+  test('refuses a bundle served under another media type than its release names', async () => {
+    const { fetch } = serve({ [bundlePath]: () => bundleResponse(bundleBytes, 'application/json') })
+
+    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toThrow(
+      `is not served as ${mediaType}`,
+    )
+  })
+
+  test('reads no more than the Kernel admits, whatever size the release declares', async () => {
+    const declared = MAXIMUM_BUNDLE_BYTES + 10
+    const oversized = {
+      ...release,
+      schema: {
+        ...release.schema,
+        bundle: {
+          ...release.schema.bundle,
+          ref: { ...release.schema.bundle.ref, size: declared },
+        },
+      },
+    } as typeof release
+    const { fetch } = serve({
+      [bundlePath]: () => bundleResponse(new Uint8Array(MAXIMUM_BUNDLE_BYTES + 1)),
+    })
+
+    await expect(readReleaseBundle(oversized, URL_V4, undefined, fetch)).rejects.toMatchObject({
+      name: 'DeploymentReadError',
+      message: expect.stringContaining(`exceeded ${MAXIMUM_BUNDLE_BYTES} bytes`),
+    })
+  })
+
+  test('refuses bytes that are not the bundle the release names', async () => {
+    // Same size, one byte flipped: the digest the descriptor names no longer matches.
+    const tampered = bundleBytes.slice()
+    tampered[tampered.length - 2] = tampered[tampered.length - 2]! ^ 1
+    const { fetch } = serve({ [bundlePath]: () => bundleResponse(tampered) })
+
+    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toBeInstanceOf(
+      DeploymentReadError,
+    )
+  })
+
+  test('refuses more bytes than the descriptor declares', async () => {
+    const { fetch } = serve({
+      [bundlePath]: () => bundleResponse(new Uint8Array(release.schema.bundle.ref.size + 1)),
+    })
+
+    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toMatchObject({
+      name: 'DeploymentReadError',
+      message: expect.stringContaining('exceeded'),
+    })
+  })
+
+  test('refuses a bundle named on another origin than the deployment', async () => {
+    const { seen, fetch } = serve({})
+
+    await expect(
+      readReleaseBundle(release, 'https://elsewhere.example.test', undefined, fetch),
+    ).rejects.toThrow('names its bundle on another origin')
+    expect(seen).toEqual([])
   })
 })

@@ -75,9 +75,22 @@ Behavior:
   Publication's deployment URL and release digest: the CLI checks that the
   deployment still serves that release, and the Kernel refuses any other.
   Versions and URLs mix in one atomic install. If Admin cannot answer, a
-  version reference fails before any install; URLs alone never read Admin. A
+  version reference fails before any install. URLs alone read Admin only to
+  propose a compatible version of a dependent the pre-check finds broken. A
   Kernel that does not list installed releases cannot pin a version: install
   the deployment URL there.
+
+  Before the install is sent, a pre-check runs the Kernel's compatibility
+  engine on what you can read, in both directions: each Domain you install
+  must find what it uses in its dependencies as the install leaves them, and
+  each installed Domain you do not name must still find what it uses in every
+  dependency you upgrade. A Domain whose installed schema you cannot read is
+  reported as not evaluated. For each installed dependent it finds broken, the
+  CLI proposes the highest stable, non-yanked published version built against
+  the new revision, and the grouped install that adds them. The pre-check is
+  advisory: the install is still sent and the Kernel decides. --json carries
+  it as the "precheck" member of the report, and of a refusal for dependency
+  or dependent compatibility.
 
   An issuer change is never silent. When a URL serves another issuer than the
   one its origin is installed under, the install needs consent, which the

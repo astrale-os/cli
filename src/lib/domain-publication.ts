@@ -42,17 +42,21 @@ export class DomainDocumentStatusError extends Error {
   }
 }
 
-/** Read one deployment document body, refusing more than one MiB. */
-export async function readBounded(response: Response, url: URL): Promise<Uint8Array> {
+/** Read one deployment document body, refusing more than `maximum` bytes (one MiB by default). */
+export async function readBounded(
+  response: Response,
+  url: URL,
+  maximum: number = MAXIMUM_PUBLICATION_BYTES,
+): Promise<Uint8Array> {
   const declared = response.headers.get('content-length')
   if (
     declared !== null &&
     (!/^\d+$/u.test(declared) ||
       !Number.isSafeInteger(Number(declared)) ||
-      Number(declared) > MAXIMUM_PUBLICATION_BYTES)
+      Number(declared) > maximum)
   ) {
     await cancel(response.body)
-    throw sizeError(url)
+    throw sizeError(url, maximum)
   }
   if (response.body === null) return new Uint8Array()
 
@@ -68,8 +72,8 @@ export async function readBounded(response: Response, url: URL): Promise<Uint8Ar
         break
       }
       if (next.value.byteLength === 0) continue
-      if (next.value.byteLength > MAXIMUM_PUBLICATION_BYTES - size) {
-        throw sizeError(url)
+      if (next.value.byteLength > maximum - size) {
+        throw sizeError(url, maximum)
       }
       chunks.push(next.value)
       size += next.value.byteLength
@@ -88,8 +92,8 @@ export async function readBounded(response: Response, url: URL): Promise<Uint8Ar
   return bytes
 }
 
-function sizeError(url: URL): Error {
-  return new Error(`GET ${url.href} exceeded ${MAXIMUM_PUBLICATION_BYTES} bytes`)
+function sizeError(url: URL, maximum: number): Error {
+  return new Error(`GET ${url.href} exceeded ${maximum} bytes`)
 }
 
 export async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {

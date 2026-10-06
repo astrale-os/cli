@@ -6,6 +6,8 @@ import type {
   InstallResult,
 } from '@astrale-os/sdk/client/schema'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { DomainRelease } from '@astrale-os/sdk/release'
+import type { bundle } from '@astrale-os/sdk/schema'
 
 import { ResponseError } from '@astrale-os/sdk/client'
 import { parseReference } from '@astrale-os/sdk/versioning'
@@ -15,6 +17,12 @@ import type { AdminRegistryApi } from '../../admin/registry'
 import type { ConnectionContext, KernelCommandOpts } from '../../connection'
 import type { AdminTargetCommandOpts } from '../../lib/admin-target'
 import type { InstallFailure, UrlSource } from './install-call'
+import type {
+  DependentProposal,
+  InstallPrecheck,
+  PrecheckRoot,
+  PrecheckVerdict,
+} from './install-precheck'
 import type { ResolvedVersion, VersionReference } from './version-reference'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
@@ -23,6 +31,7 @@ import { reasonCode } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
 import {
   DeploymentReadError,
+  readReleaseBundle,
   readServedDeployment,
   samePin,
   type ServedDeployment,
@@ -30,6 +39,7 @@ import {
 import { fatal, log } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
+import { precheckInstall, proposeDependentVersions } from './install-precheck'
 import {
   admitIssuerChanges,
   asksIssuerConsent,
@@ -126,6 +136,8 @@ export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION
 export type InstallReport = InstallResult & {
   readonly references: readonly InstallReference[]
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
+  /** The advisory pre-check this install ran before it was sent ([.78239] [.69634]). */
+  readonly precheck: InstallPrecheck
 }
 
 export interface ReferenceInstallDependencies {
@@ -138,6 +150,12 @@ export interface ReferenceInstallDependencies {
     work: (registry: Pick<AdminRegistryApi, 'index'>) => Promise<Value>,
   ) => Promise<Value>
   readonly readDeployment: (url: string, signal?: AbortSignal) => Promise<ServedDeployment>
+  /** Reads the Schema Bundle a served release names, for the pre-check. */
+  readonly readBundle: (
+    release: DomainRelease,
+    url: string,
+    signal?: AbortSignal,
+  ) => Promise<bundle.Bundle>
   readonly now: () => number
   readonly sleep: (ms: number) => Promise<void>
 }
@@ -148,6 +166,8 @@ const defaultDependencies: ReferenceInstallDependencies = Object.freeze({
   withClientSession,
   openRegistry: openInstallRegistry,
   readDeployment: (url: string, signal?: AbortSignal) => readServedDeployment(url, signal),
+  readBundle: (release: DomainRelease, url: string, signal?: AbortSignal) =>
+    readReleaseBundle(release, url, signal),
   now: () => Date.now(),
   sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 })
@@ -168,7 +188,8 @@ export interface ReleaseSource extends UrlSource {
  * reference (`<origin>@<major>.<minor>.<patch>[-<pre>]` or `<origin>@<major>.<minor>`) is first
  * translated, once, into the deployment URL and release of one Publication the caller may read in
  * Admin (Résolution [.78020] [.78086]). An Admin that cannot answer fails the version references
- * only, before any Kernel is contacted, and an install of URLs alone never reads Admin.
+ * only, before any Kernel is contacted. An install of URLs alone reads Admin only to propose a
+ * compatible version of an installed dependent the pre-check finds broken ([.69634]).
  *
  * A Kernel that lists installed releases receives the `release` request, guarded by the release
  * digest each root must serve (the Publication's for a version, the one read from the URL
@@ -505,6 +526,17 @@ async function installReleases(
         if (notice !== undefined) log.warn(notice)
       }
     }
+  } catch (error) {
+    return { error, render: 'input' }
+  }
+  // The pre-check informs the operator's issuer consent, so it is shown before that prompt.
+  // Advisory: a defect anywhere in it reports every root failed and the install is still sent.
+  const precheck = await precheckReferences(context.session, roots, before, opts, deps, {
+    changes,
+    overridden,
+  }).catch(() => failedPrecheck(roots))
+  if (!machine) presentPrecheck(precheck)
+  try {
     await admitIssuerChanges(
       changes.filter((change): change is IssuerChange => change !== undefined),
       consent,
@@ -563,6 +595,7 @@ async function installReleases(
             ...result,
             references: report,
             ...(recovered === undefined ? {} : { recovered }),
+            precheck,
           } satisfies InstallReport,
           opts,
         )
@@ -601,9 +634,223 @@ async function installReleases(
       }
     },
   })
-  if (failure !== undefined) return failure
+  if (failure !== undefined)
+    return compatibilityRefusal(failure) ? { ...failure, precheck } : failure
   if (mismatched.length > 0) return { error: pinMismatchError(mismatched), render: 'input' }
   return undefined
+}
+
+/** Whether the pre-check predicted a refusal. */
+function predicted(precheck: InstallPrecheck): boolean {
+  return precheck.dependencies.length > 0 || precheck.dependents.length > 0
+}
+
+/** The Kernel refusals the pre-check predicts. */
+const COMPATIBILITY_REFUSALS: ReadonlySet<string> = new Set([
+  'SCHEMA_DEPENDENCY_INCOMPATIBLE',
+  'SCHEMA_DEPENDENTS_INCOMPATIBLE',
+])
+
+/**
+ * Whether the install failed on a Kernel refusal of the kind the pre-check predicts: only then is
+ * the pre-check shown beside the refusal. A transport failure or an unknown outcome is resent with
+ * its own operation id, never replaced by the proposed install.
+ */
+function compatibilityRefusal(failure: InstallFailure): boolean {
+  return (
+    failure.render === 'kernel' &&
+    failure.error instanceof ResponseError &&
+    COMPATIBILITY_REFUSALS.has(reasonCode(failure.error.reason) ?? '')
+  )
+}
+
+/**
+ * Run the advisory pre-check of one install ([.78239] [.69634]) and, for each broken dependent,
+ * read the registry for a compatible version to propose. Only a broken dependent opens the
+ * registry, so an install of URLs that the pre-check passes never reads Admin. Nothing here fails
+ * the install: what the CLI cannot read is reported as skipped or unevaluated, and the install is
+ * sent for the Kernel to decide.
+ */
+async function precheckReferences(
+  session: ClientSession,
+  roots: readonly PlannedRoot[],
+  before: readonly InstalledRelease[],
+  opts: ReferenceInstallOpts,
+  deps: ReferenceInstallDependencies,
+  retry: {
+    readonly changes: readonly (IssuerChange | undefined)[]
+    readonly overridden: readonly (string | undefined)[]
+  },
+): Promise<InstallPrecheck> {
+  const checked = await Promise.all(
+    roots.map(async ({ source, served, origin }): Promise<PrecheckRoot> => {
+      const skip = (reason: Extract<PrecheckRoot, { kind: 'skipped' }>['reason']): PrecheckRoot =>
+        Object.freeze({
+          kind: 'skipped' as const,
+          reference: source.reference,
+          ...(origin === undefined ? {} : { origin }),
+          ...(served === undefined ? {} : { revision: served.revision }),
+          reason,
+        })
+      if (served === undefined) return skip('release-unread')
+      if (served.release === undefined) {
+        return skip(served.pin.kind === 'legacy' ? 'legacy' : 'release-unread')
+      }
+      try {
+        const bundle = await deps.readBundle(
+          served.release,
+          source.url,
+          AbortSignal.timeout(10_000),
+        )
+        return Object.freeze({
+          kind: 'release' as const,
+          reference: source.reference,
+          origin: served.origin,
+          release: served.release,
+          bundle,
+        })
+      } catch {
+        return skip('bundle-unread')
+      }
+    }),
+  )
+  let evaluated: PrecheckVerdict
+  try {
+    evaluated = await precheckInstall(checked, before, session.schema)
+  } catch {
+    // Advisory: a defect of the pre-check never stops an install the Kernel would admit.
+    return failedPrecheck(roots)
+  }
+  const { indirect, ...verdict } = evaluated
+  if (verdict.dependents.length === 0) return Object.freeze({ ...verdict, proposals: [] })
+  // A dependent that breaks on a dependency it reaches only through another Domain has no answer
+  // in the registry, so only the others open it.
+  const direct = verdict.dependents.filter(({ domain }) => !indirect.has(domain.origin))
+  let registered: readonly DependentProposal[] = []
+  if (direct.length > 0) {
+    try {
+      registered = await deps.openRegistry(opts, (registry) =>
+        proposeDependentVersions(direct, before, registry),
+      )
+    } catch (error) {
+      const { code } = registryFailure(error, 'read')
+      registered = [...new Set(direct.map(({ domain }) => domain.origin))].map((origin) =>
+        Object.freeze({ origin, kind: 'unread' as const, code }),
+      )
+    }
+  }
+  const proposals = [...new Set(verdict.dependents.map(({ domain }) => domain.origin))].map(
+    (origin): DependentProposal => {
+      const through = indirect.get(origin)
+      return through === undefined
+        ? registered.find((proposal) => proposal.origin === origin)!
+        : Object.freeze({ origin, kind: 'indirect' as const, dependencies: Object.freeze(through) })
+    },
+  )
+  const versions = proposals.flatMap((proposal) =>
+    proposal.kind === 'version' ? [`${proposal.origin}@${proposal.version}`] : [],
+  )
+  const command =
+    versions.length === proposals.length
+      ? installCommand(
+          [...roots.map(({ source }) => installedReference(source)), ...versions],
+          opts,
+          retry.changes,
+          retry.overridden,
+          { registry: true },
+        )
+      : undefined
+  return Object.freeze({
+    ...verdict,
+    proposals,
+    ...(command === undefined ? {} : { command }),
+  })
+}
+
+/** The pre-check of an install it could not run: every root is reported failed, nothing predicted. */
+function failedPrecheck(roots: readonly PlannedRoot[]): InstallPrecheck {
+  return Object.freeze({
+    compared: 0,
+    dependencies: [],
+    dependents: [],
+    skipped: roots.map(({ source }) =>
+      Object.freeze({ reference: source.reference, reason: 'failed' as const }),
+    ),
+    unevaluated: [],
+    proposals: [],
+  })
+}
+
+/**
+ * The pre-check for a human, before the install is sent: what the engine predicts the Kernel will
+ * refuse, the grouped install that would pass, and what it could not evaluate.
+ */
+function presentPrecheck(precheck: InstallPrecheck): void {
+  for (const finding of precheck.dependencies) {
+    log.warn(
+      `Pre-check: ${finding.origin} was built against ${finding.dependency} ${shortDigest(finding.expected)}, ` +
+        `which ${shortDigest(finding.actual)} changes: ${changesLabel(finding.changes)}.`,
+    )
+  }
+  for (const finding of precheck.dependents) {
+    log.warn(
+      `Pre-check: installing ${finding.dependency} ${shortDigest(finding.actual)} breaks installed ` +
+        `${finding.domain.origin}, built against ${shortDigest(finding.expected)}: ${changesLabel(finding.changes)}.`,
+    )
+  }
+  for (const proposal of precheck.proposals) {
+    if (proposal.kind === 'none') {
+      // The registry lists each Publication's exact dependency revisions; a version built against
+      // others may still hold, and the Kernel decides.
+      log.warn(
+        `  No published version of ${proposal.origin} is built against the revisions this install brings.`,
+      )
+    } else if (proposal.kind === 'indirect') {
+      log.warn(
+        `  No version of ${proposal.origin} is proposed: it reaches ${proposal.dependencies.join(', ')} only through another Domain, and Publications list their direct dependencies only.`,
+      )
+    } else if (proposal.kind === 'unread') {
+      log.dim(
+        `  ${proposal.origin}: the registry could not be read (${proposal.code}), so no version is proposed.`,
+      )
+    } else if (proposal.issuer !== undefined) {
+      log.dim(
+        `  ${proposal.origin}@${proposal.version} changes its issuer (${proposal.issuer.from} -> ${proposal.issuer.to}): the install asks for that consent, or name it with --allow-issuer-change=${proposal.origin}.`,
+      )
+    }
+  }
+  if (precheck.command !== undefined) log.info(`  Proposed grouped install: ${precheck.command}`)
+  for (const { reference, reason } of precheck.skipped) {
+    log.dim(`  Pre-check skipped ${reference}: ${SKIPPED[reason]}`)
+  }
+  if (precheck.unevaluated.length > 0) {
+    const count = precheck.unevaluated.length
+    log.dim(
+      `  Pre-check could not evaluate ${count === 1 ? '1 Domain' : `${count} Domains`} (${precheck.unevaluated.join(', ')}): ` +
+        `${count === 1 ? 'its' : 'their'} installed schema or bindings are not readable here, or the engine could not compare them.`,
+    )
+  }
+  if (predicted(precheck)) {
+    log.dim('  The pre-check is advisory: the install is sent and the Kernel decides.')
+  } else if (precheck.compared > 0) {
+    log.dim(
+      `  Pre-check: ${precheck.compared} dependency ${precheck.compared === 1 ? 'binding holds' : 'bindings hold'}; the Kernel checks again.`,
+    )
+  }
+}
+
+const SKIPPED: Readonly<Record<InstallPrecheck['skipped'][number]['reason'], string>> = {
+  'release-unread': 'what its deployment serves could not be read.',
+  legacy: 'it serves a legacy v2/v3 document.',
+  'bundle-unread': 'the Schema Bundle its release names could not be read.',
+  failed: 'the pre-check failed; the Kernel still checks the install.',
+}
+
+function changesLabel(changes: InstallPrecheck['dependencies'][number]['changes']): string {
+  const shown = changes.slice(0, 3).map(({ key, kind }) => `${key} ${kind}`)
+  return changes.length > 3
+    ? `${shown.join(', ')} and ${changes.length - 3} more`
+    : shown.join(', ')
 }
 
 /** What the install call gives the presentation: the Kernel result and the listing read after it. */
@@ -909,9 +1156,30 @@ function releaseInstallRetry(
   changes: readonly (IssuerChange | undefined)[],
   overridden: readonly (string | undefined)[],
 ): string {
-  const references = sources.map((source) =>
-    source.publication === undefined ? source.reference : exactReference(source.publication),
-  )
+  return installCommand(sources.map(installedReference), opts, changes, overridden, {
+    operation,
+    registry: sources.some((source) => source.publication !== undefined),
+  })
+}
+
+/** A reference as an install names it again: a version by the exact version it resolved to. */
+function installedReference(source: ReleaseSource): string {
+  return source.publication === undefined ? source.reference : exactReference(source.publication)
+}
+
+/**
+ * One `astrale domain install` command line for `references`, with the target, identity and
+ * consents of this install, the Admin target when a version reference needs the registry, and the
+ * operation id only when the command resends this very install.
+ */
+function installCommand(
+  references: readonly string[],
+  opts: ReferenceInstallOpts,
+  changes: readonly (IssuerChange | undefined)[],
+  overridden: readonly (string | undefined)[],
+  options: { readonly operation?: string; readonly registry: boolean },
+): string {
+  const operation = options.operation === undefined ? '' : ` --operation ${options.operation}`
   const url = opts.url === undefined ? '' : ` --url ${opts.url}`
   const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
   const identity = opts.as === undefined ? '' : ` --as ${opts.as}`
@@ -929,8 +1197,8 @@ function releaseInstallRetry(
   const override = overridden.some((origin) => origin !== undefined)
     ? ' --allow-identity-override'
     : ''
-  const registry = sources.some((source) => source.publication !== undefined) ? admin : ''
-  return `astrale domain install ${references.join(' ')} --operation ${operation}${consents}${revoke}${override}${url}${instance}${identity}${registry}`
+  const registry = options.registry ? admin : ''
+  return `astrale domain install ${references.join(' ')}${operation}${consents}${revoke}${override}${url}${instance}${identity}${registry}`
 }
 
 function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError {
