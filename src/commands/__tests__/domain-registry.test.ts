@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parse as parseYaml } from 'yaml'
 
 import type { AdminRegistryApi, RegistryIndexV1 } from '../../admin/registry'
 import type { RegistryCommandDependencies } from '../domain-registry/shared'
@@ -60,6 +61,7 @@ function harness(
     admin,
     dependencies,
     stdout: () => JSON.parse(written.join('')) as Record<string, unknown>,
+    written: () => written,
     opened: () => opened,
   }
 }
@@ -75,6 +77,41 @@ describe('astrale domain versions', () => {
       '1.5.0',
       '1.4.2',
     ])
+  })
+
+  test('--format yaml prints the same document as YAML; --json keeps JSON', async () => {
+    const yaml = harness('installer')
+    expect(await runVersions(ORIGIN, { format: 'yaml' }, yaml.dependencies)).toBe(0)
+    const printed = yaml.written().join('')
+    expect(printed.trimStart().startsWith('{')).toBe(false)
+    const json = harness('installer')
+    expect(await runVersions(ORIGIN, { json: true }, json.dependencies)).toBe(0)
+    expect(parseYaml(printed)).toEqual(json.stdout())
+    const both = harness('installer')
+    expect(await runVersions(ORIGIN, { format: 'yaml', json: true }, both.dependencies)).toBe(0)
+    expect(both.stdout()).toEqual(json.stdout())
+    const refused = harness('outsider')
+    expect(await runVersions(ORIGIN, { format: 'yaml' }, refused.dependencies)).toBe(1)
+    expect(parseYaml(refused.written().join(''))).toEqual({
+      error: {
+        code: 'REGISTRY_DOMAIN_NOT_FOUND',
+        message: expect.stringContaining(ORIGIN),
+        details: { origin: ORIGIN },
+      },
+    })
+  })
+
+  test('on a TTY, --format json prints the document instead of the table', async () => {
+    const isTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
+    try {
+      const run = harness('installer')
+      expect(await runVersions(ORIGIN, { format: 'json' }, run.dependencies)).toBe(0)
+      expect((run.stdout() as unknown as RegistryIndexV1).format).toBe('astrale.registry-index')
+    } finally {
+      if (isTTY === undefined) delete (process.stdout as { isTTY?: boolean }).isTTY
+      else Object.defineProperty(process.stdout, 'isTTY', isTTY)
+    }
   })
 
   test('a refusal is one error document on stdout and exit 1', async () => {

@@ -48,7 +48,10 @@ export async function runVersions(
 ): Promise<number> {
   return runRegistryCommand({
     opts,
-    machine: isMachine(opts),
+    // An explicit --format asks for the document, on a TTY too (as `presentList` does).
+    machine: isMachine(opts) || opts.format !== undefined,
+    // `--format yaml` prints the document as YAML (as `output` does); `--json` and `--raw` keep JSON.
+    notation: opts.format === 'yaml' && !opts.json && !opts.raw ? 'yaml' : 'json',
     action: 'read',
     admit: () => registryOrigin(origin),
     work: (registry, admitted) => registry.index(admitted),
@@ -77,9 +80,9 @@ Behavior:
   answer, REGISTRY_DOMAIN_NOT_FOUND. Nothing is installed or changed.
 
   The table shows VERSION, RELEASE (release digest) and STATUS
-  (pre-release, yanked) on a TTY. --json, --ci or a pipe print one
-  astrale.registry-index document; a refusal prints
-  { "error": { "code", "message", "details" } } and exits 1.
+  (pre-release, yanked) on a TTY. --json, --ci, --format or a pipe print
+  one astrale.registry-index document (YAML under --format yaml); a
+  refusal prints { "error": { "code", "message", "details" } } and exits 1.
 
 Examples:
   $ astrale domain versions issues.astrale.ai

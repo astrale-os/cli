@@ -1,4 +1,5 @@
 import chalk from 'chalk'
+import { stringify as yamlStringify } from 'yaml'
 
 import type { AdminRegistryApi } from '../../admin/registry'
 import type { KernelCommandOpts } from '../../connection'
@@ -39,6 +40,8 @@ export interface RegistryCommandDependencies {
 export async function runRegistryCommand<Admitted, Value>(input: {
   readonly opts: RegistryCommandOpts
   readonly machine: boolean
+  /** The document's notation in machine mode; JSON unless a command honors `--format yaml`. */
+  readonly notation?: 'json' | 'yaml'
   readonly action: 'read' | 'change'
   /** Admit the arguments and stdin before any connection, so a bad input costs no request. */
   readonly admit: () => Admitted | Promise<Admitted>
@@ -54,14 +57,21 @@ export async function runRegistryCommand<Admitted, Value>(input: {
     value = await open(input.opts, (registry) => input.work(registry, admitted))
   } catch (cause) {
     const error = registryFailure(cause, input.action)
-    if (input.machine) write(`${JSON.stringify(registryErrorDocument(error), null, 2)}\n`)
+    if (input.machine) write(registryDocument(registryErrorDocument(error), input.notation))
     else renderRegistryError(error)
     if (input.opts.debug) printFailureDebug(cause, '')
     return 1
   }
-  if (input.machine || input.present === undefined) write(`${JSON.stringify(value, null, 2)}\n`)
+  if (input.machine || input.present === undefined) write(registryDocument(value, input.notation))
   else input.present(value)
   return 0
+}
+
+/** One document in the notation the command chose: JSON by default (the plumbing is JSON only). */
+function registryDocument(value: unknown, notation: 'json' | 'yaml' = 'json'): string {
+  if (notation === 'yaml')
+    return `${yamlStringify(value, { indent: 2, lineWidth: 120 }).trimEnd()}\n`
+  return `${JSON.stringify(value, null, 2)}\n`
 }
 
 export function registryErrorDocument(error: AstraleError): RegistryErrorDocument {
