@@ -2,7 +2,7 @@ import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
-import type { UrlInstallOpts } from './release-install'
+import type { ReferenceInstallOpts } from './release-install'
 
 import { withAdminClientSession } from '../../connection'
 import { formatKernelError } from '../../connection/errors'
@@ -23,11 +23,12 @@ import { canPrompt } from '../../lib/interactive'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { promptText, selectFrom } from '../../lib/prompt'
-import { installByUrl } from './release-install'
+import { installByReference } from './release-install'
+import { isVersionReference } from './version-reference'
 
 type InstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts &
-  UrlInstallOpts & {
+  ReferenceInstallOpts & {
     direct?: boolean
     // Programmatic opt-out for callers that drive this command as a function.
     // The matching CLI flags are read from argv by `canPrompt` — Commander
@@ -38,19 +39,26 @@ type InstallOpts = KernelCommandOpts &
 
 /**
  * A URL reference is one that starts with `https://` or `http://` (a local Host): it names one
- * deployment and goes to the instance Kernel. Anything else is a Fleet catalog origin.
+ * deployment and goes to the instance Kernel. A version reference (`<origin>@<version>`) names a
+ * published version and goes to the instance Kernel once Admin's registry resolved it. Anything
+ * else is a Fleet catalog origin.
  */
 export function isUrlReference(reference: string): boolean {
   return reference.startsWith('https://') || reference.startsWith('http://')
 }
 
 /**
- * Whether the references go to the instance Kernel: every reference is a URL, or the deprecated
- * `--direct` names that route, so even a URL the reference grammar does not read (an upper-case
- * scheme) never reaches the Fleet catalog; `installByUrl` then admits or refuses it.
+ * Whether the references go to the instance Kernel: every reference is a URL or a version, or the
+ * deprecated `--direct` names that route, so even a URL the reference grammar does not read (an
+ * upper-case scheme) never reaches the Fleet catalog; `installByReference` then admits or refuses
+ * it.
  */
 export function installsOnKernel(references: readonly string[], direct: boolean): boolean {
-  return references.length > 0 && (direct || references.every(isUrlReference))
+  return (
+    references.length > 0 &&
+    (direct ||
+      references.every((reference) => isUrlReference(reference) || isVersionReference(reference)))
+  )
 }
 
 export default {
@@ -70,6 +78,23 @@ Behavior:
   install, it reads the installed releases back and verifies each pin. A
   deployment that answers 503 (not serving yet) to that read is read again for
   up to 60 s; a Kernel refusal of the install itself is never resent.
+
+  A version reference names a published version instead of a URL: the syntax
+  decides, a version goes to the registry and a URL is installed as is.
+    - <origin>@1.5.0 (or @2.0.0-rc.1): exactly that version, a pre-release or
+      a yanked one included (a yanked version installs with a warning);
+    - <origin>@1.5: the highest stable 1.5.x that is not yanked.
+  A major alone (@1), a range or build metadata is refused. The CLI reads the
+  Domain's Publications in the Admin registry (--admin / --admin-url, or the
+  configured Admin target) with your own identity: a private Domain needs
+  domain_installer (or domain_admin), held directly or through a Group, and
+  one you cannot read is reported as not found. The version becomes its
+  Publication's deployment URL and release digest: the CLI checks that the
+  deployment still serves that release, and the Kernel refuses any other.
+  Versions and URLs mix in one atomic install. If Admin cannot answer, a
+  version reference fails before any install; URLs alone never read Admin. A
+  Kernel that does not list installed releases cannot pin a version: install
+  the deployment URL there.
 
   An issuer change is never silent. When a URL serves another issuer than the
   one its origin is installed under, the install needs consent, which the
@@ -96,14 +121,17 @@ Behavior:
   the catalog interactively. The target instance must then be admin-managed.
 
   A fresh, strong operation id is generated automatically. Use --operation
-  only to retry or recover the exact same URL install after an outcome-unknown
-  timeout or disconnect.
+  only to retry or recover the exact same install after an outcome-unknown
+  timeout or disconnect; the retry command the CLI prints names each version
+  exactly as it resolved, never the line it was asked for.
 
   --direct is deprecated and changes nothing: URL references always go to the
   instance Kernel. It is still accepted for scripts written before, and is
   removed in a later breaking release.
 
 Examples:
+  $ astrale domain install issues.astrale.ai@1.5 -i acme-prod            # highest stable 1.5.x
+  $ astrale domain install crm.acme.dev@1.5.0 https://employees.example -i staging  # mixed, atomic
   $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel
   $ astrale domain install https://agencies.example https://employees.example -i staging  # grouped, atomic
   $ astrale domain install <new-deployment-url> --allow-issuer-change -i staging   # same line
@@ -116,7 +144,7 @@ Examples:
     {
       name: 'references',
       description:
-        'Deployment URLs to install together, or one catalog origin (omit to pick from the catalog interactively)',
+        'Deployment URLs and versions (<origin>@<version>) to install together, or one catalog origin (omit to pick from the catalog interactively)',
       required: false,
       variadic: true,
     },
@@ -139,7 +167,7 @@ Examples:
     },
     {
       flags: '--operation <uuid>',
-      description: 'Reuse an exact URL-install operation id for explicit retry/recovery',
+      description: 'Reuse an exact install operation id for explicit retry/recovery',
     },
     {
       flags: '--allow-issuer-change [origin]',
@@ -165,7 +193,7 @@ Examples:
   action: async (references: string[] | undefined, opts: InstallOpts) => {
     const named = references ?? []
     if (installsOnKernel(named, opts.direct === true)) {
-      await installByUrl(named as [string, ...string[]], opts)
+      await installByReference(named as [string, ...string[]], opts)
       return
     }
     try {
@@ -179,21 +207,21 @@ Examples:
       if (named.length > 1) {
         throw new AstraleError(
           'MIXED_REFERENCES',
-          'A catalog origin installs alone; only deployment URLs install together.',
-          'Install the catalog origin on its own, or name every Domain by its deployment URL.',
+          'A catalog origin installs alone; only deployment URLs and versions (<origin>@<version>) install together.',
+          'Install the catalog origin on its own, or name every Domain by a version or its deployment URL.',
         )
       }
       if (opts.operation !== undefined) {
         throw new AstraleError(
           'INVALID_FLAG',
-          '--operation is valid only with URL references.',
-          'URL installs generate a fresh operation id automatically.',
+          '--operation is valid only with URL or version references.',
+          'URL and version installs generate a fresh operation id automatically.',
         )
       }
       if (opts.allowIssuerChange !== undefined || opts.revokePrevious === true) {
         throw new AstraleError(
           'INVALID_FLAG',
-          '--allow-issuer-change and --revoke-previous are valid only with URL references.',
+          '--allow-issuer-change and --revoke-previous are valid only with URL or version references.',
           'Install the deployment URL to consent to an issuer change, e.g. astrale domain install https://… --allow-issuer-change=<origin>',
         )
       }
@@ -208,8 +236,8 @@ Examples:
 
 /**
  * Install a published domain through the admin control plane. The domain is
- * addressed by its catalog `origin` (the registry key); a deployment URL goes to
- * the instance Kernel instead (`installByUrl`). The target instance is the
+ * addressed by its catalog `origin` (the registry key); a deployment URL or a
+ * version goes to the instance Kernel instead (`installByReference`). The target instance is the
  * active one or `-i <slug>` and must be admin-managed.
  *
  * `-i` here means the INSTALL TARGET, not the admin target — so it is stripped

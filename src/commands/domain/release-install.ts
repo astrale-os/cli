@@ -11,10 +11,14 @@ import { ResponseError } from '@astrale-os/sdk/client'
 import { parseReference } from '@astrale-os/sdk/versioning'
 import chalk from 'chalk'
 
+import type { AdminRegistryApi } from '../../admin/registry'
 import type { ConnectionContext, KernelCommandOpts } from '../../connection'
+import type { AdminTargetCommandOpts } from '../../lib/admin-target'
 import type { InstallFailure, UrlSource } from './install-call'
+import type { ResolvedVersion, VersionReference } from './version-reference'
 
-import { withClientSession } from '../../connection'
+import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
+import { withAdminClientSession, withClientSession } from '../../connection'
 import { reasonCode } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
 import {
@@ -40,6 +44,13 @@ import {
 import { consentToDeclaredOrigin, warnUnconfirmedOverride } from './legacy/identity-override'
 import { installPublications } from './legacy/publication-install'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
+import {
+  admitVersionReference,
+  exactReference,
+  isVersionReference,
+  refuseRepeatedOrigins,
+  resolveVersionReferences,
+} from './version-reference'
 
 /**
  * How long the CLI's read of a deployment that answers 503 (not serving yet) is retried. Only that
@@ -49,18 +60,19 @@ import { acceptDomainOperationId, createDomainOperationId } from './operation'
  */
 export const NOT_YET_ACTIVE_WINDOW_MS = 60_000
 
-export type UrlInstallOpts = KernelCommandOpts & {
-  readonly operation?: string
-  readonly token?: string
-  readonly allowIdentityOverride?: boolean
-  /** Every `--allow-issuer-change` occurrence: `''` without an origin, else the origin it names. */
-  readonly allowIssuerChange?: readonly string[]
-  readonly revokePrevious?: boolean
-  // Programmatic opt-out for callers that drive the install as a function; the CLI flags are read
-  // from argv by `canPrompt`.
-  readonly ci?: boolean
-  readonly noPrompt?: boolean
-}
+export type ReferenceInstallOpts = KernelCommandOpts &
+  AdminTargetCommandOpts & {
+    readonly operation?: string
+    readonly token?: string
+    readonly allowIdentityOverride?: boolean
+    /** Every `--allow-issuer-change` occurrence: `''` without an origin, else the origin it names. */
+    readonly allowIssuerChange?: readonly string[]
+    readonly revokePrevious?: boolean
+    // Programmatic opt-out for callers that drive the install as a function; the CLI flags are read
+    // from argv by `canPrompt`.
+    readonly ci?: boolean
+    readonly noPrompt?: boolean
+  }
 
 /** The pin, revision and issuer of one installation, as the installed listing reports them. */
 export interface InstalledState {
@@ -81,15 +93,21 @@ export interface ReferenceConsent {
 }
 
 /**
- * What one reference installed: the deployment it names, the pin read from what it serves before
- * the install (null when the CLI could not read it), the installation before and after, as the
- * caller can read it (null when absent or not readable), and the issuer consent its root carried,
- * present only when the install changed its issuer.
+ * What one reference installed: the reference as written, the deployment URL it names (for
+ * a version, the URL its Publication names), the pin the install expected, the installation
+ * before and after as the caller can read it (null when absent or not readable), and the issuer
+ * consent its root carried, present only when the install changed its issuer. The expected pin of
+ * a version is the release its Publication names; for a URL it is the pin read from what the URL
+ * serves before the install, null when the CLI could not read it. A version reference also names
+ * the version it resolved to, and carries `yanked: true` when that version is yanked, which only an
+ * exact reference installs ([.79339]); a URL reference carries neither.
  */
 export interface InstallReference {
   readonly reference: string
   readonly origin: string | null
   readonly url: string
+  readonly version?: string
+  readonly yanked?: true
   readonly pin: InstalledPin | null
   readonly previous: InstalledState | null
   readonly installed: InstalledState | null
@@ -100,9 +118,9 @@ export interface InstallReference {
 export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
 
 /**
- * `--json` of an install by URL: the Kernel result, unchanged, plus one entry per reference. When
- * the Kernel refused the request but every reference is already installed as requested (AM-81),
- * the result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
+ * `--json` of an install: the Kernel result, unchanged, plus one entry per reference. When the
+ * Kernel refused the request but every reference is already installed as requested (AM-81), the
+ * result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
  * refusal, so a consumer can tell it from a Kernel replay.
  */
 export type InstallReport = InstallResult & {
@@ -110,48 +128,71 @@ export type InstallReport = InstallResult & {
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
 }
 
-export interface UrlInstallDependencies {
+export interface ReferenceInstallDependencies {
   readonly acceptOperationId: (input: unknown) => string
   readonly createOperationId: () => string
   readonly withClientSession: typeof withClientSession
+  /** Opens the Admin registry with the caller's own credential; only version references do. */
+  readonly openRegistry: <Value>(
+    opts: ReferenceInstallOpts,
+    work: (registry: Pick<AdminRegistryApi, 'index'>) => Promise<Value>,
+  ) => Promise<Value>
   readonly readDeployment: (url: string, signal?: AbortSignal) => Promise<ServedDeployment>
   readonly now: () => number
   readonly sleep: (ms: number) => Promise<void>
 }
 
-const defaultDependencies: UrlInstallDependencies = Object.freeze({
+const defaultDependencies: ReferenceInstallDependencies = Object.freeze({
   acceptOperationId: (input: unknown) => acceptDomainOperationId(input, 'install'),
   createOperationId: () => createDomainOperationId('install'),
   withClientSession,
+  openRegistry: openInstallRegistry,
   readDeployment: (url: string, signal?: AbortSignal) => readServedDeployment(url, signal),
   now: () => Date.now(),
   sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 })
 
 /**
- * Install every URL reference in one atomic Kernel operation on the instance Kernel. A Kernel that
- * lists installed releases receives the `release` request, guarded by the release digest each URL
- * serves and carrying the operator's consent for each root whose issuer it changes (D7); a Kernel
- * without that listing receives the pre-release `publication` request
- * (`legacy/publication-install.ts`) and takes no issuer consent.
+ * One root of an install: the reference as the operator wrote it, the deployment URL it names and
+ * the host serving it. A version reference also carries the Publication it resolved to, whose
+ * release the Kernel must find at that URL.
  */
-export async function installByUrl(
+export interface ReleaseSource extends UrlSource {
+  readonly reference: string
+  readonly publication?: ResolvedVersion
+}
+
+/**
+ * Install every reference in one atomic Kernel operation on the instance Kernel. The syntax
+ * decides ([.78896]): a deployment URL is installed as is, without any lookup; a version
+ * reference (`<origin>@<major>.<minor>.<patch>[-<pre>]` or `<origin>@<major>.<minor>`) is first
+ * translated, once, into the deployment URL and release of one Publication the caller may read in
+ * Admin (Résolution [.78020] [.78086]). An Admin that cannot answer fails the version references
+ * only, before any Kernel is contacted, and an install of URLs alone never reads Admin.
+ *
+ * A Kernel that lists installed releases receives the `release` request, guarded by the release
+ * digest each root must serve (the Publication's for a version, the one read from the URL
+ * otherwise; [.78352]) and carrying the operator's consent for each root whose issuer it changes
+ * (D7). A Kernel without that listing receives the pre-release `publication` request
+ * (`legacy/publication-install.ts`) and takes neither issuer consent nor a version reference.
+ */
+export async function installByReference(
   references: readonly [string, ...string[]],
-  opts: UrlInstallOpts,
-  dependencies: Partial<UrlInstallDependencies> = {},
+  opts: ReferenceInstallOpts,
+  dependencies: Partial<ReferenceInstallDependencies> = {},
 ): Promise<void> {
   const deps = { ...defaultDependencies, ...dependencies }
-  let sources: readonly [UrlSource, ...UrlSource[]]
+  let written: readonly WrittenReference[]
+  let versions: readonly VersionReference[]
   let operation: string
   let consent: IssuerChangeConsent
   try {
     consent = issuerChangeConsent(opts.allowIssuerChange, opts.revokePrevious)
-    sources = references.map((url) => ({ url, host: validateInstallUrl(url) })) as [
-      UrlSource,
-      ...UrlSource[],
-    ]
-    refuseRepeatedUrls(references)
-    if (opts.token !== undefined && references.length > 1) {
+    written = references.map(admitWrittenReference)
+    versions = written.flatMap((entry) => (entry.kind === 'version' ? [entry.version] : []))
+    refuseRepeatedUrls(written.flatMap((entry) => (entry.kind === 'url' ? [entry.source.url] : [])))
+    refuseRepeatedOrigins(versions)
+    if (opts.token !== undefined && (written.length > 1 || written[0]!.kind !== 'url')) {
       throw new AstraleError(
         'INVALID_FLAG',
         '--token is valid only with a single URL reference.',
@@ -166,6 +207,33 @@ export async function installByUrl(
     fatal(error, opts)
   }
 
+  let resolved: readonly ResolvedVersion[] = []
+  if (versions.length > 0) {
+    try {
+      resolved = await deps.openRegistry(opts, (registry) =>
+        resolveVersionReferences(versions, registry),
+      )
+    } catch (error) {
+      fatal(registryFailure(error, 'read'), opts)
+    }
+  }
+  let sources: readonly [ReleaseSource, ...ReleaseSource[]]
+  try {
+    sources = releaseSources(written, resolved)
+    refuseRepeatedUrls(sources.map((source) => source.url))
+  } catch (error) {
+    fatal(error, opts)
+  }
+  if (!isMachine(opts)) {
+    for (const version of resolved) {
+      if (version.yanked) {
+        log.warn(
+          `${version.origin} ${version.version} is yanked: it is installed only because ${version.reference} names it exactly.`,
+        )
+      }
+    }
+  }
+
   let failure: InstallFailure | undefined
   try {
     failure = await deps.withClientSession(
@@ -173,7 +241,8 @@ export async function installByUrl(
       async (context) => {
         const before = await installedReleases(context.session)
         if (before === undefined) {
-          if (asksIssuerConsent(consent)) return { error: releaseUnsupported(), render: 'input' }
+          if (resolved.length > 0) return { error: versionsUnsupported(), render: 'input' }
+          if (asksIssuerConsent(consent)) return { error: consentUnsupported(), render: 'input' }
           return installPublications(context, sources, operation, opts)
         }
         return installReleases(context, sources, before, operation, consent, opts, deps)
@@ -184,6 +253,69 @@ export async function installByUrl(
     failure = { error, render: 'kernel' }
   }
   if (failure !== undefined) await exitWithInstallFailure(failure, opts)
+}
+
+/** One reference as written: a deployment URL, or a version the registry resolves. */
+type WrittenReference =
+  | { readonly kind: 'url'; readonly source: ReleaseSource }
+  | { readonly kind: 'version'; readonly version: VersionReference }
+
+/**
+ * A version reference names an origin and a version (`<origin>@<version>`); any other reference
+ * reaching this route names one deployment, refused here when it is not an http(s) URL.
+ */
+function admitWrittenReference(reference: string): WrittenReference {
+  if (isVersionReference(reference)) {
+    return Object.freeze({ kind: 'version', version: admitVersionReference(reference) })
+  }
+  return Object.freeze({
+    kind: 'url',
+    source: Object.freeze({ reference, url: reference, host: validateInstallUrl(reference) }),
+  })
+}
+
+/** The sources in reference order, each version replaced by its Publication's deployment. */
+function releaseSources(
+  written: readonly WrittenReference[],
+  resolved: readonly ResolvedVersion[],
+): readonly [ReleaseSource, ...ReleaseSource[]] {
+  let next = 0
+  return Object.freeze(
+    written.map((entry): ReleaseSource => {
+      if (entry.kind === 'url') return entry.source
+      const publication = resolved[next++]!
+      return Object.freeze({
+        reference: publication.reference,
+        url: publication.url,
+        host: validateInstallUrl(publication.url),
+        publication,
+      })
+    }),
+  ) as unknown as readonly [ReleaseSource, ...ReleaseSource[]]
+}
+
+/**
+ * The Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
+ * configuration), read with the caller's own identity ([.79495]): never the install target that
+ * `-i`/`--url` select, and never `--creds`, the raw credential of that target. `open` is the
+ * Admin session seam the tests stub.
+ */
+export function openInstallRegistry<Value>(
+  opts: ReferenceInstallOpts,
+  work: (registry: Pick<AdminRegistryApi, 'index'>) => Promise<Value>,
+  open: typeof withAdminClientSession = withAdminClientSession,
+): Promise<Value> {
+  return open(
+    {
+      ...(opts.admin === undefined ? {} : { admin: opts.admin }),
+      ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
+      ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
+      ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+      ...(opts.as === undefined ? {} : { as: opts.as }),
+      ...(opts.ci === undefined ? {} : { ci: opts.ci }),
+    },
+    async (context) => work(connectAdminRegistry(context)),
+  )
 }
 
 /**
@@ -205,18 +337,18 @@ export async function installedReleases(
 }
 
 /**
- * One `release` source per reference, guarded by the release digest read from it when it serves
- * one, and carrying the issuer consent of a root whose issuer the install changes.
+ * One `release` source per reference, guarded by the release digest the reference must serve when
+ * one is expected, and carrying the issuer consent of a root whose issuer the install changes.
  */
 export function releaseInstallInput(
-  references: readonly [string, ...string[]],
-  served: readonly (ServedDeployment | undefined)[],
+  urls: readonly [string, ...string[]],
+  expected: readonly (InstalledPin | null)[],
   operation: string,
   token?: string,
   consents: readonly (IssuerConsentRequest | undefined)[] = [],
 ): InstallRequest {
-  const domains = references.map((url, index): DomainRequest => {
-    const pin = served[index]?.pin
+  const domains = urls.map((url, index): DomainRequest => {
+    const pin = expected[index]
     const consent = consents[index]
     return Object.freeze({
       release: Object.freeze({
@@ -233,21 +365,44 @@ export function releaseInstallInput(
   })
 }
 
-/** Join what each reference served with the installed listings read before and after. */
-export function installReferences(
-  references: readonly string[],
+/**
+ * What the CLI knows of one root before the install: its origin (named by its version reference,
+ * else read from what its URL serves) and the pin the install expects.
+ */
+interface PlannedRoot {
+  readonly source: ReleaseSource
+  readonly served: ServedDeployment | undefined
+  readonly origin: string | undefined
+  readonly expected: InstalledPin | null
+}
+
+function plannedRoots(
+  sources: readonly ReleaseSource[],
   served: readonly (ServedDeployment | undefined)[],
+): readonly PlannedRoot[] {
+  return sources.map((source, index) => {
+    const deployment = served[index]
+    return Object.freeze({
+      source,
+      served: deployment,
+      origin: source.publication?.origin ?? deployment?.origin,
+      expected: source.publication?.pin ?? deployment?.pin ?? null,
+    })
+  })
+}
+
+/** Join what each root expected with the installed listings read before and after. */
+export function installReferences(
+  roots: readonly PlannedRoot[],
   before: readonly InstalledRelease[],
   after: readonly InstalledRelease[] | undefined,
   changes: readonly (IssuerChange | undefined)[] = [],
   consent: IssuerChangeConsent | undefined = undefined,
 ): readonly InstallReference[] {
-  return references.map((reference, index) => {
+  return roots.map(({ source, origin: planned, expected }, index) => {
     const change = changes[index]
-    const deployment = served[index]
-    const url = new URL(reference).origin
-    const origin =
-      deployment?.origin ?? after?.find((installed) => installed.url === url)?.origin ?? null
+    const url = new URL(source.url).origin
+    const origin = planned ?? after?.find((installed) => installed.url === url)?.origin ?? null
     const state = (listing: readonly InstalledRelease[] | undefined): InstalledState | null => {
       const installed =
         origin === null ? undefined : listing?.find((entry) => entry.origin === origin)
@@ -259,11 +414,14 @@ export function installReferences(
             issuer: installed.issuer,
           })
     }
+    const publication = source.publication
     return Object.freeze({
-      reference,
+      reference: source.reference,
       origin,
-      url: reference,
-      pin: deployment?.pin ?? null,
+      url: source.url,
+      ...(publication === undefined ? {} : { version: publication.version }),
+      ...(publication?.yanked === true ? { yanked: true as const } : {}),
+      pin: expected,
       previous: state(before),
       installed: state(after),
       ...(change === undefined
@@ -280,8 +438,8 @@ export function installReferences(
 }
 
 /**
- * References whose installation does not pin what the CLI read from the URL before the install:
- * another document, or the same origin installed from another deployment.
+ * References whose installation does not pin what the install expected: another document, or the
+ * same origin installed from another deployment.
  */
 export function pinMismatches(
   references: readonly InstallReference[],
@@ -297,34 +455,33 @@ export function pinMismatches(
 
 async function installReleases(
   context: ConnectionContext,
-  sources: readonly [UrlSource, ...UrlSource[]],
+  sources: readonly [ReleaseSource, ...ReleaseSource[]],
   before: readonly InstalledRelease[],
   operation: string,
   consent: IssuerChangeConsent,
-  opts: UrlInstallOpts,
-  deps: UrlInstallDependencies,
+  opts: ReferenceInstallOpts,
+  deps: ReferenceInstallDependencies,
 ): Promise<InstallFailure | undefined> {
   const machine = isMachine(opts)
-  const references = sources.map((source) => source.url) as [string, ...string[]]
+  const urls = sources.map((source) => source.url) as [string, ...string[]]
   const retry = notYetActiveWindow(deps)
-  let served: readonly (ServedDeployment | undefined)[]
+  let roots: readonly PlannedRoot[]
   let changes: readonly (IssuerChange | undefined)[]
   const overridden: (string | undefined)[] = []
   try {
-    for (const reference of references) admitReference(reference)
-    served = await Promise.all(
-      references.map((reference) => readWithRetry(reference, retry, deps, machine)),
+    for (const url of urls) admitReference(url)
+    const served = await Promise.all(
+      sources.map((source) => readWithRetry(source, retry, deps, machine)),
     )
-    refuseDuplicateOrigins(references, served)
-    refuseUnknownConsentOrigins(consent, served)
-    changes = references.map((reference, index) => {
-      const deployment = served[index]
-      return deployment === undefined
-        ? undefined
-        : plannedIssuerChange(reference, deployment, before)
-    })
-    for (const [index, source] of sources.entries()) {
-      const deployment = served[index]
+    // The served release is checked before anything is sent; the Kernel checks it again.
+    refuseReleaseMismatches(sources, served)
+    roots = plannedRoots(sources, served)
+    refuseDuplicateOrigins(roots)
+    refuseUnknownConsentOrigins(consent, roots)
+    changes = roots.map(({ source, served: deployment }) =>
+      deployment === undefined ? undefined : plannedIssuerChange(source.url, deployment, before),
+    )
+    for (const [index, { source, served: deployment }] of roots.entries()) {
       // The identity-override gate stays for a source that serves only domain.json (legacy).
       overridden.push(
         deployment?.pin.kind === 'legacy'
@@ -336,11 +493,13 @@ async function installReleases(
             )
           : undefined,
       )
+      // A version names its deployment through Admin's registry, so only a URL claims an origin.
       if (
+        source.publication === undefined &&
         changes[index] === undefined &&
         deployment !== undefined &&
         !machine &&
-        !installedOrigin(before, deployment)
+        !installedOrigin(before, deployment.origin)
       ) {
         const notice = firstInstallNotice(deployment, source.url)
         if (notice !== undefined) log.warn(notice)
@@ -355,14 +514,14 @@ async function installReleases(
   } catch (error) {
     return { error, render: 'input' }
   }
-  if (!machine) warnUnreadableConsentOrigins(consent, served, before)
+  if (!machine) warnUnreadableConsentOrigins(consent, roots, before)
   if (!machine && consent.revokePrevious && changes.every((change) => change === undefined)) {
     log.dim('  --revoke-previous: no installed issuer changes, so there is nothing to revoke.')
   }
 
   const request = releaseInstallInput(
-    references,
-    served,
+    urls,
+    roots.map((root) => root.expected),
     operation,
     opts.token,
     changes.map((change) =>
@@ -372,27 +531,26 @@ async function installReleases(
   let mismatched: readonly InstallReference[] = []
   const failure = await runInstallCall<InstallOutcome>(opts, {
     label:
-      references.length === 1
-        ? `Installing domain from ${references[0]} (operation ${operation})`
-        : `Installing ${references.length} domains (operation ${operation})`,
+      sources.length === 1
+        ? `Installing domain from ${sources[0].reference} (operation ${operation})`
+        : `Installing ${sources.length} domains (operation ${operation})`,
     recovery: {
       operation,
-      retry: releaseInstallRetry(references, operation, opts, changes, overridden),
+      retry: releaseInstallRetry(sources, operation, opts, changes, overridden),
     },
     call: async () => {
       try {
         const result = await context.session.schema.install(request)
         return { result, after: await installedAfter(context.session, machine) }
       } catch (error) {
-        const recovered = await recoverCommittedInstall(error, context.session, references, served)
+        const recovered = await recoverCommittedInstall(error, context.session, roots)
         if (recovered !== undefined) return recovered
         throw error
       }
     },
     format: ({ result, after, recovered }, raw) => {
       const report = installReferences(
-        references,
-        served,
+        roots,
         before,
         after,
         recovered === undefined ? changes : [],
@@ -456,23 +614,52 @@ interface InstallOutcome {
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
 }
 
-function installedOrigin(
-  installed: readonly InstalledRelease[],
-  deployment: ServedDeployment,
-): boolean {
-  return installed.some((entry) => entry.origin === deployment.origin)
+function installedOrigin(installed: readonly InstalledRelease[], origin: string): boolean {
+  return installed.some((entry) => entry.origin === origin)
 }
 
 /**
- * An origin named by `--allow-issuer-change=<origin>` must be one this install reads; a typo would
- * otherwise consent to nothing. Unreadable references leave the check open.
+ * A version is installed only from a deployment that serves the release its Publication names
+ * ([.78352]): a deployment the CLI reads serving another release, or only the legacy domain.json,
+ * is refused before anything is sent. A deployment the CLI cannot read is left to the Kernel,
+ * which receives the Publication's release digest and refuses any other release.
+ */
+function refuseReleaseMismatches(
+  sources: readonly ReleaseSource[],
+  served: readonly (ServedDeployment | undefined)[],
+): void {
+  for (const [index, source] of sources.entries()) {
+    const publication = source.publication
+    const deployment = served[index]
+    if (publication === undefined || deployment === undefined) continue
+    if (deployment.pin.kind === 'release' && deployment.pin.release === publication.pin.release) {
+      continue
+    }
+    throw new RegistryError(
+      'PUBLICATION_RELEASE_MISMATCH',
+      `${publication.url} no longer serves the release ${publication.origin} ${publication.version} names (${publication.pin.release}); nothing was installed.`,
+      {
+        origin: publication.origin,
+        version: publication.version,
+        url: publication.url,
+        expected: publication.pin.release,
+        served: deployment.pin.kind === 'release' ? deployment.pin.release : null,
+      },
+    )
+  }
+}
+
+/**
+ * An origin named by `--allow-issuer-change=<origin>` must be one this install names; a typo would
+ * otherwise consent to nothing. A root whose origin is unknown (an unreadable URL) leaves the
+ * check open.
  */
 function refuseUnknownConsentOrigins(
   consent: IssuerChangeConsent,
-  served: readonly (ServedDeployment | undefined)[],
+  roots: readonly PlannedRoot[],
 ): void {
-  if (served.some((deployment) => deployment === undefined)) return
-  const origins = served.map((deployment) => deployment!.origin)
+  if (roots.some((root) => root.origin === undefined)) return
+  const origins = roots.map((root) => root.origin!)
   for (const origin of consent.origins) {
     if (!origins.includes(origin)) {
       throw new AstraleError(
@@ -485,19 +672,19 @@ function refuseUnknownConsentOrigins(
 }
 
 /**
- * An origin named by `--allow-issuer-change=<origin>` that this install serves but whose
+ * An origin named by `--allow-issuer-change=<origin>` that this install names but whose
  * installation the caller cannot read gets no consent: the CLI plans consents from the installed
  * listing only and never builds one from a Kernel refusal. Either the origin is not installed (a
  * first install needs no consent) or the listing hides it; the operator is told before the send.
  */
 function warnUnreadableConsentOrigins(
   consent: IssuerChangeConsent,
-  served: readonly (ServedDeployment | undefined)[],
+  roots: readonly PlannedRoot[],
   before: readonly InstalledRelease[],
 ): void {
   for (const origin of consent.origins) {
-    const named = served.some((deployment) => deployment?.origin === origin)
-    if (!named || before.some((entry) => entry.origin === origin)) continue
+    const named = roots.some((root) => root.origin === origin)
+    if (!named || installedOrigin(before, origin)) continue
     log.warn(
       `--allow-issuer-change=${origin}: ${origin} is not among the installations this identity can read, so no consent is sent. ` +
         'If it is installed, consenting to its issuer change needs read access to its installation.',
@@ -510,15 +697,14 @@ function warnUnreadableConsentOrigins(
  * SCHEMA_INPUT_INVALID at `/domains/<i>/consent` (the Domain no longer changes issuer), under the
  * same id as SCHEMA_OPERATION_CONFLICT (a retry planned from the moved listing carries no consent).
  * Before such a refusal is reported, the installations are read back: when every reference is
- * installed from its URL with the pin read before the install, the install asked for holds, and
- * the command reports it as already current with the installed Domains as the Kernel describes them,
+ * installed from its URL with the pin the install expected, the install asked for holds, and the
+ * command reports it as already current with the installed Domains as the Kernel describes them,
  * marked `recovered` with the Kernel refusal it recovered from.
  */
 async function recoverCommittedInstall(
   error: unknown,
   session: ClientSession,
-  references: readonly string[],
-  served: readonly (ServedDeployment | undefined)[],
+  roots: readonly PlannedRoot[],
 ): Promise<InstallOutcome | undefined> {
   const refusal = committedConsentRefusal(error)
   if (refusal === undefined) return undefined
@@ -529,18 +715,18 @@ async function recoverCommittedInstall(
     return undefined
   }
   const origins: string[] = []
-  for (const [index, reference] of references.entries()) {
-    const deployment = served[index]
-    const installed = after.find((entry) => entry.origin === deployment?.origin)
+  for (const { source, origin, expected } of roots) {
+    const installed = after.find((entry) => entry.origin === origin)
     if (
-      deployment === undefined ||
+      origin === undefined ||
+      expected === null ||
       installed === undefined ||
-      !samePin(deployment.pin, installed.pin) ||
-      installed.url !== new URL(reference).origin
+      !samePin(expected, installed.pin) ||
+      installed.url !== new URL(source.url).origin
     ) {
       return undefined
     }
-    origins.push(deployment.origin)
+    origins.push(origin)
   }
   let domains: CurrentDomains
   try {
@@ -570,11 +756,24 @@ function committedConsentRefusal(error: unknown): CommittedInstallRefusal | unde
     : undefined
 }
 
-function releaseUnsupported(): AstraleError {
+function consentUnsupported(): AstraleError {
   return new AstraleError(
     'KERNEL_RELEASE_UNSUPPORTED',
     'This Kernel does not list installed releases, so it takes no issuer consent: --allow-issuer-change and --revoke-previous are refused before any install.',
     'Install without them: on this Kernel the identity-override gate (--allow-identity-override) still applies. Issuer consent needs a Host release whose Kernel lists installed releases and accepts consents.',
+  )
+}
+
+/**
+ * A version is installed with the release digest its Publication names, which only the `release`
+ * request carries: a Kernel without the installed listing takes the `publication` request, which
+ * pins whatever the URL serves, so a version reference is refused there before any install.
+ */
+function versionsUnsupported(): AstraleError {
+  return new AstraleError(
+    'KERNEL_RELEASE_UNSUPPORTED',
+    'This Kernel does not list installed releases, so it cannot pin a published version: version references (<origin>@<version>) are refused before any install.',
+    'Install the deployment URL instead (`astrale domain versions <origin> --json` names it), or upgrade the Host to a release whose Kernel lists installed releases.',
   )
 }
 
@@ -587,7 +786,9 @@ interface RetryWindow {
   wait(retryAfterMs: number | undefined, attempt: number): Promise<boolean>
 }
 
-function notYetActiveWindow(deps: Pick<UrlInstallDependencies, 'now' | 'sleep'>): RetryWindow {
+function notYetActiveWindow(
+  deps: Pick<ReferenceInstallDependencies, 'now' | 'sleep'>,
+): RetryWindow {
   let deadline: number | undefined
   return {
     async wait(retryAfterMs, attempt) {
@@ -603,14 +804,14 @@ function notYetActiveWindow(deps: Pick<UrlInstallDependencies, 'now' | 'sleep'>)
 }
 
 async function readWithRetry(
-  reference: string,
+  source: ReleaseSource,
   retry: RetryWindow,
-  deps: UrlInstallDependencies,
+  deps: ReferenceInstallDependencies,
   machine: boolean,
 ): Promise<ServedDeployment | undefined> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await deps.readDeployment(reference, AbortSignal.timeout(10_000))
+      return await deps.readDeployment(source.url, AbortSignal.timeout(10_000))
     } catch (error) {
       if (
         error instanceof DeploymentReadError &&
@@ -620,11 +821,14 @@ async function readWithRetry(
         continue
       }
       // The CLI only reads what the URL serves to guard and report the install; the Kernel reads it
-      // again and stays the authority, so an unreadable document is installed without a digest.
+      // again and stays the authority, so an unreadable document is installed without a digest
+      // read from it: a version still carries the one its Publication names.
       if (!machine) {
         log.warn(
-          `Could not read what ${reference} serves (${error instanceof Error ? error.message : 'unreadable'}) — ` +
-            'installing it without an expected release digest; the installed pin is reported after install.',
+          `Could not read what ${source.url} serves (${error instanceof Error ? error.message : 'unreadable'}) — ` +
+            (source.publication === undefined
+              ? 'installing it without an expected release digest; the installed pin is reported after install.'
+              : `installing it with the release digest ${source.publication.origin} ${source.publication.version} names; the Kernel refuses any other release.`),
         )
       }
       return undefined
@@ -676,17 +880,11 @@ function refuseRepeatedUrls(references: readonly string[]): void {
   }
 }
 
-function refuseDuplicateOrigins(
-  references: readonly string[],
-  served: readonly (ServedDeployment | undefined)[],
-): void {
+function refuseDuplicateOrigins(roots: readonly PlannedRoot[]): void {
   const byOrigin = new Map<string, string[]>()
-  for (const [index, deployment] of served.entries()) {
-    if (deployment === undefined) continue
-    byOrigin.set(deployment.origin, [
-      ...(byOrigin.get(deployment.origin) ?? []),
-      references[index]!,
-    ])
+  for (const { source, origin } of roots) {
+    if (origin === undefined) continue
+    byOrigin.set(origin, [...(byOrigin.get(origin) ?? []), source.reference])
   }
   for (const [origin, named] of byOrigin) {
     if (named.length > 1) {
@@ -699,17 +897,30 @@ function refuseDuplicateOrigins(
   }
 }
 
+/**
+ * The command that resends this install under the same operation id: every version by the exact
+ * version it resolved to (a line could resolve to a newer version meanwhile), every URL as
+ * written, and the consents the install carried, each change by its origin, never a prompt.
+ */
 function releaseInstallRetry(
-  references: readonly string[],
+  sources: readonly ReleaseSource[],
   operation: string,
-  opts: UrlInstallOpts,
+  opts: ReferenceInstallOpts,
   changes: readonly (IssuerChange | undefined)[],
   overridden: readonly (string | undefined)[],
 ): string {
+  const references = sources.map((source) =>
+    source.publication === undefined ? source.reference : exactReference(source.publication),
+  )
   const url = opts.url === undefined ? '' : ` --url ${opts.url}`
   const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
   const identity = opts.as === undefined ? '' : ` --as ${opts.as}`
-  // The same operation must carry the same consents: each change by its origin, never a prompt.
+  const admin =
+    opts.admin !== undefined
+      ? ` --admin ${opts.admin}`
+      : opts.adminUrl !== undefined
+        ? ` --admin-url ${opts.adminUrl}${opts.domainIssuer === undefined ? '' : ` --domain-issuer ${opts.domainIssuer}`}`
+        : ''
   const consents = changes
     .filter((change): change is IssuerChange => change !== undefined)
     .map((change) => ` --allow-issuer-change=${change.origin}`)
@@ -718,18 +929,20 @@ function releaseInstallRetry(
   const override = overridden.some((origin) => origin !== undefined)
     ? ' --allow-identity-override'
     : ''
-  return `astrale domain install ${references.join(' ')} --operation ${operation}${consents}${revoke}${override}${url}${instance}${identity}`
+  const registry = sources.some((source) => source.publication !== undefined) ? admin : ''
+  return `astrale domain install ${references.join(' ')} --operation ${operation}${consents}${revoke}${override}${url}${instance}${identity}${registry}`
 }
 
 function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError {
   const named = mismatched
     .map(
-      (reference) => `${reference.origin} (read ${pinLabel(reference.pin!)} from ${reference.url})`,
+      (reference) =>
+        `${reference.origin} (expected ${pinLabel(reference.pin!)} from ${reference.url})`,
     )
     .join(', ')
   return new AstraleError(
     'INSTALLED_PIN_MISMATCH',
-    `The Kernel reports another installed release than the one read before the install: ${named}.`,
+    `The Kernel reports another installed release than the one the install expected: ${named}.`,
     'Another install may have run meanwhile. Read the installed releases with `astrale introspect` and install again.',
   )
 }
@@ -753,6 +966,10 @@ export function rootStatus(result: InstallResult, origin: string | null): RootSt
   return intent.previous.generation === intent.generation?.generation ? 'unchanged' : 'replaced'
 }
 
+/**
+ * One line per root ([.78492]): its origin, what the install did to it, the version a version
+ * reference resolved to, and the release it pins.
+ */
 function presentReferences(
   references: readonly InstallReference[],
   operation: string,
@@ -768,13 +985,17 @@ function presentReferences(
     const installed = reference.installed
     const status = rootStatus(result, reference.origin)
     const pin = installed?.pin ?? reference.pin
+    const version =
+      reference.version === undefined
+        ? ''
+        : `${chalk.bold(reference.version)}${reference.yanked === true ? chalk.yellow(' (yanked)') : ''} `
     // The listings only detail a replacement: the Kernel's result alone decides the status.
     const was =
       status === 'replaced' && reference.previous !== null
         ? chalk.dim(` (was ${pinLabel(reference.previous.pin)})`)
         : ''
     console.log(
-      `  ${(reference.origin ?? reference.url).padEnd(width)}  ${status.padEnd(9)}  ${pin === null ? chalk.dim('pin not read') : pinLabel(pin)}${was}`,
+      `  ${(reference.origin ?? reference.url).padEnd(width)}  ${status.padEnd(9)}  ${version}${pin === null ? chalk.dim('pin not read') : pinLabel(pin)}${was}`,
     )
   }
 }
