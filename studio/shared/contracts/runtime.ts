@@ -115,3 +115,10 @@ export interface StaleReport {
     outdated: { pkg: string; current: string; latest: string }[]
   }
 }
+
+/** The running Studio release and the CLI currently present at its launch path. */
+export interface StudioRuntime {
+  runningVersion: string
+  installedVersion: string
+  restartCommand: string[]
+}

@@ -26,6 +26,7 @@ import type {
   InstancesState,
   IntrospectionStatus,
   StudioSettings,
+  StudioRuntime,
   LayoutState,
   MergeResult,
   NodePosition,
@@ -72,6 +73,7 @@ const docRawPath = (id: string, docId: string) =>
 
 export const api = {
   workspace: () => get<DomainSummary[]>('/api/workspace'),
+  studioRuntime: () => get<StudioRuntime>('/api/workspace/runtime'),
   refreshWorkspace: () => post<{ refreshed: number }>('/api/workspace/refresh', {}),
   workspaceState: () => get<WorkspaceUiState>('/api/workspace/state'),
   updateWorkspaceState: (
@@ -283,6 +285,7 @@ export const api = {
 
 export const qk = {
   workspace: ['workspace'] as const,
+  studioRuntime: ['studio-runtime'] as const,
   workspaceState: ['workspace-state'] as const,
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,

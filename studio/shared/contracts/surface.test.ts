@@ -112,6 +112,7 @@ const TARGET_BARREL_EXPORTS = [
   'StudioEvent',
   'StudioSchemaBundle',
   'StudioSettings',
+  'StudioRuntime',
   'ThreadEntry',
   'ThreadEntryType',
   'ThreadRole',

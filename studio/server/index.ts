@@ -21,6 +21,7 @@ import { broadcast, sseResponse } from './sse'
 import { staticFiles } from './static'
 import { initWorkspaceState, stoppers } from './workspace-state'
 import { watchWorkspace } from './workspace-watch'
+import { initStudioRuntime } from './workspace/runtime'
 
 const argv = process.argv.slice(2)
 let target = ''
@@ -175,6 +176,7 @@ process.once('SIGINT', () => void shutdown('SIGINT'))
 process.once('SIGTERM', () => void shutdown('SIGTERM'))
 
 setBridgePort(server.port ?? port)
+initStudioRuntime(resolve(target), server.port ?? port)
 const urlStr = `http://localhost:${server.port}`
 console.log(`\n  ▸ ${urlStr}${DEV ? '  (dev proxy → Vite)' : ''}\n`)
 if (!LOOPBACK) {
