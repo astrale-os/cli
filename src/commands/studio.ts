@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import type { CommandDefinition } from '../program/index'
@@ -216,7 +216,7 @@ export default {
   arguments: [
     {
       name: 'path',
-      description: 'Workspace or domain dir to open (default: current dir)',
+      description: 'Workspace, domain dir, or astrale.config.ts to open (default: current dir)',
       required: false,
     },
   ],
@@ -279,6 +279,9 @@ Examples:
     try {
       const workspace = resolve(pathArg ?? process.cwd())
       if (!existsSync(workspace)) throw new Error(`path not found: ${workspace}`)
+      // Keep a config-file target exact in server arguments and the descriptor;
+      // the OS working directory must be its containing directory instead.
+      const workspaceDirectory = statSync(workspace).isFile() ? dirname(workspace) : workspace
 
       const cliDescriptor = encodeStudioCliDescriptor()
 
@@ -434,7 +437,7 @@ Examples:
         ])
         serverChild = supervise(
           spawnHandle(invocation.file, invocation.args, {
-            cwd: workspace,
+            cwd: workspaceDirectory,
             detached: true,
             env: {
               ...process.env,
