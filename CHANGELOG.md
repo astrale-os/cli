@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.128](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.127...cli/v1.0.0-beta.128) (2026-10-06)
+
+
+### Features
+
+* **lib:** read and write the Domain version registry ([#592](https://github.com/astrale-os/cli/issues/592)) ([ce5eded](https://github.com/astrale-os/cli/commit/ce5eded96099757cbb7dfd2abea9d744c6c5b411))
+
+
+### Bug Fixes
+
+* **admin:** read Fleet catalogs and set defaults on Admin's one Domain per origin ([#598](https://github.com/astrale-os/cli/issues/598)) ([79064b6](https://github.com/astrale-os/cli/commit/79064b6b090aff5c41a3179f28b1144cd1f0a0d3))
+
 ## [1.0.0-beta.127](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.126...cli/v1.0.0-beta.127) (2026-10-05)
 
 
