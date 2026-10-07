@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.131](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.130...cli/v1.0.0-beta.131) (2026-10-07)
+
+
+### Features
+
+* **studio:** full-height resizable chat tab column by default ([#618](https://github.com/astrale-os/cli/issues/618)) ([b65be5e](https://github.com/astrale-os/cli/commit/b65be5ee0fc6f35e19281e81d2fb8b85ef6668d6))
+
+
+### Bug Fixes
+
+* **commands:** preserve the active target during instance creation ([#613](https://github.com/astrale-os/cli/issues/613)) ([c864870](https://github.com/astrale-os/cli/commit/c8648701b35e06272f180f3261e301290a187da4))
+* **studio:** show a failure the agent also said as a message only once ([#616](https://github.com/astrale-os/cli/issues/616)) ([412c010](https://github.com/astrale-os/cli/commit/412c01093e638429da0bdcc2eb2607c31af1868c))
+
 ## [1.0.0-beta.130](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.129...cli/v1.0.0-beta.130) (2026-10-06)
 
 
