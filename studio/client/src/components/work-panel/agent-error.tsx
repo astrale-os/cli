@@ -61,6 +61,26 @@ export function errorHeadline(error: string): string {
   return text.length > HEADLINE_BUDGET ? `${text.slice(0, HEADLINE_BUDGET - 1)}…` : text
 }
 
+/** Case, spacing and closing punctuation aside: what two renderings of one sentence share. */
+const comparable = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[\s.!…]+$/, '')
+    .trim()
+
+/**
+ * Whether a message only repeats the failure. Some agents say why they stop (a usage
+ * limit, an overload) as prose and then fail the turn with the same sentence; the
+ * failure notice already shows it, so the message would read twice.
+ */
+export function echoesError(text: string, error: string | undefined): boolean {
+  if (!error) return false
+  const said = comparable(text)
+  if (!said) return false
+  return said === comparable(errorHeadline(error)) || comparable(error).includes(said)
+}
+
 /** What led up to the failure: the last steps, without what is already on screen. */
 export function trailingActivity(run: AgentRun, limit = 8): AgentEvent[] {
   return run.events
