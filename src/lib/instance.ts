@@ -6,7 +6,6 @@ import type { AstraleConfig } from './config'
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
 import { atomicWrite, withFileLock } from '../state/files'
 import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
-import { withoutRouteDerivedShellIssuer } from './legacy/managed-shell-issuer'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -36,9 +35,8 @@ export const InstanceEntrySchema = z.object({
 })
 
 /**
- * Format of the bookmark registry this release writes. A registry without it was written by a
- * release that derived the Shell issuer from the route (`legacy/managed-shell-issuer.ts`); every
- * write rewrites the whole registry in this format.
+ * Format of the bookmark registry this release writes. Unlabelled registries remain readable;
+ * every write rewrites the whole registry in this format.
  */
 export const INSTANCE_STORE_VERSION = 1 as const
 
@@ -90,15 +88,13 @@ function seed(): InstanceStore {
 }
 
 /**
- * Normalize a parsed registry into this release's model. `changed` reports normalized content; the
- * returned store carries no format label, which only an encoded registry holds.
+ * Normalize a parsed registry, preserving every explicit Domain issuer regardless of its format
+ * label. `changed` reports normalized content; the returned store carries no format label, which
+ * only an encoded registry holds.
  */
 export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
   let changed = false
   const instances: Record<string, InstanceEntry> = {}
-  // Read-old, deleted with `legacy/managed-shell-issuer.ts`: only a registry an earlier release
-  // wrote can hold a Shell issuer derived from the route.
-  const routeDerivedShellIssuers = store.version === undefined
 
   for (const [key, entry] of Object.entries(store.instances)) {
     if (key === 'manager') {
@@ -111,11 +107,8 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
-    const current = routeDerivedShellIssuers
-      ? withoutLegacyShellIssuer(entry, normalizedUrl)
-      : entry
     const next: InstanceEntry = {
-      ...current,
+      ...entry,
       url: normalizedUrl,
       issuer: normalizedIssuer,
       kind: 'bookmark',
@@ -129,8 +122,7 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     if (
       entry.kind !== 'bookmark' ||
       normalizedUrl !== entry.url ||
-      normalizedIssuer !== entry.issuer ||
-      current.domainIssuer !== entry.domainIssuer
+      normalizedIssuer !== entry.issuer
     ) {
       changed = true
     }
@@ -471,16 +463,6 @@ export function bookmarkExchangeDomain(
   if (entry.domainIssuer !== undefined) return { domainIssuer: entry.domainIssuer }
   const shell = managedBookmarkShell(entry, url)
   return shell === undefined ? {} : { domainOrigin: shell }
-}
-
-/**
- * Read-old: a managed bookmark in a registry an earlier release wrote drops the Shell issuer that
- * release derived from its route (`lib/legacy/managed-shell-issuer.ts`).
- */
-function withoutLegacyShellIssuer(entry: InstanceEntry, url: string): InstanceEntry {
-  return managedBookmarkShell(entry, url) === undefined
-    ? entry
-    : withoutRouteDerivedShellIssuer(entry)
 }
 
 function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {
