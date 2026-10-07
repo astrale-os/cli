@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 
 import type { InstanceStore } from '../instance'
 
-import { AstraleError } from '../../errors'
 import {
   DEFAULT_ADMIN_TARGET_NAME,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
@@ -197,8 +196,8 @@ describe('resolveAdminTargetFromStore', () => {
     })
   })
 
-  /** @evidence TEST-CLI-ADMIN-LEGACY-SHELL-ISSUER-IGNORED */
-  test('never exchanges Admin calls at the Shell issuer an earlier release stored on a managed bookmark', () => {
+  /** @evidence TEST-CLI-ADMIN-UNLABELLED-REGISTRY-ISSUER-KEPT */
+  test('keeps an explicit issuer for Admin calls through a bookmark in an unlabelled registry', () => {
     const url = 'https://bryan.eu.beta.astrale.ai/api'
     // Every bookmark store reaches Admin resolution through the registry read.
     const { store } = sanitizeStore({
@@ -215,20 +214,17 @@ describe('resolveAdminTargetFromStore', () => {
       },
     })
 
-    let failure: unknown
-    try {
-      resolveAdminTargetFromStore({ admin: 'bryan' }, DEFAULT_CONFIG, store)
-    } catch (error) {
-      failure = error
-    }
-    expect(failure).toBeInstanceOf(AstraleError)
-    expect(failure).toMatchObject({ code: 'ADMIN_DOMAIN_ISSUER_MISSING' })
+    expect(resolveAdminTargetFromStore({ admin: 'bryan' }, DEFAULT_CONFIG, store)).toMatchObject({
+      url,
+      domainIssuer: 'https://shell.beta.astrale.ai',
+      source: 'admin',
+    })
 
     expect(
       resolveAdminTargetFromStore({}, { ...DEFAULT_CONFIG, admin: { instance: 'bryan' } }, store),
     ).toMatchObject({
       url,
-      domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
+      domainIssuer: 'https://shell.beta.astrale.ai',
       source: 'config-instance',
     })
   })

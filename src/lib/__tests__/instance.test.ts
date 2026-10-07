@@ -102,7 +102,7 @@ describe('InstanceStoreSchema', () => {
     )
   })
 
-  test('exchanges managed public routes through the installed Shell, never a route-derived issuer', () => {
+  test('exchanges managed public routes through the installed Shell', () => {
     expect(managedShellOrigin('https://bryan.eu.beta.astrale.ai/api')).toBe('shell.astrale.ai')
     expect(managedShellOrigin('https://bryan.eu.astrale.ai/api')).toBe('shell.astrale.ai')
     expect(managedShellOrigin('https://kernel.example.com/api')).toBeUndefined()
@@ -198,20 +198,20 @@ describe('sanitizeStore — read must not rewrite', () => {
     expect(retained.instances.bryan).not.toHaveProperty('domainIssuer')
   })
 
-  /** @evidence TEST-CLI-INSTANCE-LEGACY-SHELL-ISSUER-DROPPED */
+  /** @evidence TEST-CLI-INSTANCE-UNLABELLED-REGISTRY-ISSUER-KEPT */
   test.each([
     ['https://bryan.eu.beta.astrale.ai/api', 'https://shell.beta.astrale.ai'],
     ['https://bryan.eu.astrale.ai/api', 'https://shell.astrale.ai'],
   ])(
-    'reads and drops the route-derived Shell issuer an earlier release stored on %s (unlabelled registry)',
-    (url, legacy) => {
+    'keeps an explicit Shell issuer read from an unlabelled registry on %s',
+    (url, domainIssuer) => {
       const store = {
         active: 'bryan',
         instances: {
           bryan: {
             url,
             issuer: url,
-            domainIssuer: legacy,
+            domainIssuer,
             slug: 'bryan',
             name: 'bryan',
             kind: 'bookmark' as const,
@@ -220,19 +220,16 @@ describe('sanitizeStore — read must not rewrite', () => {
         },
       }
 
-      const { store: repaired, changed } = sanitizeStore(InstanceStoreSchema.parse(store))
+      const { store: retained, changed } = sanitizeStore(InstanceStoreSchema.parse(store))
 
-      expect(changed).toBe(true)
-      expect(repaired.instances.bryan).not.toHaveProperty('domainIssuer')
-      expect(repaired.instances.bryan).toMatchObject({ slug: 'bryan', organizationId: 'org_123' })
-      expect(bookmarkExchangeDomain(repaired.instances.bryan, url)).toEqual({
-        domainOrigin: 'shell.astrale.ai',
-      })
+      expect(changed).toBe(false)
+      expect(retained.instances.bryan).toEqual(store.instances.bryan)
+      expect(bookmarkExchangeDomain(retained.instances.bryan, url)).toEqual({ domainIssuer })
     },
   )
 
   /** @evidence TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT */
-  test('keeps every Domain issuer of a registry this release labelled, the route-derived values too', () => {
+  test('keeps an explicit Shell issuer read from a labelled registry', () => {
     const url = 'https://bryan.eu.beta.astrale.ai/api'
     const store = InstanceStoreSchema.parse({
       version: 1,
@@ -251,7 +248,6 @@ describe('sanitizeStore — read must not rewrite', () => {
 
     const { store: retained, changed } = sanitizeStore(store)
 
-    // Only an earlier release stored a route-derived issuer; in this format it is the user's.
     expect(changed).toBe(false)
     expect(bookmarkExchangeDomain(retained.instances.bryan!, url)).toEqual({
       domainIssuer: 'https://shell.beta.astrale.ai',
@@ -282,7 +278,7 @@ describe('sanitizeStore — read must not rewrite', () => {
     expect(retained.instances.bryan.domainIssuer).toBe('https://shell-dev.example')
   })
 
-  test('keeps a route-derived Shell issuer a user set on a bookmark that is not managed', () => {
+  test('keeps an explicit Shell issuer a user set on a bookmark that is not managed', () => {
     const store = {
       active: 'shell',
       instances: {
