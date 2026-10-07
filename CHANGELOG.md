@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0-beta.130](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.129...cli/v1.0.0-beta.130) (2026-10-06)
+
+
+### Features
+
+* **commands:** filter the journal by recorded caller (D01) ([#543](https://github.com/astrale-os/cli/issues/543)) ([7cbe310](https://github.com/astrale-os/cli/commit/7cbe3105521a9c37ee7cc3f5064164c27ed21322))
+* **commands:** pre-check Domain compatibility and propose compatible dependents ([#597](https://github.com/astrale-os/cli/issues/597)) ([3f71322](https://github.com/astrale-os/cli/commit/3f71322c0f1ccdc331b8b7720d4c26ccbc044f60))
+
+
+### Bug Fixes
+
+* **commands:** report a missing snapshot target as a usage error ([#612](https://github.com/astrale-os/cli/issues/612)) ([6079524](https://github.com/astrale-os/cli/commit/607952434eeb777a535dd7d58c785d1bff768793))
+* **lib:** stop closed View servers from exiting their caller ([#607](https://github.com/astrale-os/cli/issues/607)) ([240326c](https://github.com/astrale-os/cli/commit/240326c740f725795919fa05232078a588b0f644))
+* retain View sessions when process signals are denied ([#602](https://github.com/astrale-os/cli/issues/602)) ([d38d8aa](https://github.com/astrale-os/cli/commit/d38d8aa5d662111bbd420d756921c16857581afc))
+* start Studio from a config file target ([#606](https://github.com/astrale-os/cli/issues/606)) ([96f298b](https://github.com/astrale-os/cli/commit/96f298b24a221b6c82135c380db24c1befb55bfa))
+* **studio:** bound delegated CLI capture lifetime ([#608](https://github.com/astrale-os/cli/issues/608)) ([d6b7806](https://github.com/astrale-os/cli/commit/d6b780625aeb96fd8f01c085ba4faf3409487b38))
+* **studio:** open new chat tabs with the current tab's model and effort ([#611](https://github.com/astrale-os/cli/issues/611)) ([6d1f41a](https://github.com/astrale-os/cli/commit/6d1f41a05d8c5db683360b790b2a37c9b56ae020))
+* **viewer:** show credential expiry and recover without losing input ([#603](https://github.com/astrale-os/cli/issues/603)) ([81068cf](https://github.com/astrale-os/cli/commit/81068cff0af6b4d6e20b321b7b7ea58c65691f02))
+
 ## [1.0.0-beta.129](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.128...cli/v1.0.0-beta.129) (2026-10-06)
 
 

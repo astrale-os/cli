@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 describe('managed Instance root import during provisioning', () => {
-  test('confirms human activation before selecting the instance, independently of Root import', async () => {
+  test('confirms human activation before bookmarking the instance, independently of Root import', async () => {
     const events: string[] = []
     const created = {
       id: '@instance',
@@ -24,18 +24,14 @@ describe('managed Instance root import during provisioning', () => {
       { creds: 'admin-credential', ci: true },
       {
         createOwnedInstance: async () => created,
-        upsertManagedBookmark: async () => {
+        bookmarkCreatedInstance: async () => {
           events.push('bookmark')
-          return { entry: { url: created.url } }
+          return { name: 'demo', entry: { url: created.url } }
         },
         activateInstance: async (instance) => {
           expect(instance).toBe(created)
           events.push('activate')
           return { status: 'completed', user: 'owner' }
-        },
-        setActive: async () => {
-          events.push('select')
-          return 'demo'
         },
         importInstanceRootIdentity: async () => {
           events.push('root')
@@ -43,7 +39,7 @@ describe('managed Instance root import during provisioning', () => {
         },
       },
     )
-    expect(events).toEqual(['activate', 'bookmark', 'select', 'root'])
+    expect(events).toEqual(['activate', 'bookmark', 'root'])
     expect(result.access).toEqual({ status: 'completed', user: 'owner' })
   })
 
@@ -57,8 +53,10 @@ describe('managed Instance root import during provisioning', () => {
       organizationId: 'org_demo',
     }
     const createOwnedInstance = mock(async () => created)
-    const upsertManagedBookmark = mock(async () => ({ entry: { url: created.url } }))
-    const setActive = mock(async () => 'demo')
+    const bookmarkCreatedInstance = mock(async () => ({
+      name: 'demo',
+      entry: { url: created.url },
+    }))
     const importFailure = new Error('retained material temporarily unavailable')
     const importInstanceRootIdentity = mock(async () => {
       throw importFailure
@@ -71,8 +69,7 @@ describe('managed Instance root import during provisioning', () => {
       { creds: 'admin-credential', ci: true },
       {
         createOwnedInstance,
-        upsertManagedBookmark,
-        setActive,
+        bookmarkCreatedInstance,
         importInstanceRootIdentity,
         activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
@@ -84,17 +81,14 @@ describe('managed Instance root import during provisioning', () => {
     expect(importInstanceRootIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ creds: 'admin-credential', timeout: '120000' }),
       created.id,
-      { bookmark: false },
+      { bookmark: false, replace: 'same-issuer' },
     )
-    expect(upsertManagedBookmark).toHaveBeenCalledTimes(1)
-    expect(upsertManagedBookmark).toHaveBeenCalledWith({
-      key: 'demo',
+    expect(bookmarkCreatedInstance).toHaveBeenCalledTimes(1)
+    expect(bookmarkCreatedInstance).toHaveBeenCalledWith({
       slug: 'demo',
       url: created.url,
       organizationId: created.organizationId,
-      activateWhenEmpty: false,
     })
-    expect(setActive).toHaveBeenCalledTimes(1)
     expect(result.access).toEqual({ status: 'completed', user: 'owner' })
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
   })
@@ -121,8 +115,10 @@ describe('managed Instance root import during provisioning', () => {
         .mockResolvedValueOnce({ ...pending, phase: 'install-shell-root' })
         .mockResolvedValueOnce(ready)
       const sleep = mock(async () => {})
-      const upsertManagedBookmark = mock(async () => ({ entry: { url: ready.url } }))
-      const setActive = mock(async () => 'demo')
+      const bookmarkCreatedInstance = mock(async () => ({
+        name: 'demo',
+        entry: { url: ready.url },
+      }))
       const importInstanceRootIdentity = mock(async () => ({ name: 'demo-root' }) as never)
 
       const result = await provisionInstance(
@@ -133,8 +129,7 @@ describe('managed Instance root import during provisioning', () => {
           operationId: () => pending.operationId,
           now: () => 0,
           sleep,
-          upsertManagedBookmark,
-          setActive,
+          bookmarkCreatedInstance,
           importInstanceRootIdentity,
           activateInstance: async () => ({ status: 'completed', user: 'owner' }),
         },
@@ -163,7 +158,7 @@ describe('managed Instance root import during provisioning', () => {
         ],
       ])
       expect(sleep).toHaveBeenCalledTimes(2)
-      expect(upsertManagedBookmark).toHaveBeenCalledTimes(1)
+      expect(bookmarkCreatedInstance).toHaveBeenCalledTimes(1)
       expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
     },
   )
@@ -199,8 +194,7 @@ describe('managed Instance root import during provisioning', () => {
         sleep: async () => {},
         now: () => 0,
         activateInstance: async () => ({ status: 'completed', user: 'owner' }),
-        upsertManagedBookmark: async () => ({ entry: { url: created.url } }),
-        setActive: async () => 'demo',
+        bookmarkCreatedInstance: async () => ({ name: 'demo', entry: { url: created.url } }),
         importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
       },
     )
@@ -227,8 +221,7 @@ describe('managed Instance root import during provisioning', () => {
           return created
         },
         operationId: generated,
-        upsertManagedBookmark: async () => ({ entry: { url: created.url } }),
-        setActive: async () => 'demo',
+        bookmarkCreatedInstance: async () => ({ name: 'demo', entry: { url: created.url } }),
         importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
         activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
@@ -288,8 +281,7 @@ describe('managed Instance root import during provisioning', () => {
         operationId: () => ready.operationId,
         now: () => 0,
         sleep,
-        upsertManagedBookmark: async () => ({ entry: { url: ready.url } }),
-        setActive: async () => 'demo',
+        bookmarkCreatedInstance: async () => ({ name: 'demo', entry: { url: ready.url } }),
         importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
         activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
@@ -312,8 +304,7 @@ describe('managed Instance root import during provisioning', () => {
       phase: 'create-host-child',
     }
     const createOwnedInstance = mock(async () => pending)
-    const upsertManagedBookmark = mock()
-    const setActive = mock()
+    const bookmarkCreatedInstance = mock()
     const importInstanceRootIdentity = mock()
     let now = 0
 
@@ -325,16 +316,14 @@ describe('managed Instance root import during provisioning', () => {
         operationId: () => pending.operationId,
         now: () => (now += 10 * 60_000),
         sleep: async () => {},
-        upsertManagedBookmark,
-        setActive,
+        bookmarkCreatedInstance,
         importInstanceRootIdentity,
       },
     )
 
     expect(result).toEqual({ created: pending, slug: 'demo' })
     expect(createOwnedInstance).toHaveBeenCalledTimes(1)
-    expect(upsertManagedBookmark).not.toHaveBeenCalled()
-    expect(setActive).not.toHaveBeenCalled()
+    expect(bookmarkCreatedInstance).not.toHaveBeenCalled()
     expect(importInstanceRootIdentity).not.toHaveBeenCalled()
   })
 
@@ -345,8 +334,7 @@ describe('managed Instance root import during provisioning', () => {
       url: 'https://demo.example/api',
       state: 'ready' as const,
     }
-    const upsertManagedBookmark = mock()
-    const setActive = mock()
+    const bookmarkCreatedInstance = mock()
     const result = await provisionInstance(
       'demo',
       { creds: 'admin', ci: true },
@@ -355,14 +343,12 @@ describe('managed Instance root import during provisioning', () => {
         activateInstance: async () => {
           throw new Error('response lost')
         },
-        upsertManagedBookmark,
-        setActive,
+        bookmarkCreatedInstance,
         importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
       },
     )
     expect(result.created).toBe(created)
     expect(result.access).toEqual({ status: 'pending', code: 'OWNER_ACTIVATION_UNAVAILABLE' })
-    expect(upsertManagedBookmark).not.toHaveBeenCalled()
-    expect(setActive).not.toHaveBeenCalled()
+    expect(bookmarkCreatedInstance).not.toHaveBeenCalled()
   })
 })

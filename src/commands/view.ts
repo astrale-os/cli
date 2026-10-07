@@ -649,7 +649,16 @@ Examples:
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)
 
-    if (!spec) return fatal(new Error('Nothing to open — pass a ViewPath or target node.'))
+    if (!spec) {
+      return fatal(
+        new AstraleError(
+          'MISSING_ARG',
+          '`view` needs a ViewPath or target node.',
+          'Run: astrale view @customer --snapshot',
+        ),
+        opts,
+      )
+    }
     const wantsAgentBrowser = !opts.list && !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
       return fatal(

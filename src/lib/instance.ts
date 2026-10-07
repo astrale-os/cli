@@ -317,30 +317,85 @@ export async function upsertInstance(
   const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
   validateUrl(normalizedUrl)
 
-  return mutateInstances((store) => {
-    assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[], key)
+  return mutateInstances((store) => upsertBookmark(store, key, opts, normalizedUrl, behavior))
+}
 
-    const existing = store.instances[key]
-    const kept =
-      behavior.dropDomainIssuer === true && existing !== undefined
-        ? withoutDomainIssuer(existing)
-        : existing
-    const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
-    const normalizedDomainIssuer = opts.domainIssuer
-      ? normalizeIssuerUrl(opts.domainIssuer)
-      : undefined
-    const entry: InstanceEntry = {
-      ...kept,
-      ...definedEntry(opts),
-      url: normalizedUrl,
-      ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
-      ...(normalizedDomainIssuer ? { domainIssuer: normalizedDomainIssuer } : {}),
-      kind: 'bookmark',
-      createdAt: existing?.createdAt ?? new Date().toISOString(),
+function upsertBookmark(
+  store: InstanceStore,
+  key: string,
+  opts: AddInstanceOpts,
+  normalizedUrl: string,
+  behavior: Readonly<{ activateWhenEmpty?: boolean; dropDomainIssuer?: boolean }> = {},
+): { entry: InstanceEntry; created: boolean } {
+  assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[], key)
+
+  const existing = store.instances[key]
+  const kept =
+    behavior.dropDomainIssuer === true && existing !== undefined
+      ? withoutDomainIssuer(existing)
+      : existing
+  const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
+  const normalizedDomainIssuer = opts.domainIssuer
+    ? normalizeIssuerUrl(opts.domainIssuer)
+    : undefined
+  const entry: InstanceEntry = {
+    ...kept,
+    ...definedEntry(opts),
+    url: normalizedUrl,
+    ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
+    ...(normalizedDomainIssuer ? { domainIssuer: normalizedDomainIssuer } : {}),
+    kind: 'bookmark',
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+  }
+  store.instances[key] = entry
+  if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
+  return { entry, created: !existing }
+}
+
+/** Register a verified creation without changing existing bookmark ownership or selection. */
+export async function bookmarkCreatedInstance(
+  input: Readonly<{
+    slug: string
+    url: string
+    organizationId?: string
+    defaultIdentity?: string
+  }>,
+): Promise<{ name: string; entry: InstanceEntry }> {
+  validateName(input.slug, 'Instance')
+  if (RESERVED_SLUGS.has(input.slug)) throw new ReservedSlugError(input.slug)
+  const url = normalizeInstanceKernelUrl(input.url)
+  validateUrl(url)
+
+  return mutateInstances((store) => {
+    const existingKey = resolveInstanceKey(store, input.slug)
+    if (existingKey !== null) {
+      const entry = store.instances[existingKey]!
+      if (entry.url !== url) {
+        const quotedUrl = `'${url.replaceAll("'", "'\\''")}'`
+        throw new AstraleError(
+          'INSTANCE_BOOKMARK_CONFLICT',
+          `Instance "${input.slug}" is ready, but bookmark "${existingKey}" already names ${entry.url}. The existing bookmark and active target were preserved.`,
+          `Choose an unused bookmark name: astrale instance bookmark <new-name> --url ${quotedUrl}${input.defaultIdentity ? ` --as ${input.defaultIdentity}` : ''}`,
+        )
+      }
+      // A ready receipt replay must not rewrite aliases, trust or the bookmark's identity.
+      return { name: existingKey, entry }
     }
-    store.instances[key] = entry
-    if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
-    return { entry, created: !existing }
+    const { entry } = upsertBookmark(
+      store,
+      input.slug,
+      {
+        url,
+        issuer: url,
+        slug: input.slug,
+        name: input.slug,
+        mode: 'remote',
+        ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+        ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
+      },
+      url,
+    )
+    return { name: input.slug, entry }
   })
 }
 
