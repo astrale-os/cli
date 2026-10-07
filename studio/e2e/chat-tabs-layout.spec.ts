@@ -89,3 +89,41 @@ test('along the top, titles are shown only when asked for', async ({ page, reque
       await request.post('/api/agent/chats', { data: { action: 'close', chatId: chat.id } })
   }
 })
+
+test('in the floating dock, the tab column runs down beside the composer', async ({
+  page,
+  request,
+}) => {
+  await dockWorkspacePanel(request, 'bottom')
+  const opened = await openChats(request)
+
+  try {
+    await page.goto('/')
+    const field = page.locator('[data-agent-composer]')
+    await expect(field).toBeVisible({ timeout: 30_000 })
+    // at rest the dock is the bar alone
+    await expect(page.locator('nav[data-chat-tabs="left"]')).toHaveCount(0)
+
+    await field.click()
+    await page.keyboard.type('still typing')
+    const column = page.locator('nav[data-chat-tabs="left"]')
+    await expect(column).toBeVisible()
+    // opening it never takes the caret away from what is being written
+    await expect(field).toBeFocused()
+    await expect(field).toHaveValue('still typing')
+
+    await expect
+      .poll(async () => {
+        const columnBox = (await column.boundingBox())!
+        const fieldBox = (await field.boundingBox())!
+        return (
+          columnBox.y + columnBox.height >= fieldBox.y + fieldBox.height &&
+          fieldBox.x >= columnBox.x + columnBox.width - 1
+        )
+      })
+      .toBe(true)
+  } finally {
+    for (const chat of opened)
+      await request.post('/api/agent/chats', { data: { action: 'close', chatId: chat.id } })
+  }
+})

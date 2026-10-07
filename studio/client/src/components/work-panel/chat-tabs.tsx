@@ -52,6 +52,7 @@ export function ChatTabs({
   harness,
   vertical = false,
   titled = false,
+  className,
 }: {
   chats: ChatInfo[]
   activeId?: string
@@ -60,6 +61,7 @@ export function ChatTabs({
   vertical?: boolean
   /** along the top, every tab carries its title, not only the one you are in */
   titled?: boolean
+  className?: string
 }) {
   const { open, select, close, reorder, update } = useChatMutations()
   const strip = useRef<HTMLDivElement>(null)
@@ -92,7 +94,7 @@ export function ChatTabs({
       <nav
         aria-label="Chats"
         // never more than half the panel: the conversation is what the panel is for
-        className="relative flex max-w-[50%] shrink-0 flex-col border-r"
+        className={cn('relative flex max-w-[50%] shrink-0 flex-col border-r', className)}
         style={{ width }}
         data-chat-tabs="left"
       >
