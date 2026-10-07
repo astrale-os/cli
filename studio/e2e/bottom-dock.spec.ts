@@ -145,6 +145,13 @@ test('at rest the bar is one line and carries nothing it cannot act on', async (
   await expect(page.getByRole('button', { name: 'Open comments' })).toHaveCount(0)
 })
 
+/** The open dock's tab column, the default layout: the field starts where it ends. */
+async function tabColumnWidth(page: Page): Promise<number> {
+  const column = dock(page).locator('nav[data-chat-tabs="left"]')
+  await expect(column).toBeVisible()
+  return (await column.boundingBox())!.width
+}
+
 test('a long draft rests as its first words on one line, and opens across the whole dock', async ({
   page,
 }) => {
@@ -155,10 +162,11 @@ test('a long draft rests as its first words on one line, and opens across the wh
 
   await openDock(page)
   await composer(page).fill(draft)
-  // open, the field runs from edge to edge; the controls wait on the row below it
+  // open, the field runs from the tab column to the edge; the controls wait on the
+  // row below it
   const open = (await dock(page).boundingBox())!
   const field = (await composer(page).boundingBox())!
-  expect(field.width).toBeGreaterThan(open.width - 40)
+  expect(field.width).toBeGreaterThan(open.width - (await tabColumnWidth(page)) - 40)
 
   await page.keyboard.press('Escape')
   await expect.poll(() => dockHeight(page)).toBeLessThan(ONE_LINE)
@@ -224,11 +232,12 @@ test('opening grows the dock upward from the bar it rests as', async ({ page }) 
   await openDock(page)
   const opened = (await dock(page).boundingBox())!
   // the whole point of growing rather than opening a panel: the bar's foot stays
-  // put and everything unfolds above it. The field itself rises by one row — open,
-  // it spans the whole width and the controls sit under it
+  // put and everything unfolds above it. The field itself rises by one row - open,
+  // it spans the width beside the tab column and the controls sit under it
   expect(Math.round(opened.y + opened.height)).toBe(Math.round(bar.y + bar.height))
   const after = (await composer(page).boundingBox())!
-  expect(after.width).toBeGreaterThan(before.width)
+  expect(after.width).toBeGreaterThan(opened.width - (await tabColumnWidth(page)) - 40)
+  expect(after.y).toBeLessThan(before.y)
   await expect(dock(page).getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
 
   await page.keyboard.press('Escape')

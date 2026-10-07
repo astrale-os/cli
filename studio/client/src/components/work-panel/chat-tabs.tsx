@@ -5,22 +5,23 @@
  * running turn. The strip is only navigation — what a chat RUNS is said where
  * you type it, in the composer's model picker.
  *
- * A tab is its agent's mark in its own colour, and nothing else — the title
- * belongs to the tab you are actually in. That keeps a tab about 28 pixels wide,
- * so a domain can carry a row of them; past that the strip scrolls sideways.
+ * By default the tabs are a column down the panel's whole left side, where every
+ * tab has the room to carry the start of its title. Drag the column's right edge
+ * to give the titles more room or less; past the panel's height it scrolls.
  *
- * Settings can stand the strip up instead: a column on the conversation's left,
- * where every tab has the room to carry the start of its title - for when you
- * keep enough chats open that telling them apart by colour stops working.
+ * Settings can lay them along the top instead. There a tab is its agent's mark in
+ * its own colour and nothing else - the title belongs to the tab you are in - which
+ * keeps a tab about 28 pixels wide, so a domain can carry a row of them; past that
+ * the strip scrolls sideways. Or the strip can carry every tab's title too.
  *
  * Tabs are yours to arrange: drag one along the strip (or Alt+arrow on a focused
  * tab) and the server keeps that order, for every window. Any tab can be renamed
  * by double-clicking it, or with F2: in the strip, that opens its title in place.
  *
- * `+` asks nothing: a new tab opens on the domain's starred model, or continues
- * with the agent you are already working with when nothing is starred. Changing
- * agent is not a thing you do when OPENING a conversation — it is picking a model
- * of the other one, in the composer, once you know what you want to ask.
+ * `+` asks nothing: a new tab continues the one you are in, with its agent, model,
+ * effort and speed. Changing agent is not a thing you do when OPENING a
+ * conversation - it is picking a model of the other one, in the composer, once you
+ * know what you want to ask.
  */
 import type { ChatInfo, HarnessStatus } from '@shared/types'
 
@@ -29,9 +30,11 @@ import { Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { hasHarnessLogo, HarnessLogo } from '@/components/harness-logo'
+import { ResizeHandle } from '@/components/ui/resize-handle'
 import { useAgentUnread } from '@/lib/agent-unread'
 import { useChatMutations } from '@/lib/chats'
 import { labelOf } from '@/lib/harnesses'
+import { CHAT_TABS_WIDTH, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import type { ChatTone } from './chat-tone'
@@ -48,18 +51,26 @@ export function ChatTabs({
   activeId,
   harness,
   vertical = false,
+  titled = false,
+  className,
 }: {
   chats: ChatInfo[]
   activeId?: string
   harness?: HarnessStatus
   /** a column of titled tabs on the conversation's left, rather than a strip of marks above it */
   vertical?: boolean
+  /** along the top, every tab carries its title, not only the one you are in */
+  titled?: boolean
+  className?: string
 }) {
   const { open, select, close, reorder, update } = useChatMutations()
   const strip = useRef<HTMLDivElement>(null)
   const edges = useSideScroll(strip, chats.length, !vertical)
   const tones = chatTones(chats)
   const arrange = useArrange(chats, reorder.mutate)
+  const width = useUI((state) => state.chatTabsWidth)
+  const setWidth = useUI((state) => state.setChatTabsWidth)
+  const dragFrom = useRef(width)
 
   const tabs = chats.map((chat, index) => (
     <Tab
@@ -69,6 +80,7 @@ export function ChatTabs({
       tone={tones[index]!}
       harnessLabel={labelOf(harness, chat.harness)}
       vertical={vertical}
+      titled={titled}
       onSelect={() => select.mutate(chat.id)}
       onRename={(title) => update.mutate({ chatId: chat.id, title })}
       onClose={chats.length > 1 ? () => close.mutate(chat.id) : undefined}
@@ -81,7 +93,9 @@ export function ChatTabs({
     return (
       <nav
         aria-label="Chats"
-        className="flex w-40 shrink-0 flex-col border-r"
+        // never more than half the panel: the conversation is what the panel is for
+        className={cn('relative flex max-w-[50%] shrink-0 flex-col border-r', className)}
+        style={{ width }}
         data-chat-tabs="left"
       >
         <div className="flex shrink-0 items-center justify-between px-2.5 pb-1 pt-2">
@@ -96,6 +110,20 @@ export function ChatTabs({
         >
           {tabs}
         </div>
+        {/* drag handle straddling the right border */}
+        <ResizeHandle
+          orientation="vertical"
+          label="Resize the chat tabs"
+          className="right-0 top-0 h-full w-2 translate-x-1/2"
+          value={width}
+          min={CHAT_TABS_WIDTH.min}
+          max={CHAT_TABS_WIDTH.max}
+          onDragStart={() => (dragFrom.current = width)}
+          onDrag={(dx) => setWidth(dragFrom.current + dx)}
+          onStep={(dx) => setWidth(width + dx)}
+          onLimit={(to) => setWidth(CHAT_TABS_WIDTH[to])}
+          onReset={() => setWidth(CHAT_TABS_WIDTH.fallback)}
+        />
       </nav>
     )
 
@@ -262,6 +290,7 @@ function Tab({
   tone,
   harnessLabel,
   vertical,
+  titled,
   onSelect,
   onRename,
   onClose,
@@ -273,6 +302,7 @@ function Tab({
   tone: ChatTone
   harnessLabel: string
   vertical: boolean
+  titled: boolean
   onSelect: () => void
   onRename: (title: string) => void
   onClose?: () => void
@@ -444,6 +474,16 @@ function Tab({
             <span
               className={cn(
                 'min-w-0 flex-1 truncate text-left text-[12px]',
+                active ? 'text-foreground' : 'text-muted-foreground',
+                unread && !active && 'font-medium text-foreground',
+              )}
+            >
+              {name}
+            </span>
+          ) : titled ? (
+            <span
+              className={cn(
+                'max-w-[150px] truncate text-[12px]',
                 active ? 'text-foreground' : 'text-muted-foreground',
                 unread && !active && 'font-medium text-foreground',
               )}

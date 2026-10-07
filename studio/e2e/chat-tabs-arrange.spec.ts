@@ -52,10 +52,10 @@ test('a dragged tab stays where it was dropped, and moves with the keyboard', as
     await page.goto('/')
     await expect.poll(() => shown(page)).toEqual(TITLES)
 
-    // drop the last tab on the first one's leading half: it lands before it
+    // drop the last tab on the first one's upper half: in the column it lands before it
     const landed = reordered(page)
     await tab(page, 'Arrange search').dragTo(tab(page, 'Arrange orders'), {
-      targetPosition: { x: 2, y: 8 },
+      targetPosition: { x: 8, y: 2 },
     })
     await landed
     const dragged = ['Arrange search', 'Arrange orders', 'Arrange billing']
@@ -65,10 +65,10 @@ test('a dragged tab stays where it was dropped, and moves with the keyboard', as
     await page.reload()
     await expect.poll(() => shown(page)).toEqual(dragged)
 
-    // Alt+→ steps a focused tab one place along, and it keeps the focus
+    // Alt+↓ steps a focused tab one place down the column, and it keeps the focus
     const stepped = reordered(page)
     await tab(page, 'Arrange orders').focus()
-    await page.keyboard.press('Alt+ArrowRight')
+    await page.keyboard.press('Alt+ArrowDown')
     await stepped
     const moved = ['Arrange search', 'Arrange billing', 'Arrange orders']
     await expect.poll(() => shown(page)).toEqual(moved)
