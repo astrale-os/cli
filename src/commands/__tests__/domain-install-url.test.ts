@@ -661,6 +661,34 @@ describe('issuer changes (D7): consent planned from readable installation eviden
     expect(run.requests[0]!.domains[0]).not.toHaveProperty('consent')
   })
 
+  test("the Kernel's SCHEMA_NOT_FOUND for an origin it has not installed leaves a first install without consent", async () => {
+    const run = harness({
+      served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
+      inspect: async (origin) => {
+        throw new ResponseError(1003, 'Domain was not found.', INVOCATION, {
+          code: 'SCHEMA_NOT_FOUND',
+          details: { origin },
+        })
+      },
+    })
+    await installByReference([A1], JSON_OUTPUT, run.deps)
+    expect(run.requests[0]!.domains[0]).not.toHaveProperty('consent')
+  })
+
+  test('another invalid-input refusal of the point observation is not an absent installation', async () => {
+    const run = harness({
+      served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
+      inspect: async (origin) => {
+        throw new ResponseError(1003, 'Domain is not ready.', INVOCATION, {
+          code: 'SCHEMA_NOT_READY',
+          details: { origin },
+        })
+      },
+    })
+    await expect(installByReference([A1], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toEqual([])
+  })
+
   test('a readable unlisted installation with the same issuer is neither a first install nor a change', async () => {
     const run = harness({
       served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
