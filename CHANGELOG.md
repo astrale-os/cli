@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.133](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.132...cli/v1.0.0-beta.133) (2026-10-08)
+
+
+### Bug Fixes
+
+* **commands:** treat SCHEMA_NOT_FOUND as a first install when planning issuer consent ([#625](https://github.com/astrale-os/cli/issues/625)) ([5b14c5b](https://github.com/astrale-os/cli/commit/5b14c5b6e735fab988d401e498f47255f2b793c8))
+
 ## [1.0.0-beta.132](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.131...cli/v1.0.0-beta.132) (2026-10-08)
 
 
