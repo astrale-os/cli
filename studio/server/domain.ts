@@ -11,13 +11,18 @@ import {
 } from 'ts-morph'
 
 import { workspaceKey } from './home'
+import {
+  LEGACY_APPLICATION_MODULES,
+  LEGACY_DEFINE_APPLICATION,
+  LEGACY_PROJECT_APPLICATION_KEY,
+} from './legacy/application-project'
 import { isPackageImportSpecifier, resolvePackageImport } from './package-imports'
 
 export interface DomainHandle {
   readonly id: string
   readonly root: string
   readonly configFile: string
-  readonly applicationFile: string
+  readonly domainFile: string
   readonly schemaDirName: string
   readonly schemaDir: string
   readonly schemaIndex: string
@@ -26,19 +31,19 @@ export interface DomainHandle {
 
 const registry = new Map<string, DomainHandle>()
 
-const APPLICATION_MODULES = new Set(['@astrale-os/sdk/application', '@astrale-os/sdk'])
+const DOMAIN_MODULES = new Set(['@astrale-os/sdk/domain', '@astrale-os/sdk'])
 const PROJECT_MODULES = new Set(['@astrale-os/sdk/project', '@astrale-os/sdk'])
 const TESTING_MODULES = new Set(['@astrale-os/sdk/testing'])
 
 /** What `astrale.config.ts` declares through `defineProject`, read statically. */
 export interface ProjectConfigAnalysis {
-  /** Application module of `defineProject({ application })`, resolved to a source file. */
-  readonly applicationFile: string | null
+  /** Domain definition module of `defineProject({ domain })`, resolved to a source file. */
+  readonly domainFile: string | null
   /** Dataset module coordinates of `tests: tests({ datasets: [dataset('…')] })`, in order. */
   readonly datasets: readonly string[]
 }
 
-const NO_PROJECT: ProjectConfigAnalysis = Object.freeze({ applicationFile: null, datasets: [] })
+const NO_PROJECT: ProjectConfigAnalysis = Object.freeze({ domainFile: null, datasets: [] })
 
 /**
  * Read the Project declared by `astrale.config.ts` without executing it: the configuration is
@@ -59,14 +64,19 @@ export function analyzeProjectConfig(root: string): ProjectConfigAnalysis {
   const input = resolveLocalValue(call.getArguments()[0], source)
   if (!input || !Node.isObjectLiteralExpression(input)) return NO_PROJECT
   return Object.freeze({
-    applicationFile: applicationOf(objectPropertyValue(input, 'application'), source, project),
+    domainFile: domainOf(
+      objectPropertyValue(input, 'domain') ??
+        objectPropertyValue(input, LEGACY_PROJECT_APPLICATION_KEY),
+      source,
+      project,
+    ),
     datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
   })
 }
 
-function applicationOf(node: Node | undefined, source: SourceFile, root: string): string | null {
-  const application = resolveLocalValue(node, source)
-  return application ? importedModuleOf(application, source, root) : null
+function domainOf(node: Node | undefined, source: SourceFile, root: string): string | null {
+  const domain = resolveLocalValue(node, source)
+  return domain ? importedModuleOf(domain, source, root) : null
 }
 
 function datasetsOf(node: Node | undefined, source: SourceFile): string[] {
@@ -111,26 +121,31 @@ function moduleImportingName(name: string, source: SourceFile, root: string): st
   return null
 }
 
-/** Resolve only the Application declared by the exported Project. */
-export function resolveApplicationEntry(root: string): string | null {
-  return analyzeProjectConfig(root).applicationFile
+/** Resolve only the Domain definition declared by the exported Project. */
+export function resolveDomainEntry(root: string): string | null {
+  return analyzeProjectConfig(root).domainFile
 }
 
 /**
  * Resolve the authored Schema module selected by the composition's `schema` binding.
  *
- * Application is the composition source of truth, but importing it would also load
- * Runtime, Frontend, integrations, and any authored top-level effects. Studio follows
+ * The Domain definition is the composition source of truth, but importing it would also
+ * load Runtime, Frontend, integrations, and any authored top-level effects. Studio follows
  * the Schema binding statically instead, then imports only that module in its isolated
  * extractor subprocess.
  */
-export function resolveSchemaEntry(root: string, applicationFile: string): string | null {
+export function resolveSchemaEntry(root: string, domainFile: string): string | null {
   const project = resolve(root)
-  const source = addSourceFile(applicationFile)
+  const source = addSourceFile(domainFile)
   if (source === null) return null
 
   for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isSdkCall(call, source, 'defineApplication', APPLICATION_MODULES)) continue
+    if (
+      !isSdkCall(call, source, 'defineDomain', DOMAIN_MODULES) &&
+      !isSdkCall(call, source, LEGACY_DEFINE_APPLICATION, LEGACY_APPLICATION_MODULES)
+    ) {
+      continue
+    }
     const input = resolveLocalValue(call.getArguments()[0], source)
     if (!input || !Node.isObjectLiteralExpression(input)) continue
     const schema = objectPropertyValue(input, 'schema')
@@ -144,23 +159,23 @@ export function resolveSchemaEntry(root: string, applicationFile: string): strin
 export function isDomainDir(root: string): boolean {
   const project = resolve(root)
   if (!existsSync(join(project, 'astrale.config.ts'))) return false
-  const application = resolveApplicationEntry(project)
-  return application !== null && resolveSchemaEntry(project, application) !== null
+  const domain = resolveDomainEntry(project)
+  return domain !== null && resolveSchemaEntry(project, domain) !== null
 }
 
 export function registerDomain(root: string): DomainHandle | null {
   const project = resolve(root)
   const configFile = join(project, 'astrale.config.ts')
-  const applicationFile = resolveApplicationEntry(project)
-  if (applicationFile === null || !existsSync(configFile)) return null
-  const schemaIndex = resolveSchemaEntry(project, applicationFile)
+  const domainFile = resolveDomainEntry(project)
+  if (domainFile === null || !existsSync(configFile)) return null
+  const schemaIndex = resolveSchemaEntry(project, domainFile)
   if (schemaIndex === null) return null
   const schemaDir = dirname(schemaIndex)
   const handle: DomainHandle = {
     id: workspaceKey(project),
     root: project,
     configFile,
-    applicationFile,
+    domainFile,
     schemaDirName: relative(project, schemaDir).replaceAll('\\', '/') || '.',
     schemaDir,
     schemaIndex,
@@ -169,7 +184,7 @@ export function registerDomain(root: string): DomainHandle | null {
   if (
     current?.root === handle.root &&
     current.configFile === handle.configFile &&
-    current.applicationFile === handle.applicationFile &&
+    current.domainFile === handle.domainFile &&
     current.schemaIndex === handle.schemaIndex
   ) {
     return current
@@ -202,7 +217,7 @@ export function depsInstalled(root: string): boolean {
 }
 
 /**
- * Parsed config/Application sources, keyed by path and reused while the file's text is
+ * Parsed config/Domain definition sources, keyed by path and reused while the file's text is
  * byte-identical. The workspace rescan analyzes every domain twice (`isDomainDir`, then
  * `registerDomain`) every tick; re-reading the text is cheap, re-parsing it is not. The
  * key is the content itself (not mtime), so any edit is seen on the very next call.
@@ -341,7 +356,7 @@ function resolveAuthoredModule(root: string, from: SourceFile, specifier: string
   } else if (isPackageImportSpecifier(specifier)) {
     // Read the Domain's own `imports` map rather than asking the host resolver:
     // a compiled standalone cannot resolve an external package's aliases, and
-    // rejected every Domain whose Application imports `#schema`.
+    // rejected every Domain whose definition imports `#schema`.
     candidates = resolvePackageImport(specifier, fromDir).flatMap(sourceCandidates)
   } else {
     return null

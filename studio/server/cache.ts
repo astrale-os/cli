@@ -219,13 +219,13 @@ function hashFileIfPresent(hash: ReturnType<typeof createHash>, label: string, f
   }
 }
 
-function bundleCacheKey(root: string, schemaDirName: string, applicationFile: string): string {
+function bundleCacheKey(root: string, schemaDirName: string, domainFile: string): string {
   const hash = createHash('sha256')
   hash.update(`domain-studio-bundle-cache-v${BUNDLE_CACHE_VERSION}\0`)
   hash.update(`schema-dir:${schemaDirName}\0`)
   hash.update(`bun:${Bun.version}\0`)
 
-  const files = hashAnatomyFiles(root, schemaDirName, applicationFile)
+  const files = hashAnatomyFiles(root, schemaDirName, domainFile)
   for (const [file, digest] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
     hash.update(`${file}\0${digest}\0`)
   }
@@ -309,7 +309,7 @@ export async function getBundle(
     async (): Promise<StudioSchemaBundle> => {
       try {
         const keyBefore = timing.measureSync('cache-key', () =>
-          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
         )
         if (!rebuild) {
           const cached = timing.measureSync('cache-read', () => readCachedBundle(h.root, keyBefore))
@@ -323,7 +323,7 @@ export async function getBundle(
         const bundle = await buildBundle(h, timing)
         bundles.set(id, bundle)
         const keyAfter = timing.measureSync('cache-key', () =>
-          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
         )
         if (keyAfter === keyBefore) {
           timing.measureSync('cache-write', () => writeCachedBundle(h.root, keyAfter, bundle))

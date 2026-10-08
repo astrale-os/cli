@@ -42,11 +42,11 @@ registered Kernel User and perform delegation plus Domain exchange.
 An Astrale-managed Instance exchanges its users through its installed Shell, named by origin
 (`shell.astrale.ai`) and never by an issuer derived from the route: the Shell's issuer is whatever
 the source Kernel's pin names. A bookmark that names an explicit exact Domain issuer is exchanged
-there instead, managed or not. The bookmark registry carries a format label (`version`). A registry
-without it was written by an earlier release, which stored the route-derived Shell issuer on managed
-bookmarks without the user choosing it, so reading such a registry drops those two values from its
-managed bookmarks (`lib/legacy/managed-shell-issuer.ts`); every bookmark write rewrites the whole
-registry with the label, and in a labelled registry every `domainIssuer` is the user's.
+there instead, managed or not. The bookmark registry carries a format label (`version`); every
+bookmark write rewrites the whole registry with the label. In every registry, labelled or unlabelled,
+every `domainIssuer` is the user's and is preserved on read. If an old explicit issuer no longer
+matches the installed Shell, re-run `astrale instance use <slug>` to exchange through the installed
+Shell again.
 The exchange reads the pin with `schema.inspect` through the same Client Session that already
 authenticates the selected identity for `whoami` and `delegate`, so no issuer is needed before the
 Kernel is reached. The state owner's installation cache remembers what the pin named per source

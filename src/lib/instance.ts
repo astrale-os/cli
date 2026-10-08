@@ -6,7 +6,6 @@ import type { AstraleConfig } from './config'
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
 import { atomicWrite, withFileLock } from '../state/files'
 import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
-import { withoutRouteDerivedShellIssuer } from './legacy/managed-shell-issuer'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -36,9 +35,8 @@ export const InstanceEntrySchema = z.object({
 })
 
 /**
- * Format of the bookmark registry this release writes. A registry without it was written by a
- * release that derived the Shell issuer from the route (`legacy/managed-shell-issuer.ts`); every
- * write rewrites the whole registry in this format.
+ * Format of the bookmark registry this release writes. Unlabelled registries remain readable;
+ * every write rewrites the whole registry in this format.
  */
 export const INSTANCE_STORE_VERSION = 1 as const
 
@@ -90,15 +88,13 @@ function seed(): InstanceStore {
 }
 
 /**
- * Normalize a parsed registry into this release's model. `changed` reports normalized content; the
- * returned store carries no format label, which only an encoded registry holds.
+ * Normalize a parsed registry, preserving every explicit Domain issuer regardless of its format
+ * label. `changed` reports normalized content; the returned store carries no format label, which
+ * only an encoded registry holds.
  */
 export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
   let changed = false
   const instances: Record<string, InstanceEntry> = {}
-  // Read-old, deleted with `legacy/managed-shell-issuer.ts`: only a registry an earlier release
-  // wrote can hold a Shell issuer derived from the route.
-  const routeDerivedShellIssuers = store.version === undefined
 
   for (const [key, entry] of Object.entries(store.instances)) {
     if (key === 'manager') {
@@ -111,11 +107,8 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
-    const current = routeDerivedShellIssuers
-      ? withoutLegacyShellIssuer(entry, normalizedUrl)
-      : entry
     const next: InstanceEntry = {
-      ...current,
+      ...entry,
       url: normalizedUrl,
       issuer: normalizedIssuer,
       kind: 'bookmark',
@@ -129,8 +122,7 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     if (
       entry.kind !== 'bookmark' ||
       normalizedUrl !== entry.url ||
-      normalizedIssuer !== entry.issuer ||
-      current.domainIssuer !== entry.domainIssuer
+      normalizedIssuer !== entry.issuer
     ) {
       changed = true
     }
@@ -317,30 +309,85 @@ export async function upsertInstance(
   const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
   validateUrl(normalizedUrl)
 
-  return mutateInstances((store) => {
-    assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[], key)
+  return mutateInstances((store) => upsertBookmark(store, key, opts, normalizedUrl, behavior))
+}
 
-    const existing = store.instances[key]
-    const kept =
-      behavior.dropDomainIssuer === true && existing !== undefined
-        ? withoutDomainIssuer(existing)
-        : existing
-    const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
-    const normalizedDomainIssuer = opts.domainIssuer
-      ? normalizeIssuerUrl(opts.domainIssuer)
-      : undefined
-    const entry: InstanceEntry = {
-      ...kept,
-      ...definedEntry(opts),
-      url: normalizedUrl,
-      ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
-      ...(normalizedDomainIssuer ? { domainIssuer: normalizedDomainIssuer } : {}),
-      kind: 'bookmark',
-      createdAt: existing?.createdAt ?? new Date().toISOString(),
+function upsertBookmark(
+  store: InstanceStore,
+  key: string,
+  opts: AddInstanceOpts,
+  normalizedUrl: string,
+  behavior: Readonly<{ activateWhenEmpty?: boolean; dropDomainIssuer?: boolean }> = {},
+): { entry: InstanceEntry; created: boolean } {
+  assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[], key)
+
+  const existing = store.instances[key]
+  const kept =
+    behavior.dropDomainIssuer === true && existing !== undefined
+      ? withoutDomainIssuer(existing)
+      : existing
+  const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
+  const normalizedDomainIssuer = opts.domainIssuer
+    ? normalizeIssuerUrl(opts.domainIssuer)
+    : undefined
+  const entry: InstanceEntry = {
+    ...kept,
+    ...definedEntry(opts),
+    url: normalizedUrl,
+    ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
+    ...(normalizedDomainIssuer ? { domainIssuer: normalizedDomainIssuer } : {}),
+    kind: 'bookmark',
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+  }
+  store.instances[key] = entry
+  if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
+  return { entry, created: !existing }
+}
+
+/** Register a verified creation without changing existing bookmark ownership or selection. */
+export async function bookmarkCreatedInstance(
+  input: Readonly<{
+    slug: string
+    url: string
+    organizationId?: string
+    defaultIdentity?: string
+  }>,
+): Promise<{ name: string; entry: InstanceEntry }> {
+  validateName(input.slug, 'Instance')
+  if (RESERVED_SLUGS.has(input.slug)) throw new ReservedSlugError(input.slug)
+  const url = normalizeInstanceKernelUrl(input.url)
+  validateUrl(url)
+
+  return mutateInstances((store) => {
+    const existingKey = resolveInstanceKey(store, input.slug)
+    if (existingKey !== null) {
+      const entry = store.instances[existingKey]!
+      if (entry.url !== url) {
+        const quotedUrl = `'${url.replaceAll("'", "'\\''")}'`
+        throw new AstraleError(
+          'INSTANCE_BOOKMARK_CONFLICT',
+          `Instance "${input.slug}" is ready, but bookmark "${existingKey}" already names ${entry.url}. The existing bookmark and active target were preserved.`,
+          `Choose an unused bookmark name: astrale instance bookmark <new-name> --url ${quotedUrl}${input.defaultIdentity ? ` --as ${input.defaultIdentity}` : ''}`,
+        )
+      }
+      // A ready receipt replay must not rewrite aliases, trust or the bookmark's identity.
+      return { name: existingKey, entry }
     }
-    store.instances[key] = entry
-    if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
-    return { entry, created: !existing }
+    const { entry } = upsertBookmark(
+      store,
+      input.slug,
+      {
+        url,
+        issuer: url,
+        slug: input.slug,
+        name: input.slug,
+        mode: 'remote',
+        ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+        ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
+      },
+      url,
+    )
+    return { name: input.slug, entry }
   })
 }
 
@@ -416,16 +463,6 @@ export function bookmarkExchangeDomain(
   if (entry.domainIssuer !== undefined) return { domainIssuer: entry.domainIssuer }
   const shell = managedBookmarkShell(entry, url)
   return shell === undefined ? {} : { domainOrigin: shell }
-}
-
-/**
- * Read-old: a managed bookmark in a registry an earlier release wrote drops the Shell issuer that
- * release derived from its route (`lib/legacy/managed-shell-issuer.ts`).
- */
-function withoutLegacyShellIssuer(entry: InstanceEntry, url: string): InstanceEntry {
-  return managedBookmarkShell(entry, url) === undefined
-    ? entry
-    : withoutRouteDerivedShellIssuer(entry)
 }
 
 function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {

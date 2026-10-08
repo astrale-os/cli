@@ -109,12 +109,12 @@ test('an expired login renders a clean recovery card instead of ACP internals', 
   const raw =
     'Internal error: Failed to authenticate: OAuth session expired: [session/query] sessionId=secret'
   const html = renderToStaticMarkup(
-    <AgentTurn run={{ ...run([]), status: 'failed', error: raw }} onRetry={() => {}} />,
+    <AgentTurn run={{ ...run([]), status: 'failed', error: raw }} onContinue={() => {}} />,
   )
 
   expect(html).toContain('Your Claude Code session has expired')
   expect(html).toContain('claude auth login')
-  expect(html).toContain('I’ve signed in — retry')
+  expect(html).toContain('I’ve signed in, continue')
   expect(html).not.toContain('sessionId=secret')
   expect(html).not.toContain('Internal error')
 })
@@ -181,7 +181,8 @@ test('a running turn folds its work into one line naming what it does now', () =
   )
 
   expect(html).toContain('I write the User class.')
-  expect(html).toContain('Edit · schema/user.ts')
+  // the agent's own words say it: the raw call it stands behind adds nothing
+  expect(html).not.toContain('Edit · schema/user.ts')
   expect(html).toContain('aria-expanded="false"')
   // folded: the step list is not rendered until asked for
   expect(html).not.toContain('data-testid="agent-steps"')
@@ -273,6 +274,29 @@ test('a running turn says how many actions it took and for how long', () => {
   )
   expect(html).toContain('3 actions')
   expect(html).toContain('data-testid="agent-progress"')
+  // no words from the agent yet: the call it is making stands in for them
+  expect(html).toContain('Bash · pnpm test')
+})
+
+test('a running line reads loader, time, actions, then what the agent is doing', () => {
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={run([
+        event('tool', 'Read', { tool: 'Read', target: 'a.ts' }),
+        event('message', 'All green, deploying now.'),
+        event('tool', 'Bash', { tool: 'Bash', target: 'astrale deploy' }),
+      ])}
+    />,
+  )
+  const order = [
+    'animate-spin',
+    'Working time so far',
+    '2 actions',
+    'All green, deploying now.',
+  ].map((text) => html.indexOf(text))
+  expect(order.every((index) => index >= 0)).toBe(true)
+  expect(order).toEqual([...order].sort((a, b) => a - b))
+  expect(html).not.toContain('astrale deploy')
 })
 
 test('the message being written streams in, without the machine block it ends with', () => {
@@ -296,4 +320,32 @@ test('the message being written streams in, without the machine block it ends wi
     visibleDraft({ ...writing, events: [event('message', 'x', { id: 'd1' })] }),
   ).toBeUndefined()
   expect(visibleDraft({ ...writing, status: 'succeeded' })).toBeUndefined()
+})
+
+test('an interrupted turn says so plainly and offers one way forward: Continue', () => {
+  const interrupted: AgentRun = {
+    ...run([]),
+    instruction: 'Analyse the file system',
+    status: 'interrupted',
+    error: 'the studio restarted during this turn',
+  }
+  const html = renderToStaticMarkup(<AgentTurn run={interrupted} onContinue={() => {}} />)
+
+  expect(html).toContain('data-status="interrupted"')
+  expect(html).toContain('Interrupted')
+  expect(html).toContain('Studio restarted during this turn')
+  expect(html).toContain('Continue')
+  // never a second, competing action
+  expect(html).not.toContain('Retry')
+  expect(html).not.toContain('Failed')
+})
+
+test('a stopped turn offers Continue; an earlier one only says what happened', () => {
+  const stopped: AgentRun = { ...run([]), status: 'canceled' }
+  expect(renderToStaticMarkup(<AgentTurn run={stopped} onContinue={() => {}} />)).toContain(
+    'continue-turn',
+  )
+  const earlier = renderToStaticMarkup(<AgentTurn run={stopped} />)
+  expect(earlier).toContain('You stopped this turn')
+  expect(earlier).not.toContain('continue-turn')
 })

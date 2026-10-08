@@ -6,9 +6,9 @@ tombstones, while `includeRetired` asks the same Method for caller-visible delet
 returned Method summary is decoded locally before it reaches a command; connection itself performs
 no schema discovery, introspection, or graph read.
 
-Automatic creation invokes `Fleet.createInstance`. Status, deletion, and Domain installation first
-resolve a caller-visible Instance through the ordinary inventory and then invoke that exact
-Instance receiver. An explicit Node Path may still be resolved through one exact caller-authorized
+Automatic creation invokes `Fleet.createInstance`. Status and deletion first resolve a
+caller-visible Instance through the ordinary inventory and then invoke that exact Instance receiver;
+the deprecated Fleet catalog install (`../legacy/catalog`) resolves its Instance the same way. An explicit Node Path may still be resolved through one exact caller-authorized
 graph lookup. The adapter creates internal operation IDs but preserves the existing CLI projection
 and selection-required experience.
 

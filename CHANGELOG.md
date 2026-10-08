@@ -1,5 +1,94 @@
 # Changelog
 
+## [1.0.0-beta.131](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.130...cli/v1.0.0-beta.131) (2026-10-07)
+
+
+### Features
+
+* **studio:** full-height resizable chat tab column by default ([#618](https://github.com/astrale-os/cli/issues/618)) ([b65be5e](https://github.com/astrale-os/cli/commit/b65be5ee0fc6f35e19281e81d2fb8b85ef6668d6))
+
+
+### Bug Fixes
+
+* **commands:** preserve the active target during instance creation ([#613](https://github.com/astrale-os/cli/issues/613)) ([c864870](https://github.com/astrale-os/cli/commit/c8648701b35e06272f180f3261e301290a187da4))
+* **studio:** show a failure the agent also said as a message only once ([#616](https://github.com/astrale-os/cli/issues/616)) ([412c010](https://github.com/astrale-os/cli/commit/412c01093e638429da0bdcc2eb2607c31af1868c))
+
+## [1.0.0-beta.130](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.129...cli/v1.0.0-beta.130) (2026-10-06)
+
+
+### Features
+
+* **commands:** filter the journal by recorded caller (D01) ([#543](https://github.com/astrale-os/cli/issues/543)) ([7cbe310](https://github.com/astrale-os/cli/commit/7cbe3105521a9c37ee7cc3f5064164c27ed21322))
+* **commands:** pre-check Domain compatibility and propose compatible dependents ([#597](https://github.com/astrale-os/cli/issues/597)) ([3f71322](https://github.com/astrale-os/cli/commit/3f71322c0f1ccdc331b8b7720d4c26ccbc044f60))
+
+
+### Bug Fixes
+
+* **commands:** report a missing snapshot target as a usage error ([#612](https://github.com/astrale-os/cli/issues/612)) ([6079524](https://github.com/astrale-os/cli/commit/607952434eeb777a535dd7d58c785d1bff768793))
+* **lib:** stop closed View servers from exiting their caller ([#607](https://github.com/astrale-os/cli/issues/607)) ([240326c](https://github.com/astrale-os/cli/commit/240326c740f725795919fa05232078a588b0f644))
+* retain View sessions when process signals are denied ([#602](https://github.com/astrale-os/cli/issues/602)) ([d38d8aa](https://github.com/astrale-os/cli/commit/d38d8aa5d662111bbd420d756921c16857581afc))
+* start Studio from a config file target ([#606](https://github.com/astrale-os/cli/issues/606)) ([96f298b](https://github.com/astrale-os/cli/commit/96f298b24a221b6c82135c380db24c1befb55bfa))
+* **studio:** bound delegated CLI capture lifetime ([#608](https://github.com/astrale-os/cli/issues/608)) ([d6b7806](https://github.com/astrale-os/cli/commit/d6b780625aeb96fd8f01c085ba4faf3409487b38))
+* **studio:** open new chat tabs with the current tab's model and effort ([#611](https://github.com/astrale-os/cli/issues/611)) ([6d1f41a](https://github.com/astrale-os/cli/commit/6d1f41a05d8c5db683360b790b2a37c9b56ae020))
+* **viewer:** show credential expiry and recover without losing input ([#603](https://github.com/astrale-os/cli/issues/603)) ([81068cf](https://github.com/astrale-os/cli/commit/81068cff0af6b4d6e20b321b7b7ea58c65691f02))
+
+## [1.0.0-beta.129](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.128...cli/v1.0.0-beta.129) (2026-10-06)
+
+
+### Features
+
+* **commands:** install origin@version ([#594](https://github.com/astrale-os/cli/issues/594)) ([d61ec0f](https://github.com/astrale-os/cli/commit/d61ec0f884b3fd89c8fde987f7e75a5d152f8847))
+* **commands:** show what runs on an instance ([#593](https://github.com/astrale-os/cli/issues/593)) ([25e0f95](https://github.com/astrale-os/cli/commit/25e0f95b7865bbd40f9d1e2a719adeaf3564434f))
+
+## [1.0.0-beta.128](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.127...cli/v1.0.0-beta.128) (2026-10-06)
+
+
+### Features
+
+* **lib:** read and write the Domain version registry ([#592](https://github.com/astrale-os/cli/issues/592)) ([ce5eded](https://github.com/astrale-os/cli/commit/ce5eded96099757cbb7dfd2abea9d744c6c5b411))
+
+
+### Bug Fixes
+
+* **admin:** read Fleet catalogs and set defaults on Admin's one Domain per origin ([#598](https://github.com/astrale-os/cli/issues/598)) ([79064b6](https://github.com/astrale-os/cli/commit/79064b6b090aff5c41a3179f28b1144cd1f0a0d3))
+
+## [1.0.0-beta.127](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.126...cli/v1.0.0-beta.127) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** a URL reference no longer installs through the Admin catalog route; it always goes to the instance Kernel. A bare origin still uses the catalog.
+
+### Features
+
+* **commands:** consent to an issuer change on install ([#583](https://github.com/astrale-os/cli/issues/583)) ([d02e446](https://github.com/astrale-os/cli/commit/d02e4460c93bea119e2dc66e4b77d619fcb703b1))
+* **commands:** install several Domains in one atomic Kernel operation ([#582](https://github.com/astrale-os/cli/issues/582)) ([a239c9b](https://github.com/astrale-os/cli/commit/a239c9b33f5759af7e553b3cb21b85f4916cd9ce))
+
+
+### Bug Fixes
+
+* **studio:** scaffold Domains without the removed --instance flag ([#587](https://github.com/astrale-os/cli/issues/587)) ([cae2a61](https://github.com/astrale-os/cli/commit/cae2a61ec9b7c63bf3881554f6eebf54be92e18b))
+
+## [1.0.0-beta.126](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.125...cli/v1.0.0-beta.126) (2026-10-04)
+
+
+### Features
+
+* **commands:** call Domain functions on the Admin instance ([#579](https://github.com/astrale-os/cli/issues/579)) ([134c5d6](https://github.com/astrale-os/cli/commit/134c5d6c380a5295151f1efe4d609cca59ad1903))
+* **studio:** drop agent builds no live Studio holds and prefetch them on update ([#588](https://github.com/astrale-os/cli/issues/588)) ([5d43aac](https://github.com/astrale-os/cli/commit/5d43aacd57040750cf1529204ff2c4b5a7570be0))
+* **studio:** lead the running agent line with time and actions, then its words ([#590](https://github.com/astrale-os/cli/issues/590)) ([62f3c3f](https://github.com/astrale-os/cli/commit/62f3c3f18600a4af329226cecb46a6bbd60df0c2))
+
+
+### Bug Fixes
+
+* **deps:** build the CLI on SDK 0.6.0-beta.11 and its Domain definition ([#581](https://github.com/astrale-os/cli/issues/581)) ([80bb2a5](https://github.com/astrale-os/cli/commit/80bb2a539a4823f880e7ec0fae5a864f879af380))
+* **studio:** one clear Continue for any turn that stopped short ([#591](https://github.com/astrale-os/cli/issues/591)) ([422673d](https://github.com/astrale-os/cli/commit/422673d681b1094d67c2399a5cce656c43b6da92))
+
+
+### Performance Improvements
+
+* **lib:** remember the installed Shell issuer per bookmark and heal on refusal ([#580](https://github.com/astrale-os/cli/issues/580)) ([13a0387](https://github.com/astrale-os/cli/commit/13a0387c358b799affea72bb521101006b8fb8af))
+
 ## [1.0.0-beta.125](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.124...cli/v1.0.0-beta.125) (2026-10-04)
 
 

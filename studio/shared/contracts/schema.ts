@@ -210,8 +210,8 @@ export interface StudioSchemaBundle {
 
 export interface DomainOverview {
   origin: string
-  /** Active SDK Application entry relative to the project root. */
-  applicationFile?: string
+  /** Active SDK Domain definition entry relative to the project root. */
+  domainFile?: string
   adapter: 'astrale' | 'cloudflare' | 'unknown'
   prodTarget?: string
   devSecrets?: string

@@ -25,6 +25,12 @@ export interface CommandOption {
   readonly default?: string
   readonly choices?: string[]
   readonly hidden?: boolean
+  /**
+   * Collect every occurrence of the option, in order, into a string array. An option whose value
+   * is optional (`--flag [value]`) takes it only written `--flag=value`: written bare, the
+   * occurrence collects `''` and the next argument stays an argument of the command.
+   */
+  readonly repeatable?: boolean
 }
 
 export interface CommandDefinition {
@@ -53,6 +59,8 @@ export interface CommandGroup {
   /** One-line summary shown in the program's command list (Commander `.summary()`). */
   readonly summary?: string
   readonly commands: CommandDefinition[]
+  /** Hide from help listings (internal plumbing, e.g. `__domain-registry`). */
+  readonly hidden?: boolean
   /** Nested subgroups (one extra level of `astrale foo bar baz` nesting). */
   readonly subgroups?: CommandGroup[]
 }

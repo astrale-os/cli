@@ -10,14 +10,14 @@ const handle: DomainHandle = {
   id: 'current',
   root: '/workspace/current',
   configFile: '/workspace/current/astrale.config.ts',
-  applicationFile: '/workspace/current/application.ts',
+  domainFile: '/workspace/current/domain.ts',
   schemaDirName: 'schema',
   schemaDir: '/workspace/current/schema',
   schemaIndex: '/workspace/current/schema/index.ts',
 }
 
-test('watches current Application, Runtime, and vertical authoring roots', () => {
-  expect(ANATOMY_PATHS).toContain('application.ts')
+test('watches the current Domain definition, Runtime, and vertical authoring roots', () => {
+  expect(ANATOMY_PATHS).toContain('domain.ts')
   expect(ANATOMY_PATHS).toContain('runtime.ts')
   expect(ANATOMY_PATHS).toContain('ui')
   expect(ANATOMY_PATHS).toContain('providers')
@@ -30,8 +30,8 @@ test('the workspace is re-scanned often enough to notice a domain, rarely enough
   expect(WORKSPACE_RESCAN_MS).toBeLessThanOrEqual(60_000)
 })
 
-test('Application, Runtime, and Function changes invalidate the schema bundle', () => {
-  expect(affectsBundle(handle, join(handle.root, 'application.ts'))).toBe(true)
+test('Domain definition, Runtime, and Function changes invalidate the schema bundle', () => {
+  expect(affectsBundle(handle, join(handle.root, 'domain.ts'))).toBe(true)
   expect(affectsBundle(handle, join(handle.root, 'runtime.ts'))).toBe(true)
   expect(affectsBundle(handle, join(handle.root, 'functions', 'risk', 'create.ts'))).toBe(true)
   expect(affectsBundle(handle, join(handle.root, 'functions', 'user', 'ensure.ts'))).toBe(true)
@@ -44,7 +44,7 @@ test('native recursive events preserve schema, anatomy, and Dataset channels', (
     anatomy: false,
     datasets: false,
   })
-  expect(domainWatchChannels(handle, handle.applicationFile)).toEqual({
+  expect(domainWatchChannels(handle, handle.domainFile)).toEqual({
     schema: true,
     anatomy: true,
     datasets: false,

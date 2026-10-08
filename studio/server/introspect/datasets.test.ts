@@ -54,13 +54,16 @@ function fixture(config: string): DomainHandle {
     `,
   )
   writeFileSync(join(root, 'tests/datasets/broken.ts'), `export default { id: 'broken' }\n`)
-  writeFileSync(join(root, 'application.ts'), `throw new Error('Application entry was imported')\n`)
+  writeFileSync(
+    join(root, 'domain.ts'),
+    `throw new Error('Domain definition entry was imported')\n`,
+  )
   writeFileSync(join(root, 'astrale.config.ts'), config)
   return {
     id: 'datasets-studio-test',
     root,
     configFile: join(root, 'astrale.config.ts'),
-    applicationFile: join(root, 'application.ts'),
+    domainFile: join(root, 'domain.ts'),
     schemaDirName: 'schema',
     schemaDir: join(root, 'schema'),
     schemaIndex: join(root, 'schema/index.ts'),
@@ -73,7 +76,7 @@ describe('Dataset references', () => {
       import { cloudflare } from '@astrale-os/adapter-cloudflare'
       import { defineProject } from '@astrale-os/sdk/project'
       import { dataset as ref, tests } from '@astrale-os/sdk/testing'
-      import { application } from './application.js'
+      import { domain } from './domain.js'
       // dataset('./tests/datasets/commented.ts')
       const crowded = ref('./tests/datasets/crowded.ts')
       const resources = tests({
@@ -85,7 +88,7 @@ describe('Dataset references', () => {
         ],
       })
       export default defineProject({
-        application,
+        domain,
         environments: { development: { deployment: cloudflare({}) } },
         tests: resources,
       })
@@ -167,11 +170,11 @@ describe('Dataset envelope', () => {
 })
 
 describe('Dataset extraction', () => {
-  test('extracts every referenced Dataset through the domain SDK without touching the Application', async () => {
+  test('extracts every referenced Dataset through the domain SDK without touching the Domain definition', async () => {
     const handle = fixture(
       `import { defineProject } from '@astrale-os/sdk/project'
       import { dataset, tests } from '@astrale-os/sdk/testing'
-      export default defineProject({ application: {} as never, environments: {}, tests: tests({ datasets: [
+      export default defineProject({ domain: {} as never, environments: {}, tests: tests({ datasets: [
         dataset('./tests/datasets/demo.ts'),
         dataset('./tests/datasets/broken.ts'),
         dataset('./tests/datasets/missing.ts'),

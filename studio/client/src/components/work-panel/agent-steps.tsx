@@ -302,23 +302,35 @@ export function AgentSteps({ run, steps }: { run: AgentRun; steps: AgentStep[] }
         {active && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
         {active ? (
           <span className="flex min-w-0 items-baseline gap-1.5">
-            {note && <span className="truncate text-foreground/80">{note}</span>}
-            <span className={cn('truncate', note && 'shrink-[2] text-[11px]')}>{current}</span>
-            {/* how much it has done and for how long: a wait you can measure is
-                one you can sit through */}
+            {/* how long and how much first, where the eye lands and where the
+                width never moves: a wait you can measure is one you can sit
+                through */}
             <span
               data-testid="agent-progress"
               className="flex shrink-0 items-baseline gap-1.5 text-[11px] text-muted-foreground/80"
             >
+              <RunElapsed run={run} />
               {tools > 0 && (
                 <>
                   <span aria-hidden>·</span>
                   <span className="tabular-nums">{actionsLabel(tools)}</span>
                 </>
               )}
-              <span aria-hidden>·</span>
-              <RunElapsed run={run} />
             </span>
+            <span aria-hidden className="shrink-0 text-[11px] text-muted-foreground/80">
+              ·
+            </span>
+            {/* the agent's own words say what it is doing; the raw tool call
+                only stands in when it has given none */}
+            {note ? (
+              <span className="truncate text-foreground/80" title={note}>
+                {note}
+              </span>
+            ) : (
+              <span className="truncate" title={current}>
+                {current}
+              </span>
+            )}
           </span>
         ) : (
           <span className="flex items-baseline gap-1.5">

@@ -87,40 +87,46 @@ describe('managed bookmark Shell exchange on write', () => {
     return JSON.parse(await readFile(join(home, 'instances.json'), 'utf8')).instances.bryan
   }
 
-  test('instance use resets a managed bookmark to exchange through its installed Shell', async () => {
-    const home = await fixture()
-    await writeFile(
-      join(home, 'instances.json'),
-      JSON.stringify({
-        active: 'bryan',
-        instances: {
-          bryan: {
-            url,
-            issuer: url,
-            domainIssuer: 'https://shell-dev.example',
-            slug: 'bryan',
-            name: 'bryan',
-            kind: 'bookmark',
+  test.each([
+    'https://shell.beta.astrale.ai',
+    'https://shell.astrale.ai',
+    'https://shell-dev.example',
+  ])(
+    'instance use resets a managed bookmark with issuer %s to its installed Shell',
+    async (domainIssuer) => {
+      const home = await fixture()
+      await writeFile(
+        join(home, 'instances.json'),
+        JSON.stringify({
+          active: 'bryan',
+          instances: {
+            bryan: {
+              url,
+              issuer: url,
+              domainIssuer,
+              slug: 'bryan',
+              name: 'bryan',
+              kind: 'bookmark',
+            },
           },
-        },
-      }),
-    )
-    const result = await command(
-      home,
-      `await registry.upsertManagedBookmark({key:'bryan', slug:'bryan', url:${JSON.stringify(url)}});`,
-    )
-    expect(result).toEqual({ code: 0, stderr: '' })
-    const entry = await stored(home)
-    expect(entry).toMatchObject({ url, slug: 'bryan', name: 'bryan' })
-    expect(entry).not.toHaveProperty('domainIssuer')
-  })
+        }),
+      )
+      const result = await command(
+        home,
+        `await registry.upsertManagedBookmark({key:'bryan', slug:'bryan', url:${JSON.stringify(url)}});`,
+      )
+      expect(result).toEqual({ code: 0, stderr: '' })
+      const entry = await stored(home)
+      expect(entry).toMatchObject({ url, slug: 'bryan', name: 'bryan' })
+      expect(entry).not.toHaveProperty('domainIssuer')
+    },
+  )
 
   /** @evidence TEST-CLI-INSTANCE-REGISTRY-LABELLED-ON-WRITE */
-  test('a bookmark write rewrites an earlier registry in the labelled format, where an explicit issuer keeps its meaning', async () => {
+  test('a bookmark write labels an earlier registry and preserves explicit issuers on all bookmarks', async () => {
     const home = await fixture()
     const path = join(home, 'instances.json')
-    // An earlier release wrote the registry: no format label, and the route-derived Shell issuer
-    // it stored on every managed bookmark.
+    // An earlier release wrote the registry without a format label.
     await writeFile(
       path,
       JSON.stringify({
@@ -145,7 +151,7 @@ describe('managed bookmark Shell exchange on write', () => {
       }),
     )
 
-    // The first write rewrites the whole registry: the label, and no route-derived issuer.
+    // The first write labels the whole registry and preserves both bookmarks' explicit issuers.
     const touched = await command(
       home,
       `await registry.upsertInstance('bryan', {url:${JSON.stringify(url)}, defaultIdentity:'alice'});`,
@@ -154,8 +160,8 @@ describe('managed bookmark Shell exchange on write', () => {
     const rewritten = JSON.parse(await readFile(path, 'utf8'))
     expect(rewritten.version).toBe(1)
     expect(rewritten.instances.bryan).toMatchObject({ slug: 'bryan', defaultIdentity: 'alice' })
-    expect(rewritten.instances.bryan).not.toHaveProperty('domainIssuer')
-    expect(rewritten.instances.team).not.toHaveProperty('domainIssuer')
+    expect(rewritten.instances.bryan.domainIssuer).toBe('https://shell.beta.astrale.ai')
+    expect(rewritten.instances.team.domainIssuer).toBe('https://shell.beta.astrale.ai')
 
     // In the labelled registry an explicit issuer is stored and read back, whatever its value.
     const explicit = await command(

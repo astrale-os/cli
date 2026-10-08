@@ -160,9 +160,10 @@ astrale instance forget staging
 ```
 
 Use explicit `-i <instance>` in scripts. `-i` and `--url` always select the instance a command
-acts on; they never select the Admin kernel, and Admin operations (`domain list`, `domain publish`,
-`instance list`, …) reject them. Choose the Admin kernel with `--admin <bookmark>` or
-`--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
+acts on; they never select the Admin kernel, and Admin operations (`domain publish`,
+`instance list`, …) reject them; `domain list -i <instance>` lists what runs on that instance,
+and `domain list` without them reads the Admin catalog. Choose the Admin kernel with
+`--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
 removes only the local bookmark.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
@@ -188,7 +189,14 @@ retained exact evidence. Unreachable does not mean retired. Add `--admin-only` w
 should be omitted from the machine-readable envelope.
 
 `instance create` provisions through the configured Admin Domain with a WorkOS caller; Admin owns
-Host placement. Neither `instance create` nor `instance root import` accepts `--host`.
+Host placement. Creation preserves an existing active target, including a concurrent selection;
+with no active target it selects the first instance after verifying owner access. It never repoints
+an existing bookmark to a different endpoint. A conflict retains the ready receipt and verified
+access, reports `bookmark.status=pending` with a recovery command under an unused name, and skips
+automatic root import. Use `instance use <name>` to switch explicitly.
+Automatic root recovery starts only after verified access and completed bookmarking, and replaces
+an existing root alias only for the same exact issuer claim. Explicit root import keeps its recovery contract.
+Neither `instance create` nor `instance root import` accepts `--host`.
 
 `instance root import <slug-or-id>` retrieves the target owned Instance's root signing identity
 through Admin over an end-to-end encrypted, one-use transfer. It imports that identity locally as
@@ -208,26 +216,122 @@ Use an authorized human identity for the import; `development-root` is available
 Instance calls after recovery. Root success proves execution, not an application user's access Policy.
 
 The CLI is connect-only: it does not build or run domains. The SDK's
-`astrale-domain` binary owns `dev`, `build`, `deploy`, `lint`, `package`, and test workflows. Project Environments select
-exact deployment and optional installation targets; they do not use the CLI's active instance.
+`astrale-domain` binary owns `build`, `deploy`, `publish`, `diff`, `yank`, `list`, `lint`,
+`package`, and test workflows; a deploy or a publish never installs. Project Environments say how to
+deploy and with which secrets; they name no instance and do not use the CLI's active instance. Only
+`astrale domain install` changes what an instance runs.
 
-`astrale domain install` has two modes:
+`astrale domain install` takes deployment URLs and versions (or, deprecated, one Fleet catalog
+origin):
 
-- Default: install a published catalog origin or URL through the admin control
-  plane onto an admin-managed instance.
-- `--direct`: call the public Kernel install syscall with a running domain URL.
-  This works for any instance you can authenticate to and owns the explicit
-  identity-override consent prompt.
+- Deployment URLs (`https://`, or `http://` for a local Host) go to the
+  instance Kernel through the public install syscall, on any instance you can
+  authenticate to. Several references install in ONE atomic Kernel operation
+  (every Domain moves or none does), which is how dependent Domains move together.
+  The CLI reads what each URL serves first (a 503 is read again for up to
+  60 s), refuses two references to one origin, pins the release digest it
+  read, and verifies the installed pins afterwards.
+- A version reference, `<origin>@1.5.0` (or `@2.0.0-rc.1`) for exactly that
+  version, a pre-release or a yanked one included (a yanked one warns), or
+  `<origin>@1.5` for the highest stable 1.5.x that is not yanked, is resolved
+  in the Admin registry with your own identity (`--admin` / `--admin-url`, or
+  the configured Admin target). A private Domain needs `domain_installer`,
+  directly or through a Group; one you cannot read is REGISTRY_DOMAIN_NOT_FOUND.
+  The version becomes its Publication's deployment URL and release digest; the
+  CLI checks the deployment still serves that release
+  (PUBLICATION_RELEASE_MISMATCH otherwise) and the Kernel refuses any other.
+  A major alone (`@1`), a range or build metadata is refused; an unresolvable
+  version is VERSION_UNRESOLVED. Versions and URLs mix in one install. A Kernel
+  without the installed-release listing takes no version
+  (KERNEL_RELEASE_UNSUPPORTED): install the deployment URL there.
+- `--direct`, which the SDK's printed hint and old scripts still pass, is
+  deprecated: it is accepted and changes nothing. Do not add it.
+- An issuer change is never silent. When a URL serves another issuer than
+  the one its origin is installed under, the install needs consent, recorded
+  by the Kernel in the installation: `--allow-issuer-change` for a new
+  deployment of the same line (same `<line>-` prefix and routing domain),
+  `--allow-issuer-change=<origin>` for any other change (a legacy issuer
+  moving to its first deployment included), or typing the origin at a
+  terminal. The replaced issuer keeps working while its in-flight work
+  drains; `--revoke-previous` cuts it at the activation. A first install from
+  a deployment URL needs no consent; the CLI notes the unverified claim.
+  The origin is given only after `=`: a bare `--allow-issuer-change` never
+  takes the next argument. Without consent, ISSUER_CHANGE_NOT_CONSENTED lists
+  every unconsented change in `details.origins` (`origin`, `installed`,
+  `replacement`, `line`) before anything is sent; `--json` reports each
+  consent as `references[].consent` (`from`, `to`, `previous`).
+- Before the install is sent, an advisory pre-check runs the Kernel's
+  compatibility engine on what the caller can read, both ways: each installed
+  root must find what it uses in its dependencies as the install leaves them,
+  and each installed Domain the install does not name must still find what it
+  uses in every upgraded dependency. For each broken dependent it proposes the
+  highest stable, non-yanked published version built against the new revision
+  (an Admin registry read, also for URL installs) and the grouped install;
+  unreadable Domains are reported as not evaluated. The install is still sent
+  and the Kernel decides. `--json` carries it as `precheck` (`compared`,
+  `dependencies`, `dependents`, `proposals`, `command?`, `skipped`,
+  `unevaluated`) in the report, and beside a SCHEMA_DEPENDENCY_INCOMPATIBLE or
+  SCHEMA_DEPENDENTS_INCOMPATIBLE refusal.
+- A source that serves only the legacy `domain.json`, and every URL install
+  on a Kernel without the installed-release listing, keep the
+  identity-override prompt (`--allow-identity-override` in scripts) when the
+  declared origin differs from the serving host. Such a Kernel refuses
+  `--allow-issuer-change` (KERNEL_RELEASE_UNSUPPORTED) before any install.
+- Deprecated: one bare origin installs that published Domain from the Fleet
+  catalog through the admin control plane onto an admin-managed instance.
+  Install a version (`<origin>@<version>`) or a deployment URL instead; the
+  Fleet catalog now only keeps a Fleet's default Domains.
 
 ```bash
-astrale domain install crm.example -i staging
-astrale domain install https://crm.example --direct -i staging
+astrale domain install https://crm.example -i staging
+astrale domain install https://agencies.example https://employees.example -i staging
+astrale domain install crm.example@1.5 -i production
+astrale domain install agencies.example@1.5.0 https://employees.example --allow-issuer-change -i staging
+astrale domain install <new-deployment-url> --allow-issuer-change -i staging
+astrale domain install <deployment-url> --allow-issuer-change=crm.example -i staging
+astrale domain install crm.example -i staging   # deprecated: from the Fleet catalog
 astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive -i staging
 ```
 
-A replacement cannot change an installed Domain issuer. If that identity
-change is intentional, uninstall the origin first and then install it again.
+`astrale domain versions <origin>` lists the Domain's published versions from the Admin
+registry, read with your own credential: you need `domain_installer` or `domain_admin` on the
+Domain, directly or through a Group (a Fleet catalog that lists the Domain shows it without its
+versions). Pre-releases and yanked versions are listed; a yanked
+version is never chosen by a line such as `@1.5`. An absent Domain and one you cannot read give
+the same `REGISTRY_DOMAIN_NOT_FOUND`. `--json` prints one `astrale.registry-index` document;
+refusals print `{ "error": { "code", "message", "details" } }` on stdout and exit 1. Rerunning
+the same command is always safe; it can help only when `details.retryable` is `true`.
+
+```bash
+astrale domain versions issues.astrale.ai
+astrale domain versions issues.astrale.ai --json --as ci
+```
+
+`astrale domain list -i <instance>` (or `--url <kernel>`) shows what runs on that instance: each
+installation its Kernel pins to a deployment that you can read, with the release digest from the
+Kernel pin, the version from the Admin registry (the version naming that exact release, else the
+one naming the same build from the same issuer, as `1.5.0 · staging`; a build digest alone never
+names a version), else the name the deployment's public record gives a preview
+(`1.4.2 + 7 commits · a1b2c3d · staging`, printed as computed), `legacy` for a v2/v3 pin, and
+the highest stable version available above it. The list is partial by nature: built-in and local
+Domains, and Domains you cannot read, never appear, so an absent origin is unknown, not "not
+installed". The registry is read as you (`--as` or your default identity) on the Admin kernel;
+`--creds` and `--anonymous` apply to the instance only. `--json` prints one
+`astrale.installed-list` document. A Kernel that does not list
+installed releases answers `KERNEL_RELEASE_UNSUPPORTED`; read one Domain there with
+`astrale introspect <origin> -i <instance>`.
+
+```bash
+astrale domain list -i staging
+astrale domain list -i staging --json
+```
+
+The hidden `astrale __domain-registry bundle|publish|yank` commands are JSON plumbing for
+`astrale-domain diff`, `publish` and `yank`; do not call them by hand.
+
+On a Kernel that takes no issuer consent, a replacement cannot change an
+installed Domain issuer: uninstall the origin first and then install it again.
 Uninstall accepts one or more origins and removes the complete selected set atomically, so
 dependencies inside that set are allowed. Safe mode is the default and never deletes application
 data. `--destructive` deletes application facts whose concrete Class belongs to a selected Domain;
@@ -240,8 +344,9 @@ JWKS with that exact CA. If two bookmarks point to the same normalized URL with
 different CA settings, the CLI warns and `instance list --bookmarked --json`
 shows each bookmark's `caFile`, issuer, and default identity.
 
-A deployment-only Publication change does not require reinstalling the Domain.
-Reinstall only when installation or Schema intent changes.
+A deploy never changes what an instance runs: each deployment URL serves one
+release for good, so new code reaches an instance only when it installs the new
+URL or version. Reinstalling the URL an instance already runs changes nothing.
 
 ## Identity And Delegation
 
@@ -411,6 +516,17 @@ is unchanged: it exchanges at its callable's declaring Domain as the Admin
 kernel's installation names it; the Admin Domain issuer only completes the Admin
 target. Put `key=value` params before `--admin`, or write `--admin=<bookmark>`.
 
+Rotating one secret of one deployment the Admin instance's Services host is
+such a call: the deployment's `setSecret`, with the input in a private file or
+piped, never in argv (`astrale-domain list --json` gives each deployment's
+`callTarget.path`). The deployment keeps its URL, issuer and key, so nothing is
+reinstalled; the new value is served about 4 s later.
+
+```bash
+astrale call "@$ID::services.astrale.ai:class.CloudflareDeployment.method.setSecret" \
+  --admin -d @rotate.json --json
+```
+
 ## Journal
 
 `astrale logs` reads the public Kernel journal syscall and returns
@@ -423,7 +539,16 @@ astrale logs --topic op:function.failed
 astrale logs --topic-prefix op:function. --follow
 ```
 
-Use `--principal`, `--since`, `--until`, or an opaque `--cursor` as needed.
+Use `--principal`, `--caller`, `--since`, `--until`, or an opaque `--cursor` as needed.
+`--principal` filters in the Kernel by the executing principal; a Domain acting for a user
+(managed CLI, Console, `astrale call` through a Domain token exchange) is the principal of its
+records. `--caller` keeps the records whose caller (the identity whose authority the operation
+exercised) matches; it filters each returned page, so `--limit` bounds the page first. The Kernel
+records `caller` only when it differs from the principal, so the effective caller is `caller`,
+else `principal`: exact for records written by a Kernel with astrale-os/kernel#959, while records
+from an older Kernel fall back to the principal (a Domain acting for a user shows as the caller).
+Both accept `@self`; the human table shows PRINCIPAL and the effective CALLER, and JSON keeps
+`caller` only where the Kernel recorded it.
 `--follow` retains one Client session and advances only with returned cursors.
 Structured output retains the admitted `correlation` object, including invocation root and
 parent identifiers, and includes `correlationId` as a projection of `invocationId`.

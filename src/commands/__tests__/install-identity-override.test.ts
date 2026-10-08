@@ -2,18 +2,33 @@ import { defineSchema } from '@astrale-os/sdk/schema'
 import { afterAll, describe, expect, test } from 'bun:test'
 
 import { releaseFor } from '../../__tests__/fixtures/publication'
-import { domainRefFromTarget, isIdentityOverride, probeDeclaredOrigin } from '../domain/install'
+import { installsOnKernel, isUrlReference } from '../domain/install'
+import { isIdentityOverride, probeDeclaredOrigin } from '../domain/legacy/identity-override'
 
-describe('admin-path target classification', () => {
-  test('an http(s) url installs by url', () => {
-    expect(domainRefFromTarget('https://crm.acme.dev')).toEqual({ url: 'https://crm.acme.dev' })
-    expect(domainRefFromTarget('http://localhost:8787')).toEqual({ url: 'http://localhost:8787' })
+describe('install reference classification', () => {
+  test('a reference starting with https:// or http:// is a deployment URL', () => {
+    expect(isUrlReference('https://crm.acme.dev')).toBe(true)
+    expect(isUrlReference('http://localhost:8787')).toBe(true)
   })
 
-  test('a bare origin installs by catalog origin (the unique registry key)', () => {
-    expect(domainRefFromTarget('crm.acme.dev')).toEqual({ origin: 'crm.acme.dev' })
-    // A host:port that is not a url is still an origin, not a url.
-    expect(domainRefFromTarget('example.astrale.ai')).toEqual({ origin: 'example.astrale.ai' })
+  test('anything else is a catalog origin (the unique registry key)', () => {
+    expect(isUrlReference('crm.acme.dev')).toBe(false)
+    expect(isUrlReference('example.astrale.ai')).toBe(false)
+    // A URL is recognized by its written scheme only (AM-58).
+    expect(isUrlReference('http:crm.acme.dev')).toBe(false)
+    expect(isUrlReference('HTTPS://crm.acme.dev')).toBe(false)
+  })
+
+  test('URL references, and every reference passed with --direct, go to the instance Kernel', () => {
+    expect(installsOnKernel(['https://a.dev', 'http://localhost:8787'], false)).toBe(true)
+    // --direct never lets a reference fall through to the Fleet catalog; the URL install admits
+    // or refuses it (an upper-case scheme reached the Kernel before installs were grouped).
+    expect(installsOnKernel(['HTTPS://crm.acme.dev'], true)).toBe(true)
+    expect(installsOnKernel(['crm.acme.dev'], true)).toBe(true)
+    expect(installsOnKernel(['HTTPS://crm.acme.dev'], false)).toBe(false)
+    expect(installsOnKernel(['https://a.dev', 'crm.acme.dev'], false)).toBe(false)
+    expect(installsOnKernel([], true)).toBe(false)
+    expect(installsOnKernel([], false)).toBe(false)
   })
 })
 

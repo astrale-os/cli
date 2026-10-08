@@ -141,7 +141,7 @@ export function extractCanonicalSchemaFromSdk(
   }
 }
 
-/** Project canonical Core data without importing Application or Runtime modules. */
+/** Project canonical Core data without importing Domain definition or Runtime modules. */
 export function projectCanonicalCore(
   root: CanonicalDomainSchemaV1,
 ): Pick<StudioCore, 'domain' | 'nodes' | 'edges'> {

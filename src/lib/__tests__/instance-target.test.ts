@@ -138,7 +138,7 @@ describe('resolveInstanceTarget', () => {
     })
   })
 
-  test('exchanges a managed bookmark through the installed Shell, never a route-derived issuer', async () => {
+  test('exchanges a managed bookmark without an explicit issuer through the installed Shell', async () => {
     const resolved = await resolveInstanceTarget(
       { source: 'name', name: 'bryan' },
       { config: DEFAULT_CONFIG, instances: store },
@@ -151,14 +151,16 @@ describe('resolveInstanceTarget', () => {
     expect(resolved).not.toHaveProperty('domainIssuer')
   })
 
-  test('ignores the Shell issuer an earlier release stored on a managed bookmark', async () => {
-    // Every bookmark store reaches resolution through the registry read, which drops it.
+  test('keeps the explicit Shell issuer of a managed bookmark in an unlabelled registry', async () => {
     const resolved = await resolveInstanceTarget(
       { source: 'name', name: 'legacy' },
       { config: DEFAULT_CONFIG, instances: sanitizeStore(store).store },
     )
-    expect(resolved).toMatchObject({ source: 'bookmark', domainOrigin: 'shell.astrale.ai' })
-    expect(resolved).not.toHaveProperty('domainIssuer')
+    expect(resolved).toMatchObject({
+      source: 'bookmark',
+      domainIssuer: 'https://shell.astrale.ai',
+    })
+    expect(resolved).not.toHaveProperty('domainOrigin')
   })
 
   test('exchanges a managed bookmark at the exact issuer its user set', async () => {

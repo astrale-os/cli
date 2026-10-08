@@ -1,4 +1,4 @@
-import { publication } from '@astrale-os/sdk/publication'
+import { legacy as publication } from '@astrale-os/sdk/release'
 
 const MAXIMUM_PUBLICATION_BYTES = 1024 * 1024
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -16,7 +16,7 @@ export async function fetchDomainPublication(
   })
   if (!response.ok) {
     await cancel(response.body)
-    throw new Error(`GET ${url.href} → ${response.status}`)
+    throw new DomainDocumentStatusError(url, response)
   }
   const bytes = await readBounded(response, url)
   try {
@@ -27,16 +27,36 @@ export async function fetchDomainPublication(
   }
 }
 
-async function readBounded(response: Response, url: URL): Promise<Uint8Array> {
+/** A deployment document request answered with a non-2xx status. */
+export class DomainDocumentStatusError extends Error {
+  readonly status: number
+  /** Raw `Retry-After` header, when the deployment sent one. */
+  readonly retryAfter?: string
+
+  constructor(url: URL, response: Response) {
+    super(`GET ${url.href} → ${response.status}`)
+    this.name = 'DomainDocumentStatusError'
+    this.status = response.status
+    const retryAfter = response.headers.get('retry-after')
+    if (retryAfter !== null) this.retryAfter = retryAfter
+  }
+}
+
+/** Read one deployment document body, refusing more than `maximum` bytes (one MiB by default). */
+export async function readBounded(
+  response: Response,
+  url: URL,
+  maximum: number = MAXIMUM_PUBLICATION_BYTES,
+): Promise<Uint8Array> {
   const declared = response.headers.get('content-length')
   if (
     declared !== null &&
     (!/^\d+$/u.test(declared) ||
       !Number.isSafeInteger(Number(declared)) ||
-      Number(declared) > MAXIMUM_PUBLICATION_BYTES)
+      Number(declared) > maximum)
   ) {
     await cancel(response.body)
-    throw sizeError(url)
+    throw sizeError(url, maximum)
   }
   if (response.body === null) return new Uint8Array()
 
@@ -52,8 +72,8 @@ async function readBounded(response: Response, url: URL): Promise<Uint8Array> {
         break
       }
       if (next.value.byteLength === 0) continue
-      if (next.value.byteLength > MAXIMUM_PUBLICATION_BYTES - size) {
-        throw sizeError(url)
+      if (next.value.byteLength > maximum - size) {
+        throw sizeError(url, maximum)
       }
       chunks.push(next.value)
       size += next.value.byteLength
@@ -72,11 +92,11 @@ async function readBounded(response: Response, url: URL): Promise<Uint8Array> {
   return bytes
 }
 
-function sizeError(url: URL): Error {
-  return new Error(`GET ${url.href} exceeded ${MAXIMUM_PUBLICATION_BYTES} bytes`)
+function sizeError(url: URL, maximum: number): Error {
+  return new Error(`GET ${url.href} exceeded ${maximum} bytes`)
 }
 
-async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {
+export async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {
   if (body !== null) await body.cancel().catch(() => undefined)
 }
 

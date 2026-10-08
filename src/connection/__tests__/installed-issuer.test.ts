@@ -375,7 +375,7 @@ describe('Shell exchange at the installed issuer', () => {
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-LEGACY-ISSUER-UNCHANGED */
   test('exchanges a Shell still pinned at its stable issuer there, reusing what an earlier release cached', async () => {
-    // The previous release exchanged at the route-derived stable issuer and cached the result.
+    // An earlier release exchanged at the stable issuer and cached the result.
     const earlier = network({ [LEGACY_SHELL]: 'live' })
     await createExchangeCredentialResolver(
       { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainIssuer: LEGACY_SHELL },

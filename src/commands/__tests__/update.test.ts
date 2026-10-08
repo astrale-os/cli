@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import pkg from '../../../package.json' with { type: 'json' }
-import { cliStale } from '../update'
+import { cliStale, prefetchStudioAgents } from '../update'
 
 function interactiveEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1', TERM: 'xterm-256color' }
@@ -179,5 +181,40 @@ describe('CLI update application', () => {
     expect(stderr).toContain('cannot replace itself')
     expect(stderr).not.toContain('Checking and updating Astrale')
     expect(stdout).toContain('Astrale skills skipped')
+  })
+})
+
+describe('Studio agent prefetch after an update', () => {
+  test('starts the updated binary detached once Studio has installed an agent here', () => {
+    const home = mkdtempSync(join(tmpdir(), 'astrale-update-prefetch-'))
+    try {
+      const calls: { bin: string; args: readonly string[]; options: Record<string, unknown> }[] = []
+      let unrefs = 0
+      const spawnImpl = ((
+        bin: string,
+        args: readonly string[],
+        options: Record<string, unknown>,
+      ) => {
+        calls.push({ bin, args, options })
+        return { on: () => undefined, unref: () => unrefs++ }
+      }) as unknown as Parameters<typeof prefetchStudioAgents>[2]
+
+      // a CLI that never ran a Studio agent downloads nothing
+      expect(prefetchStudioAgents('/new/astrale', home, spawnImpl)).toBe(false)
+      expect(calls).toEqual([])
+
+      mkdirSync(join(home, 'cache', 'agents'), { recursive: true })
+      expect(prefetchStudioAgents('/new/astrale', home, spawnImpl)).toBe(true)
+      expect(calls).toEqual([
+        {
+          bin: '/new/astrale',
+          args: ['__studio-agents-prefetch'],
+          options: { detached: true, stdio: 'ignore', windowsHide: true },
+        },
+      ])
+      expect(unrefs).toBe(1)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })

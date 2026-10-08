@@ -28,11 +28,17 @@ import { pendingHandoff } from '../chats'
 import { getHarnessById } from '../harness/registry'
 import { resolveHarnessConfiguration } from '../harness/selection'
 import { buildSystemPrompt } from '../prompts/system'
-import { briefedDomains, buildResumePrompt, buildTurnPrompt } from '../prompts/turn'
+import {
+  briefedDomains,
+  buildResumePrompt,
+  buildTurnPrompt,
+  replayPreamble,
+  type StopCause,
+} from '../prompts/turn'
 import { studioSessionId } from '../telemetry'
 import { handoffPreamble } from '../transfer'
 import { domainOrigin, domainRelativePath } from '../workspace'
-import { currentRun } from './live-state'
+import { currentRun, hydrateRun } from './live-state'
 
 /**
  * Which open threads a turn carries. None unless asked: an open thread is the
@@ -43,6 +49,7 @@ export type CommentSelection = 'all' | string[]
 
 export interface SubmitOpts {
   message?: string
+  /** Continue: pick the chat's last turn back up after it stopped short */
   resume?: boolean
   comments?: CommentSelection
   /** ids of the images this message carries, uploaded to its chat beforehand */
@@ -139,6 +146,33 @@ async function domainParts(
   }
 }
 
+/** The chat's last turn, when it stopped before finishing - what Continue picks up. */
+function stoppedTurn(
+  stateRoot: string,
+  chat: StoredChat,
+): (AgentRun & { status: StopCause }) | undefined {
+  hydrateRun(stateRoot, chat)
+  const last = currentRun(chat.id)
+  return last &&
+    (last.status === 'interrupted' || last.status === 'failed' || last.status === 'canceled')
+    ? (last as AgentRun & { status: StopCause })
+    : undefined
+}
+
+/**
+ * Whether the conversation the chat holds already carries this turn: it ran in
+ * that session and the agent did something with it. Only then can Continue be
+ * a bare "keep going" - otherwise the agent never kept the message, and it has
+ * to be sent again.
+ */
+function reachedAgent(turn: AgentRun, session: string | undefined): boolean {
+  return (
+    !!session &&
+    turn.sessionId === session &&
+    turn.events.some((event) => event.kind !== 'status' && event.kind !== 'error')
+  )
+}
+
 /** A run is named after whatever its turn actually carries, in the order it was meant. */
 function runSummary(turn: {
   bareResume: boolean
@@ -147,7 +181,7 @@ function runSummary(turn: {
   threads: number
   documents: number
 }): string {
-  if (turn.bareResume) return 'continuing after interruption'
+  if (turn.bareResume) return 'continue where it stopped'
   if (turn.message) return turn.message.slice(0, 60) + (turn.message.length > 60 ? '…' : '')
   if (turn.images > 0) return imagesLabel(turn.images)
   if (turn.threads > 0)
@@ -171,9 +205,27 @@ export async function prepareRun(
   if (!available) return { error: `${harness.label} is not available on this machine` }
 
   const resume = chat.sessionId
-  const bareResume = options?.resume === true && !!resume
-  const message = (options?.message ?? '').trim()
-  const resolved = resolveAttachments(workspace.stateRoot, chat.id, options?.attachments ?? [])
+  // Continue, whatever stopped the turn: in the same session when the agent had
+  // already taken it up, and otherwise by sending it again exactly as it was - a
+  // first turn cut short never got a session to resume.
+  const stopped = options?.resume ? stoppedTurn(workspace.stateRoot, chat) : undefined
+  if (options?.resume && !stopped)
+    return { error: 'nothing to continue — the last turn did not stop short' }
+  const replayable =
+    !!stopped?.instruction?.trim() ||
+    !!stopped?.attachments?.length ||
+    !!stopped?.targetCommentIds.length
+  const bareResume = !!stopped && !!resume && (reachedAgent(stopped, resume) || !replayable)
+  const replay = stopped && !bareResume ? stopped : undefined
+  const message = ((replay ? replay.instruction : options?.message) ?? '').trim()
+  const comments = replay ? replay.targetCommentIds : options?.comments
+  const resolved = resolveAttachments(
+    workspace.stateRoot,
+    chat.id,
+    replay
+      ? (replay.attachments ?? []).map((attachment) => attachment.id)
+      : (options?.attachments ?? []),
+  )
   if ('error' in resolved) return resolved
   const attachments: ChatAttachment[] = bareResume ? [] : resolved.attachments
   const images: AgentTurnImage[] = attachmentFiles(workspace.stateRoot, chat.id, attachments).map(
@@ -181,7 +233,7 @@ export async function prepareRun(
   )
   const domains: DomainTurnParts[] = []
   for (const handle of workspace.domains) {
-    domains.push(await domainParts(workspace, handle, controller.signal, options?.comments))
+    domains.push(await domainParts(workspace, handle, controller.signal, comments))
     if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
   }
   const briefed = briefedDomains(domains)
@@ -209,12 +261,15 @@ export async function prepareRun(
   // A forked tab opens on the summary of the conversation it came from — once,
   // on the turn that actually starts its own session. The summary itself stays
   // on the chat afterwards; only its delivery is one-shot.
-  const owed = pendingHandoff(chat)
+  // A new conversation owes the briefing even once it went out: a first turn that
+  // stopped short left no session behind to remember it.
+  const owed = pendingHandoff(chat) ?? (resume ? undefined : chat.handoff?.summary)
   const handoff = owed ? handoffPreamble(owed) : ''
   const makeTurn = (firstTurn: boolean) =>
     bareResume && !firstTurn
-      ? buildResumePrompt()
+      ? buildResumePrompt(stopped?.status)
       : (firstTurn ? handoff : '') +
+        (replay ? replayPreamble(replay.status) : '') +
         buildTurnPrompt({
           workspaceRoot: workspace.root,
           domains,

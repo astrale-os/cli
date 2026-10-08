@@ -14,8 +14,9 @@ const EDGE_STYLES: { value: EdgeStyle; label: string }[] = [
 ]
 
 const CHAT_TABS: { value: ChatTabsSide; label: string }[] = [
-  { value: 'top', label: 'Top' },
   { value: 'left', label: 'Left, with titles' },
+  { value: 'top', label: 'Top' },
+  { value: 'top-titled', label: 'Top, with titles' },
 ]
 
 /** Visual preferences: theme follows the browser; canvas geometry follows the workspace. */
@@ -56,7 +57,7 @@ export function AppearanceSettings() {
         </SettingRow>
         <SettingRow
           label="Chat tabs"
-          description="Above the conversation, or in a column beside it with the start of each title. Applies to this browser."
+          description="In a resizable column beside the conversation, or above it with or without each title. Applies to this browser."
         >
           <SettingSelect
             value={chatTabsSide}

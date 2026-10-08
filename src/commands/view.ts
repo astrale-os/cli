@@ -377,13 +377,15 @@ async function startSessionLocked(
 
 type PageState = { state: string; error?: string }
 
-async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
+export async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
   const deadline = Date.now() + STATE_TIMEOUT_MS
   let last: PageState = { state: 'waiting' }
   while (Date.now() < deadline) {
     try {
       last = (await (await fetch(`${record.pageUrl}state`)).json()) as PageState
-      if (last.state === 'connected' || last.state === 'plain' || last.state === 'failed') {
+      if (
+        ['connected', 'plain', 'failed', 'refreshing', 'degraded', 'expired'].includes(last.state)
+      ) {
         return last
       }
     } catch {
@@ -436,6 +438,12 @@ function describeState(state: PageState): string {
       return `failed — ${state.error ?? 'unknown error'}`
     case 'mounting':
       return 'still mounting (check again with a snapshot)'
+    case 'refreshing':
+      return 'renewing the session (View remains mounted)'
+    case 'degraded':
+      return 'session renewal failed (reconnecting automatically)'
+    case 'expired':
+      return 'session expired (reconnecting automatically)'
     default:
       return 'page not loaded yet'
   }
@@ -631,11 +639,20 @@ Examples:
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
     if (opts.refresh !== undefined) return refreshCommand(opts)
-    if (opts.close !== undefined) return closeCommand(opts)
+    if (opts.close !== undefined) return closeCommand(opts).catch((error) => fatal(error, opts))
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)
 
-    if (!spec) return fatal(new Error('Nothing to open - pass a ViewPath or Domain origin.'))
+    if (!spec) {
+      return fatal(
+        new AstraleError(
+          'MISSING_ARG',
+          '`view` needs a ViewPath or Domain origin.',
+          'Run: astrale view crm.example.dev --snapshot',
+        ),
+        opts,
+      )
+    }
     const wantsAgentBrowser = !opts.list && !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
       return fatal(

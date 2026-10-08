@@ -141,18 +141,13 @@ export async function ensureOwnedInstance(
     return 'skipped'
   }
 
-  const { created, selectionError, access } = await deps.provision(slug)
+  const { created, bookmark, access } = await deps.provision(slug)
   if (created.state !== 'ready') {
     reportNotReady([created])
     return 'skipped'
   }
-  if (selectionError) {
-    const detail = selectionError instanceof Error ? selectionError.message : String(selectionError)
-    throw new AstraleError(
-      'INSTANCE_SELECTION_FAILED',
-      `Instance "${slug}" was provisioned, but the CLI could not select it: ${detail}`,
-      `Fix local CLI storage, then run \`astrale instance use ${slug}\`.`,
-    )
+  if (bookmark?.status === 'pending') {
+    throw new AstraleError(bookmark.code, bookmark.message, bookmark.hint)
   }
   if (access?.status !== 'completed') {
     log.warn(
