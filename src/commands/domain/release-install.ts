@@ -488,6 +488,7 @@ async function installReleases(
   const retry = notYetActiveWindow(deps)
   let roots: readonly PlannedRoot[]
   let changes: readonly (IssuerChange | undefined)[]
+  const knownIssuers = new Map(before.map(({ origin, issuer }) => [origin, issuer]))
   const overridden: (string | undefined)[] = []
   try {
     for (const url of urls) admitReference(url)
@@ -499,8 +500,27 @@ async function installReleases(
     roots = plannedRoots(sources, served)
     refuseDuplicateOrigins(roots)
     refuseUnknownConsentOrigins(consent, roots)
-    changes = roots.map(({ source, served: deployment }) =>
-      deployment === undefined ? undefined : plannedIssuerChange(source.url, deployment, before),
+    changes = await Promise.all(
+      roots.map(async ({ source, served: deployment }) => {
+        if (deployment === undefined) return undefined
+        if (installedOrigin(before, deployment.origin))
+          return plannedIssuerChange(source.url, deployment, before)
+        // The installed listing is caller-scoped and omits registrations with no deployment pin.
+        // Its omission does not establish a first install. Read this exact root's publication
+        // before planning consent, without inventing an installed release or broadening access.
+        let installed
+        try {
+          installed = await context.session.schema.inspect(deployment.origin as never)
+        } catch (error) {
+          if (error instanceof ResponseError && error.code === 3002) return undefined
+          throw error
+        }
+        const issuer = installed.publication?.identity.issuer
+        if (issuer !== undefined) knownIssuers.set(installed.origin, issuer)
+        return issuer === undefined
+          ? undefined
+          : plannedIssuerChange(source.url, deployment, [{ origin: installed.origin, issuer }])
+      }),
     )
     for (const [index, { source, served: deployment }] of roots.entries()) {
       // The identity-override gate stays for a source that serves only domain.json (legacy).
@@ -520,7 +540,7 @@ async function installReleases(
         changes[index] === undefined &&
         deployment !== undefined &&
         !machine &&
-        !installedOrigin(before, deployment.origin)
+        !knownIssuers.has(deployment.origin)
       ) {
         const notice = firstInstallNotice(deployment, source.url)
         if (notice !== undefined) log.warn(notice)
@@ -546,7 +566,7 @@ async function installReleases(
   } catch (error) {
     return { error, render: 'input' }
   }
-  if (!machine) warnUnreadableConsentOrigins(consent, roots, before)
+  if (!machine) warnUnreadableConsentOrigins(consent, roots, knownIssuers)
   if (!machine && consent.revokePrevious && changes.every((change) => change === undefined)) {
     log.dim('  --revoke-previous: no installed issuer changes, so there is nothing to revoke.')
   }
@@ -921,17 +941,18 @@ function refuseUnknownConsentOrigins(
 /**
  * An origin named by `--allow-issuer-change=<origin>` that this install names but whose
  * installation the caller cannot read gets no consent: the CLI plans consents from the installed
- * listing only and never builds one from a Kernel refusal. Either the origin is not installed (a
- * first install needs no consent) or the listing hides it; the operator is told before the send.
+ * listing and the exact root's installed publication, never from a Kernel refusal. Either the
+ * origin is not installed or neither observation exposes its issuer; the operator is told before
+ * the send.
  */
 function warnUnreadableConsentOrigins(
   consent: IssuerChangeConsent,
   roots: readonly PlannedRoot[],
-  before: readonly InstalledRelease[],
+  knownIssuers: ReadonlyMap<string, string>,
 ): void {
   for (const origin of consent.origins) {
     const named = roots.some((root) => root.origin === origin)
-    if (!named || installedOrigin(before, origin)) continue
+    if (!named || knownIssuers.has(origin)) continue
     log.warn(
       `--allow-issuer-change=${origin}: ${origin} is not among the installations this identity can read, so no consent is sent. ` +
         'If it is installed, consenting to its issuer change needs read access to its installation.',
