@@ -156,6 +156,7 @@ function harness(options: {
   readonly install?: (request: InstallRequest, call: number) => Promise<InstallResult>
   readonly served?: Readonly<Record<string, () => Promise<ServedDeployment>>>
   readonly now?: () => number
+  readonly inspect?: (origin: string) => Promise<unknown>
 }): Harness {
   const requests: InstallRequest[] = []
   const credentials: unknown[] = []
@@ -171,7 +172,8 @@ function harness(options: {
           requests.length,
         )
       },
-      inspect: async (origin: string) => ({ origin, revision: REVISION, generation: digest('e') }),
+      inspect: async (origin: string) =>
+        options.inspect?.(origin) ?? { origin, revision: REVISION, generation: digest('e') },
     },
   }
   const state = {
@@ -594,7 +596,7 @@ const consentOnUnchangedRoot = () =>
     details: { phase: 'input', path: '/domains/0/consent', issue: 'invalid' },
   })
 
-describe('issuer changes (D7): consent planned from the installed listing', () => {
+describe('issuer changes (D7): consent planned from readable installation evidence', () => {
   /** agencies.test installed from `from` until an install commits, the install reading `to`. */
   function moving(from: string, to: string, served = servedRelease('agencies.test', to, '2')) {
     const installed = installedFrom(servedRelease('agencies.test', from, '1'), from)
@@ -608,6 +610,80 @@ describe('issuer changes (D7): consent planned from the installed listing', () =
       },
     })
   }
+
+  test('sends explicit consent for a legacy installation omitted from the release listing', async () => {
+    const inspect = mock(async (origin: string) => ({
+      origin,
+      revision: REVISION,
+      publication: { identity: { issuer: A_LEGACY, subject: origin } },
+    }))
+    const run = harness({
+      listing: async () => [],
+      served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
+      inspect,
+    })
+    await installByReference(
+      [A1],
+      { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] },
+      run.deps,
+    )
+    expect(inspect).toHaveBeenCalledWith('agencies.test')
+    expect(run.requests[0]!.domains[0]).toEqual({
+      release: { url: A1, digest: digest('2') },
+      consent: { issuer: { from: A_LEGACY, to: A1 } },
+    })
+    expect(JSON.parse(stdout).references[0]).toMatchObject({
+      previous: null,
+      consent: { from: A_LEGACY, to: A1, previous: 'drain' },
+    })
+  })
+
+  test('requires origin-scoped consent for an unlisted legacy issuer before sending an install', async () => {
+    const run = harness({
+      served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
+      inspect: async (origin) => ({ origin, publication: { identity: { issuer: A_LEGACY } } }),
+    })
+    await expect(
+      installByReference([A1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toEqual([])
+    expect(JSON.parse(stderr)).toMatchObject({ error: 'ISSUER_CHANGE_NOT_CONSENTED' })
+  })
+
+  test('an exact not-found observation leaves a first install without consent', async () => {
+    const run = harness({
+      served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
+      inspect: async () => {
+        throw new ResponseError(3002, 'Not found.', INVOCATION)
+      },
+    })
+    await installByReference([A1], JSON_OUTPUT, run.deps)
+    expect(run.requests[0]!.domains[0]).not.toHaveProperty('consent')
+  })
+
+  test('a readable unlisted installation with the same issuer is neither a first install nor a change', async () => {
+    const run = harness({
+      served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
+      inspect: async (origin) => ({ origin, publication: { identity: { issuer: A1 } } }),
+    })
+    const shown = await human(() =>
+      installByReference([A1], { allowIssuerChange: ['agencies.test'] }, run.deps),
+    )
+    expect(run.requests[0]!.domains[0]).not.toHaveProperty('consent')
+    expect(shown.warnings).not.toContain('no consent is sent')
+    expect(shown.warnings).not.toContain('first install')
+  })
+
+  test('does not treat an unavailable point observation as an absent installation', async () => {
+    const run = harness({
+      served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
+      inspect: async () => {
+        throw backendUnavailable()
+      },
+    })
+    await expect(installByReference([A1], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
+    expect(run.requests).toEqual([])
+  })
 
   test('refuses a same-line change without consent before any install is sent', async () => {
     const run = moving(A1, A2)

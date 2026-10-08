@@ -139,7 +139,7 @@ export interface IssuerChange {
 export function plannedIssuerChange(
   reference: string,
   served: ServedDeployment,
-  installed: readonly InstalledRelease[],
+  installed: readonly Pick<InstalledRelease, 'origin' | 'issuer'>[],
 ): IssuerChange | undefined {
   const current = installed.find((entry) => entry.origin === served.origin)
   if (current === undefined || current.issuer === served.issuer) return undefined
