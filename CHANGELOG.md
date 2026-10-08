@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0-beta.132](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.131...cli/v1.0.0-beta.132) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** astrale view no longer accepts a node path or @id, and --target is removed; pass the Domain origin (with --view SLUG) or a ViewPath and let the View route to the node. --list and the JSON candidates drop origin, and VIEW_TARGET_REQUIRED is gone. Studio contracts drop targetRequired, targets, target, targetId, ViewInfo.viewFor, IrView.target and the view-changed diff kind.
+
+### Features
+
+* **commands:** open Views by Domain, never for a node ([#578](https://github.com/astrale-os/cli/issues/578)) ([b5922e4](https://github.com/astrale-os/cli/commit/b5922e4ebf174993f5cdbc0628142262e60587af))
+
+
+### Bug Fixes
+
+* **commands:** consent to issuer changes for unlisted installations ([#623](https://github.com/astrale-os/cli/issues/623)) ([c532a74](https://github.com/astrale-os/cli/commit/c532a74d49dd14f1d92f27b5edcb824530f34818))
+* **studio:** domain eye draws the action, plus a ring tab icon ([#619](https://github.com/astrale-os/cli/issues/619)) ([bf3daf1](https://github.com/astrale-os/cli/commit/bf3daf123f7bfb45284bd4a8a6e3e1572e520bf4))
+
 ## [1.0.0-beta.131](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.130...cli/v1.0.0-beta.131) (2026-10-07)
 
 
