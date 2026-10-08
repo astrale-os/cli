@@ -512,7 +512,7 @@ async function installReleases(
         try {
           installed = await context.session.schema.inspect(deployment.origin as never)
         } catch (error) {
-          if (error instanceof ResponseError && error.code === 3002) return undefined
+          if (isAbsentDomain(error)) return undefined
           throw error
         }
         const issuer = installed.publication?.identity.issuer
@@ -1297,6 +1297,17 @@ function pinLabel(pin: InstalledPin): string {
 
 function shortDigest(digest: string): string {
   return digest.startsWith('sha256:') ? `sha256:${digest.slice(7, 19)}` : digest
+}
+
+/**
+ * Whether reading an origin's publication found no installed Domain: the Kernel answers an origin
+ * that is not installed with 1003 and reason SCHEMA_NOT_FOUND. An exact 3002 says the same.
+ */
+function isAbsentDomain(error: unknown): boolean {
+  if (!(error instanceof ResponseError)) return false
+  return (
+    error.code === 3002 || (error.code === 1003 && reasonCode(error.reason) === 'SCHEMA_NOT_FOUND')
+  )
 }
 
 /** The host name a URL reference is served from; any http(s) URL, as before installs were grouped. */
