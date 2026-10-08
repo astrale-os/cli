@@ -46,7 +46,7 @@ function currentFixture(): DomainHandle {
       export const schema = defineSchema('documents.runtime.test', {
         dependencies: { directory: DirectorySchema },
         classes: { Document },
-        views: { editor: view({ target: Document }) },
+        views: { editor: view({ description: 'Edit documents.' }) },
         core: { nodes: { welcome } },
       })
       export const installedBundle = bundle.create(schema)
@@ -78,7 +78,7 @@ describe('SDK V1 schema extractor', () => {
       },
       ir: {
         domain: 'documents.runtime.test',
-        views: { editor: { target: { kind: 'definition' } } },
+        views: { editor: { name: 'editor', description: 'Edit documents.' } },
         importsByKey: {
           'directory.runtime.test:class.Named': {
             ref: { origin: 'directory.runtime.test', kind: 'class', name: 'Named' },

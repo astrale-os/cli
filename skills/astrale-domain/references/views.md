@@ -5,17 +5,16 @@ The React host owns the session, not the business Domain's runtime.
 
 ## Domain Views and internal routing
 
-- Every View belongs to its own Domain. Declare `view({ description? })` and never give it a
-  `target`: Class- or node-bound Views are deprecated and will be removed. The Shell opens a View by
-  declaration path (`/:<origin>:view.<name>`) or as the Domain entrypoint.
+- Every View belongs to its own Domain. The Shell opens it by declaration path
+  (`/:<origin>:view.<name>`) or as the Domain entrypoint, never for a Class or a node. Declare
+  `view({ description? })`; a View declaration names no Class.
 - A screen about one node (an issue, an invoice) is an internal route of the Domain frontend, such as
   `/issues/$issue`. Read the node from the router (`useParams`, `useSearch`) and pass it to the named
-  Query. Do not rely on the Shell to hand the View a node to render.
+  Query. The Shell hands the View no node to render and cannot tell which View renders a node.
 - Link to another screen of the same Domain with the router. Open another Domain's View with
   `openView({ view: '/:<origin>:view.<name>' })` (or its Domain entrypoint) and let that View route
   internally; never pass it a node to render.
-- Do not read the handshake's `targetNodeId` to pick a node: it is deprecated and will always be the
-  Domain path.
+- The handshake's `targetNodeId` is deprecated and always the Domain path; do not branch on it.
 
 ## Declare the surface
 
@@ -141,7 +140,7 @@ astrale identity list --json
 astrale get @self -i staging --as alice --json
 astrale introspect /:issues.example:class.Issue:close -i staging --as alice
 astrale view /:issues.example:view.application -i staging --as alice
-astrale view /:issues.example --list -i staging --as alice
+astrale view issues.example --list -i staging --as alice
 astrale logs -i staging --as alice --topic-prefix op:function. --limit 20
 astrale view --sessions
 astrale view --close <session-id>

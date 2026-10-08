@@ -13,24 +13,17 @@ function mergeRoute(target: ViewInfo, incoming: ViewInfo): void {
 }
 
 function canonicalViewInfo(slug: string, view: NonNullable<SchemaIR['views']>[string]): ViewInfo {
-  const targets =
-    view.target.kind === 'definition' ? view.target.definitions.map((ref) => ref.name) : []
   return {
     slug,
     kind: 'unknown',
     ...(view.description ? { description: view.description } : {}),
-    ...(targets.length === 1
-      ? { viewFor: targets[0] }
-      : targets.length > 1
-        ? { viewFor: targets }
-        : {}),
   }
 }
 
 /**
  * Join canonical View definitions with route/source metadata. Passing a
  * canonical map (including an empty map) makes it authoritative: static routes
- * cannot invent Views or override identity, target, or description.
+ * cannot invent Views or override identity or description.
  * Without admitted canonical Views, Studio does not invent authoring semantics.
  */
 export function buildViews(

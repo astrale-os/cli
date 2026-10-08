@@ -36,7 +36,7 @@ astrale mutate
 astrale call <path> [key=value...]
 astrale token
 astrale logs
-astrale view [target-or-view]
+astrale view [domain-or-view]
 astrale ui ...
 astrale instance ...
 astrale domain ...
@@ -557,12 +557,15 @@ With `--json`, `--follow` emits NDJSON with one complete admitted record per lin
 
 ## Views And Browser Sessions
 
-`astrale view` opens one resolved View through a local browser shell:
+`astrale view` opens one resolved View through a local browser shell. Every View belongs to its
+Domain: pass a Domain origin (opens its entrypoint, or `--view <slug>`) or an explicit ViewPath. A
+View is never opened for a node; a View that shows one node routes to it itself.
 
 ```bash
-astrale view @customer --list
-astrale view @customer --snapshot
-astrale view /:crm.example:view.dashboard --target @customer
+astrale view crm.example --list
+astrale view crm.example --snapshot
+astrale view crm.example --view dashboard
+astrale view /:crm.example:view.dashboard
 astrale view --sessions
 astrale view --close <session-id>
 ```

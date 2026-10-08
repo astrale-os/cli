@@ -10,13 +10,15 @@ import {
 } from '@astrale-os/shell'
 
 import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
-import { installOpenIntentHandler } from '../src/lib/view/open-intent'
+import { installViewOpenHandler } from '../src/lib/view/open-intent'
 import { accessibleIframeAdapter, viewTitle } from './frame'
 
 /**
  * The `astrale view` host page: a thin consumer of Shell's exact V2 mount
- * contract. Its nonce-scoped server supplies one target-bound Host placement;
+ * contract. Its nonce-scoped server supplies one Domain-bound Host placement;
  * this page never reconstructs parallel URL, target, key, or handshake inputs.
+ * A View it hosts may open another View of a Domain (`view.open`); it never opens
+ * a View for a node.
  */
 
 type Config = {
@@ -267,19 +269,21 @@ async function main(): Promise<void> {
     }
   }
 
+  const heldCredential = async () => {
+    if (tokens === null) return undefined
+    const held = await tokens.acquire()
+    return {
+      token: held.credential,
+      expiresAt: held.expiresAt,
+      refresh: async () => {
+        const next = await tokens!.acquire()
+        return { token: next.credential, expiresAt: next.expiresAt }
+      },
+    }
+  }
+
   const mount = async (view: ResolvedView): Promise<MountedWindow> => {
-    const held = view.route.handshake === 'shell' ? await tokens!.acquire() : undefined
-    const credential =
-      held === undefined
-        ? undefined
-        : {
-            token: held.credential,
-            expiresAt: held.expiresAt,
-            refresh: async () => {
-              const next = await tokens!.acquire()
-              return { token: next.credential, expiresAt: next.expiresAt }
-            },
-          }
+    const credential = view.route.handshake === 'shell' ? await heldCredential() : undefined
     return shell.mountView({
       host: container,
       view,
@@ -289,20 +293,29 @@ async function main(): Promise<void> {
     })
   }
 
-  installOpenIntentHandler(shell, {
+  installViewOpenHandler(shell, {
     current: () => mounted,
     setCurrent: (next) => {
       mounted = next
       showWindowStatus()
     },
-    mount,
-    opened: (selected) => {
-      showPlacement(selected)
+    open: async (view) => {
+      const credential = await heldCredential()
+      return shell.openView({
+        host: container,
+        view,
+        capabilities: hostCapabilities,
+        handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
+        ...(credential === undefined ? {} : { credential }),
+      })
+    },
+    opened: (next) => {
+      showPlacement(next.view)
       el('error').style.display = 'none'
     },
     failed: showIntentError,
-    reply: (message, windowId) => {
-      replyToIntent(shell.children, message.envelope.sender.windowId, message, { windowId })
+    reply: (message, result) => {
+      replyToIntent(shell.children, message.envelope.sender.windowId, message, result)
     },
     reject: (message, error) => {
       rejectIntent(shell.children, message.envelope.sender.windowId, message, error)

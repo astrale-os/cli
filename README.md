@@ -181,6 +181,11 @@ Main command groups:
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
 
+`astrale view <origin>` opens a Domain's entrypoint View (`--view <slug>` picks
+another, `--list` prints them all); `astrale view /:<origin>:view.<slug>` opens
+one View exactly. Every View belongs to its Domain: none is opened for a node, and
+a View that shows one node selects it through its own internal routing.
+
 `astrale view --refresh <id>` re-resolves an open View against its retained
 instance and identity, then reloads the existing tab without changing its URL.
 If resolution fails, the previous placement remains available. Use
@@ -194,7 +199,7 @@ astrale view /:app.example:view.application -i staging --as alice --allow-identi
 ```
 
 The viewer offers the initial identity and the explicitly allowed local names. **Switch & reload**
-re-resolves the same View/target and mints a fresh credential before reloading the entire page
+re-resolves the same View in its Domain and mints a fresh credential before reloading the entire page
 (unsaved changes are lost). Failure leaves the previous session usable. This does not change CLI
 defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
 

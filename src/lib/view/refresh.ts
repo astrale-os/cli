@@ -4,9 +4,9 @@ import type { withClientSession } from '../../connection'
 import type { ViewServeConfig } from './session'
 
 import { AstraleError } from '../../errors'
-import { resolveInstalledDomainView, resolveViewCandidates, selectedView } from './resolve'
+import { resolveDomainViews, selectedView, viewKeyOrigin } from './resolve'
 
-/** Re-resolve the same View and target using this session's retained Kernel authority. */
+/** Re-resolve the same View in its Domain catalog using this session's retained Kernel authority. */
 export function refreshViewPlacement(
   config: ViewServeConfig,
   connect: typeof withClientSession,
@@ -22,15 +22,13 @@ export function refreshViewPlacement(
       )
     }
     const current = config.session.view
-    if (current.route.declaration.target.kind === 'domain') {
-      return selectedView(await resolveInstalledDomainView(context, `/:${current.route.key}`))
-    }
-    const candidates = await resolveViewCandidates(context, current.target)
+    const key = String(current.route.key)
+    const { candidates } = await resolveDomainViews(context, viewKeyOrigin(key))
     const selected = candidates.find((candidate) => candidate.route.key === current.route.key)
     if (selected === undefined) {
       throw new AstraleError(
         'VIEW_NOT_FOUND',
-        'The open View is no longer applicable to its target.',
+        'The open View is no longer published by its Domain.',
       )
     }
     return selectedView(selected)

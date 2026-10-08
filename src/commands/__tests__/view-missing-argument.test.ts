@@ -7,12 +7,12 @@ import { delimiter, join } from 'node:path'
 const entry = join(import.meta.dir, '../../../bin/astrale.ts')
 const usageError = {
   error: 'MISSING_ARG',
-  message: '`view` needs a ViewPath or target node.',
-  hint: 'Run: astrale view @customer --snapshot',
+  message: '`view` needs a ViewPath or Domain origin.',
+  hint: 'Run: astrale view crm.example.dev --snapshot',
 }
 
 async function runView(args: readonly string[], tty = false) {
-  const root = await mkdtemp(join(tmpdir(), 'astrale-view-missing-target-'))
+  const root = await mkdtemp(join(tmpdir(), 'astrale-view-missing-argument-'))
   const home = join(root, 'home')
   const bin = join(root, 'bin')
   await mkdir(home)
@@ -88,14 +88,14 @@ for (const { mode, flags, tty } of [
   { mode: 'debug', flags: ['--debug'], tty: false },
   { mode: 'json and debug', flags: ['--json', '--debug'], tty: true },
 ]) {
-  test(`snapshot without a target reports usage before browser, auth or effects (${mode})`, async () => {
+  test(`snapshot without a View reports usage before browser, auth or effects (${mode})`, async () => {
     const result = await runView(['--snapshot', ...flags], tty)
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     const [error, ...debug] = result.stderr.trimEnd().split('\n')
     expect(JSON.parse(error!)).toEqual(usageError)
     if (flags.includes('--debug')) {
-      expect(debug.join('\n')).toContain('AstraleError: `view` needs a ViewPath or target node.')
+      expect(debug.join('\n')).toContain('AstraleError: `view` needs a ViewPath or Domain origin.')
       expect(debug.join('\n')).toContain('view.ts')
     } else {
       expect(debug).toEqual([])
@@ -103,7 +103,7 @@ for (const { mode, flags, tty } of [
   })
 }
 
-test('snapshot without a target gives the same actionable usage error on a terminal', async () => {
+test('snapshot without a View gives the same actionable usage error on a terminal', async () => {
   const result = await runView(['--snapshot'], true)
   expect(result.exitCode).toBe(1)
   expect(result.stderr).toBe(`✖ ${usageError.error}: ${usageError.message}\n`)

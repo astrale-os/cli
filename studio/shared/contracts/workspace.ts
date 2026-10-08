@@ -102,7 +102,6 @@ export type SchemaChangeKind =
   | 'function-metadata-changed'
   | 'view-added'
   | 'view-removed'
-  | 'view-changed'
   | 'view-metadata-changed'
   | 'policy-added'
   | 'policy-removed'

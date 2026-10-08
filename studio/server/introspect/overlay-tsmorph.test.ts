@@ -69,7 +69,7 @@ export const declaredPolicy = policy({ expression: {} })`,
     writeFileSync(
       join(moduleDir, 'views/billing.ts'),
       `import { view } from '@astrale-os/sdk/schema'
-export const declaredView = view({ target: 'domain' })`,
+export const declaredView = view({})`,
     )
     writeFileSync(
       join(schemaDir, 'index.ts'),
@@ -78,7 +78,7 @@ import { declaredPolicy as guard } from './modules/billing/policies/pay.js'
 import { declaredView } from './modules/billing/views/billing.js'
 export const schema = defineSchema('example.dev', {
   policies: { MayPay: guard },
-  views: { billing: declaredView, overview: view({ target: 'domain' }) },
+  views: { billing: declaredView, overview: view({}) },
 })`,
     )
     const spans = buildSourceSpans({ ir: null, domainRoot: root, schemaDir })
