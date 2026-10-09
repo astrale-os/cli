@@ -72,7 +72,12 @@ function renderResponse(
   const hint =
     code === 'FUNCTION_INPUT_INVALID' && (machine || issues.length === 0)
       ? 'Use `astrale introspect <path>` to see the callable input.'
-      : (removalHint ?? (upgrade ? schemaUpgradeHint(upgrade) : undefined))
+      : (removalHint ??
+        (upgrade
+          ? schemaUpgradeHint(upgrade)
+          : failure.code === CREDENTIAL_REFUSED
+            ? 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.'
+            : undefined))
   if (machine) {
     writeRaw({
       ...fields,
@@ -111,6 +116,9 @@ function renderResponse(
   }
   if (hint) log.dim(`  ${hint}`)
 }
+
+/** The Kernel code of a credential it does not accept (AUTH_INVALID), including an unregistered account. */
+const CREDENTIAL_REFUSED = 2002
 
 function renderRecovery(recovery: OperationRecovery | undefined): void {
   if (!recovery)
