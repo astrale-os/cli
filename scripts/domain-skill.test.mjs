@@ -51,6 +51,7 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
   assert.doesNotMatch(source, /return\s*\{\s*deps\s*:/)
   assert.doesNotMatch(source, /context\.work\b/)
   assert.doesNotMatch(source, /context\.activation\b/)
+  assert.doesNotMatch(source, /\.union\.(?:invoke|query|mutate)\b/, 'removed union authority mode')
 })
 
 test('the Domain skill router reaches existing reference files without orphaned guides', () => {
