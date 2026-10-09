@@ -2,7 +2,7 @@ import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { ExchangeFailure, Fetch } from '@astrale-os/sdk/client'
 
 import { credential, grant } from '@astrale-os/sdk/auth'
-import { ExchangeError } from '@astrale-os/sdk/client'
+import { ExchangeError, ResponseError } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { SourceCredentialResolver } from './credential'
@@ -72,7 +72,8 @@ export interface ExchangeIssuer {
  * The Client owns the exchange itself (`session.exchange`). The CLI keeps what outlives one
  * process: the persisted cache, the command-timeout lifetime rules, and its error codes. A target
  * naming an installed Domain by origin exchanges at the issuer its pin names, as `installed` holds
- * it (without one, the pin is read once for this resolver); an exact issuer ignores `installed`.
+ * it (without one, the pin is read once for this resolver). A callable's resolved issuer remains
+ * installation-owned; only a target without an installed origin treats its issuer as exact.
  */
 export function createExchangeCredentialResolver(
   target: ExchangeTarget,
@@ -83,9 +84,11 @@ export function createExchangeCredentialResolver(
   installed?: ExchangeIssuer,
 ): SourceCredentialResolver {
   const domain =
-    target.domainIssuer === undefined
-      ? (installed ?? createInstalledIssuer(target.kernelIssuer, target.domainOrigin))
-      : exactIssuer(target.domainIssuer)
+    installed ??
+    (target.domainIssuer === undefined
+      ? createInstalledIssuer(target.kernelIssuer, target.domainOrigin)
+      : exactIssuer(target.domainIssuer))
+  const installationOwned = installed !== undefined || target.domainIssuer === undefined
   if (target.domainIssuer !== undefined) {
     requireExchangeTransport(target.kernelIssuer, target.domainIssuer)
   }
@@ -98,11 +101,29 @@ export function createExchangeCredentialResolver(
       requireLive(signal)
       const known = await domain.known()
       requireLive(signal)
+      // A remembered issuer can still exchange after its drain has ended. Validate its bearer on
+      // a read-only Kernel call before handing it to any business call; replaying a command or a
+      // failed business invocation would risk repeating side effects.
+      const checked = async (token: string) => {
+        if (installationOwned && known !== undefined) {
+          await confirmCredential(kernelIssuer, token, fetch, timeoutMs, signal)
+        }
+        requireLive(signal)
+        return token
+      }
+      let refused: ResponseError | undefined
       const persisted = async (identity: SourceIdentity) => {
-        if (known === undefined) return undefined
+        if (known === undefined || refused !== undefined) return undefined
         const cached = await cache.get(exchangeKey(kernelIssuer, known, identity), cacheTtlSeconds)
         requireLive(signal)
-        return cached
+        if (cached === undefined) return undefined
+        try {
+          return await checked(cached)
+        } catch (cause) {
+          if (!(cause instanceof ResponseError) || cause.code !== 2002) throw cause
+          refused = cause
+          return undefined
+        }
       }
       if (hintedIdentity !== undefined) {
         const cached = await persisted(hintedIdentity)
@@ -158,13 +179,17 @@ export function createExchangeCredentialResolver(
         // A Domain the Kernel hosts has no issuer to exchange at: the caller stays itself.
         if (current === null) return sourceToken
         try {
-          return await exchangeAt(current)
+          if (refused !== undefined) throw refused
+          return await checked(await exchangeAt(current))
         } catch (failure) {
           if (!issuerMayHaveMoved(failure)) throw failure
-          const moved = await domain.moved(current, session, signal)
+          // Another concurrent resolution may already have updated `current`. The refused cached
+          // bearer was still issued by `known`; compare the pin against that issuer.
+          const failedIssuer = refused === undefined ? current : known!
+          const moved = await domain.moved(failedIssuer, session, signal)
           requireLive(signal)
           if (moved === undefined) throw failure
-          return moved === null ? sourceToken : await exchangeAt(moved)
+          return moved === null ? sourceToken : await checked(await exchangeAt(moved))
         }
       } finally {
         exchange.close()
@@ -183,7 +208,35 @@ function exactIssuer(domainIssuer: IssuerId): ExchangeIssuer {
 }
 
 function issuerMayHaveMoved(failure: unknown): boolean {
-  return failure instanceof AstraleError && MOVED_ISSUER_CODES.has(failure.code)
+  return (
+    (failure instanceof AstraleError && MOVED_ISSUER_CODES.has(failure.code)) ||
+    (failure instanceof ResponseError && failure.code === 2002)
+  )
+}
+
+/** Confirm a remembered issuer's authority without invoking any application callable. */
+async function confirmCredential(
+  kernelIssuer: IssuerId,
+  token: string,
+  fetch: Fetch,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<void> {
+  const session = new ClientSession({
+    kernel: kernelIssuer,
+    fetch,
+    timeoutMs,
+    policy: {
+      maximumRouteAgeMs: 60_000,
+      ...(new URL(kernelIssuer).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
+    },
+    auth: { ttlSeconds: 1, resolve: () => ({ credential: token }) },
+  })
+  try {
+    await session.auth.whoami({ signal })
+  } finally {
+    session.close()
+  }
 }
 
 type SourceIdentity = Readonly<{ issuer: string; subject: string }>

@@ -4,6 +4,7 @@ import type { DomainInfo } from '@astrale-os/sdk/client/schema'
 import { issuer } from '@astrale-os/sdk/auth'
 import { createGraph, ResponseError, TransportError } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { pack } from 'msgpackr'
 import { createHash } from 'node:crypto'
@@ -12,8 +13,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { AstraleConfig } from '../../lib/config'
+import type { CredentialIntent } from '../credential'
 import type { InstalledDomainReader } from '../installed-issuer'
 import type { ConnectionContext, ConnectionFactory } from '../session'
+import type { ConnectionTarget } from '../target'
 
 import { prepareQuery } from '../../graph'
 import { ExchangeCredentialCache } from '../../state/exchange-credentials'
@@ -75,6 +78,140 @@ afterEach(async () => {
 })
 
 describe('Shell exchange at the installed issuer', () => {
+  test.each(['persisted credential', 'fresh exchange'])(
+    'a Services deploy after drain heals a stale installation before executing (%s)',
+    async (cached) => {
+      const origin = 'services.astrale.ai'
+      const path = Path.parse(`/:${origin}:class.CloudflareService:deploy`)
+      const intent = { principal: 'callable', path } as const
+      const services = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT, {
+        target: { ...TARGET, domainOrigin: origin },
+        intent,
+      })
+      let executions = 0
+      let actions = 0
+      const deploy: ShellAction = async (context) => {
+        actions += 1
+        await context.session.call(createPathCall(path.toString(), { deploy: true }))
+        executions += 1
+        return 'deployed'
+      }
+      await expect(services.run('user-1', deploy)).resolves.toBe('deployed')
+      services.reinstall(NEXT_DEPLOYMENT, { [DEPLOYMENT]: 'live', [NEXT_DEPLOYMENT]: 'live' })
+
+      await expect(
+        services.run(cached === 'persisted credential' ? 'user-1' : 'user-2', deploy),
+      ).resolves.toBe('deployed')
+      expect(actions).toBe(2)
+      expect(executions).toBe(2)
+      expect(services.businessIssuers()).toEqual([DEPLOYMENT, NEXT_DEPLOYMENT])
+      expect(await installations.get(KERNEL, origin)).toEqual({ issuer: NEXT_DEPLOYMENT })
+    },
+  )
+
+  test.each([2002, 2004, 5002])(
+    'never replays an application invocation that refuses with %i',
+    async (code) => {
+      const origin = 'services.astrale.ai'
+      const path = Path.parse(`/:${origin}:class.CloudflareService:deploy`)
+      const services = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT, {
+        target: { ...TARGET, domainOrigin: origin },
+        intent: { principal: 'callable', path },
+      })
+      await services.run()
+      let actions = 0
+      const deploy: ShellAction = async (context) => {
+        actions += 1
+        return context.session.call(createPathCall(path.toString(), { deploy: true, fail: code }))
+      }
+      await expect(services.run('user-1', deploy)).rejects.toMatchObject({ code })
+      expect(actions).toBe(1)
+      expect(services.businessIssuers()).toEqual([DEPLOYMENT])
+    },
+  )
+
+  test('keeps a credential refusal when re-reading the pin does not explain it', async () => {
+    await installations.set(KERNEL, SHELL, { issuer: DEPLOYMENT })
+    const net = network(
+      { [DEPLOYMENT]: 'live' },
+      {
+        kernel: { kind: 'up', admits: () => false },
+      },
+    )
+    const pin = pinned(DEPLOYMENT)
+    await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).rejects.toMatchObject({
+      code: 2002,
+    })
+    expect(pin.reads).toEqual([SHELL])
+    expect(
+      net.requests.filter((request) => request.endsWith('/.well-known/astrale/token')),
+    ).toHaveLength(1)
+  })
+
+  test('a concurrent resolution can finish healing before another refused bearer reads the pin', async () => {
+    const seed = network({ [DEPLOYMENT]: 'live' })
+    for (const user of ['user-1', 'user-2']) {
+      await createExchangeCredentialResolver(
+        { ...TARGET, domainIssuer: DEPLOYMENT },
+        { resolve: async () => sourceToken(user) },
+        seed.fetch,
+        5_000,
+        credentials,
+      ).resolve(KERNEL, live())
+    }
+    await installations.set(KERNEL, SHELL, { issuer: DEPLOYMENT })
+    const net = network(
+      { [DEPLOYMENT]: 'live', [NEXT_DEPLOYMENT]: 'live' },
+      {
+        kernel: {
+          kind: 'up',
+          pin: () => NEXT_DEPLOYMENT,
+          admits: (token) => credentialIssuer(token) === NEXT_DEPLOYMENT,
+        },
+      },
+    )
+    let release!: () => void
+    let started!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const firstSource = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let hints = 0
+    let sources = 0
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      {
+        cacheIdentity: async () => ({
+          issuer: 'https://workos.example',
+          subject: `user-${++hints}`,
+        }),
+        async resolve() {
+          const user = `user-${++sources}`
+          if (user === 'user-1') {
+            started()
+            await blocked
+          }
+          return sourceToken(user)
+        },
+      },
+      net.fetch,
+      5_000,
+      credentials,
+      createInstalledIssuer(KERNEL, SHELL, installations),
+    )
+    const first = resolver.resolve(KERNEL, live())
+    await firstSource
+    try {
+      await expect(resolver.resolve(KERNEL, live())).resolves.toBe(
+        exchanged(NEXT_DEPLOYMENT, 'user-2'),
+      )
+    } finally {
+      release()
+    }
+    await expect(first).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
+  })
   /** @evidence TEST-CLI-INSTALLED-SHELL-DEPLOYMENT-ISSUER */
   test('exchanges at the deployment issuer the Kernel pin names, read as the source caller', async () => {
     const net = network({ [DEPLOYMENT]: 'live', [LEGACY_SHELL]: 'live' })
@@ -93,8 +230,8 @@ describe('Shell exchange at the installed issuer', () => {
       `domain ${DEPLOYMENT}/.well-known/astrale/token`,
     ])
 
-    // The next command is a new process: it reads no pin, resolves no source credential and sends
-    // nothing; it selects the credential persisted under the issuer the pin named.
+    // The next command reads no pin and resolves no source credential. It validates the persisted
+    // bearer with a read-only Kernel call before selecting it.
     const next = network({})
     const reread = pinned(DEPLOYMENT)
     let sourceResolutions = 0
@@ -115,7 +252,7 @@ describe('Shell exchange at the installed issuer', () => {
     await expect(nextProcess.resolve(KERNEL, live())).resolves.toBe(exchanged(DEPLOYMENT))
     expect(reread.reads).toEqual([])
     expect(sourceResolutions).toBe(0)
-    expect(next.requests).toEqual([])
+    expect(next.requests).toEqual([`kernel ${INVOCATION} as other`])
   })
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-RECOVERS-ONCE */
@@ -220,8 +357,8 @@ describe('Shell exchange at the installed issuer', () => {
     expect(shell.inspects()).toEqual([])
   })
 
-  /** @evidence TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-IN-ONE-RETRY */
-  test('after a Shell reinstall, the first command presenting the remembered credential fails once and the retry exchanges at the new issuer', async () => {
+  /** @evidence TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-WITHIN-COMMAND */
+  test('after a Shell reinstall, the first command heals its remembered credential before the business call', async () => {
     const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
     await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
     await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
@@ -232,11 +369,11 @@ describe('Shell exchange at the installed issuer', () => {
     shell.reinstall(NEXT_DEPLOYMENT, { [DEPLOYMENT]: 'retired', [NEXT_DEPLOYMENT]: 'live' })
 
     // The credential exchanged at the old issuer is still persisted and within its lifetime, and the
-    // record still names its issuer: the next command presents it, fails once and forgets the record.
-    await expect(shell.run()).rejects.toMatchObject({ code: 2002 })
-    expect(await installations.get(KERNEL, SHELL)).toBeUndefined()
+    // record still names its issuer: a read-only confirmation fails and re-reads the pin.
+    await expect(shell.run()).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
+    expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: NEXT_DEPLOYMENT })
 
-    // The retry reads the new pin, exchanges there, and later commands read nothing again.
+    // Later commands reuse the new pin without reading it again.
     await expect(shell.run()).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
     await expect(shell.run()).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
     expect(shell.inspects()).toHaveLength(2)
@@ -272,7 +409,7 @@ describe('Shell exchange at the installed issuer', () => {
       () => NEXT_DEPLOYMENT,
     )
 
-    await expect(shell.run()).rejects.toMatchObject({ code: 2002 })
+    await expect(shell.run()).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
     for (let command = 0; command < 3; command += 1) {
       await expect(shell.run()).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
       await expect(shell.run('user-2')).resolves.toBe(exchanged(NEXT_DEPLOYMENT, 'user-2'))
@@ -283,14 +420,14 @@ describe('Shell exchange at the installed issuer', () => {
     expect(shell.inspects()).toHaveLength(1)
   })
 
-  /** @evidence TEST-CLI-INSTALLED-SHELL-RECOVERED-REFUSAL-FORGETS */
+  /** @evidence TEST-CLI-INSTALLED-SHELL-CONCURRENT-REFUSALS-HEAL */
   test.each([
     ['graph', (context: ConnectionContext) => context.graph.query(QUERY, { page: { size: 1 } })],
     ['session', (context: ConnectionContext) => context.session.call(createPathCall(WHOAMI, {}))],
     ['schema', (context: ConnectionContext) => context.session.schema.inspect(SHELL)],
     ['auth', (context: ConnectionContext) => context.auth.whoami()],
   ] as const)(
-    'forgets a remembered issuer the Kernel refuses even when the command recovers from every refusal (%s)',
+    'heals a remembered issuer before concurrent calls on each Kernel capability (%s)',
     async (_surface, query) => {
       // The Studio's per-Class queries: each failure is reported in the result and the command
       // ends normally.
@@ -310,8 +447,8 @@ describe('Shell exchange at the installed issuer', () => {
         () => NEXT_DEPLOYMENT,
       )
 
-      await expect(shell.run('user-1', batch)).resolves.toEqual([2002, 2002])
-      expect(await installations.get(KERNEL, SHELL)).toBeUndefined()
+      await expect(shell.run('user-1', batch)).resolves.toEqual(['ok', 'ok'])
+      expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: NEXT_DEPLOYMENT })
       const stale = shell.presented().length
 
       // The next command reads the pin (once per concurrent first call, as C0 did); no later
@@ -322,7 +459,12 @@ describe('Shell exchange at the installed issuer', () => {
       for (let command = 0; command < 3; command += 1) {
         await expect(shell.run('user-1', batch)).resolves.toEqual(['ok', 'ok'])
       }
-      expect(shell.presented().slice(0, stale)).toEqual([DEPLOYMENT, DEPLOYMENT])
+      expect(
+        shell
+          .presented()
+          .slice(0, stale)
+          .filter((issuer) => issuer === DEPLOYMENT),
+      ).toEqual([DEPLOYMENT, DEPLOYMENT])
       expect(shell.presented().slice(stale)).not.toContain(DEPLOYMENT)
       expect(shell.inspects()).toHaveLength(reads)
       expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: NEXT_DEPLOYMENT })
@@ -398,7 +540,10 @@ describe('Shell exchange at the installed issuer', () => {
       exchanged(LEGACY_SHELL),
     )
     expect(pin.reads).toEqual([SHELL])
-    expect(net.requests).toEqual([`kernel ${INVOCATION} as source`])
+    expect(net.requests).toEqual([
+      `kernel ${INVOCATION} as source`,
+      `kernel ${INVOCATION} as other`,
+    ])
   })
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-ISSUER-UNRESOLVED */
@@ -558,7 +703,14 @@ type ShellAction = (context: ConnectionContext) => Promise<unknown>
  * Kernel answering the Host-encoded DomainInfo for the issuer `installed()` names, and the Kernel
  * admits only a credential that issuer issued, refusing any other with 2002.
  */
-function shellCommand(issuers: Record<string, IssuerState>, initial: () => string) {
+function shellCommand(
+  issuers: Record<string, IssuerState>,
+  initial: () => string,
+  selection: { target: ConnectionTarget; intent: CredentialIntent } = {
+    target: TARGET,
+    intent: {},
+  },
+) {
   let installed = initial
   const state = { ...issuers }
   const presented: string[] = []
@@ -577,17 +729,20 @@ function shellCommand(issuers: Record<string, IssuerState>, initial: () => strin
   })
   const command = (user: string): ConnectionFactory => {
     return (target, _timeoutMs, _options, _config, _credential, issuer) => {
-      const resolver = createExchangeCredentialResolver(
-        TARGET,
-        {
-          cacheIdentity: async () => ({ issuer: 'https://workos.example', subject: user }),
-          resolve: async () => sourceToken(user),
-        },
-        net.fetch,
-        5_000,
-        credentials,
-        issuer,
-      )
+      const resolver =
+        _credential?.principal === 'caller'
+          ? { resolve: async () => sourceToken(user) }
+          : createExchangeCredentialResolver(
+              { ...target, domainOrigin: selection.target.domainOrigin! },
+              {
+                cacheIdentity: async () => ({ issuer: 'https://workos.example', subject: user }),
+                resolve: async () => sourceToken(user),
+              },
+              net.fetch,
+              5_000,
+              credentials,
+              issuer,
+            )
       const session = new ClientSession(
         createClientSessionOptions(
           target,
@@ -616,12 +771,12 @@ function shellCommand(issuers: Record<string, IssuerState>, initial: () => strin
   return {
     run: (user = 'user-1', action: ShellAction = call) =>
       withResolvedClientSession(
-        TARGET,
+        selection.target,
         {},
         {} as AstraleConfig,
         action,
         command(user),
-        {},
+        selection.intent,
         installations,
       ),
     /** A call followed by a failure of the command itself, not of any Kernel call. */
@@ -640,6 +795,7 @@ function shellCommand(issuers: Record<string, IssuerState>, initial: () => strin
     exchanges: () =>
       net.requests.filter((request) => request.endsWith('/.well-known/astrale/token')),
     presented: () => presented,
+    businessIssuers: () => net.businessIssuers,
   }
 }
 
@@ -669,6 +825,7 @@ function network(
   options: { readonly cacheControl?: boolean; readonly kernel?: KernelState } = {},
 ) {
   const requests: string[] = []
+  const businessIssuers: string[] = []
   const kernel = options.kernel ?? { kind: 'up' }
   const fetch: Fetch = async (input, init) => {
     const url = String(input)
@@ -680,6 +837,7 @@ function network(
       const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
       const user = String(credentialSubject(body.credential))
       const call = body.call.input as Record<string, unknown> | undefined
+      if (call?.deploy === true) businessIssuers.push(String(credentialIssuer(body.credential)))
       const inspected = call?.kind === 'inspect' ? ` inspect ${String(call.origin)}` : ''
       requests.push(
         `kernel ${url}${inspected} as ${body.credential.startsWith(SOURCE_HEADER) ? 'source' : 'other'}`,
@@ -696,6 +854,8 @@ function network(
         return answered(url, refusal(body.requestId, 2002, contentType))
       }
       if (call?.forbidden === true) return answered(url, refusal(body.requestId, 2004, contentType))
+      if (typeof call?.fail === 'number')
+        return answered(url, refusal(body.requestId, call.fail, contentType))
       if (inspected !== '' && kernel.pin !== undefined) {
         return answered(url, introspection(body.requestId, String(call!.origin), kernel.pin()))
       }
@@ -748,7 +908,7 @@ function network(
     }
     throw new Error(`unexpected URL ${url}`)
   }
-  return { fetch, requests }
+  return { fetch, requests, businessIssuers }
 }
 
 /** Report the answered URL on each response, as a network fetch does. */

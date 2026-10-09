@@ -291,6 +291,7 @@ describe('call --admin against a fake Admin kernel', () => {
       expect(events).toEqual([
         { kind: 'inspect', kernel, origin: 'services.astrale.ai' },
         { kind: 'exchange', kernel, issuer: SERVICES_ISSUER },
+        { kind: 'confirm', kernel, credentialIssuer: SERVICES_ISSUER },
         {
           kind: 'dispatch',
           kernel,
