@@ -116,9 +116,6 @@ function diffViews(
       out.push({ kind: 'view-removed', target: name })
       continue
     }
-    if (!same(prev[name].target, next[name].target)) {
-      out.push({ kind: 'view-changed', target: name })
-    }
     if (prev[name].description !== next[name].description) {
       out.push({ kind: 'view-metadata-changed', target: name })
     }

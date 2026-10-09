@@ -27,14 +27,7 @@ function fixture(input: {
   listOutput?: unknown
   useDefaultOperationIds?: boolean
   operationId?: (
-    kind:
-      | 'create'
-      | 'status'
-      | 'delete'
-      | 'install-domain'
-      | 'invite'
-      | 'retrieve-root'
-      | 'reconcile-invitation',
+    kind: 'create' | 'status' | 'delete' | 'invite' | 'retrieve-root' | 'reconcile-invitation',
   ) => string
   invoke?: (target: string, input: unknown) => unknown
   query?: (
@@ -406,32 +399,6 @@ describe('V2 Admin Instance adapter', () => {
     expect(operationIds[0]).not.toBe(operationIds[1])
   })
 
-  test('installs a resolved catalog Domain through Instance.installDomain', async () => {
-    const contract = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        domain: '@crm-domain',
-        instance: '@instance-node',
-        origin: 'crm.acme.dev',
-        ok: true,
-        installedRevision: `sha256:${'a'.repeat(64)}`,
-      }),
-    })
-    const api = await contract.connect()
-
-    await expect(api.installDomain('demo', '@crm-domain')).resolves.toMatchObject({
-      domain: '@crm-domain',
-      instance: '@instance-node',
-      origin: 'crm.acme.dev',
-      ok: true,
-    })
-    expect(contract.calls.at(-1)).toEqual({
-      target: '@instance-node::admin.astrale.ai:class.Instance.method.installDomain',
-      value: { operationId: 'cli.instance.install-domain.test', domain: '@crm-domain' },
-    })
-    expect(contract.reflection).not.toHaveBeenCalled()
-  })
-
   test('retrieves a root identity transfer scoped to the exact Instance and recipient', async () => {
     const recipient = {
       kty: 'EC' as const,
@@ -766,32 +733,6 @@ describe('V2 Admin Instance adapter', () => {
     await expect((await malformedStatus.connect()).status('demo')).rejects.toThrow(
       'Admin failure message is invalid.',
     )
-
-    const malformedInstall = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        domain: '@crm-domain',
-        instance: '@instance-node',
-        origin: 'crm.acme.dev',
-        ok: 'yes',
-      }),
-    })
-    await expect(
-      (await malformedInstall.connect()).installDomain('demo', '@crm-domain'),
-    ).rejects.toThrow('Admin Domain install outcome is invalid.')
-
-    const malformedInstallPath = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        domain: 'not-a-path',
-        instance: '@instance-node',
-        origin: 'crm.acme.dev',
-        ok: true,
-      }),
-    })
-    await expect(
-      (await malformedInstallPath.connect()).installDomain('demo', '@crm-domain'),
-    ).rejects.toThrow('Admin Domain reference is invalid.')
 
     const malformedInvitation = fixture({
       instances: [instanceNode()],

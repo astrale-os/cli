@@ -4,6 +4,7 @@ import {
   AGENT_ACCESS_LEVELS,
   AGENT_EFFORT_LEVELS,
   AGENT_TOOL_STATUSES,
+  type AgentContextUsage,
   type AgentEvent,
   type AgentPromptSnapshot,
   type AgentRun,
@@ -91,6 +92,14 @@ function decodeMergeResult(value: unknown): MergeResult | undefined {
   }
 }
 
+function decodeContext(value: unknown): AgentContextUsage | undefined {
+  const record = asJsonRecord(value)
+  const used = asFiniteNumber(record?.used)
+  const size = asFiniteNumber(record?.size)
+  if (used === undefined || size === undefined || used < 0 || size <= 0) return undefined
+  return { used, size }
+}
+
 function decodePrompt(value: unknown): AgentPromptSnapshot | undefined {
   const record = asJsonRecord(value)
   const createdAt = asString(record?.createdAt)
@@ -161,6 +170,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
   const costUsd = asFiniteNumber(record.costUsd)
   const numTurns = asFiniteNumber(record.numTurns)
   const tokens = asFiniteNumber(record.tokens)
+  const context = decodeContext(record.context)
   const error = asString(record.error)
   const liveReplies = asFiniteNumber(record.liveReplies)
   const merge = decodeMergeResult(record.merge)
@@ -182,6 +192,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     ...(costUsd === undefined ? {} : { costUsd }),
     ...(numTurns === undefined ? {} : { numTurns }),
     ...(tokens === undefined ? {} : { tokens }),
+    ...(context === undefined ? {} : { context }),
     ...(error === undefined ? {} : { error }),
     ...(liveReplies === undefined ? {} : { liveReplies }),
     ...(merge === undefined ? {} : { merge }),
@@ -207,8 +218,7 @@ export function readLastRun(root: string, chat: StoredChat): AgentRun | null {
   if (last.status === 'running' || last.status === 'queued') {
     last.status = 'interrupted'
     last.finishedAt = last.finishedAt ?? new Date().toISOString()
-    last.error =
-      'the studio restarted during this turn — your conversation is preserved; submit again to continue'
+    last.error = 'the studio restarted during this turn'
     persistRun(root, last, true)
   }
   return last

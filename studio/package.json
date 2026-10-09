@@ -21,10 +21,10 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.70.0",
-    "@agentclientprotocol/codex-acp": "1.6.2",
-    "@agentclientprotocol/sdk": "1.4.0",
-    "@astrale-os/sdk": "0.6.0-beta.0",
+    "@agentclientprotocol/claude-agent-acp": "0.85.1",
+    "@agentclientprotocol/codex-acp": "2.1.1",
+    "@agentclientprotocol/sdk": "1.7.0",
+    "@astrale-os/sdk": "0.6.0-beta.18",
     "@astrale-os/shell": "0.6.0-beta.3",
     "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-collapsible": "^1.1.0",

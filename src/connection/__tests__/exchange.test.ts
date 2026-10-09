@@ -35,7 +35,7 @@ describe('Domain token exchange', () => {
       body?: Record<string, any>
     }> = []
     const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
-    const fetch: Fetch = async (input, init) => {
+    const fetch: Fetch = exact(async (input, init) => {
       const url = String(input)
       if (url === INVOCATION) {
         const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
@@ -67,7 +67,7 @@ describe('Domain token exchange', () => {
         )
       }
       throw new Error(`unexpected URL ${url}`)
-    }
+    })
     const sourceAudiences: string[] = []
     let sourceIdentityReads = 0
     const path = join(directory, 'credentials.json')
@@ -133,20 +133,21 @@ describe('Domain token exchange', () => {
     ).toHaveLength(1)
   })
 
-  test('discovers the Domain exchange endpoint while Kernel delegation is in flight', async () => {
-    let discoveryStarted = false
+  test('discovers the Domain exchange endpoint while the Kernel caller is read', async () => {
+    const discovery = Promise.withResolvers<void>()
     let kernelRequests = 0
     const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
-    const fetch: Fetch = async (input, init) => {
+    const fetch: Fetch = exact(async (input, init) => {
       const url = String(input)
       if (url.endsWith('/.well-known/openid-configuration')) {
-        discoveryStarted = true
+        discovery.resolve()
         return jsonResponse(configuration(true))
       }
       if (url === INVOCATION) {
-        expect(discoveryStarted).toBe(true)
         kernelRequests += 1
         const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
+        // The caller read answers only once discovery has started beside it.
+        if (kernelRequests === 1) await discovery.promise
         return invocationResponse(
           body.requestId,
           kernelRequests === 1 ? { id: 'user-1' } : 'kernel-destination-envelope',
@@ -162,7 +163,7 @@ describe('Domain token exchange', () => {
         )
       }
       throw new Error(`unexpected URL ${url}`)
-    }
+    })
     const resolver = createExchangeCredentialResolver(
       TARGET,
       { resolve: async () => SOURCE_TOKEN },
@@ -267,7 +268,7 @@ describe('Domain token exchange', () => {
 
   /** @evidence TEST-CLI-EXCHANGE-NO-LEGACY-FALLBACK */
   test('fails closed when issuer discovery does not advertise exchange', async () => {
-    const fetch: Fetch = async (input, init) => {
+    const fetch: Fetch = exact(async (input, init) => {
       const url = String(input)
       if (url === INVOCATION) {
         const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
@@ -282,7 +283,7 @@ describe('Domain token exchange', () => {
       if (url.endsWith('/.well-known/openid-configuration'))
         return jsonResponse(configuration(false))
       throw new Error('exchange endpoint must not be called')
-    }
+    })
     const resolver = createExchangeCredentialResolver(
       TARGET,
       { resolve: async () => SOURCE_TOKEN },
@@ -292,6 +293,27 @@ describe('Domain token exchange', () => {
     )
     await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_UNSUPPORTED',
+      message: `Domain issuer ${DOMAIN} does not advertise token exchange.`,
+    })
+  })
+
+  test('keeps the Domain refusal code and message of a refused exchange', async () => {
+    const refused = exchangeFetch('unused', {
+      status: 401,
+      body: { error: { code: 2002, message: 'Token is invalid.' } },
+    })
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => SOURCE_TOKEN },
+      refused,
+      5_000,
+      new ExchangeCredentialCache(join(directory, 'refused.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+      code: '2002',
+      message: 'Token is invalid.',
+      cause: { failure: 'rejected' },
     })
   })
 
@@ -410,7 +432,7 @@ describe('Domain token exchange', () => {
       ),
     ).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      message: 'Token exchange response is missing Cache-Control: no-store.',
+      message: 'Domain token exchange response is missing Cache-Control: no-store.',
     })
     await expect(
       resolver(exchangeFetch(exchanged, { body: { token: 7, expiresAt: 'soon' } })).resolve(
@@ -419,7 +441,7 @@ describe('Domain token exchange', () => {
       ),
     ).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      message: 'Token exchange returned an invalid success response.',
+      message: 'Domain token exchange returned an invalid response.',
     })
   })
 
@@ -447,8 +469,8 @@ describe('Domain token exchange', () => {
 
     await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_UNAVAILABLE',
-      message: 'Domain issuer discovery could not be reached.',
-      cause: native,
+      message: 'Domain discovery could not be reached.',
+      cause: { failure: 'unavailable', cause: native },
     })
   })
 })
@@ -459,10 +481,11 @@ function exchangeFetch(
     readonly body?: unknown
     readonly cacheControl?: boolean
     readonly expiresAt?: number
+    readonly status?: number
     readonly user?: string
   } = {},
 ): Fetch {
-  return async (input, init) => {
+  return exact(async (input, init) => {
     const url = String(input)
     if (url === INVOCATION) {
       const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
@@ -480,13 +503,22 @@ function exchangeFetch(
         options.body ?? { token: exchanged, expiresAt: options.expiresAt ?? EXPIRES_AT },
       ),
       {
-        status: 200,
+        status: options.status ?? 200,
         headers: {
           'content-type': 'application/vnd.astrale+json',
           ...(options.cacheControl === false ? {} : { 'cache-control': 'no-store' }),
         },
       },
     )
+    return response
+  })
+}
+
+/** Report the answered URL on each response, as a network fetch does. */
+function exact(fetch: Fetch): Fetch {
+  return async (input, init) => {
+    const response = await fetch(input, init)
+    if (response.url === '') Object.defineProperty(response, 'url', { value: String(input) })
     return response
   }
 }

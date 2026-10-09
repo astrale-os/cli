@@ -79,3 +79,99 @@ describe('bookmark registry write ownership', () => {
     expect(await readFile(path, 'utf8')).toBe('{corrupt')
   })
 })
+
+describe('managed bookmark Shell exchange on write', () => {
+  const url = 'https://bryan.eu.beta.astrale.ai/api'
+
+  async function stored(home: string) {
+    return JSON.parse(await readFile(join(home, 'instances.json'), 'utf8')).instances.bryan
+  }
+
+  test.each([
+    'https://shell.beta.astrale.ai',
+    'https://shell.astrale.ai',
+    'https://shell-dev.example',
+  ])(
+    'instance use resets a managed bookmark with issuer %s to its installed Shell',
+    async (domainIssuer) => {
+      const home = await fixture()
+      await writeFile(
+        join(home, 'instances.json'),
+        JSON.stringify({
+          active: 'bryan',
+          instances: {
+            bryan: {
+              url,
+              issuer: url,
+              domainIssuer,
+              slug: 'bryan',
+              name: 'bryan',
+              kind: 'bookmark',
+            },
+          },
+        }),
+      )
+      const result = await command(
+        home,
+        `await registry.upsertManagedBookmark({key:'bryan', slug:'bryan', url:${JSON.stringify(url)}});`,
+      )
+      expect(result).toEqual({ code: 0, stderr: '' })
+      const entry = await stored(home)
+      expect(entry).toMatchObject({ url, slug: 'bryan', name: 'bryan' })
+      expect(entry).not.toHaveProperty('domainIssuer')
+    },
+  )
+
+  /** @evidence TEST-CLI-INSTANCE-REGISTRY-LABELLED-ON-WRITE */
+  test('a bookmark write labels an earlier registry and preserves explicit issuers on all bookmarks', async () => {
+    const home = await fixture()
+    const path = join(home, 'instances.json')
+    // An earlier release wrote the registry without a format label.
+    await writeFile(
+      path,
+      JSON.stringify({
+        active: 'bryan',
+        instances: {
+          bryan: {
+            url,
+            issuer: url,
+            domainIssuer: 'https://shell.beta.astrale.ai',
+            slug: 'bryan',
+            name: 'bryan',
+            kind: 'bookmark',
+          },
+          team: {
+            url: 'https://team.eu.beta.astrale.ai/api',
+            domainIssuer: 'https://shell.beta.astrale.ai',
+            slug: 'team',
+            name: 'team',
+            kind: 'bookmark',
+          },
+        },
+      }),
+    )
+
+    // The first write labels the whole registry and preserves both bookmarks' explicit issuers.
+    const touched = await command(
+      home,
+      `await registry.upsertInstance('bryan', {url:${JSON.stringify(url)}, defaultIdentity:'alice'});`,
+    )
+    expect(touched).toEqual({ code: 0, stderr: '' })
+    const rewritten = JSON.parse(await readFile(path, 'utf8'))
+    expect(rewritten.version).toBe(1)
+    expect(rewritten.instances.bryan).toMatchObject({ slug: 'bryan', defaultIdentity: 'alice' })
+    expect(rewritten.instances.bryan.domainIssuer).toBe('https://shell.beta.astrale.ai')
+    expect(rewritten.instances.team.domainIssuer).toBe('https://shell.beta.astrale.ai')
+
+    // In the labelled registry an explicit issuer is stored and read back, whatever its value.
+    const explicit = await command(
+      home,
+      `await registry.upsertInstance('bryan', {url:${JSON.stringify(url)}, domainIssuer:'https://shell.beta.astrale.ai'});
+       registry.resetInstancesMemo();
+       const read = await registry.resolveInstance('bryan');
+       if (read.domainIssuer !== 'https://shell.beta.astrale.ai' || read.domainOrigin !== undefined) throw new Error(JSON.stringify(read));`,
+    )
+    expect(explicit).toEqual({ code: 0, stderr: '' })
+    expect(await stored(home)).toMatchObject({ domainIssuer: 'https://shell.beta.astrale.ai' })
+  })
+})

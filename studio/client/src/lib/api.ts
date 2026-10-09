@@ -26,6 +26,7 @@ import type {
   InstancesState,
   IntrospectionStatus,
   StudioSettings,
+  StudioRuntime,
   LayoutState,
   MergeResult,
   NodePosition,
@@ -72,6 +73,7 @@ const docRawPath = (id: string, docId: string) =>
 
 export const api = {
   workspace: () => get<DomainSummary[]>('/api/workspace'),
+  studioRuntime: () => get<StudioRuntime>('/api/workspace/runtime'),
   refreshWorkspace: () => post<{ refreshed: number }>('/api/workspace/refresh', {}),
   workspaceState: () => get<WorkspaceUiState>('/api/workspace/state'),
   updateWorkspaceState: (
@@ -96,7 +98,7 @@ export const api = {
   anatomy: (id: string) => get<DomainAnatomy>(`${d(id)}/anatomy`),
   viewRuntime: (id: string, slug: string) =>
     get<ViewRuntime>(`${d(id)}/views/${encodeURIComponent(slug)}/runtime`),
-  launchView: (id: string, slug: string, request: { preparationId: string; targetId?: string }) =>
+  launchView: (id: string, slug: string, request: { preparationId: string }) =>
     post<ViewSessionResult>(`${d(id)}/views/${encodeURIComponent(slug)}/session`, request),
   releaseViewSession: (id: string, sessionId: string, page: string) =>
     post<{ ok: true }>(`${d(id)}/views/sessions/release`, { sessionId, page }),
@@ -211,6 +213,9 @@ export const api = {
     }),
   selectChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'select', chatId }),
   closeChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'close', chatId }),
+  /** arrange the tabs; tabs `order` leaves out keep their place after the named ones */
+  reorderChats: (order: string[]) =>
+    post<ChatList>('/api/agent/chats', { action: 'reorder', order }),
   updateChat: (
     chatId: string,
     patch: { title?: string; model?: string; effort?: string; fastMode?: boolean },
@@ -280,6 +285,7 @@ export const api = {
 
 export const qk = {
   workspace: ['workspace'] as const,
+  studioRuntime: ['studio-runtime'] as const,
   workspaceState: ['workspace-state'] as const,
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,

@@ -3,23 +3,56 @@ import net from 'node:net'
 /**
  * Loopback port helpers for launching local servers (e.g. `astrale studio`).
  *
- * We probe by ACTUALLY trying to bind, not by connecting — a connect-probe to
- * 127.0.0.1 is racy and can falsely pass on a half-open socket. Whatever port
- * the OS lets us bind is, by definition, free for us right now. We bind on the
- * loopback interface specifically (matching the studio's 127.0.0.1 bind) with
- * `exclusive: true` so the probe never "succeeds" on a port another process
- * holds via SO_REUSEADDR/REUSEPORT.
+ * A port is free only when BOTH probes agree:
+ *
+ * 1. We can ACTUALLY bind it on the loopback interface (matching the studio's
+ *    127.0.0.1 bind). Whatever the OS lets us bind is free for us right now.
+ * 2. Nothing ANSWERS a connection on it, over IPv4 or IPv6 loopback. The bind
+ *    probe alone misses listeners the studio would not collide with but the
+ *    printed `http://localhost:<port>` URL still reaches: on macOS/BSD a
+ *    127.0.0.1 bind succeeds next to another process's wildcard (`*`, `::`)
+ *    listener, and nowhere does it see a listener bound to `::1` only (Vite's
+ *    default `localhost`). The browser then resolves `localhost` to ::1 and
+ *    lands on that other server instead of the studio.
  */
 const LOOPBACK = '127.0.0.1'
+const LOOPBACK_V6 = '::1'
+const CONNECT_TIMEOUT_MS = 500
 
-/** Resolves true if [port] can be bound on loopback right now, false otherwise. */
-export function portFree(port: number, host = LOOPBACK): Promise<boolean> {
+function canBind(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const srv = net.createServer()
     srv.once('error', () => resolve(false))
     srv.once('listening', () => srv.close(() => resolve(true)))
     srv.listen({ port, host, exclusive: true })
   })
+}
+
+/**
+ * Resolves true if something accepts a TCP connection on [host]:[port].
+ * A refusal, or a host this machine cannot reach (IPv6 disabled), means no.
+ * A loopback connect never hangs without a listener, so a timeout counts as
+ * busy (a listener whose accept backlog is full).
+ */
+export function portAnswers(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host })
+    const settle = (answered: boolean) => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(answered)
+    }
+    const timer = setTimeout(() => settle(true), CONNECT_TIMEOUT_MS)
+    socket.once('connect', () => settle(true))
+    socket.once('error', () => settle(false))
+  })
+}
+
+/** Resolves true if [port] can be bound on [host] and no loopback listener answers on it. */
+export async function portFree(port: number, host = LOOPBACK): Promise<boolean> {
+  if (!(await canBind(port, host))) return false
+  const answers = await Promise.all([portAnswers(port, LOOPBACK), portAnswers(port, LOOPBACK_V6)])
+  return !answers.some(Boolean)
 }
 
 /**

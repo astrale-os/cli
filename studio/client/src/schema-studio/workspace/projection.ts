@@ -98,12 +98,7 @@ export async function prepareWorkspaceDomain(
   )
   // Views ride in the domain's own projection, so the frame layout, the drag
   // persistence and the id prefixing below treat them exactly like a class.
-  const views = viewGraph(
-    buildViewsModel(input.anatomy, input.bundle),
-    input.bundle,
-    collapsed,
-    input.visibility.hidden,
-  )
+  const views = viewGraph(buildViewsModel(input.anatomy, input.bundle), input.bundle)
   // Standalone Functions ride along the same way, for the same reason: they are members
   // of this domain's schema, so its frame has to hold them.
   const functions = functionGraph(

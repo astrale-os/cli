@@ -128,11 +128,9 @@ export interface IrImportDescriptor {
   key: IrClassKey
 }
 
-export type IrViewTarget = { kind: 'domain' } | { kind: 'definition'; definitions: IrSchemaRef[] }
-
+/** A View of the Domain. Every View belongs to its Domain; none is bound to a Class or a node. */
 export interface IrView {
   name: string
-  target: IrViewTarget
   description?: string
 }
 
@@ -212,8 +210,8 @@ export interface StudioSchemaBundle {
 
 export interface DomainOverview {
   origin: string
-  /** Active SDK Application entry relative to the project root. */
-  applicationFile?: string
+  /** Active SDK Domain definition entry relative to the project root. */
+  domainFile?: string
   adapter: 'astrale' | 'cloudflare' | 'unknown'
   prodTarget?: string
   devSecrets?: string
@@ -230,49 +228,16 @@ export interface ViewInfo {
   kind: 'inline-html' | 'spa' | 'unknown'
   mount?: string
   url?: string
-  /** the class(es) this view binds to via `viewFor: selfOf(Class)` (DSL allows an array);
-   *  absent ⇒ unbound/global */
-  viewFor?: string | string[]
   file?: string
   description?: string
-}
-
-/** One node that can be supplied as a targeted view's `targetNodeId`. */
-export interface ViewTargetCandidate {
-  id: string
-  ref: string
-  className: string
-  classOrigin: string
-  label: string
-  description?: string
-  status?: string
-}
-
-/** Small durable snapshot retained when a previously selected node disappears. */
-export interface RememberedViewTarget {
-  id: string
-  className: string
-  classOrigin: string
-  label: string
-}
-
-export interface ViewTargetResult {
-  status: 'available' | 'unavailable'
-  items: ViewTargetCandidate[]
-  selected: ViewTargetCandidate | null
-  stale: RememberedViewTarget | null
-  truncated: boolean
-  reason?: string
 }
 
 /** Full launch context shown before Studio asks `astrale view` to resolve and open the View. */
 export interface ViewRuntime {
   slug: string
-  /** Opaque, short-lived handle for the exact instance and target candidates shown below. */
+  /** Opaque, short-lived handle for the exact instance shown below. */
   preparationId: string
   instance: string | null
-  targetRequired: boolean
-  targets: ViewTargetResult
 }
 
 export type ViewSessionResult =
@@ -281,7 +246,6 @@ export type ViewSessionResult =
       sessionId: string
       pageUrl: string
       viewUrl: string
-      target: ViewTargetCandidate | null
     }
   | { status: 'unavailable'; reason: string }
 

@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 function project(nested: boolean) {
-  const root = mkdtempSync(join(tmpdir(), 'studio-anatomy-application-'))
+  const root = mkdtempSync(join(tmpdir(), 'studio-anatomy-domain-'))
   roots.push(root)
   const owner = nested ? join(root, 'domain') : root
   mkdirSync(join(owner, 'schema'), { recursive: true })
@@ -20,11 +20,11 @@ function project(nested: boolean) {
     join(root, 'astrale.config.ts'),
     `import { defineProject } from '@astrale-os/sdk/project'
 import { cloudflare } from '@astrale-os/adapter-cloudflare'
-import { application } from '${nested ? './domain/application.js' : './application.js'}'
-export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+import { domain } from '${nested ? './domain/domain.js' : './domain.js'}'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
 `,
   )
-  writeFileSync(join(owner, 'application.ts'), 'export const application = {}\n')
+  writeFileSync(join(owner, 'domain.ts'), 'export const domain = {}\n')
   writeFileSync(
     join(owner, 'schema/index.ts'),
     "defineSchema('example.astrale.ai', { classes: {} })\n",
@@ -32,12 +32,12 @@ export default defineProject({ application, environments: { development: { deplo
   return { root, schemaDirName: nested ? 'domain/schema' : 'schema' }
 }
 
-test('overview anchors a root Application', () => {
+test('overview anchors a root Domain definition', () => {
   const input = project(false)
-  expect(buildAnatomy(input).overview.applicationFile).toBe('application.ts')
+  expect(buildAnatomy(input).overview.domainFile).toBe('domain.ts')
 })
 
-test('overview preserves the config-imported nested Application path', () => {
+test('overview preserves the config-imported nested Domain definition path', () => {
   const input = project(true)
-  expect(buildAnatomy(input).overview.applicationFile).toBe('domain/application.ts')
+  expect(buildAnatomy(input).overview.domainFile).toBe('domain/domain.ts')
 })

@@ -252,6 +252,34 @@ function handle(message) {
         messageId: 'answer',
         content: { type: 'text', text: 'Hello' },
       })
+      if (mode === 'service-error') {
+        // codex-acp's report of a turn the service refused: unattributed text, then end_turn
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: "model 'gpt-6.1-sol' is not enabled\\n\\n" },
+        })
+        update(params.sessionId, { sessionUpdate: 'usage_update', used: 20, size: 200000 })
+        send({ id: message.id, result: { stopReason: 'end_turn' } })
+        return
+      }
+      if (mode === 'unattributed') {
+        // the same shape, followed by more of the turn: it was not the end after all
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Warning: config\\n\\n' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: ' and more\\n\\n' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'next',
+          content: { type: 'text', text: 'Done' },
+        })
+        send({ id: message.id, result: { stopReason: 'end_turn' } })
+        return
+      }
       if (mode === 'partial-fail') {
         send({ id: message.id, error: { code: -32000, message: 'late failure' } })
         return
@@ -374,6 +402,32 @@ describe('ACP harness adapter', () => {
       expect(readLog(log).filter(({ type }) => type === 'boot')).toHaveLength(1)
     })
   }
+
+  test('a pinned agent not yet installed is available without downloading or spawning it', async () => {
+    const root = temporaryRoot('studio-acp-managed-health-')
+    const log = join(root, 'acp.jsonl')
+    const previous = {
+      home: process.env.ASTRALE_HOME,
+      bin: process.env.DOMAIN_STUDIO_CODEX_BIN,
+    }
+    process.env.ASTRALE_HOME = root
+    delete process.env.DOMAIN_STUDIO_CODEX_BIN
+    try {
+      const health = await new AcpCodexHarness(undefined, fakeAcpAgent(root, log)).health()
+      expect(health).toMatchObject({
+        ok: true,
+        cli: { source: 'managed', installed: false },
+      })
+      expect(health.bin?.startsWith(join(root, 'cache', 'agents', 'codex'))).toBe(true)
+      expect(health.detail).toContain('is installed by Studio on first use')
+      expect(existsSync(log)).toBe(false)
+      expect(existsSync(join(root, 'cache'))).toBe(false)
+    } finally {
+      if (previous.home === undefined) delete process.env.ASTRALE_HOME
+      else process.env.ASTRALE_HOME = previous.home
+      if (previous.bin !== undefined) process.env.DOMAIN_STUDIO_CODEX_BIN = previous.bin
+    }
+  })
 
   test('probes agent and model diagnostics through a disposable ACP session without prompting', async () => {
     const root = temporaryRoot('studio-acp-probe-')
@@ -546,6 +600,7 @@ describe('ACP harness adapter', () => {
     const root = temporaryRoot('studio-acp-codex-')
     const log = join(root, 'acp.jsonl')
     const events: string[] = []
+    const contexts: unknown[] = []
     const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
 
     const result = await harness.run({
@@ -570,13 +625,17 @@ describe('ACP harness adapter', () => {
       env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex' },
       signal: new AbortController().signal,
       onEvent: (event) => events.push(`${event.kind}:${event.text}`),
+      onContext: (context) => contexts.push(context),
     })
 
+    // the window's occupancy is reported as it arrives, and kept on the result
+    expect(contexts).toEqual([{ used: 12, size: 200000 }])
     expect(result).toMatchObject({
       sessionId: 'new-session',
       finalText: 'Hello world',
       tokens: 12,
       costUsd: 0.01,
+      context: { used: 12, size: 200000 },
       numTurns: 1,
       isError: false,
     })
@@ -832,6 +891,38 @@ describe('ACP harness adapter', () => {
     expect(ask.errorMessage).toContain('late failure')
     expect(deltas).toEqual(['Hello'])
     expect(readLog(askLog).filter((entry) => entry.type === 'boot')).toHaveLength(1)
+  })
+
+  test('a Codex turn the service refused fails with its message instead of replying it', async () => {
+    const root = temporaryRoot('studio-acp-service-error-')
+    const deltas: string[] = []
+    const events: AgentStreamEvent[] = []
+    const run = (mode: string) =>
+      new AcpCodexHarness('/opt/codex', fakeAcpAgent(root)).run({
+        root,
+        prompt: 'hello',
+        env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: mode },
+        signal: new AbortController().signal,
+        onEvent: (event) => events.push(event),
+        onDelta: (text) => deltas.push(text),
+      })
+
+    const refused = await run('service-error')
+    expect(refused).toMatchObject({
+      finalText: 'Hello',
+      isError: true,
+      errorMessage: "model 'gpt-6.1-sol' is not enabled",
+    })
+    expect(deltas.join('')).toBe('Hello')
+    expect(events.filter((event) => event.kind === 'message').map((event) => event.text)).toEqual([
+      'Hello',
+    ])
+
+    deltas.length = 0
+    const continued = await run('unattributed')
+    expect(continued).toMatchObject({ isError: false })
+    expect(continued.finalText).toBe('HelloWarning: config\n\n and more\n\nDone')
+    expect(deltas.join('')).toBe(continued.finalText)
   })
 
   test('cancellation sends session/cancel and kills the ACP process group', async () => {

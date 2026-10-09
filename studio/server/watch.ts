@@ -1,6 +1,6 @@
 /**
  * watch.ts — two debounced watch channels per domain:
- *   Application + selected Schema sources → re-introspect → schema-diff (+ compile-error)
+ *   Domain definition + selected Schema sources → re-introspect → schema-diff (+ compile-error)
  *   anatomy fileset   → anatomy-diff
  * The studio is read-only, so this only ever pushes; the client refetches.
  */
@@ -42,7 +42,7 @@ export function affectsBundle(handle: DomainHandle, path: string): boolean {
   const rel = relative(handle.root, path).split('\\').join('/')
   const topLevel = rel.split('/')[0]
   return (
-    path === handle.applicationFile ||
+    path === handle.domainFile ||
     rel === 'runtime.ts' ||
     rel.endsWith('/runtime.ts') ||
     BUNDLE_SOURCE_DIRS.has(topLevel)
@@ -66,7 +66,7 @@ export function domainWatchChannels(handle: DomainHandle, path: string): DomainW
     return { schema: false, anatomy: false, datasets: false }
   }
   return {
-    schema: absolute === resolve(handle.applicationFile) || inside(rel, handle.schemaDirName),
+    schema: absolute === resolve(handle.domainFile) || inside(rel, handle.schemaDirName),
     anatomy: ANATOMY_PATHS.some((candidate) => inside(rel, candidate)),
     datasets:
       absolute === resolve(handle.configFile) || rel === 'tests' || rel.startsWith('tests/'),
@@ -171,7 +171,7 @@ export function watchDomain(handle: DomainHandle): () => void {
   const attach = async (): Promise<void> => {
     if (closed) return
     const fallbackStarted = performance.now()
-    const schemaW = chokidar.watch([handle.applicationFile, handle.schemaDir], {
+    const schemaW = chokidar.watch([handle.domainFile, handle.schemaDir], {
       ignoreInitial: true,
       ignored,
     })

@@ -28,12 +28,14 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 The CLI is distributed only as this standalone executable; the npm package is
 deprecated.
 
-Generated Project Environments deploy remotely with either adapter. `pnpm dev`
-watches `development`; `pnpm dev staging` selects another Environment. The
-Environment declares its deployment and optional Kernel installation target.
-The Astrale adapter uses Services on the configured instance; the Cloudflare
-adapter uses the author's Cloudflare account. Domain development runs no local
-Worker or ingress. Stopping orchestration leaves deployment and installation alive.
+Generated Project Environments deploy remotely with either adapter.
+`pnpm run deploy <environment>` makes one immutable deployment, prints its URL
+and never installs; `astrale domain install <url> -i <instance>` pins that
+release on an instance. An Environment names no instance. The Astrale adapter
+deploys on the Admin instance's Services; the Cloudflare adapter deploys in the
+author's Cloudflare account. Domain development runs no local Worker or ingress.
+The astrale-domain skill's `references/release.md` describes deploy, install,
+publish and yank.
 
 ## Quickstart
 
@@ -55,8 +57,17 @@ Creation finalizes and verifies the selected WorkOS owner's access before bookma
 the instance. If interrupted, rerun your original `instance create` command with the same slug,
 Admin target options (`--admin`, `--admin-url`, `--domain-issuer`) and creator identity. Admin checks
 the original creation receipt and resumes the same Instance and reserved User. Existing bookmarks
-and selection remain untouched until human access succeeds. JSON separates provisioning `state`
-from `access.status`; unfinished creation/access returns a nonzero exit status. An explicit Admin
+and selection remain untouched until human access succeeds. Creation preserves the active target,
+including a selection made by another CLI process while creation runs. With no active target, it
+selects the first created instance. To switch explicitly, run `astrale instance use <slug>`.
+A bookmark already naming another endpoint is preserved; the ready receipt includes a pending
+`bookmark` outcome with a command to register the new endpoint under an unused name. Automatic root
+import starts only after verified owner access and completed bookmarking, and is skipped on a
+bookmark conflict to preserve any existing root identity. It replaces an existing root alias only
+for the same exact Kernel issuer claim; an identity for another issuer is preserved and reported.
+Explicit `instance root import` retains its recovery behavior.
+JSON separates provisioning `state`, `access.status`, and `bookmark.status`; an unfinished journey
+returns a nonzero exit status without changing a successful provisioning receipt. An explicit Admin
 `--creds` bearer cannot produce a child-audience proof: replace it with `--as <identity>` for the
 creator's WorkOS identity while retaining the same Admin target options.
 Root recovery is independent and never substitutes for the human owner's access.
@@ -134,6 +145,23 @@ On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version
 again**. It also detects stale local Astrale skills and offers to repair them.
 
+## Reporting an issue
+
+```sh
+astrale issue "Short title" --body "Context and details"
+cat issue.md | astrale issue "Short title" --project ./orders -i staging
+```
+
+A title and body are enough. Prefer optional `--project` and `-i` when known. The project selects
+local installed versions; `-i` selects the affected instance without connecting to it.
+
+Optionally add `Type: bug`, `Type: limitation` (including capability requests), or `Type: friction`.
+Keep the body brief: **Context** → **Reproduction** for bugs (exact inputs/steps, expected vs. actual
+result) or **Scenario** for limitations/friction (concrete task, obstacle, desired behavior) → **Impact**.
+Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
+
+If confirmation fails, use the printed `--retry` command. `--json` returns the issue ID and reference.
+
 ## Commands
 
 The authoritative command surface is generated from the code:
@@ -153,6 +181,11 @@ Main command groups:
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
 
+`astrale view <origin>` opens a Domain's entrypoint View (`--view <slug>` picks
+another, `--list` prints them all); `astrale view /:<origin>:view.<slug>` opens
+one View exactly. Every View belongs to its Domain: none is opened for a node, and
+a View that shows one node selects it through its own internal routing.
+
 `astrale view --refresh <id>` re-resolves an open View against its retained
 instance and identity, then reloads the existing tab without changing its URL.
 If resolution fails, the previous placement remains available. Use
@@ -166,7 +199,7 @@ astrale view /:app.example:view.application -i staging --as alice --allow-identi
 ```
 
 The viewer offers the initial identity and the explicitly allowed local names. **Switch & reload**
-re-resolves the same View/target and mints a fresh credential before reloading the entire page
+re-resolves the same View in its Domain and mints a fresh credential before reloading the entire page
 (unsaved changes are lost). Failure leaves the previous session usable. This does not change CLI
 defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
 
@@ -309,6 +342,18 @@ It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
 
+## Fleet catalog (deprecated)
+
+`astrale domain publish`, the catalog listing of `astrale domain list` and the bare-origin
+`astrale domain install <origin>` read and write the Admin Fleet catalog, which now only keeps a
+Fleet's default Domains (what every new Instance of the Fleet receives) until provisioning by
+version replaces it. They still work, unchanged for scripts, and warn a person that they are
+deprecated. Publish a version with `astrale-domain publish <environment>` in the Domain's project,
+list a Domain's versions with `astrale domain versions <origin>`, and install one with
+`astrale domain install <origin>@<version>` or by its deployment URL. The commands are removed in a
+later breaking release, once provisioning by version ships and no supported SDK installs by bare
+origin.
+
 ## Fleet selection
 
 An explicit `--fleet <path>` keeps that exact target; authorization failure never falls back.
@@ -326,6 +371,12 @@ resuming from another process. Policies on each callable remain authoritative if
 No Fleet discovery callable or wrapper command is introduced. These readers require the existing
 Fleet-slug backfill; missing names or slugs fail explicitly. An explicit historical `core.fleet`
 catalogue path remains supported while that Core node exists.
+
+Admin keeps one Domain per origin. A Fleet's catalog is the Domains it contains and the Domains it
+lists from another Fleet: `domain list` and `domain install <origin>` read both, and
+`domain publish --install-by-default` sets the Fleet's own default with
+`Fleet.configureDomainDefault`. Only the core Fleet catalogues a new origin; Admin refuses it on
+another Fleet with `CATALOG_ORIGIN_CONFLICT`.
 
 An explicit target avoids Fleet discovery entirely. Implicit resolution reads each directory page
 once and checks `UseFleet` with at most eight requests in flight; instance creation reuses the

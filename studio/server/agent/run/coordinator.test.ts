@@ -44,7 +44,7 @@ import {
   switchChatHarness,
   updateChat,
 } from './coordinator'
-import { isRunActive } from './live-state'
+import { currentRun, isRunActive, setCurrentRun } from './live-state'
 import { persistRun, readRunHistory } from './transcript'
 
 const roots: string[] = []
@@ -81,16 +81,16 @@ function fixture(): DomainHandle {
     join(root, 'astrale.config.ts'),
     `import { defineProject } from '@astrale-os/sdk/project'
 import { cloudflare } from '@astrale-os/adapter-cloudflare'
-import application from './application.js'
-export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+import domain from './domain.js'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
 `,
   )
   writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
   writeFileSync(
-    join(root, 'application.ts'),
-    `import { defineApplication } from '@astrale-os/sdk/application'
+    join(root, 'domain.ts'),
+    `import { defineDomain } from '@astrale-os/sdk/domain'
 import { Test } from './schema/index.js'
-export default defineApplication({ schema: Test, runtime: {} as never })
+export default defineDomain({ schema: Test, runtime: {} as never })
 `,
   )
   const handle = registerDomain(root)!
@@ -237,6 +237,79 @@ describe.serial('agent runner invariants', () => {
     expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(true)
     unwrap(closeChat(chat))
     expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(false)
+  })
+
+  test('Continue sends a first turn again when it stopped before any session existed', async () => {
+    useMock('error')
+    const handle = fixture()
+    const failed = (await submitRun(() => {}, { message: 'build the billing domain' })).run!
+    expect((await waitForTerminal(handle.id)).status).toBe('failed')
+    expect(failed.sessionId).toBeUndefined()
+
+    // nothing for the agent to remember: the very same message goes again, with a
+    // note that part of the work may already be on disk
+    useMock()
+    const resumed = await submitRun(() => {}, { resume: true })
+    expect(resumed.error).toBeUndefined()
+    expect(resumed.run).toMatchObject({ instruction: 'build the billing domain', resumed: false })
+    expect(resumed.run?.prompt?.turnPrompt).toContain('build the billing domain')
+    expect(resumed.run?.prompt?.turnPrompt).toContain('A previous attempt at this message')
+    expect((await waitForTerminal(handle.id)).status).toBe('succeeded')
+
+    // a turn that finished leaves nothing to continue
+    expect((await submitRun(() => {}, { resume: true })).error).toContain('nothing to continue')
+  })
+
+  test('Continue resumes the same session once the agent had taken the turn up', async () => {
+    useMock()
+    const handle = fixture()
+    await submitRun(() => {}, { message: 'first' })
+    await waitForTerminal(handle.id)
+    await submitRun(() => {}, { message: 'second' })
+    const second = await waitForTerminal(handle.id)
+    // the studio went down mid-turn, after the agent had started working
+    setCurrentRun({ ...second, status: 'interrupted', error: 'the studio restarted' })
+
+    const resumed = (await submitRun(() => {}, { resume: true })).run!
+    expect(resumed).toMatchObject({ resumed: true, sessionId: 'mock-session' })
+    expect(resumed.instruction).toBeUndefined()
+    expect(resumed.summary).toBe('continue where it stopped')
+    expect(resumed.prompt?.turnPrompt).toContain('Resuming the SAME session')
+    expect(resumed.prompt?.turnPrompt).toContain('Domain Studio restarted')
+    expect(resumed.prompt?.turnPrompt).not.toContain('second')
+    await waitForTerminal(handle.id)
+    expect(currentRun(chatId(handle))?.status).toBe('succeeded')
+  })
+
+  test('the message streams in as it is written, then lands under the same id', async () => {
+    useMock()
+    const handle = fixture()
+    const frames: StudioEvent[] = []
+    await submitRun((event) => frames.push(event), { message: 'stream it' })
+    const run = await waitForTerminal(handle.id)
+
+    const message = run.events.findLast((event) => event.kind === 'message')!
+    const pieces = frames.flatMap((frame) => (frame.type === 'agent-draft' ? [frame] : []))
+    expect(pieces.length).toBeGreaterThan(0)
+    // one draft, assembled in order, that became the message itself
+    expect(new Set(pieces.map((piece) => piece.id))).toEqual(new Set([message.id]))
+    let text = ''
+    for (const piece of pieces) {
+      expect(piece.offset).toBe(text.length)
+      text += piece.text
+    }
+    expect(text).toBe(message.text)
+    // the draft is live only: it never outlives its turn
+    expect(run.draft).toBeUndefined()
+    // and the window's occupancy rode along, then stayed on the run
+    expect(frames.some((frame) => frame.type === 'agent-context')).toBe(true)
+    expect(run.context).toEqual({ used: 42_000, size: 200_000 })
+
+    // the next turn of the same conversation starts as full as this one left it
+    const next = await submitRun(() => {}, { message: 'and again' })
+    expect(next.run?.resumed).toBe(true)
+    expect(next.run?.context).toEqual({ used: 42_000, size: 200_000 })
+    await waitForTerminal(handle.id)
   })
 
   test('refuses an image the chat does not hold, and a file that is not an image', async () => {
@@ -587,23 +660,39 @@ describe.serial('agent runner invariants', () => {
     ).toEqual([expect.objectContaining({ instruction: 'in the second tab' })])
   })
 
-  test('a new tab opens on the star, or continues with the agent already open', () => {
+  test('a new tab continues the tab in front of you: agent, model, effort and speed', () => {
     delete process.env.DOMAIN_STUDIO_HARNESS
     const handle = fixture()
     // nothing starred: the first tab is the agent this machine has
     expect(unwrap(openChat({})).harness).toBe('claude')
 
-    // move the live conversation elsewhere and the next tab follows it — the
-    // agent that was live, since nothing states where chats should start
+    // move the live conversation elsewhere and the next tab follows it
     expect(unwrap(openChat({ harness: 'mock' })).harness).toBe('mock')
     expect(unwrap(openChat({})).harness).toBe('mock')
 
-    // starring one IS that statement, and it outranks the tab you happen to be in
+    // what you set in this tab is what the next one opens with
+    const tuned = unwrap(
+      updateChat(listChats().activeId, { model: 'mock-large', effort: 'high', fastMode: true }),
+    )
+    expect(unwrap(openChat({}))).toMatchObject({
+      harness: 'mock',
+      model: 'mock-large',
+      effort: 'high',
+      fastMode: true,
+    })
+    expect(tuned.id).not.toBe(listChats().activeId)
+
+    // a star does not pull a new tab away from the work in front of you
     // Studio settings are global; point that global at this test's root.
     initWorkspaceState(handle.root)
     updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus[1m]' } })
     expect(getHarness().id).toBe('claude')
-    expect(unwrap(openChat({})).harness).toBe('claude')
+    expect(unwrap(openChat({}))).toMatchObject({ harness: 'mock', model: 'mock-large' })
+
+    // asking for another agent keeps the effort and speed, never the other agent's model
+    const other = unwrap(openChat({ harness: 'claude' }))
+    expect(other).toMatchObject({ harness: 'claude', effort: 'high', fastMode: true })
+    expect(other.model).toBeUndefined()
   })
 
   test('a chat opened for a fresh domain carries its exact target into the first prompt', async () => {

@@ -52,3 +52,38 @@ test.each([
     expect(stdout).toBe(`${JSON.stringify(JSON.parse(stdout), null, 2)}\n`)
   },
 )
+
+test('create returns the ready receipt and verified access alongside a recoverable bookmark conflict', async () => {
+  let stdout = ''
+  spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    stdout += String(chunk)
+    return true
+  })
+  process.exitCode = 0
+  const created = {
+    id: '@created-instance',
+    slug: 'prod',
+    url: 'https://prod.example.test/api',
+    operationId: 'retained-operation',
+    state: 'ready' as const,
+  }
+  const access = { status: 'completed' as const, user: 'verified-owner' }
+  const bookmark = {
+    status: 'pending' as const,
+    code: 'INSTANCE_BOOKMARK_CONFLICT',
+    message: 'The existing bookmark and active target were preserved.',
+    hint: "Choose an unused bookmark name: astrale instance bookmark <new-name> --url 'https://prod.example.test/api' --as creator",
+  }
+  spyOn(provisioning, 'provisionInstance').mockImplementation(async () => ({
+    created,
+    slug: created.slug,
+    access,
+    bookmark,
+  }))
+
+  await command.action('prod', { json: true, as: 'creator' })
+
+  expect(Number(process.exitCode)).toBe(1)
+  expect(JSON.parse(stdout)).toEqual({ ...created, access, bookmark })
+  expect(stdout).toBe(`${JSON.stringify(JSON.parse(stdout), null, 2)}\n`)
+})

@@ -51,6 +51,35 @@ export function activityLabel(run: AgentRun): string {
   return 'Working…'
 }
 
+/** How many actions - tool calls - the agent has taken in this turn so far. */
+export function actionCount(run: AgentRun): number {
+  return run.events.filter((event) => event.kind === 'tool').length
+}
+
+export function actionsLabel(count: number): string {
+  return `${count} ${count === 1 ? 'action' : 'actions'}`
+}
+
+/**
+ * The message the agent is writing, as far as it got - minus the machine-state
+ * block a turn ends with, which is Studio's to read, not the reader's. A block
+ * only just opened cannot say yet whether it is one, so it waits until it can.
+ */
+export function visibleDraft(run: AgentRun): string | undefined {
+  const draft = run.draft
+  if (!draft || !isRunActive(run) || run.events.some((event) => event.id === draft.id))
+    return undefined
+  let text = draft.text
+  for (const fence of text.matchAll(/```(?:json)?[ \t]*\n?/g)) {
+    const rest = text.slice(fence.index + fence[0].length)
+    if (/^\s*\{?\s*$/.test(rest) || /^\s*\{\s*"(?:comments|schemaVersion)"/.test(rest)) {
+      text = text.slice(0, fence.index)
+      break
+    }
+  }
+  return text.trim() || undefined
+}
+
 /** One line of the work behind a turn, in the order it happened. */
 export type AgentStep =
   | { kind: 'note'; id: string; text: string }
@@ -256,8 +285,11 @@ export function AgentSteps({ run, steps }: { run: AgentRun; steps: AgentStep[] }
   const tools = steps.filter((step) => step.kind === 'tool').length
   // a turn of pure narration still says how much there is to unfold
   const count = tools || steps.length
-  const note = active ? latestNote(steps) : undefined
-  const current = activityLabel(run)
+  // once the agent is writing its message, that message is what it is doing - the
+  // last thing it said before is no longer the news
+  const writing = active && !!visibleDraft(run)
+  const note = active && !writing ? latestNote(steps) : undefined
+  const current = writing ? 'Writing…' : activityLabel(run)
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -270,13 +302,40 @@ export function AgentSteps({ run, steps }: { run: AgentRun; steps: AgentStep[] }
         {active && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
         {active ? (
           <span className="flex min-w-0 items-baseline gap-1.5">
-            {note && <span className="truncate text-foreground/80">{note}</span>}
-            <span className={cn('truncate', note && 'shrink-[2] text-[11px]')}>{current}</span>
+            {/* how long and how much first, where the eye lands and where the
+                width never moves: a wait you can measure is one you can sit
+                through */}
+            <span
+              data-testid="agent-progress"
+              className="flex shrink-0 items-baseline gap-1.5 text-[11px] text-muted-foreground/80"
+            >
+              <RunElapsed run={run} />
+              {tools > 0 && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="tabular-nums">{actionsLabel(tools)}</span>
+                </>
+              )}
+            </span>
+            <span aria-hidden className="shrink-0 text-[11px] text-muted-foreground/80">
+              ·
+            </span>
+            {/* the agent's own words say what it is doing; the raw tool call
+                only stands in when it has given none */}
+            {note ? (
+              <span className="truncate text-foreground/80" title={note}>
+                {note}
+              </span>
+            ) : (
+              <span className="truncate" title={current}>
+                {current}
+              </span>
+            )}
           </span>
         ) : (
           <span className="flex items-baseline gap-1.5">
             <span>
-              {count} {count === 1 ? 'step' : 'steps'}
+              {tools ? actionsLabel(tools) : `${count} ${count === 1 ? 'step' : 'steps'}`}
             </span>
             <span aria-hidden>·</span>
             <RunElapsed run={run} />

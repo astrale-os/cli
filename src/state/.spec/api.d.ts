@@ -43,11 +43,12 @@ export const SESSION_ROUTES_PATH: string
 export const INSTALLATIONS_PATH: string
 
 /**
- * What the CLI remembers about one Domain installed on one Kernel. Only facts fixed for the life of
- * the installation belong here; facts an upgrade changes need revalidation and never live here.
+ * What the CLI remembers about one Domain installed on one Kernel. Only facts whose staleness fails
+ * closed belong here (a moved issuer fails at token exchange or Kernel admission, and its reader
+ * forgets it); facts an upgrade changes without failing need revalidation and never live here.
  */
 export interface Installation {
-  /** Installed Domain issuer, or null when the Domain executes on the Kernel itself. */
+  /** Issuer the installed pin named when read, or null when the Domain executes on the Kernel. */
   readonly issuer: string | null
 }
 

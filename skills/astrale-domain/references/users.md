@@ -72,6 +72,7 @@ export const Team = nodeClass({
 
 // schema/schema.ts
 export const schema = defineSchema('work.example', {
+  name: 'Work',
   dependencies: { kernel: KernelSchema, shell: ShellSchema },
   classes: { Employee, Team },
   policies: { shellMayTraverseMember },

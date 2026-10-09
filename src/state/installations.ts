@@ -8,8 +8,9 @@ import { INSTALLATIONS_PATH } from './paths'
 
 const VERSION = 1
 /**
- * Every recorded fact is fixed for the life of its installation, and a stale one fails closed at
- * token exchange or Kernel admission. The age only bounds how long an unused entry lingers.
+ * A recorded issuer goes stale when a consented reinstall moves it; a stale one fails closed at
+ * token exchange or Kernel admission, and its reader forgets it. The age only bounds how long an
+ * unused entry lingers.
  */
 const MAXIMUM_AGE_MS = 24 * 60 * 60 * 1_000
 const MAXIMUM_ENTRIES = 256
@@ -19,11 +20,13 @@ const LOCK: FileLockOptions = Object.freeze({ timeoutMs: 1_000, pollIntervalMs: 
 /**
  * What the CLI remembers about one Domain installed on one Kernel.
  *
- * Only facts fixed for the life of the installation belong here. Facts an upgrade changes
- * (revision, bindings, readiness) need revalidation and must never be served from this record.
+ * Only facts whose staleness fails closed belong here: a reinstall that moves the issuer makes a
+ * stale record fail at token exchange or Kernel admission, and its reader then forgets it. Facts an
+ * upgrade changes without failing (revision, bindings, readiness) need revalidation and must never
+ * be served from this record.
  */
 export interface Installation {
-  /** Installed Domain issuer, or null when the Domain executes on the Kernel itself. */
+  /** Issuer the installed pin named when read, or null when the Domain executes on the Kernel. */
   readonly issuer: string | null
 }
 
@@ -43,7 +46,8 @@ export namespace installations {
  * Remember each Domain installation per source Kernel.
  *
  * The record is installation state, never authority: the Kernel still admits every credential the
- * CLI exchanges through its issuer. It lets a callable command skip reading the installation again.
+ * CLI exchanges through its issuer. It lets a callable command, and the Shell exchange of a managed
+ * Instance, skip reading the installation again.
  *
  * A record is trusted only while the cache can still forget it: a caller that finds it stale must
  * be able to evict it, or every later command would keep reusing it.

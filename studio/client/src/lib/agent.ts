@@ -8,7 +8,13 @@
  * keyed by chat id - a turn streaming into a background tab must not overwrite
  * what the foreground one shows.
  */
-import type { AgentEvent, AgentRun, ChatAttachment } from '@shared/types'
+import type {
+  AgentContextUsage,
+  AgentDraft,
+  AgentEvent,
+  AgentRun,
+  ChatAttachment,
+} from '@shared/types'
 
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
@@ -26,6 +32,10 @@ interface AgentLiveState {
   dropRun: (chatId: string, runId: string) => void
   /** add one activity event, or bring a step already shown up to date */
   putEvent: (chatId: string, runId: string, event: AgentEvent) => void
+  /** how full the run's context window is now, as the agent just reported it */
+  putContext: (chatId: string, runId: string, context: AgentContextUsage) => void
+  /** more of the message the agent is writing - see the `agent-draft` event */
+  putDraft: (chatId: string, runId: string, id: string, offset: number, text: string) => void
 }
 
 /** How far a run has got; every terminal status ranks the same, and none regresses. */
@@ -64,6 +74,40 @@ export function mergeEvents(preferred: AgentEvent[], other: AgentEvent[]): Agent
   return changed ? merged : base
 }
 
+/**
+ * Two copies of a run's draft, as one. The same draft is as far as the longer copy
+ * got; a different one is the newer message - unless it is already written out as
+ * an event, in which case it is over and the other is what is being written.
+ */
+export function mergeDraft(
+  preferred: AgentDraft | undefined,
+  other: AgentDraft | undefined,
+  events: AgentEvent[],
+): AgentDraft | undefined {
+  const written = (draft: AgentDraft | undefined) =>
+    !!draft && events.some((event) => event.id === draft.id)
+  const a = written(preferred) ? undefined : preferred
+  const b = written(other) ? undefined : other
+  if (a && b && a.id === b.id) return a.text.length >= b.text.length ? a : b
+  return a ?? b
+}
+
+/** A draft with one more piece of text in place, or unchanged when the piece cannot be placed. */
+export function extendDraft(
+  draft: AgentDraft | undefined,
+  id: string,
+  offset: number,
+  text: string,
+): AgentDraft | undefined {
+  if (draft?.id === id) {
+    // a piece past the end means one went missing: the next snapshot repairs it
+    if (offset > draft.text.length) return draft
+    return { id, text: draft.text.slice(0, offset) + text }
+  }
+  // a new message starts at its beginning; joined midway it waits for a snapshot
+  return offset === 0 ? { id, text } : draft
+}
+
 export const useAgentLive = create<AgentLiveState>((set) => ({
   runs: {},
   // merge-forward: the HTTP submit response and the SSE stream race; never let an
@@ -75,7 +119,8 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       if (cur && cur.id === run.id) {
         const events = mergeEvents(run.events, cur.events)
         const status = PROGRESS[run.status] >= PROGRESS[cur.status] ? run.status : cur.status
-        return { runs: { ...s.runs, [run.chatId]: { ...cur, ...run, events, status } } }
+        const draft = mergeDraft(run.draft, cur.draft, events)
+        return { runs: { ...s.runs, [run.chatId]: { ...cur, ...run, events, status, draft } } }
       }
       return { runs: { ...s.runs, [run.chatId]: run } }
     })
@@ -100,7 +145,44 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       const events = cur.events.with(index, event)
       return { runs: { ...s.runs, [chatId]: { ...cur, events } } }
     }),
+  putContext: (chatId, runId, context) =>
+    set((s) => {
+      const cur = s.runs[chatId]
+      if (!cur || cur.id !== runId) return s
+      return { runs: { ...s.runs, [chatId]: { ...cur, context } } }
+    }),
+  putDraft: (chatId, runId, id, offset, text) =>
+    set((s) => {
+      const cur = s.runs[chatId]
+      if (!cur || cur.id !== runId || cur.events.some((event) => event.id === id)) return s
+      const draft = extendDraft(cur.draft, id, offset, text)
+      if (draft === cur.draft) return s
+      return { runs: { ...s.runs, [chatId]: { ...cur, draft } } }
+    }),
 }))
+
+/**
+ * How full a chat's conversation is, read off its turns, newest first.
+ *
+ * The window belongs to the CONVERSATION, not the turn: a turn that has not
+ * reported yet (the one just sent, or one still starting) is as full as the
+ * turn before it left it. A turn that started a NEW conversation is where that
+ * stops - nothing before it is in this window - and a chat with no
+ * conversation at all has nothing in its window either.
+ */
+export function conversationContext(
+  turns: AgentRun[],
+  conversation: boolean,
+): AgentContextUsage | undefined {
+  const last = turns.at(-1)
+  if (!conversation && !isRunActive(last)) return undefined
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const turn = turns[index]!
+    if (turn.context) return turn.context
+    if (turn.resumed === false) return undefined
+  }
+  return undefined
+}
 
 /**
  * The turn a submit is about to become, put up from the keystroke.
@@ -224,11 +306,13 @@ export function reconcileRun(live: AgentRun | undefined, stored: AgentRun | null
   // snapshot holds another window's run before the stream delivers it
   if (stored.id !== live.id)
     return Date.parse(stored.createdAt) > Date.parse(live.createdAt) ? stored : live
+  const events = mergeEvents(live.events, stored.events)
   return {
     ...live,
     ...stored,
     status: PROGRESS[stored.status] > PROGRESS[live.status] ? stored.status : live.status,
-    events: mergeEvents(live.events, stored.events),
+    events,
+    draft: mergeDraft(live.draft, stored.draft, events),
   }
 }
 

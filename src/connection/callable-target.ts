@@ -25,12 +25,12 @@ export async function resolveCallableTarget(
   return withCallableIssuer(target, installed.publication?.identity.issuer)
 }
 
-/** The callable's Domain issuer replaces the bookmark's; a Kernel-hosted Domain has none. */
+/** The callable's Domain issuer replaces the bookmark's Domain; a Kernel-hosted Domain has none. */
 export function withCallableIssuer(
   target: ConnectionTarget,
   domainIssuer: string | undefined,
 ): ConnectionTarget {
-  const { domainIssuer: _bookmarkDomain, ...source } = target
+  const { domainIssuer: _bookmarkIssuer, domainOrigin: _bookmarkOrigin, ...source } = target
   return {
     ...source,
     ...(domainIssuer === undefined || domainIssuer === target.kernelIssuer

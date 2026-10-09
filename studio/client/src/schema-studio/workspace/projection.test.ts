@@ -87,11 +87,11 @@ describe('workspace projection', () => {
     expect(result.edges[1]!.style?.strokeWidth).toBe(result.edges[0]!.style?.strokeWidth)
   })
 
-  test("a domain's views arrive as nodes of the domain, bound to what they render", async () => {
+  test("a domain's views arrive as nodes of the domain, bound to no class", async () => {
     const value = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
     const input = prepared(value).input
     input.anatomy = anatomy(
-      [{ slug: 'board', kind: 'spa', mount: '/ui/board', viewFor: 'User' }],
+      [{ slug: 'board', kind: 'spa', mount: '/ui/board' }],
       'local.example.dev',
     )
     // every id already placed, so the layout is a repaint — no ELK worker in a unit test
@@ -106,9 +106,7 @@ describe('workspace projection', () => {
     const result = await prepareWorkspaceDomain(input, [])
 
     expect(result.nodes.map((node) => node.id)).toContain('view.board')
-    expect(result.edges).toContainEqual(
-      expect.objectContaining({ source: 'view.board', target: 'class.User' }),
-    )
+    expect(result.edges.filter((edge) => edge.source === 'view.board')).toEqual([])
   })
 
   test('resolves an exact dependency Class to the selected Domain frame', () => {

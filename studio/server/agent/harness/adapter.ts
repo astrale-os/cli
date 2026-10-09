@@ -4,16 +4,18 @@
  *
  * A *harness* is whatever local AI agent does the edits (Claude Code, Codex, …).
  * The studio never talks to a model API directly; it shells out to the harness
- * the user already has running locally (no cloud API key of our own). Each
+ * CLI, signed in as the user (no cloud API key of our own). Each
  * harness maps its native streaming output onto `AgentStreamEvent`s and returns
  * a final text blob (which carries the machine-state reply block).
  */
 import type {
   AgentAccess,
+  AgentContextUsage,
   AgentEffort,
   AgentEventKind,
   AgentToolCall,
   HarnessCapabilities,
+  HarnessCli,
   HarnessLoadout,
 } from '../../../shared/types'
 
@@ -82,6 +84,10 @@ export interface AgentTurnInput {
   signal: AbortSignal
   /** called for every normalized activity event */
   onEvent: (e: AgentStreamEvent) => void
+  /** called with each chunk of the agent's message text as it streams in */
+  onDelta?: (text: string) => void
+  /** called whenever the agent reports how full its context window is */
+  onContext?: (context: AgentContextUsage) => void
 }
 
 export interface AgentTurnResult {
@@ -93,6 +99,8 @@ export interface AgentTurnResult {
   numTurns?: number
   /** total token usage reported by the harness */
   tokens?: number
+  /** the context window's occupancy as last reported during the turn */
+  context?: AgentContextUsage
   isError: boolean
   errorMessage?: string
   /** the resume sessionId we passed was rejected by the harness (the conversation
@@ -140,6 +148,8 @@ export interface HarnessHealth {
   bin?: string
   /** human-readable reason when not ok */
   detail?: string
+  /** the agent CLI the ACP server drives */
+  cli?: HarnessCli
 }
 
 export interface HarnessLoadoutOptions {

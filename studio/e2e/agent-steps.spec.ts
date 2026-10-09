@@ -91,10 +91,12 @@ test('the work behind a turn unfolds on demand, while it runs and once it is don
   await dockWorkspacePanel(request, 'left')
   await page.goto('/')
 
-  // running: one line, carrying the latest narration and the current tool
+  // running: one line, carrying the latest narration in place of the current tool
   const line = page.getByRole('button', { name: /I write the User class now/ })
   await expect(line).toBeVisible({ timeout: 12_000 })
-  await expect(line).toContainText('Edit · schema/user.ts')
+  await expect(line).not.toContainText('Edit · schema/user.ts')
+  // how much it has done so far, and for how long
+  await expect(line).toContainText('2 actions')
   await expect(line).toHaveAttribute('aria-expanded', 'false')
   const steps = page.getByTestId('agent-steps')
   await expect(steps).toHaveCount(0)
@@ -114,7 +116,7 @@ test('the work behind a turn unfolds on demand, while it runs and once it is don
   await stub.complete()
   const answer = page.getByText('The Users page is in place.', { exact: true })
   await expect(answer).toBeVisible({ timeout: 12_000 })
-  const summary = page.getByRole('button', { name: /2 steps/ })
+  const summary = page.getByRole('button', { name: /2 actions/ })
   await expect(summary).toContainText('1m 30s')
   await expect(summary).toHaveAttribute('aria-expanded', 'true')
   await expect(steps).toContainText('I write the User class now.')

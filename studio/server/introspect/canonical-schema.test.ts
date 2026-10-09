@@ -60,7 +60,7 @@ const schema = defineSchema('docs.example.dev', {
   functions: {
     search: func({ input: string, output: output.stream(string), auth: 'authenticated' }),
   },
-  views: { documents: view({ target: Document }) },
+  views: { documents: view({ description: 'Browse documents.' }) },
   core: { nodes: { primary }, edges: [primaryLink] },
 })
 const namedRef = { origin: dependency.origin, kind: 'class', name: 'Named' } as const
@@ -139,9 +139,9 @@ describe('canonical Schema projection', () => {
       auth: 'authenticated',
       output: { mode: 'stream' },
     })
-    expect(extraction.ir.views.documents.target).toEqual({
-      kind: 'definition',
-      definitions: [documentRef],
+    expect(extraction.ir.views.documents).toEqual({
+      name: 'documents',
+      description: 'Browse documents.',
     })
     expect(extraction.ir.dependencies).toEqual([
       { origin: dependency.origin, revision: sdk.schema.revision(dependency) },
@@ -194,9 +194,12 @@ describe('canonical Schema projection', () => {
           calls.push('schema.resolve')
           return sdk.schema.resolve(value)
         },
-        compareDependencyMeaning(source: typeof schema, target: typeof dependency) {
-          calls.push('schema.compareDependencyMeaning')
-          return sdk.schema.compareDependencyMeaning(source, target)
+        compatibility: {
+          ...sdk.schema.compatibility,
+          compareMeaning(request: Parameters<typeof sdk.schema.compatibility.compareMeaning>[0]) {
+            calls.push('schema.compatibility.compareMeaning')
+            return sdk.schema.compatibility.compareMeaning(request)
+          },
         },
       },
     } as unknown as typeof sdk
@@ -206,7 +209,101 @@ describe('canonical Schema projection', () => {
       'bundle.create',
       'bundle.accept',
       'schema.resolve',
-      'schema.compareDependencyMeaning',
+      'schema.compatibility.compareMeaning',
     ])
+  })
+
+  test('admits a modern Domain that exposes only the canonical compatibility owner', () => {
+    const extraction = extractCanonicalSchemaFromSdk(
+      {
+        ...sdk,
+        schema: { resolve: sdk.schema.resolve, compatibility: sdk.schema.compatibility },
+      },
+      schema,
+    )
+    expect(extraction.status).toBe('admitted')
+    expect(
+      extraction.ir.importedClassesByKey['shared.example.dev:class.Named']?.properties.title,
+    ).toEqual({ type: 'string' })
+  })
+
+  test('retains imported Classes through the inspected older Domain SDK', () => {
+    const calls: unknown[][] = []
+    const extraction = extractCanonicalSchemaFromSdk(
+      {
+        ...sdk,
+        schema: {
+          resolve: sdk.schema.resolve,
+          compareDependencyMeaning(dependent, target) {
+            calls.push([dependent, target])
+            return { footprint: ['shared.example.dev:class.Named'] }
+          },
+        },
+      },
+      schema,
+    )
+    expect(calls).toEqual([[schema, dependency]])
+    expect(extraction.status).toBe('admitted')
+    expect(extraction.ir.importsByKey['shared.example.dev:class.Named']).toEqual({
+      origin: namedRef.origin,
+      ref: namedRef,
+      key: 'shared.example.dev:class.Named',
+    })
+    expect(
+      extraction.ir.importedClassesByKey['shared.example.dev:class.Named']?.properties.title,
+    ).toEqual({ type: 'string' })
+  })
+
+  test('prefers canonical compatibility when a Domain exposes both generations', () => {
+    let legacyCalls = 0
+    const extraction = extractCanonicalSchemaFromSdk(
+      {
+        ...sdk,
+        schema: {
+          ...sdk.schema,
+          compareDependencyMeaning() {
+            legacyCalls++
+            throw new Error('Legacy comparison must not run.')
+          },
+        },
+      },
+      schema,
+    )
+    expect(extraction.status).toBe('admitted')
+    expect(legacyCalls).toBe(0)
+  })
+
+  test('does not retry a rejected canonical comparison through the legacy owner', () => {
+    let legacyCalls = 0
+    const extraction = extractCanonicalSchemaFromSdk(
+      {
+        ...sdk,
+        schema: {
+          resolve: sdk.schema.resolve,
+          compatibility: {
+            compareMeaning() {
+              throw new Error('The Domain rejected compatibility admission.')
+            },
+          },
+          compareDependencyMeaning() {
+            legacyCalls++
+            return { footprint: ['shared.example.dev:class.Named'] }
+          },
+        },
+      },
+      schema,
+    )
+    expect(extraction).toMatchObject({ status: 'preview', revision: null })
+    expect(extraction.ir.importsByKey).toEqual({})
+    expect(legacyCalls).toBe(0)
+  })
+
+  test('retains preview behavior when neither compatibility generation is exposed', () => {
+    const extraction = extractCanonicalSchemaFromSdk(
+      { ...sdk, schema: { resolve: sdk.schema.resolve } },
+      schema,
+    )
+    expect(extraction).toMatchObject({ status: 'preview', revision: null })
+    expect(extraction.ir.importsByKey).toEqual({})
   })
 })

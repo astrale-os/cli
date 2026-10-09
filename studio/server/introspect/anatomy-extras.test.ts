@@ -86,7 +86,6 @@ const schemaInput = {
   classes: {},
   views: {
     issue: view({
-      target: [Issue, Group],
       description: 'Inspect an issue.',
     }),
   },
@@ -96,7 +95,7 @@ export const schema = defineSchema(ORIGIN, schemaInput)
   )
   writeFileSync(
     join(root, 'views', 'routes.ts'),
-    `import { defineFrontend, vite } from '@astrale-os/sdk/application'
+    `import { defineFrontend, vite } from '@astrale-os/sdk/domain'
 export const frontend = defineFrontend({
   schema,
   source: vite(),
@@ -112,13 +111,6 @@ export const frontend = defineFrontend({
       issue: {
         name: 'issue',
         description: 'Inspect an issue.',
-        target: {
-          kind: 'definition',
-          definitions: [
-            { origin: 'issues.example.dev', kind: 'class', name: 'Issue' },
-            { origin: 'accounts.example.dev', kind: 'class', name: 'Group' },
-          ],
-        },
       },
     }),
   ).toEqual([
@@ -127,7 +119,6 @@ export const frontend = defineFrontend({
       kind: 'spa',
       mount: '/ui/issues/:id',
       url: undefined,
-      viewFor: ['Issue', 'Group'],
       file: 'views/routes.ts',
       description: 'Inspect an issue.',
     },
@@ -142,7 +133,7 @@ test('discovers Vite frontend default routes from canonical View names', () => {
   writeFileSync(
     join(root, 'schema', 'index.ts'),
     `export const schema = defineSchema('generated.example.dev', {
-  views: { summary: view({ target: 'domain' }) },
+  views: { summary: view({}) },
 })
 `,
   )
@@ -161,7 +152,6 @@ export const frontend = defineFrontend({
     buildViews(root, 'schema', {
       summary: {
         name: 'summary',
-        target: { kind: 'domain' },
       },
     }),
   ).toEqual([
@@ -182,8 +172,8 @@ test('canonical Bundle views reject static schema and route-only identities', ()
     join(root, 'astrale.config.ts'),
     `import { defineProject } from '@astrale-os/sdk/project'
 import { cloudflare } from '@astrale-os/adapter-cloudflare'
-import { application } from './application.js'
-export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+import { domain } from './domain.js'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
 `,
   )
   mkdirSync(join(root, 'schema'), { recursive: true })
@@ -191,14 +181,14 @@ export default defineProject({ application, environments: { development: { deplo
     join(root, 'schema', 'index.ts'),
     `export const schema = defineSchema('static.invalid', {
   views: {
-    account: view({ target: WrongTarget, description: 'Static guess.' }),
-    sourceOnly: view({ target: WrongTarget, description: 'Static guess.' }),
-    invented: view({ target: 'domain' }),
+    account: view({ description: 'Static guess.' }),
+    sourceOnly: view({ description: 'Static guess.' }),
+    invented: view({}),
   },
 })`,
   )
   writeFileSync(
-    join(root, 'application.ts'),
+    join(root, 'domain.ts'),
     `export const frontend = defineFrontend({
   schema,
   source: external('https://shell.example.dev'),
@@ -214,15 +204,10 @@ export default defineProject({ application, environments: { development: { deplo
       account: {
         name: 'account',
         description: 'Admitted account view.',
-        target: {
-          kind: 'definition',
-          definitions: [{ origin: 'accounts.example.dev', kind: 'class', name: 'Account' }],
-        },
       },
       sourceOnly: {
         name: 'sourceOnly',
         description: 'Admitted source-only view.',
-        target: { kind: 'domain' },
       },
     }),
   ).toEqual([
@@ -230,16 +215,15 @@ export default defineProject({ application, environments: { development: { deplo
       slug: 'account',
       kind: 'spa',
       description: 'Admitted account view.',
-      viewFor: 'Account',
       url: 'https://shell.example.dev/account',
-      file: 'application.ts',
+      file: 'domain.ts',
     },
     {
       slug: 'sourceOnly',
       kind: 'spa',
       description: 'Admitted source-only view.',
       url: 'https://shell.example.dev/source-only',
-      file: 'application.ts',
+      file: 'domain.ts',
     },
   ])
   expect(buildViews(root, 'schema', {})).toEqual([])
