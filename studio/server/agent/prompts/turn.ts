@@ -174,14 +174,36 @@ function attachedImages(images: { name: string; path: string }[]): string[] {
   ]
 }
 
-/** Build the minimal nudge for a surviving interrupted conversation. */
-export function buildResumePrompt(): string {
+/** Why a turn stopped before it finished, in the words the agent is told. */
+export type StopCause = 'interrupted' | 'failed' | 'canceled'
+
+function stopReason(cause: StopCause): string {
+  if (cause === 'interrupted') return 'was cut off when Domain Studio restarted'
+  if (cause === 'canceled') return 'was stopped by the user before it finished'
+  return 'ended on an error before it finished'
+}
+
+/** Build the minimal nudge that picks a stopped turn back up in the SAME session. */
+export function buildResumePrompt(cause: StopCause = 'interrupted'): string {
   return [
-    '> Resuming the SAME session. Your previous turn was cut off when Domain Studio',
-    '> restarted — nothing else has changed. Pick up exactly where you left off.',
+    `> Resuming the SAME session. Your previous turn ${stopReason(cause)} -`,
+    '> nothing else has changed. Pick up exactly where you left off.',
     '',
     'Continue and finish what you were doing, then make sure every thread attached to that',
     'turn gets an answer through the usual channel (the domain-studio MCP tools, or the final',
     'machine-state ```json``` block). Keep going from where you stopped — do not restart.',
+  ].join('\n')
+}
+
+/**
+ * The note a stopped turn carries when it is sent again from scratch - the agent
+ * never kept it, but the files may already hold part of its work.
+ */
+export function replayPreamble(cause: StopCause): string {
+  return [
+    `> A previous attempt at this message ${stopReason(cause)}. Part of its work may`,
+    '> already be on disk: check the current state before redoing anything.',
+    '',
+    '',
   ].join('\n')
 }

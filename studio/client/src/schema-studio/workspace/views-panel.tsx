@@ -53,9 +53,6 @@ export function WorkspaceViewsPanel({ inputs }: { inputs: WorkspaceDomainInput[]
                     key={`${input.summary.id}:${view.slug}`}
                     domainId={input.summary.id}
                     view={view}
-                    icon={
-                      view.boundClass ? input.bundle.ir?.classes[view.boundClass]?.icon : undefined
-                    }
                   />
                 ))}
               </WorkspacePanelGroup>

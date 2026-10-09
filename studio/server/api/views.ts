@@ -1,4 +1,4 @@
-/** CLI-resolved View target discovery and Shell session routes. */
+/** CLI-resolved Domain View preparation and Shell session routes. */
 import type { StudioSchemaBundle, ViewInfo } from '../../shared/types'
 
 import { getAnatomy, getBundle } from '../cache'
@@ -40,10 +40,8 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
   if (runtimeMatch && req.method === 'GET') {
     const resolved = await resolveView(handle.id, runtimeMatch[1])
     if ('error' in resolved) return resolved.error
-    const { view, bundle, origin } = resolved
-    return json(
-      await getViewRuntime(root, origin, view, bundle, studioSettings().viewProbeTimeoutMs),
-    )
+    const { view, origin } = resolved
+    return json(await getViewRuntime(root, origin, view))
   }
 
   const sessionMatch = rest.match(/^\/views\/([^/]+)\/session$/)

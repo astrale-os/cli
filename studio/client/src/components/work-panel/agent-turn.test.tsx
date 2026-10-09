@@ -3,7 +3,7 @@ import type { AgentEvent, AgentRun } from '@shared/types'
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { latestNote, splitTurn } from './agent-steps'
+import { latestNote, splitTurn, visibleDraft } from './agent-steps'
 import { activityLabel, AgentTurn, agentAuthFailure, compactTarget } from './agent-turn'
 
 const event = (
@@ -109,12 +109,12 @@ test('an expired login renders a clean recovery card instead of ACP internals', 
   const raw =
     'Internal error: Failed to authenticate: OAuth session expired: [session/query] sessionId=secret'
   const html = renderToStaticMarkup(
-    <AgentTurn run={{ ...run([]), status: 'failed', error: raw }} onRetry={() => {}} />,
+    <AgentTurn run={{ ...run([]), status: 'failed', error: raw }} onContinue={() => {}} />,
   )
 
   expect(html).toContain('Your Claude Code session has expired')
   expect(html).toContain('claude auth login')
-  expect(html).toContain('I’ve signed in — retry')
+  expect(html).toContain('I’ve signed in, continue')
   expect(html).not.toContain('sessionId=secret')
   expect(html).not.toContain('Internal error')
 })
@@ -181,7 +181,8 @@ test('a running turn folds its work into one line naming what it does now', () =
   )
 
   expect(html).toContain('I write the User class.')
-  expect(html).toContain('Edit · schema/user.ts')
+  // the agent's own words say it: the raw call it stands behind adds nothing
+  expect(html).not.toContain('Edit · schema/user.ts')
   expect(html).toContain('aria-expanded="false"')
   // folded: the step list is not rendered until asked for
   expect(html).not.toContain('data-testid="agent-steps"')
@@ -200,7 +201,7 @@ test('a finished turn shows its answer under a folded count of the steps behind 
   )
 
   expect(html).toContain('The Users page is in place.')
-  expect(html).toContain('2 steps')
+  expect(html).toContain('2 actions')
   expect(html).toContain('1m 30s')
   expect(html).not.toContain('I read the guides first.')
 })
@@ -210,4 +211,141 @@ test('a finished turn without any work shows no step line', () => {
 
   expect(html).toContain('Hello.')
   expect(html).not.toContain('aria-expanded')
+})
+
+test('a call the agent described is shown in its own words, and says where it stands', () => {
+  const { steps } = splitTurn(
+    run([
+      event('tool', 'pnpm test', {
+        tool: 'execute',
+        target: 'pnpm test',
+        status: 'in_progress',
+        revision: 2,
+      }),
+      event('tool', 'Read', { tool: 'Read', target: 'schema/user.ts' }),
+    ]),
+  )
+
+  expect(steps).toEqual([
+    {
+      kind: 'tool',
+      id: 'tool-pnpm test',
+      tool: 'execute',
+      detail: 'pnpm test',
+      title: 'pnpm test',
+      status: 'in_progress',
+      revision: 2,
+    },
+    // no words beyond the tool's name, no details recorded: the tool and its target
+    { kind: 'tool', id: 'tool-Read', tool: 'Read', detail: 'schema/user.ts' },
+  ])
+})
+
+test('the toggle sits right after the words it folds, running or done', () => {
+  const whileRunning = renderToStaticMarkup(
+    <AgentTurn run={run([event('tool', 'Edit', { tool: 'Edit', target: 'schema/user.ts' })])} />,
+  )
+  const onceDone = renderToStaticMarkup(
+    <AgentTurn
+      run={done([
+        event('tool', 'Read', { tool: 'Read' }),
+        event('message', 'The Users page is in place.'),
+      ])}
+    />,
+  )
+
+  for (const html of [whileRunning, onceDone]) {
+    const trigger = html.slice(html.indexOf('aria-expanded'), html.indexOf('</button>'))
+    // the chevron is the trigger's last child, and nothing pushes it across the panel
+    expect(trigger.trimEnd()).toMatch(/lucide-chevron-right[^>]*><path[^>]*><\/path><\/svg>$/)
+    expect(trigger).not.toContain('ml-auto')
+  }
+})
+
+test('a running turn says how many actions it took and for how long', () => {
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={run([
+        event('tool', 'Read', { tool: 'Read', target: 'a.ts' }),
+        event('tool', 'Edit', { tool: 'Edit', target: 'b.ts' }),
+        event('tool', 'Bash', { tool: 'Bash', target: 'pnpm test' }),
+      ])}
+    />,
+  )
+  expect(html).toContain('3 actions')
+  expect(html).toContain('data-testid="agent-progress"')
+  // no words from the agent yet: the call it is making stands in for them
+  expect(html).toContain('Bash · pnpm test')
+})
+
+test('a running line reads loader, time, actions, then what the agent is doing', () => {
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={run([
+        event('tool', 'Read', { tool: 'Read', target: 'a.ts' }),
+        event('message', 'All green, deploying now.'),
+        event('tool', 'Bash', { tool: 'Bash', target: 'astrale deploy' }),
+      ])}
+    />,
+  )
+  const order = [
+    'animate-spin',
+    'Working time so far',
+    '2 actions',
+    'All green, deploying now.',
+  ].map((text) => html.indexOf(text))
+  expect(order.every((index) => index >= 0)).toBe(true)
+  expect(order).toEqual([...order].sort((a, b) => a - b))
+  expect(html).not.toContain('astrale deploy')
+})
+
+test('the message being written streams in, without the machine block it ends with', () => {
+  const writing = {
+    ...run([event('tool', 'Edit', { tool: 'Edit' })]),
+    draft: { id: 'd1', text: 'Added the **field**.\n\n```json\n{ "schemaVersion": "x"' },
+  }
+  expect(visibleDraft(writing)).toBe('Added the **field**.')
+  const html = renderToStaticMarkup(<AgentTurn run={writing} />)
+  expect(html).toContain('>field</strong>')
+  expect(html).toContain('Writing…')
+  expect(html).not.toContain('schemaVersion')
+  // a fence just opened cannot say yet what it holds
+  expect(visibleDraft({ ...writing, draft: { id: 'd1', text: 'Done.\n```json\n' } })).toBe('Done.')
+  // a real code block stays
+  expect(
+    visibleDraft({ ...writing, draft: { id: 'd1', text: 'Run:\n```sh\npnpm test\n```' } }),
+  ).toContain('pnpm test')
+  // once written out as a message, or once the turn is over, the draft is gone
+  expect(
+    visibleDraft({ ...writing, events: [event('message', 'x', { id: 'd1' })] }),
+  ).toBeUndefined()
+  expect(visibleDraft({ ...writing, status: 'succeeded' })).toBeUndefined()
+})
+
+test('an interrupted turn says so plainly and offers one way forward: Continue', () => {
+  const interrupted: AgentRun = {
+    ...run([]),
+    instruction: 'Analyse the file system',
+    status: 'interrupted',
+    error: 'the studio restarted during this turn',
+  }
+  const html = renderToStaticMarkup(<AgentTurn run={interrupted} onContinue={() => {}} />)
+
+  expect(html).toContain('data-status="interrupted"')
+  expect(html).toContain('Interrupted')
+  expect(html).toContain('Studio restarted during this turn')
+  expect(html).toContain('Continue')
+  // never a second, competing action
+  expect(html).not.toContain('Retry')
+  expect(html).not.toContain('Failed')
+})
+
+test('a stopped turn offers Continue; an earlier one only says what happened', () => {
+  const stopped: AgentRun = { ...run([]), status: 'canceled' }
+  expect(renderToStaticMarkup(<AgentTurn run={stopped} onContinue={() => {}} />)).toContain(
+    'continue-turn',
+  )
+  const earlier = renderToStaticMarkup(<AgentTurn run={stopped} />)
+  expect(earlier).toContain('You stopped this turn')
+  expect(earlier).not.toContain('continue-turn')
 })

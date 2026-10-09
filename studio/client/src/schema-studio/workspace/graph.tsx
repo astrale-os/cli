@@ -9,7 +9,6 @@ import {
   type Edge,
   type EdgeChange,
   type InternalNode,
-  MiniMap,
   type Node,
   type NodeChange,
   Panel,
@@ -36,8 +35,6 @@ import { useUI } from '@/lib/store'
 import { decodeFlowNodeId } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
-import type { ClassNodeData } from '../projection'
-
 import { CanvasIconToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
@@ -47,8 +44,12 @@ import { type EdgeFocus, edgeTypes } from '../floating-edge'
 import { type Geometry, normalizeContainerLayout } from '../geometry'
 import { neighborSet, relationshipEdgeIds, selectedRelationshipContext } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
-import { CLASS_H, CLASS_W, DOCK_CLEARANCE, FUNCTION_HUE, VIEW_HUE, moduleTint } from '../palette'
-import { workspaceExternalNodeId, workspaceExternalOrigin } from './external-frames'
+import { CLASS_H, CLASS_W, DOCK_CLEARANCE } from '../palette'
+import {
+  followExternalFrames,
+  workspaceExternalNodeId,
+  workspaceExternalOrigin,
+} from './external-frames'
 import { workspaceGeometry, workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
@@ -159,14 +160,12 @@ export function WorkspaceSchemaGraph({
   const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const setOpenAnchor = useUI((state) => state.setOpenAnchor)
   const showCardinality = useUI((state) => state.showCardinality)
-  const scheme = useUI((state) => state.resolvedTheme)
   const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
   const setExternalPosition = useSchemaWorkspace((state) => state.setExternalPosition)
   const ensureDomainPositions = useSchemaWorkspace((state) => state.ensureDomainPositions)
-  const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
   const resetWorkspaceFrames = useSchemaWorkspace((state) => state.resetWorkspaceFrames)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
   const toggleDomain = useSchemaWorkspace((state) => state.toggleDomain)
@@ -191,7 +190,6 @@ export function WorkspaceSchemaGraph({
   const fittedNodes = useRef('')
   // The domains a running reorganize still waits on — see the projection effect below.
   const reorganizing = useRef<string[] | null>(null)
-  const solo = domains.length === 1
 
   // Selecting on the canvas says what you are looking at, and nothing else. It used to
   // also make the clicked node's domain ACTIVE — which silently swapped the agent
@@ -269,7 +267,12 @@ export function WorkspaceSchemaGraph({
       adopted.current.workspaceOrigins === workspaceOrigins
     // …unless a reorganize is in flight, whose first wave is exactly a frame-only change and
     // the one time the canvas is not already painting the answer.
-    if (echo && reorganizing.current === null) return
+    if (echo && reorganizing.current === null) {
+      // The one thing such an echo can still bring: imported frames the reader never placed
+      // are laid out beside the domains that import them, so a dropped domain takes them along.
+      setNodes((current) => followExternalFrames(current, projection.nodes))
+      return
+    }
     adopted.current = { domains, catalog, expandedExternals, workspaceOrigins }
     // A reorganize lands in two waves (see `reorganizeSettled`), and the first one packs the
     // frames around the very geometry it is discarding. Paint that wave — it is what the
@@ -279,8 +282,9 @@ export function WorkspaceSchemaGraph({
     const settling =
       reorganizing.current !== null && !reorganizeSettled(domains, reorganizing.current)
     if (!settling) {
+      // Imported frames are NOT recorded here: one the reader never moved stays laid out
+      // beside the domains importing it, and follows them. Only a drop records one.
       ensureDomainPositions(projection.domainPositions)
-      ensureExternalPositions(projection.externalPositions)
     }
     // A box saved too small for its classes would drop them onto each other, one saved
     // too large keeps space no class uses — paint the fit, and let the next drag persist it.
@@ -303,15 +307,7 @@ export function WorkspaceSchemaGraph({
     if (fittedNodes.current === nodeKey) return
     fittedNodes.current = nodeKey
     setFitRequest((n) => n + 1)
-  }, [
-    catalog,
-    domains,
-    ensureDomainPositions,
-    ensureExternalPositions,
-    expandedExternals,
-    projection,
-    workspaceOrigins,
-  ])
+  }, [catalog, domains, ensureDomainPositions, expandedExternals, projection, workspaceOrigins])
 
   // React Flow's queued fitView waits on its measurement lifecycle, so frame the
   // canvas from the geometry we already hold (see fit.ts).
@@ -603,20 +599,6 @@ export function WorkspaceSchemaGraph({
     if (!hasAnyUnsentDraft()) setOpenAnchor(null)
   }, [setOpenAnchor])
 
-  const minimapNodeColor = useCallback(
-    (node: Node) =>
-      node.type === 'classNode'
-        ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
-        : node.type === 'viewNode'
-          ? moduleTint(VIEW_HUE, scheme).mark
-          : node.type === 'functionNode'
-            ? moduleTint(FUNCTION_HUE, scheme).mark
-            : node.type === 'workspaceDomain' && !solo
-              ? moduleTint(255, scheme).border
-              : 'transparent',
-    [scheme, solo],
-  )
-
   return (
     <WorkspaceNodeActionsProvider actions={nodeActions}>
       <SmartEdgeProvider nodes={nodes} options={SMART_EDGE_PROVIDER_OPTIONS}>
@@ -659,13 +641,6 @@ export function WorkspaceSchemaGraph({
               <LayoutGrid className="h-4 w-4 text-foreground" />
             </ControlButton>
           </Controls>
-          <MiniMap
-            pannable
-            zoomable
-            style={{ width: 168, height: 112, ...dockLift }}
-            nodeColor={minimapNodeColor}
-            nodeStrokeWidth={0}
-          />
 
           {projection.diagnostics.length > 0 && (
             <Panel position="top-center" className="max-w-xl">

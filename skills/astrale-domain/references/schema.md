@@ -38,6 +38,16 @@ Choose required versus optional from the business invariant, not fixture conveni
 native node properties rather than redeclaring them. Preserve timestamps and identities through
 SDK-owned canonical types.
 
+Declare `immutable` when the business invariant forbids rewriting a value, for example a contract
+file or a source digest: `property(schema, { immutable: 'create' })` accepts the value only when the
+node or edge is created; `property(schema, { required: false, immutable: 'once' })` also accepts one
+later write while the value is absent, such as a blob attached after creation. Neither can be changed
+or unset afterwards; deleting the element is the only way to drop it. A rewrite is refused with
+`MUTATION_PROPERTY_IMMUTABLE`, and a second or concurrent write of a `once` value fails its absence
+precondition with `MUTATION_PRECONDITION_FAILED`. Do not combine it with `auto(...)` or
+`stateProperty(...)`, and do not mark a `once` property required. Changing the option on an existing
+property is a breaking schema change for dependents.
+
 One exported `stateMachine` is the authority for a finite lifecycle. Persist it with
 `stateProperty(machine)` and reuse `machine.stateSchema` or `machine.eventSchema` in callable values;
 do not copy its states or events into sibling enums or transition Rules.
@@ -112,5 +122,8 @@ allocate a new ID, so consumers should resolve the ref rather than cache an inst
 
 ## Views
 
-Schema Views declare semantic view identities. Frontend routing and Shell handshake belong to the SDK
-frontend composition, not to Class properties or callable handlers.
+Schema Views declare semantic view identities of the Domain: `view({ description? })`. Every View
+belongs to its own Domain and opens on it; a View declaration names no Class or node. A screen about
+one node is an internal route of the Domain frontend. Frontend
+routing and Shell handshake belong to the SDK frontend composition, not to Class properties or
+callable handlers.

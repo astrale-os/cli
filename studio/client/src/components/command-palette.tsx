@@ -10,12 +10,14 @@ import {
   Folder,
   Globe,
   Loader2,
+  Map as MapIcon,
   Plug,
   Spline,
   Tag,
 } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
+import { TOUR_STEPS } from '@/components/tour'
 import { api, qk } from '@/lib/api'
 import { buildFunctionsModel } from '@/lib/functions'
 import { useWorkspace } from '@/lib/hooks'
@@ -300,6 +302,7 @@ export function CommandPalette() {
   const open = useUI((s) => s.paletteOpen)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
   const setSection = useUI((s) => s.setSection)
+  const setTourOpen = useUI((s) => s.setTourOpen)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
   const setFocus = useUI((s) => s.setFocus)
@@ -308,6 +311,10 @@ export function CommandPalette() {
   const canvas = useCanvasDomains()
   const { data: domains = [] } = useWorkspace()
   const indexCache = useRef<PaletteSearchIndexCache | null>(null)
+  const [search, setSearch] = useState('')
+  useEffect(() => {
+    if (!open) setSearch('')
+  }, [open])
   if (!indexCache.current) indexCache.current = new PaletteSearchIndexCache()
   const bundleQueries = useQueries({
     queries: domains.map((domain) => paletteBundleQuery(domain.id, open)),
@@ -335,6 +342,23 @@ export function CommandPalette() {
   }, [setPaletteOpen])
 
   const close = () => setPaletteOpen(false)
+
+  // cmdk ranks items, not groups: the tour sits last, and comes first only when asked for.
+  const wantsHelp = /\b(tour|onboard|help|guide)/i.test(search)
+  const helpGroup = (
+    <Command.Group heading="Help">
+      <Command.Item
+        value="tour studio onboarding help"
+        className={ITEM_CLS}
+        onSelect={() => {
+          close()
+          setTourOpen(true)
+        }}
+      >
+        <Row icon={MapIcon} label="Studio tour" meta={`${TOUR_STEPS.length} steps`} />
+      </Command.Item>
+    </Command.Group>
+  )
 
   // Build once per Domain schema revision, not once per loading-phase poll.
   const index = indexCache.current.build(domains, bundles)
@@ -373,6 +397,8 @@ export function CommandPalette() {
       <div className="flex items-center border-b px-3">
         <Command.Input
           autoFocus
+          value={search}
+          onValueChange={setSearch}
           placeholder="Search the schema…"
           className="h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
@@ -403,6 +429,8 @@ export function CommandPalette() {
       )}
 
       <Command.List className="max-h-[60vh] overflow-y-auto overflow-x-hidden p-2">
+        {wantsHelp && helpGroup}
+
         <Command.Empty className="py-8 text-center text-sm text-muted-foreground">
           {load.pending.length > 0 ? 'No matches in the domains loaded so far' : 'No results'}
         </Command.Empty>
@@ -547,6 +575,8 @@ export function CommandPalette() {
             </Command.Item>
           ))}
         </Command.Group>
+
+        {!wantsHelp && helpGroup}
       </Command.List>
 
       <div className="flex items-center justify-end gap-3 border-t px-3 py-2 text-[11px] text-muted-foreground">

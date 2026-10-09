@@ -61,7 +61,6 @@ export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
   views: {
     overview: view({
       description: 'CRM overview.',
-      target: 'domain',
     }),
   },
   policies: { mayManageInvoice },

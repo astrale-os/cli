@@ -22,6 +22,7 @@ import type {
 } from '../../shared/types'
 
 import { isSchemaRevision } from '../../shared/types'
+import { dependencyFootprint, type DependencyFootprintSchema } from './dependency-footprint'
 
 type AnyRecord = Record<string, unknown>
 
@@ -55,12 +56,8 @@ export interface SchemaSdk {
       readonly closure: readonly CanonicalDomainSchemaV1[]
     }
   }
-  readonly schema: {
+  readonly schema: DependencyFootprintSchema & {
     resolve(input: any): ResolvedSchemaDomain
-    compareDependencyMeaning(
-      source: CanonicalDomainSchemaV1,
-      target: CanonicalDomainSchemaV1,
-    ): { readonly footprint: readonly unknown[] }
   }
   readonly ClassKey: {
     is(input: unknown): input is IrClassKey
@@ -144,7 +141,7 @@ export function extractCanonicalSchemaFromSdk(
   }
 }
 
-/** Project canonical Core data without importing Application or Runtime modules. */
+/** Project canonical Core data without importing Domain definition or Runtime modules. */
 export function projectCanonicalCore(
   root: CanonicalDomainSchemaV1,
 ): Pick<StudioCore, 'domain' | 'nodes' | 'edges'> {
@@ -208,7 +205,7 @@ function projectImports(
   // The DSL computes the exact reachable footprint. Studio no longer recurses
   // through JSON Schemas, policies, Views, and Core declarations to rediscover it.
   for (const dependency of closure) {
-    const footprint = sdk.schema.compareDependencyMeaning(domain.source, dependency).footprint
+    const footprint = dependencyFootprint(sdk.schema, domain.source, dependency)
     for (const candidate of footprint) {
       if (!sdk.ClassKey.is(candidate)) continue
       const ref = sdk.ClassKey.ref(candidate)
@@ -305,13 +302,8 @@ function projectFunction(name: string, value: unknown): IrFunction {
 
 function projectView(name: string, value: unknown): IrView {
   const declaration = asRecord(value) ?? {}
-  const target = asRecord(declaration.target)
   return {
     name,
-    target:
-      target?.kind === 'definition'
-        ? { kind: 'definition', definitions: refsOf(target.definitions) }
-        : { kind: 'domain' },
     ...(typeof declaration.description === 'string'
       ? { description: declaration.description }
       : {}),

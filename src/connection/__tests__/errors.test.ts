@@ -1,6 +1,7 @@
 import { ResponseError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
+import { stripVTControlCharacters } from 'node:util'
 
 import { formatKernelError, functionInputIssues, schemaUpgradeHint } from '../errors'
 import { transportFailure } from './failure-fixtures'
@@ -45,6 +46,34 @@ describe('formatKernelError', () => {
       transport: { kind: 'acquisition', resource: 'publication' },
     })
     expect(writes[0]).not.toContain('ECONNREFUSED')
+  })
+
+  test('keeps the release acquisition resource of a v4 Host read', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        transportFailure('Release discovery request failed.', 'connect', {
+          kind: 'acquisition',
+          resource: 'release',
+        }),
+        true,
+        'https://localhost:8443/kernel/host',
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toMatchObject({
+      error: 'CONNECTION_ERROR',
+      message: 'Release discovery request failed.',
+      phase: 'connect',
+      transport: { kind: 'acquisition', resource: 'release' },
+    })
   })
 
   test('retains operation recovery only for outcome-unknown transport failure', async () => {
@@ -390,11 +419,56 @@ describe('formatKernelError', () => {
     expect(details.join('\n')).toContain('reason: SCHEMA_UPGRADE_INCOMPATIBLE')
     expect(details.join('\n')).toContain('installed issuer: https://old.example')
     expect(details.join('\n')).toContain('replacement issuer: https://new.example')
+    expect(details.join('\n')).toContain('--allow-issuer-change=grc.example')
     expect(details.join('\n')).toContain('astrale domain uninstall grc.example')
     expect(details.join('\n')).toContain(
-      'Safe uninstall refuses surviving dependents or owned data.',
+      'safe uninstall refuses surviving dependents or owned data',
     )
-    expect(details.join('\n')).toContain('astrale domain uninstall grc.example --destructive')
+  })
+
+  test('names a stale consent and an in-flight limit (CT10)', async () => {
+    const details: string[] = []
+    const originalError = console.error
+    const originalLog = console.log
+    console.error = () => {}
+    console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
+    try {
+      await formatKernelError(
+        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
+          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+          details: {
+            phase: 'upgrade',
+            origin: 'grc.example',
+            issue: 'issuer-changed',
+            installedIssuer: 'https://other.example',
+            replacementIssuer: 'https://new.example',
+            consented: { from: 'https://old.example', to: 'https://new.example' },
+          },
+        }),
+        false,
+      )
+      await formatKernelError(
+        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
+          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+          details: {
+            phase: 'upgrade',
+            origin: 'grc.example',
+            issue: 'in-flight-limit',
+            inFlight: 8,
+          },
+        }),
+        false,
+      )
+    } finally {
+      console.error = originalError
+      console.log = originalLog
+    }
+
+    const text = details.join('\n')
+    expect(text).toContain('consented: https://old.example -> https://new.example')
+    expect(text).toContain('the installation changed after it was read')
+    expect(text).toContain('replaced issuers in flight: 8')
+    expect(text).toContain('--revoke-previous')
   })
 
   test('explains a private Domain source without exposing transport diagnostics', async () => {
@@ -529,11 +603,11 @@ describe('formatKernelError', () => {
       console.log = originalLog
     }
 
-    expect(errors.join('\n')).toContain('Function input is invalid.')
-    expect(details.join('\n')).toContain(
-      '/customer/email: Must be a valid email address. (INVALID_FORMAT)',
-    )
-    expect(details.join('\n')).not.toContain('astrale introspect')
+    // Interactive output is styled; compare its text so a forced-colour terminal gives the same result.
+    const rendered = stripVTControlCharacters(details.join('\n'))
+    expect(stripVTControlCharacters(errors.join('\n'))).toContain('Function input is invalid.')
+    expect(rendered).toContain('/customer/email: Must be a valid email address. (INVALID_FORMAT)')
+    expect(rendered).not.toContain('astrale introspect')
   })
 
   test('keeps the introspection fallback for legacy Function input issues', async () => {

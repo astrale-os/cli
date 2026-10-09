@@ -10,7 +10,7 @@ import type { KernelCommandOpts } from '../connection'
 import type { ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
 import type { CommandDefinition } from '../program/index'
 
-import { expandSelfInPath, withClientSession } from '../connection'
+import { withClientSession } from '../connection'
 import { AstraleError } from '../errors'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
 import { readInstances } from '../lib/instance'
@@ -23,10 +23,11 @@ import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
   candidateSlug,
+  type DomainViews,
   parseViewSpec,
   pickCandidate,
+  resolveDomainViews,
   resolveInstalledDomainView,
-  resolveViewCandidates,
   selectedView,
   type ViewCandidate,
 } from '../lib/view/resolve'
@@ -50,7 +51,6 @@ import { snapshotText, waitForSettledSnapshot } from '../lib/view/snapshot'
 
 export type ViewOpts = KernelCommandOpts &
   RawOutputOpts & {
-    target?: string
     view?: string
     list?: boolean
     headed?: boolean
@@ -91,53 +91,47 @@ export async function resolveSession(
   opts: ViewOpts,
 ): Promise<{ view?: ResolvedView; candidates: ViewCandidate[] }> {
   const parsed = parseViewSpec(spec)
-  if (parsed.kind === 'target' && opts.target) {
-    fatal(new Error('Pass the target either as the positional or as --target, not both'))
-  }
   if (parsed.kind === 'view' && opts.view) {
     fatal(new Error('An explicit ViewPath cannot be combined with --view <slug>'))
   }
-  const { target, candidates } = await withClientSession(opts, async (context) => {
-    if (parsed.kind === 'view' && opts.target === undefined) {
+  const views = await withClientSession(opts, async (context): Promise<DomainViews> => {
+    if (parsed.kind === 'view') {
       const candidate = await resolveInstalledDomainView(context, parsed.path)
-      return { target: String(candidate.target), candidates: [candidate] }
+      return { domain: String(candidate.target), candidates: [candidate], entrypoint: candidate }
     }
-    const targetInput = parsed.kind === 'target' ? parsed.path : opts.target!
-    const { path: target } = await expandSelfInPath(targetInput, context)
-    return { target, candidates: await resolveViewCandidates(context, target) }
+    return resolveDomainViews(context, parsed.origin)
   })
 
   if (opts.list) {
-    return { candidates }
+    return { candidates: views.candidates }
   }
-  const selector = parsed.kind === 'view' ? parsed.path : opts.view
-  const picked = await chooseCandidate(candidates, target, selector, opts)
+  const picked = await chooseCandidate(views, opts.view, opts)
   return {
     view: selectedView(picked),
-    candidates,
+    candidates: views.candidates,
   }
 }
 
 async function chooseCandidate(
-  candidates: ViewCandidate[],
-  anchor: string,
+  views: DomainViews,
   selector: string | undefined,
   opts: ViewOpts,
 ): Promise<ViewCandidate> {
-  const picked = pickCandidate(candidates, anchor, selector)
+  const picked = pickCandidate(views, selector)
   if (picked !== 'ambiguous') return picked
+  const { candidates, domain } = views
   // promptSelect answers undefined when the terminal cannot be asked, so the
   // ambiguity error below stays the single non-interactive outcome.
   if (!isMachine(opts)) {
     const chosen = await promptSelect(
-      `${anchor} has ${candidates.length} views — open which?`,
+      `${domain} has ${candidates.length} views and no entrypoint - open which?`,
       candidates.map((c) => ({ name: `${candidateSlug(c)}  ${chalk.dim(c.url)}`, value: c })),
     )
     if (chosen) return chosen
   }
   throw new AstraleError(
     'AMBIGUOUS_VIEW',
-    `${anchor} resolves ${candidates.length} views — pick one with --view <slug>: ${candidates.map(candidateSlug).join(', ')}`,
+    `${domain} publishes ${candidates.length} views and no entrypoint - pick one with --view <slug>: ${candidates.map(candidateSlug).join(', ')}`,
   )
 }
 
@@ -383,13 +377,15 @@ async function startSessionLocked(
 
 type PageState = { state: string; error?: string }
 
-async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
+export async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
   const deadline = Date.now() + STATE_TIMEOUT_MS
   let last: PageState = { state: 'waiting' }
   while (Date.now() < deadline) {
     try {
       last = (await (await fetch(`${record.pageUrl}state`)).json()) as PageState
-      if (last.state === 'connected' || last.state === 'plain' || last.state === 'failed') {
+      if (
+        ['connected', 'plain', 'failed', 'refreshing', 'degraded', 'expired'].includes(last.state)
+      ) {
         return last
       }
     } catch {
@@ -442,6 +438,12 @@ function describeState(state: PageState): string {
       return `failed — ${state.error ?? 'unknown error'}`
     case 'mounting':
       return 'still mounting (check again with a snapshot)'
+    case 'refreshing':
+      return 'renewing the session (View remains mounted)'
+    case 'degraded':
+      return 'session renewal failed (reconnecting automatically)'
+    case 'expired':
+      return 'session expired (reconnecting automatically)'
     default:
       return 'page not loaded yet'
   }
@@ -467,7 +469,7 @@ async function reportOpened(
   }
   const label = `/:${record.view.route.key}`
   log.success(`View session ${chalk.bold(record.id)} — ${chalk.bold(label)}`)
-  log.dim(`  target    ${record.view.target}`)
+  log.dim(`  domain    ${record.view.target}`)
   log.dim(
     `  identity  ${record.identity ?? '(default)'}  instance  ${record.instance ?? '(active)'}`,
   )
@@ -544,9 +546,7 @@ async function sessionsCommand(opts: ViewOpts): Promise<void> {
     return
   }
   for (const s of sessions) {
-    console.log(
-      `${chalk.bold(s.id)}  /:${s.view.route.key}  target ${s.view.target}  ${chalk.dim(s.pageUrl)}`,
-    )
+    console.log(`${chalk.bold(s.id)}  /:${s.view.route.key}  ${chalk.dim(s.pageUrl)}`)
   }
 }
 
@@ -575,18 +575,16 @@ export default {
   arguments: [
     {
       name: 'spec',
-      description: 'ViewPath (/:origin:view.slug) or target node (/path or @id)',
+      description: 'ViewPath (/:origin:view.slug) or Domain origin (origin or /:origin)',
       required: false,
     },
   ],
   options: [
     {
-      flags: '--target <path>',
-      description:
-        'Target node to open the view on (optional — some views are standalone); @self works',
+      flags: '--view <slug>',
+      description: 'With a Domain origin: open this View instead of the Domain entrypoint',
     },
-    { flags: '--view <slug>', description: 'Pick a view when the target resolves several' },
-    { flags: '--list', description: 'Resolve and print the candidate views; do not open' },
+    { flags: '--list', description: "Print the Domain's views; do not open" },
     { flags: '--headed', description: 'Visible agent-browser window' },
     { flags: '--browser', description: 'Open in the system default browser instead' },
     { flags: '--no-open', description: 'Start the session and print the URL only' },
@@ -613,35 +611,48 @@ export default {
   ],
   afterHelpText: `
 What it does:
-  Renders ONE view — no GUI, no cookies, no WorkOS. Target-bound views resolve on
-  the kernel; an explicit Domain view resolves from authenticated installation
-  introspection. It then starts a loopback session server that supplies the shell
+  Renders ONE view - no GUI, no cookies, no WorkOS. Every View belongs to its
+  Domain: a Domain origin opens its entrypoint (or --view <slug>) from the
+  Domain's View catalog, and an explicit ViewPath resolves from authenticated
+  installation introspection. A View that shows one node selects it through its
+  own internal routing; there is no target node to pass.
+  It then starts a loopback session server that supplies the shell
   handshake (real handshake via @astrale-os/shell, token minted from YOUR CLI
   identity, kernel calls proxied), and opens the page headless in agent-browser.
   Driving stays agent-browser's job; auth follows --as/--creds/-i like any kernel
   command.
 
   A session stays up ~30 min idle (heartbeat while the page is open). The view
-  gets exactly what the GUI would hand it: one target-bound resolved placement,
+  gets exactly what the GUI would hand it: one Domain-bound resolved placement,
   an audience-bound credential for shell mounts, and the kernel endpoint.
 
 Examples:
-  $ astrale view @customer
+  $ astrale view crm.example.dev
+  $ astrale view crm.example.dev --view dashboard --snapshot
   $ astrale view /:crm.example.dev:view.dashboard
-  $ astrale view /:agents.astrale.ai:view.agent --target @f00d1234 --as alice
-  $ astrale view @customer --snapshot
+  $ astrale view /:agents.astrale.ai:view.agent --as alice
   $ astrale view /:integrations.astrale.ai:view.application
+  $ astrale view crm.example.dev --list
   $ astrale view --list
   $ astrale view --sessions ; astrale view --close --all
   $ astrale view --refresh v-abc123
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
     if (opts.refresh !== undefined) return refreshCommand(opts)
-    if (opts.close !== undefined) return closeCommand(opts)
+    if (opts.close !== undefined) return closeCommand(opts).catch((error) => fatal(error, opts))
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)
 
-    if (!spec) return fatal(new Error('Nothing to open — pass a ViewPath or target node.'))
+    if (!spec) {
+      return fatal(
+        new AstraleError(
+          'MISSING_ARG',
+          '`view` needs a ViewPath or Domain origin.',
+          'Run: astrale view crm.example.dev --snapshot',
+        ),
+        opts,
+      )
+    }
     const wantsAgentBrowser = !opts.list && !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
       return fatal(
@@ -661,11 +672,11 @@ Examples:
     )
     if (opts.list) {
       if (isMachine(opts)) output(candidates, opts)
-      else if (candidates.length === 0) log.dim('No views resolve here.')
+      else if (candidates.length === 0) log.dim('This Domain publishes no views.')
       else {
         for (const c of candidates) {
           console.log(
-            `${chalk.bold(candidateSlug(c))}  ${c.handshake}  ${c.origin}  ${chalk.dim(c.url)}  ${c.path}`,
+            `${chalk.bold(candidateSlug(c))}  ${c.handshake}  ${chalk.dim(c.url)}  ${c.path}`,
           )
         }
       }

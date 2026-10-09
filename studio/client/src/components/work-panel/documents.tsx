@@ -9,13 +9,14 @@ import {
   FileText,
   FileType,
   Hash,
+  Loader2,
   Paperclip,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import { FilePickButton } from '@/components/composer'
+import { FilePickButton, useFilePicker } from '@/components/composer'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -96,22 +97,52 @@ export function AttachButton({
           Attach to domain
         </p>
         {domains.map((domain) => (
-          <div
+          <DomainAttachRow
             key={domain.id}
-            className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent"
-          >
-            <span className="min-w-0 flex-1 truncate text-[12px]">{domain.origin}</span>
-            <DomainAttachButton
-              domainId={domain.id}
-              onPicked={() => {
-                setOpen(false)
-                onPicked?.()
-              }}
-            />
-          </div>
+            domainId={domain.id}
+            origin={domain.origin}
+            onPicked={() => {
+              setOpen(false)
+              onPicked?.()
+            }}
+          />
         ))}
       </PopoverContent>
     </Popover>
+  )
+}
+
+/**
+ * One domain of the paperclip's list, and the whole row is the choice: the clip
+ * was already pressed, so a second one on every row would only say it again.
+ */
+function DomainAttachRow({
+  domainId,
+  origin,
+  onPicked,
+}: {
+  domainId: string
+  origin: string
+  onPicked: () => void
+}) {
+  const { upload } = useDocumentMutations(domainId)
+  const { pick, field } = useFilePicker({ onFiles: (files) => upload.mutate(files), onPicked })
+  return (
+    <>
+      <button
+        type="button"
+        onClick={pick}
+        disabled={upload.isPending}
+        aria-label={`Attach a document to ${origin}`}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:opacity-50"
+      >
+        <span className="min-w-0 flex-1 truncate">{origin}</span>
+        {upload.isPending && (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+        )}
+      </button>
+      {field}
+    </>
   )
 }
 

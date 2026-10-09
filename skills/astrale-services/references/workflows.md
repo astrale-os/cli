@@ -29,12 +29,13 @@ This deploys provider compute and returns provider evidence. It does not install
 installation is desired, use the normal explicit command:
 
 ```bash
-astrale domain install "$PUBLISHED_APPLICATION_URL" --direct -i "$CONSUMER_INSTANCE"
+astrale domain install "$PUBLISHED_APPLICATION_URL" -i "$CONSUMER_INSTANCE"
 ```
 
-For a managed one-command project deployment, use `@astrale-os/adapter-astrale`. It deliberately
-performs Services deploy, waits for stable Publication readiness, then installs once on the
-configured instance.
+To deploy a Domain project, use `@astrale-os/adapter-astrale` instead: `astrale-domain deploy
+<environment>` makes one immutable deployment of its release on the Admin instance's Services, waits
+until it serves that release, and prints its URL. It never installs: install that URL with the same
+explicit command (the astrale-domain skill's `references/release.md`).
 
 ## Operate a Service
 

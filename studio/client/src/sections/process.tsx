@@ -1,4 +1,4 @@
-import type { IrFunction, IrMethod, StudioSchemaBundle, ViewInfo } from '@shared/types'
+import type { IrFunction, IrMethod, StudioSchemaBundle } from '@shared/types'
 
 import { ArrowUpRight, Box, Braces, LayoutTemplate, Sprout, Workflow, Zap } from 'lucide-react'
 import { type ReactNode, useMemo } from 'react'
@@ -49,21 +49,6 @@ export function canonicalCoreCount(value: unknown): number {
       ? Object.keys(core.nodes).length
       : 0
   return nodes + (Array.isArray(core.edges) ? core.edges.length : 0)
-}
-
-/** Distinct classes a list of views binds to (UI entrypoints), in first-seen order. */
-function viewTargets(views: ViewInfo[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const v of views) {
-    for (const t of Array.isArray(v.viewFor) ? v.viewFor : v.viewFor ? [v.viewFor] : []) {
-      if (!seen.has(t)) {
-        seen.add(t)
-        out.push(t)
-      }
-    }
-  }
-  return out
 }
 
 export function ProcessSection({
@@ -125,7 +110,6 @@ export function ProcessSection({
 
   const fnCount = groups.reduce((n, g) => n + g.fns.length, 0)
   const views = anatomy?.views ?? []
-  const uiTargets = useMemo(() => viewTargets(anatomy?.views ?? []), [anatomy?.views])
 
   const gotoClass = (name: string) => {
     if (!domainId) return
@@ -207,7 +191,7 @@ export function ProcessSection({
                       </IconTile>
                     }
                     title={`${views.length} view${views.length === 1 ? '' : 's'}`}
-                    subtitle={uiTargets.length > 0 ? uiTargets.join(' · ') : 'UI entrypoints'}
+                    subtitle={views.map((view) => view.slug).join(' · ')}
                     trailing={<ArrowUpRight className="h-4 w-4 text-muted-foreground" />}
                   />
                 )}

@@ -52,6 +52,7 @@
   border-color: currentColor;
 }
 .schema-edge-label.is-on {
+  z-index: 1;
   border-color: var(--color-muted-foreground);
   color: var(--color-foreground);
 }
@@ -62,6 +63,13 @@
 }
 .react-flow__edge.is-selected .react-flow__edge-path {
   stroke-width: 3px;
+}
+/* Labels are placed to avoid each other, but a crowded canvas can still force two to touch.
+   Every label shares one portal layer and stacks in DOM order, so the selected edge's labels are
+   lifted above the rest (and a focused node's above the faded context) to stay readable. */
+.schema-edge-label.is-selected {
+  z-index: 2;
+  border-color: var(--color-primary);
 }
 
 /* Selecting a relationship promotes its actual endpoints while leaving every other node and

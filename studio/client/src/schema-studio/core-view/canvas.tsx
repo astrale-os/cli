@@ -7,7 +7,6 @@ import {
   type Edge,
   type EdgeChange,
   Handle,
-  MiniMap,
   type Node,
   type NodeChange,
   type NodeProps,
@@ -349,13 +348,6 @@ export function CoreView({
         <Background gap={20} size={1} color="var(--color-input)" />
         <EdgeMarkerDefs />
         <Controls showInteractive={false} position="bottom-left" style={lift} />
-        <MiniMap
-          pannable
-          zoomable
-          style={{ width: 168, height: 112, ...lift }}
-          nodeColor={(n) => moduleTint((n.data as CoreNodeData).hue).mark}
-          nodeStrokeWidth={0}
-        />
         <Panel position="top-right">
           <CanvasToolbar>
             <CanvasIconToggle

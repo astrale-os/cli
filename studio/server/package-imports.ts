@@ -8,7 +8,7 @@
  * when Studio runs from source, but throws `Cannot find package '#schema'`
  * inside the shipped binary — the compiled runtime resolves against its own
  * embedded graph, not the Domain's package manifest. Discovery then dropped
- * every Domain whose Application imports its Schema through an alias.
+ * every Domain whose definition imports its Schema through an alias.
  *
  * So Studio walks the manifest itself, following the Node resolution algorithm
  * for `imports`: identical answers from source and from the executable, with no

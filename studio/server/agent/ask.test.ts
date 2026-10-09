@@ -44,16 +44,16 @@ test('Ask uses the active chat model and forks the session of that chat alone', 
     join(root, 'astrale.config.ts'),
     `import { defineProject } from '@astrale-os/sdk/project'
 import { cloudflare } from '@astrale-os/adapter-cloudflare'
-import application from './application.js'
-export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+import domain from './domain.js'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
 `,
   )
   writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
   writeFileSync(
-    join(root, 'application.ts'),
-    `import { defineApplication } from '@astrale-os/sdk/application'
+    join(root, 'domain.ts'),
+    `import { defineDomain } from '@astrale-os/sdk/domain'
 import { Test } from './schema/index.js'
-export default defineApplication({ schema: Test, runtime: {} as never })
+export default defineDomain({ schema: Test, runtime: {} as never })
 `,
   )
   const handle = registerDomain(root)!

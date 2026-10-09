@@ -52,9 +52,9 @@ test('an imported domain frame drags from anywhere, member cards included', asyn
     })
     .toBe(true)
 
-  // Initial layout also travels through the debounced machine-side state. Wait for it so
-  // the post-drag assertion cannot accidentally observe that earlier write.
-  await expect.poll(savedPosition).not.toBeNull()
+  // A frame nobody moved has no record: it is laid out beside the domain importing it, and
+  // only a drop gives it one.
+  expect(await savedPosition()).toBeNull()
   const savedAtRest = JSON.stringify(await savedPosition())
 
   const parked = await frameTransform()

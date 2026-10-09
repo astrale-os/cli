@@ -61,7 +61,7 @@ afterEach(() => {
 })
 
 async function runInstall(instance: string): Promise<void> {
-  const { installViaAdmin } = await import('../domain/install')
+  const { installViaAdmin } = await import('../domain/legacy/catalog-install')
   await installViaAdmin(
     'crm.acme.dev',
     {
@@ -155,7 +155,7 @@ describe('admin domain install owner boundary', () => {
         replacementIssuer: 'https://new.example',
       },
     })
-    const { installViaAdmin } = await import('../domain/install')
+    const { installViaAdmin } = await import('../domain/legacy/catalog-install')
 
     await expect(
       installViaAdmin(

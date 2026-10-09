@@ -165,6 +165,13 @@ export function reconcileOwnedInvitation(options: AdminConnectionOptions, invita
   )
 }
 
+/** Resolve a known Instance in its own Admin session, whichever Fleet holds it. */
+export function resolveOwnedInstance(options: AdminConnectionOptions, identifier: string) {
+  return withAdminClientSession(options, (context) =>
+    resolveOwnedInstanceInContext(context, identifier),
+  )
+}
+
 /** Resolve a known Instance independently of default placement. */
 export async function resolveOwnedInstanceInContext(
   context: ConnectionContext,
