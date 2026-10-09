@@ -67,7 +67,7 @@ For a non-Root caller, an authorized Function requires both:
   Describe the constituent match Policies; do not add unsupported metadata or duplicate patterns for a label.
 - Read `users.md` for Shell User subclasses, registration, and membership. Business graph ownership
   does not justify a shadow User or manual writes to Shell's membership/authority pair.
-- Declare the exact protected foreign Function in Application requirements when calling as the Domain,
+- Declare the exact protected foreign Function in the Domain definition's requirements when calling as the Domain,
   including Policy-admitted Shell methods. Installation supplies the Domain principal's capability;
   the carried Grant must still satisfy the callable's intrinsic or Policy branch.
 - For a human-principal session, inspect the human's effective group profile instead. Domain requirements

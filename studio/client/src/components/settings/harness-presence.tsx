@@ -13,6 +13,9 @@ import { cn } from '@/lib/utils'
  * answered when Studio asked?".
  */
 export function HarnessPresenceRow({ presence }: { presence: HarnessPresence }) {
+  // the agent CLI's own version: the build Studio pins, or what a local one reported
+  const version = presence.cli?.version ?? presence.version
+  const warned = presence.ok && !!presence.cli?.warning
   return (
     <div className="flex items-start gap-2.5 px-3 py-2.5">
       <HarnessLogo
@@ -28,16 +31,16 @@ export function HarnessPresenceRow({ presence }: { presence: HarnessPresence }) 
           <span
             className={cn(
               'ml-auto shrink-0 font-mono text-[11px]',
-              presence.ok ? 'text-muted-foreground' : 'text-destructive',
+              !presence.ok ? 'text-destructive' : warned ? 'text-warning' : 'text-muted-foreground',
             )}
           >
-            {presence.ok ? (presence.version ?? 'detected') : 'not detected'}
+            {presence.ok ? (version ?? 'detected') : 'not detected'}
           </span>
           <span
             aria-hidden
             className={cn(
               'h-2 w-2 shrink-0 rounded-full',
-              presence.ok ? 'bg-success' : 'bg-destructive',
+              !presence.ok ? 'bg-destructive' : warned ? 'bg-warning' : 'bg-success',
             )}
           />
         </div>

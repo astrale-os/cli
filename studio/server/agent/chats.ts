@@ -38,6 +38,8 @@ import { decodeAttachments } from './attachments'
 const CHATS_DIR = 'chats'
 const chatFile = (id: string) => `${CHATS_DIR}/${id}.json`
 const ACTIVE_FILE = 'active-chat.json'
+/** The order the tabs were arranged in, by id; absent until someone drags one. */
+const ORDER_FILE = 'chat-order.json'
 
 /** Enough of the old conversation to orient the next agent, not a re-briefing. */
 const MAX_HANDOFF_CHARS = 8000
@@ -94,7 +96,7 @@ export interface StoredChat {
 
 export interface ChatStore {
   activeId: string
-  /** every tab, oldest first */
+  /** every tab, in the order the user arranged them, new ones last */
   chats: StoredChat[]
 }
 
@@ -222,8 +224,33 @@ function writeActiveId(activeRoot: string, activeId: string): void {
   writeJson(activeRoot, ACTIVE_FILE, { activeId })
 }
 
-/** Every tab on disk, oldest first — a corrupt file is skipped, not fatal. */
+function decodeOrder(value: unknown): string[] {
+  return asStringArray(asJsonRecord(value)?.order) ?? []
+}
+
+function readOrder(root: string): string[] {
+  return readJson(root, ORDER_FILE, decodeOrder, [])
+}
+
+/**
+ * Every tab on disk, in the order the user arranged them; a corrupt file is
+ * skipped, not fatal.
+ *
+ * The arrangement is a list of ids beside the chats, not a field on each: one
+ * drag rewrites one file, and a tab another window opens meanwhile is simply
+ * absent from it and lands last, where a new tab always does.
+ */
 function readChats(root: string): StoredChat[] {
+  const chats = readChatsByAge(root)
+  const order = readOrder(root)
+  if (order.length === 0) return chats
+  const rank = new Map(order.map((id, index) => [id, index]))
+  // a stable sort: tabs the arrangement never saw keep their age order, after it
+  return chats.sort((a, b) => (rank.get(a.id) ?? order.length) - (rank.get(b.id) ?? order.length))
+}
+
+/** Every tab on disk, oldest first. */
+function readChatsByAge(root: string): StoredChat[] {
   const chats: StoredChat[] = []
   for (const file of listState(root, CHATS_DIR)) {
     if (!file.endsWith('.json')) continue
@@ -239,6 +266,12 @@ function readChats(root: string): StoredChat[] {
 
 function readStore(root: string, activeRoot = root): ChatStore {
   return { activeId: readActiveId(activeRoot), chats: readChats(root) }
+}
+
+/** The tab in front of the user, read as it is: nothing is created or repaired. */
+export function peekActiveChat(root: string, activeRoot = root): StoredChat | undefined {
+  const store = readStore(root, activeRoot)
+  return store.chats.find((chat) => chat.id === store.activeId) ?? store.chats.at(-1)
 }
 
 /**
@@ -330,7 +363,8 @@ export function createChat(
 ): StoredChat {
   const chat = newChat(input.harness, {
     ...seedFields(input),
-    tone: nextChatTone(readChats(root), input.harness),
+    // by age, not by arrangement: "the newest tab's hue" means the last one OPENED
+    tone: nextChatTone(readChatsByAge(root), input.harness),
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -624,10 +658,29 @@ export function setActiveChat(root: string, chatId: string, activeRoot = root): 
   return true
 }
 
+/**
+ * Arrange the tabs in `order`.
+ *
+ * Ids no tab holds are dropped, and tabs the caller did not name keep their
+ * place relative to each other, after the named ones: a window that has not
+ * seen a tab yet cannot lose it by dragging another.
+ */
+export function setChatOrder(root: string, order: string[]): StoredChat[] {
+  const chats = readChats(root)
+  const known = new Set(chats.map((chat) => chat.id))
+  const named = [...new Set(order)].filter((id) => known.has(id))
+  const rest = chats.map((chat) => chat.id).filter((id) => !named.includes(id))
+  writeJson(root, ORDER_FILE, { order: [...named, ...rest] })
+  return readChats(root)
+}
+
 /** Drop a tab. The last one may go too — the next read seeds a fresh one. */
 export function deleteChat(root: string, chatId: string, activeRoot = root): boolean {
   if (!chatExists(root, chatId)) return false
   removeState(root, chatFile(chatId))
+  const order = readOrder(root)
+  if (order.includes(chatId))
+    writeJson(root, ORDER_FILE, { order: order.filter((id) => id !== chatId) })
   if (readActiveId(activeRoot) === chatId) {
     const remaining = readChats(root)
     writeActiveId(activeRoot, remaining[remaining.length - 1]?.id ?? '')

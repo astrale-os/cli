@@ -67,7 +67,7 @@ describe('schema modules', () => {
     const value = bundle({ Invoice: nodeClass('Invoice'), Resource: nodeClass('Resource') })
     value.ir!.policies = { mayPay: {}, globalAccess: {} }
     value.ir!.functions.pay = { name: 'pay', input: {}, output: { mode: 'value', schema: {} } }
-    value.ir!.views.billing = { name: 'billing', target: { kind: 'domain' } }
+    value.ir!.views.billing = { name: 'billing' }
     for (const [ref, file] of Object.entries({
       'class.Invoice': 'schema/modules/billing/classes/invoice.ts',
       'policy.mayPay': 'schema/modules/billing/policies/nested/may-pay.ts',
@@ -117,8 +117,8 @@ describe('schema modules', () => {
       })
       value.ir!.policies = { zGuard: {}, aGuard: {} }
       value.ir!.views = {
-        zBoard: { name: 'zBoard', target: { kind: 'domain' } },
-        aBoard: { name: 'aBoard', target: { kind: 'domain' } },
+        zBoard: { name: 'zBoard' },
+        aBoard: { name: 'aBoard' },
       }
       for (const name of ['zRun', 'aRun']) {
         value.ir!.functions[name] = { name, input: {}, output: { mode: 'value', schema: {} } }

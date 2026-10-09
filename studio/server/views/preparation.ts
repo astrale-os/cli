@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto'
 
-import type { ViewTargetResult } from '../../shared/types'
-
 const PREPARATION_TTL_MS = 10 * 60_000
 const MAX_PREPARATIONS = 128
 
@@ -11,14 +9,12 @@ export interface ViewPreparation {
   origin: string
   slug: string
   instance: string | null
-  targetRequired: boolean
-  targets: ViewTargetResult
   expiresAt: number
 }
 
 const preparations = new Map<string, ViewPreparation>()
 
-/** Keep the exact instance and candidates shown to the user for the subsequent launch request. */
+/** Keep the exact instance shown to the user for the subsequent launch request. */
 export function rememberViewPreparation(
   input: Omit<ViewPreparation, 'id' | 'expiresAt'>,
   now = Date.now(),

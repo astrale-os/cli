@@ -1,7 +1,7 @@
 /**
  * Bun subprocess that imports ONE referenced Dataset module and the Domain's installed
  * `@astrale-os/sdk/testing` facade, then prints the portable encoded Dataset. It never
- * imports `astrale.config.ts` or `application.ts`: a Dataset module reaches the Schema
+ * imports `astrale.config.ts` or `domain.ts`: a Dataset module reaches the Schema
  * only, so a broken adapter or Runtime cannot take the demo data down with it.
  */
 import { evaluateIsland, installedSdkExport, reportFailure } from './island'

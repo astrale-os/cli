@@ -42,7 +42,10 @@ function harness(publishedIssuer = serviceIssuer, failure?: Error) {
     return {
       context: {
         target: selected,
+        graph: {},
+        auth: {},
         session: {
+          auth: {},
           schema: {
             async inspect(origin: string) {
               inspected.push(origin)
@@ -86,6 +89,22 @@ describe('callable credential ownership', () => {
       { principal: 'domain' },
     ])
     expect(fixture.closed).toEqual([0, 1])
+  })
+
+  test('replaces the bookmark Shell origin with the callable Domain', async () => {
+    const fixture = harness()
+    const { domainIssuer: _issuer, ...managed } = target
+    await withResolvedClientSession(
+      { ...managed, domainOrigin: 'shell.astrale.ai' },
+      {},
+      config,
+      async (context) => {
+        expect(context.target.domainIssuer).toBe(serviceIssuer)
+        expect(context.target).not.toHaveProperty('domainOrigin')
+      },
+      fixture.open,
+      { principal: 'callable', path: Path.parse(paths[0]!) },
+    )
   })
 
   test('retains the caller for a locally hosted Domain', async () => {

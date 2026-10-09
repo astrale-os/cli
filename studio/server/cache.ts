@@ -70,8 +70,9 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
  * version is the only thing that can retire a bundle a newer Studio would compose
  * differently. v8: source locations include registered Policies and Views.
  * v9: a handler link's wiring file is its declaring module, not the handler's.
+ * v10: dependency admission uses the inspected SDK's canonical compatibility owner.
  */
-const BUNDLE_CACHE_VERSION = 9
+const BUNDLE_CACHE_VERSION = 10
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',
@@ -81,6 +82,8 @@ const TOOL_INPUTS = [
   'introspect/extractor.ts',
   'introspect/island.ts',
   'introspect/canonical-schema.ts',
+  'introspect/dependency-footprint.ts',
+  'introspect/legacy/dependency-footprint.ts',
   'introspect/overlay.ts',
   'introspect/overlay-tsmorph.ts',
   'introspect/source-overlay/handlers.ts',
@@ -216,13 +219,13 @@ function hashFileIfPresent(hash: ReturnType<typeof createHash>, label: string, f
   }
 }
 
-function bundleCacheKey(root: string, schemaDirName: string, applicationFile: string): string {
+function bundleCacheKey(root: string, schemaDirName: string, domainFile: string): string {
   const hash = createHash('sha256')
   hash.update(`domain-studio-bundle-cache-v${BUNDLE_CACHE_VERSION}\0`)
   hash.update(`schema-dir:${schemaDirName}\0`)
   hash.update(`bun:${Bun.version}\0`)
 
-  const files = hashAnatomyFiles(root, schemaDirName, applicationFile)
+  const files = hashAnatomyFiles(root, schemaDirName, domainFile)
   for (const [file, digest] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
     hash.update(`${file}\0${digest}\0`)
   }
@@ -306,7 +309,7 @@ export async function getBundle(
     async (): Promise<StudioSchemaBundle> => {
       try {
         const keyBefore = timing.measureSync('cache-key', () =>
-          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
         )
         if (!rebuild) {
           const cached = timing.measureSync('cache-read', () => readCachedBundle(h.root, keyBefore))
@@ -320,7 +323,7 @@ export async function getBundle(
         const bundle = await buildBundle(h, timing)
         bundles.set(id, bundle)
         const keyAfter = timing.measureSync('cache-key', () =>
-          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
         )
         if (keyAfter === keyBefore) {
           timing.measureSync('cache-write', () => writeCachedBundle(h.root, keyAfter, bundle))

@@ -3,7 +3,7 @@ import { Node, type SourceFile, SyntaxKind } from 'ts-morph'
 
 import type { ViewInfo } from '../../../../shared/types'
 
-import { resolveApplicationEntry } from '../../../domain'
+import { resolveDomainEntry } from '../../../domain'
 import { defineSchemaCalls } from '../schema-definition'
 import {
   addSource,
@@ -68,9 +68,9 @@ export function buildFrontendViews(
   canonicalViewNames: readonly string[],
 ): ViewInfo[] {
   const project = makeProject()
-  const application = resolveApplicationEntry(root)
-  const applicationFiles = application === null ? [] : [application]
-  const sources = [...new Set([...listSourceFiles(join(root, 'views')), ...applicationFiles])]
+  const domainFile = resolveDomainEntry(root)
+  const domainFiles = domainFile === null ? [] : [domainFile]
+  const sources = [...new Set([...listSourceFiles(join(root, 'views')), ...domainFiles])]
     .map((file) => addSource(project, file))
     .filter((source): source is SourceFile => source !== null)
   const views: ViewInfo[] = []

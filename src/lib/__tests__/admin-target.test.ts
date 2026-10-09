@@ -10,6 +10,7 @@ import {
   resolveAdminTargetFromStore,
 } from '../admin-target'
 import { DEFAULT_CONFIG, type AstraleConfig } from '../config'
+import { sanitizeStore } from '../instance'
 
 const instances: InstanceStore = {
   active: 'primary',
@@ -192,6 +193,39 @@ describe('resolveAdminTargetFromStore', () => {
     ).toMatchObject({
       kernelIssuer: 'https://override-admin.example.com',
       domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
+    })
+  })
+
+  /** @evidence TEST-CLI-ADMIN-UNLABELLED-REGISTRY-ISSUER-KEPT */
+  test('keeps an explicit issuer for Admin calls through a bookmark in an unlabelled registry', () => {
+    const url = 'https://bryan.eu.beta.astrale.ai/api'
+    // Every bookmark store reaches Admin resolution through the registry read.
+    const { store } = sanitizeStore({
+      active: 'bryan',
+      instances: {
+        bryan: {
+          url,
+          issuer: url,
+          domainIssuer: 'https://shell.beta.astrale.ai',
+          slug: 'bryan',
+          name: 'bryan',
+          kind: 'bookmark',
+        },
+      },
+    })
+
+    expect(resolveAdminTargetFromStore({ admin: 'bryan' }, DEFAULT_CONFIG, store)).toMatchObject({
+      url,
+      domainIssuer: 'https://shell.beta.astrale.ai',
+      source: 'admin',
+    })
+
+    expect(
+      resolveAdminTargetFromStore({}, { ...DEFAULT_CONFIG, admin: { instance: 'bryan' } }, store),
+    ).toMatchObject({
+      url,
+      domainIssuer: 'https://shell.beta.astrale.ai',
+      source: 'config-instance',
     })
   })
 })

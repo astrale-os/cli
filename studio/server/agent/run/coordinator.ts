@@ -36,11 +36,13 @@ import {
   markHandoffDelivered,
   MAX_QUEUED_MESSAGES,
   moveQueuedMessage,
+  peekActiveChat,
   pendingHandoff,
   renameChat,
   requeueChatMessage,
   resolveChat,
   setActiveChat,
+  setChatOrder,
   setChatEffort,
   setChatFastMode,
   setChatModel,
@@ -85,23 +87,35 @@ function seedOf(workspace: AgentWorkspace): ChatSeed {
 }
 
 /**
- * The agent a new tab opens on — a question the GUI never asks.
+ * What a new tab opens with: the tab you are in, unless something outranks it.
  *
- * A starred model, or a `--harness` lock, names the agent outright: both are
- * deliberate statements about where conversations start, and the star's whole
- * promise is that new chats open on it. With neither, the tab continues with the
- * agent you are already working with, which is the only other honest answer.
+ * A new tab continues the work in front of you: same agent, same model, same
+ * reasoning level, same speed. Only a `--harness` lock names the agent outright,
+ * and an agent this machine is known not to have cannot be continued: both open
+ * on the selection instead. The star still decides where the FIRST tab starts,
+ * and what every tab left unpinned runs.
  *
- * Either way, changing agent stays what it always was: pick a model of the
- * other one, in the conversation you want to move.
+ * The model belongs to its agent, so it crosses over only when the agent does;
+ * the effort and speed are about the work, not the agent, so they always follow,
+ * exactly as they do when a conversation is forked.
  */
-function newChatHarness(workspace: AgentWorkspace): string {
+function newChatDefaults(
+  workspace: AgentWorkspace,
+  requested?: string,
+): Pick<StoredChat, 'harness' | 'model' | 'effort' | 'fastMode'> {
   const selection = getHarnessSelection()
-  if (selection.source !== 'default') return selection.id
-  return (
-    resolveChat(workspace.stateRoot, selection.id, undefined, seedOf(workspace), workspace.uiRoot)
-      ?.harness ?? selection.id
-  )
+  const current = peekActiveChat(workspace.stateRoot, workspace.uiRoot)
+  const continuable =
+    current && !selection.locked && lastKnownPresence(current.harness) !== false
+      ? current.harness
+      : undefined
+  const harness = requested || continuable || selection.id
+  return {
+    harness,
+    ...(current?.model && current.harness === harness ? { model: current.model } : {}),
+    ...(current?.effort ? { effort: current.effort } : {}),
+    ...(current?.fastMode === undefined ? {} : { fastMode: current.fastMode }),
+  }
 }
 
 /** A chat's status is its own live run's — tabs never report each other's work. */
@@ -181,7 +195,8 @@ export function openChat(input: {
   newDomainId?: string
 }): ChatResult<ChatInfo> {
   const workspace = agentWorkspace()
-  const harness = input.harness?.trim().toLowerCase() || newChatHarness(workspace)
+  const defaults = newChatDefaults(workspace, input.harness?.trim().toLowerCase())
+  const harness = defaults.harness
   if (!hasHarness(harness)) return { ok: false, error: `unknown harness: ${harness}` }
   const newDomain = input.newDomainId ? findDomain(workspace, input.newDomainId) : undefined
   if (input.newDomainId && !newDomain)
@@ -189,7 +204,7 @@ export function openChat(input: {
   const chat = createChat(
     workspace.stateRoot,
     {
-      harness,
+      ...defaults,
       ...seedOf(workspace),
       ...(input.title === undefined ? {} : { title: input.title }),
       ...(newDomain
@@ -245,6 +260,12 @@ export function switchChatHarness(
 export function selectChat(chatId: string): ChatResult<ChatList> {
   const workspace = agentWorkspace()
   if (!setActiveChat(workspace.stateRoot, chatId, workspace.uiRoot)) return unknownChat(chatId)
+  return { ok: true, value: listChats() }
+}
+
+/** Arrange the tabs; ids no tab holds are ignored, and unnamed tabs keep their place after. */
+export function reorderChats(order: string[]): ChatResult<ChatList> {
+  setChatOrder(agentWorkspace().stateRoot, order)
   return { ok: true, value: listChats() }
 }
 

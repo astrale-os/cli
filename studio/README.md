@@ -20,8 +20,8 @@ astrale studio --harness codex # lock this process to Codex
 ```
 
 `astrale studio` resolves the studio shipped with the CLI, binds the first free
-loopback port in **4319–4338** (so a studio already running in another workspace
-just takes the next one), and prints its URL — it does **not** pop a browser by
+loopback port in **4319–4338** (so a studio or any other server already
+answering on `localhost` just pushes it to the next one), and prints its URL — it does **not** pop a browser by
 default (pass `--open` for that). Flags: `--port <n>` ·
 `--harness claude|codex` · `--open` · `--dev`.
 
@@ -42,12 +42,14 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > workspace root) for semantic schema rendering; source-only anatomy remains
 > available when they are missing.
 > Projects are discovered exclusively through the default-exported `defineProject`
-> in `astrale.config.ts`. Studio follows the Project's `application` binding
-> to a `defineApplication` module, then its `schema` binding to authored source.
+> in `astrale.config.ts`. Studio follows the Project's `domain` binding
+> to a `defineDomain` module, then its `schema` binding to authored source.
+> Projects on an SDK older than 0.6.0-beta.11 (`application` / `defineApplication`)
+> are still read, through `studio/server/legacy/application-project.ts`.
 > Deployment targets belong to `environments`; Studio does not execute the adapters.
 > Test datasets come from the same Project's `tests: tests({ datasets: [...] })`.
-> Module filenames are unrestricted; there is no conventional-file or legacy
-> `defineDomain` fallback. Existing projects must migrate to `defineProject`.
+> Module filenames are unrestricted; there is no conventional-file fallback.
+> Existing projects must migrate to `defineProject`.
 > Configuration is analyzed statically without executing adapters or runtime code;
 > local bindings and SDK import aliases are supported, dynamic construction is not.
 
@@ -106,10 +108,33 @@ Studio detects both local harnesses. `--harness` (or `DOMAIN_STUDIO_HARNESS`)
 locks the whole Studio process to one harness; the composer then offers only its
 models, and Settings says what is holding the lock.
 
-- **Claude Code:** install `claude` and authenticate normally. Studio can also
+- **Claude Code:** authenticate normally (`claude /login`). Studio can also
   route this harness through its Anthropic-compatible model-gateway settings.
-- **Codex:** install `codex` and run `codex login`; Codex keeps using that local
-  binary, login, and configuration.
+- **Codex:** run `codex login`; Codex keeps using that login and configuration.
+
+Studio does not run whatever `claude` or `codex` your PATH holds. Each bundled
+ACP adapter speaks a private protocol to its CLI (the Claude Agent SDK's control
+stream, Codex's experimental app-server API) and neither checks the version it
+talks to, so Studio runs the exact build the adapter was written for. The
+versions come from `pnpm-lock.yaml` (`pnpm run agents:pin` regenerates
+`server/agent/harness/acp/pinned-binaries.ts`; `pnpm test` fails while it is
+stale). The first turn, Ask, or loadout probe that needs an agent downloads its
+platform package from the npm registry, verifies it against the lockfile's
+integrity, and unpacks it under `$ASTRALE_HOME/cache/agents` (about 90 MB to
+download for Claude Code, 110 MB for Codex); the chat shows the progress. Logins
+and configuration are shared with your own install (`~/.claude`, `~/.codex`).
+Every process running a build leases it, and any other build no live process
+holds is removed as soon as a Studio starts or installs one: a Studio still open
+on an older release keeps its build until it exits. Conversations live in the
+agents' own homes, so removing a build loses none. After replacing the CLI,
+`astrale update` starts the new release in the background to download its pinned
+builds of the agents Studio already installed, so the first chat after an update
+does not wait on the download.
+
+`DOMAIN_STUDIO_CLAUDE_BIN` / `DOMAIN_STUDIO_CODEX_BIN` run a local executable
+instead (`DOMAIN_STUDIO_CODEX_BIN=codex` for the one on PATH). Settings → Agent
+then shows its `--version` and warns when it strays from the pinned build: an
+older Claude Code, or a Codex from another minor release.
 
 Both execution paths go through Studio's shared **Agent Client Protocol (ACP)**
 adapter. The standalone CLI embeds the official Claude and Codex ACP agent
@@ -121,11 +146,11 @@ configuration, applies Studio's optional model override, and deletes the session
 without sending a prompt. Studio does not infer unavailable inventories such as
 skills, MCP servers, tools, or subagents.
 
-Claude's ACP server advertises `session/fork`, so **Ask** inherits its parent
-conversation and deletes the ephemeral fork afterward. The current Codex ACP
-server does not advertise fork yet; Codex Ask therefore uses a fresh ephemeral
-ACP session and still leaves the main conversation untouched. Capability
-detection will use a fork automatically when the Codex server adds it.
+Both ACP servers advertise `session/fork`, so **Ask** inherits its parent
+conversation and deletes the ephemeral fork afterward, leaving the main
+conversation untouched. Capability detection decides this per server: one that
+does not advertise fork gets a fresh ephemeral ACP session instead, and so does
+an Ask whose fork fails before answering.
 
 Settings → Details still owns the access level. **Workspace** uses the harness's
 workspace-write sandbox. **Full automation** preserves the existing deploy/install
@@ -186,7 +211,9 @@ button. Sending runs the whole order in one gesture —
 `create-astrale-domain <name> --yes` then `pnpm install` in the workspace root
 (on the scaffolder line that matches the SDK Studio reads — NOT `@latest`, whose
 last stable release is a generation behind and writes domains nothing here can
-render),
+render — from the first release whose managed scaffold names no instance: the
+active instance is never passed, an operator picks one when installing the URL
+a deploy prints),
 the staged files into the new domain's `.domain-studio/context/docs`, and the
 message to its agent as a first turn. That chat opens with a **New domain** chip
 naming the exact origin and repo path; the agent receives the same target plus
@@ -255,7 +282,7 @@ workspace canvases.
 
 Schema parsing delegates admission, semantic resolution, revisioning and exact
 dependency reachability to the Astrale DSL installed by the domain. Studio resolves
-the Application's `schema` binding statically, then a Bun subprocess imports only
+the Domain definition's `schema` binding statically, then a Bun subprocess imports only
 that module; Studio keeps a deliberately lossy render projection and derives Core
 from the same admitted root. A ts-morph overlay is limited to information absent
 from the DSL (handler-file links, source spans and JSDoc).

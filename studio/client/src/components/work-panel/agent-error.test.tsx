@@ -51,11 +51,12 @@ test('the headline is the first meaningful line, past transport wrappers', () =>
 test('the conversation shows a compact chip, never the raw dump', () => {
   const raw =
     'Internal error (JSON-RPC -32603)\n{"details":"model overloaded"}\n\nstderr (tail):\nsecret-stack-trace'
-  const html = renderToStaticMarkup(<AgentTurn run={failed(raw)} onRetry={() => {}} />)
+  const html = renderToStaticMarkup(<AgentTurn run={failed(raw)} onContinue={() => {}} />)
 
   expect(html).toContain('agent-error-chip')
   expect(html).toContain('Failed')
-  expect(html).toContain('Retry')
+  expect(html).toContain('Continue')
+  expect(html).not.toContain('Retry')
   expect(html).not.toContain('secret-stack-trace')
   expect(html).not.toContain('model overloaded')
 })
@@ -78,4 +79,26 @@ test('the diagnostic carries everything needed to investigate', () => {
   // prose is already on screen; the activity trail is the steps
   expect(trailingActivity(run).map((e) => e.kind)).toEqual(['tool', 'error'])
   expect(trailingActivity(run).at(-1)?.text).toBe('reply not merged')
+})
+
+test('a message that only repeats the failure is shown once, in the notice', () => {
+  const limit = "You've hit your session limit · resets 6:40pm (Europe/Paris)"
+  const run = {
+    ...failed(`Internal error: ${limit}`, [event('message', limit)]),
+    harness: 'claude' as const,
+  }
+  const html = renderToStaticMarkup(<AgentTurn run={run} onContinue={() => {}} />)
+
+  expect(html.split('hit your session limit').length - 1).toBe(1)
+  expect(html).toContain('agent-error-chip')
+})
+
+test('a message that says more than the failure stays in the conversation', () => {
+  const run = failed('Internal error: model overloaded', [
+    event('message', 'Added the Refund class to schema/billing.ts.'),
+  ])
+  const html = renderToStaticMarkup(<AgentTurn run={run} onContinue={() => {}} />)
+
+  expect(html).toContain('Added the Refund class')
+  expect(html).toContain('Model overloaded')
 })

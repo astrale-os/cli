@@ -12,6 +12,22 @@ export const CLI_CONNECTION_TARGET = defineLaw({
   ],
 })
 
+export const CLI_CONNECTION_ADMIN_CALL = defineLaw({
+  id: 'CLI-CONNECTION-ADMIN-CALL',
+  statement:
+    'A command run on the Admin kernel resolves it exactly like Admin Domain operations (configured target, Admin bookmark, or URL with its Admin Domain issuer), never from -i/--url or the active instance, and selects a callable credential as on any other target: the declaring Domain issuer the Admin kernel installation names.',
+  tests: [
+    {
+      file: '../commands/__tests__/call-admin.test.ts',
+      id: 'TEST-CLI-CALL-ADMIN-SET-SECRET',
+    },
+    {
+      file: '../commands/__tests__/call-admin.test.ts',
+      id: 'TEST-CLI-CALL-ADMIN-REFUSES-INSTANCE-SELECTORS',
+    },
+  ],
+})
+
 export const CLI_CONNECTION_DOMAIN_EXCHANGE = defineLaw({
   id: 'CLI-CONNECTION-DOMAIN-EXCHANGE',
   statement:
@@ -220,6 +236,78 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
     {
       file: '__tests__/failure-safety.test.ts',
       id: 'TEST-CLI-CONNECTION-FAILURE-SAFETY',
+    },
+  ],
+})
+
+export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
+  id: 'CLI-CONNECTION-INSTALLED-SHELL-ISSUER',
+  statement:
+    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller. The installation cache remembers what the pin named per source Kernel, so a later command exchanges there, or selects the Domain credential persisted under that issuer before resolving the source credential, without reading the pin again. A consented reinstall changes the issuer within one installation, so the record is healed, never trusted: a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and what the session holds when the pin cannot be read again; any failure of a command that relied on the remembered issuer forgets it, and so does any Kernel call of that command the Kernel refuses with 2002, even one the command recovers from, so the next command reads the pin and no command sends a stale remembered issuer after one has failed; a command that read the pin itself keeps the record. No issuer is derived from the route: in every bookmark registry, labelled or unlabelled, every explicit exact Domain issuer is the user's and wins, whatever its value. Every bookmark write rewrites the registry with the format label. Re-running `astrale instance use <slug>` resets a managed bookmark to exchange through its installed Shell. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
+  tests: [
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-DEPLOYMENT-ISSUER',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-RECOVERS-ONCE',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-LEGACY-ISSUER-UNCHANGED',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-ISSUER-UNRESOLVED',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-READ-FAILURE-KEEPS-CLASSIFICATION',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-READ-ONCE-PER-BOOKMARK',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-IN-ONE-RETRY',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-NEVER-SENT-TWICE',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-RECOVERED-REFUSAL-FORGETS',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-FAILURE-FORGETS-REMEMBERED-ONLY',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-INSTALLED-ISSUER-SERVES-EXCHANGE',
+    },
+    {
+      file: '__tests__/installed-issuer.test.ts',
+      id: 'TEST-CLI-INSTALLED-SHELL-INSPECT-DECODED',
+    },
+    {
+      file: '../lib/__tests__/instance.test.ts',
+      id: 'TEST-CLI-INSTANCE-UNLABELLED-REGISTRY-ISSUER-KEPT',
+    },
+    {
+      file: '../lib/__tests__/instance.test.ts',
+      id: 'TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT',
+    },
+    {
+      file: '../lib/__tests__/instance-concurrency.test.ts',
+      id: 'TEST-CLI-INSTANCE-REGISTRY-LABELLED-ON-WRITE',
+    },
+    {
+      file: '../lib/__tests__/admin-target.test.ts',
+      id: 'TEST-CLI-ADMIN-UNLABELLED-REGISTRY-ISSUER-KEPT',
     },
   ],
 })

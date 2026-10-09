@@ -1,7 +1,7 @@
 /**
  * detect.ts — workspace domain detection. Walks a directory tree (symlink-safe,
  * ignoring node_modules/.git/.astrale/dist/…), registering every confirmed
- * domain whose Application selects an authored Schema. Also handles being pointed
+ * domain whose Domain definition selects an authored Schema. Also handles being pointed
  * at a single astrale.config.ts.
  */
 import { existsSync, lstatSync, readdirSync } from 'node:fs'

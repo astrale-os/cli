@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
 import { ScrollArea } from '@/components/ui/misc'
 import {
+  conversationContext,
   type HarnessLink,
   harnessLink,
   isRunActive,
@@ -36,6 +37,7 @@ import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
 import { CommentPicker, useAttachedComments } from './comment-picker'
+import { ContextRing } from './context-ring'
 import { DockActivity } from './dock-activity'
 import { AttachButton, DocumentChips } from './documents'
 import { HandoffChip } from './handoff-chip'
@@ -62,52 +64,53 @@ function countDocuments(groups: { documents?: readonly unknown[] }[]): number {
   return groups.reduce((total, group) => total + (group.documents?.length ?? 0), 0)
 }
 
-/** Run the last turn again, as it was first sent. */
-function retryTurn(turn: AgentRun, chatId: string | undefined, qc: QueryClient): void {
-  void api
-    .agentSubmit(
-      turn.instruction,
-      chatId,
-      turn.targetCommentIds,
-      turn.attachments?.map((attachment) => attachment.id),
-    )
-    .then(
-      (result) => {
-        if (result.run) useAgentLive.getState().setRun(result.run)
-        if (result.error) toast.error(`Could not retry — ${result.error}`)
-        qc.invalidateQueries({ queryKey: qk.agent(chatId) })
-        qc.invalidateQueries({ queryKey: qk.agentHistory(chatId) })
-      },
-      (error) => toast.error(`Could not retry — ${String(error)}`),
-    )
-}
-
-/** Pick an interrupted turn back up. */
-function resumeTurn(chatId: string | undefined): void {
-  // a refused resume answers 200 with an error field; without
+/**
+ * Pick the last turn back up, however it stopped. One action, never a choice to
+ * get wrong: the server resumes the session when the agent had taken the turn
+ * up, and sends it again as it was when it had not.
+ */
+function continueTurn(chatId: string | undefined, qc: QueryClient): void {
+  // a refused continue answers 200 with an error field; without
   // this the button would look like it did nothing at all
   void api.agentResume(chatId).then(
     (result) => {
-      if (result.error) toast.error(`Could not continue — ${result.error}`)
+      if (result.run) useAgentLive.getState().setRun(result.run)
+      if (result.error) toast.error(`Could not continue: ${result.error}`)
+      qc.invalidateQueries({ queryKey: qk.agent(chatId) })
+      qc.invalidateQueries({ queryKey: qk.agentHistory(chatId) })
     },
-    (error) => toast.error(`Could not continue — ${String(error)}`),
+    (error) => toast.error(`Could not continue: ${String(error)}`),
   )
 }
 
 /**
- * The agent half of the work panel: the chat tabs on top, the selected
- * conversation below with its composer pinned at the bottom.
+ * The agent half of the work panel: the chat tabs, and the selected conversation
+ * with its composer pinned at the bottom.
  *
  * The three pieces are exported apart because the bottom dock takes them apart:
- * there the composer is the resting state — a bar floating over the view — and
+ * there the composer is the resting state - a bar floating over the view - and
  * the transcript is what unfolds above it. Docked left or right they stack, and
- * this is that stack.
+ * this is that stack. With the tabs on the left, their column runs the panel's
+ * whole height, down beside the composer, rather than stopping short above it.
  */
 export function AgentTab() {
+  const tabsLeft = useUI((state) => state.chatTabsSide === 'left')
+  const { data: chats } = useChats()
+  const { data: harness } = useHarness()
+  if (!tabsLeft)
+    return (
+      <AgentDropZone className="relative flex h-full min-h-0 flex-col">
+        <AgentTranscript />
+        <AgentComposer />
+      </AgentDropZone>
+    )
   return (
-    <AgentDropZone className="relative flex h-full min-h-0 flex-col">
-      <AgentTranscript />
-      <AgentComposer />
+    <AgentDropZone className="relative flex h-full min-h-0 flex-row">
+      <ChatTabs chats={chats?.chats ?? []} activeId={chats?.activeId} harness={harness} vertical />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <AgentTranscript tabs={false} />
+        <AgentComposer />
+      </div>
     </AgentDropZone>
   )
 }
@@ -161,8 +164,13 @@ export function AgentDropZone({
   )
 }
 
-/** The chat tabs and the turns under them — everything but the composer. */
-export function AgentTranscript() {
+/** The chat tabs and the turns under them - everything but the composer. */
+export function AgentTranscript({
+  tabs = true,
+}: {
+  /** false when the caller lays the tabs out itself */
+  tabs?: boolean
+} = {}) {
   const qc = useQueryClient()
   const { data: chats } = useChats()
   const activeId = chats?.activeId
@@ -176,23 +184,33 @@ export function AgentTranscript() {
   useReadAgentReplies(activeId, turns)
   const run = useDisplayRun(activeId)
   const scroller = useRef<HTMLDivElement>(null)
+  const tabsSide = useUI((state) => state.chatTabsSide)
+  const tabsLeft = tabsSide === 'left'
 
   // follow the conversation: a new turn, a new message or a new activity line all
   // move the bottom, and the bottom is what you are reading. The scrollable element
   // is ScrollArea's own viewport, not the Root we hold.
-  const signature = `${turns.length}:${run?.events.length ?? 0}:${run?.status ?? ''}`
+  const signature = `${turns.length}:${run?.events.length ?? 0}:${run?.status ?? ''}:${run?.draft?.text.length ?? 0}`
   useLayoutEffect(() => {
     const viewport = scroller.current?.querySelector('[data-radix-scroll-area-viewport]')
     if (viewport) viewport.scrollTop = viewport.scrollHeight
   }, [signature])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ChatTabs chats={openChats} activeId={activeId} harness={harness} />
+    <div className={cn('flex min-h-0 flex-1', tabsLeft ? 'flex-row' : 'flex-col')}>
+      {tabs && (
+        <ChatTabs
+          chats={openChats}
+          activeId={activeId}
+          harness={harness}
+          vertical={tabsLeft}
+          titled={tabsSide === 'top-titled'}
+        />
+      )}
 
       {/* type=scroll: the bar shows while scrolling and fades out — a chat should not
           carry a permanent gutter down its side. */}
-      <ScrollArea ref={scroller} type="scroll" className="min-h-0 flex-1">
+      <ScrollArea ref={scroller} type="scroll" className="min-h-0 min-w-0 flex-1">
         <div className="space-y-4 px-3 py-3">
           {chat?.newDomain ? <NewDomainChip domain={chat.newDomain} /> : null}
           {origin && (
@@ -209,10 +227,9 @@ export function AgentTranscript() {
               {needsDivider(turns[index - 1], turn) && <TurnDivider at={turn.createdAt} />}
               <AgentTurn
                 run={turn}
-                onRetry={
-                  index === turns.length - 1 ? () => retryTurn(turn, activeId, qc) : undefined
+                onContinue={
+                  index === turns.length - 1 ? () => continueTurn(activeId, qc) : undefined
                 }
-                onResume={() => resumeTurn(activeId)}
               />
             </div>
           ))}
@@ -341,6 +358,8 @@ export function AgentComposer({
   const { data: harness } = useHarness()
   const run = useDisplayRun(chats?.activeId)
   const chatId = chat?.id
+  const turns = useAgentTurns(chatId)
+  const context = conversationContext(turns, !!chat?.sessionId)
   // The draft lives in the store, keyed by chat: re-docking the panel unmounts the
   // composer and a half-written message must survive that — and a message is written
   // TO an agent, so it stays on the tab it was written on. Switching tabs therefore
@@ -750,6 +769,8 @@ export function AgentComposer({
                 tone={toneOf(openChats, chatId, chat?.harness)}
               />
             )}
+            {/* resting, the ring only shows once there is something to measure */}
+            {(!resting || context) && <ContextRing context={context} />}
             {/* the meter sits before the model, in reading order: how hard, on what */}
             {!resting && <ChatFastToggle chat={chat} />}
             {!resting && <ChatEffortPicker chat={chat} harness={harness} />}
@@ -776,6 +797,7 @@ export function AgentComposer({
         <div className="flex items-center gap-1 px-2 pb-2">
           <AttachButton onPicked={() => field.current?.focus()} />
           <div className="ml-auto flex items-center gap-1.5">
+            <ContextRing context={context} />
             <ChatFastToggle chat={chat} />
             {/* the meter sits before the model, in reading order: how hard, on what */}
             <ChatEffortPicker chat={chat} harness={harness} />

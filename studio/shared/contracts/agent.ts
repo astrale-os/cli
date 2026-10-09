@@ -160,6 +160,14 @@ export interface AgentRun {
   numTurns?: number
   /** total token usage reported by the harness for this turn */
   tokens?: number
+  /** how full the conversation's context window is, as the agent last reported it */
+  context?: AgentContextUsage
+  /**
+   * The message the agent is writing right now, as it streams in. Live only: it
+   * becomes the `message` event that carries the same `id` once the agent stops
+   * writing it (it calls a tool, or the turn ends), and is never stored.
+   */
+  draft?: AgentDraft
   error?: string
   /** how many threads the agent answered live via the bridge tools this turn */
   liveReplies?: number
@@ -167,6 +175,25 @@ export interface AgentRun {
   merge?: MergeResult
   /** exact prompt inputs sent to the harness for this turn */
   prompt?: AgentPromptSnapshot
+}
+
+/**
+ * How much of the model's context window the conversation occupies - ACP's
+ * `usage_update`. Reported by the agent as the turn goes, so it moves mid-turn
+ * and carries over to the next turn of the same conversation.
+ */
+export interface AgentContextUsage {
+  /** tokens currently in context */
+  used: number
+  /** the context window's total size, in tokens */
+  size: number
+}
+
+/** A message still being written - see `AgentRun.draft`. */
+export interface AgentDraft {
+  /** the id the finished message event will carry */
+  id: string
+  text: string
 }
 
 /**
@@ -312,6 +339,23 @@ export interface HarnessCapabilities {
   gateway: 'anthropic' | 'responses' | 'none'
 }
 
+/**
+ * The agent CLI the ACP server drives. Studio pins the build each adapter was
+ * written for and installs it on first use (`managed`); a `custom` executable is
+ * one the environment forced, held to that pin only by a warning.
+ */
+export interface HarnessCli {
+  source: 'managed' | 'custom'
+  /** managed: the pinned build; custom: what `--version` reported, when it did */
+  version?: string
+  /** false until a managed build has been downloaded — it is on first use */
+  installed: boolean
+  /** custom: why Studio is not running its own build */
+  reason?: string
+  /** custom: why this version may not work with the bundled adapter */
+  warning?: string
+}
+
 /** One local agent, probed over ACP: is it here, and which server answered. */
 export interface HarnessPresence {
   id: string
@@ -321,6 +365,8 @@ export interface HarnessPresence {
   ok: boolean
   /** the ACP agent server's version — not the CLI's own */
   version?: string
+  /** the agent CLI behind that server */
+  cli?: HarnessCli
   /** human message — the ACP handshake, or install / PATH guidance when not ok */
   message: string
   capabilities: HarnessCapabilities

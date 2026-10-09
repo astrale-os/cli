@@ -8,7 +8,6 @@ export {
   AdminInstanceNotFoundError,
   findOwnedInstance,
   formatInstanceState,
-  type DomainInstallReceipt,
   type InvitationInfo,
   type InvitationState,
   type InstanceInfo,
