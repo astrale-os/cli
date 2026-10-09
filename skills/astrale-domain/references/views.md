@@ -19,6 +19,14 @@ The React host owns the session, not the business Domain's runtime.
 ## Declare the surface
 
 ```ts
+// schema/schema.ts: the Schema names the Domain and its entrypoint View.
+export const schema = defineSchema('work.example', {
+  name: 'Work',
+  entrypoint: 'application',
+  views: { application: view({}) },
+})
+
+// domain.ts
 import { defineFrontend, vite } from '@astrale-os/sdk/view'
 import { schema } from '#schema'
 
@@ -26,9 +34,13 @@ export const frontend = defineFrontend({
   schema,
   source: vite(),
   routes: { application: { path: '/application', handshake: 'shell' } },
-  entrypoint: 'application',
 })
 ```
+
+- Every Schema declares the Domain `name` the Shell shows, and at most one `entrypoint` among its
+  Views: the View the Shell opens for the application. Both are projected into the graph (the Domain
+  Node `name`, an `entrypoint` Edge), where the Shell lists them; a Domain without an entrypoint is
+  not listed. `defineFrontend` no longer takes an `entrypoint`.
 
 - Use `handshake: 'shell'` for host-provided session/client access; `none` is for standalone public documents.
   A View declaration has no callable auth mode: its graph reads and calls retain their own authorization.
