@@ -122,6 +122,24 @@ describe('view session server credentials', () => {
         expect(exchange).not.toHaveBeenCalled()
         expect(mint).toHaveBeenCalledWith({ audience: 'https://kernel.test', ttlSeconds: 240 })
       }
+      const exchanges = exchange.mock.calls.length
+      const host = await fetch(`${address(server)}/s/${nonce}/kernel-token`, {
+        method: 'POST',
+        headers: HOST,
+      })
+      expect(host.status).toBe(200)
+      expect(await host.json()).toMatchObject({ token: mintedCredential('minted'), kind: 'minted' })
+      expect(mint).toHaveBeenCalledWith({ audience: 'https://kernel.test', ttlSeconds: 240 })
+      expect(exchange).toHaveBeenCalledTimes(exchanges)
+      const child = await fetch(`${address(server)}/s/${nonce}/token`, {
+        method: 'POST',
+        headers: HOST,
+      })
+      expect(await child.json()).toMatchObject(
+        external && !explicit
+          ? { token: 'exchanged-credential', kind: 'exchanged' }
+          : { token: mintedCredential('minted'), kind: 'minted' },
+      )
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))
@@ -380,15 +398,17 @@ describe('view session server credentials', () => {
         view: config.session.view,
       })
 
-      const response = await fetch(`${address(server)}/s/${nonce}/token`, {
-        method: 'POST',
-        headers: HOST,
-      })
+      for (const endpoint of ['token', 'kernel-token']) {
+        const response = await fetch(`${address(server)}/s/${nonce}/${endpoint}`, {
+          method: 'POST',
+          headers: HOST,
+        })
 
-      expect(response.status).toBe(403)
-      expect(await response.json()).toEqual({
-        error: 'plain views have no Astrale credential privilege',
-      })
+        expect(response.status).toBe(403)
+        expect(await response.json()).toEqual({
+          error: 'plain views have no Astrale credential privilege',
+        })
+      }
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))
@@ -640,7 +660,7 @@ describe('view session host authority', () => {
   })
 
   /** The embedded View reaches none of it, identity switching configured or not. */
-  test.each(['/config.json', '/identity', '/release', '/token'])(
+  test.each(['/config.json', '/identity', '/release', '/token', '/kernel-token'])(
     'refuses %s to anything but the View host',
     async (route) => {
       const nonce = 'host-only'

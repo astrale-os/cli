@@ -58,6 +58,7 @@ function openMessage(
 function mounted(windowId: string, view: ResolvedView, onClose?: () => void): MountedWindow {
   return {
     windowId,
+    ready: Promise.resolve(),
     window: {
       windowId,
       functionId: String(view.route.key),

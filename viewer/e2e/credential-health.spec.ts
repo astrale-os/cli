@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { answerKernel, kernelRevision } from './kernel'
+
 const temporary = mkdtempSync(join(tmpdir(), 'astrale-view-credential-'))
 const childFile = join(temporary, 'child.js')
 execFileSync(
@@ -31,6 +33,7 @@ async function mount(page: Page, context: BrowserContext) {
   const reports: string[] = []
   await page.clock.install()
   await context.route('https://**/*', async (route) => {
+    if (await answerKernel(route)) return
     const url = new URL(route.request().url())
     if (url.hostname === 'view.example') {
       if (url.pathname !== '/child.js') documents += 1
@@ -66,6 +69,10 @@ async function mount(page: Page, context: BrowserContext) {
           sessionId: 'credential-fixture',
         },
       })
+    if (url.pathname === '/kernel-token')
+      return route.fulfill({
+        json: { token: 'kernel-fixture', expiresAt: Date.now() + 3_600_000, kind: 'minted' },
+      })
     if (url.pathname === '/token') {
       tokens += 1
       if (!available)
@@ -88,6 +95,8 @@ async function mount(page: Page, context: BrowserContext) {
   await page.goto('https://host.example/')
   const frame = page.frameLocator('#frame iframe')
   await expect(frame.locator('output')).toHaveText('ready')
+  await expect(frame.locator('output')).toHaveAttribute('data-caller', 'fixture')
+  await expect(frame.locator('output')).toHaveAttribute('data-revision', kernelRevision)
   await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'connected')
   await frame.getByRole('textbox', { name: 'Draft' }).fill('Unsaved draft')
   const element = await page.locator('#frame iframe').elementHandle()
