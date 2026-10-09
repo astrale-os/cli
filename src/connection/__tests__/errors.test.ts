@@ -8,6 +8,7 @@ import { transportFailure } from './failure-fixtures'
 
 const CONFLICT = 4001
 const VALIDATION = 1003
+const CREDENTIAL_REFUSED = 2002
 const TEST_INVOCATION = {
   source: 'https://kernel.test',
   id: 'connection-errors',
@@ -261,6 +262,30 @@ describe('formatKernelError', () => {
     expect(hints.join('\n')).toContain(
       'Delete this data explicitly, then retry. No data was deleted.',
     )
+  })
+
+  test('points a refused credential at a new login while keeping the Kernel code', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new ResponseError(CREDENTIAL_REFUSED, 'Credential is invalid.', TEST_INVOCATION),
+        true,
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: CREDENTIAL_REFUSED,
+      message: 'Credential is invalid.',
+      hint: 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.',
+    })
   })
 
   test('maps SDK error identities to stable CLI error codes', async () => {

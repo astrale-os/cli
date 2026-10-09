@@ -1,5 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
+import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activate-account'
 import { type IdpSession } from '../../lib/idp'
 import { log } from '../../lib/log'
 import { loginViaIdp, type LoginFlowOpts } from '../../lib/login-flow'
@@ -48,12 +49,23 @@ Examples:
 Notes:
   Device auth is the default because it matches CLI use. Token values are
   cached locally for credential resolution but are never printed.
+  A WorkOS user login also completes the access an administrator prepared for
+  this account on Astrale Admin, such as a Fleet invitation. Login succeeds
+  even when Admin cannot be reached; run it again later to complete access.
 `,
   action: async (opts: LoginOpts) => {
     const { session, identityName, idpName } = await loginViaIdp(opts)
+    const adminAccess = await activateLoggedInAccount({
+      identityName,
+      idpName,
+      clientCredentials: opts.clientCredentials,
+    })
 
     if (isMachine(opts)) {
-      output(publicSession(session), opts)
+      output(
+        { ...publicSession(session), ...(adminAccess ? { admin_access: adminAccess } : {}) },
+        opts,
+      )
       return
     }
 
@@ -61,6 +73,7 @@ Notes:
     log.dim(`  subject: ${session.subject}`)
     if (session.expires_at) log.dim(`  expires_at: ${session.expires_at}`)
     if (opts.use !== false) log.dim('  default identity updated')
+    if (adminAccess && adminAccess !== 'ready') log.warn(ACCOUNT_ACTIVATION_WARNINGS[adminAccess])
   },
 } satisfies CommandDefinition
 
