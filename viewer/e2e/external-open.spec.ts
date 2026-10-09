@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { answerKernel } from './kernel'
+
 const temporary = mkdtempSync(join(tmpdir(), 'astrale-view-browser-'))
 const childFile = join(temporary, 'child.js')
 execFileSync(
@@ -31,6 +33,7 @@ test('published requirements grant only each mounted View and isolate its provid
   let provider = 'https://provider-a.example'
   let revision = 0
   await context.route('https://**/*', async (route) => {
+    if (await answerKernel(route)) return
     const url = new URL(route.request().url())
     if (url.hostname.startsWith('provider-'))
       return route.fulfill({ contentType: 'text/html', body: '<title>Provider ready</title>' })
@@ -68,6 +71,10 @@ test('published requirements grant only each mounted View and isolate its provid
           instance: 'fixture',
           sessionId: 'browser-fixture',
         },
+      })
+    if (url.pathname === '/kernel-token')
+      return route.fulfill({
+        json: { token: 'kernel-fixture', expiresAt: Date.now() + 3_600_000, kind: 'minted' },
       })
     if (url.pathname === '/token')
       return route.fulfill({

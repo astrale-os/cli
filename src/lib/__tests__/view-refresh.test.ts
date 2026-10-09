@@ -223,6 +223,20 @@ async function setupIdentityView(hooks: IdentityHooks) {
 }
 
 describe('View identity switching', () => {
+  test('replaces the host Kernel grant when identity changes and refuses the old page', () =>
+    withIdentityView({}, async ({ request }) => {
+      expect(await (await request('kernel-token')).json()).toMatchObject({
+        token: mintedCredential('credential-alice'),
+        kind: 'minted',
+      })
+      expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
+      expect((await request('kernel-token', 0)).status).toBe(409)
+      expect(await (await request('kernel-token', 1)).json()).toMatchObject({
+        token: mintedCredential('credential-bob'),
+        kind: 'minted',
+      })
+    }))
+
   test('uses the newly resolved View issuer on identity switch and refresh', () => {
     const route = fixture(true).session.view.route
     let next = route
@@ -376,9 +390,13 @@ describe('View identity switching', () => {
       }
     }))
 
-  test.each(['mint', 'exchange'] as const)(
-    'does not cache a delayed %s credential from the previous identity',
-    (phase) => {
+  test.each([
+    { phase: 'mint', route: 'token' },
+    { phase: 'exchange', route: 'token' },
+    { phase: 'mint', route: 'kernel-token' },
+  ] as const)(
+    'does not cache a delayed $phase credential on $route from the previous identity',
+    ({ phase, route }) => {
       const started = Promise.withResolvers<void>()
       const delayed = Promise.withResolvers<string>()
       return withIdentityView(
@@ -390,12 +408,12 @@ describe('View identity switching', () => {
           },
         },
         async ({ request }) => {
-          const old = request('token')
+          const old = request(route)
           await started.promise
           expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
           delayed.resolve(mintedCredential('credential-alice'))
           expect((await old).status).toBe(502)
-          expect(await (await request('token', 1)).json()).toMatchObject({
+          expect(await (await request(route, 1)).json()).toMatchObject({
             token: mintedCredential('credential-bob'),
           })
         },
@@ -419,6 +437,7 @@ describe('View identity switching', () => {
         expect((await request('identity', 0, { identity: 'alice' })).status).toBe(409)
         expect((await request('refresh')).status).toBe(409)
         expect((await request('token')).status).toBe(409)
+        expect((await request('kernel-token')).status).toBe(409)
         delayed.resolve()
         expect((await first).status).toBe(200)
       },

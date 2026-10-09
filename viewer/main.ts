@@ -183,19 +183,24 @@ async function main(): Promise<void> {
 
   report('mounting')
   type ViewToken = { token: string; expiresAt: number }
-  const loadToken = async () => {
-    const next = await j<ViewToken>('/token', { method: 'POST' })
+  const loadToken = async (path = '/token') => {
+    const next = await j<ViewToken>(path, { method: 'POST' })
     return { credential: next.token, expiresAt: next.expiresAt }
   }
   let tokens: ReturnType<typeof createSessionCredentialProvider> | null = null
+  let kernelTokens: ReturnType<typeof createSessionCredentialProvider> | null = null
   if (route.handshake === 'shell') {
     tokens = createSessionCredentialProvider({
       ttlSeconds: cfg.delegationTtlSeconds,
-      mint: loadToken,
+      mint: () => loadToken(),
       initial: await loadToken(),
     })
     // The page outlives many credentials; anticipate rather than pay on the next user action.
     tokens.start()
+    kernelTokens = createSessionCredentialProvider({
+      ttlSeconds: cfg.delegationTtlSeconds,
+      mint: () => loadToken('/kernel-token'),
+    })
   }
   const kernelUrl = new URL(cfg.kernelUrl, location.href).href
 
@@ -206,7 +211,7 @@ async function main(): Promise<void> {
       auth: {
         ttlSeconds: cfg.delegationTtlSeconds,
         resolve: async (invoked, signal) =>
-          tokens === null ? {} : tokens.resolve(invoked, signal),
+          kernelTokens === null ? {} : kernelTokens.resolve(invoked, signal),
       },
       policy: {
         maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
