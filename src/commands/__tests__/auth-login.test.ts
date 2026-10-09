@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,6 +16,55 @@ afterEach(async () => {
 })
 
 describe('auth login command', () => {
+  test('refuses unversioned identity state before OAuth, then recovers explicitly without losing keys', async () => {
+    const accessToken = unsignedJwt({ iss: 'http://127.0.0.1', sub: 'user_123', exp: 1893456000 })
+    const server = oauthServer({ accessToken })
+    const path = join(tmp, 'identities.json')
+    const saved = `${JSON.stringify({ default: 'manager', identities: {} })}\n`
+    const privatePath = join(tmp, 'keys', 'manager.private.jwk')
+    try {
+      await writeIdpConfig(server.url)
+      await writeFile(path, saved)
+      await mkdir(join(tmp, 'keys'))
+      await writeFile(privatePath, 'retained private key bytes')
+      const args = [
+        '--idp',
+        'test',
+        '--name',
+        'alice',
+        '--client-credentials',
+        '--client-secret-env',
+        'TEST_CLIENT_SECRET',
+        '--raw',
+      ]
+
+      const refused = await runAuthLogin(...args)
+      expect(refused.exitCode).toBe(1)
+      expect(refused.stderr).toContain('Rename this file to preserve it')
+      expect(server.clientIds()).toEqual([])
+      expect(await readFile(path, 'utf8')).toBe(saved)
+      expect(
+        await readFile(join(tmp, 'idp-sessions', 'alice.json'), 'utf8').catch(() => null),
+      ).toBeNull()
+
+      await rename(path, `${path}.saved`)
+      const recovered = await runAuthLogin(...args)
+      expect(recovered.exitCode).toBe(0)
+      expect(server.clientIds()).toEqual(['client_123'])
+      expect(await readFile(`${path}.saved`, 'utf8')).toBe(saved)
+      expect(await readFile(privatePath, 'utf8')).toBe('retained private key bytes')
+      expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({
+        version: 1,
+        default: 'alice',
+      })
+      expect(
+        JSON.parse(await readFile(join(tmp, 'idp-sessions', 'alice.json'), 'utf8')).access_token,
+      ).toBe(accessToken)
+    } finally {
+      await server.stop()
+    }
+  })
+
   test('rejects requested audience when provider mints a different access-token aud', async () => {
     const server = oauthServer({
       accessToken: unsignedJwt({

@@ -20,6 +20,7 @@ describe('instance use bookmark probe', () => {
       probeBookmark(resolved, {
         readInstances: async () =>
           InstanceStoreSchema.parse({
+            version: 1,
             active: 'stable',
             instances: {
               stable: { url: resolved.url, caFile: resolved.caFile },
@@ -43,6 +44,7 @@ describe('instance use bookmark probe', () => {
     const failure = probeBookmark(resolved, {
       readInstances: async () =>
         InstanceStoreSchema.parse({
+          version: 1,
           active: 'stable',
           instances: {
             stable: { url: resolved.url, caFile: resolved.caFile },

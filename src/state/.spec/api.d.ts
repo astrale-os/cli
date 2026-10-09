@@ -160,7 +160,7 @@ export interface IdentityUpdate<Value> {
   readonly value: Value
 }
 
-/** Decode the missing, legacy, or current identity file without writing or migrating it. */
+/** Decode missing or V1 identity state without writing it; refuse unversioned and unsupported files. */
 export function readIdentityStore(options?: IdentityStoreOptions): Promise<IdentityStore>
 
 /** Reread and commit one identity transition under the file's cross-process lock. */

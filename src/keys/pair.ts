@@ -7,9 +7,6 @@ import { AstraleError } from '../errors'
 import { atomicWrite, KEYS_DIR } from '../state/index'
 import { inferAlg } from './algorithm'
 
-const LEGACY_MANAGER_PRIVATE = 'manager.private.jwk'
-const LEGACY_MANAGER_PUBLIC = 'manager.public.jwk'
-
 export type KeypairPaths = {
   readonly privatePath: string
   readonly publicPath: string
@@ -26,7 +23,7 @@ export interface KeypairInput {
   readonly publicJwk: unknown
 }
 
-/** Preserve manager filenames and confine every subject file to the selected key directory. */
+/** Confine every subject file to the selected key directory. */
 export function keypairPaths(subject: string, keysDir: string = KEYS_DIR): KeypairPaths {
   if (
     subject.length === 0 ||
@@ -36,14 +33,9 @@ export function keypairPaths(subject: string, keysDir: string = KEYS_DIR): Keypa
   ) {
     throw invalidKeySubject(subject)
   }
-  const filenames =
-    subject === 'manager'
-      ? { private: LEGACY_MANAGER_PRIVATE, public: LEGACY_MANAGER_PUBLIC }
-      : { private: `${subject}.private.jwk`, public: `${subject}.public.jwk` }
-
   return {
-    privatePath: confinedKeyPath(keysDir, filenames.private, subject),
-    publicPath: confinedKeyPath(keysDir, filenames.public, subject),
+    privatePath: confinedKeyPath(keysDir, `${subject}.private.jwk`, subject),
+    publicPath: confinedKeyPath(keysDir, `${subject}.public.jwk`, subject),
   }
 }
 
@@ -129,8 +121,7 @@ export async function listIdentityKeys(keysDir: string = KEYS_DIR): Promise<stri
     const entries = await readdir(keysDir)
     const names = new Set<string>()
     for (const entry of entries) {
-      if (entry === LEGACY_MANAGER_PRIVATE) names.add('manager')
-      else if (entry.endsWith('.private.jwk')) names.add(entry.replace(/\.private\.jwk$/, ''))
+      if (entry.endsWith('.private.jwk')) names.add(entry.replace(/\.private\.jwk$/, ''))
     }
     return Array.from(names).sort()
   } catch (error) {

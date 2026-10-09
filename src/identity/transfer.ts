@@ -23,7 +23,6 @@ const IdentityExportFields = {
   privateJwk: JwkSchema,
   publicJwk: JwkSchema,
 }
-const LegacyIdentityExportSchema = z.object(IdentityExportFields).strict()
 const IdentityExportV1Schema = z
   .object({ version: z.literal(IDENTITY_EXPORT_VERSION), ...IdentityExportFields })
   .strict()
@@ -82,11 +81,9 @@ export async function decodeIdentityExport(
     throw invalidExport('The identity export is not valid JSON.')
   }
 
-  let decoded: z.infer<typeof LegacyIdentityExportSchema>
+  let decoded: z.infer<typeof IdentityExportV1Schema>
   try {
-    decoded = hasVersion(input)
-      ? IdentityExportV1Schema.parse(input)
-      : LegacyIdentityExportSchema.parse(input)
+    decoded = IdentityExportV1Schema.parse(input)
   } catch {
     throw invalidExport('The identity export has an invalid or unsupported shape.')
   }
@@ -197,10 +194,6 @@ export async function importIdentity(
 
 export async function writeIdentityExport(path: string, content: string): Promise<void> {
   await atomicWrite(path, content)
-}
-
-function hasVersion(input: unknown): input is { readonly version: unknown } {
-  return typeof input === 'object' && input !== null && Object.hasOwn(input, 'version')
 }
 
 async function removeKeypairIfUnreferenced(

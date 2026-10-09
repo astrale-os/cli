@@ -2,8 +2,8 @@ import { AstraleError } from '../errors'
 
 /**
  * Resolve the JOSE algorithm to use with this key. Prefers `privateJwk.alg`
- * when present, falls back to inferring from `crv`/`kty` so keys generated
- * by older CLIs that did not stamp `alg`. Throws when neither form resolves.
+ * when present, otherwise derives it from the JWK’s `crv`/`kty` pair.
+ * Portable V1 identity exports permit JWKs without `alg`.
  */
 export function inferAlg(privateJwk: Record<string, unknown>, keyPath?: string): string {
   const explicit = privateJwk.alg

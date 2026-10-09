@@ -7,8 +7,8 @@ import { ReservedSlugError } from '../errors'
 // registries — kept in a leaf module to avoid circular imports.
 
 const NAME_RE = /^[a-zA-Z0-9_.-]+$/
-// `host` is the reserved slug of the host/manager kernel (SPEC §5.2); `manager` is the legacy name.
-const RESERVED_SLUGS = new Set(['manager', 'host'])
+// `host` names the Kernel’s intrinsic Host domain.
+const RESERVED_SLUGS = new Set(['host'])
 
 export { RESERVED_SLUGS }
 

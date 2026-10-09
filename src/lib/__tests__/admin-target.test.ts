@@ -196,8 +196,8 @@ describe('resolveAdminTargetFromStore', () => {
     })
   })
 
-  /** @evidence TEST-CLI-ADMIN-UNLABELLED-REGISTRY-ISSUER-KEPT */
-  test('keeps an explicit issuer for Admin calls through a bookmark in an unlabelled registry', () => {
+  /** @evidence TEST-CLI-ADMIN-REGISTRY-ISSUER-KEPT */
+  test('keeps an explicit issuer for Admin calls through a parsed bookmark', () => {
     const url = 'https://bryan.eu.beta.astrale.ai/api'
     // Every bookmark store reaches Admin resolution through the registry read.
     const { store } = sanitizeStore({

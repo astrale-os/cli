@@ -1,7 +1,7 @@
 # CLI key material
 
-This Node-only module owns the retained `@astrale-os/cli/keys` subpath. Manager keys use the
-`manager.private.jwk` / `manager.public.jwk` filenames; every other identity uses its own subject-named pair. Writes are private and
+This Node-only module owns the retained `@astrale-os/cli/keys` subpath. Every identity uses its own
+`<subject>.private.jwk` / `<subject>.public.jwk` pair, including an identity named `manager`. Writes are private and
 atomic through State. Signing admits the selected private JWK algorithm and never substitutes
 manager material for a missing identity key.
 

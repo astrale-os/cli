@@ -12,6 +12,7 @@ import {
 describe('InstanceStoreSchema', () => {
   test('parses valid store with url', () => {
     const result = InstanceStoreSchema.parse({
+      version: 1,
       active: 'prod',
       instances: {
         prod: { url: 'https://prod.example.com', createdAt: '2024-01-01T00:00:00Z' },
@@ -21,18 +22,21 @@ describe('InstanceStoreSchema', () => {
     expect(result.instances.prod.url).toBe('https://prod.example.com')
   })
 
-  test('parses legacy instance without url for migration compatibility', () => {
-    const result = InstanceStoreSchema.parse({
-      active: 'dev',
-      instances: {
-        dev: { createdAt: '2024-01-01T00:00:00Z' },
-      },
-    })
-    expect(result.instances.dev.url).toBeUndefined()
+  test('refuses a persisted bookmark without its connection URL', () => {
+    expect(() =>
+      InstanceStoreSchema.parse({
+        version: 1,
+        active: 'dev',
+        instances: {
+          dev: { createdAt: '2024-01-01T00:00:00Z' },
+        },
+      }),
+    ).toThrow()
   })
 
   test('parses multiple instances', () => {
     const result = InstanceStoreSchema.parse({
+      version: 1,
       active: 'prod',
       instances: {
         local: { url: 'https://local.example.com', createdAt: '2024-01-01T00:00:00Z' },
@@ -45,6 +49,7 @@ describe('InstanceStoreSchema', () => {
   test('rejects missing active field', () => {
     expect(() =>
       InstanceStoreSchema.parse({
+        version: 1,
         instances: { m: { createdAt: '2024-01-01' } },
       }),
     ).toThrow()
@@ -55,6 +60,7 @@ describe('InstanceStoreSchema', () => {
     // `createdAt` is metadata; the connection URL is the only required
     // field for a usable bookmark.
     const result = InstanceStoreSchema.parse({
+      version: 1,
       active: 'm',
       instances: { m: { url: 'http://test' } },
     })
@@ -63,6 +69,7 @@ describe('InstanceStoreSchema', () => {
 
   test('accepts empty instances record', () => {
     const result = InstanceStoreSchema.parse({
+      version: 1,
       active: 'none',
       instances: {},
     })
@@ -198,35 +205,34 @@ describe('sanitizeStore — read must not rewrite', () => {
     expect(retained.instances.bryan).not.toHaveProperty('domainIssuer')
   })
 
-  /** @evidence TEST-CLI-INSTANCE-UNLABELLED-REGISTRY-ISSUER-KEPT */
+  /** @evidence TEST-CLI-INSTANCE-REGISTRY-ISSUER-KEPT */
   test.each([
     ['https://bryan.eu.beta.astrale.ai/api', 'https://shell.beta.astrale.ai'],
     ['https://bryan.eu.astrale.ai/api', 'https://shell.astrale.ai'],
-  ])(
-    'keeps an explicit Shell issuer read from an unlabelled registry on %s',
-    (url, domainIssuer) => {
-      const store = {
-        active: 'bryan',
-        instances: {
-          bryan: {
-            url,
-            issuer: url,
-            domainIssuer,
-            slug: 'bryan',
-            name: 'bryan',
-            kind: 'bookmark' as const,
-            organizationId: 'org_123',
-          },
+  ])('keeps an explicit Shell issuer in a V1 registry on %s', (url, domainIssuer) => {
+    const store = {
+      active: 'bryan',
+      instances: {
+        bryan: {
+          url,
+          issuer: url,
+          domainIssuer,
+          slug: 'bryan',
+          name: 'bryan',
+          kind: 'bookmark' as const,
+          organizationId: 'org_123',
         },
-      }
+      },
+    }
 
-      const { store: retained, changed } = sanitizeStore(InstanceStoreSchema.parse(store))
+    const { store: retained, changed } = sanitizeStore(
+      InstanceStoreSchema.parse({ version: 1, ...store }),
+    )
 
-      expect(changed).toBe(false)
-      expect(retained.instances.bryan).toEqual(store.instances.bryan)
-      expect(bookmarkExchangeDomain(retained.instances.bryan, url)).toEqual({ domainIssuer })
-    },
-  )
+    expect(changed).toBe(false)
+    expect(retained.instances.bryan).toEqual(store.instances.bryan)
+    expect(bookmarkExchangeDomain(retained.instances.bryan, url)).toEqual({ domainIssuer })
+  })
 
   /** @evidence TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT */
   test('keeps an explicit Shell issuer read from a labelled registry', () => {
@@ -252,6 +258,10 @@ describe('sanitizeStore — read must not rewrite', () => {
     expect(bookmarkExchangeDomain(retained.instances.bryan!, url)).toEqual({
       domainIssuer: 'https://shell.beta.astrale.ai',
     })
+  })
+
+  test('refuses an unversioned registry instead of interpreting it as V1', () => {
+    expect(() => InstanceStoreSchema.parse({ active: '', instances: {} })).toThrow()
   })
 
   test('refuses a registry format this release does not know', () => {
@@ -337,6 +347,7 @@ describe('sanitizeStore — read must not rewrite', () => {
 describe('bookmark TLS trust collisions', () => {
   test('finds the same normalized URL with a different CA configuration', () => {
     const store = InstanceStoreSchema.parse({
+      version: 1,
       active: 'stable',
       instances: {
         stable: {
@@ -366,6 +377,7 @@ describe('bookmark TLS trust collisions', () => {
 
   test('treats custom CA versus system trust as a meaningful difference', () => {
     const store = InstanceStoreSchema.parse({
+      version: 1,
       active: 'custom',
       instances: {
         custom: { url: 'https://local.example', caFile: '/certs/local.pem' },

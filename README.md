@@ -80,6 +80,14 @@ astrale instance bookmark staging --url https://kernel.example.com
 astrale instance use staging
 ```
 
+Local `identities.json` and `instances.json` registries require `version: 1`; portable identity
+imports likewise require the V1 export envelope. An unversioned registry is refused without
+conversion. If the CLI reports one, rename that specific file in `ASTRALE_HOME` (by default
+`~/.astrale`) to retain its bytes, keeping the `keys` directory unchanged. Then run `astrale auth
+login` and select an Instance with `astrale instance use <name>`, or bookmark its new URL. Login
+validates the identity registry before requesting a token or writing a session. Existing keys can
+still be imported using a V1 identity export; do not discard them to reset local bookmarks.
+
 Local key registrations are scoped to the Kernel issuer, not a bookmark name or transport URL.
 Aliases for the same issuer share a registration; different issuers remain isolated. Registrations
 retained under old bookmark keys must be re-recorded with `astrale identity register <name>

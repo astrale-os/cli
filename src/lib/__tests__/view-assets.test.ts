@@ -50,7 +50,7 @@ describe('viewer asset resolution', () => {
     expect(source).toContain('#frame {\n        flex: 1;\n        min-width: 0;')
   })
 
-  test('skips partial candidates and prefers complete package-owned assets', async () => {
+  test('does not load complete sibling assets outside the package when its bundle is partial', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-view-candidates-'))
     temporaryDirectories.push(root)
     const prefix = join(root, '.npm-global')
@@ -68,7 +68,8 @@ describe('viewer asset resolution', () => {
     await writeFile(join(legacy, 'main.js'), '')
     await writeFile(join(legacy, 'index.html'), '')
 
-    expect(viewerDistDir(pathToFileURL(bundle).href, entry)).toBe(legacy)
+    expect(viewerDistDir(pathToFileURL(bundle).href, entry)).toBe(published)
+    await expect(ensureViewerAssets(pathToFileURL(bundle).href, entry)).rejects.toThrow()
 
     await writeFile(join(published, 'index.html'), '')
     expect(viewerDistDir(pathToFileURL(bundle).href, entry)).toBe(published)

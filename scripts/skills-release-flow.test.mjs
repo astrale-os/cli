@@ -38,7 +38,7 @@ const skills = markdownFiles(skillsRoot).map((path) => ({
 
 test('no skill example uses a deploy-time installation surface or a removed flag', () => {
   // A deploy never installs: `installation`, `--deploy-only`, `signingIdentity` and the `dev` loop
-  // are gone from canonical projects, and `--direct` changes nothing until it is removed (D13).
+  // are gone from canonical projects; installation accepts only the immutable deployment URL.
   const removed = [
     [/--deploy-only\b/, '--deploy-only'],
     [/\binstallation\s*:/, 'an Environment installation'],
@@ -138,6 +138,6 @@ test('Studio tells its agent and the env editor that a deploy never installs', (
     assert.doesNotMatch(source, /pnpm prod/)
     assert.match(source, /`pnpm run deploy <environment>`/)
   }
-  assert.match(prompt, /never installs; then `astrale domain install <url> --direct -i <instance>`/)
+  assert.match(prompt, /never installs; then `astrale domain install <url> -i <instance>`/)
   assert.match(prompt, /\/\.well-known\/astrale\/release\.json/)
 })

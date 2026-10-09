@@ -5,6 +5,7 @@ import { InstanceStoreSchema, assertNoCollision, resolveInstanceKey } from '../i
 import { validateSlug } from '../validation'
 
 const baseStore = InstanceStoreSchema.parse({
+  version: 1,
   active: 'staging',
   instances: {
     staging: {
@@ -40,8 +41,9 @@ describe('DESIGN — §4.7 slug + namespace', () => {
     expect(() => validateSlug('')).toThrow(/Invalid slug/)
   })
 
-  test('validateSlug rejects reserved "manager"', () => {
-    expect(() => validateSlug('manager')).toThrow(ReservedSlugError)
+  test('reserves host while treating manager as an ordinary user slug', () => {
+    expect(() => validateSlug('host')).toThrow(ReservedSlugError)
+    expect(() => validateSlug('manager')).not.toThrow()
   })
 
   test('assertNoCollision rejects existing key', () => {
@@ -87,13 +89,12 @@ describe('DESIGN — §7 resolver', () => {
   })
 })
 
-describe('DESIGN — backward compat registry', () => {
-  test('legacy store without kind/slug/mode parses', () => {
-    const legacy = InstanceStoreSchema.parse({
-      active: 'old',
-      instances: { old: { url: 'http://x', createdAt: '2023-01-01' } },
-    })
-    expect(legacy.instances.old.kind).toBeUndefined()
-    expect(legacy.instances.old.mode).toBeUndefined()
+describe('DESIGN — V1 bookmark registry', () => {
+  test('requires its version while keeping optional bookmark metadata optional', () => {
+    const fields = { active: 'current', instances: { current: { url: 'http://x' } } }
+    expect(() => InstanceStoreSchema.parse(fields)).toThrow()
+    const current = InstanceStoreSchema.parse({ version: 1, ...fields })
+    expect(current.instances.current.kind).toBeUndefined()
+    expect(current.instances.current.mode).toBeUndefined()
   })
 })

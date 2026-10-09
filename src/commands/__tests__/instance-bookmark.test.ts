@@ -37,6 +37,7 @@ describe('instance bookmark command', () => {
       join(tmp, 'instances.json'),
       JSON.stringify(
         {
+          version: 1,
           active: 'testmarc',
           instances: {
             testmarc: {
@@ -77,6 +78,7 @@ describe('instance bookmark command', () => {
     await writeFile(
       join(tmp, 'instances.json'),
       JSON.stringify({
+        version: 1,
         active: 'stable',
         instances: {
           stable: {
@@ -105,6 +107,7 @@ describe('instance bookmark command', () => {
     await writeFile(
       join(tmp, 'instances.json'),
       JSON.stringify({
+        version: 1,
         active: 'stable',
         instances: {
           stable: {
