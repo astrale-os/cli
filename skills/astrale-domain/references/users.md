@@ -145,6 +145,21 @@ astrale call /:shell.astrale.ai:class.Group:assignMember \
 These Shell handlers require exact `@NodeId` reference inputs; group methods return `{}`. Keep business
 references as IDs and convert to `@NodeId` at the Shell call boundary. Resolve Core member/admin
 on the target instance first, rather than sending group labels or IDs copied from another Kernel.
+An administrator finds both among their own memberships. The Core Path `/:shell.astrale.ai:core.admin`
+traverses the Shell Domain node and Kernel `of_domain`, which Shell administrators cannot read.
+
+To make an invited user an instance administrator, an existing administrator assigns them to Core
+`admin`; invitation never does. `astrale instance invitation status` reports the invited `user`, the
+Shell User Admin reserved on the Instance; the accepting account registers onto it. Assign it once
+the Invitation is `completed`. `unassignMember` with the same input revokes it, and the user keeps
+Core `member`:
+
+```sh
+astrale instance invitation status @invitation-id --json
+astrale query @self --edge /:shell.astrale.ai:class.member_of_group -i staging --as operator
+astrale call /:shell.astrale.ai:class.Group:assignMember \
+  member=@user-id group=@administrators-id -i staging --as operator
+```
 
 For local-key testing, use a CLI whose `astrale identity register --help` exposes `--node`.
 Register the existing Employee ID; do not create another node to attach login credentials.

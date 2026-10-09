@@ -32,6 +32,8 @@ export interface InvitationInfo {
   readonly instance: string
   readonly invitedBy?: string
   readonly claimedBy?: string
+  /** Shell User reserved on the Instance for this invitation; the accepting account registers onto it. */
+  readonly user?: string
   readonly createdAt: string
   readonly expiresAt?: string
   readonly acceptedAt?: string
