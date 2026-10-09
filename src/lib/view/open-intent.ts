@@ -1,7 +1,5 @@
 import type { IntentMessage, MountedWindow, OpenViewResult, Shell } from '@astrale-os/shell'
 
-import { Path } from '@astrale-os/sdk/graph/path'
-
 /** The Kernel path of a View declaration: `/:<origin>:view.<name>`. */
 export type ViewPath = string
 
@@ -64,7 +62,7 @@ export async function handleViewOpenIntent(
   }
 }
 
-/** The declaration path of a requested View; a request for any node but its Domain is refused. */
+/** The declaration path of a requested Domain View; target selection is no longer accepted. */
 export function domainViewPath(request: {
   readonly view: string
   readonly target?: string
@@ -72,10 +70,9 @@ export function domainViewPath(request: {
   const key = String(request.view)
   const separator = key.lastIndexOf(':view.')
   if (separator <= 0) throw new Error(`Invalid View key: ${key}`)
-  const origin = key.slice(0, separator)
-  if (request.target !== undefined && request.target !== Path.domain(origin).raw) {
+  if (request.target !== undefined) {
     throw new Error(
-      `Views open on their Domain only; ${key} cannot open on ${request.target}. Route to the node inside the View.`,
+      `Views open on their Domain only; target is no longer accepted. Route to the node inside the View.`,
     )
   }
   return `/:${key}`

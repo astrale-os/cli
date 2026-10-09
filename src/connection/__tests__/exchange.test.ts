@@ -120,7 +120,7 @@ describe('Domain token exchange', () => {
       call: {
         input: {
           audience: DOMAIN,
-          attenuation: { kind: 'identity', self: true },
+          principal: 'user-1',
         },
       },
     })

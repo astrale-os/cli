@@ -26,7 +26,7 @@ test.each(['refreshing', 'degraded', 'expired'])(
             handshake: 'none',
             issuer:
               'https://fixture.example' as ViewServeConfig['session']['view']['route']['issuer'],
-            etag: `sha256:${'a'.repeat(64)}`,
+            release: `sha256:${'a'.repeat(64)}`,
             revision:
               `sha256:${'b'.repeat(64)}` as ViewServeConfig['session']['view']['route']['revision'],
           },

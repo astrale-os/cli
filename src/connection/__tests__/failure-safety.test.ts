@@ -36,9 +36,9 @@ test('Session and acquisition failures remain typed without unsafe recovery advi
 
   const acquisition = await capture(() =>
     formatKernelError(
-      transportFailure('Publication failed.', 'unknown', {
+      transportFailure('Release failed.', 'unknown', {
         kind: 'acquisition',
-        resource: 'publication',
+        resource: 'release',
       }),
       true,
       '',
@@ -48,7 +48,7 @@ test('Session and acquisition failures remain typed without unsafe recovery advi
   )
   expect(JSON.parse(acquisition)).toMatchObject({
     error: 'TRANSPORT_ERROR',
-    transport: { kind: 'acquisition', resource: 'publication' },
+    transport: { kind: 'acquisition', resource: 'release' },
   })
   expect(acquisition).not.toContain('must-not-leak')
 

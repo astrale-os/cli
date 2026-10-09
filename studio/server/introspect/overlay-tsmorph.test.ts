@@ -76,7 +76,7 @@ export const declaredView = view({})`,
       `import { defineSchema, view } from '@astrale-os/sdk/schema'
 import { declaredPolicy as guard } from './modules/billing/policies/pay.js'
 import { declaredView } from './modules/billing/views/billing.js'
-export const schema = defineSchema('example.dev', {
+export const schema = defineSchema('example.dev', { name: 'Test Domain',
   policies: { MayPay: guard },
   views: { billing: declaredView, overview: view({}) },
 })`,
@@ -226,7 +226,7 @@ export const create = defineWorkflow()('createIssue', async ({ input }) => graph
       join(schemaDir, 'index.ts'),
       `
         import { Issue, assigned_to, closeIssue, createIssue } from './members.js'
-        export const Schema = defineSchema('issues.example', {
+        export const Schema = defineSchema('issues.example', { name: 'Test Domain',
           classes: { Issue, assigned_to },
           functions: { createIssue, closeIssue },
         })

@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 
 import { admittedBundleRevisionFromSdk } from './revision'
 
-const schema = defineSchema('notes.example.dev', {})
+const schema = defineSchema('notes.example.dev', { name: 'Test Domain' })
 const wire = JSON.parse(JSON.stringify(sdk.bundle.create(schema)))
 
 describe('installed Bundle revision', () => {

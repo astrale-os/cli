@@ -15,7 +15,7 @@ export type InstalledDomainReader = (
   session: ClientSession,
   origin: string,
   signal: AbortSignal,
-) => Promise<Pick<DomainInfo, 'publication'>>
+) => Promise<Pick<DomainInfo, 'release'>>
 
 const inspectInstalledDomain: InstalledDomainReader = (session, origin, signal) =>
   session.schema.inspect(origin, { signal })
@@ -137,7 +137,7 @@ async function installedIssuer(
   signal: AbortSignal,
 ): Promise<IssuerId | null> {
   try {
-    const pinned = (await read(session, origin, signal)).publication?.identity.issuer
+    const pinned = (await read(session, origin, signal)).release?.identity.issuer
     if (pinned === undefined) return null
     const accepted = issuer.accept(pinned)
     return accepted === kernelIssuer ? null : accepted

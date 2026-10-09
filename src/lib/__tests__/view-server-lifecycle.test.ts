@@ -21,7 +21,7 @@ async function run(body: string) {
       session: { id, nonce: id, pid: 0, port: 0, pageUrl: '', createdAt: '2026-10-06T00:00:00.000Z',
         view: { target: '/:fixture.example', route: { key: 'fixture.example:view.application',
           declaration: { target: { kind: 'domain' } }, href: 'https://view.example/', handshake: 'none',
-          issuer: 'https://fixture.example', etag: 'sha256:' + 'a'.repeat(64), revision: 'sha256:' + 'b'.repeat(64) } } },
+          issuer: 'https://fixture.example', release: 'sha256:' + 'a'.repeat(64), revision: 'sha256:' + 'b'.repeat(64) } } },
       kernel: {}, proxy: { kernelUrl: 'https://kernel.example', issuer: 'https://kernel.example', direct: true },
       externalOrigins: [], idleMs, releaseGraceMs: 30,
     })

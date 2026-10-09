@@ -90,13 +90,13 @@ describe('setup domain step', () => {
 
     expect(lines).toContain('  Next: cd crm && pnpm install && pnpm run deploy development')
     expect(lines).toContain(
-      '  Then: astrale domain install <url> --direct -i <instance>   # the URL the deploy prints',
+      '  Then: astrale domain install <url> -i <instance>   # the URL the deploy prints',
     )
     expect(lines.join('\n')).not.toContain('pnpm prod')
     expect(lines.join('\n')).not.toContain('--instance')
     expect(nextSteps('crm')).toEqual([
       'cd crm && pnpm install && pnpm run deploy development',
-      'astrale domain install <url> --direct -i <instance>',
+      'astrale domain install <url> -i <instance>',
     ])
   })
 

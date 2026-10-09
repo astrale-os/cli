@@ -22,7 +22,7 @@ test('refuses a View requiring a browser feature beyond the shared profile, as t
               href: 'https://view.example/',
               handshake: 'none',
               issuer: 'https://browser-fixture.example',
-              etag: `sha256:${'a'.repeat(64)}`,
+              release: `sha256:${'a'.repeat(64)}`,
               revision: `sha256:${'d'.repeat(64)}`,
               iframe: { allow: ['usb'] },
             },

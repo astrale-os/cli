@@ -46,7 +46,7 @@ test.beforeAll(async () => {
           href: 'https://view.example/board',
           handshake: 'none',
           issuer: 'https://ownership.example',
-          etag: `sha256:${'a'.repeat(64)}`,
+          release: `sha256:${'a'.repeat(64)}`,
           revision: `sha256:${'b'.repeat(64)}`,
         },
       },

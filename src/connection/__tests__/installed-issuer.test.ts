@@ -6,7 +6,6 @@ import { createGraph, ResponseError, TransportError } from '@astrale-os/sdk/clie
 import { ClientSession } from '@astrale-os/sdk/client/session'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { pack } from 'msgpackr'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -334,10 +333,7 @@ describe('Shell exchange at the installed issuer', () => {
   })
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-READ-ONCE-PER-BOOKMARK */
-  test('reads the pin once per bookmark across commands, against the bytes a .117 Host encodes', async () => {
-    // The Shell 1Pact pins today (shell-v2) answers at the stable issuer; the fake Kernel answers
-    // exactly the DomainInfo bytes Host 0.12.0-beta.113 to .126 encode for it.
-    expect(sha256(pack(domainInfo(SHELL, LEGACY_SHELL)))).toBe(HOST_DOMAIN_INFO_SHA256.legacy)
+  test('reads the installed issuer once per bookmark across commands', async () => {
     const shell = shellCommand({ [LEGACY_SHELL]: 'live' }, () => LEGACY_SHELL)
 
     for (let command = 0; command < 5; command += 1) {
@@ -630,14 +626,12 @@ describe('Shell exchange at the installed issuer', () => {
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-INSPECT-DECODED */
   test.each([
-    ['a deployment issuer', DEPLOYMENT, HOST_DOMAIN_INFO_SHA256.deployment],
-    ['the stable issuer', LEGACY_SHELL, HOST_DOMAIN_INFO_SHA256.legacy],
-    ['no publication', null, HOST_DOMAIN_INFO_SHA256.kernelHosted],
+    ['a deployment issuer', DEPLOYMENT],
+    ['an independent issuer', LEGACY_SHELL],
+    ['no release', null],
   ] as const)(
-    'reads the pin with schema.inspect and decodes the DomainInfo every supported Host encodes (%s)',
-    async (_case, pin, hostBytes) => {
-      // The fake Kernel answers exactly the bytes Host releases 0.12.0-beta.113 to .126 encode.
-      expect(sha256(pack(domainInfo(SHELL, pin)))).toBe(hostBytes)
+    'reads the pin with schema.inspect and decodes canonical ReleaseRef DomainInfo (%s)',
+    async (_case, pin) => {
       const net = network(
         { [DEPLOYMENT]: 'live', [LEGACY_SHELL]: 'live' },
         { kernel: { kind: 'up', pin: () => pin } },
@@ -659,7 +653,7 @@ describe('Shell exchange at the installed issuer', () => {
   )
 
   test.each([
-    ['no publication', null],
+    ['no release', null],
     ['the source Kernel as its issuer', KERNEL],
   ])('keeps the caller when the Kernel hosts the Domain itself (%s)', async (_case, answer) => {
     const net = network({})
@@ -813,8 +807,8 @@ function pinned(...answers: Array<string | null | Error | (() => string | null)>
     if (answer instanceof Error) throw answer
     const named = typeof answer === 'function' ? answer() : answer
     return {
-      publication: named === null || named === undefined ? null : { identity: { issuer: named } },
-    } as Pick<DomainInfo, 'publication'>
+      release: named === null || named === undefined ? null : { identity: { issuer: named } },
+    } as Pick<DomainInfo, 'release'>
   }
   return { read, reads }
 }
@@ -954,32 +948,21 @@ function refusal(
   )
 }
 
-/**
- * SHA-256 of the DomainInfo each Host release from 0.12.0-beta.113 to 0.12.0-beta.126 encodes, in
- * its own image, for `domainInfo(SHELL, issuer)`: the oldest Host still serving managed Instances
- * answers these bytes.
- */
-const HOST_DOMAIN_INFO_SHA256 = {
-  deployment: '71e17ffc54e25ffb100b2482353d3b0121d063708112458e81aeac7cc89dce8f',
-  legacy: '7e055e973d4712de1ddd853555d00a53dc590e934fd32e653e97974212e9e6e1',
-  kernelHosted: '0af1e689db279a0727dba10c0e37344e7747ec74cee0bfc4f88ac68a7fb38bf0',
-} as const
-
-/** The DomainInfo of a Kernel whose pin for `origin` names `pinnedIssuer`, or no publication. */
+/** The DomainInfo of a Kernel whose pin for `origin` names `pinnedIssuer`, or no release. */
 function domainInfo(origin: string, pinnedIssuer: string | null) {
   const revision = `sha256:${'a'.repeat(64)}`
   return {
     origin,
     revision,
     generation: `sha256:${'b'.repeat(64)}`,
-    publication:
+    release:
       pinnedIssuer === null
         ? null
         : {
             origin,
             identity: { issuer: pinnedIssuer, subject: origin },
             revision,
-            etag: `sha256:${'c'.repeat(64)}`,
+            digest: `sha256:${'c'.repeat(64)}`,
           },
     readiness: `sha256:${'d'.repeat(64)}`,
     capabilities: { requested: {}, materialized: {} },
@@ -989,9 +972,9 @@ function domainInfo(origin: string, pinnedIssuer: string | null) {
 
 /** The binary `schema.inspect` answer of a Kernel whose pin names `pinnedIssuer`. */
 function introspection(requestId: unknown, origin: string, pinnedIssuer: string | null): Response {
-  return new Response(new Uint8Array(pack(domainInfo(origin, pinnedIssuer))), {
+  return new Response(JSON.stringify(domainInfo(origin, pinnedIssuer)), {
     headers: {
-      'content-type': 'application/vnd.astrale.schema-introspection.v2+msgpack',
+      'content-type': 'application/vnd.astrale.schema-introspection.v4+json',
       'cache-control': 'no-store',
       'x-astrale-request-id': String(requestId),
       'x-astrale-binary-headers': '-',

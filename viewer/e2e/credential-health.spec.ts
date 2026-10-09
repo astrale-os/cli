@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { fulfillKernel } from './kernel'
+
 const temporary = mkdtempSync(join(tmpdir(), 'astrale-view-credential-'))
 const childFile = join(temporary, 'child.js')
 execFileSync(
@@ -32,6 +34,7 @@ async function mount(page: Page, context: BrowserContext) {
   await page.clock.install()
   await context.route('https://**/*', async (route) => {
     const url = new URL(route.request().url())
+    if (url.hostname === 'kernel.example') return fulfillKernel(route)
     if (url.hostname === 'view.example') {
       if (url.pathname !== '/child.js') documents += 1
       return route.fulfill({
@@ -52,7 +55,7 @@ async function mount(page: Page, context: BrowserContext) {
               href: 'https://view.example/',
               handshake: 'shell',
               issuer: 'https://browser-fixture.example',
-              etag: `sha256:${'a'.repeat(64)}`,
+              release: `sha256:${'a'.repeat(64)}`,
               revision: `sha256:${'d'.repeat(64)}`,
             },
           },

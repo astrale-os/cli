@@ -11,11 +11,6 @@ import {
 } from 'ts-morph'
 
 import { workspaceKey } from './home'
-import {
-  LEGACY_APPLICATION_MODULES,
-  LEGACY_DEFINE_APPLICATION,
-  LEGACY_PROJECT_APPLICATION_KEY,
-} from './legacy/application-project'
 import { isPackageImportSpecifier, resolvePackageImport } from './package-imports'
 
 export interface DomainHandle {
@@ -64,12 +59,7 @@ export function analyzeProjectConfig(root: string): ProjectConfigAnalysis {
   const input = resolveLocalValue(call.getArguments()[0], source)
   if (!input || !Node.isObjectLiteralExpression(input)) return NO_PROJECT
   return Object.freeze({
-    domainFile: domainOf(
-      objectPropertyValue(input, 'domain') ??
-        objectPropertyValue(input, LEGACY_PROJECT_APPLICATION_KEY),
-      source,
-      project,
-    ),
+    domainFile: domainOf(objectPropertyValue(input, 'domain'), source, project),
     datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
   })
 }
@@ -140,10 +130,7 @@ export function resolveSchemaEntry(root: string, domainFile: string): string | n
   if (source === null) return null
 
   for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (
-      !isSdkCall(call, source, 'defineDomain', DOMAIN_MODULES) &&
-      !isSdkCall(call, source, LEGACY_DEFINE_APPLICATION, LEGACY_APPLICATION_MODULES)
-    ) {
+    if (!isSdkCall(call, source, 'defineDomain', DOMAIN_MODULES)) {
       continue
     }
     const input = resolveLocalValue(call.getArguments()[0], source)

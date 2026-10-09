@@ -227,15 +227,3 @@ package of the `domains` repository), or by deploying the identical release agai
 After a leak, put the new value in the secrets file and every CI secret store first (an identical
 redeploy with the old value would write it back), rotate every deployment that still serves, then
 revoke the old value where it was issued.
-
-## Older projects
-
-- `installation` in an Environment and `--deploy-only` are refused before any effect: deploy, then
-  install the printed URL. adapter-astrale's removed instance mode (`instance`, `signingIdentity`)
-  is refused at deploy with the configuration to write instead. A deployment gets its own key, so
-  there is no `.astrale/identity.json` to keep; only a legacy direct-mode Cloudflare Environment
-  still reads its `signingIdentity` file.
-- `astrale-domain dev` serves only legacy direct-mode Environments (adapter-cloudflare without
-  `namespace`), which replace one stable Worker in place; iterate with `deploy` then `install`.
-- The SDK's printed install hint and old scripts may pass `--direct` to `astrale domain install`. It
-  is accepted and changes nothing: URL references always go to the instance Kernel. Do not add it.

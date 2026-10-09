@@ -13,7 +13,6 @@ export default defineCode({
     '../src/commands/call.ts',
     '../src/commands/describe.ts',
     '../src/commands/domain/install.ts',
-    '../src/commands/domain/legacy/catalog-publish.ts',
     '../src/commands/domain/list.ts',
     '../src/commands/get.ts',
     '../src/commands/identity/create.ts',

@@ -30,10 +30,9 @@ type LogsOpts = KernelCommandOpts & {
 
 export interface JournalRecord {
   readonly sequence: number
-  readonly timestamp: string
   readonly topic: string
   readonly payload: unknown
-  readonly occurredAt?: string
+  readonly occurredAt: string
   readonly committedAt?: string
   /** Executor that authenticated the recorded operation (a Domain acting for a user included). */
   readonly principal?: string
@@ -43,8 +42,6 @@ export interface JournalRecord {
    */
   readonly caller?: string
   readonly correlation?: JournalCorrelation
-  readonly correlationId?: string
-  readonly causationId?: string
 }
 
 export interface JournalCorrelation {
@@ -313,7 +310,7 @@ function journalProjection(records: JournalRecord[]): ListProjection {
     columns,
     rows: records.map((record) => ({
       sequence: String(record.sequence),
-      timestamp: record.timestamp,
+      timestamp: record.occurredAt,
       topic: record.topic,
       principal: record.principal ?? '',
       caller: effectiveCaller(record) ?? '',
@@ -328,7 +325,7 @@ function printRecord(record: JournalRecord, opts: LogsOpts): void {
     return
   }
   process.stdout.write(
-    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')} ${chalk.dim(effectiveCaller(record) ?? '')}\n`,
+    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.occurredAt)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')} ${chalk.dim(effectiveCaller(record) ?? '')}\n`,
   )
 }
 
@@ -353,39 +350,23 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
     throw new TypeError(`Kernel journal record ${index} is invalid`)
   }
   const occurredAt = optionalText(input.occurredAt, index, 'occurredAt')
-  const timestamp = optionalText(input.timestamp, index, 'timestamp') ?? occurredAt
-  if (timestamp === undefined) {
-    throw new TypeError(`Kernel journal record ${index} is missing occurredAt/timestamp`)
+  if (occurredAt === undefined) {
+    throw new TypeError(`Kernel journal record ${index} is missing occurredAt`)
   }
   const correlation = acceptCorrelation(input.correlation, index)
-  const legacyCorrelationId = optionalIdentifier(input.correlationId, index, 'correlationId')
-  const structuredCorrelationId = correlation?.invocationId
-  if (
-    legacyCorrelationId !== undefined &&
-    structuredCorrelationId !== undefined &&
-    legacyCorrelationId !== structuredCorrelationId
-  ) {
-    throw new TypeError(`Kernel journal record ${index} has conflicting correlation identifiers`)
-  }
-  const correlationId = structuredCorrelationId ?? legacyCorrelationId
   const principal = optionalText(input.principal, index, 'principal')
   const caller = optionalText(input.caller, index, 'caller')
   return Object.freeze({
     sequence: input.sequence as number,
-    timestamp,
+    occurredAt,
     topic: input.topic,
     payload: input.payload,
-    ...(occurredAt === undefined ? {} : { occurredAt }),
     ...(optionalText(input.committedAt, index, 'committedAt') === undefined
       ? {}
       : { committedAt: input.committedAt as string }),
     ...(principal === undefined ? {} : { principal }),
     ...(caller === undefined ? {} : { caller }),
     ...(correlation === undefined ? {} : { correlation }),
-    ...(correlationId === undefined ? {} : { correlationId }),
-    ...(optionalIdentifier(input.causationId, index, 'causationId') === undefined
-      ? {}
-      : { causationId: input.causationId as string }),
   })
 }
 

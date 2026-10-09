@@ -160,9 +160,8 @@ astrale instance forget staging
 ```
 
 Use explicit `-i <instance>` in scripts. `-i` and `--url` always select the instance a command
-acts on; they never select the Admin kernel, and Admin operations (`domain publish`,
-`instance list`, …) reject them; `domain list -i <instance>` lists what runs on that instance,
-and `domain list` without them reads the Admin catalog. Choose the Admin kernel with
+acts on; they never select the Admin kernel, and Admin operations (`instance list`, …) reject them; `domain list -i <instance>` lists what runs on that instance,
+`domain list` without them uses the active instance. Choose the Admin kernel with
 `--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
 removes only the local bookmark.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
@@ -224,14 +223,13 @@ The CLI is connect-only: it does not build or run domains. The SDK's
 deploy and with which secrets; they name no instance and do not use the CLI's active instance. Only
 `astrale domain install` changes what an instance runs.
 
-`astrale domain install` takes deployment URLs and versions (or, deprecated, one Fleet catalog
-origin):
+`astrale domain install` takes deployment URLs and versions:
 
 - Deployment URLs (`https://`, or `http://` for a local Host) go to the
   instance Kernel through the public install syscall, on any instance you can
   authenticate to. Several references install in ONE atomic Kernel operation
   (every Domain moves or none does), which is how dependent Domains move together.
-  The CLI reads what each URL serves first (a 503 is read again for up to
+  The CLI reads each URL's canonical `release.json` first (a 503 is read again for up to
   60 s), refuses two references to one origin, pins the release digest it
   read, and verifies the installed pins afterwards.
 - A version reference, `<origin>@1.5.0` (or `@2.0.0-rc.1`) for exactly that
@@ -244,11 +242,7 @@ origin):
   CLI checks the deployment still serves that release
   (PUBLICATION_RELEASE_MISMATCH otherwise) and the Kernel refuses any other.
   A major alone (`@1`), a range or build metadata is refused; an unresolvable
-  version is VERSION_UNRESOLVED. Versions and URLs mix in one install. A Kernel
-  without the installed-release listing takes no version
-  (KERNEL_RELEASE_UNSUPPORTED): install the deployment URL there.
-- `--direct`, which the SDK's printed hint and old scripts still pass, is
-  deprecated: it is accepted and changes nothing. Do not add it.
+  version is VERSION_UNRESOLVED. Versions and URLs mix in one install.
 - An issuer change is never silent. When a URL serves another issuer than
   the one its origin is installed under, the install needs consent, recorded
   by the Kernel in the installation: `--allow-issuer-change` for a new
@@ -275,15 +269,6 @@ origin):
   `dependencies`, `dependents`, `proposals`, `command?`, `skipped`,
   `unevaluated`) in the report, and beside a SCHEMA_DEPENDENCY_INCOMPATIBLE or
   SCHEMA_DEPENDENTS_INCOMPATIBLE refusal.
-- A source that serves only the legacy `domain.json`, and every URL install
-  on a Kernel without the installed-release listing, keep the
-  identity-override prompt (`--allow-identity-override` in scripts) when the
-  declared origin differs from the serving host. Such a Kernel refuses
-  `--allow-issuer-change` (KERNEL_RELEASE_UNSUPPORTED) before any install.
-- Deprecated: one bare origin installs that published Domain from the Fleet
-  catalog through the admin control plane onto an admin-managed instance.
-  Install a version (`<origin>@<version>`) or a deployment URL instead; the
-  Fleet catalog now only keeps a Fleet's default Domains.
 
 ```bash
 astrale domain install https://crm.example -i staging
@@ -292,15 +277,13 @@ astrale domain install crm.example@1.5 -i production
 astrale domain install agencies.example@1.5.0 https://employees.example --allow-issuer-change -i staging
 astrale domain install <new-deployment-url> --allow-issuer-change -i staging
 astrale domain install <deployment-url> --allow-issuer-change=crm.example -i staging
-astrale domain install crm.example -i staging   # deprecated: from the Fleet catalog
 astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive -i staging
 ```
 
 `astrale domain versions <origin>` lists the Domain's published versions from the Admin
 registry, read with your own credential: you need `domain_installer` or `domain_admin` on the
-Domain, directly or through a Group (a Fleet catalog that lists the Domain shows it without its
-versions). Pre-releases and yanked versions are listed; a yanked
+Domain, directly or through a Group. Pre-releases and yanked versions are listed; a yanked
 version is never chosen by a line such as `@1.5`. An absent Domain and one you cannot read give
 the same `REGISTRY_DOMAIN_NOT_FOUND`. `--json` prints one `astrale.registry-index` document;
 refusals print `{ "error": { "code", "message", "details" } }` on stdout and exit 1. Rerunning
@@ -311,19 +294,17 @@ astrale domain versions issues.astrale.ai
 astrale domain versions issues.astrale.ai --json --as ci
 ```
 
-`astrale domain list -i <instance>` (or `--url <kernel>`) shows what runs on that instance: each
+`astrale domain list` (active instance, or `-i <instance>` / `--url <kernel>`) shows what runs on that instance: each
 installation its Kernel pins to a deployment that you can read, with the release digest from the
 Kernel pin, the version from the Admin registry (the version naming that exact release, else the
 one naming the same build from the same issuer, as `1.5.0 · staging`; a build digest alone never
 names a version), else the name the deployment's public record gives a preview
-(`1.4.2 + 7 commits · a1b2c3d · staging`, printed as computed), `legacy` for a v2/v3 pin, and
+(`1.4.2 + 7 commits · a1b2c3d · staging`, printed as computed), and
 the highest stable version available above it. The list is partial by nature: built-in and local
 Domains, and Domains you cannot read, never appear, so an absent origin is unknown, not "not
 installed". The registry is read as you (`--as` or your default identity) on the Admin kernel;
 `--creds` and `--anonymous` apply to the instance only. `--json` prints one
-`astrale.installed-list` document. A Kernel that does not list
-installed releases answers `KERNEL_RELEASE_UNSUPPORTED`; read one Domain there with
-`astrale introspect <origin> -i <instance>`.
+`astrale.installed-list` document.
 
 ```bash
 astrale domain list -i staging

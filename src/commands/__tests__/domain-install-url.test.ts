@@ -8,7 +8,7 @@ import { stripVTControlCharacters } from 'node:util'
 import type { ServedDeployment } from '../../lib/domain-release'
 import type { ReferenceInstallDependencies } from '../domain/release-install'
 
-import { releaseFor } from '../../__tests__/fixtures/publication'
+import { deploymentReleaseFor } from '../../__tests__/fixtures/publication'
 import { transportFailure } from '../../connection/__tests__/failure-fixtures'
 import { DeploymentReadError } from '../../lib/domain-release'
 import { installByReference, NOT_YET_ACTIVE_WINDOW_MS, rootStatus } from '../domain/release-install'
@@ -22,7 +22,7 @@ const INVOCATION = {
 
 const A = 'https://agencies-production-0123456789abcdef.deployments.test'
 const B = 'https://employees-production-fedcba9876543210.deployments.test'
-const REVISION = schema.revision(defineSchema('agencies.test', {}))
+const REVISION = schema.revision(defineSchema('agencies.test', { name: 'Test Domain' }))
 const digest = (seed: string) => `sha256:${seed.repeat(64)}` as const
 
 function servedRelease(origin: string, url: string, seed: string): ServedDeployment {
@@ -31,15 +31,7 @@ function servedRelease(origin: string, url: string, seed: string): ServedDeploym
     issuer: url,
     revision: REVISION,
     pin: { kind: 'release', release: digest(seed), build: digest('b') },
-  }
-}
-
-function servedLegacy(origin: string, url: string, seed = '6'): ServedDeployment {
-  return {
-    origin,
-    issuer: url,
-    revision: REVISION,
-    pin: { kind: 'legacy', document: 3, etag: digest(seed) },
+    release: deploymentReleaseFor(defineSchema(origin, { name: 'Test Domain' }), url).document,
   }
 }
 
@@ -113,12 +105,6 @@ function current(origins: readonly string[]): InstallResult {
     domains: origins.map((origin) => ({ origin, revision: REVISION })),
   } as unknown as InstallResult
 }
-
-const unsupportedListing = () =>
-  new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
-    code: 'FUNCTION_INPUT_INVALID',
-    details: { issues: [{ code: 'invalid_union', path: '/kind', message: 'Invalid input' }] },
-  })
 
 /**
  * The Kernel's refusal when its own read of a deployment fails, a 503 included: the shape a Host
@@ -272,7 +258,7 @@ describe('install by URL on a Kernel that lists installed releases', () => {
         dependencies: [],
         dependents: [],
         proposals: [],
-        skipped: [{ reference: A, reason: 'release-unread' }],
+        skipped: [{ reference: A, reason: 'bundle-unread' }],
         unevaluated: [],
       },
     })
@@ -395,27 +381,6 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     expect(text).toContain('  employees.test  replaced   release sha256:222222222222')
     expect(text).not.toContain('(was')
   })
-
-  test('installs a legacy source by URL without a digest and verifies its legacy pin', async () => {
-    const deployed = releaseFor(defineSchema('crm.test', {}), 'https://crm.test').publication
-    const served: ServedDeployment = {
-      origin: 'crm.test',
-      issuer: 'https://crm.test',
-      revision: deployed.schema.revision,
-      pin: { kind: 'legacy', document: deployed.version, etag: deployed.etag },
-    }
-    const run = harness({
-      served: { 'https://crm.test': async () => served },
-      listing: async (call) => (call === 0 ? [] : [installedFrom(served, 'https://crm.test')]),
-      install: async () => committed(['crm.test']),
-    })
-
-    await installByReference(['https://crm.test'], JSON_OUTPUT, run.deps)
-
-    expect(run.requests[0]!.domains).toEqual([{ release: { url: 'https://crm.test' } }])
-    expect(JSON.parse(stdout).references[0].installed.pin).toEqual(served.pin)
-  })
-
   test('installs an unreadable deployment without a digest and reports the Kernel pin', async () => {
     const a = servedRelease('agencies.test', A, '1')
     const run = harness({
@@ -536,15 +501,6 @@ describe('install by URL on a Kernel that lists installed releases', () => {
     expect(warnings).toContain(`origin agencies.test claimed by unverified deployment ${A}`)
     expect(run.requests).toHaveLength(1)
   })
-
-  test('keeps the identity-override gate for a legacy domain.json source that serves another origin', async () => {
-    const run = harness({ served: { [A]: async () => servedLegacy('agencies.test', A) } })
-
-    await expect(installByReference([A], JSON_OUTPUT, run.deps)).rejects.toBeInstanceOf(ExitError)
-    expect(run.requests).toEqual([])
-    expect(JSON.parse(stderr)).toMatchObject({ error: 'IDENTITY_OVERRIDE_REJECTED' })
-  })
-
   test('refuses a URL not written as the Kernel reads it before any install', async () => {
     const run = harness({})
     await expect(
@@ -615,7 +571,7 @@ describe('issuer changes (D7): consent planned from readable installation eviden
     const inspect = mock(async (origin: string) => ({
       origin,
       revision: REVISION,
-      publication: { identity: { issuer: A_LEGACY, subject: origin } },
+      release: { identity: { issuer: A_LEGACY, subject: origin } },
     }))
     const run = harness({
       listing: async () => [],
@@ -641,7 +597,7 @@ describe('issuer changes (D7): consent planned from readable installation eviden
   test('requires origin-scoped consent for an unlisted legacy issuer before sending an install', async () => {
     const run = harness({
       served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
-      inspect: async (origin) => ({ origin, publication: { identity: { issuer: A_LEGACY } } }),
+      inspect: async (origin) => ({ origin, release: { identity: { issuer: A_LEGACY } } }),
     })
     await expect(
       installByReference([A1], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run.deps),
@@ -692,7 +648,7 @@ describe('issuer changes (D7): consent planned from readable installation eviden
   test('a readable unlisted installation with the same issuer is neither a first install nor a change', async () => {
     const run = harness({
       served: { [A1]: async () => servedRelease('agencies.test', A1, '2') },
-      inspect: async (origin) => ({ origin, publication: { identity: { issuer: A1 } } }),
+      inspect: async (origin) => ({ origin, release: { identity: { issuer: A1 } } }),
     })
     const shown = await human(() =>
       installByReference([A1], { allowIssuerChange: ['agencies.test'] }, run.deps),
@@ -802,36 +758,6 @@ describe('issuer changes (D7): consent planned from readable installation eviden
       consent: { issuer: { from: A_LEGACY, to: A1 } },
     })
   })
-
-  test('rolling back to a legacy domain.json source needs the consent and the identity-override gate', async () => {
-    const run = moving(A1, A_LEGACY, servedLegacy('agencies.test', A_LEGACY))
-
-    await expect(
-      installByReference(
-        [A_LEGACY],
-        { ...JSON_OUTPUT, allowIssuerChange: ['agencies.test'] },
-        run.deps,
-      ),
-    ).rejects.toBeInstanceOf(ExitError)
-    expect(JSON.parse(stderr)).toMatchObject({ error: 'IDENTITY_OVERRIDE_REJECTED' })
-
-    stderr = ''
-    await expect(
-      installByReference([A_LEGACY], { ...JSON_OUTPUT, allowIdentityOverride: true }, run.deps),
-    ).rejects.toBeInstanceOf(ExitError)
-    expect(JSON.parse(stderr)).toMatchObject({ error: 'ISSUER_CHANGE_NOT_CONSENTED' })
-    expect(run.requests).toEqual([])
-
-    await installByReference(
-      [A_LEGACY],
-      { ...JSON_OUTPUT, allowIdentityOverride: true, allowIssuerChange: ['agencies.test'] },
-      run.deps,
-    )
-    expect(run.requests[0]!.domains).toEqual([
-      { release: { url: A_LEGACY }, consent: { issuer: { from: A1, to: A_LEGACY } } },
-    ] as never)
-  })
-
   test('moves grouped Domains to new deployments with one consent per changed root', async () => {
     const B1 = `https://employees-eeeeeeeeeeeeeeee-bbbbbbbbbbbbbbbb.deployments.test`
     const B2 = `https://employees-eeeeeeeeeeeeeeee-cccccccccccccccc.deployments.test`
@@ -1123,109 +1049,6 @@ describe('issuer changes (D7): consent planned from readable installation eviden
     )
   })
 })
-
-describe('install by URL on a Kernel without the installed listing (pre-release request)', () => {
-  test('sends the exact pre-release publication request after the refused probe', async () => {
-    const deployed = releaseFor(defineSchema('crm.test', {}), 'https://crm.test').publication
-    globalThis.fetch = mock(async () => Response.json(deployed)) as unknown as typeof fetch
-    const read = mock(async () => {
-      throw new Error('the legacy path reads no release.json')
-    })
-    const run = harness({
-      listing: async () => {
-        throw unsupportedListing()
-      },
-      install: async () => committed(['crm.test']),
-    })
-
-    await installByReference(
-      ['https://crm.test'],
-      { json: true, direct: true, allowIdentityOverride: true } as never,
-      { ...run.deps, readDeployment: read },
-    )
-
-    expect(run.listings).toBe(1)
-    expect(read).not.toHaveBeenCalled()
-    expect(JSON.stringify(run.requests)).toBe(
-      `[{"operation":"${GENERATED}","domains":[{"publication":{"url":"https://crm.test"}}]}]`,
-    )
-    // The pre-release output: the Kernel result alone.
-    expect(JSON.parse(stdout)).toEqual(JSON.parse(JSON.stringify(committed(['crm.test']))))
-  })
-
-  test('keeps the pre-release recovery command for an outcome-unknown install', async () => {
-    globalThis.fetch = mock(async () => new Response('missing', { status: 404 })) as never
-    const run = harness({
-      listing: async () => {
-        throw unsupportedListing()
-      },
-      install: async () => {
-        throw transportFailure('Invocation outcome is unknown.', 'unknown', {
-          kind: 'invocation',
-          delivery: 'unknown',
-        })
-      },
-    })
-
-    await expect(
-      installByReference(['https://crm.test'], { json: true, instance: 'legacy' }, run.deps),
-    ).rejects.toBeInstanceOf(ExitError)
-    expect(run.requests).toHaveLength(1)
-    expect(JSON.parse(stderr)).toMatchObject({
-      operation: GENERATED,
-      retry: `astrale domain install https://crm.test --direct --operation ${GENERATED} -i legacy`,
-    })
-  })
-
-  test('admits any http(s) URL, as before installs were grouped', async () => {
-    globalThis.fetch = mock(async () => new Response('missing', { status: 404 })) as never
-    const run = harness({
-      listing: async () => {
-        throw unsupportedListing()
-      },
-      install: async () => committed(['crm.example.test']),
-    })
-
-    await installByReference(['https://CRM.example.test'], { json: true }, run.deps)
-    expect(run.requests[0]!.domains).toEqual([{ publication: { url: 'https://CRM.example.test' } }])
-  })
-
-  test('refuses issuer consent before any install: such a Kernel takes none', async () => {
-    const run = harness({
-      listing: async () => {
-        throw unsupportedListing()
-      },
-    })
-
-    for (const flags of [{ allowIssuerChange: [''] }, { revokePrevious: true }]) {
-      stderr = ''
-      await expect(
-        installByReference(['https://crm.test'], { json: true, ...flags }, run.deps),
-      ).rejects.toBeInstanceOf(ExitError)
-      expect(JSON.parse(stderr)).toMatchObject({ error: 'KERNEL_RELEASE_UNSUPPORTED' })
-    }
-    expect(run.listings).toBe(2)
-    expect(run.requests).toEqual([])
-  })
-
-  test('propagates any other probe failure without installing', async () => {
-    const run = harness({
-      listing: async () => {
-        throw new ResponseError(2002 as never, 'Authentication is invalid.', INVOCATION, {
-          code: 'AUTH_INVALID',
-          details: {},
-        })
-      },
-    })
-
-    await expect(installByReference([A], { json: true }, run.deps)).rejects.toBeInstanceOf(
-      ExitError,
-    )
-    expect(run.requests).toEqual([])
-    expect(JSON.parse(stderr)).toMatchObject({ error: 'RESPONSE_ERROR', code: 2002 })
-  })
-})
-
 describe('root status from the Kernel result', () => {
   test('reads installed, replaced and unchanged from the receipt, unknown without an origin', () => {
     const result = committed(['agencies.test', 'employees.test'], GENERATED, ['employees.test'])

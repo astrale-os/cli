@@ -206,8 +206,8 @@ test('an upgraded Studio rebuilds a persisted successful preview from the old ad
     domain.schemaIndex,
     `import { classIcon, defineSchema, nodeClass, valueSchema } from '@astrale-os/sdk/schema'
 const Shared = nodeClass({ icon: classIcon.neutral, properties: { title: valueSchema<string>()({ type: 'string' }) } })
-const dependency = defineSchema('cache-dependency.studio.test', { classes: { Shared } })
-export const schema = defineSchema('cache-upgrade.studio.test', {
+const dependency = defineSchema('cache-dependency.studio.test', { name: 'Test Domain', classes: { Shared } })
+export const schema = defineSchema('cache-upgrade.studio.test', { name: 'Test Domain',
   dependencies: { dependency },
   classes: { Document: nodeClass({ icon: classIcon.neutral, extends: [Shared] }) },
 })
@@ -262,8 +262,8 @@ test('anatomy follows a bundle that heals after a temporary extraction failure',
   writeFileSync(
     domain.schemaIndex,
     `import { defineSchema, view } from '@astrale-os/sdk/schema'
-export const schema = defineSchema('anatomy-cache.studio.test', {
-  views: { application: view({ target: 'domain' }) },
+export const schema = defineSchema('anatomy-cache.studio.test', { name: 'Test Domain',
+  views: { application: view({}) },
 })
 `,
   )

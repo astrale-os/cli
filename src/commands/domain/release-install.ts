@@ -42,7 +42,6 @@ import { exitWithInstallFailure, runInstallCall } from './install-call'
 import { precheckInstall, proposeDependentVersions } from './install-precheck'
 import {
   admitIssuerChanges,
-  asksIssuerConsent,
   firstInstallNotice,
   issuerChangeConsent,
   issuerConsentRequest,
@@ -51,8 +50,6 @@ import {
   type IssuerChangeConsent,
   type IssuerConsentRequest,
 } from './issuer-consent'
-import { consentToDeclaredOrigin, warnUnconfirmedOverride } from './legacy/identity-override'
-import { installPublications } from './legacy/publication-install'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
 import {
   admitVersionReference,
@@ -74,7 +71,6 @@ export type ReferenceInstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
     readonly operation?: string
     readonly token?: string
-    readonly allowIdentityOverride?: boolean
     /** Every `--allow-issuer-change` occurrence: `''` without an origin, else the origin it names. */
     readonly allowIssuerChange?: readonly string[]
     readonly revokePrevious?: boolean
@@ -194,8 +190,7 @@ export interface ReleaseSource extends UrlSource {
  * A Kernel that lists installed releases receives the `release` request, guarded by the release
  * digest each root must serve (the Publication's for a version, the one read from the URL
  * otherwise; [.78352]) and carrying the operator's consent for each root whose issuer it changes
- * (D7). A Kernel without that listing receives the pre-release `publication` request
- * (`legacy/publication-install.ts`) and takes neither issuer consent nor a version reference.
+ * (D7).
  */
 export async function installByReference(
   references: readonly [string, ...string[]],
@@ -261,11 +256,6 @@ export async function installByReference(
       opts,
       async (context) => {
         const before = await installedReleases(context.session)
-        if (before === undefined) {
-          if (resolved.length > 0) return { error: versionsUnsupported(), render: 'input' }
-          if (asksIssuerConsent(consent)) return { error: consentUnsupported(), render: 'input' }
-          return installPublications(context, sources, operation, opts)
-        }
         return installReleases(context, sources, before, operation, consent, opts, deps)
       },
       { principal: 'caller' },
@@ -339,22 +329,9 @@ export function openInstallRegistry<Value>(
   )
 }
 
-/**
- * The installed releases the caller can read, or `undefined` from a Kernel that predates the
- * listing: such a Kernel refuses the `installed` kind as invalid input, which a Kernel that has
- * the listing never does.
- */
-export async function installedReleases(
-  session: ClientSession,
-): Promise<readonly InstalledRelease[] | undefined> {
-  try {
-    return await session.schema.installed()
-  } catch (error) {
-    if (error instanceof ResponseError && reasonCode(error.reason) === 'FUNCTION_INPUT_INVALID') {
-      return undefined
-    }
-    throw error
-  }
+/** The installed releases the caller can read from the selected Kernel. */
+export function installedReleases(session: ClientSession): Promise<readonly InstalledRelease[]> {
+  return session.schema.installed()
 }
 
 /**
@@ -489,7 +466,6 @@ async function installReleases(
   let roots: readonly PlannedRoot[]
   let changes: readonly (IssuerChange | undefined)[]
   const knownIssuers = new Map(before.map(({ origin, issuer }) => [origin, issuer]))
-  const overridden: (string | undefined)[] = []
   try {
     for (const url of urls) admitReference(url)
     const served = await Promise.all(
@@ -515,7 +491,7 @@ async function installReleases(
           if (isAbsentDomain(error)) return undefined
           throw error
         }
-        const issuer = installed.publication?.identity.issuer
+        const issuer = installed.release?.identity.issuer
         if (issuer !== undefined) knownIssuers.set(installed.origin, issuer)
         return issuer === undefined
           ? undefined
@@ -523,17 +499,6 @@ async function installReleases(
       }),
     )
     for (const [index, { source, served: deployment }] of roots.entries()) {
-      // The identity-override gate stays for a source that serves only domain.json (legacy).
-      overridden.push(
-        deployment?.pin.kind === 'legacy'
-          ? await consentToDeclaredOrigin(
-              deployment.origin,
-              source.host,
-              opts.allowIdentityOverride ?? false,
-              machine,
-            )
-          : undefined,
-      )
       // A version names its deployment through Admin's registry, so only a URL claims an origin.
       if (
         source.publication === undefined &&
@@ -553,7 +518,6 @@ async function installReleases(
   // Advisory: a defect anywhere in it reports every root failed and the install is still sent.
   const precheck = await precheckReferences(context.session, roots, before, opts, deps, {
     changes,
-    overridden,
   }).catch(() => failedPrecheck(roots))
   if (!machine) presentPrecheck(precheck)
   try {
@@ -588,7 +552,7 @@ async function installReleases(
         : `Installing ${sources.length} domains (operation ${operation})`,
     recovery: {
       operation,
-      retry: releaseInstallRetry(sources, operation, opts, changes, overridden),
+      retry: releaseInstallRetry(sources, operation, opts, changes),
     },
     call: async () => {
       try {
@@ -636,16 +600,7 @@ async function installReleases(
           )
         }
       }
-      for (const [index, reference] of report.entries()) {
-        const pin = reference.pin ?? reference.installed?.pin
-        if (reference.origin !== null && pin?.kind === 'legacy') {
-          warnUnconfirmedOverride(
-            reference.origin,
-            sources[index]!.host,
-            overridden[index],
-            machine,
-          )
-        }
+      for (const reference of report) {
         if (reference.installed === null && after !== undefined) {
           log.warn(
             `The installation of ${reference.origin ?? reference.reference} is not readable by this identity; its pin was not verified.`,
@@ -699,7 +654,6 @@ async function precheckReferences(
   deps: ReferenceInstallDependencies,
   retry: {
     readonly changes: readonly (IssuerChange | undefined)[]
-    readonly overridden: readonly (string | undefined)[]
   },
 ): Promise<InstallPrecheck> {
   const checked = await Promise.all(
@@ -713,9 +667,6 @@ async function precheckReferences(
           reason,
         })
       if (served === undefined) return skip('release-unread')
-      if (served.release === undefined) {
-        return skip(served.pin.kind === 'legacy' ? 'legacy' : 'release-unread')
-      }
       try {
         const bundle = await deps.readBundle(
           served.release,
@@ -776,7 +727,6 @@ async function precheckReferences(
           [...roots.map(({ source }) => installedReference(source)), ...versions],
           opts,
           retry.changes,
-          retry.overridden,
           { registry: true },
         )
       : undefined
@@ -861,7 +811,6 @@ function presentPrecheck(precheck: InstallPrecheck): void {
 
 const SKIPPED: Readonly<Record<InstallPrecheck['skipped'][number]['reason'], string>> = {
   'release-unread': 'what its deployment serves could not be read.',
-  legacy: 'it serves a legacy v2/v3 document.',
   'bundle-unread': 'the Schema Bundle its release names could not be read.',
   failed: 'the pre-check failed; the Kernel still checks the install.',
 }
@@ -887,7 +836,7 @@ function installedOrigin(installed: readonly InstalledRelease[], origin: string)
 
 /**
  * A version is installed only from a deployment that serves the release its Publication names
- * ([.78352]): a deployment the CLI reads serving another release, or only the legacy domain.json,
+ * ([.78352]): a deployment the CLI reads serving another release,
  * is refused before anything is sent. A deployment the CLI cannot read is left to the Kernel,
  * which receives the Publication's release digest and refuses any other release.
  */
@@ -899,7 +848,7 @@ function refuseReleaseMismatches(
     const publication = source.publication
     const deployment = served[index]
     if (publication === undefined || deployment === undefined) continue
-    if (deployment.pin.kind === 'release' && deployment.pin.release === publication.pin.release) {
+    if (deployment.pin.release === publication.pin.release) {
       continue
     }
     throw new RegistryError(
@@ -910,7 +859,7 @@ function refuseReleaseMismatches(
         version: publication.version,
         url: publication.url,
         expected: publication.pin.release,
-        served: deployment.pin.kind === 'release' ? deployment.pin.release : null,
+        served: deployment.pin.release,
       },
     )
   }
@@ -1022,27 +971,6 @@ function committedConsentRefusal(error: unknown): CommittedInstallRefusal | unde
   return typeof details?.path === 'string' && /^\/domains\/\d+\/consent$/u.test(details.path)
     ? code
     : undefined
-}
-
-function consentUnsupported(): AstraleError {
-  return new AstraleError(
-    'KERNEL_RELEASE_UNSUPPORTED',
-    'This Kernel does not list installed releases, so it takes no issuer consent: --allow-issuer-change and --revoke-previous are refused before any install.',
-    'Install without them: on this Kernel the identity-override gate (--allow-identity-override) still applies. Issuer consent needs a Host release whose Kernel lists installed releases and accepts consents.',
-  )
-}
-
-/**
- * A version is installed with the release digest its Publication names, which only the `release`
- * request carries: a Kernel without the installed listing takes the `publication` request, which
- * pins whatever the URL serves, so a version reference is refused there before any install.
- */
-function versionsUnsupported(): AstraleError {
-  return new AstraleError(
-    'KERNEL_RELEASE_UNSUPPORTED',
-    'This Kernel does not list installed releases, so it cannot pin a published version: version references (<origin>@<version>) are refused before any install.',
-    'Install the deployment URL instead (`astrale domain versions <origin> --json` names it), or upgrade the Host to a release whose Kernel lists installed releases.',
-  )
 }
 
 /**
@@ -1175,9 +1103,8 @@ function releaseInstallRetry(
   operation: string,
   opts: ReferenceInstallOpts,
   changes: readonly (IssuerChange | undefined)[],
-  overridden: readonly (string | undefined)[],
 ): string {
-  return installCommand(sources.map(installedReference), opts, changes, overridden, {
+  return installCommand(sources.map(installedReference), opts, changes, {
     operation,
     registry: sources.some((source) => source.publication !== undefined),
   })
@@ -1197,7 +1124,6 @@ function installCommand(
   references: readonly string[],
   opts: ReferenceInstallOpts,
   changes: readonly (IssuerChange | undefined)[],
-  overridden: readonly (string | undefined)[],
   options: { readonly operation?: string; readonly registry: boolean },
 ): string {
   const operation = options.operation === undefined ? '' : ` --operation ${options.operation}`
@@ -1215,11 +1141,8 @@ function installCommand(
     .map((change) => ` --allow-issuer-change=${change.origin}`)
     .join('')
   const revoke = opts.revokePrevious === true ? ' --revoke-previous' : ''
-  const override = overridden.some((origin) => origin !== undefined)
-    ? ' --allow-identity-override'
-    : ''
   const registry = options.registry ? admin : ''
-  return `astrale domain install ${references.join(' ')}${operation}${consents}${revoke}${override}${url}${instance}${identity}${registry}`
+  return `astrale domain install ${references.join(' ')}${operation}${consents}${revoke}${url}${instance}${identity}${registry}`
 }
 
 function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError {
@@ -1290,9 +1213,7 @@ function presentReferences(
 }
 
 function pinLabel(pin: InstalledPin): string {
-  return pin.kind === 'release'
-    ? `release ${shortDigest(pin.release)}`
-    : `legacy v${pin.document} ${shortDigest(pin.etag)}`
+  return `release ${shortDigest(pin.release)}`
 }
 
 function shortDigest(digest: string): string {
@@ -1300,7 +1221,7 @@ function shortDigest(digest: string): string {
 }
 
 /**
- * Whether reading an origin's publication found no installed Domain: the Kernel answers an origin
+ * Whether reading an origin's release found no installed Domain: the Kernel answers an origin
  * that is not installed with 1003 and reason SCHEMA_NOT_FOUND. An exact 3002 says the same.
  */
 function isAbsentDomain(error: unknown): boolean {

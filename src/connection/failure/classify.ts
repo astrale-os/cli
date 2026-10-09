@@ -66,9 +66,7 @@ function transportContext(error: TransportError): TransportDiagnosticContext | u
   if (record(evidence.context)) {
     if (
       evidence.context.kind === 'acquisition' &&
-      (evidence.context.resource === 'release' ||
-        evidence.context.resource === 'publication' ||
-        evidence.context.resource === 'bundle')
+      (evidence.context.resource === 'release' || evidence.context.resource === 'bundle')
     ) {
       return { kind: 'acquisition', resource: evidence.context.resource }
     }

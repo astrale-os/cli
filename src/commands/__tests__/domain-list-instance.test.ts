@@ -4,6 +4,7 @@ import { deploymentName } from '@astrale-os/sdk/versioning'
 import { describe, expect, test } from 'bun:test'
 
 import type { AdminRegistryApi } from '../../admin/registry'
+import type { AstraleError } from '../../errors'
 import type { InstalledListDependencies } from '../domain/installed-list'
 
 import { deploymentFixture, recordServer } from '../../__tests__/fixtures/deployment-record'
@@ -14,7 +15,6 @@ import {
   type FakeDomain,
   type FakeRelease,
 } from '../../admin/registry/__tests__/fake-admin'
-import { AstraleError } from '../../errors'
 import { readDeploymentRecord } from '../../lib/deployment-record'
 import { stripAnsi } from '../../lib/format'
 import {
@@ -23,7 +23,6 @@ import {
   listInstalled,
   renderInstalled,
 } from '../domain/installed-list'
-import { misplacedCatalogFlags } from '../domain/list'
 
 const KERNEL = 'https://acme-stg.instances.astrale.test/kernel'
 const REVISION = `sha256:${'5'.repeat(64)}`
@@ -159,11 +158,6 @@ const listing: InstalledRelease[] = [
     release: digest('release:integrations-installed'),
     build: digest('build:integrations'),
   }),
-  installed('issues.astrale.ai', 'https://issues.astrale.ai', {
-    kind: 'legacy',
-    document: 3,
-    etag: digest('etag:issues'),
-  }),
   installed('shell.astrale.ai', shell091.url, {
     kind: 'release',
     release: shell091.releaseDigest,
@@ -248,9 +242,6 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
       available: '2.1.0',
     })
 
-    // A legacy v2/v3 pin names no release; nothing names a release no record backs.
-    expect(byOrigin['issues.astrale.ai']).toMatchObject({ name: 'legacy' })
-    expect(byOrigin['issues.astrale.ai']?.version).toBeUndefined()
     expect(byOrigin['integrations.example.com']).toMatchObject({ name: 'unknown' })
     expect(byOrigin['integrations.example.com']?.version).toBeUndefined()
 
@@ -313,41 +304,6 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
       expect(opts).not.toHaveProperty('url')
     }
   })
-
-  test('a Kernel without the installed listing is refused before Admin or any deployment', async () => {
-    let registry = 0
-    let records = 0
-    const error = await listInstalled(
-      { instance: 'legacy-117' },
-      {
-        installed: async () => ({ kernel: KERNEL, releases: undefined }),
-        registry: async () => {
-          registry += 1
-          throw new Error('unexpected')
-        },
-        record: async () => {
-          records += 1
-          return undefined
-        },
-      },
-    ).catch((cause: unknown) => cause)
-    expect(error).toBeInstanceOf(AstraleError)
-    expect((error as AstraleError).code).toBe('KERNEL_RELEASE_UNSUPPORTED')
-    expect(registry + records).toBe(0)
-  })
-
-  test('only legacy pins: Admin is never opened', async () => {
-    const run = fixture({
-      installed: async () => ({
-        kernel: KERNEL,
-        releases: listing.filter((entry) => entry.pin.kind === 'legacy'),
-      }),
-    })
-    const list = await listInstalled({ instance: 'acme-stg' }, run.dependencies)
-    expect(run.opened).toEqual([])
-    expect(list.domains.map((domain) => domain.name)).toEqual(['legacy'])
-  })
-
   test('a registry that cannot be read fails the listing; versions are never dropped silently', async () => {
     const run = fixture({
       registry: async () => {
@@ -389,22 +345,9 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
       version: '1.4.2 + 7 commits · a1b2c3d · staging',
       available: '1.5.0',
     })
-    expect(rows.find((row) => row.origin === 'issues.astrale.ai')).toMatchObject({
-      version: 'legacy',
-      available: '—',
-    })
     const plain = stripAnsi(renderInstalled(list))
     expect(plain.split('\n')[0]).toMatch(/^\s+ORIGIN\s+VERSION\s+DIGEST\s+AVAILABLE$/u)
     expect(plain).toContain('built-in and local Domains never are')
-  })
-
-  test('the catalog options are refused beside -i/--url', () => {
-    expect(misplacedCatalogFlags({ instance: 'acme-stg', check: true, quiet: true })).toEqual([
-      '--check',
-      '-q/--quiet',
-    ])
-    expect(misplacedCatalogFlags({ instance: 'acme-stg', fleet: '@fleet' })).toEqual(['--fleet'])
-    expect(misplacedCatalogFlags({ instance: 'acme-stg', json: true })).toEqual([])
   })
 })
 

@@ -30,7 +30,7 @@ describe('view close command process failures', () => {
         pageUrl: 'http://127.0.0.1:4419/s/nonce/',
         view: { target: '/:example.test', route: {
           key: 'example.test:view.main', href: 'https://example.test/ui', handshake: 'shell',
-          issuer: 'https://example.test', etag: 'sha256:' + 'a'.repeat(64),
+          issuer: 'https://example.test', release: 'sha256:' + 'a'.repeat(64),
           revision: 'sha256:' + 'b'.repeat(64), declaration: { target: { kind: 'domain' } },
         } }, createdAt: '2026-10-06T00:00:00.000Z',
       }

@@ -33,8 +33,6 @@ test('embedded agents deploy without installing, then install the printed URL', 
   expect(prompt).not.toContain('pnpm prod')
   expect(prompt).not.toContain('managed deploy + install')
   expect(prompt).toContain('`pnpm run deploy <environment>` deploys and prints')
-  expect(prompt).toContain(
-    'never installs; then `astrale domain install <url> --direct -i <instance>`',
-  )
+  expect(prompt).toContain('never installs; then `astrale domain install <url> -i <instance>`')
   expect(prompt).toContain('/.well-known/astrale/release.json')
 })

@@ -67,11 +67,6 @@ export function issuerChangeConsent(
   })
 }
 
-/** Whether the command asked for anything only an issuer-consenting Kernel can take. */
-export function asksIssuerConsent(consent: IssuerChangeConsent): boolean {
-  return consent.sameLine || consent.origins.length > 0 || consent.revokePrevious
-}
-
 /** The deployment line an address belongs to: its scheme, its routing domain and its line. */
 export interface DeploymentLineAddress {
   readonly scheme: string
@@ -290,7 +285,6 @@ export function firstInstallNotice(
   served: ServedDeployment,
   reference: string,
 ): string | undefined {
-  if (served.pin.kind !== 'release') return undefined
   const url = new URL(reference)
   if (served.origin.toLowerCase() === url.hostname.toLowerCase()) return undefined
   return `origin ${served.origin} claimed by unverified deployment ${url.origin}`

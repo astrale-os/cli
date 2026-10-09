@@ -166,7 +166,6 @@ describe('program composition', () => {
       'domain',
       'domain install',
       'domain list',
-      'domain publish',
       'domain uninstall',
       'domain versions',
       'get',
@@ -643,7 +642,7 @@ describe('help contract — skill is single-source, not duplicated', () => {
   )
 })
 
-test('exposes Fleet selection only on the four Fleet-targeted commands', async () => {
+test('exposes Fleet selection only on the instance Fleet-targeted commands', async () => {
   const program = await buildProgram()
   expect(program.commands.some((command) => command.name() === 'fleet')).toBe(false)
   const selected: string[] = []
@@ -655,10 +654,72 @@ test('exposes Fleet selection only on the four Fleet-targeted commands', async (
     }
   }
   visit(program.commands)
-  expect(selected.sort()).toEqual([
-    'domain list',
-    'domain publish',
-    'instance create',
-    'instance list',
-  ])
+  expect(selected.sort()).toEqual(['instance create', 'instance list'])
+})
+
+describe('canonical Domain commands', () => {
+  test.each([
+    ['install', 'https://domain.example', '--direct'],
+    ['install', 'https://domain.example', '--allow-identity-override'],
+    ['list', '--fleet', '@fleet'],
+    ['list', '--check'],
+    ['list', '--default-only'],
+    ['list', '-q'],
+    ['list', '--count'],
+    ['list', '-l'],
+  ])('rejects a retired option before invoking the command: %j', async (...args) => {
+    const argv = args.filter((value): value is string => typeof value === 'string') as string[]
+    const program = await buildProgram()
+    for (const command of allCommands(program))
+      command.exitOverride().configureOutput({ writeErr: () => undefined })
+    const domain = program.commands.find((command) => command.name() === 'domain')!
+    let invoked = false
+    for (const command of domain.commands)
+      command.action(() => {
+        invoked = true
+      })
+    await expect(program.parseAsync(['node', 'astrale', 'domain', ...argv])).rejects.toMatchObject({
+      code: 'commander.unknownOption',
+    })
+    expect(invoked).toBe(false)
+  })
+
+  test('requires install references and exposes only the current Domain commands', async () => {
+    const program = await buildProgram()
+    for (const command of allCommands(program))
+      command.exitOverride().configureOutput({ writeErr: () => undefined })
+    const domain = program.commands.find((command) => command.name() === 'domain')!
+    expect(domain.commands.map((command) => command.name())).toEqual([
+      'list',
+      'versions',
+      'install',
+      'uninstall',
+    ])
+    let invoked = false
+    domain.commands
+      .find((command) => command.name() === 'install')!
+      .action(() => {
+        invoked = true
+      })
+    await expect(
+      program.parseAsync(['node', 'astrale', 'domain', 'install']),
+    ).rejects.toMatchObject({
+      code: 'commander.missingArgument',
+    })
+    expect(invoked).toBe(false)
+  })
+
+  test('lists the active instance without an explicit selector', async () => {
+    const program = await buildProgram()
+    const domain = program.commands.find((command) => command.name() === 'domain')!
+    const list = domain.commands.find((command) => command.name() === 'list')!
+    let invoked = false
+    list.action(() => {
+      invoked = true
+    })
+    await program.parseAsync(['node', 'astrale', 'domain', 'list', '--json'])
+    expect(invoked).toBe(true)
+    expect(list.opts()).toMatchObject({ json: true })
+    expect(list.opts()).not.toHaveProperty('instance')
+  })
 })

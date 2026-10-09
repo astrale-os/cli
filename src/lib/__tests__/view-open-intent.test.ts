@@ -24,7 +24,7 @@ function domainView(name: string): ResolvedView {
       href: `https://shell.test/${name}`,
       handshake: 'shell',
       issuer: issuer('https://shell.test'),
-      etag: digest('a'),
+      release: digest('a'),
       revision: revision('b'),
     },
   }
@@ -45,10 +45,9 @@ function openMessage(
         ...(requestTarget === undefined
           ? {}
           : {
-              target: requestTarget as IntentMessage<'view.open'>['envelope']['payload']['target'] &
-                string,
+              target: requestTarget,
             }),
-      },
+      } as IntentMessage<'view.open'>['envelope']['payload'],
       sender: { windowId: 'old-window' },
       ...(correlationId ? { correlationId } : {}),
     },
@@ -58,10 +57,10 @@ function openMessage(
 function mounted(windowId: string, view: ResolvedView, onClose?: () => void): MountedWindow {
   return {
     windowId,
+    ready: Promise.resolve(),
     window: {
       windowId,
       functionId: String(view.route.key),
-      targetNodeId: String(view.target),
       children: [],
       view,
       location: { target: view.target, params: {} },
@@ -140,14 +139,15 @@ describe('view.open host', () => {
     ])
   })
 
-  test('accepts the Domain path as the only explicit target', async () => {
+  test('refuses the removed explicit target even when it names the Domain', async () => {
     const h = harness()
     await handleViewOpenIntent(
       h.host,
       openMessage('shell.test:view.card', undefined, '/:shell.test'),
     )
 
-    expect(h.events).toContain('open:/:shell.test:view.card')
+    expect(h.current()?.windowId).toBe('old-window')
+    expect(h.events).toEqual([expect.stringContaining('target is no longer accepted')])
   })
 
   test('refuses to open a View for a node and keeps the current View', async () => {

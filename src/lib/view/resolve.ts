@@ -50,7 +50,7 @@ export type ViewCandidate = ResolvedView & {
   name?: string
   handshake: 'shell' | 'none'
   issuer: string
-  etag: string
+  release: string
   revision: string
 }
 
@@ -102,8 +102,8 @@ export async function resolveInstalledDomainView(
     throw new AstraleError('VIEW_NOT_FOUND', `View "${name}" is not installed for ${origin}`)
   }
 
-  const publication = installed.domain.publication
-  if (publication === null) {
+  const release = installed.domain.release
+  if (release === null) {
     throw new AstraleError(
       'VIEW_NOT_PUBLISHED',
       `${viewPath} is installed locally but has no published View binding`,
@@ -114,7 +114,7 @@ export async function resolveInstalledDomainView(
   if (binding === undefined) {
     throw new AstraleError(
       'VIEW_NOT_PUBLISHED',
-      `${viewPath} has no active View binding in its installed Publication`,
+      `${viewPath} has no active View binding in its installed Release`,
     )
   }
   assertAllowedInstalledViewEndpoint(ctx, binding.href)
@@ -125,11 +125,10 @@ export async function resolveInstalledDomainView(
     declaration: Object.freeze(viewDeclaration),
     href: binding.href,
     handshake: binding.handshake,
-    ...(binding.iframe === undefined ? {} : { iframe: binding.iframe }),
     ...(binding.host === undefined ? {} : { host: binding.host }),
-    issuer: publication.identity.issuer,
-    etag: publication.etag,
-    revision: publication.revision,
+    issuer: release.identity.issuer,
+    release: release.digest,
+    revision: release.revision,
   })
   return toCandidate(Path.domain(origin).raw, route)
 }
@@ -161,7 +160,7 @@ function toCandidate(domain: ResolvedView['target'], route: SessionResolvedView)
     name: key.slice(key.lastIndexOf(':view.') + ':view.'.length),
     handshake: route.handshake,
     issuer: route.issuer,
-    etag: route.etag,
+    release: route.release,
     revision: route.revision,
   })
 }

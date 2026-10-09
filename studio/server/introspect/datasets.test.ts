@@ -33,7 +33,7 @@ function fixture(config: string): DomainHandle {
         source: { as: 'parent', accepts: [Item], outgoing: '0..*' },
         target: { as: 'child', accepts: [Item], incoming: '0..1' },
       })
-      export const schema = defineSchema('datasets.studio.test', { classes: { Item, contains } })
+      export const schema = defineSchema('datasets.studio.test', { name: 'Test Domain', classes: { Item, contains } })
     `,
   )
   writeFileSync(

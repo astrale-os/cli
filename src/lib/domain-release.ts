@@ -1,27 +1,15 @@
 import type { InstalledPin } from '@astrale-os/sdk/client/schema'
 import type { bundle } from '@astrale-os/sdk/schema'
 
-import {
-  accept,
-  decodeBundle,
-  legacy,
-  MEDIA_TYPE,
-  PATH,
-  type DomainRelease,
-} from '@astrale-os/sdk/release'
+import { accept, decodeBundle, MEDIA_TYPE, PATH, type DomainRelease } from '@astrale-os/sdk/release'
 
-import {
-  cancel,
-  DomainDocumentStatusError,
-  fetchDomainPublication,
-  readBounded,
-} from './domain-publication'
+import { cancel, readBounded } from './deployment-document'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 /**
  * What one deployment URL serves, read the way the Kernel reads it at install: its pinned document
- * (a `DomainRelease` v4, or a legacy v2/v3 Publication), the origin and issuer that document
+ * (a `DomainRelease` v4), the origin and issuer that document
  * declares, and the pin an install of it records.
  */
 export interface ServedDeployment {
@@ -30,7 +18,7 @@ export interface ServedDeployment {
   readonly revision: string
   readonly pin: InstalledPin
   /** The admitted `DomainRelease` v4 itself, present exactly when `pin` is a release pin. */
-  readonly release?: DomainRelease
+  readonly release: DomainRelease
 }
 
 /**
@@ -57,12 +45,7 @@ export class DeploymentReadError extends Error {
   }
 }
 
-/**
- * Read the document one deployment URL serves. `release.json` under the v4 media type is the
- * release; a 404, or a 2xx under another media type, reads the legacy `domain.json`; any other
- * answer fails without falling back, so an unavailable release is never read as a legacy pin. Both
- * documents live at the URL's origin, as the Kernel resolves them.
- */
+/** Read the canonical release document at the deployment origin, without redirects or fallback. */
 export async function readServedDeployment(
   url: string,
   signal?: AbortSignal,
@@ -83,38 +66,19 @@ export async function readServedDeployment(
   if (response.status === 200 && hasMediaType(response, MEDIA_TYPE)) {
     return served(await acceptRelease(response, releaseUrl))
   }
-  const success = response.status >= 200 && response.status <= 299
-  if (response.status !== 404 && !success) {
-    await cancel(response.body)
+  await cancel(response.body)
+  if (response.status !== 200) {
     throw new DeploymentReadError(`GET ${releaseUrl.href} → ${response.status}`, {
       status: response.status,
       retryAfter: response.headers.get('retry-after') ?? undefined,
     })
   }
-  await cancel(response.body)
-  try {
-    return servedLegacy(await fetchDomainPublication(origin, signal, fetchImpl))
-  } catch (cause) {
-    if (cause instanceof DomainDocumentStatusError) {
-      throw new DeploymentReadError(cause.message, {
-        status: cause.status,
-        retryAfter: cause.retryAfter,
-        cause,
-      })
-    }
-    throw new DeploymentReadError(
-      cause instanceof Error ? cause.message : `GET ${legacy.url(origin)} failed.`,
-      { cause },
-    )
-  }
+  throw new DeploymentReadError(`GET ${releaseUrl.href} is not served as ${MEDIA_TYPE}.`)
 }
 
 /** Whether two pins name the same pinned document: one meaning per variant. */
 export function samePin(left: InstalledPin, right: InstalledPin): boolean {
-  if (left.kind === 'release') {
-    return right.kind === 'release' && left.release === right.release && left.build === right.build
-  }
-  return right.kind === 'legacy' && left.document === right.document && left.etag === right.etag
+  return left.release === right.release && left.build === right.build
 }
 
 async function acceptRelease(response: Response, url: URL): Promise<DomainRelease> {
@@ -216,19 +180,6 @@ export async function readReleaseBundle(
       },
     )
   }
-}
-
-function servedLegacy(publication: legacy.Publication): ServedDeployment {
-  return Object.freeze({
-    origin: publication.origin,
-    issuer: publication.identity.issuer,
-    revision: publication.schema.revision,
-    pin: Object.freeze({
-      kind: 'legacy' as const,
-      document: publication.version,
-      etag: publication.etag,
-    }),
-  })
 }
 
 /** The Kernel's media type comparison: parameters kept, case and whitespace ignored. */

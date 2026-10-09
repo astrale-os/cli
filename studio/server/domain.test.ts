@@ -425,67 +425,29 @@ export default defineDomain({ schema, runtime: {} as never })
   })
 })
 
-describe('Projects authored before the Domain definition rename (legacy)', () => {
-  function legacyFixture(nested = false): string {
-    const root = mkdtempSync(join(tmpdir(), 'studio-legacy-application-'))
-    roots.push(root)
-    const owner = nested ? join(root, 'domain') : root
-    mkdirSync(join(owner, 'schema'), { recursive: true })
-    writeFileSync(
-      join(root, 'astrale.config.ts'),
-      `import { defineProject } from '@astrale-os/sdk/project'
-import { cloudflare } from '@astrale-os/adapter-cloudflare'
-import { application } from '${nested ? './domain/application.js' : './application.js'}'
-export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+describe('retired Project application composition', () => {
+  test.each(['@astrale-os/sdk/application', '@astrale-os/sdk'])(
+    'does not discover an application Project or constructor from %s',
+    (module) => {
+      const root = fixture()
+      writeFileSync(
+        join(root, 'astrale.config.ts'),
+        `import { defineProject } from '@astrale-os/sdk/project'
+import application from './application.js'
+export default defineProject({ application })
 `,
-    )
-    writeFileSync(join(owner, 'schema/index.ts'), 'export const schema = {}\n')
-    writeFileSync(
-      join(owner, 'application.ts'),
-      `import { defineApplication } from '@astrale-os/sdk/application'
-import { schema } from './schema/index.js'
-export const application = defineApplication({ schema, runtime: {} as never })
-`,
-    )
-    return root
-  }
-
-  test.each([false, true])(
-    'still reads defineProject({ application }) and defineApplication (nested: %p)',
-    (nested) => {
-      const root = legacyFixture(nested)
-      const application = join(root, nested ? 'domain/application.ts' : 'application.ts')
-      expect(analyzeProjectConfig(root)).toEqual({ domainFile: application, datasets: [] })
-      expect(resolveSchemaEntry(root, application)).toBe(
-        join(root, nested ? 'domain/schema/index.ts' : 'schema/index.ts'),
       )
-      const handle = registerDomain(root)!
-      domainIds.push(handle.id)
-      expect(handle.domainFile).toBe(application)
+      writeFileSync(
+        join(root, 'application.ts'),
+        `import { defineApplication } from '${module}'
+import { schema } from './schema/index.js'
+export default defineApplication({ schema, runtime: {} as never })
+`,
+      )
+      expect(resolveDomainEntry(root)).toBeNull()
+      expect(resolveSchemaEntry(root, join(root, 'application.ts'))).toBeNull()
+      expect(isDomainDir(root)).toBe(false)
+      expect(registerDomain(root)).toBeNull()
     },
   )
-
-  test('still reads defineApplication from the root SDK facade', () => {
-    const root = legacyFixture()
-    writeFileSync(
-      join(root, 'application.ts'),
-      `import { defineApplication } from '@astrale-os/sdk'
-import { schema } from './schema/index.js'
-export const application = defineApplication({ schema, runtime: {} as never })
-`,
-    )
-    expect(isDomainDir(root)).toBe(true)
-  })
-
-  test('does not read defineApplication from the new @astrale-os/sdk/domain entry', () => {
-    const root = legacyFixture()
-    writeFileSync(
-      join(root, 'application.ts'),
-      `import { defineApplication } from '@astrale-os/sdk/domain'
-import { schema } from './schema/index.js'
-export const application = defineApplication({ schema, runtime: {} as never })
-`,
-    )
-    expect(isDomainDir(root)).toBe(false)
-  })
 })

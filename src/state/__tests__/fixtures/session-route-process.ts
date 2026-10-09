@@ -24,14 +24,14 @@ const route = invocation.acceptRoute({
   via: {
     kind: 'via',
     issuer: sourceIssuer,
-    publication: {
+    release: {
       origin: 'destination.application.test',
       identity: {
         issuer: 'https://destination.application.test',
         subject: 'destination.application.test',
       },
       revision: `sha256:${'1'.padStart(64, '0')}`,
-      etag: `sha256:${'1'.padStart(64, '0')}`,
+      digest: `sha256:${'1'.padStart(64, '0')}`,
     },
   },
 })
