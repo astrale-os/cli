@@ -7,8 +7,10 @@ test('embedded agents receive the current SDK and frontend skill contracts', () 
 
   expect(prompt).toContain('modular Actions and Workflows')
   expect(prompt).toContain('astrale-frontend-design')
-  expect(prompt).toContain('Runtime/Application entries')
-  expect(prompt).toContain('"@$ASTRALE_ISSUES_PROJECT_ID::createIssue"')
+  expect(prompt).toContain('Runtime/Domain definition entries')
+  expect(prompt).toContain(
+    '"@$ASTRALE_ISSUES_PROJECT_ID::issues.astrale.ai:class.Project.method.createIssue"',
+  )
   expect(prompt).toContain('astrale --ci --no-prompt call')
   expect(prompt).toContain('Issue Node ID')
   expect(prompt).not.toContain('class.Issue:create')
@@ -23,4 +25,16 @@ test('embedded agents keep immutable thread replies brief and move detail to con
   expect(prompt).toContain('may be as long as needed')
   expect(prompt).toContain('Thread entries are immutable')
   expect(prompt).toContain('Correct or clarify it by appending a new reply')
+})
+
+test('embedded agents deploy without installing, then install the printed URL', () => {
+  const prompt = buildSystemPrompt({ bridge: false })
+
+  expect(prompt).not.toContain('pnpm prod')
+  expect(prompt).not.toContain('managed deploy + install')
+  expect(prompt).toContain('`pnpm run deploy <environment>` deploys and prints')
+  expect(prompt).toContain(
+    'never installs; then `astrale domain install <url> --direct -i <instance>`',
+  )
+  expect(prompt).toContain('/.well-known/astrale/release.json')
 })

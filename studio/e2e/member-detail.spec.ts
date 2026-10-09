@@ -27,9 +27,7 @@ async function openInvoice(page: Page): Promise<Locator> {
 const refsOf = (rows: Locator) =>
   rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-anchor-ref')))
 
-test('own members first, inherited ones after them under the Class that declares them', async ({
-  page,
-}) => {
+test('keeps inherited properties while excluding concrete parent methods', async ({ page }) => {
   const panel = await openInvoice(page)
 
   // the canonical schema orders each Class's members by name; the panel keeps that
@@ -51,9 +49,8 @@ test('own members first, inherited ones after them under the Class that declares
     'class.Invoice.method.remind',
     'class.Invoice.method.search',
     'class.Invoice.method.settle',
-    'class.Document.method.archive',
   ])
-  await expect(methods.nth(3)).toContainText('Document.archive')
+  await expect(panel.locator('[data-anchor-ref="class.Document.method.archive"]')).toHaveCount(0)
   // the base's members no longer live in a section of their own
   await expect(panel.getByText('Inherited', { exact: true })).toHaveCount(0)
 })
@@ -69,7 +66,7 @@ test('a method is one line closed and the whole contract open', async ({ page })
 
   // closed: the name, at the height of a property row, and nothing more — not the
   // inputs, not the return, not the Policy
-  await expect(settle.getByRole('button', { name: /settle/ })).toHaveText('settle')
+  await expect(settle.getByRole('button', { name: /settle/ })).toHaveText('settlecontract')
   await expect(settle).not.toContainText('amount')
   await expect(settle).not.toContainText('Yes / no')
   await expect(panel.locator('[data-method-detail]')).toHaveCount(0)

@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Boxes,
   FlaskConical,
@@ -5,11 +6,13 @@ import {
   MessagesSquare,
   Network,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   Workflow,
 } from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useEffect, useMemo } from 'react'
+import { toast } from 'sonner'
 
 import { AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
@@ -19,11 +22,14 @@ import { CommentModeOverlay } from '@/components/comment-mode'
 import { NewDomainDialog } from '@/components/create-domain'
 import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { StudioRuntimeNotice } from '@/components/studio-runtime-notice'
+import { Tour } from '@/components/tour'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
 import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
 import { useAgentLive, useAgentSnapshot } from '@/lib/agent'
-import { useWorkspace } from '@/lib/hooks'
+import { api, qk } from '@/lib/api'
+import { useInvalidateDomain, useWorkspace } from '@/lib/hooks'
 import { type SectionKey, useUI } from '@/lib/store'
 import { useStudioEventSync } from '@/lib/studio-events'
 import { cn } from '@/lib/utils'
@@ -77,13 +83,18 @@ function SectionRouter({
 function IconAction({
   label,
   shortcut,
+  tour,
   active,
+  disabled,
   onClick,
   children,
 }: {
   label: string
   shortcut?: string
+  /** The tour's handle on this action — see `components/tour.tsx`. */
+  tour?: string
   active?: boolean
+  disabled?: boolean
   onClick: () => void
   children: ReactNode
 }) {
@@ -94,9 +105,11 @@ function IconAction({
           type="button"
           aria-label={label}
           aria-pressed={active}
+          data-tour={tour}
+          disabled={disabled}
           onClick={onClick}
           className={cn(
-            'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+            'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-60',
             active
               ? 'bg-primary/10 text-primary'
               : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -114,6 +127,8 @@ function IconAction({
 }
 
 export function App() {
+  const queryClient = useQueryClient()
+  const invalidateDomain = useInvalidateDomain()
   const { data: domains } = useWorkspace()
   const workspaceUiReady = useWorkspaceUiSync()
   const section = useUI((s) => s.section)
@@ -131,17 +146,24 @@ export function App() {
   const clearSelection = useUI((s) => s.clearSelection)
   const setRun = useAgentLive((s) => s.setRun)
   const validIds = useMemo(() => new Set((domains ?? []).map((domain) => domain.id)), [domains])
-  const scopedDomainId =
-    (sectionDomainId && validIds.has(sectionDomainId) ? sectionDomainId : undefined) ??
-    (selectionDomainId && validIds.has(selectionDomainId) ? selectionDomainId : undefined) ??
-    domains?.[0]?.id
+  const known = (domainId?: string) => (domainId && validIds.has(domainId) ? domainId : undefined)
+  const scopedDomainId = known(sectionDomainId) ?? known(selectionDomainId) ?? domains?.[0]?.id
   const scopedDomain = domains?.find((domain) => domain.id === scopedDomainId)
+  const refreshDomains = useMutation({
+    mutationFn: api.refreshWorkspace,
+    onSuccess: ({ refreshed }) => {
+      for (const domain of domains ?? []) invalidateDomain(domain.id)
+      void queryClient.invalidateQueries({ queryKey: qk.workspace })
+      toast.success(`${refreshed === 1 ? 'Domain' : 'Domains'} refreshed`)
+    },
+    onError: (error) => toast.error(`Could not refresh domains — ${String(error)}`),
+  })
 
   // A concrete canvas selection hands its owner to the local readers. Their picker
   // can then diverge without creating a workspace-wide active-domain concept.
   useEffect(() => {
     if (selectionDomainId && validIds.has(selectionDomainId)) setSectionDomainId(selectionDomainId)
-  }, [selectionDomainId, validIds])
+  }, [selectionDomainId, validIds, setSectionDomainId])
 
   const changeSectionDomain = (domainId: string) => {
     setSectionDomainId(domainId)
@@ -192,13 +214,14 @@ export function App() {
           {/* what you are looking at — which DOMAIN is the rail's question, not this bar's */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <InstanceSwitcher />
+            <StudioRuntimeNotice />
             {scopedDomain ? (
               <UpdatesBadge domainId={scopedDomain.id} domainPath={scopedDomain.path} />
             ) : null}
           </div>
 
           {/* where you are */}
-          <nav className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+          <nav data-tour="sections" className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
             {NAV.map((n) => {
               const Icon = n.icon
               const active = section === n.key
@@ -224,12 +247,20 @@ export function App() {
 
           {/* what you can do */}
           <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            <IconAction
+              label="Refresh domains"
+              disabled={refreshDomains.isPending}
+              onClick={() => refreshDomains.mutate()}
+            >
+              <RefreshCw className={cn('h-4 w-4', refreshDomains.isPending && 'animate-spin')} />
+            </IconAction>
             <IconAction label="Search" shortcut="⌘K" onClick={() => setPaletteOpen(true)}>
               <Search className="h-4 w-4" />
             </IconAction>
             <IconAction
               label="Comment mode"
               shortcut="C"
+              tour="comment"
               active={commentMode}
               onClick={() => toggleCommentMode()}
             >
@@ -244,7 +275,9 @@ export function App() {
             {!panelOpen && panelSide !== 'bottom' && (
               <>
                 <span className="mx-1 h-4 w-px bg-border" />
-                <AgentSubmitButton />
+                <span data-tour="agent" className="contents">
+                  <AgentSubmitButton />
+                </span>
               </>
             )}
           </div>
@@ -267,7 +300,7 @@ export function App() {
                 onDomainChange={changeSectionDomain}
               />
             ) : (
-              <EmptyWorkspace empty={domains.length === 0} />
+              <EmptyWorkspace />
             )}
           </main>
           <WorkPanel />
@@ -280,6 +313,7 @@ export function App() {
       <AskLayer />
       <SettingsDialog />
       <NewDomainDialog />
+      <Tour />
     </TooltipProvider>
   )
 }
@@ -289,20 +323,18 @@ export function App() {
  * to offer, and the rail that normally offers it is inside a section that cannot
  * draw — so it is offered here instead.
  */
-function EmptyWorkspace({ empty }: { empty: boolean }) {
+function EmptyWorkspace() {
   const setNewDomainOpen = useUI((s) => s.setNewDomainOpen)
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-      {empty ? 'This workspace has no domain yet.' : 'No domain selected'}
-      {empty && (
-        <button
-          type="button"
-          onClick={() => setNewDomainOpen(true)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" /> New domain
-        </button>
-      )}
+      This workspace has no domain yet.
+      <button
+        type="button"
+        onClick={() => setNewDomainOpen(true)}
+        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+      >
+        <Plus className="h-4 w-4" /> New domain
+      </button>
     </div>
   )
 }

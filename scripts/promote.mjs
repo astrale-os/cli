@@ -23,7 +23,7 @@ export async function promote(release, { apply = false, gh = runGh } = {}) {
       release,
     )
   ) {
-    throw new Error('Use an exact CLI release tag, e.g. cli/v1.0.0-beta.85')
+    throw new Error('Use an exact CLI release tag, e.g. cli/v1.0.0-beta.133')
   }
   const command = (args) => {
     const result = gh(args)

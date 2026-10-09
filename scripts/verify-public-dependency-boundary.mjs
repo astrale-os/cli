@@ -22,6 +22,7 @@ const checkedFiles = [
   'package.json',
   'studio/package.json',
   'studio/e2e/fixture/package.json',
+  'studio/e2e/fixture/peer/package.json',
   '.npmrc',
   'studio/.npmrc',
   'pnpm-workspace.yaml',
@@ -49,7 +50,12 @@ for (const path of ['.npmrc', 'studio/.npmrc']) {
   )
 }
 
-for (const path of ['package.json', 'studio/package.json', 'studio/e2e/fixture/package.json']) {
+for (const path of [
+  'package.json',
+  'studio/package.json',
+  'studio/e2e/fixture/package.json',
+  'studio/e2e/fixture/peer/package.json',
+]) {
   const manifest = JSON.parse(await readFile(path, 'utf8'))
   for (const field of dependencyFields) {
     for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
@@ -117,7 +123,18 @@ assert.equal(
 assert.equal(workspaceConfig.trustLockfile, false, 'CLI must verify lock entries against policy')
 assert.deepEqual(
   workspaceConfig.minimumReleaseAgeExclude,
-  ['@astrale-os/*', '@astrale-domains/*', '@astrale/*', '@jsr/astrale__*', 'create-astrale-domain'],
+  [
+    '@astrale-os/*',
+    '@astrale-domains/*',
+    '@astrale/*',
+    '@jsr/astrale__*',
+    'create-astrale-domain',
+    // Studio's agent stack: the ACP adapters and the agent CLI builds they pin.
+    '@agentclientprotocol/*',
+    '@anthropic-ai/claude-agent-sdk',
+    '@anthropic-ai/claude-agent-sdk-*',
+    '@openai/codex',
+  ],
   'CLI must use only the approved release-age exceptions',
 )
 assert.equal(
@@ -129,10 +146,10 @@ assert.equal(
 const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
 assert.equal(
   (await readFile('.bun-version', 'utf8')).trim(),
-  '1.4.0',
+  '1.4.2',
   'CLI must pin the local Bun 1.4 runtime',
 )
-assert.equal(cliManifest.packageManager, 'pnpm@12.0.0', 'CLI must pin the qualification pnpm')
+assert.equal(cliManifest.packageManager, 'pnpm@12.1.0', 'CLI must pin the qualification pnpm')
 assert.equal(cliManifest.private, true, 'standalone-only CLI package must remain private')
 assert.equal(cliManifest.publishConfig, undefined, 'standalone-only CLI must not be publishable')
 assert.equal(
@@ -142,7 +159,7 @@ assert.equal(
 )
 assert.equal(
   cliManifest.devDependencies?.['bun-types'],
-  '1.4.0',
+  '1.4.2',
   'CLI root must pin the Bun 1.4 type package',
 )
 assert.equal(
@@ -281,10 +298,21 @@ const studioKernelReferences = studioProject.getSourceFiles().flatMap((sourceFil
 assert.deepEqual(studioKernelReferences, [], 'Studio source references Kernel packages directly')
 
 const fixtureManifest = JSON.parse(await readFile('studio/e2e/fixture/package.json', 'utf8'))
+const peerManifest = JSON.parse(await readFile('studio/e2e/fixture/peer/package.json', 'utf8'))
 assert.equal(
   fixtureManifest.dependencies?.['@astrale-os/sdk'],
   cliManifest.devDependencies?.['@astrale-os/sdk'],
   'Studio browser fixture must qualify the current exact SDK publication',
+)
+assert.equal(
+  peerManifest.dependencies?.['@astrale-os/sdk'],
+  cliManifest.devDependencies?.['@astrale-os/sdk'],
+  'Studio peer fixture must qualify the current exact SDK publication',
+)
+assert.equal(
+  peerManifest.dependencies?.['@astrale-os/adapter-cloudflare'],
+  fixtureManifest.dependencies?.['@astrale-os/adapter-cloudflare'],
+  'Studio browser and peer fixtures must qualify the same exact Cloudflare adapter publication',
 )
 
 const lockDocuments = parseAllDocuments(await readFile('pnpm-lock.yaml', 'utf8'))
@@ -314,6 +342,7 @@ for (const [locator, snapshot] of Object.entries(lock.packages ?? {})) {
 verifyImporter('.', cliManifest)
 verifyImporter('studio', studioManifest)
 verifyImporter('studio/e2e/fixture', fixtureManifest)
+verifyImporter('studio/e2e/fixture/peer', peerManifest)
 const studioImporter = lock.importers?.studio?.dependencies
 const sdkResolution = studioImporter?.['@astrale-os/sdk']?.version
 const shellResolution = studioImporter?.['@astrale-os/shell']?.version

@@ -22,8 +22,10 @@ Behavior:
   always Instance member access and never grants Fleet or Host authority.
 
   The command returns after WorkOS durably accepts the Invitation request.
-  After the recipient accepts, Admin automatically reconciles their child Shell
-  user and Instance access through its retryable webhook consumer.
+  WorkOS acceptance alone grants no access: when the recipient signs in to the
+  Instance from the invitation link, Admin registers their child Shell user with
+  their own credential and adds it to the Instance members. Admin's WorkOS
+  webhook cannot register the user on its own.
 
 Examples:
   $ astrale instance invite my-app person@example.com
@@ -55,7 +57,7 @@ Examples:
       log.dim(`  state: ${invitation.state}`)
       if (invitation.instance) log.dim(`  instance: ${invitation.instance}`)
       if (invitation.claimedBy) log.dim(`  user: ${invitation.claimedBy}`)
-      log.dim('  access: automatic after acceptance')
+      log.dim('  access: after the recipient signs in to the Instance')
     } catch (error) {
       await formatKernelError(error, isMachine(opts), undefined, opts.debug)
       process.exit(1)

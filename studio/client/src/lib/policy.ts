@@ -19,7 +19,10 @@ import { isIrSchemaRef, schemaRefKey } from '@shared/types'
 
 export type PolicyReservedTerm = 'subject' | 'object' | 'source' | 'target'
 
-export type PolicyTerm = { kind: PolicyReservedTerm } | { kind: 'variable'; id: number }
+export type PolicyTerm =
+  | { kind: PolicyReservedTerm }
+  | { kind: 'variable'; id: number }
+  | { kind: 'ref'; ref: IrSchemaRef }
 
 export interface PolicyEdgeStep {
   source: PolicyTerm
@@ -29,13 +32,26 @@ export interface PolicyEdgeStep {
   repeat?: { min: number; max: number }
 }
 
-export interface PolicyVariable {
-  variable: { kind: 'variable'; id: number }
-  class: IrSchemaRef
+export type PolicyVariable = { variable: { kind: 'variable'; id: number } } & (
+  | { class: IrSchemaRef }
+  | { selector: { kind: 'any' } | { kind: 'satisfies'; class: IrSchemaRef } }
+)
+
+export interface PolicySameNode<Term> {
+  sameNode: { left: Term; right: Term }
+}
+
+export function variableClass(variable: PolicyVariable): IrSchemaRef | undefined {
+  return 'class' in variable
+    ? variable.class
+    : variable.selector.kind === 'satisfies'
+      ? variable.selector.class
+      : undefined
 }
 
 export type PolicyPattern =
   | PolicyEdgeStep
+  | PolicySameNode<PolicyTerm>
   | { exists: { nodes: PolicyVariable[]; where: PolicyPattern } }
   | { allOf: PolicyPattern[] }
   | { anyOf: PolicyPattern[] }
@@ -61,7 +77,11 @@ export interface PolicyCheckLeaf {
   object: PolicyCheckObject
 }
 
-export type PolicyCheck = PolicyCheckLeaf | { allOf: PolicyCheck[] } | { anyOf: PolicyCheck[] }
+export type PolicyCheck =
+  | PolicyCheckLeaf
+  | PolicySameNode<PolicyCheckObject>
+  | { allOf: PolicyCheck[] }
+  | { anyOf: PolicyCheck[] }
 
 /** What a policy protects: a node (`object`), an edge (`source`/`target`), or nothing but the subject. */
 export type PolicyGuard = 'object' | 'edge' | 'subject'
@@ -84,6 +104,8 @@ function decodeTerm(value: unknown): PolicyTerm | undefined {
     case 'source':
     case 'target':
       return { kind: record.kind }
+    case 'ref':
+      return isIrSchemaRef(record.ref) ? { kind: 'ref', ref: record.ref } : undefined
     case 'variable':
       return isBoundedInt(record.id) ? { kind: 'variable', id: record.id } : undefined
     default:
@@ -105,6 +127,12 @@ function decodeList<T>(value: unknown, decode: (item: unknown) => T | undefined)
 export function decodePolicyPattern(value: unknown): PolicyPattern | undefined {
   const record = asRecord(value)
   if (!record) return undefined
+  if ('sameNode' in record) {
+    const same = asRecord(record.sameNode)
+    const left = decodeTerm(same?.left)
+    const right = decodeTerm(same?.right)
+    return left && right ? { sameNode: { left, right } } : undefined
+  }
   if ('allOf' in record) {
     const allOf = decodeList(record.allOf, decodePolicyPattern)
     return allOf && { allOf }
@@ -115,12 +143,16 @@ export function decodePolicyPattern(value: unknown): PolicyPattern | undefined {
   }
   if ('exists' in record) {
     const exists = asRecord(record.exists)
-    const nodes = decodeList(exists?.nodes, (item) => {
+    const nodes = decodeList<PolicyVariable>(exists?.nodes, (item) => {
       const node = asRecord(item)
       const variable = decodeTerm(node?.variable)
-      return variable?.kind === 'variable' && isIrSchemaRef(node?.class)
-        ? { variable, class: node.class }
-        : undefined
+      if (variable?.kind !== 'variable') return undefined
+      if (isIrSchemaRef(node?.class)) return { variable, class: node.class }
+      const selector = asRecord(node?.selector)
+      if (selector?.kind === 'any') return { variable, selector: { kind: 'any' } }
+      if (selector?.kind === 'satisfies' && isIrSchemaRef(selector.class))
+        return { variable, selector: { kind: 'satisfies', class: selector.class } }
+      return undefined
     })
     const where = decodePolicyPattern(exists?.where)
     return nodes && where ? { exists: { nodes, where } } : undefined
@@ -194,6 +226,12 @@ function decodeCheckObject(value: unknown): PolicyCheckObject | undefined {
 export function decodePolicyCheck(value: unknown): PolicyCheck | undefined {
   const record = asRecord(value)
   if (!record) return undefined
+  if ('sameNode' in record) {
+    const same = asRecord(record.sameNode)
+    const left = decodeCheckObject(same?.left)
+    const right = decodeCheckObject(same?.right)
+    return left && right ? { sameNode: { left, right } } : undefined
+  }
   if ('allOf' in record) {
     const allOf = decodeList(record.allOf, decodePolicyCheck)
     return allOf && { allOf }
@@ -212,6 +250,7 @@ export function decodePolicyCheck(value: unknown): PolicyCheck | undefined {
  * explicit discriminator without changing that existing contract.
  */
 export type ParsedPolicyCheck =
+  | { kind: 'sameNode'; left: PolicyCheckObject; right: PolicyCheckObject }
   | { kind: 'check'; policy: IrSchemaRef; object: PolicyCheckObject }
   | { kind: 'allOf' | 'anyOf'; items: ParsedPolicyCheck[] }
 
@@ -224,6 +263,10 @@ function parsePolicyCheckBranch(value: unknown): ParsedPolicyCheck[] | undefined
 export function parsePolicyCheck(value: unknown): ParsedPolicyCheck | undefined {
   const record = asRecord(value)
   if (!record) return undefined
+  if ('sameNode' in record) {
+    const decoded = decodePolicyCheck(record)
+    return decoded && 'sameNode' in decoded ? { kind: 'sameNode', ...decoded.sameNode } : undefined
+  }
   if ('check' in record) {
     const object = decodeCheckObject(record.object)
     return isIrSchemaRef(record.check) && record.check.kind === 'policy' && object
@@ -241,11 +284,21 @@ export function parsePolicyCheck(value: unknown): ParsedPolicyCheck | undefined 
 
 // ── reading ─────────────────────────────────────────────────────────────────
 
+/** Compact complete expression, with parentheses preserving nested conjunctions/disjunctions. */
+export function policyCheckLabel(check: PolicyCheck, origin?: string): string {
+  if ('check' in check)
+    return `${origin ? policyLabel(check.check, origin) : check.check.name} on ${policyObjectLabel(check.object, 'receiver')}`
+  if ('sameNode' in check)
+    return `${policyObjectLabel(check.sameNode.left, 'receiver')} is the same Node as ${policyObjectLabel(check.sameNode.right, 'receiver')}`
+  const items = 'allOf' in check ? check.allOf : check.anyOf
+  return `(${items.map((item) => policyCheckLabel(item, origin)).join('allOf' in check ? ' and ' : ' or ')})`
+}
+
 /** Every `check` a callable's policy expression bottoms out in, in source order. */
 export function policyCheckLeaves(check: PolicyCheck): PolicyCheckLeaf[] {
   if ('allOf' in check) return check.allOf.flatMap(policyCheckLeaves)
   if ('anyOf' in check) return check.anyOf.flatMap(policyCheckLeaves)
-  return [check]
+  return 'check' in check ? [check] : []
 }
 
 export const isEdgeStep = (pattern: PolicyPattern): pattern is PolicyEdgeStep =>
@@ -259,7 +312,10 @@ export function patternTerms(pattern: PolicyPattern): Set<PolicyReservedTerm> {
     else if ('anyOf' in p) p.anyOf.forEach(visit)
     else if ('exists' in p) visit(p.exists.where)
     else {
-      for (const term of [p.source, p.target]) if (term.kind !== 'variable') found.add(term.kind)
+      for (const term of 'sameNode' in p
+        ? [p.sameNode.left, p.sameNode.right]
+        : [p.source, p.target])
+        if (term.kind !== 'variable' && term.kind !== 'ref') found.add(term.kind)
     }
   }
   visit(pattern)
@@ -325,7 +381,13 @@ export function policyGuard(policy: Policy, index: PolicyIndex): PolicyGuard {
 
 /** Where a policy is used in the schema — which classes it protects, which callables check it. */
 export interface PolicyUsage {
-  classes: { className: string; type: 'node' | 'edge'; operation: 'read' | 'traverse' }[]
+  policies: { ref: IrSchemaRef; via: IrSchemaRef[] }[]
+  classes: {
+    className: string
+    type: 'node' | 'edge'
+    operation: 'read' | 'traverse'
+    via?: IrSchemaRef[]
+  }[]
   callables: {
     owner: string
     ownerKind: 'class' | 'function'
@@ -333,31 +395,62 @@ export interface PolicyUsage {
     object: PolicyCheckObject
     /** the check is one branch of several, so passing it alone may not be enough */
     composed: boolean
+    via?: IrSchemaRef[]
   }[]
 }
 
 export function policyUsage(ir: SchemaIR, policy: Policy): PolicyUsage {
   const key = schemaRefKey(policy.ref)
-  const usage: PolicyUsage = { classes: [], callables: [] }
+  const usage: PolicyUsage = { policies: [], classes: [], callables: [] }
+  const parents = new Map<string, Policy[]>()
+  for (const candidate of indexPolicies(ir).policies) {
+    const expression = candidate.expression
+    if ('match' in expression) continue
+    for (const ref of 'allOf' in expression ? expression.allOf : expression.anyOf) {
+      const child = schemaRefKey(ref)
+      const siblings = parents.get(child)
+      if (siblings) siblings.push(candidate)
+      else parents.set(child, [candidate])
+    }
+  }
+  // Breadth-first traversal retains one shortest explanation per ancestor. Exact keys
+  // and a visited map keep diamonds, cycles and same-named foreign policies distinct.
+  const paths = new Map<string, IrSchemaRef[]>([[key, []]])
+  for (const [child, path] of paths) {
+    for (const parent of parents.get(child) ?? []) {
+      const parentKey = schemaRefKey(parent.ref)
+      if (paths.has(parentKey)) continue
+      usage.policies.push({ ref: parent.ref, via: path })
+      paths.set(parentKey, [parent.ref, ...path])
+    }
+  }
   const collect = (owner: string, ownerKind: 'class' | 'function', name: string, raw: unknown) => {
     const check = raw === undefined ? undefined : decodePolicyCheck(raw)
     if (!check) return
-    const leaves = policyCheckLeaves(check)
-    for (const leaf of leaves) {
-      if (schemaRefKey(leaf.check) !== key) continue
+    const composed = 'allOf' in check || 'anyOf' in check
+    for (const leaf of policyCheckLeaves(check)) {
+      const via = paths.get(schemaRefKey(leaf.check))
+      if (!via) continue
       usage.callables.push({
         owner,
         ownerKind,
         name,
         object: leaf.object,
-        composed: leaves.length > 1,
+        composed,
+        ...(via.length > 0 ? { via } : {}),
       })
     }
   }
   for (const cls of Object.values(ir.classes)) {
     for (const [operation, ref] of Object.entries(cls.policies ?? {})) {
-      if ((operation === 'read' || operation === 'traverse') && schemaRefKey(ref) === key) {
-        usage.classes.push({ className: cls.name, type: cls.type, operation })
+      const via = paths.get(schemaRefKey(ref))
+      if ((operation === 'read' || operation === 'traverse') && via) {
+        usage.classes.push({
+          className: cls.name,
+          type: cls.type,
+          operation,
+          ...(via.length > 0 ? { via } : {}),
+        })
       }
     }
     for (const [name, method] of Object.entries(cls.methods)) {

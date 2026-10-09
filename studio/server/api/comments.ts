@@ -1,5 +1,5 @@
 /** Schema-anchored review comment routes and agent reply merge. */
-import type { ThreadEntry } from '../../shared/types'
+import type { ThreadEntry, ThreadRole } from '../../shared/types'
 
 import { isConcreteAnchorRef } from '../../shared/comment-anchors'
 import { getBundle } from '../cache'
@@ -15,12 +15,16 @@ import {
   setStatus,
   upsertComment,
 } from '../state/comments'
-import { badRequest, json, notFound, type DomainRouteContext } from './http'
+import { badRequest, badRequestFromError, json, notFound, type DomainRouteContext } from './http'
+
+function threadRole(value: unknown): ThreadRole | undefined {
+  return value === 'author' || value === 'user' ? value : undefined
+}
 
 function replyEntry(value: unknown): Omit<ThreadEntry, 'id'> | undefined {
   const record = asJsonRecord(value)
   const text = asString(record?.text)
-  const role = record?.role === 'author' ? 'author' : record?.role === 'user' ? 'user' : undefined
+  const role = threadRole(record?.role)
   if (!record || text === undefined || role === undefined) return undefined
   const type = record.type === 'choice' ? 'choice' : 'text'
   const options = asStringArray(record.options)
@@ -61,8 +65,7 @@ export async function handleCommentRoute(context: DomainRouteContext): Promise<R
         anchors: asStringArray(body.anchors) ?? [],
         anchorRefs,
         text: asString(body.text),
-        firstRole:
-          body.firstRole === 'author' ? 'author' : body.firstRole === 'user' ? 'user' : undefined,
+        firstRole: threadRole(body.firstRole),
         type: body.type === 'choice' ? 'choice' : body.type === 'text' ? 'text' : undefined,
         options: asStringArray(body.options),
         schemaVersion: bundle?.renderFingerprint,
@@ -104,7 +107,7 @@ export async function handleCommentRoute(context: DomainRouteContext): Promise<R
       notify({ type: 'comments', domainId: id })
       return json(result)
     } catch (error) {
-      return badRequest(error instanceof Error ? error.message : String(error))
+      return badRequestFromError(error)
     }
   }
 

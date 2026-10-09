@@ -10,27 +10,31 @@ components. Components whose license requires attribution are listed below.
 
 Domain Studio embeds these ACP components:
 
-- **Package:** `@agentclientprotocol/sdk` 1.4.0
+- **Package:** `@agentclientprotocol/sdk` 1.7.0
   - **License:** Apache License 2.0
   - **Copyright:** © 2025 Zed Industries, Inc. and contributors
   - **Source:** https://github.com/agentclientprotocol/typescript-sdk
-- **Package:** `@agentclientprotocol/codex-acp` 1.6.2
+- **Package:** `@agentclientprotocol/codex-acp` 2.1.1
   - **License:** Apache License 2.0
   - **Copyright:** © 2025 JetBrains s.r.o.
   - **Source:** https://github.com/agentclientprotocol/codex-acp
-- **Package:** `@agentclientprotocol/claude-agent-acp` 0.70.0
+- **Package:** `@agentclientprotocol/claude-agent-acp` 0.85.1
   - **License:** Apache License 2.0
   - **Copyright:** © 2025 Zed Industries, Inc. and contributors
   - **Source:** https://github.com/agentclientprotocol/claude-agent-acp
-- **Transitive package:** `@openai/codex` 0.148.0
+- **Transitive package:** `@openai/codex` 0.159.3
   - **License:** Apache License 2.0
   - **Source:** https://github.com/openai/codex
 
-The Claude adapter also contains `@anthropic-ai/claude-agent-sdk` 0.3.232.
+The Claude adapter also contains `@anthropic-ai/claude-agent-sdk` 0.3.286.
 Copyright © Anthropic PBC; all rights reserved. Its use is subject to Anthropic's
 [legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance).
-Studio points the adapter at the user's separately installed and authenticated
-Claude Code executable.
+
+Neither agent CLI is embedded in the executable. On first use, Studio downloads
+the platform package pinned by its lockfile from the npm registry
+(`@anthropic-ai/claude-agent-sdk-<platform>` for Claude Code, `@openai/codex`
+for Codex), verifies its integrity, and runs it with the user's own
+authentication. Those packages remain subject to their publishers' terms.
 
 ## skills (agent registry compatibility)
 
@@ -67,20 +71,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-
-## cloudflared
-
-- **Project:** `cloudflare/cloudflared`
-- **Bundled version:** 2026.8.2
-- **License:** Apache License 2.0
-- **Copyright:** Cloudflare, Inc. and contributors
-- **Source:** https://github.com/cloudflare/cloudflared/tree/2026.8.2
-
-Standalone release archives carry the unmodified official executable as
-`astrale-cloudflared` and include the Apache License 2.0 text as
-`LICENSE.cloudflared`, sourced from the reviewed distribution copy at
-`licenses/cloudflared.txt`. Astrale disables cloudflared self-update and
-advances the binary only through a checksum-pinned Astrale CLI release.
 
 ## elkjs (Eclipse Layout Kernel for JavaScript)
 

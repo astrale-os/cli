@@ -10,7 +10,7 @@
  * and `kind` is derived from the FIRST thread entry's role
  * (author-seeded ⇒ 'question', else 'comment').
  */
-import type { AnchorRef, Comment, CommentStore, ThreadEntry } from '../../shared/types'
+import type { AnchorRef, Comment, CommentStore, MergeResult, ThreadEntry } from '../../shared/types'
 
 import {
   asBoolean,
@@ -18,6 +18,7 @@ import {
   asJsonRecord,
   asString,
   asStringArray,
+  decodeEach,
   parseJson,
 } from '../json'
 import { readJson, writeJson } from './store'
@@ -44,12 +45,7 @@ export function decodeAnchorRef(value: unknown): AnchorRef | undefined {
 }
 
 export function decodeAnchorRefs(value: unknown): AnchorRef[] {
-  return Array.isArray(value)
-    ? value.flatMap((anchor) => {
-        const decoded = decodeAnchorRef(anchor)
-        return decoded ? [decoded] : []
-      })
-    : []
+  return decodeEach(value, decodeAnchorRef) ?? []
 }
 
 function decodeThreadEntry(value: unknown): ThreadEntry | undefined {
@@ -86,12 +82,7 @@ function decodeComment(value: unknown): Comment | undefined {
   if (!id) return undefined
   const anchors = asStringArray(record.anchors) ?? []
   const anchorRefs = decodeAnchorRefs(record.anchorRefs)
-  const thread = Array.isArray(record.thread)
-    ? record.thread.flatMap((entry) => {
-        const decoded = decodeThreadEntry(entry)
-        return decoded ? [decoded] : []
-      })
-    : []
+  const thread = decodeEach(record.thread, decodeThreadEntry) ?? []
   const status = record.status === 'closed' ? 'closed' : 'open'
   const closeNote = asString(record.closeNote)
   const createdAt = asString(record.createdAt) ?? ''
@@ -112,12 +103,7 @@ function decodeComment(value: unknown): Comment | undefined {
 function decodeCommentStore(value: unknown): CommentStore | undefined {
   const record = asJsonRecord(value)
   if (!record) return undefined
-  const comments = Array.isArray(record.comments)
-    ? record.comments.flatMap((comment) => {
-        const decoded = decodeComment(comment)
-        return decoded ? [decoded] : []
-      })
-    : []
+  const comments = decodeEach(record.comments, decodeComment) ?? []
   return { schemaVersion: asString(record.schemaVersion) ?? '', comments }
 }
 
@@ -136,13 +122,10 @@ function deriveKind(thread: ThreadEntry[]): Comment['kind'] {
   return thread[0]?.role === 'author' ? 'question' : 'comment'
 }
 
-function makeEntry(input: {
-  role: ThreadEntry['role']
-  type?: ThreadEntry['type']
-  text: string
-  options?: string[]
-  answer?: string | null
-}): ThreadEntry {
+/** A new thread entry as callers describe it: the store assigns the id, `type` defaults to text. */
+type NewThreadEntry = Omit<ThreadEntry, 'id' | 'type'> & { type?: ThreadEntry['type'] }
+
+function makeEntry(input: NewThreadEntry): ThreadEntry {
   const entry: ThreadEntry = {
     id: crypto.randomUUID(),
     role: input.role,
@@ -159,10 +142,10 @@ export function upsertComment(
   input: {
     id?: string
     anchors: string[]
-    anchorRefs: import('../../shared/types').AnchorRef[]
+    anchorRefs: AnchorRef[]
     text?: string
-    firstRole?: 'user' | 'author'
-    type?: 'text' | 'choice'
+    firstRole?: ThreadEntry['role']
+    type?: ThreadEntry['type']
     options?: string[]
     schemaVersion?: string
   },
@@ -170,55 +153,37 @@ export function upsertComment(
   const store = readComments(root)
   if (input.schemaVersion !== undefined) store.schemaVersion = input.schemaVersion
 
-  // If id provided and exists → append a thread entry instead of creating.
-  if (input.id) {
-    const existing = store.comments.find((c) => c.id === input.id)
-    if (existing) {
-      const entry = makeEntry({
-        role: input.firstRole ?? 'user',
-        type: input.type,
-        text: input.text ?? '',
-        options: input.options,
-      })
-      existing.thread.push(entry)
-      existing.kind = deriveKind(existing.thread)
-      persist(root, store)
-      return existing
-    }
-  }
-
-  const role = input.firstRole ?? 'user'
-  const firstEntry = makeEntry({
-    role,
+  const entry = makeEntry({
+    role: input.firstRole ?? 'user',
     type: input.type,
     text: input.text ?? '',
     options: input.options,
   })
+
+  // If id provided and exists → append a thread entry instead of creating.
+  const existing = input.id ? store.comments.find((c) => c.id === input.id) : undefined
+  if (existing) {
+    existing.thread.push(entry)
+    existing.kind = deriveKind(existing.thread)
+    persist(root, store)
+    return existing
+  }
+
   const comment: Comment = {
     id: input.id ?? crypto.randomUUID(),
     anchors: input.anchors,
     anchorRefs: input.anchorRefs,
     status: 'open',
-    thread: [firstEntry],
+    thread: [entry],
     createdAt: new Date().toISOString(),
-    kind: role === 'author' ? 'question' : 'comment',
+    kind: deriveKind([entry]),
   }
   store.comments.push(comment)
   persist(root, store)
   return comment
 }
 
-export function addThreadEntry(
-  root: string,
-  id: string,
-  entry: {
-    role: 'user' | 'author'
-    type?: 'text' | 'choice'
-    text: string
-    options?: string[]
-    answer?: string | null
-  },
-): Comment | null {
+export function addThreadEntry(root: string, id: string, entry: NewThreadEntry): Comment | null {
   const store = readComments(root)
   const comment = store.comments.find((c) => c.id === id)
   if (!comment) return null
@@ -231,7 +196,7 @@ export function addThreadEntry(
 export function setStatus(
   root: string,
   id: string,
-  status: 'open' | 'closed',
+  status: Comment['status'],
   closeNote?: string,
 ): Comment | null {
   const store = readComments(root)
@@ -318,12 +283,7 @@ function decodePastedComment(value: unknown): PastedComment | undefined {
   const anchors = asStringArray(record.anchors)
   const status = record.status === 'open' || record.status === 'closed' ? record.status : undefined
   const closeNote = asString(record.closeNote)
-  const thread = Array.isArray(record.thread)
-    ? record.thread.flatMap((entry) => {
-        const decoded = decodePastedEntry(entry)
-        return decoded ? [decoded] : []
-      })
-    : undefined
+  const thread = decodeEach(record.thread, decodePastedEntry)
   return {
     ...(id === undefined ? {} : { id }),
     ...(anchors === undefined ? {} : { anchors }),
@@ -337,12 +297,7 @@ function decodePastedStore(value: unknown): PastedStore | undefined {
   const record = asJsonRecord(value)
   if (!record) return undefined
   const schemaVersion = asString(record.schemaVersion)
-  const comments = Array.isArray(record.comments)
-    ? record.comments.flatMap((comment) => {
-        const decoded = decodePastedComment(comment)
-        return decoded ? [decoded] : []
-      })
-    : undefined
+  const comments = decodeEach(record.comments, decodePastedComment)
   return {
     ...(schemaVersion === undefined ? {} : { schemaVersion }),
     ...(comments === undefined ? {} : { comments }),
@@ -406,7 +361,7 @@ export function mergeReply(
   currentRenderFingerprint: string,
   pastedText: string,
   opts?: MergeOptions,
-): import('../../shared/types').MergeResult {
+): MergeResult {
   return mergeParsedReply(root, currentRenderFingerprint, parseReplyBlock(pastedText), opts)
 }
 
@@ -420,8 +375,8 @@ export function mergeParsedReply(
   currentRenderFingerprint: string,
   parsed: PastedStore,
   opts?: MergeOptions,
-): import('../../shared/types').MergeResult {
-  const pastedComments = Array.isArray(parsed.comments) ? parsed.comments : []
+): MergeResult {
+  const pastedComments = parsed.comments ?? []
 
   const store = readComments(root)
   let merged = 0
@@ -452,13 +407,12 @@ export function mergeParsedReply(
     for (const pe of pc.thread ?? []) {
       const entry = normalizePastedEntry(pe)
       if (seen.has(entry.id)) continue
-      if (
-        entry.role === 'author' &&
-        (liveTexts?.has(entry.text.trim()) || authorTexts?.has(entry.text.trim()))
-      )
-        continue
+      if (entry.role === 'author') {
+        const text = entry.text.trim()
+        if (liveTexts?.has(text) || authorTexts?.has(text)) continue
+        authorTexts?.add(text)
+      }
       seen.add(entry.id)
-      if (entry.role === 'author') authorTexts?.add(entry.text.trim())
       local.thread.push(entry)
       appended += 1
     }
@@ -477,15 +431,13 @@ export function mergeParsedReply(
   persist(root, store)
 
   const pastedSchemaVersion = parsed.schemaVersion
-  const schemaMismatch = Boolean(
-    pastedSchemaVersion && pastedSchemaVersion !== currentRenderFingerprint,
-  )
-
   return {
     merged,
     closed,
     unknownIds,
-    schemaMismatch,
+    schemaMismatch: Boolean(
+      pastedSchemaVersion && pastedSchemaVersion !== currentRenderFingerprint,
+    ),
     pastedSchemaVersion,
   }
 }

@@ -64,6 +64,28 @@ describe('Domain canvas projection', () => {
     ).toEqual(['class.Document'])
   })
 
+  test('keeps Kernel concepts while omitting implementation bases and their inheritance', () => {
+    const fixture = bundle({
+      Identity: nodeClass('Identity', {
+        origin: 'kernel.astrale.ai',
+        extendsRefs: [classRef('kernel.astrale.ai', 'Node')],
+      }),
+      Named: nodeClass('Named', { origin: 'kernel.astrale.ai' }),
+      Descriptable: nodeClass('Descriptable', { origin: 'kernel.astrale.ai' }),
+      Timestamped: nodeClass('Timestamped', { origin: 'kernel.astrale.ai' }),
+      Node: nodeClass('Node', { origin: 'kernel.astrale.ai' }),
+      Edge: nodeClass('Edge', { origin: 'kernel.astrale.ai' }),
+    })
+    fixture.ir!.domain = 'kernel.astrale.ai'
+
+    const result = projectDomainCanvas(fixture, new Set(), {}, true)
+
+    expect(result.nodes.filter((node) => node.type === 'classNode').map((node) => node.id)).toEqual(
+      ['class.Identity'],
+    )
+    expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toEqual([])
+  })
+
   test('badges Kernel roles at any depth and never shows Kernel parents as chips', () => {
     const fixture = bundle({
       Principal: nodeClass('Principal', {

@@ -54,17 +54,18 @@ export function coreDataEntries(data: Record<string, unknown>): CoreDataEntry[] 
   }))
 }
 
-function displayField(
-  data: Record<string, unknown>,
-  names: readonly string[],
-): CoreDataEntry | undefined {
-  const entries = coreDataEntries(data)
-  return names.flatMap((name) => entries.filter((entry) => entry.label === name))[0]
+/** The field a card is titled by: `name` first, else `title`. */
+function titleField(entries: readonly CoreDataEntry[]): CoreDataEntry | undefined {
+  for (const name of ['name', 'title']) {
+    const entry = entries.find((candidate) => candidate.label === name)
+    if (entry) return entry
+  }
+  return undefined
 }
 
 /** A node's human label: its `name`/`title` field, else the last path segment. */
 export function displayName(n: { path: string; data: Record<string, unknown> }): string {
-  const v = displayField(n.data, ['name', 'title'])?.value
+  const v = titleField(coreDataEntries(n.data))?.value
   return typeof v === 'string' && v ? v : lastSeg(n.path)
 }
 
@@ -86,9 +87,10 @@ export function previewFields(
   n: { path: string; data: Record<string, unknown> },
   max = 2,
 ): [string, string][] {
-  const titleField = displayField(n.data, ['name', 'title'])
-  return coreDataEntries(n.data)
-    .filter((entry) => entry.key !== titleField?.key)
+  const entries = coreDataEntries(n.data)
+  const title = titleField(entries)
+  return entries
+    .filter((entry) => entry.key !== title?.key)
     .slice(0, max)
     .map(({ label, value }) => [label, fmtVal(value)] as [string, string])
 }
@@ -122,6 +124,8 @@ export interface CoreGraphOptions {
 }
 
 // ── structure (nodes + edges, pre-layout) ───────────────────────────────────
+
+const CORE_EDGE_COLOR = 'oklch(0.6 0.12 35)'
 
 export function buildCoreGraph(
   core: StudioCore,
@@ -189,15 +193,14 @@ export function buildCoreGraph(
     const source = nodeAnchor(e.from)
     const target = nodeAnchor(e.to)
     if (!ids.has(source) || !ids.has(target)) return
-    const color = 'oklch(0.6 0.12 35)'
     edges.push({
       id: coreEdgeId(index),
       source,
       target,
       type: 'floating',
       data: { label: e.edgeName, index },
-      markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
-      style: { stroke: color, strokeWidth: 2 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: CORE_EDGE_COLOR, width: 16, height: 16 },
+      style: { stroke: CORE_EDGE_COLOR, strokeWidth: 2 },
     })
   })
   return { nodes, edges }

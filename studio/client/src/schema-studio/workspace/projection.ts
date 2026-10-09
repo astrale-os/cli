@@ -3,20 +3,26 @@ import type { Edge, Node } from '@xyflow/react'
 
 import { isIrClassRef } from '@shared/schema/identity'
 
+import { buildFunctionsModel } from '@/lib/functions'
 import { encodeFlowEdgeId, encodeFlowNodeId } from '@/lib/targets'
 import { buildViewsModel } from '@/lib/views'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
+import { layoutDomain, packPendingDocked } from '../dock-layout'
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from '../edge-markers'
-import { elkLayout } from '../elk-layout'
-import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
+import { functionGraph } from '../function-graph'
+import { applyGeometry, packPendingNodes, type Geometry } from '../geometry'
+import { isKernelClass, isKernelImplementationClass } from '../inheritance'
 import { moduleOfClass } from '../modules'
+import { EDGE_WIDTH } from '../palette'
 import { projectDomainCanvas } from '../projection'
 import { viewGraph } from '../view-graph'
 import { classRef, domainRef, edgeRef, isHidden } from '../visibility'
 import {
+  externalLanes,
   projectExternalFrames,
+  savedExternalRects,
   workspaceExternalMemberNodeId,
   type WorkspaceExternalCluster,
   type WorkspaceExternalReference,
@@ -68,7 +74,14 @@ interface ResolvedTarget {
 const CROSS_COLOR = 'var(--edge-cross)'
 const INHERITANCE_COLOR = 'var(--edge-inherit)'
 
-export const workspaceDomainNodeId = (domainId: string) => `workspace-domain:${domainId}`
+const DOMAIN_NODE_PREFIX = 'workspace-domain:'
+
+export const workspaceDomainNodeId = (domainId: string) => `${DOMAIN_NODE_PREFIX}${domainId}`
+
+/** The domain a frame node stands for, or null for any other node on the canvas. */
+export function workspaceDomainOfFrame(nodeId: string): string | null {
+  return nodeId.startsWith(DOMAIN_NODE_PREFIX) ? nodeId.slice(DOMAIN_NODE_PREFIX.length) : null
+}
 export const qualifiedNodeId = encodeFlowNodeId
 
 /** Layout one Domain independently, reusing persisted geometry and packing only new nodes. */
@@ -85,15 +98,18 @@ export async function prepareWorkspaceDomain(
   )
   // Views ride in the domain's own projection, so the frame layout, the drag
   // persistence and the id prefixing below treat them exactly like a class.
-  const views = viewGraph(
-    buildViewsModel(input.anatomy, input.bundle),
+  const views = viewGraph(buildViewsModel(input.anatomy, input.bundle), input.bundle)
+  // Standalone Functions ride along the same way, for the same reason: they are members
+  // of this domain's schema, so its frame has to hold them.
+  const functions = functionGraph(
+    buildFunctionsModel(input.bundle),
     input.bundle,
     collapsed,
     input.visibility.hidden,
   )
   const structure = {
-    nodes: [...schema.nodes, ...views.nodes],
-    edges: [...schema.edges, ...views.edges],
+    nodes: [...schema.nodes, ...views.nodes, ...functions.nodes],
+    edges: [...schema.edges, ...views.edges, ...functions.edges],
   }
   const saved = input.layout.positions
   const placed = structure.nodes.filter((node) => saved[node.id])
@@ -101,14 +117,16 @@ export async function prepareWorkspaceDomain(
   let geometry: Geometry
 
   if (pending.length === 0) geometry = saved
-  else if (placed.length === 0)
-    geometry = geometryOf(await elkLayout(structure.nodes, structure.edges))
+  else if (placed.length === 0) geometry = await layoutDomain(structure.nodes, structure.edges)
   else {
+    const known = placed.map((node) => ({ node, position: saved[node.id] }))
+    const docked = packPendingDocked(known, pending, structure.edges)
     geometry = {
       ...saved,
+      ...docked,
       ...packPendingNodes(
-        placed.map((node) => ({ node, position: saved[node.id] })),
-        pending,
+        known,
+        pending.filter((node) => !docked[node.id]),
       ),
     }
   }
@@ -186,10 +204,6 @@ function resolveClass(
       unresolved: { origin: ref.origin, name: ref.name, definition: 'class' },
     },
   ]
-}
-
-function edgeId(ownerId: string, name: string, source: string, target: string): string {
-  return encodeFlowEdgeId(ownerId, name, source, target)
 }
 
 interface ExternalIndex {
@@ -278,6 +292,7 @@ function rememberDependencyFootprint(
       // An imported EDGE is a relationship, not a box: it is already on the canvas as the
       // line between its endpoints, and a card for it would name the same thing twice.
       if (ir.importedClassesByKey[descriptor.key]?.type === 'edge') continue
+      if (isKernelImplementationClass(descriptor.ref)) continue
       index.note({ origin, name, definition: 'class' }, owner.input.summary.id)
     }
   }
@@ -291,29 +306,29 @@ function crossDomainEdges(
 ): Edge[] {
   const edges: Edge[] = []
   const seen = new Set<string>()
-  const remember = index.connect
 
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
     if (!ir) continue
+    const ownerId = owner.input.summary.id
     for (const edgeClass of Object.values(ir.classes)) {
       if (edgeClass.type !== 'edge' || edgeClass.endpoints?.length !== 2) continue
       if (isHidden(edgeRef(edgeClass.name), owner.input.visibility.hidden)) continue
-      const sources = endpointClasses(edgeClass.endpoints[0]).flatMap((input) =>
+      const [sourceEnd, targetEnd] = edgeClass.endpoints
+      const sources = endpointClasses(sourceEnd).flatMap((input) =>
         resolveClass(owner, input, origins, diagnostics),
       )
-      const targets = endpointClasses(edgeClass.endpoints[1]).flatMap((input) =>
+      const targets = endpointClasses(targetEnd).flatMap((input) =>
         resolveClass(owner, input, origins, diagnostics),
       )
       const markers = edgeMarkers(edgeClass.orientation)
       for (const source of sources) {
         for (const target of targets) {
-          const crossesDomain =
-            source.domainId !== owner.input.summary.id || target.domainId !== owner.input.summary.id
+          const crossesDomain = source.domainId !== ownerId || target.domainId !== ownerId
           if (!crossesDomain || source.nodeId === target.nodeId) continue
-          remember(source, owner.input.summary.id)
-          remember(target, owner.input.summary.id)
-          const id = edgeId(owner.input.summary.id, edgeClass.name, source.nodeId, target.nodeId)
+          index.connect(source, ownerId)
+          index.connect(target, ownerId)
+          const id = encodeFlowEdgeId(ownerId, edgeClass.name, source.nodeId, target.nodeId)
           if (seen.has(id)) continue
           seen.add(id)
           edges.push({
@@ -324,19 +339,19 @@ function crossDomainEdges(
             data: {
               label: edgeClass.name,
               edgeClass: edgeClass.name,
-              ownerDomainId: owner.input.summary.id,
+              ownerDomainId: ownerId,
               sourceEnd: {
-                ...(edgeClass.endpoints?.[0]?.name ? { role: edgeClass.endpoints[0].name } : {}),
-                cardinality: formatCardinality(edgeClass.endpoints?.[0]?.cardinality),
+                ...(sourceEnd.name ? { role: sourceEnd.name } : {}),
+                cardinality: formatCardinality(sourceEnd.cardinality),
               },
               targetEnd: {
-                ...(edgeClass.endpoints?.[1]?.name ? { role: edgeClass.endpoints[1].name } : {}),
-                cardinality: formatCardinality(edgeClass.endpoints?.[1]?.cardinality),
+                ...(targetEnd.name ? { role: targetEnd.name } : {}),
+                cardinality: formatCardinality(targetEnd.cardinality),
               },
             },
             markerStart: markers.markerStart,
             markerEnd: markers.markerEnd,
-            style: { stroke: CROSS_COLOR, strokeWidth: 2.5 },
+            style: { stroke: CROSS_COLOR, strokeWidth: EDGE_WIDTH },
           })
         }
       }
@@ -356,22 +371,35 @@ function inheritanceEdges(
   const seen = new Set<string>()
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
-    if (!ir || !owner.input.visibility.showInheritedEdges) continue
+    if (!ir) continue
+    const ownerId = owner.input.summary.id
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node') continue
       const source = localTarget(owner, className)
       if (!source) continue
       for (const parent of definition.extendsRefs ?? []) {
+        if (isKernelClass(parent)) {
+          // Kernel inheritance is expressed by the Class card's semantic role badges. Keep
+          // the meaningful Kernel Class available for inspection, but never draw an
+          // implementation-level inheritance line to it.
+          if (!isKernelImplementationClass(parent)) {
+            for (const target of resolveClass(owner, parent, origins, diagnostics)) {
+              index.connect(target, ownerId)
+            }
+          }
+          continue
+        }
+        if (!owner.input.visibility.showInheritedEdges) continue
         for (const target of resolveClass(owner, parent, origins, diagnostics)) {
           if (target.nodeId === source.nodeId) continue
           // A parent in the owner's OWN domain is already drawn by that domain's projection.
           // Same guard the relationship edges use above — without it every local `extends`
           // lands on the canvas twice, perfectly superposed and routed twice over.
-          if (target.domainId === owner.input.summary.id) continue
+          if (target.domainId === ownerId) continue
           // A parent OUTSIDE the canvas used to be dropped here without a trace, which is
           // the one dependency the reader could not see was there. It gets the same grey
           // box a relationship's far end gets.
-          index.connect(target, owner.input.summary.id)
+          index.connect(target, ownerId)
           const id = `workspace-extends:${source.nodeId}:${target.nodeId}`
           if (seen.has(id)) continue
           seen.add(id)
@@ -380,11 +408,11 @@ function inheritanceEdges(
             source: source.nodeId,
             target: target.nodeId,
             type: 'floating',
-            data: { label: 'extends', kind: 'extends', ownerDomainId: owner.input.summary.id },
+            data: { label: 'extends', kind: 'extends', ownerDomainId: ownerId },
             markerEnd: EDGE_ARROW,
             style: {
               stroke: INHERITANCE_COLOR,
-              strokeWidth: 1.7,
+              strokeWidth: EDGE_WIDTH,
               strokeDasharray: '2 4',
             },
           })
@@ -409,12 +437,28 @@ export function composeWorkspaceCanvas(
   const origins = new Map<string, WorkspaceDomainProjection[]>()
   for (const domain of domains) {
     const origin = domain.input.bundle.ir?.domain ?? domain.input.summary.origin
-    origins.set(origin, [...(origins.get(origin) ?? []), domain])
+    const declaring = origins.get(origin)
+    if (declaring) declaring.push(domain)
+    else origins.set(origin, [domain])
   }
 
+  // The dependency footprint comes first: a domain placed for the first time has to fit
+  // around the external frames already sitting on the canvas, not only the domain frames.
+  const index = externalIndex()
+  const cross = crossDomainEdges(domains, origins, diagnostics, index)
+  const inheritance = inheritanceEdges(domains, origins, diagnostics, index)
+  rememberDependencyFootprint(domains, origins, index)
+  const clusters = index.clusters({ workspaceOrigins, expanded: new Set(expandedExternals) })
+
+  const lanes = externalLanes(clusters, externalPositions)
   const frames = layoutWorkspaceFrames(
-    domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
+    domains.map((domain) => ({
+      domainId: domain.input.summary.id,
+      nodes: domain.nodes,
+      trailing: lanes[domain.input.summary.id],
+    })),
     domainPositions,
+    savedExternalRects(clusters, externalPositions),
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
   const nodes: Node[] = []
@@ -479,16 +523,7 @@ export function composeWorkspaceCanvas(
     }
   }
 
-  const index = externalIndex()
-  const cross = crossDomainEdges(domains, origins, diagnostics, index)
-  const inheritance = inheritanceEdges(domains, origins, diagnostics, index)
-  rememberDependencyFootprint(domains, origins, index)
-  const externals = projectExternalFrames(
-    index.clusters({ workspaceOrigins, expanded: new Set(expandedExternals) }),
-    frames,
-    externalPositions,
-    catalog,
-  )
+  const externals = projectExternalFrames(clusters, frames, externalPositions, catalog)
   nodes.push(...externals.nodes)
   edges.push(...cross, ...inheritance)
 

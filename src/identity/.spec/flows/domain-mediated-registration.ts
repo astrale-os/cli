@@ -1,21 +1,19 @@
-import type { Authentication, ProvisionRequest, ProvisionResult } from '@astrale-os/sdk/auth'
-import type { LocalBinding } from '@astrale-os/sdk/mutation'
+import type { Authentication, RegisterRequest, RegisterResult } from '@astrale-os/sdk/auth'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 
 interface RegistrationAuthority {
   prepareSelfProven(input: {
     readonly identity: string
-    readonly classPath: string
-    readonly properties: Readonly<Record<string, unknown>>
+    readonly nodeId: NodeId
     readonly kernelIssuer: string
   }): Promise<{
-    readonly binding: LocalBinding
-    readonly request: ProvisionRequest
+    readonly request: RegisterRequest
     readonly authentication: Authentication
   }>
   call(input: {
     readonly target: string
-    readonly request: ProvisionRequest
-  }): Promise<ProvisionResult>
+    readonly request: RegisterRequest
+  }): Promise<RegisterResult>
   persist(input: {
     readonly identity: string
     readonly targetKey: string
@@ -24,13 +22,12 @@ interface RegistrationAuthority {
   }): Promise<void>
 }
 
-/** Application Identity Classes are provisioned only through their explicit authority owner. */
+/** An optional Domain callable supplies authority to register an existing Identity Node. */
 export async function registerThroughDomain(
   authority: RegistrationAuthority,
   input: {
     readonly identity: string
-    readonly classPath: string
-    readonly properties: Readonly<Record<string, unknown>>
+    readonly nodeId: NodeId
     readonly kernelIssuer: string
     readonly targetKey: string
     readonly callable: string
@@ -38,20 +35,20 @@ export async function registerThroughDomain(
 ): Promise<{ readonly issuer: string; readonly subject: string; readonly nodeId: string }> {
   const prepared = await authority.prepareSelfProven(input)
   const result = await authority.call({ target: input.callable, request: prepared.request })
-  const nodeId = result.createdNodes[prepared.binding]
+  const nodeId = input.nodeId
   const matches = result.identities.filter((candidate) => candidate.id === nodeId)
-  if (nodeId === undefined || matches.length !== 1) {
-    throw new Error('Provision result omitted or substituted the prepared binding.')
+  if (matches.length !== 1) {
+    throw new Error('Register result omitted or substituted the selected Node.')
   }
   const identity = matches[0]
   if (identity.iss === undefined || identity.sub === undefined) {
-    throw new Error('Provision result omitted the prepared Authentication.')
+    throw new Error('Register result omitted the prepared Authentication.')
   }
   if (
     identity.iss !== prepared.authentication.iss ||
     identity.sub !== prepared.authentication.sub
   ) {
-    throw new Error('Provision result substituted the prepared Authentication.')
+    throw new Error('Register result substituted the prepared Authentication.')
   }
   await authority.persist({
     identity: input.identity,

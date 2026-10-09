@@ -25,30 +25,31 @@ astrale call /:services.astrale.ai:class.CloudflareWorker:deploy \
   -i "$TARGET" --json < deploy.json
 ```
 
-This deploys provider compute and returns optional canonical Published Application metadata. It
-does not install a Domain. If installation is desired, use the normal explicit command:
+This deploys provider compute and returns provider evidence. It does not install a Domain. If
+installation is desired, use the normal explicit command:
 
 ```bash
-astrale domain install "$PUBLISHED_APPLICATION_URL" --direct -i "$CONSUMER_INSTANCE"
+astrale domain install "$PUBLISHED_APPLICATION_URL" -i "$CONSUMER_INSTANCE"
 ```
 
-For a managed one-command project deployment, use `@astrale-os/adapter-astrale`. It deliberately
-performs Services deploy, waits for stable Publication readiness, then installs once on the
-configured instance.
+To deploy a Domain project, use `@astrale-os/adapter-astrale` instead: `astrale-domain deploy
+<environment>` makes one immutable deployment of its release on the Admin instance's Services, waits
+until it serves that release, and prints its URL. It never installs: install that URL with the same
+explicit command (the astrale-domain skill's `references/release.md`).
 
 ## Operate a Service
 
 ```bash
 API_TOKEN="$API_TOKEN" jq -n '{name:"API_TOKEN",value:env.API_TOKEN}' | \
-  astrale call "@$SERVICE_NODE_ID::setSecret" -i "$TARGET" --json
+  astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.setSecret" -i "$TARGET" --json
 unset API_TOKEN
 
-astrale call "@$SERVICE_NODE_ID::secrets" -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::deleteSecret" name=API_TOKEN -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::setSchedule" \
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.secrets" -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.deleteSecret" name=API_TOKEN -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.setSchedule" \
   --data '{"crons":["0 * * * *"]}' -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::schedules" -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::logs" tail=100 -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.schedules" -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.logs" tail=100 -i "$TARGET" --json
 ```
 
 ## View and delete
@@ -56,7 +57,7 @@ astrale call "@$SERVICE_NODE_ID::logs" tail=100 -i "$TARGET" --json
 ```bash
 astrale view /:services.astrale.ai:view.application -i "$TARGET" --browser
 
-astrale call "@$SERVICE_NODE_ID::delete" -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.delete" -i "$TARGET" --json
 ```
 
 Deletion removes provider deployment, schedules, secrets, routing/certificate resources, and the

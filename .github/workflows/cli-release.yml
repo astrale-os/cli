@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.0
+  BUN_VERSION: 1.4.2
 
 jobs:
   test:
@@ -40,7 +40,7 @@ jobs:
           node-version-file: '.nvmrc'
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.0.0
+          version: 12.1.0
       - name: Install dependencies
         env:
           GH_TOKEN: ''
@@ -96,7 +96,7 @@ jobs:
           node-version-file: '.nvmrc'
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.0.0
+          version: 12.1.0
       - name: Install dependencies
         env:
           GH_TOKEN: ''
@@ -115,17 +115,16 @@ jobs:
             --define '__ASTRALE_BUNDLED__=true' \
             --define '__ASTRALE_SOURCE_REVISION__="${{ steps.source.outputs.sha }}"' \
             bin/astrale.ts --outfile dist/astrale
+          if [ "${{ matrix.target_os }}" = darwin ]; then
+            # Bun's built-in ad-hoc signer currently handles ARM64 only.
+            if [ "${{ matrix.target_arch }}" = x64 ]; then
+              codesign --force --sign - dist/astrale
+            fi
+            codesign --verify --strict --verbose=4 dist/astrale
+          fi
           ./dist/astrale --version
           ./dist/astrale --help >/dev/null
           ./dist/astrale skills status --json >/dev/null
-      - name: Acquire pinned cloudflared companion
-        run: |
-          set -eu
-          node scripts/acquire-cloudflared.mjs \
-            '${{ matrix.target_os }}-${{ matrix.target_arch }}' \
-            dist/astrale-cloudflared
-          ./dist/astrale-cloudflared --version | \
-            grep -Eq '^cloudflared version 2026\.8\.2([[:space:]]|$)'
       - name: Qualify skill update with the built binary
         env:
           ASTRALE_E2E_CLI: ./dist/astrale
@@ -134,23 +133,26 @@ jobs:
           GITHUB_TOKEN: ''
           NODE_AUTH_TOKEN: ''
           NPM_TOKEN: ''
-        run: pnpm test:skills-e2e
+        run: |
+          pnpm test:skills-e2e
+          if test -f scripts/qualification/standalone-upgrade-e2e.mjs; then
+            node scripts/qualification/standalone-upgrade-e2e.mjs dist/astrale dist/astrale
+          fi
       - name: Package asset
         run: |
           set -eu
           asset="astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}"
-          node scripts/package-release-asset.mjs \
-            dist/astrale dist/astrale-cloudflared licenses/cloudflared.txt "$asset.tar.gz"
-          printf 'astrale\nastrale-cloudflared\nLICENSE.cloudflared\n' > dist/archive-entries
+          node scripts/package-release-asset.mjs dist/astrale "$asset.tar.gz"
+          printf 'astrale\n' > dist/archive-entries
           tar -tzf "$asset.tar.gz" | cmp - dist/archive-entries
           mkdir -p dist/archive-check
           tar -xzf "$asset.tar.gz" -C dist/archive-check
           cmp dist/astrale dist/archive-check/astrale
-          cmp dist/astrale-cloudflared dist/archive-check/astrale-cloudflared
-          cmp licenses/cloudflared.txt dist/archive-check/LICENSE.cloudflared
           test -x dist/archive-check/astrale
-          test -x dist/archive-check/astrale-cloudflared
-          test ! -x dist/archive-check/LICENSE.cloudflared
+          if [ "${{ matrix.target_os }}" = darwin ]; then
+            codesign --verify --strict --verbose=4 dist/archive-check/astrale
+          fi
+          ./dist/archive-check/astrale --version
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}
@@ -193,9 +195,6 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           node scripts/resolve-cli-release.mjs
-      - id: cohort
-        name: Resolve companion cohort
-        run: echo "cloudflared_version=$(node -p "require('./cloudflared.lock.json').version")" >> "$GITHUB_OUTPUT"
       - name: Generate checksums
         run: |
           set -eu
@@ -207,10 +206,8 @@ jobs:
           cd release-assets
           {
             printf '{\n'
-            printf '  "schemaVersion": 2,\n'
             printf '  "version": "%s",\n' '${{ steps.meta.outputs.version }}'
             printf '  "binaryVersion": "%s",\n' '${{ steps.meta.outputs.binary_version }}'
-            printf '  "cloudflaredVersion": "%s",\n' '${{ steps.cohort.outputs.cloudflared_version }}'
             printf '  "channel": "%s",\n' '${{ steps.meta.outputs.channel }}'
             printf '  "repo": "%s",\n' '${{ github.repository }}'
             printf '  "assets": {\n'
@@ -233,7 +230,6 @@ jobs:
           TAG: ${{ steps.meta.outputs.immutable_tag }}
           VERSION: ${{ steps.meta.outputs.version }}
           BINARY_VERSION: ${{ steps.meta.outputs.binary_version }}
-          CLOUDFLARED_VERSION: ${{ steps.cohort.outputs.cloudflared_version }}
           CHANNEL: ${{ steps.meta.outputs.channel }}
           EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
@@ -252,7 +248,6 @@ jobs:
           CHANNEL: ${{ steps.meta.outputs.channel }}
           VERSION: ${{ steps.meta.outputs.version }}
           BINARY_VERSION: ${{ steps.meta.outputs.binary_version }}
-          CLOUDFLARED_VERSION: ${{ steps.cohort.outputs.cloudflared_version }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
           EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
         run: |
@@ -298,9 +293,6 @@ jobs:
           GH_TOKEN='' GITHUB_TOKEN='' \
           ASTRALE_E2E_CLI="$qualification_dir/astrale" \
             node scripts/qualification/skills-update-e2e.mjs
-          "$qualification_dir/astrale-cloudflared" --version | \
-            grep -Eq '^cloudflared version 2026\.8\.2([[:space:]]|$)'
-          test -s "$qualification_dir/LICENSE.cloudflared"
       - name: Release summary
         run: |
           cat <<EOF >> "$GITHUB_STEP_SUMMARY"

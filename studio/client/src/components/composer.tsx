@@ -42,6 +42,7 @@ export function ComposerField({
   value,
   onChange,
   onSubmit,
+  grow = true,
   className,
   ref,
   ...rest
@@ -50,6 +51,9 @@ export function ComposerField({
   onChange: (next: string) => void
   /** Enter without Shift — the one gesture a composer has. */
   onSubmit: () => void
+  /** Grow with what is written. Off, the field stays one line tall — a resting
+   *  bar that shows a preview of the draft instead. */
+  grow?: boolean
   /** The caller's own handle on the field: the dock focuses it, the clip gives
    *  the caret back to it. Left out, the field still grows on its own. */
   ref?: React.RefObject<HTMLTextAreaElement | null>
@@ -61,8 +65,8 @@ export function ComposerField({
     const el = field.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
-  }, [value, field])
+    if (grow) el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
+  }, [value, field, grow])
 
   return (
     <textarea
@@ -120,6 +124,36 @@ export function SendButton({
 }
 
 /**
+ * The file dialog, for any control that opens it: the hidden input to render
+ * beside that control, and the call that opens it.
+ */
+export function useFilePicker({
+  onFiles,
+  onPicked,
+}: {
+  onFiles: (files: File[]) => void
+  /** Give the caret back to the composer - see `FilePickButton`. */
+  onPicked?: () => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const field = (
+    <input
+      ref={input}
+      type="file"
+      multiple
+      className="hidden"
+      onChange={(event) => {
+        const files = event.target.files ? [...event.target.files] : []
+        event.target.value = ''
+        if (files.length) onFiles(files)
+        onPicked?.()
+      }}
+    />
+  )
+  return { pick: () => input.current?.click(), field }
+}
+
+/**
  * The paperclip. One click, one meaning: pick files. What becomes of them is the
  * caller's business — a domain uploads them, a domain that does not exist yet
  * holds on to them until it does.
@@ -143,7 +177,7 @@ export function FilePickButton({
   label?: string
   busyLabel?: string
 }) {
-  const input = useRef<HTMLInputElement>(null)
+  const { pick, field } = useFilePicker({ onFiles, onPicked })
   const title = busy ? busyLabel : label
 
   return (
@@ -153,23 +187,12 @@ export function FilePickButton({
         title={title}
         aria-label={title}
         disabled={busy || disabled}
-        onClick={() => input.current?.click()}
+        onClick={pick}
         className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
       </button>
-      <input
-        ref={input}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          const files = event.target.files ? [...event.target.files] : []
-          event.target.value = ''
-          if (files.length) onFiles(files)
-          onPicked?.()
-        }}
-      />
+      {field}
     </>
   )
 }

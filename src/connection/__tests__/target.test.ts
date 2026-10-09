@@ -4,7 +4,12 @@ import { describe, expect, test } from 'bun:test'
 import type { AstraleConfig } from '../../lib/config'
 import type { InstanceStore } from '../../lib/instance'
 
-import { resolveAdminConnectionTarget, resolveConnectionTarget } from '../target'
+import {
+  adminSessionOptions,
+  registrationKeyForTarget,
+  resolveAdminConnectionTarget,
+  resolveConnectionTarget,
+} from '../target'
 
 const config: AstraleConfig = {
   issuer: 'https://cli.example',
@@ -31,6 +36,22 @@ const instances: InstanceStore = {
 }
 
 describe('connection target', () => {
+  test('shares registrations across aliases and transports only for the same Kernel issuer', () => {
+    const kernelIssuer = issuer.accept('https://kernel.example/issuer')
+    const original = { slug: 'first', url: 'https://kernel.example/api', kernelIssuer }
+    const alias = { slug: 'second', url: 'https://proxy.example/invoke', kernelIssuer }
+    const direct = { url: 'https://kernel.example/issuer', kernelIssuer }
+    expect(registrationKeyForTarget(original)).toBe(kernelIssuer)
+    expect(registrationKeyForTarget(alias)).toBe(registrationKeyForTarget(original))
+    expect(registrationKeyForTarget(direct)).toBe(registrationKeyForTarget(original))
+    expect(
+      registrationKeyForTarget({
+        ...original,
+        kernelIssuer: issuer.accept('https://other.example'),
+      }),
+    ).not.toBe(kernelIssuer)
+  })
+
   /** @evidence TEST-CLI-CONNECTION-SELECTS-EXACT-TARGET */
   test('preserves URL, bookmark, active, managed, and Admin target semantics', async () => {
     expect(
@@ -78,6 +99,23 @@ describe('connection target', () => {
       slug: 'remote',
     })
 
+    expect(
+      await resolveConnectionTarget({ instance: 'bryan' }, config, {
+        instances,
+        managed: async (slug) => ({
+          id: 'managed-id',
+          slug,
+          url: `https://${slug}.eu.beta.astrale.ai`,
+          state: 'ready',
+        }),
+      }),
+    ).toEqual({
+      url: 'https://bryan.eu.beta.astrale.ai/api',
+      kernelIssuer: issuer.accept('https://bryan.eu.beta.astrale.ai/api'),
+      domainOrigin: 'shell.astrale.ai',
+      slug: 'bryan',
+    })
+
     expect(await resolveConnectionTarget({ instance: 'control' }, config, { instances })).toEqual({
       url: 'https://admin.example/api',
       kernelIssuer: issuer.accept('https://admin.example/issuer'),
@@ -91,5 +129,35 @@ describe('connection target', () => {
       domainIssuer: issuer.accept('https://admin-domain.example'),
       slug: 'control',
     })
+  })
+
+  test('an Admin session beside an instance target keeps the caller, never the target or its credential', () => {
+    const options = adminSessionOptions({
+      instance: 'acme-stg',
+      url: 'https://acme.example/api',
+      creds: 'INSTANCE-TOKEN',
+      anonymous: true,
+      fleet: '@fleet',
+      admin: 'control',
+      adminUrl: 'https://admin.example/api',
+      domainIssuer: 'https://admin-domain.example',
+      timeout: '10s',
+      as: 'operator',
+      ci: true,
+    })
+    expect(options).toEqual({
+      admin: 'control',
+      adminUrl: 'https://admin.example/api',
+      domainIssuer: 'https://admin-domain.example',
+      timeout: '10s',
+      as: 'operator',
+      ci: true,
+    })
+    expect(Object.isFrozen(options)).toBe(true)
+    // Only a raw credential or --anonymous given for the target: Admin gets the default identity.
+    expect(
+      adminSessionOptions({ url: 'https://acme.example/api', creds: 'INSTANCE-TOKEN' }),
+    ).toEqual({})
+    expect(adminSessionOptions({ instance: 'acme-stg', anonymous: true })).toEqual({})
   })
 })

@@ -7,7 +7,6 @@ import {
   Link2,
   List,
   ListChecks,
-  Lock,
   type LucideIcon,
   Puzzle,
   ToggleLeft,
@@ -52,22 +51,10 @@ export function friendlyType(
   }
 }
 
-/**
- * Icon + tone for a method, derived ONLY from its declared inheritance (reliable
- * schema data — never guessed from the method name). Sealed → a lock (cannot be
- * overridden), abstract → a contract to fulfil, otherwise a plain operation.
- */
+/** Abstract contracts and concrete operations have distinct glyphs. */
 export function methodGlyph(method: IrMethod): { icon: LucideIcon; tone: string } {
-  if (method.inheritance === 'sealed') return { icon: Lock, tone: 'warning' }
-  if (method.inheritance === 'abstract') return { icon: Puzzle, tone: 'fn' }
+  if (!method.executable) return { icon: Puzzle, tone: 'fn' }
   return { icon: Zap, tone: 'primary' }
-}
-
-/** Short, human label for the params of a method ("no input" / "url, name" / …). */
-export function paramSummary(method: IrMethod): string {
-  const keys = Object.keys(method.input.properties ?? {})
-  if (keys.length === 0) return 'No input'
-  return keys.join(', ')
 }
 
 /** `friendlyType`, with a List naming what it holds: "List of Text" says more than "List". */

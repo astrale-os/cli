@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 
 import { resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
-import { cardLabel, isMany, isOptional } from './model'
+import { cardLabel, classSelectionId, isMany, isOptional } from './model'
 
 // ── Edge relationship: directed source → target, with each end's real icon ──
 // Endpoints carry a role (`as`), a set of allowed `types` (a union lists several
@@ -80,33 +80,20 @@ function EndpointCard({
   const epAnchor = endpoint.name
     ? anchorData(`edge.${edgeName}.endpoint.${endpoint.name}`, endpoint.name)
     : {}
+  // what one allowed type shows, and where a click on it leads (nowhere when unresolvable)
   const meta = ({ name: t, ref }: (typeof targets)[number]) => {
-    if (ref) {
-      const local = ref.origin === ir.domain
-      const cls = local ? ir.classes[t] : resolveClass(bundle, ref)
-      const resolvable = !!cls
-      return {
-        t,
-        key: classRefKey(ref),
-        origin: local ? undefined : ref.origin,
-        resolvable,
-        selectionId: local ? `class.${ref.name}` : `class.${classRefKey(ref)}`,
-        icon: cls?.icon as string | undefined,
-      }
-    }
-    const cls = ir.classes[t]
-    const resolvable = !!cls
+    const local = !ref || ref.origin === ir.domain
+    const cls = local ? ir.classes[t] : resolveClass(bundle, ref)
+    const origin = local ? undefined : ref?.origin
+    const selectionId = ref ? classSelectionId(ref, ir.domain) : `class.${t}`
     return {
       t,
-      key: `class:${t}`,
-      origin: undefined,
-      resolvable,
-      selectionId: resolvable ? `class.${t}` : undefined,
+      key: ref ? classRefKey(ref) : `class:${t}`,
+      resolvable: !!cls,
+      title: cls ? `Open ${t}` : origin ? `${t} · ${origin}` : t,
+      onClick: cls ? () => selectClass(selectionId, bundle.domainId) : undefined,
       icon: cls?.icon as string | undefined,
     }
-  }
-  const go = (m: { resolvable: boolean; selectionId?: string }) => () => {
-    if (m.resolvable && m.selectionId) selectClass(m.selectionId, bundle.domainId)
   }
   const role = roleAddsNothing(
     endpoint.name,
@@ -129,9 +116,9 @@ function EndpointCard({
     return (
       <button
         type="button"
-        onClick={m.resolvable ? go(m) : undefined}
+        onClick={m.onClick}
         disabled={!m.resolvable}
-        title={m.resolvable ? `Open ${m.t}` : m.origin ? `${m.t} · ${m.origin}` : m.t}
+        title={m.title}
         {...epAnchor}
         {...revealed}
         className={cn(
@@ -165,9 +152,9 @@ function EndpointCard({
             <button
               key={m.key}
               type="button"
-              onClick={m.resolvable ? go(m) : undefined}
+              onClick={m.onClick}
               disabled={!m.resolvable}
-              title={m.resolvable ? `Open ${m.t}` : m.origin ? `${m.t} · ${m.origin}` : m.t}
+              title={m.title}
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-md border border-border py-0.5 pl-1 pr-1.5 transition-colors',
                 m.resolvable ? 'cursor-pointer hover:bg-accent/60' : 'cursor-default',

@@ -31,7 +31,8 @@ const ir: SchemaIR = {
           input: {},
           output: { mode: 'value', schema: {} },
           static: false,
-          inheritance: 'default',
+          abstract: false,
+          executable: true,
           auth: 'authorized',
         },
       },
@@ -52,6 +53,43 @@ const ir: SchemaIR = {
 }
 
 describe('source overlay', () => {
+  test('locates registered policies and views in their authored modules, including aliases and inline declarations', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-module-overlay-'))
+    roots.push(root)
+    const schemaDir = join(root, 'schema')
+    const moduleDir = join(schemaDir, 'modules/billing')
+    mkdirSync(join(moduleDir, 'policies'), { recursive: true })
+    mkdirSync(join(moduleDir, 'views'), { recursive: true })
+    writeFileSync(
+      join(moduleDir, 'policies/pay.ts'),
+      `import { policy } from '@astrale-os/sdk/schema'
+/** May settle billing. */
+export const declaredPolicy = policy({ expression: {} })`,
+    )
+    writeFileSync(
+      join(moduleDir, 'views/billing.ts'),
+      `import { view } from '@astrale-os/sdk/schema'
+export const declaredView = view({})`,
+    )
+    writeFileSync(
+      join(schemaDir, 'index.ts'),
+      `import { defineSchema, view } from '@astrale-os/sdk/schema'
+import { declaredPolicy as guard } from './modules/billing/policies/pay.js'
+import { declaredView } from './modules/billing/views/billing.js'
+export const schema = defineSchema('example.dev', {
+  policies: { MayPay: guard },
+  views: { billing: declaredView, overview: view({}) },
+})`,
+    )
+    const spans = buildSourceSpans({ ir: null, domainRoot: root, schemaDir })
+    expect(spans['policy.MayPay']).toMatchObject({
+      file: 'schema/modules/billing/policies/pay.ts',
+      doc: 'May settle billing.',
+    })
+    expect(spans['view.billing']?.file).toBe('schema/modules/billing/views/billing.ts')
+    expect(spans['view.overview']?.file).toBe('schema/index.ts')
+    expect(spans['policy.guard']).toBeUndefined()
+  })
   test('links modular Action and Workflow declarations to exact callables', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-runtime-overlay-'))
     roots.push(root)
@@ -100,6 +138,68 @@ describe('source overlay', () => {
     ])
   })
 
+  test('scans a shared handler module once per link without double-counting token prefixes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-shared-handler-'))
+    roots.push(root)
+    mkdirSync(join(root, 'functions'))
+    writeFileSync(
+      join(root, 'functions/impl.ts'),
+      `export const shared = async ({ input }) => graph.createEdge(input)\n`,
+    )
+    writeFileSync(
+      join(root, 'functions/index.ts'),
+      `
+        import { defineAction } from '@astrale-os/sdk/action'
+        import { defineWorkflow } from '@astrale-os/sdk/workflow'
+        import { shared } from './impl.ts'
+        export const rename = defineAction()('Issue.rename', shared)
+        export const create = defineWorkflow()('createIssue', shared)
+      `,
+    )
+
+    const links = buildHandlerLinks({ ir, domainRoot: root })
+    expect(links.map((link) => [link.method, link.handlerFile, link.kernelCalls])).toEqual([
+      ['rename', 'functions/impl.ts', ['graph.createEdge']],
+      ['createIssue', 'functions/impl.ts', ['graph.createEdge']],
+    ])
+  })
+
+  test('points the wiring at the declaration and the handler at its implementation', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-handler-wiring-'))
+    roots.push(root)
+    mkdirSync(join(root, 'functions'))
+    writeFileSync(
+      join(root, 'functions/impl.ts'),
+      `\n\nexport const settle = async ({ input }) => graph.update(input)\n`,
+    )
+    writeFileSync(
+      join(root, 'functions/index.ts'),
+      `import { defineAction } from '@astrale-os/sdk/action'
+import { defineWorkflow } from '@astrale-os/sdk/workflow'
+import { settle } from './impl.ts'
+
+export const rename = defineAction()('Issue.rename', settle)
+export const create = defineWorkflow()('createIssue', async ({ input }) => graph.create(input))
+`,
+    )
+
+    const links = buildHandlerLinks({ ir, domainRoot: root })
+    expect(
+      links.map((link) => [
+        link.method,
+        link.wiringFile,
+        link.wiringLine,
+        link.handlerFile,
+        link.handlerLine,
+      ]),
+    ).toEqual([
+      // the handler is imported: the declaration and the implementation live apart
+      ['rename', 'functions/index.ts', 5, 'functions/impl.ts', 3],
+      // the handler is inline: both sit in the declaring module
+      ['createIssue', 'functions/index.ts', 6, 'functions/index.ts', 6],
+    ])
+  })
+
   test('indexes Class, Property, Method, Edge endpoint, and Function declarations', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-schema-spans-'))
     roots.push(root)
@@ -118,15 +218,17 @@ describe('source overlay', () => {
           properties: { note: property(z.string()) },
         })
         export const createIssue = fn({ input, output })
+        /** Close one issue. */
+        export const closeIssue = func({ input, output })
       `,
     )
     writeFileSync(
       join(schemaDir, 'index.ts'),
       `
-        import { Issue, assigned_to, createIssue } from './members.js'
+        import { Issue, assigned_to, closeIssue, createIssue } from './members.js'
         export const Schema = defineSchema('issues.example', {
           classes: { Issue, assigned_to },
-          functions: { createIssue },
+          functions: { createIssue, closeIssue },
         })
       `,
     )
@@ -137,5 +239,8 @@ describe('source overlay', () => {
     expect(spans['edge.assigned_to.endpoint.owner']?.file).toBe('domain/model/members.ts')
     expect(spans['edge.assigned_to.property.note']?.file).toBe('domain/model/members.ts')
     expect(spans['function.createIssue']?.file).toBe('domain/model/members.ts')
+    // `func` is the current DSL helper; its Function needs the same span and doc.
+    expect(spans['function.closeIssue']?.file).toBe('domain/model/members.ts')
+    expect(spans['function.closeIssue']?.doc).toBe('Close one issue.')
   })
 })

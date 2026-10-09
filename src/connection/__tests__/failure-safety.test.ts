@@ -1,3 +1,5 @@
+import { NodeUnavailableError } from '@astrale-os/sdk/client'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { expect, test } from 'bun:test'
 
 import { formatKernelError } from '../errors'
@@ -73,3 +75,13 @@ async function capture(action: () => Promise<void>): Promise<string> {
     process.stderr.write = original
   }
 }
+
+// Missing and authorization-masked reads must remain indistinguishable.
+test('unavailable Node output preserves the point-read error and offers observation guidance', async () => {
+  const error = new NodeUnavailableError(Path.parse('/:example.test:core.root'))
+  const result = JSON.parse(await capture(() => formatKernelError(error, true)))
+  expect(result).toMatchObject({ error: 'NODE_UNAVAILABLE', message: error.message })
+  expect(result.hint).toContain('-i/--as')
+  expect(result.hint).not.toContain('astrale call')
+  expect(result.hint).not.toContain('astrale introspect')
+})

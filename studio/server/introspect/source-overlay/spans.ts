@@ -2,13 +2,22 @@
  * Source coordinates and leading documentation for authored schema members.
  */
 import { existsSync } from 'node:fs'
-import { Node, SyntaxKind, type CallExpression, type Project, type SourceFile } from 'ts-morph'
+import {
+  Node,
+  SyntaxKind,
+  type CallExpression,
+  type ObjectLiteralExpression,
+  type Project,
+  type PropertyAccessExpression,
+  type SourceFile,
+} from 'ts-morph'
 
 import type { SchemaIR, SourceSpan } from '../../../shared/types'
 
 import {
   calleeName,
   newProject,
+  nodeKey,
   objectPropertyValue,
   propertyKey,
   relToRoot,
@@ -60,7 +69,18 @@ function cleanComment(raw: string): string {
 const DECL_HELPERS: Record<string, 'node' | 'edge' | 'function'> = {
   nodeClass: 'node',
   edgeClass: 'edge',
+  // `func` is the V1 DSL's standalone-callable helper; `fn` is its older spelling.
+  // Without both, a Function gets no span — no file to open, no source doc, and the
+  // module tree files it under the domain root instead of the folder declaring it.
+  func: 'function',
   fn: 'function',
+}
+
+/** `<x>.directed` / `<x>.undirected`: the current edge declaration forms. */
+function isEdgeOrientationAccess(expression: Node): expression is PropertyAccessExpression {
+  if (!Node.isPropertyAccessExpression(expression)) return false
+  const name = expression.getName()
+  return name === 'directed' || name === 'undirected'
 }
 
 /** Recognize current Class and Function declaration helpers. */
@@ -68,11 +88,7 @@ function declarationHelper(call: CallExpression): 'node' | 'edge' | 'function' |
   const direct = calleeName(call)
   if (direct && direct in DECL_HELPERS) return DECL_HELPERS[direct]
   const expression = call.getExpression()
-  if (
-    Node.isPropertyAccessExpression(expression) &&
-    (expression.getName() === 'directed' || expression.getName() === 'undirected') &&
-    expression.getExpression().getText() === 'edgeClass'
-  ) {
+  if (isEdgeOrientationAccess(expression) && expression.getExpression().getText() === 'edgeClass') {
     return 'edge'
   }
   return undefined
@@ -84,7 +100,8 @@ function declarationHelper(call: CallExpression): 'node' | 'edge' | 'function' |
  */
 interface MemberName {
   schemaName: string
-  section: 'class' | 'function'
+  section: 'class' | 'function' | 'policy' | 'view'
+  value: Node
 }
 
 interface MemberNameMap {
@@ -95,16 +112,21 @@ interface MemberNameMap {
 }
 
 /** Stable source coordinate for the value behind a local/imported alias. */
-function memberValueKey(node: Node, seen = new Set<string>()): string | undefined {
+function memberValue(node: Node, seen = new Set<string>()): Node | undefined {
   const value = unwrapExpression(node)
-  const key = `${value.getSourceFile().getFilePath()}:${value.getStart()}`
+  const key = nodeKey(value)
   if (seen.has(key)) return undefined
   seen.add(key)
   if (Node.isIdentifier(value)) {
     const resolved = valueOfIdentifier(value)
-    if (resolved) return memberValueKey(resolved, seen)
+    if (resolved) return memberValue(resolved, seen)
   }
-  return key
+  return value
+}
+
+function memberValueKey(node: Node): string | undefined {
+  const value = memberValue(node)
+  return value ? nodeKey(value) : undefined
 }
 
 /** Map each registered member VARIABLE (as referenced in `defineSchema`) to its
@@ -124,6 +146,8 @@ function buildMemberNameMap(files: SourceFile[]): MemberNameMap {
       if (!cfg) continue
       collectSchemaSection(map, cfg, 'classes', 'class')
       collectSchemaSection(map, cfg, 'functions', 'function')
+      collectSchemaSection(map, cfg, 'policies', 'policy')
+      collectSchemaSection(map, cfg, 'views', 'view')
     }
   }
   return map
@@ -133,20 +157,22 @@ function buildMemberNameMap(files: SourceFile[]): MemberNameMap {
  *  handling both `Key: alias` and shorthand `Key`. */
 function collectSchemaSection(
   map: MemberNameMap,
-  cfg: Node,
-  prop: 'classes' | 'functions',
-  section: 'class' | 'function',
+  cfg: ObjectLiteralExpression,
+  prop: 'classes' | 'functions' | 'policies' | 'views',
+  section: MemberName['section'],
 ): void {
   const obj = getObjectProp(cfg, prop)
   if (!obj) return
   for (const p of obj.getProperties()) {
     const schemaName = propertyKey(p)
-    const memberValue = objectPropertyValue(p)
-    if (!schemaName || !memberValue) continue
-    const member = { schemaName, section } satisfies MemberName
-    const valueKey = memberValueKey(memberValue)
-    if (valueKey) map.byValue.set(valueKey, member)
-    const unwrapped = unwrapExpression(memberValue)
+    const declaredValue = objectPropertyValue(p)
+    if (!schemaName || !declaredValue) continue
+    const value = memberValue(declaredValue)
+    if (!value) continue
+    const member = { schemaName, section, value } satisfies MemberName
+    // `value` is already fully resolved, so its own coordinate is its value key.
+    map.byValue.set(nodeKey(value), member)
+    const unwrapped = unwrapExpression(declaredValue)
     if (Node.isIdentifier(unwrapped)) map.byIdentifier.set(unwrapped.getText(), member)
   }
 }
@@ -158,12 +184,11 @@ function collectSchemaSection(
 function resolveMemberKind(
   ir: SchemaIR | null,
   name: string,
-  section: 'class' | 'function' | undefined,
+  section: MemberName['section'] | undefined,
   helperKind: 'node' | 'edge' | 'function',
 ): 'class' | 'edge' | 'function' {
   if (section === 'function' || helperKind === 'function') return 'function'
   const isEdge = helperKind === 'edge' || ir?.classes?.[name]?.type === 'edge'
-  if (section === 'class') return isEdge ? 'edge' : 'class'
   return isEdge ? 'edge' : 'class'
 }
 
@@ -195,6 +220,15 @@ export function buildSourceSpans(args: {
     .filter((f) => f.getFilePath() === dir || f.getFilePath().startsWith(`${dir}/`))
   // The Domain's `defineSchema` map is authoritative for each member's name.
   const memberNames = buildMemberNameMap(sourceFiles)
+  for (const { schemaName, section, value } of memberNames.byValue.values()) {
+    if (section !== 'policy' && section !== 'view') continue
+    const statement = value.getFirstAncestorByKind(SyntaxKind.VariableStatement)
+    spans[`${section}.${schemaName}`] = makeSpan(
+      relToRoot(domainRoot, value.getSourceFile().getFilePath()),
+      value,
+      statement ?? value,
+    )
+  }
 
   for (const sf of sourceFiles) {
     const fileRel = relToRoot(domainRoot, sf.getFilePath())
@@ -239,7 +273,7 @@ function makeSpan(fileRel: string, spanNode: Node, docNode: Node): SourceSpan {
     startLine: spanNode.getStartLineNumber(),
     endLine: spanNode.getEndLineNumber(),
   }
-  const doc = leadingDoc(docNode) ?? leadingDoc(spanNode)
+  const doc = leadingDoc(docNode) ?? (docNode === spanNode ? undefined : leadingDoc(spanNode))
   if (doc) span.doc = doc
   return span
 }
@@ -249,29 +283,32 @@ function collectPropsAndMethods(
   spans: Record<string, SourceSpan>,
   ns: string,
   name: string,
-  cfg: Node,
+  cfg: ObjectLiteralExpression,
   fileRel: string,
 ): void {
-  if (!Node.isObjectLiteralExpression(cfg)) return
   const propsObj = getObjectProp(cfg, 'properties') ?? getObjectProp(cfg, 'props')
-  if (propsObj) {
-    for (const p of propsObj.getProperties()) {
-      const pName = propertyKey(p)
-      if (!pName) continue
-      spans[`${ns}.${name}.property.${pName}`] = makeSpan(fileRel, p, p)
-    }
-  }
+  if (propsObj) collectMemberSpans(spans, `${ns}.${name}.property`, propsObj, fileRel)
   const methodsObj = getObjectProp(cfg, 'methods')
-  if (methodsObj) {
-    for (const m of methodsObj.getProperties()) {
-      const mName = propertyKey(m)
-      if (!mName) continue
-      spans[`${ns}.${name}.method.${mName}`] = makeSpan(fileRel, m, m)
-    }
+  if (methodsObj) collectMemberSpans(spans, `${ns}.${name}.method`, methodsObj, fileRel)
+}
+
+/** Record `<prefix>.<key>` for every named property of `obj`. */
+function collectMemberSpans(
+  spans: Record<string, SourceSpan>,
+  prefix: string,
+  obj: ObjectLiteralExpression,
+  fileRel: string,
+): void {
+  for (const p of obj.getProperties()) {
+    const key = propertyKey(p)
+    if (key) spans[`${prefix}.${key}`] = makeSpan(fileRel, p, p)
   }
 }
 
-/** Record edge endpoint and property spans from current directed/undirected forms. */
+/**
+ * Record edge endpoint spans from current directed/undirected forms. Their
+ * property spans are already recorded by `collectPropsAndMethods`.
+ */
 function collectEdge(
   spans: Record<string, SourceSpan>,
   name: string,
@@ -279,30 +316,17 @@ function collectEdge(
   fileRel: string,
 ): void {
   const argsList = init.getArguments()
-  const expression = init.getExpression()
-  const currentObjectForm =
-    Node.isPropertyAccessExpression(expression) &&
-    (expression.getName() === 'directed' || expression.getName() === 'undirected') &&
-    argsList[0] &&
-    Node.isObjectLiteralExpression(argsList[0])
-
-  if (currentObjectForm) {
-    const config = argsList[0]
-    if (Node.isObjectLiteralExpression(config)) {
-      for (const endpointName of ['source', 'target'] as const) {
-        const ep = getObjectProp(config, endpointName)
-        if (!ep) continue
-        const role = stringLiteralOfProp(ep, 'as') ?? stringLiteralOfProp(ep, 'role')
-        if (role) spans[`edge.${name}.endpoint.${role}`] = makeSpan(fileRel, ep, ep)
-      }
-      const properties = getObjectProp(config, 'properties') ?? getObjectProp(config, 'props')
-      if (properties) {
-        for (const p of properties.getProperties()) {
-          const pName = propertyKey(p)
-          if (!pName) continue
-          spans[`edge.${name}.property.${pName}`] = makeSpan(fileRel, p, p)
-        }
-      }
+  const config = argsList[0]
+  if (
+    isEdgeOrientationAccess(init.getExpression()) &&
+    config &&
+    Node.isObjectLiteralExpression(config)
+  ) {
+    for (const endpointName of ['source', 'target'] as const) {
+      const ep = getObjectProp(config, endpointName)
+      if (!ep) continue
+      const role = stringLiteralOfProp(ep, 'as') ?? stringLiteralOfProp(ep, 'role')
+      if (role) spans[`edge.${name}.endpoint.${role}`] = makeSpan(fileRel, ep, ep)
     }
     return
   }
@@ -318,10 +342,9 @@ function collectEdge(
 
 /** The object-literal value of a named property, if it is itself an object. */
 function getObjectProp(
-  obj: Node,
+  obj: ObjectLiteralExpression,
   name: string,
-): import('ts-morph').ObjectLiteralExpression | undefined {
-  if (!Node.isObjectLiteralExpression(obj)) return undefined
+): ObjectLiteralExpression | undefined {
   const prop = obj.getProperty(name)
   if (!prop) return undefined
   let value: Node | undefined

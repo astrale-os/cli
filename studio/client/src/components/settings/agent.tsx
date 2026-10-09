@@ -15,7 +15,7 @@ import { AgentAccessPicker } from './agent-access'
 import { AgentSession } from './agent-session'
 import { HarnessPresenceRow } from './harness-presence'
 import { AgentLoadout } from './loadout'
-import { SettingRow } from './row'
+import { SettingRow, SettingsHeading } from './row'
 
 export interface AgentSettingsProps {
   harness?: HarnessStatus
@@ -41,9 +41,7 @@ export function AgentSettings({ harness }: AgentSettingsProps) {
 
   return (
     <div>
-      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Agent
-      </div>
+      <SettingsHeading>Agent</SettingsHeading>
       <div className="divide-y divide-border rounded-lg border bg-card">
         {detected.length === 0 ? (
           <p className="px-3 py-2.5 text-[12px] text-muted-foreground">Looking for local agents…</p>
@@ -101,9 +99,7 @@ export function AgentDetails({ settings, harness, values, setValues }: AgentDeta
 
   return (
     <div>
-      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Agent details
-      </div>
+      <SettingsHeading>Agent details</SettingsHeading>
       <div className="divide-y divide-border rounded-lg border bg-card">
         <SettingRow
           label="Access"

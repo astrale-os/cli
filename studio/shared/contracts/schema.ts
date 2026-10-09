@@ -5,7 +5,12 @@
  * is owned by `../schema/identity`; SDK admission owns schema semantics.
  */
 
-import type { IrClassKey, IrClassRef, IrSchemaRef } from '../schema/identity'
+import {
+  isIrClassRef,
+  type IrClassKey,
+  type IrClassRef,
+  type IrSchemaRef,
+} from '../schema/identity'
 
 export interface JsonSchema {
   type?: string | string[]
@@ -29,7 +34,20 @@ export function isNodePathSchema(schema: JsonSchema): boolean {
   return schema.$ref === NODE_PATH_SCHEMA_ID && Object.hasOwn(schema, 'x-astrale-path')
 }
 
-export type MethodInheritance = 'default' | 'abstract' | 'sealed'
+/**
+ * The Classes a Node path value schema accepts, as exact Definition coordinates.
+ *
+ * `x-astrale-path.accepts` is where the V1 DSL records what a `→node` field may point
+ * at, and it is the only place a standalone Function names the Classes it works on —
+ * a Function declares no receiver, so this is what ties it to the schema.
+ */
+export function nodePathAccepts(schema: JsonSchema): IrClassRef[] {
+  if (!isNodePathSchema(schema)) return []
+  const path = schema['x-astrale-path']
+  if (typeof path !== 'object' || path === null) return []
+  const accepts = (path as { accepts?: unknown }).accepts
+  return Array.isArray(accepts) ? accepts.filter(isIrClassRef) : []
+}
 
 /** Portable form of the DSL-owned canonical schema revision. */
 export type SchemaRevision = `sha256:${string}`
@@ -63,7 +81,9 @@ export interface IrCallable {
 
 export interface IrMethod extends IrCallable {
   static: boolean
-  inheritance: MethodInheritance
+  abstract: boolean
+  /** Local executable declaration; independent of the inherited contract flag. */
+  executable: boolean
 }
 
 /** Standalone DSL callable projected without inventing a receiver. */
@@ -108,11 +128,9 @@ export interface IrImportDescriptor {
   key: IrClassKey
 }
 
-export type IrViewTarget = { kind: 'domain' } | { kind: 'definition'; definitions: IrSchemaRef[] }
-
+/** A View of the Domain. Every View belongs to its Domain; none is bound to a Class or a node. */
 export interface IrView {
   name: string
-  target: IrViewTarget
   description?: string
 }
 
@@ -192,8 +210,8 @@ export interface StudioSchemaBundle {
 
 export interface DomainOverview {
   origin: string
-  /** Active SDK Application entry relative to the project root. */
-  applicationFile?: string
+  /** Active SDK Domain definition entry relative to the project root. */
+  domainFile?: string
   adapter: 'astrale' | 'cloudflare' | 'unknown'
   prodTarget?: string
   devSecrets?: string
@@ -210,49 +228,16 @@ export interface ViewInfo {
   kind: 'inline-html' | 'spa' | 'unknown'
   mount?: string
   url?: string
-  /** the class(es) this view binds to via `viewFor: selfOf(Class)` (DSL allows an array);
-   *  absent ⇒ unbound/global */
-  viewFor?: string | string[]
   file?: string
   description?: string
-}
-
-/** One node that can be supplied as a targeted view's `targetNodeId`. */
-export interface ViewTargetCandidate {
-  id: string
-  ref: string
-  className: string
-  classOrigin: string
-  label: string
-  description?: string
-  status?: string
-}
-
-/** Small durable snapshot retained when a previously selected node disappears. */
-export interface RememberedViewTarget {
-  id: string
-  className: string
-  classOrigin: string
-  label: string
-}
-
-export interface ViewTargetResult {
-  status: 'available' | 'unavailable'
-  items: ViewTargetCandidate[]
-  selected: ViewTargetCandidate | null
-  stale: RememberedViewTarget | null
-  truncated: boolean
-  reason?: string
 }
 
 /** Full launch context shown before Studio asks `astrale view` to resolve and open the View. */
 export interface ViewRuntime {
   slug: string
-  /** Opaque, short-lived handle for the exact instance and target candidates shown below. */
+  /** Opaque, short-lived handle for the exact instance shown below. */
   preparationId: string
   instance: string | null
-  targetRequired: boolean
-  targets: ViewTargetResult
 }
 
 export type ViewSessionResult =
@@ -261,7 +246,6 @@ export type ViewSessionResult =
       sessionId: string
       pageUrl: string
       viewUrl: string
-      target: ViewTargetCandidate | null
     }
   | { status: 'unavailable'; reason: string }
 
@@ -377,6 +361,8 @@ export interface StudioDataset {
   revision: string
   /** false when the current schema bundle carries another revision (stale until re-extracted) */
   schemaMatch: boolean
+  /** Canonical Schema reference key → explicitly associated Dataset Node id. */
+  references: Record<string, string>
   /** `path` is the Dataset Node id; `className` is the local Class name or the exact imported key */
   nodes: StudioCoreNode[]
   edges: StudioCoreEdge[]

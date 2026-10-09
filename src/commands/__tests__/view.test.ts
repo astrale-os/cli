@@ -1,7 +1,7 @@
 import type { ResolvedView } from '@astrale-os/shell'
 
 import { Path } from '@astrale-os/sdk/graph/path'
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
 const bundleMock = mock(async (_origin: unknown): Promise<unknown> => installedDomain)
@@ -53,12 +53,7 @@ const resolved = [
     issuer: 'https://ai-gateway.astrale.ai',
     etag: `sha256:${'a'.repeat(64)}`,
     revision: `sha256:${'b'.repeat(64)}`,
-    declaration: {
-      target: {
-        kind: 'definition' as const,
-        definitions: [{ origin: 'ai-gateway.astrale.ai', kind: 'class' as const, name: 'Model' }],
-      },
-    },
+    declaration: { target: { kind: 'domain' as const } },
   }),
   route({
     key: 'ai-gateway.astrale.ai:view.model',
@@ -111,56 +106,135 @@ const installedDomain = {
 }
 
 describe('view session resolution', () => {
-  test('registers the development origin and deletes both legacy override flags', async () => {
+  test('preserves published host requirements when selecting an explicit installed Domain View', async () => {
+    const { resolveSession } = await import('../view')
+    const host = { navigation: { external: { origins: ['https://provider.example'] } } }
+    bundleMock.mockImplementationOnce(async () => ({
+      ...installedDomain,
+      domain: {
+        ...installedDomain.domain,
+        bindings: {
+          ...installedDomain.domain.bindings,
+          views: installedDomain.domain.bindings.views.map((binding) =>
+            binding.view.endsWith(':view.model')
+              ? { ...binding, handshake: 'shell', host }
+              : binding,
+          ),
+        },
+      },
+    }))
+    const result = await resolveSession('/:ai-gateway.astrale.ai:view.model', {})
+    expect(result.view?.route.host).toEqual(host)
+    expect(viewsForMock).not.toHaveBeenCalled()
+  })
+
+  test('reports a missing installed View through the structured command error boundary', async () => {
+    const command = (await import('../view')).default
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exited = new Error('fixture exit')
+    const exit = spyOn(process, 'exit').mockImplementation(() => {
+      throw exited
+    })
+    try {
+      await expect(
+        command.action('/:ai-gateway.astrale.ai:view.absent', {
+          open: false,
+          json: true,
+        }),
+      ).rejects.toBe(exited)
+      expect(exit).toHaveBeenCalledWith(1)
+      expect(stderr).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(String(stderr.mock.calls[0]![0]))).toMatchObject({
+        error: 'VIEW_NOT_FOUND',
+        message: 'View "absent" is not installed for ai-gateway.astrale.ai',
+      })
+      expect(abMock).not.toHaveBeenCalled()
+    } finally {
+      exit.mockRestore()
+      stderr.mockRestore()
+    }
+  })
+
+  test('does not expose local development or legacy placement overrides', async () => {
     const command = (await import('../view')).default
     const flags = command.options?.map((option) => option.flags) ?? []
 
-    expect(flags).toContain('--development-local-url <origin>')
+    expect(flags).not.toContain('--development-local-url <origin>')
     expect(flags).not.toContain('--view-url <url>')
     expect(flags).not.toContain('--handshake <mode>')
   })
 
+  test('takes no target node', async () => {
+    const command = (await import('../view')).default
+    const flags = command.options?.map((option) => option.flags) ?? []
+
+    expect(flags).not.toContain('--target <path>')
+  })
+
   /** @evidence TEST-CLI-VIEW-PRESERVES-HOST-PROVENANCE */
-  test('returns one exact target-bound placement without split mount coordinates', async () => {
+  test('returns one exact Domain-bound placement without split mount coordinates', async () => {
     const { resolveSession } = await import('../view')
     viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
 
-    const result = await resolveSession('@model-id', { view: 'chat' })
+    const result = await resolveSession('ai-gateway.astrale.ai', { view: 'chat' })
 
     expect(viewsForMock).toHaveBeenCalledTimes(1)
-    expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('@model-id')
-    expect(result.view).toEqual({ target: Path.parse('@model-id').raw, route: resolved[0] })
+    expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('/:ai-gateway.astrale.ai')
+    expect(result.view).toEqual({
+      target: Path.domain('ai-gateway.astrale.ai').raw,
+      route: resolved[0],
+    })
     expect(result.view).not.toHaveProperty('url')
     expect(result.view).not.toHaveProperty('functionId')
     expect(result.view).not.toHaveProperty('handshake')
   })
 
-  test('lists every candidate with its complete placement provenance', async () => {
+  test('opens the Domain entrypoint when no View is named', async () => {
+    const { resolveSession } = await import('../view')
+    viewsForMock.mockImplementationOnce(async () => ({ entrypoint: resolved[1], views: resolved }))
+
+    const result = await resolveSession('/:ai-gateway.astrale.ai', { json: true })
+
+    expect(result.view).toEqual({
+      target: Path.domain('ai-gateway.astrale.ai').raw,
+      route: resolved[1],
+    })
+  })
+
+  test('refuses to guess between several Views without an entrypoint', async () => {
     const { resolveSession } = await import('../view')
     viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
 
-    const result = await resolveSession('@model-id', { list: true })
+    await expect(resolveSession('ai-gateway.astrale.ai', { json: true })).rejects.toMatchObject({
+      code: 'AMBIGUOUS_VIEW',
+    })
+  })
+
+  test('lists every View of the Domain with its complete placement provenance', async () => {
+    const { resolveSession } = await import('../view')
+    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
+
+    const result = await resolveSession('ai-gateway.astrale.ai', { list: true })
 
     expect(result.view).toBeUndefined()
     expect(result.candidates).toEqual([
       expect.objectContaining({
-        target: '@model-id',
+        target: '/:ai-gateway.astrale.ai',
         route: resolved[0],
         id: 'ai-gateway.astrale.ai:view.chat',
         path: '/:ai-gateway.astrale.ai:view.chat',
         url: 'https://ai-gateway.astrale.ai/ui/chat',
         name: 'chat',
         handshake: 'shell',
-        origin: 'class',
       }),
       expect.objectContaining({
-        target: '@model-id',
+        target: '/:ai-gateway.astrale.ai',
         route: resolved[1],
         id: 'ai-gateway.astrale.ai:view.model',
         handshake: 'none',
-        origin: 'self',
       }),
     ])
+    expect(result.candidates[0]).not.toHaveProperty('origin')
   })
 
   test('lists candidates without consulting agent-browser', async () => {
@@ -171,7 +245,7 @@ describe('view session resolution', () => {
     ) => Promise<void>
     viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
 
-    await action('@model-id', { list: true })
+    await action('ai-gateway.astrale.ai', { list: true })
 
     expect(viewsForMock).toHaveBeenCalledTimes(1)
     expect(findAgentBrowserMock).not.toHaveBeenCalled()
@@ -191,26 +265,14 @@ describe('view session resolution', () => {
     })
   })
 
-  test('keeps explicit target resolution on View.resolve', async () => {
-    const { resolveSession } = await import('../view')
-    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
-
-    const result = await resolveSession('/:ai-gateway.astrale.ai:view.chat', {
-      target: '@model-id',
-    })
-
-    expect(bundleMock).not.toHaveBeenCalled()
-    expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('@model-id')
-    expect(result.view).toEqual({ target: Path.parse('@model-id').raw, route: resolved[0] })
-  })
-
-  test('requires a target for an installed definition view', async () => {
+  test('refuses a node path: Views belong to their Domain', async () => {
     const { resolveSession } = await import('../view')
 
-    await expect(resolveSession('/:ai-gateway.astrale.ai:view.chat', {})).rejects.toMatchObject({
-      code: 'VIEW_TARGET_REQUIRED',
-    })
+    for (const spec of ['@model-id', '/models/gpt']) {
+      await expect(resolveSession(spec, {})).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' })
+    }
     expect(viewsForMock).not.toHaveBeenCalled()
+    expect(bundleMock).not.toHaveBeenCalled()
   })
 })
 
@@ -228,78 +290,6 @@ describe('view capture timing', () => {
 })
 
 describe('view session runtime', () => {
-  test('proves a local transport before creating session state and threads the witness once', async () => {
-    const { startDevelopmentViewSession } = await import('../view')
-    const selected: ResolvedView = {
-      target: Path.parse('/:ai-gateway.astrale.ai').raw,
-      route: resolved[0],
-    }
-    const witness = {
-      href: 'http://127.0.0.1:8787/ui/chat',
-      issuer: resolved[0].issuer,
-      revision: resolved[0].revision,
-      etag: resolved[0].etag,
-    }
-    const signal = new AbortController().signal
-    const order: string[] = []
-    const record = {
-      id: 'v-proof',
-      pid: 0,
-      port: 4419,
-      nonce: 'proof',
-      pageUrl: 'http://127.0.0.1:4419/s/proof/',
-      view: selected,
-      createdAt: '2026-08-26T00:00:00.000Z',
-    }
-    const prove = mock(async () => {
-      order.push('prove')
-      return witness
-    })
-    const start = mock(async () => {
-      order.push('start')
-      return record
-    })
-
-    await expect(
-      startDevelopmentViewSession(
-        selected,
-        { developmentLocalUrl: 'http://127.0.0.1:8787' },
-        { prove, start, signal: () => signal },
-      ),
-    ).resolves.toBe(record)
-
-    expect(prove).toHaveBeenCalledWith(selected, 'http://127.0.0.1:8787', signal)
-    expect(start).toHaveBeenCalledWith(
-      selected,
-      { developmentLocalUrl: 'http://127.0.0.1:8787' },
-      witness,
-    )
-    expect(order).toEqual(['prove', 'start'])
-  })
-
-  test('a failed local proof creates no session state', async () => {
-    const { startDevelopmentViewSession } = await import('../view')
-    const selected: ResolvedView = {
-      target: Path.parse('/:ai-gateway.astrale.ai').raw,
-      route: resolved[0],
-    }
-    const prove = mock(async () => {
-      throw new Error('local Publication unavailable')
-    })
-    const start = mock(async () => {
-      throw new Error('must not start')
-    })
-
-    await expect(
-      startDevelopmentViewSession(
-        selected,
-        { developmentLocalUrl: 'http://127.0.0.1:8787' },
-        { prove, start },
-      ),
-    ).rejects.toThrow('local Publication unavailable')
-    expect(start).not.toHaveBeenCalled()
-  })
-
   test('builds one serve config with the admitted operator origin grant', async () => {
     const { createViewServeConfig } = await import('../view')
     const record = {
@@ -312,22 +302,24 @@ describe('view session runtime', () => {
       createdAt: '2026-08-26T00:00:00.000Z',
     }
 
-    const transport = {
-      href: 'http://127.0.0.1:8787/ui/chat',
-      issuer: resolved[0].issuer,
-      revision: resolved[0].revision,
-      etag: resolved[0].etag,
-    }
     const config = createViewServeConfig(
       record,
       { allowExternalOrigin: ['https://connect.nango.dev/'] },
       { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' },
-      transport,
     )
 
     expect(config.session).toBe(record)
-    expect(config.transport).toEqual(transport)
+    expect(config).not.toHaveProperty('transport')
     expect(config.externalOrigins).toEqual(['https://connect.nango.dev'])
+    expect(config.identities).toBeUndefined()
+    const named = { ...record, identity: 'alice' }
+    const target = { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' }
+    expect(
+      createViewServeConfig(named, { allowIdentity: ['bob', 'alice', 'bob'] }, target).identities,
+    ).toEqual(['alice', 'bob'])
+    expect(() =>
+      createViewServeConfig(named, { allowIdentity: ['bob'], creds: 'opaque' }, target),
+    ).toThrow('requires a named CLI identity')
     expect(config.proxy).toEqual({
       kernelUrl: 'https://kernel.test',
       issuer: 'https://kernel.test',

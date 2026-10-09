@@ -1,4 +1,4 @@
-import type { IrFunction, IrMethod, StudioSchemaBundle, ViewInfo } from '@shared/types'
+import type { IrFunction, IrMethod, StudioSchemaBundle } from '@shared/types'
 
 import { ArrowUpRight, Box, Braces, LayoutTemplate, Sprout, Workflow, Zap } from 'lucide-react'
 import { type ReactNode, useMemo } from 'react'
@@ -15,10 +15,10 @@ import {
 } from '@/components/studio-kit'
 import { ScrollArea } from '@/components/ui/misc'
 import { methodGlyph } from '@/lib/friendly'
+import { functionGlyph } from '@/lib/functions'
 import { useAnatomy, useBundle } from '@/lib/hooks'
 import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
-import { cn } from '@/lib/utils'
 import { DomainPicker, DomainsRailHeader } from '@/schema-studio/domains-rail'
 import { ModulesSidebar } from '@/schema-studio/sidebar'
 
@@ -31,6 +31,15 @@ interface Fn {
   link?: StudioSchemaBundle['overlay']['handlerLinks'][number]
 }
 
+/** The callables one actor owns: the domain's standalone Functions, or one class's Methods. */
+interface FnGroup {
+  owner: string
+  label: string
+  /** The owning class; null for the domain's standalone Functions. */
+  className: string | null
+  fns: Fn[]
+}
+
 /** Count the portable genesis elements in a canonical DomainSchema V1 Core. */
 export function canonicalCoreCount(value: unknown): number {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
@@ -40,21 +49,6 @@ export function canonicalCoreCount(value: unknown): number {
       ? Object.keys(core.nodes).length
       : 0
   return nodes + (Array.isArray(core.edges) ? core.edges.length : 0)
-}
-
-/** Distinct classes a list of views binds to (UI entrypoints), in first-seen order. */
-function viewTargets(views: ViewInfo[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const v of views) {
-    for (const t of Array.isArray(v.viewFor) ? v.viewFor : v.viewFor ? [v.viewFor] : []) {
-      if (!seen.has(t)) {
-        seen.add(t)
-        out.push(t)
-      }
-    }
-  }
-  return out
 }
 
 export function ProcessSection({
@@ -69,6 +63,7 @@ export function ProcessSection({
   const setSection = useUI((s) => s.setSection)
   const focusClass = useUI((s) => s.focusClass)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
+  const revealOnCanvas = useUI((s) => s.revealOnCanvas)
 
   const bundle = bundleQ.data
   const anatomy = anatomyQ.data
@@ -76,17 +71,17 @@ export function ProcessSection({
 
   const coreCount = useMemo(() => canonicalCoreCount(ir?.core), [ir?.core])
 
-  // every class method, grouped by its owning class (the "process actor")
+  // every class method, grouped by its owning class (the "process actor"); the
+  // domain's standalone Functions lead
   const groups = useMemo(() => {
-    if (!ir || !bundle)
-      return [] as { owner: string; label: string; className: string | null; fns: Fn[] }[]
-    const out: { owner: string; label: string; className: string | null; fns: Fn[] }[] = []
+    const out: FnGroup[] = []
+    if (!ir || !bundle) return out
 
     const domainFunctions = Object.entries(ir.functions)
     if (domainFunctions.length > 0) {
       out.push({
         owner: ir.domain,
-        label: 'Domain callables',
+        label: 'Functions',
         className: null,
         fns: domainFunctions.map(([name, method]) => ({
           owner: ir.domain,
@@ -110,25 +105,32 @@ export function ProcessSection({
       }))
       out.push({ owner: c.name, label: c.name, className: c.name, fns })
     }
-    return out.sort((a, b) => {
-      if (a.className === null && b.className !== null) return -1
-      if (a.className !== null && b.className === null) return 1
-      return 0
-    })
+    return out
   }, [ir, bundle])
 
   const fnCount = groups.reduce((n, g) => n + g.fns.length, 0)
   const views = anatomy?.views ?? []
-  const uiTargets = useMemo(() => viewTargets(views), [views])
 
   const gotoClass = (name: string) => {
     if (!domainId) return
     setSection('schema')
     focusClass(`class.${name}`, domainId)
   }
+  // A standalone Function is a schema member with a node of its own, so it gets the same
+  // jump a Class does — Process names the callable, the schema shows what it is wired to.
+  const gotoFunction = (name: string) => {
+    if (!domainId) return
+    setSection('schema')
+    focusClass(`function.${name}`, domainId)
+    revealOnCanvas(`function.${name}`)
+  }
   const gotoViews = () => {
     setSection('schema')
     setPanelOverlay('views', domainId)
+  }
+  const gotoFunctions = () => {
+    setSection('schema')
+    setPanelOverlay('functions', domainId)
   }
 
   if (!domainId) {
@@ -189,7 +191,7 @@ export function ProcessSection({
                       </IconTile>
                     }
                     title={`${views.length} view${views.length === 1 ? '' : 's'}`}
-                    subtitle={uiTargets.length > 0 ? uiTargets.join(' · ') : 'UI entrypoints'}
+                    subtitle={views.map((view) => view.slug).join(' · ')}
                     trailing={<ArrowUpRight className="h-4 w-4 text-muted-foreground" />}
                   />
                 )}
@@ -210,11 +212,15 @@ export function ProcessSection({
                     <Surface key={g.owner} className="overflow-hidden">
                       <button
                         type="button"
-                        onClick={g.className ? () => gotoClass(g.className!) : undefined}
-                        className={cn(
-                          'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                          g.className && 'hover:bg-accent/40',
-                        )}
+                        onClick={
+                          g.className === null ? gotoFunctions : () => gotoClass(g.className!)
+                        }
+                        title={
+                          g.className
+                            ? `Open ${g.className} in the schema`
+                            : 'Open the Functions overview'
+                        }
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40"
                       >
                         <IconTile tone="muted" size="sm">
                           {g.className ? <Box /> : <Braces />}
@@ -231,9 +237,9 @@ export function ProcessSection({
                             fn={fn}
                             origin={ir.domain}
                             domainId={domainId}
-                            onClick={
-                              fn.ownerKind === 'class' ? () => gotoClass(fn.owner) : undefined
-                            }
+                            {...(fn.ownerKind === 'class'
+                              ? { onClick: () => gotoClass(fn.owner) }
+                              : { onOpen: () => gotoFunction(fn.name) })}
                           />
                         ))}
                       </div>
@@ -280,23 +286,33 @@ function FnRow({
   origin,
   domainId,
   onClick,
+  onOpen,
 }: {
   fn: Fn
   origin: string
   domainId: string
+  /** Makes the WHOLE row navigate — which costs the chips inside it their own clicks. */
   onClick?: () => void
+  /** A jump carried by one trailing control instead, leaving those chips live. */
+  onOpen?: () => void
 }) {
   const glyph =
     fn.link?.kind === 'workflow'
       ? { icon: Workflow, tone: 'fuchsia' }
       : fn.link?.kind === 'action'
         ? { icon: Zap, tone: 'violet' }
-        : 'inheritance' in fn.method
+        : 'abstract' in fn.method
           ? methodGlyph(fn.method)
-          : { icon: Zap, tone: 'violet' }
+          : // A standalone Function: the same glyph the canvas, the rail and the Functions
+            // overview give it, rather than a bolt it has not earned.
+            { icon: functionGlyph(fn), tone: 'fn' }
   const Glyph = glyph.icon
   const calls = fn.link?.kernelCalls ?? []
-  const contractOnly = fn.link && !fn.link.implemented
+  // A row that is itself a button cannot hold the Policy link or the auth popover — a
+  // button inside a button — so an inert row keeps them and offers its jump on the side.
+  const inert = onClick === undefined
+  const contractOnly =
+    (!('executable' in fn.method) || fn.method.executable) && fn.link && !fn.link.implemented
   return (
     <Row
       onClick={onClick}
@@ -309,28 +325,41 @@ function FnRow({
       title={
         <span className="flex items-center gap-1.5">
           <span className="font-semibold">{fn.name}</span>
-          <MethodAuthBadge method={fn.method} domainId={domainId} interactive={!onClick} />
+          <MethodAuthBadge method={fn.method} domainId={domainId} interactive={inert} />
           {/* the policies this callable checks — the shield's hover card proves them on demo data */}
-          <PolicyChips method={fn.method} origin={origin} />
+          <PolicyChips method={fn.method} origin={origin} domainId={inert ? domainId : undefined} />
           {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}
           {'static' in fn.method && fn.method.static && <Chip tone="default">static</Chip>}
-          {'inheritance' in fn.method && fn.method.inheritance === 'abstract' && (
-            <Chip tone="fn">contract</Chip>
-          )}
+          {'abstract' in fn.method && fn.method.abstract && <Chip tone="fn">contract</Chip>}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {fn.link?.unlinked && <Chip tone="default">unlinked</Chip>}
         </span>
       }
       trailing={
-        calls.length > 0 ? (
-          <div className="hidden items-center gap-1 sm:flex">
-            {calls.slice(0, 3).map((k) => (
-              <Chip key={k} tone="outline" className="font-mono">
-                {k}
-              </Chip>
-            ))}
-            {calls.length > 3 && <Chip tone="default">+{calls.length - 3}</Chip>}
-          </div>
+        calls.length > 0 || onOpen ? (
+          <>
+            {calls.length > 0 && (
+              <div className="hidden items-center gap-1 sm:flex">
+                {calls.slice(0, 3).map((k) => (
+                  <Chip key={k} tone="outline" className="font-mono">
+                    {k}
+                  </Chip>
+                ))}
+                {calls.length > 3 && <Chip tone="default">+{calls.length - 3}</Chip>}
+              </div>
+            )}
+            {onOpen && (
+              <button
+                type="button"
+                onClick={onOpen}
+                title={`Open ${fn.name} in the schema`}
+                aria-label={`Open ${fn.name} in the schema`}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+              </button>
+            )}
+          </>
         ) : undefined
       }
     />

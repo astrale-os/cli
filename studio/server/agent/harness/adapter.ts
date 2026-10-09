@@ -4,15 +4,18 @@
  *
  * A *harness* is whatever local AI agent does the edits (Claude Code, Codex, …).
  * The studio never talks to a model API directly; it shells out to the harness
- * the user already has running locally (no cloud API key of our own). Each
+ * CLI, signed in as the user (no cloud API key of our own). Each
  * harness maps its native streaming output onto `AgentStreamEvent`s and returns
  * a final text blob (which carries the machine-state reply block).
  */
 import type {
   AgentAccess,
+  AgentContextUsage,
   AgentEffort,
   AgentEventKind,
+  AgentToolCall,
   HarnessCapabilities,
+  HarnessCli,
   HarnessLoadout,
 } from '../../../shared/types'
 
@@ -22,6 +25,12 @@ export interface AgentStreamEvent {
   text: string
   tool?: string
   target?: string
+  /**
+   * for kind:'tool' - the call this reports on, and everything known about it so
+   * far. An agent reports a call again each time it learns more (its input, then
+   * its output): every report carrying the same `id` updates one step.
+   */
+  call?: { id: string; detail: AgentToolCall }
 }
 
 /** Harness-neutral description of one stdio MCP server. Each harness is
@@ -39,11 +48,21 @@ export interface HarnessMcpServer {
   invoke?: (tool: string, args: Record<string, unknown>) => Promise<unknown>
 }
 
+/** One image sent with a turn's prompt; the harness reads the bytes from `path`. */
+export interface AgentTurnImage {
+  path: string
+  mimeType: string
+  name: string
+}
+
 export interface AgentTurnInput {
   /** the domain repo root — the agent's working directory */
   root: string
   /** the turn message (scaffolded handoff / delta) */
   prompt: string
+  /** images the user sent with the message — handed over as images where the
+   *  harness takes them; the prompt lists their paths either way */
+  images?: AgentTurnImage[]
   /** appended to the harness's default system prompt — the reply protocol */
   appendSystemPrompt?: string
   /** prior harness session id → resume the same conversation */
@@ -52,6 +71,8 @@ export interface AgentTurnInput {
   model?: string
   /** harness reasoning effort for this turn */
   effort?: AgentEffort
+  /** request the ACP agent's advertised fast service tier */
+  fastMode?: boolean
   /** authority granted to the local harness */
   access?: AgentAccess
   /** generated MCP servers exposing Studio write-back */
@@ -63,6 +84,10 @@ export interface AgentTurnInput {
   signal: AbortSignal
   /** called for every normalized activity event */
   onEvent: (e: AgentStreamEvent) => void
+  /** called with each chunk of the agent's message text as it streams in */
+  onDelta?: (text: string) => void
+  /** called whenever the agent reports how full its context window is */
+  onContext?: (context: AgentContextUsage) => void
 }
 
 export interface AgentTurnResult {
@@ -74,6 +99,8 @@ export interface AgentTurnResult {
   numTurns?: number
   /** total token usage reported by the harness */
   tokens?: number
+  /** the context window's occupancy as last reported during the turn */
+  context?: AgentContextUsage
   isError: boolean
   errorMessage?: string
   /** the resume sessionId we passed was rejected by the harness (the conversation
@@ -97,6 +124,7 @@ export interface AskInput {
   model?: string
   /** harness reasoning effort for this side question */
   effort?: AgentEffort
+  fastMode?: boolean
   /** authority granted to the local harness */
   access?: AgentAccess
   /** extra env merged into the harness child only — see AgentTurnInput.env */
@@ -120,6 +148,8 @@ export interface HarnessHealth {
   bin?: string
   /** human-readable reason when not ok */
   detail?: string
+  /** the agent CLI the ACP server drives */
+  cli?: HarnessCli
 }
 
 export interface HarnessLoadoutOptions {

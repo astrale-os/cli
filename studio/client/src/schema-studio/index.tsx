@@ -1,7 +1,7 @@
 import { ReactFlowProvider } from '@xyflow/react'
-import { AlertTriangle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { ErrorBanner } from '@/components/error-banner'
 import { ScrollArea } from '@/components/ui/misc'
 import { useBundle, useCore } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
@@ -90,16 +90,17 @@ function CoreSection({
 
   return (
     <div className="h-full flex flex-col">
-      {bundle.error && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-warning/10 border-b border-warning/30 text-warning text-sm">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            {bundle.error.message}
-            {!bundle.depsInstalled &&
-              ' — showing the static structure; run `pnpm install` in the domain for full fidelity.'}
-          </span>
-        </div>
-      )}
+      <ErrorBanner
+        messages={
+          bundle.error
+            ? [
+                bundle.depsInstalled
+                  ? bundle.error.message
+                  : `${bundle.error.message} - showing the static structure; run \`pnpm install\` in the domain for full fidelity.`,
+              ]
+            : []
+        }
+      />
 
       {!bundle.ir ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-6 text-center">

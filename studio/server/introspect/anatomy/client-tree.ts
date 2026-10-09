@@ -3,10 +3,12 @@ import { join } from 'node:path'
 
 import type { ClientTree } from '../../../shared/types'
 
-import { listDirs, listFiles, readTextSafe } from './source'
+import { SOURCE_FILE, listDirs, listFiles, readTextSafe } from './source'
 
 // Client tree and best-effort top-level route registry parsing.
 const RESERVED_CLIENT_DIRS = new Set(['shell', 'ui', 'views'])
+/** A quoted `/ui/...` key pointing at a component identifier. */
+const ROUTE_ENTRY = /['"`](\/ui\/[^'"`]+)['"`]\s*:\s*([A-Za-z_$][\w$.]*)/g
 
 export function buildClientTree(
   root: string,
@@ -31,7 +33,7 @@ export function buildClientTree(
 
   const routes = parseRoutes(
     listFiles(srcDir)
-      .filter((file) => /\.[cm]?[jt]sx?$/.test(file))
+      .filter((file) => SOURCE_FILE.test(file))
       .map((file) => join(srcDir, file)),
   )
 
@@ -46,11 +48,8 @@ export function buildClientTree(
 function parseRoutes(files: string[]): Record<string, string> {
   const routes: Record<string, string> = {}
   for (const file of files) {
-    const src = readTextSafe(file)
-    const entryRe = /['"`](\/ui\/[^'"`]+)['"`]\s*:\s*([A-Za-z_$][\w$.]*)/g
-    let match: RegExpExecArray | null
-    while ((match = entryRe.exec(src)) !== null) {
-      routes[match[1]] = match[2]
+    for (const [, route, component] of readTextSafe(file).matchAll(ROUTE_ENTRY)) {
+      routes[route] = component
     }
   }
   return routes

@@ -2,7 +2,15 @@ import type { IrClass, IrClassRef, IrMethod, JsonSchema, StudioSchemaBundle } fr
 
 import { classRefKey } from '@shared/schema/identity'
 
-const KERNEL_ORIGIN = 'kernel.astrale.ai'
+export const KERNEL_ORIGIN = 'kernel.astrale.ai'
+
+const KERNEL_IMPLEMENTATION_CLASSES = new Set([
+  'Timestamped',
+  'Descriptable',
+  'Named',
+  'Node',
+  'Edge',
+])
 
 export type ClassTier = 'local' | 'kernel' | 'external'
 
@@ -16,7 +24,7 @@ export interface InheritedGroup {
   resolved: boolean
   origin?: string
   props: [name: string, schema: JsonSchema, optional: boolean][]
-  methods: { name: string; method: IrMethod; overridden: boolean }[]
+  methods: { name: string; method: IrMethod }[]
 }
 
 export function resolveClass(
@@ -33,11 +41,16 @@ export function resolveClass(
 
 export function classTier(bundle: StudioSchemaBundle, reference: IrClassRef): ClassTier {
   if (reference.origin === bundle.ir?.domain) return 'local'
-  return reference.origin === KERNEL_ORIGIN ? 'kernel' : 'external'
+  return isKernelClass(reference) ? 'kernel' : 'external'
 }
 
 export function isKernelClass(reference: IrClassRef): boolean {
   return reference.origin === KERNEL_ORIGIN
+}
+
+/** Kernel implementation scaffolding that does not belong on Studio's domain canvas. */
+export function isKernelImplementationClass(reference: IrClassRef): boolean {
+  return isKernelClass(reference) && KERNEL_IMPLEMENTATION_CLASSES.has(reference.name)
 }
 
 /** A kernel base that says what a Class IS, rather than what it declares. */
@@ -53,7 +66,7 @@ const KERNEL_ROLE_ORDER: KernelRole[] = ['identity', 'function', 'view']
 
 /** The role a single `extends` reference confers, if it is one of the kernel bases. */
 export function kernelRoleOf(reference: IrClassRef): KernelRole | undefined {
-  return reference.origin === KERNEL_ORIGIN ? KERNEL_ROLES[reference.name] : undefined
+  return isKernelClass(reference) ? KERNEL_ROLES[reference.name] : undefined
 }
 
 /**
@@ -94,10 +107,7 @@ export function inheritedGroupsOfClass(
 ): InheritedGroup[] {
   const selected = resolveClass(bundle, reference)
   if (!selected) return []
-  const ownProperties = new Set(Object.keys(selected.properties))
-  const ownMethods = new Set(Object.keys(selected.methods))
-  const claimedProperties = new Set(ownProperties)
-  const claimedMethods = new Set<string>()
+  const claimedProperties = new Set(Object.keys(selected.properties))
   const visited = new Set<string>([classRefKey(selected.ref)])
   const queue = (selected.extendsRefs ?? []).map((ref) => ({ ref, depth: 1 }))
   const groups: InheritedGroup[] = []
@@ -111,17 +121,17 @@ export function inheritedGroupsOfClass(
     if (owner) {
       queue.push(...(owner.extendsRefs ?? []).map((parent) => ({ ref: parent, depth: depth + 1 })))
     }
+    const required = owner?.required ?? []
     const props = Object.entries(owner?.properties ?? {})
       .filter(([name]) => !claimedProperties.has(name))
       .map(
         ([name, value]) =>
-          [name, value, !(owner?.required ?? []).includes(name)] as InheritedGroup['props'][number],
+          [name, value, !required.includes(name)] as InheritedGroup['props'][number],
       )
     const methods = Object.entries(owner?.methods ?? {})
-      .filter(([name]) => !claimedMethods.has(name))
-      .map(([name, method]) => ({ name, method, overridden: ownMethods.has(name) }))
+      .filter(([, method]) => method.abstract)
+      .map(([name, method]) => ({ name, method }))
     for (const [name] of props) claimedProperties.add(name)
-    for (const { name } of methods) claimedMethods.add(name)
     groups.push({
       owner: ref.name,
       ref,

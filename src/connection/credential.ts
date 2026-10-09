@@ -1,9 +1,11 @@
 import type { Fetch } from '@astrale-os/sdk/client'
 import type { SessionAuth } from '@astrale-os/sdk/client/session'
+import type { Path } from '@astrale-os/sdk/graph/path'
 
 import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
+import type { ExchangeIssuer, ExchangeTarget } from './exchange'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
@@ -12,6 +14,7 @@ import { resolveCredential, resolvePersistedIdpSourceIdentity } from './auth'
 import { createExchangeCredentialResolver } from './exchange'
 import {
   exchangeCredentialTtlSeconds,
+  explicitCredentialTtlSeconds,
   invocationCredentialTtlSeconds,
   nestedCredentialCarrierTtlSeconds,
 } from './lifetime'
@@ -29,6 +32,7 @@ export interface SourceCredentialResolver {
 export type CredentialIntent =
   | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
   | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
+  | Readonly<{ principal: 'callable'; path: Path; nestedTtlSeconds?: never }>
 
 type CredentialResolver = typeof resolveCredential
 
@@ -81,7 +85,11 @@ function sourceBoundDelegationTtl(input: string, requestedTtlSeconds: number): n
   }
 }
 
-/** Bind CLI identity state and Core Auth delegation to one Session auth capability. */
+/**
+ * Bind CLI identity state and Core Auth delegation to one Session auth capability. A target that
+ * names an installed Domain by origin exchanges at the issuer `installed` holds for the Kernel pin;
+ * without one, the pin is read once for this credential.
+ */
 export function createCliCredential(
   target: ConnectionTarget,
   options: ConnectionOptions,
@@ -90,19 +98,26 @@ export function createCliCredential(
   timeoutMs = 30_000,
   intent: CredentialIntent = {},
   resolveSource: CredentialResolver = resolveCredential,
+  installed?: ExchangeIssuer,
 ): SessionAuth | undefined {
+  if (intent.principal === 'callable') {
+    throw new TypeError('Callable credentials require installed Domain resolution.')
+  }
   if (intent.nestedTtlSeconds !== undefined && intent.principal !== 'caller') {
     throw new TypeError('Nested credential issuance requires the caller principal.')
   }
   validateCredentialSelection(options)
   if (options.anonymous === true) return undefined
-  const useDomainPrincipal =
-    target.domainIssuer !== undefined &&
-    options.creds === undefined &&
-    intent.principal !== 'caller'
+  const exchange =
+    options.creds === undefined && intent.principal !== 'caller'
+      ? exchangeTarget(target)
+      : undefined
+  const useDomainPrincipal = exchange !== undefined
   const ttlSeconds =
     intent.nestedTtlSeconds === undefined
-      ? invocationCredentialTtlSeconds(timeoutMs)
+      ? options.creds === undefined
+        ? invocationCredentialTtlSeconds(timeoutMs)
+        : explicitCredentialTtlSeconds(timeoutMs)
       : nestedCredentialCarrierTtlSeconds(timeoutMs, intent.nestedTtlSeconds)
   const authOptions = Object.freeze({
     ...(options.as === undefined ? {} : { as: options.as }),
@@ -128,15 +143,20 @@ export function createCliCredential(
       return credential
     },
   }
-  const effective = useDomainPrincipal
-    ? createExchangeCredentialResolver(
-        { ...target, domainIssuer: target.domainIssuer },
-        source,
-        fetch,
-        timeoutMs,
-      )
-    : source
+  const effective =
+    exchange !== undefined
+      ? createExchangeCredentialResolver(exchange, source, fetch, timeoutMs, undefined, installed)
+      : source
   return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
+}
+
+/** The Domain a target's identity is exchanged at: its exact issuer, else its installed origin. */
+function exchangeTarget(target: ConnectionTarget): ExchangeTarget | undefined {
+  if (target.domainIssuer !== undefined) return { ...target, domainIssuer: target.domainIssuer }
+  if (target.domainOrigin !== undefined) {
+    return { ...target, domainIssuer: undefined, domainOrigin: target.domainOrigin }
+  }
+  return undefined
 }
 
 /** Reject contradictory explicit credential selections before identity or network access. */

@@ -43,12 +43,24 @@ function dependencies(
     provision: mock(async (slug) => ({
       created: instance(slug),
       slug,
+      access: { status: 'completed' as const, user: 'owner' },
     })),
     ...overrides,
   }
 }
 
 describe('setup owned-instance reconciliation', () => {
+  test('does not claim setup fixed while the created owner access is pending', async () => {
+    const deps = dependencies({
+      provision: mock(async (slug) => ({
+        created: instance(slug),
+        slug,
+        access: { status: 'pending' as const, code: 'OWNER_ACTIVATION_UNAVAILABLE' },
+      })),
+    })
+    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
+    expect(deps.adopt).not.toHaveBeenCalled()
+  })
   test('silently adopts the sole owned ready instance', async () => {
     const ready = instance('only')
     const failed = instance('old-attempt', 'failed')
@@ -135,12 +147,17 @@ describe('setup owned-instance reconciliation', () => {
     expect(deps.provision).not.toHaveBeenCalled()
   })
 
-  test('does not report setup fixed when provisioning could not select the instance', async () => {
+  test('does not report setup fixed when the ready instance could not be bookmarked', async () => {
     const deps = dependencies({
       provision: mock(async (slug) => ({
         created: instance(slug),
         slug,
-        selectionError: new Error('instances.json is read-only'),
+        bookmark: {
+          status: 'pending' as const,
+          code: 'INSTANCE_BOOKMARK_FAILED',
+          message: 'Instance is ready, but instances.json is read-only',
+          hint: 'Fix local CLI storage, then replay instance create',
+        },
       })),
     })
     const logged: string[] = []
@@ -159,9 +176,9 @@ describe('setup owned-instance reconciliation', () => {
     }
 
     expect(caught).toBeInstanceOf(AstraleError)
-    expect((caught as AstraleError).code).toBe('INSTANCE_SELECTION_FAILED')
+    expect((caught as AstraleError).code).toBe('INSTANCE_BOOKMARK_FAILED')
     expect((caught as AstraleError).message).toContain('instances.json is read-only')
-    expect((caught as AstraleError).hint).toContain('astrale instance use new-instance')
+    expect((caught as AstraleError).hint).toContain('replay instance create')
     expect(logged.join('\n')).not.toContain('https://new-instance.eu.astrale.ai')
   })
 

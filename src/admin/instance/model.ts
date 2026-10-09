@@ -2,6 +2,7 @@
 export type InstanceState = 'provisioning' | 'ready' | 'deleting' | 'failed' | 'deleted'
 
 export interface InstanceInfo {
+  readonly fleetId?: string
   readonly id: string
   readonly slug: string
   readonly operationId?: string
@@ -20,15 +21,6 @@ export interface InstanceInfo {
 /** An Instance returned through the caller-scoped Admin graph inventory. */
 export interface OwnedInstanceInfo extends InstanceInfo {
   readonly state: InstanceState
-}
-
-export interface DomainInstallReceipt {
-  readonly domain: string
-  readonly instance: string
-  readonly origin: string
-  readonly ok: boolean
-  readonly installedRevision?: string
-  readonly error?: string
 }
 
 export interface RootIdentityRecipient {
@@ -55,7 +47,15 @@ export interface RetrievedRootIdentity {
   readonly transfer: RootIdentityTransfer
 }
 
-export type InvitationState = 'pending' | 'accepted' | 'revoked' | 'expired'
+export type InvitationState =
+  | 'pending'
+  | 'accepted'
+  | 'registering'
+  | 'registered'
+  | 'completed'
+  | 'cancelled'
+  | 'expired'
+  | 'failed'
 
 export interface InvitationInfo {
   readonly id: string

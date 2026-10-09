@@ -41,13 +41,20 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'studio-agent-routes-'))
   roots.push(root)
   mkdirSync(join(root, 'schema'))
-  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import domain from './domain.js'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
+`,
+  )
   writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
   writeFileSync(
-    join(root, 'application.ts'),
-    `import { defineApplication } from '@astrale-os/sdk/application'
+    join(root, 'domain.ts'),
+    `import { defineDomain } from '@astrale-os/sdk/domain'
 import { Test } from './schema/index.js'
-export default defineApplication({ schema: Test, runtime: {} as never })
+export default defineDomain({ schema: Test, runtime: {} as never })
 `,
   )
   const handle = registerDomain(root)!
@@ -129,6 +136,53 @@ test('a chat pins its own reasoning level, and the turn carries it', async () =>
   expect(await patch('max')).toMatchObject({ effort: 'max' })
   // clearing it hands the choice back to the agent's own configuration
   expect(await patch('')).not.toHaveProperty('effort')
+})
+
+test('fast mode can be toggled on a chat without starting or stopping a turn', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  fixture()
+  const chatId = listChats().activeId
+  const patch = async (fastMode: boolean) => {
+    const url = new URL('http://127.0.0.1/api/agent/chats')
+    return (await (
+      await handleAgentRoute({
+        req: new Request(url, { method: 'POST' }),
+        url,
+        rest: '/agent/chats',
+        body: { action: 'update', chatId, fastMode },
+        notify: () => {},
+      })
+    )?.json()) as { fastMode?: boolean; status: string }
+  }
+
+  expect(await patch(true)).toMatchObject({ fastMode: true, status: 'idle' })
+  expect(await patch(false)).toMatchObject({ fastMode: false, status: 'idle' })
+})
+
+test('reordering the tabs persists and tells every window', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  fixture()
+  const url = new URL('http://127.0.0.1/api/agent/chats')
+  const post = async (body: JsonRecord, notify: (event: StudioEvent) => void = () => {}) =>
+    (await (
+      await handleAgentRoute({
+        req: new Request(url, { method: 'POST' }),
+        url,
+        rest: '/agent/chats',
+        body,
+        notify,
+      })
+    )?.json()) as { id: string; chats: { id: string }[] }
+  const first = listChats().activeId
+  const second = (await post({ action: 'open' })).id
+  const events: StudioEvent[] = []
+
+  const list = await post({ action: 'reorder', order: [second, first] }, (event) =>
+    events.push(event),
+  )
+  expect(list.chats.map((chat) => chat.id)).toEqual([second, first])
+  expect(listChats().chats.map((chat) => chat.id)).toEqual([second, first])
+  expect(events).toContainEqual({ type: 'chats' })
 })
 
 test('a new chat resolves and exposes the domain its creation brief targets', async () => {

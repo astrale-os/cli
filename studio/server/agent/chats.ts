@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto'
 
 import type {
   AgentEffort,
+  ChatAttachment,
   ChatInfo,
   ChatStatus,
   NewDomainContext,
@@ -28,13 +29,17 @@ import type {
 } from '../../shared/types'
 
 import { isAgentEffort } from '../../shared/agent-effort'
+import { isChatTone, nextChatTone } from '../../shared/chat-tone'
 import { DEFAULT_CHAT_TITLE } from '../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { listState, readJson, removeState, writeJson } from '../state/store'
+import { decodeAttachments } from './attachments'
 
 const CHATS_DIR = 'chats'
 const chatFile = (id: string) => `${CHATS_DIR}/${id}.json`
 const ACTIVE_FILE = 'active-chat.json'
+/** The order the tabs were arranged in, by id; absent until someone drags one. */
+const ORDER_FILE = 'chat-order.json'
 
 /** Enough of the old conversation to orient the next agent, not a re-briefing. */
 const MAX_HANDOFF_CHARS = 8000
@@ -46,7 +51,6 @@ const MAX_HANDOFF_CHARS = 8000
  * this the enqueue fails loudly rather than growing a backlog nobody reviews.
  */
 export const MAX_QUEUED_MESSAGES = 20
-const DEFAULT_TITLE = DEFAULT_CHAT_TITLE
 
 /**
  * A summary of another harness's conversation.
@@ -68,8 +72,12 @@ export interface StoredChat {
   id: string
   title: string
   harness: string
+  /** colour slot picked at creation and kept for life (see shared/chat-tone.ts);
+   *  absent only on chats written before tones were stored */
+  tone?: number
   model?: string
   effort?: AgentEffort
+  fastMode?: boolean
   sessionId?: string
   turns: number
   createdAt: string
@@ -88,7 +96,7 @@ export interface StoredChat {
 
 export interface ChatStore {
   activeId: string
-  /** every tab, oldest first */
+  /** every tab, in the order the user arranged them, new ones last */
   chats: StoredChat[]
 }
 
@@ -107,6 +115,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const turns = asFiniteNumber(record.turns)
   const model = asString(record.model)
   const effort = isAgentEffort(record.effort) ? record.effort : undefined
+  const fastMode = asBoolean(record.fastMode)
   const sessionId = asString(record.sessionId)
   const handoff = decodeHandoff(record.handoff)
   const newDomain = decodeNewDomain(record.newDomain)
@@ -114,15 +123,18 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const createdAt = asString(record.createdAt) ?? new Date().toISOString()
   const workspace = asString(record.workspace)
   const origins = asStringArray(record.origins)
+  const tone = isChatTone(record.tone) ? record.tone : undefined
   return {
     id,
-    title: asString(record.title) || DEFAULT_TITLE,
+    title: asString(record.title) || DEFAULT_CHAT_TITLE,
     harness,
     turns: turns !== undefined && Number.isInteger(turns) && turns >= 0 ? turns : 0,
     createdAt,
     updatedAt: asString(record.updatedAt) ?? createdAt,
+    ...(tone === undefined ? {} : { tone }),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
+    ...(fastMode === undefined ? {} : { fastMode }),
     ...(sessionId ? { sessionId } : {}),
     ...(workspace ? { workspace } : {}),
     ...(origins?.length ? { origins } : {}),
@@ -146,9 +158,21 @@ function decodeQueue(value: unknown): QueuedMessage[] {
   return value.flatMap((entry) => {
     const record = asJsonRecord(entry)
     const id = asString(record?.id)
-    const text = asString(record?.text)
-    if (!id || !text) return []
-    return [{ id, text, createdAt: asString(record?.createdAt) ?? new Date().toISOString() }]
+    const text = asString(record?.text) ?? ''
+    const attachments = decodeAttachments(record?.attachments)
+    if (!id || (!text && !attachments)) return []
+    const comments = Array.isArray(record?.comments)
+      ? record.comments.filter((entry): entry is string => typeof entry === 'string')
+      : []
+    return [
+      {
+        id,
+        text,
+        ...(comments.length ? { comments } : {}),
+        ...(attachments ? { attachments } : {}),
+        createdAt: asString(record?.createdAt) ?? new Date().toISOString(),
+      },
+    ]
   })
 }
 
@@ -175,7 +199,7 @@ function newChat(harness: string, extra?: Partial<StoredChat>): StoredChat {
   const now = new Date().toISOString()
   return {
     id: randomUUID(),
-    title: DEFAULT_TITLE,
+    title: DEFAULT_CHAT_TITLE,
     harness,
     turns: 0,
     createdAt: now,
@@ -200,8 +224,33 @@ function writeActiveId(activeRoot: string, activeId: string): void {
   writeJson(activeRoot, ACTIVE_FILE, { activeId })
 }
 
-/** Every tab on disk, oldest first — a corrupt file is skipped, not fatal. */
+function decodeOrder(value: unknown): string[] {
+  return asStringArray(asJsonRecord(value)?.order) ?? []
+}
+
+function readOrder(root: string): string[] {
+  return readJson(root, ORDER_FILE, decodeOrder, [])
+}
+
+/**
+ * Every tab on disk, in the order the user arranged them; a corrupt file is
+ * skipped, not fatal.
+ *
+ * The arrangement is a list of ids beside the chats, not a field on each: one
+ * drag rewrites one file, and a tab another window opens meanwhile is simply
+ * absent from it and lands last, where a new tab always does.
+ */
 function readChats(root: string): StoredChat[] {
+  const chats = readChatsByAge(root)
+  const order = readOrder(root)
+  if (order.length === 0) return chats
+  const rank = new Map(order.map((id, index) => [id, index]))
+  // a stable sort: tabs the arrangement never saw keep their age order, after it
+  return chats.sort((a, b) => (rank.get(a.id) ?? order.length) - (rank.get(b.id) ?? order.length))
+}
+
+/** Every tab on disk, oldest first. */
+function readChatsByAge(root: string): StoredChat[] {
   const chats: StoredChat[] = []
   for (const file of listState(root, CHATS_DIR)) {
     if (!file.endsWith('.json')) continue
@@ -219,6 +268,12 @@ function readStore(root: string, activeRoot = root): ChatStore {
   return { activeId: readActiveId(activeRoot), chats: readChats(root) }
 }
 
+/** The tab in front of the user, read as it is: nothing is created or repaired. */
+export function peekActiveChat(root: string, activeRoot = root): StoredChat | undefined {
+  const store = readStore(root, activeRoot)
+  return store.chats.find((chat) => chat.id === store.activeId) ?? store.chats.at(-1)
+}
+
 /**
  * The store, guaranteed to hold at least one chat and a valid `activeId`.
  *
@@ -234,15 +289,34 @@ export function ensureChats(
 ): ChatStore {
   const store = readStore(root, activeRoot)
   if (store.chats.length === 0) {
-    const chat = newChat(defaultHarness, seedFields(seed))
+    const chat = newChat(defaultHarness, {
+      ...seedFields(seed),
+      tone: nextChatTone([], defaultHarness),
+    })
     writeChat(root, chat)
     store.chats.push(chat)
   }
+  backfillTones(root, store.chats)
   if (!store.chats.some((chat) => chat.id === store.activeId)) {
     store.activeId = store.chats[store.chats.length - 1]!.id
     writeActiveId(activeRoot, store.activeId)
   }
   return store
+}
+
+/**
+ * Give chats saved before tones were stored the one they will keep from now on,
+ * in creation order and next to the tones already handed out.
+ */
+function backfillTones(root: string, chats: StoredChat[]): void {
+  if (chats.every((chat) => chat.tone !== undefined)) return
+  const toned = chats.filter((chat) => chat.tone !== undefined)
+  for (const chat of chats) {
+    if (chat.tone !== undefined) continue
+    chat.tone = nextChatTone(toned, chat.harness)
+    toned.push(chat)
+    writeChat(root, chat)
+  }
 }
 
 function seedFields(seed?: ChatSeed): Partial<StoredChat> {
@@ -258,8 +332,7 @@ export function activeChat(
   seed?: ChatSeed,
   activeRoot = root,
 ): StoredChat {
-  const store = ensureChats(root, defaultHarness, seed, activeRoot)
-  return store.chats.find((chat) => chat.id === store.activeId)!
+  return resolveChat(root, defaultHarness, undefined, seed, activeRoot)!
 }
 
 /** Resolve a caller-supplied chat id, falling back to the active tab. */
@@ -271,8 +344,8 @@ export function resolveChat(
   activeRoot = root,
 ): StoredChat | undefined {
   const store = ensureChats(root, defaultHarness, seed, activeRoot)
-  if (!chatId) return store.chats.find((chat) => chat.id === store.activeId)
-  return store.chats.find((chat) => chat.id === chatId)
+  const wanted = chatId || store.activeId
+  return store.chats.find((chat) => chat.id === wanted)
 }
 
 export function createChat(
@@ -282,6 +355,7 @@ export function createChat(
     title?: string
     model?: string
     effort?: AgentEffort
+    fastMode?: boolean
     handoff?: ChatHandoff
     newDomain?: NewDomainContext
   } & ChatSeed,
@@ -289,9 +363,12 @@ export function createChat(
 ): StoredChat {
   const chat = newChat(input.harness, {
     ...seedFields(input),
+    // by age, not by arrangement: "the newest tab's hue" means the last one OPENED
+    tone: nextChatTone(readChatsByAge(root), input.harness),
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
+    ...(input.fastMode === undefined ? {} : { fastMode: input.fastMode }),
     ...(input.handoff
       ? {
           handoff: { ...input.handoff, summary: input.handoff.summary.slice(0, MAX_HANDOFF_CHARS) },
@@ -321,11 +398,13 @@ export function forkChat(
     root,
     {
       harness,
-      title: source.title === DEFAULT_TITLE ? DEFAULT_TITLE : `${source.title} (${harness})`,
+      title:
+        source.title === DEFAULT_CHAT_TITLE ? DEFAULT_CHAT_TITLE : `${source.title} (${harness})`,
       ...(model ? { model } : {}),
       // how hard you asked this work to be thought about is about the work, not
       // about the agent — it follows, mapped onto whatever ladder it lands on
       ...(source.effort ? { effort: source.effort } : {}),
+      ...(source.fastMode === undefined ? {} : { fastMode: source.fastMode }),
       ...(source.workspace ? { workspace: source.workspace } : {}),
       ...(source.origins ? { origins: source.origins } : {}),
       handoff: {
@@ -339,15 +418,17 @@ export function forkChat(
   )
 }
 
-/** Apply `patch` to one chat and stamp `updatedAt`; the harness is never patchable. */
+/**
+ * Apply `patch` to one chat and stamp `updatedAt`; the harness is never patchable.
+ * A patch that returns `false` changed nothing, and the file is left as it was.
+ */
 function mutateChat(
   root: string,
   chatId: string,
-  patch: (chat: StoredChat) => void,
+  patch: (chat: StoredChat) => void | false,
 ): StoredChat | undefined {
   const chat = readChat(root, chatId)
-  if (!chat) return undefined
-  patch(chat)
+  if (!chat || patch(chat) === false) return undefined
   chat.updatedAt = new Date().toISOString()
   writeChat(root, chat)
   return chat
@@ -356,7 +437,7 @@ function mutateChat(
 export function renameChat(root: string, chatId: string, title: string): StoredChat | undefined {
   const trimmed = title.trim().slice(0, 80)
   return mutateChat(root, chatId, (chat) => {
-    chat.title = trimmed || DEFAULT_TITLE
+    chat.title = trimmed || DEFAULT_CHAT_TITLE
   })
 }
 
@@ -365,7 +446,7 @@ export function titleChatFromMessage(root: string, chatId: string, message: stri
   const summary = message.trim().split('\n')[0]?.trim()
   if (!summary) return
   mutateChat(root, chatId, (chat) => {
-    if (chat.title === DEFAULT_TITLE)
+    if (chat.title === DEFAULT_CHAT_TITLE)
       chat.title = summary.length > 48 ? `${summary.slice(0, 48).trimEnd()}…` : summary
   })
 }
@@ -394,6 +475,16 @@ export function setChatModel(root: string, chatId: string, model: string): Store
   return mutateChat(root, chatId, (chat) => {
     if (trimmed) chat.model = trimmed
     else delete chat.model
+  })
+}
+
+export function setChatFastMode(
+  root: string,
+  chatId: string,
+  fastMode: boolean,
+): StoredChat | undefined {
+  return mutateChat(root, chatId, (chat) => {
+    chat.fastMode = fastMode
   })
 }
 
@@ -445,10 +536,14 @@ export function enqueueChatMessage(
   root: string,
   chatId: string,
   text: string,
+  comments?: string[],
+  attachments?: ChatAttachment[],
 ): QueuedMessage | undefined {
   const message: QueuedMessage = {
     id: randomUUID(),
     text: text.trim(),
+    ...(comments?.length ? { comments } : {}),
+    ...(attachments?.length ? { attachments } : {}),
     createdAt: new Date().toISOString(),
   }
   return mutateChat(root, chatId, (chat) => {
@@ -478,14 +573,13 @@ export function takeQueuedMessage(
   messageId?: string,
 ): QueuedMessage | undefined {
   let taken: QueuedMessage | undefined
-  const chat = readChat(root, chatId)
-  if (!chat) return undefined
-  const queue = chatQueue(chat)
-  taken = messageId ? queue.find((entry) => entry.id === messageId) : queue[0]
-  if (!taken) return undefined
-  chat.queue = queue.filter((entry) => entry.id !== taken!.id)
-  chat.updatedAt = new Date().toISOString()
-  writeChat(root, chat)
+  mutateChat(root, chatId, (chat) => {
+    const queue = chatQueue(chat)
+    const found = messageId ? queue.find((entry) => entry.id === messageId) : queue[0]
+    if (!found) return false
+    chat.queue = queue.filter((entry) => entry.id !== found.id)
+    taken = found
+  })
   return taken
 }
 
@@ -497,11 +591,11 @@ export function editQueuedMessage(
   text: string,
 ): QueuedMessage | undefined {
   const trimmed = text.trim()
-  if (!trimmed) return undefined
   let edited: QueuedMessage | undefined
   mutateChat(root, chatId, (chat) => {
     chat.queue = chatQueue(chat).map((entry) => {
-      if (entry.id !== messageId) return entry
+      // the text may go only when images are left to carry the message
+      if (entry.id !== messageId || (!trimmed && !entry.attachments?.length)) return entry
       edited = { ...entry, text: trimmed }
       return edited
     })
@@ -516,17 +610,15 @@ export function moveQueuedMessage(
   messageId: string,
   delta: -1 | 1,
 ): boolean {
-  const chat = readChat(root, chatId)
-  if (!chat) return false
-  const queue = [...chatQueue(chat)]
-  const from = queue.findIndex((entry) => entry.id === messageId)
-  const to = from + delta
-  if (from < 0 || to < 0 || to >= queue.length) return false
-  queue.splice(to, 0, queue.splice(from, 1)[0]!)
-  chat.queue = queue
-  chat.updatedAt = new Date().toISOString()
-  writeChat(root, chat)
-  return true
+  const moved = mutateChat(root, chatId, (chat) => {
+    const queue = [...chatQueue(chat)]
+    const from = queue.findIndex((entry) => entry.id === messageId)
+    const to = from + delta
+    if (from < 0 || to < 0 || to >= queue.length) return false
+    queue.splice(to, 0, queue.splice(from, 1)[0]!)
+    chat.queue = queue
+  })
+  return moved !== undefined
 }
 
 /** The transferred summary has reached the harness; never send it twice. */
@@ -566,10 +658,29 @@ export function setActiveChat(root: string, chatId: string, activeRoot = root): 
   return true
 }
 
+/**
+ * Arrange the tabs in `order`.
+ *
+ * Ids no tab holds are dropped, and tabs the caller did not name keep their
+ * place relative to each other, after the named ones: a window that has not
+ * seen a tab yet cannot lose it by dragging another.
+ */
+export function setChatOrder(root: string, order: string[]): StoredChat[] {
+  const chats = readChats(root)
+  const known = new Set(chats.map((chat) => chat.id))
+  const named = [...new Set(order)].filter((id) => known.has(id))
+  const rest = chats.map((chat) => chat.id).filter((id) => !named.includes(id))
+  writeJson(root, ORDER_FILE, { order: [...named, ...rest] })
+  return readChats(root)
+}
+
 /** Drop a tab. The last one may go too — the next read seeds a fresh one. */
 export function deleteChat(root: string, chatId: string, activeRoot = root): boolean {
   if (!chatExists(root, chatId)) return false
   removeState(root, chatFile(chatId))
+  const order = readOrder(root)
+  if (order.includes(chatId))
+    writeJson(root, ORDER_FILE, { order: order.filter((id) => id !== chatId) })
   if (readActiveId(activeRoot) === chatId) {
     const remaining = readChats(root)
     writeActiveId(activeRoot, remaining[remaining.length - 1]?.id ?? '')
@@ -584,6 +695,7 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
     title: chat.title,
     harness: chat.harness,
     turns: chat.turns,
+    ...(chat.tone === undefined ? {} : { tone: chat.tone }),
     createdAt: chat.createdAt,
     updatedAt: chat.updatedAt,
     status,
@@ -592,6 +704,7 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
     ...(chat.origins === undefined ? {} : { origins: [...chat.origins] }),
     ...(chat.model === undefined ? {} : { model: chat.model }),
     ...(chat.effort === undefined ? {} : { effort: chat.effort }),
+    ...(chat.fastMode === undefined ? {} : { fastMode: chat.fastMode }),
     ...(chat.sessionId === undefined ? {} : { sessionId: chat.sessionId }),
     ...(chat.handoff
       ? {

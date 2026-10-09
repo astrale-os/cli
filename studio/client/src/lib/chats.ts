@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 
 import { api, qk } from './api'
 import { useSchemaSettled } from './hooks'
+import { useUI } from './store'
 
 const NO_CHATS: ChatInfo[] = []
 
@@ -73,18 +74,44 @@ export function useChatMutations() {
   })
   const close = useMutation({
     mutationFn: (chatId: string) => api.closeChat(chatId),
-    onSuccess: (list) => {
+    onSuccess: (list, chatId) => {
+      // A draft belongs to its chat, so it goes when the chat does — there is
+      // nothing left to send it to, and the tab id will never come back.
+      useUI.getState().dropAgentDraft(chatId)
       setList(list)
       refresh()
     },
     onError: (error) => toast.error(`Could not close the chat — ${String(error)}`),
   })
+  const reorder = useMutation({
+    mutationFn: (order: string[]) => api.reorderChats(order),
+    // A dropped tab has to stay where it was dropped, not jump back for a round trip.
+    onMutate: (order) => {
+      const current = queryClient.getQueryData<ChatList>(qk.chats)
+      if (!current) return
+      const rank = new Map(order.map((id, index) => [id, index]))
+      const place = (chat: ChatInfo) => rank.get(chat.id) ?? order.length
+      setList({ ...current, chats: [...current.chats].sort((a, b) => place(a) - place(b)) })
+    },
+    onSuccess: setList,
+    onError: (error) => {
+      refresh()
+      toast.error(`Could not move the chat: ${String(error)}`)
+    },
+  })
   const update = useMutation({
-    mutationFn: (input: { chatId: string; title?: string; model?: string; effort?: string }) =>
+    mutationFn: (input: {
+      chatId: string
+      title?: string
+      model?: string
+      effort?: string
+      fastMode?: boolean
+    }) =>
       api.updateChat(input.chatId, {
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.effort === undefined ? {} : { effort: input.effort }),
+        ...(input.fastMode === undefined ? {} : { fastMode: input.fastMode }),
       }),
     onSuccess: () => refresh(),
     onError: (error) => toast.error(String(error)),
@@ -104,7 +131,7 @@ export function useChatMutations() {
     onError: (error) => toast.error(`Could not delete the transferred context — ${String(error)}`),
   })
 
-  return { open, select, close, update, switchHarness, forgetOrigin }
+  return { open, select, close, reorder, update, switchHarness, forgetOrigin }
 }
 
 /**

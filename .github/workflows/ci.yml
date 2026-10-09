@@ -14,9 +14,22 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.0
+  BUN_VERSION: 1.4.2
 
 jobs:
+  agent-setup:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare from pinned Config archive and verify reuse
+        run: |
+          AGENT_HARNESSES=codex bash scripts/setup/setup.sh
+          AGENT_HARNESSES=codex bash scripts/setup/verify.sh
+          AGENT_HARNESSES=codex bash scripts/setup/setup.sh
+          git diff --exit-code -- pnpm-lock.yaml
+
   ui-search-contract:
     uses: ./.github/workflows/ui-search-contract.yml
     with:
@@ -72,8 +85,10 @@ jobs:
       - name: Check public dependency closure
         run: node scripts/verify-public-dependency-boundary.mjs
       - name: Lint
+        if: matrix.node-version == '26'
         run: pnpm lint
       - name: Check formatting
+        if: matrix.node-version == '26'
         run: pnpm format:check
       - name: Typecheck
         run: pnpm typecheck
@@ -121,5 +136,23 @@ jobs:
         run: STANDALONE=true pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --dir studio exec playwright install --with-deps chromium
+      # The viewer suite drives the real CLI session server, so this job builds
+      # the CLI's generated assets exactly as the test job does.
+      - name: Generate embedded assets
+        run: pnpm assets:ensure
+      - name: Verify published View external navigation
+        run: pnpm test:viewer:browser
       - name: Run Studio browser smoke
         run: pnpm --dir studio test:e2e
+      - name: Retain failed browser evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: studio-browser-failures
+          path: |
+            viewer/test-results/**
+            studio/test-results/**/*.png
+            studio/test-results/**/trace.zip
+            studio/test-results/**/error-context.md
+          retention-days: 7
+          if-no-files-found: ignore

@@ -35,6 +35,9 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   expect(bundle.schemaRevision).toMatch(/^sha256:[a-f0-9]{64}$/)
   expect(bundle.ir?.classes).toHaveProperty('Company')
   expect(bundle.ir?.classes).toHaveProperty('Invoice')
+  expect(bundle.ir?.classes?.Invoice).toMatchObject({
+    methods: { settle: { abstract: true, executable: true } },
+  })
   expect(bundle.ir?.classes).toHaveProperty('Subscription')
 
   // Dock the work panel to a side for this run. The studio now starts on the floating

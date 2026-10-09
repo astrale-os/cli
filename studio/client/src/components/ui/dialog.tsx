@@ -5,7 +5,6 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 export const Dialog = DialogPrimitive.Root
-export const DialogTrigger = DialogPrimitive.Trigger
 export const DialogClose = DialogPrimitive.Close
 export const DialogPortal = DialogPrimitive.Portal
 
@@ -56,9 +55,6 @@ DialogContent.displayName = 'DialogContent'
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('flex flex-col gap-1.5', className)} {...props} />
-}
-export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex justify-end gap-2', className)} {...props} />
 }
 export const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,

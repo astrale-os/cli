@@ -17,11 +17,11 @@ import { parse } from 'yaml'
 import { promote } from './promote.mjs'
 
 const commit = 'a'.repeat(40)
-const release = 'cli/v1.0.0-beta.85'
+const release = 'cli/v1.0.0-beta.133'
 const digest = (value) => createHash('sha256').update(value).digest('hex')
 function fixture(
   t,
-  { corrupt = false, qualified = true, apiFailure = false, existing = false } = {},
+  { corrupt = false, qualified = true, apiFailure = false, existing = false, retired = false } = {},
 ) {
   t.mock.method(console, 'log', () => {})
   const directory = mkdtempSync(join(tmpdir(), 'cli-promotion-test-'))
@@ -42,10 +42,9 @@ function fixture(
   writeFileSync(
     join(directory, 'manifest.json'),
     JSON.stringify({
-      schemaVersion: 2,
-      version: '1.0.0-beta.85',
-      binaryVersion: '1.0.0-beta.85',
-      cloudflaredVersion: '2026.8.2',
+      ...(retired ? { schemaVersion: 2, cloudflaredVersion: '2026.8.2' } : {}),
+      version: '1.0.0-beta.133',
+      binaryVersion: '1.0.0-beta.133',
       channel: 'beta',
       repo: 'astrale-os/cli',
       assets: entries,
@@ -59,7 +58,7 @@ function fixture(
   if (corrupt) writeFileSync(join(directory, 'astrale-linux-x64.tar.gz'), 'tampered')
   const writes = []
   const uploaded = new Map()
-  let latest = existing ? { body: 'Promoted cli/v1.0.0-beta.99', prerelease: true } : undefined
+  let latest = existing ? { body: 'Promoted cli/v1.0.0-beta.134', prerelease: true } : undefined
   let latestCommit = existing ? 'b'.repeat(40) : undefined
   const json = (value) => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
   const missing = () => ({ status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' })
@@ -159,6 +158,7 @@ test('promotion copies archives unchanged, changes only manifest channel, and re
 })
 
 for (const [name, options, error] of [
+  ['retired two-binary release', { retired: true }, /schemaVersion is invalid/],
   ['corrupt archive', { corrupt: true }, /differs from immutable/],
   ['skipped qualification', { qualified: false }, /No successful/],
   ['GitHub API failure', { apiFailure: true }, /403/],
@@ -192,7 +192,7 @@ test('workflow separates unprivileged preview from protected, serialized publica
 test('explicit rollback can move latest back to a previously qualified release', async (t) => {
   const state = fixture(t, { existing: true })
   const report = await promote(release, { gh: state.gh, apply: true })
-  assert.equal(report.previous, 'Promoted cli/v1.0.0-beta.99')
+  assert.equal(report.previous, 'Promoted cli/v1.0.0-beta.134')
   assert.ok(state.writes.some((args) => args.includes('PATCH') && args.includes(`sha=${commit}`)))
-  assert.equal(JSON.parse(state.uploaded.get('manifest.json').bytes).version, '1.0.0-beta.85')
+  assert.equal(JSON.parse(state.uploaded.get('manifest.json').bytes).version, '1.0.0-beta.133')
 })

@@ -12,6 +12,7 @@ import {
   Subscription,
 } from './billing/index.js'
 import { PaymentsSchema } from './external.js'
+import { escalateTicket, exportLedger, reconcileInvoice } from './functions/index.js'
 import { BelongsToTeam, Company, Person, platformTeam, Team, WorksAt } from './people/index.js'
 import {
   Opportunity,
@@ -56,10 +57,10 @@ export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
     AboutAccount,
     MessageOn,
   },
+  functions: { reconcileInvoice, escalateTicket, exportLedger },
   views: {
     overview: view({
       description: 'CRM overview.',
-      target: 'domain',
     }),
   },
   policies: { mayManageInvoice },

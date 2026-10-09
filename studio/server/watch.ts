@@ -1,6 +1,6 @@
 /**
  * watch.ts — two debounced watch channels per domain:
- *   Application + selected Schema sources → re-introspect → schema-diff (+ compile-error)
+ *   Domain definition + selected Schema sources → re-introspect → schema-diff (+ compile-error)
  *   anatomy fileset   → anatomy-diff
  * The studio is read-only, so this only ever pushes; the client refetches.
  */
@@ -10,7 +10,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path'
 
 import type { DomainHandle } from './domain'
 
-import { getBundle, invalidate, invalidateDatasets } from './cache'
+import { invalidate, invalidateDatasets, rebuildAndAnnounce } from './cache'
 import { broadcast } from './sse'
 import { ANATOMY_GLOBS } from './state/baseline'
 
@@ -42,7 +42,7 @@ export function affectsBundle(handle: DomainHandle, path: string): boolean {
   const rel = relative(handle.root, path).split('\\').join('/')
   const topLevel = rel.split('/')[0]
   return (
-    path === handle.applicationFile ||
+    path === handle.domainFile ||
     rel === 'runtime.ts' ||
     rel.endsWith('/runtime.ts') ||
     BUNDLE_SOURCE_DIRS.has(topLevel)
@@ -66,7 +66,7 @@ export function domainWatchChannels(handle: DomainHandle, path: string): DomainW
     return { schema: false, anatomy: false, datasets: false }
   }
   return {
-    schema: absolute === resolve(handle.applicationFile) || inside(rel, handle.schemaDirName),
+    schema: absolute === resolve(handle.domainFile) || inside(rel, handle.schemaDirName),
     anatomy: ANATOMY_PATHS.some((candidate) => inside(rel, candidate)),
     datasets:
       absolute === resolve(handle.configFile) || rel === 'tests' || rel.startsWith('tests/'),
@@ -79,43 +79,33 @@ interface DomainWatchHandlers {
   datasets(): void
 }
 
+const DEBOUNCE_MS = 150
+
+/** Run `fn` once events on a channel have been quiet for DEBOUNCE_MS; the last call's args win. */
+function debounced<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return (...args) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => fn(...args), DEBOUNCE_MS)
+  }
+}
+
 function domainWatchHandlers(handle: DomainHandle): DomainWatchHandlers {
-  let schemaTimer: ReturnType<typeof setTimeout> | undefined
-  let anatomyTimer: ReturnType<typeof setTimeout> | undefined
-  let datasetsTimer: ReturnType<typeof setTimeout> | undefined
   return {
-    datasets: () => {
-      clearTimeout(datasetsTimer)
-      datasetsTimer = setTimeout(() => {
-        invalidateDatasets(handle.id)
-        broadcast({ type: 'datasets', domainId: handle.id })
-      }, 150)
-    },
-    schema: () => {
-      clearTimeout(schemaTimer)
-      schemaTimer = setTimeout(async () => {
-        // Origin and View declarations are part of the current schema, so schema
-        // edits invalidate both render surfaces.
-        invalidate(handle.id, 'all')
-        broadcast({ type: 'resolving', domainId: handle.id })
-        const bundle = await getBundle(handle.id, true)
-        if (bundle?.error)
-          broadcast({ type: 'compile-error', domainId: handle.id, message: bundle.error.message })
-        broadcast({
-          type: 'schema-diff',
-          domainId: handle.id,
-          renderFingerprint: bundle?.renderFingerprint ?? 'sha-none',
-        })
-        broadcast({ type: 'anatomy-diff', domainId: handle.id })
-      }, 150)
-    },
-    anatomy: (path) => {
-      clearTimeout(anatomyTimer)
-      anatomyTimer = setTimeout(() => {
-        invalidate(handle.id, affectsBundle(handle, path) ? 'all' : 'anatomy')
-        broadcast({ type: 'anatomy-diff', domainId: handle.id })
-      }, 150)
-    },
+    datasets: debounced(() => {
+      invalidateDatasets(handle.id)
+      broadcast({ type: 'datasets', domainId: handle.id })
+    }),
+    schema: debounced(() => {
+      // Origin and View declarations are part of the current schema, so schema
+      // edits invalidate both render surfaces.
+      invalidate(handle.id, 'all')
+      void rebuildAndAnnounce(handle.id, broadcast)
+    }),
+    anatomy: debounced((path: string) => {
+      invalidate(handle.id, affectsBundle(handle, path) ? 'all' : 'anatomy')
+      broadcast({ type: 'anatomy-diff', domainId: handle.id })
+    }),
   }
 }
 
@@ -181,7 +171,7 @@ export function watchDomain(handle: DomainHandle): () => void {
   const attach = async (): Promise<void> => {
     if (closed) return
     const fallbackStarted = performance.now()
-    const schemaW = chokidar.watch([handle.applicationFile, handle.schemaDir], {
+    const schemaW = chokidar.watch([handle.domainFile, handle.schemaDir], {
       ignoreInitial: true,
       ignored,
     })
@@ -197,7 +187,9 @@ export function watchDomain(handle: DomainHandle): () => void {
       { ignoreInitial: true, ignored },
     )
     open.push(schemaW, anatomyW, datasetsW)
-    listen(handlers, schemaW, anatomyW, datasetsW)
+    datasetsW.on('all', handlers.datasets)
+    schemaW.on('all', handlers.schema)
+    anatomyW.on('all', (_event, path) => handlers.anatomy(path))
     await Promise.all([ready(schemaW), ready(anatomyW), ready(datasetsW)])
     if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
       console.log(
@@ -215,15 +207,4 @@ export function watchDomain(handle: DomainHandle): () => void {
     closed = true
     for (const w of open) void w.close()
   }
-}
-
-function listen(
-  handlers: DomainWatchHandlers,
-  schemaW: ChokidarWatcher,
-  anatomyW: ChokidarWatcher,
-  datasetsW: ChokidarWatcher,
-): void {
-  datasetsW.on('all', handlers.datasets)
-  schemaW.on('all', handlers.schema)
-  anatomyW.on('all', (_event, path) => handlers.anatomy(path))
 }

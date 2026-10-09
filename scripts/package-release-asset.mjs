@@ -45,13 +45,8 @@ function tarEntry(name, bytes, mode) {
   return Buffer.concat([tarHeader(name, bytes.length, mode), bytes, padding])
 }
 
-export function packageReleaseAsset(astrale, cloudflared, cloudflaredLicense) {
-  const tar = Buffer.concat([
-    tarEntry('astrale', astrale, 0o755),
-    tarEntry('astrale-cloudflared', cloudflared, 0o755),
-    tarEntry('LICENSE.cloudflared', cloudflaredLicense, 0o644),
-    Buffer.alloc(TAR_END_BYTES),
-  ])
+export function packageReleaseAsset(astrale) {
+  const tar = Buffer.concat([tarEntry('astrale', astrale, 0o755), Buffer.alloc(TAR_END_BYTES)])
   const compressed = gzipSync(tar, { level: 9 })
   // gzip metadata must not vary with wall time or the runner operating system.
   compressed.fill(0, 4, 8)
@@ -60,20 +55,11 @@ export function packageReleaseAsset(astrale, cloudflared, cloudflaredLicense) {
 }
 
 function main() {
-  const [astralePath, cloudflaredPath, licensePath, assetPath, ...extra] = process.argv.slice(2)
-  if (!astralePath || !cloudflaredPath || !licensePath || !assetPath || extra.length > 0) {
-    throw new TypeError(
-      'Usage: node scripts/package-release-asset.mjs <astrale> <astrale-cloudflared> <license> <asset.tar.gz>',
-    )
+  const [astralePath, assetPath, ...extra] = process.argv.slice(2)
+  if (!astralePath || !assetPath || extra.length > 0) {
+    throw new TypeError('Usage: node scripts/package-release-asset.mjs <astrale> <asset.tar.gz>')
   }
-  writeFileSync(
-    assetPath,
-    packageReleaseAsset(
-      readFileSync(astralePath),
-      readFileSync(cloudflaredPath),
-      readFileSync(licensePath),
-    ),
-  )
+  writeFileSync(assetPath, packageReleaseAsset(readFileSync(astralePath)))
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) main()

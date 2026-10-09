@@ -1,3 +1,4 @@
+import { FIXTURE_ID } from './test'
 import { expect, test } from './test'
 
 test('an imported domain is hidden and restored through its persisted visibility state', async ({
@@ -5,7 +6,7 @@ test('an imported domain is hidden and restored through its persisted visibility
   request,
 }) => {
   const workspace = (await (await request.get('/api/workspace')).json()) as Array<{ id: string }>
-  const domainId = workspace.find((domain) => domain.id === 'fixture')!.id
+  const domainId = workspace.find((domain) => domain.id === FIXTURE_ID)!.id
   const visibilityUrl = `/api/domain/${encodeURIComponent(domainId)}/visibility`
 
   await page.goto('/')

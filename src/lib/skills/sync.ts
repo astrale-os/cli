@@ -7,6 +7,7 @@ import {
   readFile,
   readdir,
   readlink,
+  realpath,
   rename,
   rm,
   symlink,
@@ -349,7 +350,9 @@ async function inspectAstraleSkills(
     group.push(agent)
     agentDirectories.set(agent.globalSkillsDir, group)
   }
+  const canonicalDirectory = await realpath(canonical).catch(() => canonical)
   for (const [directory, agents] of agentDirectories) {
+    if ((await realpath(directory).catch(() => directory)) === canonicalDirectory) continue
     const links = await Promise.all(
       snapshot.skills.map((skill) =>
         isCanonicalLink(join(directory, skill.name), join(canonical, skill.name)),
@@ -682,14 +685,15 @@ async function reconcileAgentLinks(
       const target = join(directory, name)
       const canonical = join(canonicalRoot, name)
       if (await isCanonicalLink(target, canonical)) continue
-      try {
-        await lstat(target)
-        throw new Error(
-          `${target} already exists and is not managed by Astrale; move it aside, then retry`,
-        )
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      }
+      // An agent's skills directory may itself point at the canonical directory.
+      // Do not delete the skill when both paths already address the same location.
+      const [targetPath, canonicalPath] = await Promise.all([
+        realpath(target).catch(() => resolve(target)),
+        realpath(canonical).catch(() => resolve(canonical)),
+      ])
+      if (targetPath === canonicalPath) continue
+      // Match skills add: replace existing agent copies without backing them up.
+      await rm(target, { recursive: true, force: true })
       await symlink(relative(dirname(target), canonical), target)
       changed = true
     }

@@ -14,6 +14,7 @@ import { anchorKey } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { type ExternalDomain, externalDomains } from './external'
+import { KERNEL_ORIGIN } from './inheritance'
 import { SchemaIcon } from './schema-icon'
 import { domainRef, isHidden } from './visibility'
 
@@ -31,7 +32,7 @@ const importAnchor = (origin: string) => `${IMPORT_PREFIX}${origin}`
 /** Resolve a domain's display name + SVG icon from the catalog, falling back to its origin. */
 function useResolve() {
   const { data: catalog } = useCatalog()
-  const byOrigin = new Map((catalog ?? []).map((e) => [e.origin, e]))
+  const byOrigin = useMemo(() => new Map((catalog ?? []).map((e) => [e.origin, e])), [catalog])
   return (origin: string): Pick<DomainCatalogEntry, 'name' | 'icon'> & { description?: string } =>
     byOrigin.get(origin) ?? { name: origin.split('.')[0] || origin, icon: '' }
 }
@@ -74,9 +75,10 @@ function DomainRow({
         type="button"
         onClick={() => onToggleHidden(domainRef(domain.origin))}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
       >
-        {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        {/* What a click does: an open eye shows, a closed eye hides. */}
+        {hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
       </button>
     </div>
   )
@@ -202,7 +204,7 @@ export function DomainsPanel({
 
   // Canonical dependencies and resolved references are the import ground truth.
   const taken = useMemo(() => {
-    const t = new Set<string>(['kernel.astrale.ai', ...referenced])
+    const t = new Set<string>([KERNEL_ORIGIN, ...referenced])
     for (const dependency of bundle?.ir?.dependencies ?? []) t.add(dependency.origin)
     for (const descriptor of Object.values(bundle?.ir?.importsByKey ?? {})) {
       t.add(descriptor.origin)

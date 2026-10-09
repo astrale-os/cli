@@ -25,6 +25,8 @@ import {
   resolveChat,
   setActiveChat,
   setChatModel,
+  setChatFastMode,
+  setChatOrder,
   setChatSession,
   takeQueuedMessage,
   titleChatFromMessage,
@@ -42,6 +44,16 @@ afterEach(() => {
 })
 
 describe('chat tabs', () => {
+  test('fast mode is a persistent per-chat switch and follows a harness handoff', () => {
+    const dir = root()
+    const source = createChat(dir, { harness: 'codex' })
+    setChatFastMode(dir, source.id, true)
+    const stored = resolveChat(dir, 'codex', source.id)!
+    expect(chatInfo(stored, 'idle').fastMode).toBe(true)
+
+    const forked = forkChat(dir, stored, 'claude', 'continue here')
+    expect(forked.fastMode).toBe(true)
+  })
   test('seeds one chat on the default harness and keeps its id across reads', () => {
     const dir = root()
     const first = activeChat(dir, 'claude')
@@ -79,6 +91,72 @@ describe('chat tabs', () => {
     expect(resolveChat(dir, 'claude', codex.id)?.sessionId).toBeUndefined()
     expect(resolveChat(dir, 'claude', codex.id)?.turns).toBe(0)
     expect(resolveChat(dir, 'claude', claude.id)?.sessionId).toBe('claude-session')
+  })
+
+  test('a chat keeps its tone for life, whatever tab closes', () => {
+    const dir = root()
+    const first = activeChat(dir, 'claude')
+    const second = createChat(dir, { harness: 'claude' })
+    const third = createChat(dir, { harness: 'claude' })
+    expect([first.tone, second.tone, third.tone]).toEqual([0, 1, 2])
+
+    deleteChat(dir, second.id)
+    expect(resolveChat(dir, 'claude', third.id)?.tone).toBe(2)
+    expect(chatInfo(resolveChat(dir, 'claude', third.id)!, 'idle').tone).toBe(2)
+    // the freed hue goes to the next tab, not the survivor's
+    expect(createChat(dir, { harness: 'claude' }).tone).toBe(1)
+
+    // closing the brand tab hands the brand to the next chat of that agent only
+    deleteChat(dir, first.id)
+    expect(resolveChat(dir, 'claude', third.id)?.tone).toBe(2)
+    expect(createChat(dir, { harness: 'claude' }).tone).toBe(0)
+  })
+
+  test('keeps the order tabs were arranged in, new ones last', () => {
+    const dir = root()
+    // three tabs opened a second apart, as chats opened within one millisecond tie
+    for (const [index, id] of ['a', 'b', 'c'].entries())
+      writeJson(dir, `chats/${id}.json`, {
+        id,
+        title: 'New chat',
+        harness: 'claude',
+        tone: index,
+        turns: 0,
+        createdAt: `2026-09-01T00:00:0${index}.000Z`,
+        updatedAt: `2026-09-01T00:00:0${index}.000Z`,
+      })
+    const [first, second, third] = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+    const ids = () => ensureChats(dir, 'claude').chats.map((chat) => chat.id)
+    expect(ids()).toEqual([first.id, second.id, third.id])
+
+    // an unknown id is ignored, and a tab the caller did not name keeps its place after
+    setChatOrder(dir, [third.id, 'gone', first.id])
+    expect(ids()).toEqual([third.id, first.id, second.id])
+
+    const fourth = createChat(dir, { harness: 'claude' })
+    expect(ids()).toEqual([third.id, first.id, second.id, fourth.id])
+
+    deleteChat(dir, first.id)
+    expect(ids()).toEqual([third.id, second.id, fourth.id])
+    expect(readJson(dir, 'chat-order.json', (value) => value, undefined)).toEqual({
+      order: [third.id, second.id],
+    })
+  })
+
+  test('chats saved before tones existed get one once, and keep it', () => {
+    const dir = root()
+    const legacy = ['a', 'b'].map((id, index) => ({
+      id,
+      title: 'New chat',
+      harness: 'claude',
+      turns: 0,
+      createdAt: `2026-09-01T00:00:0${index}.000Z`,
+      updatedAt: `2026-09-01T00:00:0${index}.000Z`,
+    }))
+    for (const chat of legacy) writeJson(dir, `chats/${chat.id}.json`, chat)
+    expect(ensureChats(dir, 'claude').chats.map((chat) => chat.tone)).toEqual([0, 1])
+    deleteChat(dir, 'a')
+    expect(ensureChats(dir, 'claude').chats.map((chat) => chat.tone)).toEqual([1])
   })
 
   test('persists the new-domain context and exposes it on the chat', () => {

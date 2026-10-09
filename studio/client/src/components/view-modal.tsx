@@ -1,23 +1,7 @@
-import type {
-  ViewInfo,
-  ViewSessionResult,
-  ViewTargetCandidate,
-  ViewTargetResult,
-} from '@shared/types'
+import type { ViewInfo, ViewSessionResult } from '@shared/types'
 
-import {
-  AlertCircle,
-  Check,
-  ChevronsUpDown,
-  ExternalLink,
-  Loader2,
-  MonitorPlay,
-  RefreshCw,
-  Search,
-  Unplug,
-  X,
-} from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertCircle, ExternalLink, Loader2, MonitorPlay, RefreshCw, Unplug, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import { api } from '@/lib/api'
 import { useViewRuntime } from '@/lib/hooks'
@@ -25,17 +9,26 @@ import { cn } from '@/lib/utils'
 
 import { DescriptionText } from './studio-kit'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog'
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+
+type ViewRuntime = NonNullable<ReturnType<typeof useViewRuntime>['data']>
 
 type SessionState =
   | { phase: 'idle' | 'launching' }
   | { phase: 'ready'; session: Extract<ViewSessionResult, { status: 'ready' }> }
   | { phase: 'error'; reason: string }
 
+const errorReason = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
 /**
  * A View workbench backed by the CLI-owned session. `astrale view` resolves the
  * installed placement and owns identity, active-instance data, delegation, and
- * the Shell mount. Opening the dialog is the only start action the user needs.
+ * the Shell mount. Every View belongs to its Domain and opens on it: there is no
+ * target to pick. Opening the dialog is the only start action the user needs.
+ *
+ * The dialog holds one named page of that session and hands exactly that page
+ * back when it goes. It never closes the session: the operator may have opened
+ * the same View in a tab of their own, and the session server keeps the session
+ * up for as long as any page still holds it.
  */
 export function ViewModal({
   domainId,
@@ -50,29 +43,13 @@ export function ViewModal({
 }) {
   const runtimeQuery = useViewRuntime(domainId, view.slug, open)
   const runtime = runtimeQuery.data
-  const [targetId, setTargetId] = useState('')
+  // This dialog's page of whatever session it is showing. Stable for the life of
+  // the dialog, and never the id of the tab the View was popped out into.
+  const [pageId] = useState(() => crypto.randomUUID())
   const [restarting, setRestarting] = useState(false)
   const [session, setSession] = useState<SessionState>({ phase: 'idle' })
-  const initializedFor = useRef('')
 
-  useEffect(() => {
-    if (!open) {
-      initializedFor.current = ''
-      setTargetId('')
-      setSession({ phase: 'idle' })
-      return
-    }
-    if (!runtime) return
-    const key = `${domainId}:${view.slug}:${runtime.instance ?? 'none'}`
-    if (initializedFor.current === key) return
-    initializedFor.current = key
-    setTargetId(runtime.targets.selected?.id ?? '')
-  }, [domainId, open, runtime, view.slug])
-
-  const targetReady =
-    !!runtime &&
-    (!runtime.targetRequired || runtime.targets.items.some((target) => target.id === targetId))
-  const launchReady = open && !restarting && !!runtime?.instance && targetReady
+  const launchReady = open && !restarting && !!runtime?.instance
 
   useEffect(() => {
     if (!launchReady) {
@@ -83,47 +60,42 @@ export function ViewModal({
     let openedSessionId: string | null = null
     setSession({ phase: 'launching' })
     void api
-      .launchView(domainId, view.slug, {
-        preparationId: runtime.preparationId,
-        ...(targetId ? { targetId } : {}),
-      })
+      .launchView(domainId, view.slug, { preparationId: runtime.preparationId })
       .then((result) => {
         if (result.status === 'ready') {
           openedSessionId = result.sessionId
-          if (disposed) void api.closeViewSession(domainId, result.sessionId)
+          if (disposed) void api.releaseViewSession(domainId, result.sessionId, pageId)
           else setSession({ phase: 'ready', session: result })
         } else if (!disposed) {
           setSession({ phase: 'error', reason: result.reason })
         }
       })
       .catch((error: unknown) => {
-        if (!disposed) {
-          setSession({
-            phase: 'error',
-            reason: error instanceof Error ? error.message : String(error),
-          })
-        }
+        if (!disposed) setSession({ phase: 'error', reason: errorReason(error) })
       })
     return () => {
       disposed = true
-      if (openedSessionId) void api.closeViewSession(domainId, openedSessionId)
+      if (openedSessionId) void api.releaseViewSession(domainId, openedSessionId, pageId)
     }
-  }, [domainId, launchReady, runtime?.instance, runtime?.preparationId, targetId, view.slug])
+  }, [domainId, launchReady, pageId, runtime?.instance, runtime?.preparationId, view.slug])
 
+  // Unloading Studio takes this dialog's page with it, and an unload runs no
+  // effect cleanup. Release that page here so a session nobody else holds does
+  // not sit out its idle budget - and so one a popped-out tab holds survives.
   useEffect(() => {
     if (session.phase !== 'ready') return
-    const closeOnPageExit = () => {
-      const url = `/api/domain/${encodeURIComponent(domainId)}/views/sessions/close`
+    const releaseOnPageExit = () => {
+      const url = `/api/domain/${encodeURIComponent(domainId)}/views/sessions/release`
       navigator.sendBeacon(
         url,
-        new Blob([JSON.stringify({ sessionId: session.session.sessionId })], {
+        new Blob([JSON.stringify({ sessionId: session.session.sessionId, page: pageId })], {
           type: 'application/json',
         }),
       )
     }
-    window.addEventListener('pagehide', closeOnPageExit)
-    return () => window.removeEventListener('pagehide', closeOnPageExit)
-  }, [domainId, session])
+    window.addEventListener('pagehide', releaseOnPageExit)
+    return () => window.removeEventListener('pagehide', releaseOnPageExit)
+  }, [domainId, pageId, session])
 
   const restart = async () => {
     if (restarting) return
@@ -132,10 +104,7 @@ export function ViewModal({
     try {
       await runtimeQuery.refetch()
     } catch (error) {
-      setSession({
-        phase: 'error',
-        reason: error instanceof Error ? error.message : String(error),
-      })
+      setSession({ phase: 'error', reason: errorReason(error) })
     } finally {
       setRestarting(false)
     }
@@ -160,20 +129,12 @@ export function ViewModal({
             )}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {runtime?.targetRequired && (
-              <TargetPicker
-                result={runtime.targets}
-                value={targetId}
-                onChange={setTargetId}
-                instance={runtime.instance}
-              />
-            )}
             {session.phase === 'ready' && (
               <a
                 href={session.session.pageUrl}
                 target="_blank"
                 rel="noreferrer"
-                title="Open in a new tab"
+                title="Open in a new tab (the View stays open after this dialog closes)"
                 className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <ExternalLink className="h-4 w-4" />
@@ -202,7 +163,7 @@ export function ViewModal({
           {session.phase === 'ready' ? (
             <iframe
               key={session.session.sessionId}
-              src={session.session.pageUrl}
+              src={`${session.session.pageUrl}?page=${encodeURIComponent(pageId)}`}
               title={`${view.slug} preview`}
               className="h-full w-full border-0 bg-white"
               allow="clipboard-read; clipboard-write"
@@ -212,7 +173,6 @@ export function ViewModal({
               loading={runtimeQuery.isLoading || restarting || session.phase === 'launching'}
               runtimeError={runtimeQuery.isError}
               runtime={runtime}
-              targetId={targetId}
               sessionError={session.phase === 'error' ? session.reason : undefined}
               onRetry={() => void restart()}
             />
@@ -223,163 +183,16 @@ export function ViewModal({
   )
 }
 
-function TargetPicker({
-  result,
-  value,
-  onChange,
-  instance,
-}: {
-  result: ViewTargetResult
-  value: string
-  onChange: (id: string) => void
-  instance: string | null
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const selected = result.items.find((item) => item.id === value) ?? null
-  const filtered = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase()
-    if (!query) return result.items
-    return result.items.filter((item) =>
-      [item.label, item.description, item.className, item.status, item.id]
-        .filter(Boolean)
-        .some((text) => text!.toLocaleLowerCase().includes(query)),
-    )
-  }, [result.items, search])
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) setSearch('')
-      }}
-    >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'flex h-8 min-w-52 max-w-[22rem] items-center gap-2 rounded-md border bg-card px-2.5 text-left transition-colors hover:bg-accent',
-            result.stale && !selected && 'border-warning/50',
-          )}
-        >
-          <span
-            className={cn(
-              'h-2 w-2 shrink-0 rounded-full',
-              selected ? 'bg-success' : result.stale ? 'bg-warning' : 'bg-muted-foreground/40',
-            )}
-          />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-            {selected?.label ?? result.stale?.label ?? 'Select a target'}
-          </span>
-          <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className="z-[70] w-[28rem] p-0">
-        <div className="flex items-center gap-2 border-b px-3 py-2.5">
-          <Search className="h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            autoFocus
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search visible targets…"
-            className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-          />
-          <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
-            {instance ?? 'no instance'}
-          </span>
-        </div>
-
-        {result.stale && (
-          <div className="m-2 flex gap-2 rounded-lg border border-warning/25 bg-warning/8 p-2.5 text-[11px] text-warning">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>
-              <strong>{result.stale.label}</strong> was remembered, but it was deleted or is no
-              longer visible. Pick a replacement.
-            </span>
-          </div>
-        )}
-
-        <div className="max-h-80 overflow-y-auto p-1.5">
-          {result.status === 'unavailable' ? (
-            <PickerEmpty>{result.reason ?? 'Targets could not be queried.'}</PickerEmpty>
-          ) : filtered.length === 0 ? (
-            <PickerEmpty>
-              {result.items.length === 0 ? 'No eligible targets are visible.' : 'No matches.'}
-            </PickerEmpty>
-          ) : (
-            filtered.map((item) => (
-              <TargetOption
-                key={item.id}
-                item={item}
-                selected={item.id === value}
-                onClick={() => {
-                  onChange(item.id)
-                  setOpen(false)
-                }}
-              />
-            ))
-          )}
-        </div>
-        {result.truncated && (
-          <div className="border-t px-3 py-2 text-[10px] text-muted-foreground">
-            Showing the first 200 visible targets per class.
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-function TargetOption({
-  item,
-  selected,
-  onClick,
-}: {
-  item: ViewTargetCandidate
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent',
-        selected && 'bg-accent/70',
-      )}
-    >
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-muted text-[10px] font-semibold text-muted-foreground">
-        {item.className.slice(0, 2).toUpperCase()}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium">{item.label}</span>
-        <span className="block truncate text-[10px] text-muted-foreground">
-          {[item.className, item.description, item.status].filter(Boolean).join(' · ')}
-        </span>
-      </span>
-      <code className="text-[9px] text-muted-foreground">{item.id.slice(0, 8)}</code>
-      {selected && <Check className="h-3.5 w-3.5 text-primary" />}
-    </button>
-  )
-}
-
-function PickerEmpty({ children }: { children: React.ReactNode }) {
-  return <div className="px-3 py-8 text-center text-[11px] text-muted-foreground">{children}</div>
-}
-
 function PreviewState({
   loading,
   runtimeError,
   runtime,
-  targetId,
   sessionError,
   onRetry,
 }: {
   loading: boolean
   runtimeError: boolean
-  runtime?: ReturnType<typeof useViewRuntime>['data']
-  targetId: string
+  runtime?: ViewRuntime
   sessionError?: string
   onRetry: () => void
 }) {
@@ -401,21 +214,6 @@ function PreviewState({
     return (
       <StateFrame icon={<Unplug />} title="Choose an Astrale instance">
         The installed View reads data from the active instance in the Studio header.
-      </StateFrame>
-    )
-  }
-  if (runtime.targetRequired && !runtime.targets.items.some((target) => target.id === targetId)) {
-    const stale = runtime.targets.stale
-    return (
-      <StateFrame
-        icon={<Search />}
-        title={stale ? 'The remembered target is gone' : 'Choose what this view should open'}
-      >
-        {stale
-          ? `${stale.label} was deleted or is no longer visible. Use the target selector above.`
-          : runtime.targets.items.length
-            ? `${runtime.targets.items.length} visible candidate${runtime.targets.items.length === 1 ? '' : 's'} found on ${runtime.instance}.`
-            : runtime.targets.reason || 'No eligible targets are currently visible.'}
       </StateFrame>
     )
   }

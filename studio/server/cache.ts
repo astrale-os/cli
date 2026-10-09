@@ -14,6 +14,7 @@ import type {
   SchemaOverlay,
   StudioCore,
   StudioDatasets,
+  StudioEvent,
   StudioSchemaBundle,
 } from '../shared/types'
 
@@ -67,9 +68,11 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
  * same sources. The key below hashes the domain's files and this server's own
  * sources — but a shipped standalone has no sources on disk to hash, so there the
  * version is the only thing that can retire a bundle a newer Studio would compose
- * differently. v7: the overlay reads both of its passes out of one ts-morph project.
+ * differently. v8: source locations include registered Policies and Views.
+ * v9: a handler link's wiring file is its declaring module, not the handler's.
+ * v10: dependency admission uses the inspected SDK's canonical compatibility owner.
  */
-const BUNDLE_CACHE_VERSION = 7
+const BUNDLE_CACHE_VERSION = 10
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',
@@ -79,6 +82,8 @@ const TOOL_INPUTS = [
   'introspect/extractor.ts',
   'introspect/island.ts',
   'introspect/canonical-schema.ts',
+  'introspect/dependency-footprint.ts',
+  'introspect/legacy/dependency-footprint.ts',
   'introspect/overlay.ts',
   'introspect/overlay-tsmorph.ts',
   'introspect/source-overlay/handlers.ts',
@@ -214,13 +219,13 @@ function hashFileIfPresent(hash: ReturnType<typeof createHash>, label: string, f
   }
 }
 
-function bundleCacheKey(root: string, schemaDirName: string, applicationFile: string): string {
+function bundleCacheKey(root: string, schemaDirName: string, domainFile: string): string {
   const hash = createHash('sha256')
   hash.update(`domain-studio-bundle-cache-v${BUNDLE_CACHE_VERSION}\0`)
   hash.update(`schema-dir:${schemaDirName}\0`)
   hash.update(`bun:${Bun.version}\0`)
 
-  const files = hashAnatomyFiles(root, schemaDirName, applicationFile)
+  const files = hashAnatomyFiles(root, schemaDirName, domainFile)
   for (const [file, digest] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
     hash.update(`${file}\0${digest}\0`)
   }
@@ -304,7 +309,7 @@ export async function getBundle(
     async (): Promise<StudioSchemaBundle> => {
       try {
         const keyBefore = timing.measureSync('cache-key', () =>
-          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
         )
         if (!rebuild) {
           const cached = timing.measureSync('cache-read', () => readCachedBundle(h.root, keyBefore))
@@ -318,7 +323,7 @@ export async function getBundle(
         const bundle = await buildBundle(h, timing)
         bundles.set(id, bundle)
         const keyAfter = timing.measureSync('cache-key', () =>
-          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
         )
         if (keyAfter === keyBefore) {
           timing.measureSync('cache-write', () => writeCachedBundle(h.root, keyAfter, bundle))
@@ -340,6 +345,26 @@ export async function getBundle(
   } finally {
     if (building.get(id) === current) building.delete(id)
   }
+}
+
+/**
+ * Rebuild a domain's bundle from fresh sources and announce the new generation:
+ * `resolving` first, the compile error if extraction failed, then the schema and
+ * anatomy diffs every client refetches on. Callers invalidate what they need first.
+ */
+export async function rebuildAndAnnounce(
+  id: string,
+  notify: (event: StudioEvent) => void,
+): Promise<void> {
+  notify({ type: 'resolving', domainId: id })
+  const bundle = await getBundle(id, true)
+  if (bundle?.error) notify({ type: 'compile-error', domainId: id, message: bundle.error.message })
+  notify({
+    type: 'schema-diff',
+    domainId: id,
+    renderFingerprint: bundle?.renderFingerprint ?? 'sha-none',
+  })
+  notify({ type: 'anatomy-diff', domainId: id })
 }
 
 export function introspectionStatus(): IntrospectionStatus {
@@ -401,7 +426,8 @@ export async function getCore(id: string, rebuild = false): Promise<StudioCore |
 export async function getDatasets(id: string, rebuild = false): Promise<StudioDatasets | null> {
   const h = getDomain(id)
   if (!h) return null
-  if (!rebuild && datasets.has(id)) return datasets.get(id)!
+  const held = datasets.get(id)
+  if (!rebuild && held) return held
   const run = getBundle(id, rebuild).then((bundle) =>
     buildDatasets(h, bundle, studioSettings().introspectTimeoutMs),
   )

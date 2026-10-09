@@ -11,6 +11,7 @@ export interface SchemaDefinitionLocation {
   line: number
 }
 
+/** Parse every authored module under the schema directory. */
 export function schemaProject(root: string, schemaDirName: string): SourceFile[] {
   const project = makeProject()
   return listSourceFiles(join(root, schemaDirName))
@@ -36,8 +37,9 @@ export function defineSchemaCalls(source: SourceFile) {
 export function findSchemaDefinition(
   root: string,
   schemaDirName = 'schema',
+  schemaSources: readonly SourceFile[] = schemaProject(root, schemaDirName),
 ): SchemaDefinitionLocation | null {
-  for (const source of schemaProject(root, schemaDirName)) {
+  for (const source of schemaSources) {
     for (const call of defineSchemaCalls(source)) {
       const origin = literalString(call.getArguments()[0], source)
       if (!origin) continue

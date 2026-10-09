@@ -6,11 +6,13 @@
  * agent wears that agent's OWN colour — Claude's terracotta, OpenAI's black —
  * and every tab after it takes the next hue in the ring.
  *
- * Tones follow POSITION, not identity — closing a tab re-colours the ones after
- * it. That is deliberate: the strip stays a short, stable sequence of colours
- * instead of accumulating whatever hues happened to be handed out.
+ * Tones follow IDENTITY, not position: the server picks a chat's slot when it
+ * opens (`shared/chat-tone.ts`) and stores it, so closing a tab never
+ * re-colours the others — a colour keeps meaning "this conversation".
  */
 import type { ChatInfo } from '@shared/types'
+
+import { BRAND_CHAT_TONE } from '@shared/chat-tone'
 
 export interface ChatTone {
   /** the harness mark's colour */
@@ -28,6 +30,7 @@ const BRAND: Record<string, ChatTone> = {
 /** An agent Studio has no colour for — the panel's own ink says nothing wrong. */
 export const NEUTRAL_TONE: ChatTone = { mark: 'text-foreground', surface: 'bg-accent' }
 
+/** One per `CHAT_TONE_RING` slot, in slot order. */
 const TONES: ChatTone[] = [
   { mark: 'text-chat-1', surface: 'bg-chat-1/12' },
   { mark: 'text-chat-2', surface: 'bg-chat-2/12' },
@@ -44,18 +47,24 @@ export function brandTone(harness: string): ChatTone {
   return BRAND[harness] ?? NEUTRAL_TONE
 }
 
+/** The colour of one stored slot: the brand, or a hue of the ring. */
+function slotTone(harness: string, tone: number): ChatTone {
+  return tone === BRAND_CHAT_TONE ? brandTone(harness) : TONES[(tone - 1) % TONES.length]!
+}
+
 /**
- * Colour the whole strip at once: the FIRST tab of each agent keeps that agent's
- * own mark colour, and everything after it draws from the ring.
+ * Colour the whole strip at once, each tab by the slot it was opened with.
  *
- * The ring advances per coloured tab rather than per position, so two neighbours
- * are never handed the same hue just because they sit at the same rank within
- * their own agent.
+ * A chat that carries no slot (only ever one the server has not toned yet) is
+ * placed the way the server would: the first of its agent takes the brand, the
+ * rest draw from the ring.
  */
 export function chatTones(chats: ChatInfo[]): ChatTone[] {
   const branded = new Set<string>()
+  for (const chat of chats) if (chat.tone === BRAND_CHAT_TONE) branded.add(chat.harness)
   let next = 0
   return chats.map((chat) => {
+    if (chat.tone !== undefined) return slotTone(chat.harness, chat.tone)
     if (!branded.has(chat.harness)) {
       branded.add(chat.harness)
       return brandTone(chat.harness)

@@ -5,7 +5,7 @@
  * answers the authored file when Studio runs from source but throws inside a
  * `bun build --compile` binary, which resolves against its own embedded graph
  * rather than the Domain's manifest. Discovery silently rejected every Domain
- * whose Application reaches its Schema through an alias — GRC among them.
+ * whose Domain definition reaches its Schema through an alias — GRC among them.
  *
  * A source-mode assertion cannot catch that: it passes either way. So this
  * compiles the real discovery module into a standalone executable and runs it
@@ -28,7 +28,7 @@ function temporaryDir(prefix: string): string {
   return dir
 }
 
-/** A Domain whose Application imports its Schema through the `#schema` alias. */
+/** A Domain whose definition imports its Schema through the `#schema` alias. */
 function aliasDomain(): string {
   const root = temporaryDir('studio-standalone-domain-')
   mkdirSync(join(root, 'schema'))
@@ -36,13 +36,20 @@ function aliasDomain(): string {
     join(root, 'package.json'),
     JSON.stringify({ name: 'grc', type: 'module', imports: { '#schema': './schema/index.ts' } }),
   )
-  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import domain from './domain.js'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
+`,
+  )
   writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
   writeFileSync(
-    join(root, 'application.ts'),
-    `import { defineApplication } from '@astrale-os/sdk/application'
+    join(root, 'domain.ts'),
+    `import { defineDomain } from '@astrale-os/sdk/domain'
 import { schema } from '#schema'
-export default defineApplication({ schema, runtime: {} as never })
+export default defineDomain({ schema, runtime: {} as never })
 `,
   )
   return root
@@ -54,14 +61,14 @@ function compileProbe(): string {
   const entry = join(build, 'probe.ts')
   writeFileSync(
     entry,
-    `import { isDomainDir, resolveApplicationEntry, resolveSchemaEntry } from ${JSON.stringify(join(import.meta.dir, 'domain.ts'))}
+    `import { isDomainDir, resolveDomainEntry, resolveSchemaEntry } from ${JSON.stringify(join(import.meta.dir, 'domain.ts'))}
 const root = process.argv[2]!
-const application = resolveApplicationEntry(root)
+const domain = resolveDomainEntry(root)
 process.stdout.write(
   JSON.stringify({
     isDomainDir: isDomainDir(root),
-    application,
-    schema: application === null ? null : resolveSchemaEntry(root, application),
+    domain,
+    schema: domain === null ? null : resolveSchemaEntry(root, domain),
   }),
 )
 `,
@@ -87,7 +94,7 @@ test('a standalone executable discovers a Domain that reaches its Schema through
   expect(probed.stderr.toString()).toBe('')
   expect(JSON.parse(probed.stdout.toString())).toEqual({
     isDomainDir: true,
-    application: join(root, 'application.ts'),
+    domain: join(root, 'domain.ts'),
     schema: join(root, 'schema/index.ts'),
   })
 }, 120_000)

@@ -1,4 +1,4 @@
-import type { StudioCore, StudioDataset, StudioDatasetFailure } from '@shared/types'
+import type { StudioCore, StudioCoreNode, StudioDataset, StudioDatasetFailure } from '@shared/types'
 
 import type { PolicyMatch, PolicyObject } from './policy-evaluate'
 
@@ -36,10 +36,25 @@ export function datasetCore(dataset: StudioDataset): StudioCore {
   }
 }
 
+/** A node's name as the canvas shows it: its display name, else the last segment of its id. */
+export const labelOf = (node: StudioCoreNode | undefined, id: string): string =>
+  node ? displayName(node) : lastSeg(id)
+
 /** A node's name as the canvas shows it, from its id alone. */
 export function nodeLabel(core: StudioCore, id: string): string {
-  const node = core.nodes.find((candidate) => candidate.path === id)
-  return node ? displayName(node) : lastSeg(id)
+  return labelOf(
+    core.nodes.find((candidate) => candidate.path === id),
+    id,
+  )
+}
+
+/** Nodes by id in one pass, for callers that look many of them up (first match wins, as `find`). */
+export function nodeLookup(core: StudioCore): (id: string) => StudioCoreNode | undefined {
+  const byPath = new Map<string, StudioCoreNode>()
+  for (const node of core.nodes) {
+    if (!byPath.has(node.path)) byPath.set(node.path, node)
+  }
+  return (id) => byPath.get(id)
 }
 
 /** An edge as a reader names it: `Ada —owns→ Inbox`. */

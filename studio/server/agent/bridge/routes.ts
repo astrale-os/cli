@@ -1,6 +1,6 @@
-import type { StudioEvent } from '../../../shared/types'
 import type { DomainHandle } from '../../domain'
 import type { JsonRecord } from '../../json'
+import type { Notify } from '../notify'
 import type { AgentWorkspace } from '../workspace'
 
 import { concreteAnchorKind } from '../../../shared/comment-anchors'
@@ -14,7 +14,7 @@ import { domainOrigin, domainRelativePath, findDomain } from '../workspace'
 
 interface RunBridge {
   workspace: AgentWorkspace
-  notify: (event: StudioEvent) => void
+  notify: Notify
   onReply: (commentId: string, text: string) => void
   onProgress: (text: string) => void
 }
@@ -37,7 +37,7 @@ function error(message: string, status = 400): Response {
 export function openBridgeSession(
   workspace: AgentWorkspace,
   token: string,
-  notify: (event: StudioEvent) => void,
+  notify: Notify,
 ): BridgeSession {
   const bridge: RunBridge = {
     workspace,
@@ -72,15 +72,10 @@ function openIn(handle: DomainHandle) {
 }
 
 /** Which domain holds a comment — ids are uuids, so at most one does. */
-function ownerOf(
-  workspace: AgentWorkspace,
-  commentId: string,
-): { handle: DomainHandle } | undefined {
-  for (const handle of workspace.domains) {
-    if (readComments(handle.root).comments.some((comment) => comment.id === commentId))
-      return { handle }
-  }
-  return undefined
+function ownerOf(workspace: AgentWorkspace, commentId: string): DomainHandle | undefined {
+  return workspace.domains.find((handle) =>
+    readComments(handle.root).comments.some((comment) => comment.id === commentId),
+  )
 }
 
 async function applyBridgeCall(sub: string, body: JsonRecord): Promise<Response> {
@@ -157,7 +152,7 @@ async function applyBridgeCall(sub: string, body: JsonRecord): Promise<Response>
       if (!owner) return error('unknown commentId', 404)
       const options = asStringArray(body.options)
       const answer = body.answer === null ? null : asString(body.answer)
-      const comment = addThreadEntry(owner.handle.root, commentId, {
+      const comment = addThreadEntry(owner.root, commentId, {
         role: 'author',
         type: options ? 'choice' : 'text',
         text,
@@ -166,9 +161,9 @@ async function applyBridgeCall(sub: string, body: JsonRecord): Promise<Response>
       })
       if (!comment) return error('unknown commentId', 404)
       const closeNote = asString(body.closeNote)
-      if (body.resolve === true) setStatus(owner.handle.root, commentId, 'closed', closeNote)
+      if (body.resolve === true) setStatus(owner.root, commentId, 'closed', closeNote)
       bridge.onReply(commentId, text)
-      changed(owner.handle)
+      changed(owner)
       return json({ ok: true, resolved: body.resolve === true })
     }
     case 'resolve': {
@@ -177,10 +172,10 @@ async function applyBridgeCall(sub: string, body: JsonRecord): Promise<Response>
       const owner = ownerOf(workspace, commentId)
       if (!owner) return error('unknown commentId', 404)
       const closeNote = asString(body.closeNote)
-      const comment = setStatus(owner.handle.root, commentId, 'closed', closeNote)
+      const comment = setStatus(owner.root, commentId, 'closed', closeNote)
       if (!comment) return error('unknown commentId', 404)
       bridge.onReply(commentId, closeNote ? `resolved: ${closeNote}` : 'resolved')
-      changed(owner.handle)
+      changed(owner)
       return json({ ok: true })
     }
     case 'progress': {

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { AstraleConfig } from '../../lib/config'
+import type { ExchangeIssuer } from '../exchange'
 
 import { persistKeypair, signAs } from '../../keys/index'
 import { bindCredentialIdentity } from '../auth'
@@ -223,6 +224,48 @@ describe('connection credential', () => {
     expect(fetches).toBe(0)
   })
 
+  /** @evidence TEST-CLI-CONNECTION-INSTALLED-ISSUER-SERVES-EXCHANGE */
+  test('exchanges for an installed origin where the issuer the command owner hands it says', async () => {
+    const source = token(Math.ceil(Date.now() / 1_000) + 600, 'installed-origin-user')
+    const asked: string[] = []
+    let fetches = 0
+    const installed: ExchangeIssuer = {
+      async known() {
+        asked.push('known')
+        return undefined
+      },
+      async current() {
+        asked.push('current')
+        // A Domain the Kernel hosts: the caller stays itself, so nothing is sent.
+        return null
+      },
+      async moved() {
+        asked.push('moved')
+        return undefined
+      },
+    }
+    const auth = createCliCredential(
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, domainOrigin: 'shell.astrale.ai' },
+      {},
+      config,
+      async () => {
+        fetches += 1
+        throw new Error('the pin is read only through the issuer the command owner hands over')
+      },
+      30_000,
+      {},
+      async () => source,
+      installed,
+    )
+    if (auth === undefined) throw new Error('expected authenticated credential')
+
+    const resolved = await auth.resolve(TARGET_CALL, new AbortController().signal)
+
+    expect(resolved.credential).toBe(source)
+    expect(asked).toEqual(['known', 'current'])
+    expect(fetches).toBe(0)
+  })
+
   test('rejects nested issuance through a Domain principal', () => {
     expect(() =>
       createCliCredential(
@@ -238,6 +281,36 @@ describe('connection credential', () => {
         { nestedTtlSeconds: 240 } as never,
       ),
     ).toThrow('Nested credential issuance requires the caller principal')
+  })
+
+  test('uses a 30-second explicit bearer for a five-second command without extending its authority', async () => {
+    const bearer = token(Math.ceil(Date.now() / 1_000) + 30)
+    const auth = createCliCredential(
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
+      { creds: bearer },
+      config,
+      undefined,
+      5_000,
+    )
+    if (auth === undefined) throw new Error('expected authenticated credential')
+    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toEqual({
+      credential: bearer,
+      delegate: { ttlSeconds: 10 },
+    })
+  })
+
+  test('still rejects an explicit bearer that cannot cover a short command and its receipt margin', async () => {
+    const auth = createCliCredential(
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
+      { creds: token(Math.ceil(Date.now() / 1_000) + 8) },
+      config,
+      undefined,
+      5_000,
+    )
+    if (auth === undefined) throw new Error('expected authenticated credential')
+    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
+    })
   })
 
   test('rejects a long command before dispatch when its source bearer is too short', async () => {

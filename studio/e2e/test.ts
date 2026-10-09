@@ -1,3 +1,9 @@
+import { resolve } from 'node:path'
+
+import { workspaceKey } from '../server/home'
+export const FIXTURE_ID = workspaceKey(resolve(import.meta.dirname, 'fixture'))
+export const PEER_ID = workspaceKey(resolve(import.meta.dirname, 'fixture/peer'))
+
 import type { WorkspacePanelUiState, WorkspaceUiState } from '@shared/types'
 
 import {
@@ -15,7 +21,15 @@ const DEFAULT_WORKSPACE_UI: WorkspaceUiState = {
   version: 1,
   section: 'schema',
   edgeStyle: 'curved',
-  panel: { open: false, tab: 'agent', side: 'bottom', size: 360 },
+  detailWidth: 420,
+  panel: {
+    open: false,
+    tab: 'agent',
+    side: 'bottom',
+    size: 360,
+    dockWidth: 880,
+    dockHeight: 560,
+  },
   rail: { width: 240, collapsed: false },
   schema: {
     visibleDomainIds: [],

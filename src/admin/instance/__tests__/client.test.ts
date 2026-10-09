@@ -22,18 +22,12 @@ async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 function fixture(input: {
+  fleet?: string
   instances?: readonly Node[]
   listOutput?: unknown
   useDefaultOperationIds?: boolean
   operationId?: (
-    kind:
-      | 'create'
-      | 'status'
-      | 'delete'
-      | 'install-domain'
-      | 'invite'
-      | 'retrieve-root'
-      | 'reconcile-invitation',
+    kind: 'create' | 'status' | 'delete' | 'invite' | 'retrieve-root' | 'reconcile-invitation',
   ) => string
   invoke?: (target: string, input: unknown) => unknown
   query?: (
@@ -51,7 +45,7 @@ function fixture(input: {
     value: unknown
   }> = []
   const remote = adminSession((target, value) => {
-    if (target === '/:admin.astrale.ai:core.fleet::listInstances') {
+    if (target.endsWith('::admin.astrale.ai:class.Fleet.method.listInstances')) {
       listCalls.push({ target, value })
       if (input.listOutput !== undefined) return input.listOutput
       const includeRetired =
@@ -91,7 +85,7 @@ function fixture(input: {
     listCalls,
     connect: () =>
       connectAdminInstances(
-        { session: remote.session, graph },
+        { session: remote.session, graph, fleet: input.fleet ?? AdminContract.fleet.raw },
         input.useDefaultOperationIds
           ? undefined
           : { operationId: input.operationId ?? ((kind) => `cli.instance.${kind}.test`) },
@@ -100,6 +94,75 @@ function fixture(input: {
 }
 
 describe('V2 Admin Instance adapter', () => {
+  test('resolves a known slug without requiring inventory access to the default Fleet', async () => {
+    const contract = fixture({ instances: [instanceNode({ slug: 'astrale-project' })] })
+    const api = await contract.connect()
+    expect((await api.require('astrale-project')).slug).toBe('astrale-project')
+    expect(contract.listCalls).toHaveLength(0)
+    expect(contract.query.mock.calls[0]?.[0]).toMatchObject({
+      steps: [{ op: 'filter', predicate: { value: 'astrale-project' } }],
+    })
+  })
+  test('uses the exact Instance receiver without reading or checking a selected Fleet', async () => {
+    const contract = fixture({
+      fleet: '@other-fleet',
+      instances: [instanceNode()],
+      invoke: () => instanceSummaryFromNode(instanceNode()),
+    })
+    const api = await contract.connect()
+    expect((await api.status('@instance-node')).id).toBe('@instance-node')
+    expect(contract.query).toHaveBeenCalledTimes(1)
+    expect(contract.listCalls).toHaveLength(0)
+    expect(contract.calls[0]?.target).toBe(
+      '@instance-node::admin.astrale.ai:class.Instance.method.status',
+    )
+  })
+  test.each(['@astrale-fleet', '/:admin.astrale.ai:core.fleet'])(
+    'uses the exact Fleet path %s for list and create without directory discovery',
+    async (fleet) => {
+      const contract = fixture({
+        fleet,
+        listOutput: [],
+        invoke: () => instanceSummaryFromNode(instanceNode()),
+      })
+      const api = await contract.connect()
+      await api.list()
+      await api.create('demo', 'stable-request')
+      expect(contract.listCalls[0]?.target).toBe(
+        `${fleet}::admin.astrale.ai:class.Fleet.method.listInstances`,
+      )
+      expect(contract.calls).toEqual([
+        {
+          target: `${fleet}::admin.astrale.ai:class.Fleet.method.createInstance`,
+          value: { operationId: 'stable-request', slug: 'demo' },
+        },
+      ])
+      expect(contract.query).not.toHaveBeenCalled()
+    },
+  )
+  test.each(['astrale', 'default', ''])(
+    'rejects a Fleet slug or invalid path %s before I/O',
+    async (fleet) => {
+      const contract = fixture({ fleet })
+      await expect(contract.connect()).rejects.toThrow()
+      expect(contract.call).not.toHaveBeenCalled()
+      expect(contract.query).not.toHaveBeenCalled()
+    },
+  )
+  test('does not fall back to the core Fleet when the explicit target fails', async () => {
+    const contract = fixture({
+      fleet: '@missing',
+      invoke: () => {
+        throw new Error('Fleet unavailable')
+      },
+    })
+    const api = await contract.connect()
+    await expect(api.create('demo')).rejects.toThrow('Fleet unavailable')
+    expect(contract.calls).toHaveLength(1)
+    expect(contract.calls[0]?.target).toStartWith('@missing::')
+    expect(contract.listCalls).toHaveLength(0)
+  })
+
   test('lists caller-visible Instances through the one Fleet inventory Method', async () => {
     const contract = fixture({
       instances: [
@@ -146,15 +209,15 @@ describe('V2 Admin Instance adapter', () => {
     ])
     expect(contract.listCalls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::listInstances',
+        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
         value: {},
       },
       {
-        target: '/:admin.astrale.ai:core.fleet::listInstances',
+        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
         value: {},
       },
       {
-        target: '/:admin.astrale.ai:core.fleet::listInstances',
+        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
         value: { includeRetired: true },
       },
     ])
@@ -183,7 +246,7 @@ describe('V2 Admin Instance adapter', () => {
     })
     expect(contract.calls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::createInstance',
+        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.createInstance',
         value: { operationId: 'cli.instance.create.test', slug: 'demo' },
       },
     ])
@@ -226,7 +289,7 @@ describe('V2 Admin Instance adapter', () => {
     ).resolves.toMatchObject(pending)
     expect(contract.calls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::createInstance',
+        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.createInstance',
         value: { operationId: pending.operationId, slug: 'demo' },
       },
     ])
@@ -239,7 +302,7 @@ describe('V2 Admin Instance adapter', () => {
         id: '@instance-node',
         slug: 'demo',
         url: 'https://demo.eu.astrale.ai',
-        state: target.endsWith('::delete') ? 'deleted' : 'ready',
+        state: target.endsWith('.method.delete') ? 'deleted' : 'ready',
         createdAt: '2026-08-12T00:00:00.000Z',
         updatedAt: '2026-08-12T00:00:00.000Z',
       }),
@@ -250,11 +313,11 @@ describe('V2 Admin Instance adapter', () => {
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
     expect(contract.calls).toEqual([
       {
-        target: '@instance-node::status',
+        target: '@instance-node::admin.astrale.ai:class.Instance.method.status',
         value: { operationId: 'cli.instance.status.test' },
       },
       {
-        target: '@instance-node::delete',
+        target: '@instance-node::admin.astrale.ai:class.Instance.method.delete',
         value: { operationId: 'cli.instance.delete.test' },
       },
     ])
@@ -319,8 +382,8 @@ describe('V2 Admin Instance adapter', () => {
     )
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
     expect(contract.calls.map(({ target }) => target)).toEqual([
-      '@instance-node::delete',
-      '@instance-node::delete',
+      '@instance-node::admin.astrale.ai:class.Instance.method.delete',
+      '@instance-node::admin.astrale.ai:class.Instance.method.delete',
     ])
     expect(queries).toBe(2)
     const operationIds = contract.calls.map(({ value }) =>
@@ -334,32 +397,6 @@ describe('V2 Admin Instance adapter', () => {
       /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
     )
     expect(operationIds[0]).not.toBe(operationIds[1])
-  })
-
-  test('installs a resolved catalog Domain through Instance.installDomain', async () => {
-    const contract = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        domain: '@crm-domain',
-        instance: '@instance-node',
-        origin: 'crm.acme.dev',
-        ok: true,
-        installedRevision: `sha256:${'a'.repeat(64)}`,
-      }),
-    })
-    const api = await contract.connect()
-
-    await expect(api.installDomain('demo', '@crm-domain')).resolves.toMatchObject({
-      domain: '@crm-domain',
-      instance: '@instance-node',
-      origin: 'crm.acme.dev',
-      ok: true,
-    })
-    expect(contract.calls.at(-1)).toEqual({
-      target: '@instance-node::installDomain',
-      value: { operationId: 'cli.instance.install-domain.test', domain: '@crm-domain' },
-    })
-    expect(contract.reflection).not.toHaveBeenCalled()
   })
 
   test('retrieves a root identity transfer scoped to the exact Instance and recipient', async () => {
@@ -393,7 +430,7 @@ describe('V2 Admin Instance adapter', () => {
     })
     expect(contract.calls).toEqual([
       {
-        target: '@instance-node::retrieveRootIdentity',
+        target: '@instance-node::admin.astrale.ai:class.Instance.method.retrieveRootIdentity',
         value: {
           requestId: 'cli.instance.retrieve-root.test',
           recipient,
@@ -401,6 +438,31 @@ describe('V2 Admin Instance adapter', () => {
       },
     ])
   })
+
+  test.each([
+    'pending',
+    'accepted',
+    'registering',
+    'registered',
+    'completed',
+    'cancelled',
+    'expired',
+    'failed',
+  ])(
+    'observes the exact current Invitation state %s without collapsing progress into completion',
+    async (state) => {
+      const summary = {
+        id: '@invitation-node',
+        email: 'person@example.com',
+        state,
+        access: 'member',
+        instance: '@instance-node',
+        createdAt: '2026-09-07T00:00:00.000Z',
+      } as const
+      const api = await fixture({ invoke: () => summary }).connect()
+      await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
+    },
+  )
 
   test('invites through the exact Instance receiver and observes before explicit recovery', async () => {
     const summary = {
@@ -420,7 +482,7 @@ describe('V2 Admin Instance adapter', () => {
     await expect(api.reconcileInvitation('@invitation-node')).resolves.toEqual(summary)
     expect(contract.calls).toEqual([
       {
-        target: '@instance-node::inviteUser',
+        target: '@instance-node::admin.astrale.ai:class.Instance.method.inviteUser',
         value: {
           operationId: 'cli.instance.invite.test',
           email: 'Person@Example.com',
@@ -428,11 +490,11 @@ describe('V2 Admin Instance adapter', () => {
         },
       },
       {
-        target: '@invitation-node::status',
+        target: '@invitation-node::admin.astrale.ai:class.Invitation.method.status',
         value: {},
       },
       {
-        target: '@invitation-node::reconcile',
+        target: '@invitation-node::admin.astrale.ai:class.Invitation.method.reconcile',
         value: { operationId: 'cli.instance.reconcile-invitation.test' },
       },
     ])
@@ -479,13 +541,17 @@ describe('V2 Admin Instance adapter', () => {
     const api = await contract.connect()
 
     await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
-    expect(contract.calls).toEqual([{ target: '@invitation-node::status', value: {} }])
+    expect(contract.calls).toEqual([
+      { target: '@invitation-node::admin.astrale.ai:class.Invitation.method.status', value: {} },
+    ])
     expect(contract.query).not.toHaveBeenCalled()
     expect(contract.reflection).not.toHaveBeenCalled()
     expect(operationId).not.toHaveBeenCalled()
 
     contract.calls.length = 0
-    const error = await captureRejection(api.statusInvitation('@invitation-node::status'))
+    const error = await captureRejection(
+      api.statusInvitation('@invitation-node::admin.astrale.ai:class.Invitation.method.status'),
+    )
     expect(error).toBeInstanceOf(TypeError)
     expect((error as Error).message).toBe('Admin Invitation id is invalid.')
     expect(contract.calls).toEqual([])
@@ -584,7 +650,10 @@ describe('V2 Admin Instance adapter', () => {
 
     await expect(api.list()).resolves.toEqual([])
     expect(contract.listCalls).toEqual([
-      { target: '/:admin.astrale.ai:core.fleet::listInstances', value: {} },
+      {
+        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
+        value: {},
+      },
     ])
     expect(contract.query).not.toHaveBeenCalled()
     expect(contract.call).toHaveBeenCalledTimes(1)
@@ -633,32 +702,6 @@ describe('V2 Admin Instance adapter', () => {
     await expect((await malformedStatus.connect()).status('demo')).rejects.toThrow(
       'Admin failure message is invalid.',
     )
-
-    const malformedInstall = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        domain: '@crm-domain',
-        instance: '@instance-node',
-        origin: 'crm.acme.dev',
-        ok: 'yes',
-      }),
-    })
-    await expect(
-      (await malformedInstall.connect()).installDomain('demo', '@crm-domain'),
-    ).rejects.toThrow('Admin Domain install outcome is invalid.')
-
-    const malformedInstallPath = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        domain: 'not-a-path',
-        instance: '@instance-node',
-        origin: 'crm.acme.dev',
-        ok: true,
-      }),
-    })
-    await expect(
-      (await malformedInstallPath.connect()).installDomain('demo', '@crm-domain'),
-    ).rejects.toThrow('Admin Domain reference is invalid.')
 
     const malformedInvitation = fixture({
       instances: [instanceNode()],

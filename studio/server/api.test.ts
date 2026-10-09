@@ -18,13 +18,20 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'studio-api-contract-'))
   roots.push(root)
   mkdirSync(join(root, 'schema'))
-  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import domain from './domain.js'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
+`,
+  )
   writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
   writeFileSync(
-    join(root, 'application.ts'),
-    `import { defineApplication } from '@astrale-os/sdk/application'
+    join(root, 'domain.ts'),
+    `import { defineDomain } from '@astrale-os/sdk/domain'
 import { Test } from './schema/index.js'
-export default defineApplication({ schema: Test, runtime: {} as never })
+export default defineDomain({ schema: Test, runtime: {} as never })
 `,
   )
   const handle = registerDomain(root)!
@@ -44,6 +51,25 @@ test('router ignores non-api paths and returns the stable JSON 404 for unknown A
   expect(response?.status).toBe(404)
   expect(response?.headers.get('content-type')).toBe('application/json')
   expect(await response?.json()).toEqual({ error: 'not found' })
+})
+
+test('refresh rebuilds domain reads and announces them without touching agent routes', async () => {
+  const handle = fixture()
+  const events: Array<{ type: string; domainId?: string }> = []
+  const url = new URL('http://127.0.0.1/api/workspace/refresh')
+  const response = await handleApi(new Request(url, { method: 'POST' }), url, (event) =>
+    events.push({ type: event.type, ...('domainId' in event && { domainId: event.domainId }) }),
+  )
+
+  expect(response?.status).toBe(200)
+  expect(await response?.json()).toEqual({ refreshed: 1 })
+  const types = events.map((event) => event.type)
+  expect(types[0]).toBe('resolving')
+  expect(types).toContain('schema-diff')
+  expect(types).toContain('anatomy-diff')
+  expect(types).toContain('datasets')
+  expect(types.some((type) => type.startsWith('agent'))).toBe(false)
+  expect(events.every((event) => event.domainId === handle.id)).toBe(true)
 })
 
 test('router blocks cross-site mutations before route dispatch but permits same-origin requests', async () => {

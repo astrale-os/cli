@@ -36,6 +36,14 @@ const context: ConnectionContext = Object.freeze({
 })
 
 describe('connection session', () => {
+  test('exposes the complete session-owned Auth API to command consumers', async () => {
+    await withResolvedClientSession(target, { anonymous: true }, config, async (context) => {
+      expect(context.auth).toBe(context.session.auth)
+      expect(typeof context.auth.admit).toBe('function')
+      expect(Object.isFrozen(context.auth)).toBe(true)
+    })
+  })
+
   /** @evidence TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER */
   test('pins the selected canonical Kernel issuer without a transport escape hatch', async () => {
     const auth = { ttlSeconds: 3_600, resolve: async () => ({ credential: 'credential' }) }

@@ -1,21 +1,23 @@
 import * as acp from '@agentclientprotocol/sdk'
-import { spawn } from 'node:child_process'
-import { accessSync, constants } from 'node:fs'
+import { accessSync, constants, readFileSync } from 'node:fs'
 import { delimiter, isAbsolute, resolve } from 'node:path'
-import { Readable, Writable } from 'node:stream'
 
+import type { AgentContextUsage, AgentToolCall, AgentToolContent } from '../../../../shared/types'
 import type {
+  AgentTurnImage,
   AgentTurnInput,
   AgentTurnResult,
   AskInput,
   AskResult,
   HarnessMcpServer,
 } from '../adapter'
+import type { AcpAgentProcess } from './agent-process'
 import type { AcpProvider } from './command'
 
 import { effectiveAgentEffort } from '../../../../shared/agent-effort'
-import { childEnvironment, terminateProcessTree } from '../process'
-import { effortConfig, effortValues, modelConfig } from './options'
+import { terminateProcessTree } from '../process'
+import { initializeAgent, spawnAcpAgent } from './agent-process'
+import { effortConfig, effortValues, fastConfig, fastValue, modelConfig } from './options'
 import {
   providerEnvironment,
   providerMode,
@@ -25,27 +27,41 @@ import {
 
 const SETUP_TIMEOUT_MS = 30_000
 const DELETE_TIMEOUT_MS = 5_000
-const MAX_STDERR = 16_000
 const RESUME_REJECTED =
   /no (?:conversation|rollout|session|thread).*found|session not found|session .*?(?:not found|does not exist|expired)|thread.*?(?:not found|does not exist|expired)|could not (?:find|load|resume)|unknown (?:session|thread)|invalid (?:session|thread)(?: id)?|resume failed/i
 
 type AcpInput = AgentTurnInput | AskInput
-
-interface ProcessExit {
-  code: number | null
-  signal: NodeJS.Signals | null
-  spawnError?: string
-}
 
 interface ExecutionResult {
   sessionId?: string
   text: string
   tokens?: number
   costUsd?: number
+  context?: AgentContextUsage
   isError: boolean
   errorMessage?: string
   resumeRejected?: boolean
   forkAttempted: boolean
+}
+
+/**
+ * What `session/prompt` carries: the images first, as images, then the text that
+ * talks about them. An agent that does not take images gets the text alone — the
+ * prompt already lists each image's path, so the message still reaches it whole.
+ */
+export function promptBlocks(
+  prompt: string,
+  images: readonly AgentTurnImage[] | undefined,
+  acceptsImages: boolean,
+): acp.ContentBlock[] {
+  const pictures: acp.ContentBlock[] = acceptsImages
+    ? (images ?? []).map((image) => ({
+        type: 'image',
+        mimeType: image.mimeType,
+        data: readFileSync(image.path).toString('base64'),
+      }))
+    : []
+  return [...pictures, { type: 'text', text: prompt }]
 }
 
 function executableOnPath(command: string, pathValue: string | undefined): string | undefined {
@@ -100,17 +116,147 @@ export function acpMcpServers(
   }))
 }
 
-function errorText(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message
-  return String(error)
+/**
+ * A JSON-RPC failure keeps its real cause in `data` ("Internal error" alone says
+ * nothing), so the code and the data travel with the message: the first line stays
+ * the headline the chat shows, the rest is what the details view is for.
+ */
+export function errorText(error: unknown): string {
+  if (!(error instanceof Error) || !error.message) return String(error)
+  const { code, data } = error as Error & { code?: unknown; data?: unknown }
+  if (typeof code !== 'number') return error.message
+  const detail =
+    data === undefined || data === null
+      ? ''
+      : typeof data === 'string'
+        ? data.trim()
+        : JSON.stringify(data, null, 2)
+  const lines = [`${error.message} (JSON-RPC ${code})`]
+  if (detail && !error.message.includes(detail)) lines.push(detail)
+  return lines.join('\n')
 }
 
+/** The agent's own stderr tail, on its own block so it never swallows the headline. */
 function stderrSuffix(stderr: string): string {
   const text = stderr.trim()
-  return text ? `: ${text.slice(-800)}` : ''
+  return text ? `\n\nstderr (tail):\n${text.slice(-2000)}` : ''
 }
 
-function toolTarget(update: acp.ToolCall | acp.ToolCallUpdate): string {
+/**
+ * Everything an agent has reported about one tool call. ACP announces a call
+ * once (`tool_call`) and then sends only what changed (`tool_call_update`): the
+ * command once its input has streamed in, the output and status once it ran.
+ */
+export interface AcpToolCallState {
+  title?: string
+  name?: string
+  kind?: acp.ToolKind
+  status?: acp.ToolCallStatus
+  rawInput?: unknown
+  rawOutput?: unknown
+  content?: acp.ToolCallContent[]
+  locations?: acp.ToolCallLocation[]
+}
+
+const TOOL_CALL_FIELDS = [
+  'title',
+  'name',
+  'kind',
+  'status',
+  'rawInput',
+  'rawOutput',
+  'content',
+  'locations',
+] as const satisfies readonly (keyof AcpToolCallState)[]
+
+/** Whether a report changed anything a reader sees - a `_meta`-only update does not. */
+function toolCallChanged(before: AcpToolCallState, after: AcpToolCallState): boolean {
+  return TOOL_CALL_FIELDS.some((field) => before[field] !== after[field])
+}
+
+/** Fold one report into what was known; a field it leaves out, or sends as null, is unchanged. */
+export function foldToolCall(
+  known: AcpToolCallState | undefined,
+  update: acp.ToolCall | acp.ToolCallUpdate,
+): AcpToolCallState {
+  const next: AcpToolCallState = { ...known }
+  if (update.title) next.title = update.title
+  if (update.name) next.name = update.name
+  if (update.kind) next.kind = update.kind
+  if (update.status) next.status = update.status
+  if (update.rawInput !== undefined && update.rawInput !== null) next.rawInput = update.rawInput
+  if (update.rawOutput !== undefined && update.rawOutput !== null) next.rawOutput = update.rawOutput
+  // replaced whole, as ACP defines them - an empty list clears what was there
+  if (update.content) next.content = update.content
+  if (update.locations) next.locations = update.locations
+  return next
+}
+
+function toolContent(content: acp.ToolCallContent): AgentToolContent[] {
+  switch (content.type) {
+    case 'diff':
+      return [
+        {
+          type: 'diff',
+          path: content.path,
+          ...(typeof content.oldText === 'string' ? { oldText: content.oldText } : {}),
+          newText: content.newText,
+        },
+      ]
+    // Studio lends the agent no terminal: a command's output reaches it as text
+    case 'terminal':
+      return []
+    case 'content': {
+      const block = content.content
+      switch (block.type) {
+        case 'text':
+          return block.text ? [{ type: 'text', text: block.text }] : []
+        case 'image':
+          return [{ type: 'resource', label: block.uri ?? `Image (${block.mimeType})` }]
+        case 'audio':
+          return [{ type: 'resource', label: `Audio (${block.mimeType})` }]
+        case 'resource_link':
+          return [{ type: 'resource', label: block.uri }]
+        case 'resource': {
+          const resource = block.resource
+          return [
+            {
+              type: 'resource',
+              label: resource.uri,
+              ...('text' in resource && typeof resource.text === 'string'
+                ? { text: resource.text }
+                : {}),
+            },
+          ]
+        }
+        default:
+          return []
+      }
+    }
+    default:
+      return []
+  }
+}
+
+/** A call as Studio keeps it: harness-neutral, and bounded by the store that keeps it. */
+export function toolCallDetail(state: AcpToolCallState): AgentToolCall {
+  const content = (state.content ?? []).flatMap(toolContent)
+  return {
+    title: state.title ?? state.name ?? state.kind ?? 'Tool',
+    ...(state.kind ? { kind: state.kind } : {}),
+    ...(state.status ? { status: state.status } : {}),
+    ...(state.rawInput === undefined ? {} : { input: state.rawInput }),
+    content,
+    // the verbatim result is the fallback: what the agent chose to show says it
+    // better, without the notes it only meant for the model
+    ...(content.length || state.rawOutput === undefined ? {} : { output: state.rawOutput }),
+    locations: (state.locations ?? []).map((location) =>
+      location.line ? `${location.path}:${location.line}` : location.path,
+    ),
+  }
+}
+
+function toolTarget(update: AcpToolCallState): string {
   const location = update.locations?.[0]
   if (location) return `${location.path}${location.line ? `:${location.line}` : ''}`
   const input = update.rawInput
@@ -138,10 +284,6 @@ function planText(entries: acp.PlanEntry[]): string {
     .join('\n')
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolveWait) => setTimeout(resolveWait, ms))
-}
-
 function permissionResponse(params: acp.RequestPermissionRequest): acp.RequestPermissionResponse {
   const option =
     params.options.find((candidate) => candidate.kind === 'allow_once') ??
@@ -151,19 +293,190 @@ function permissionResponse(params: acp.RequestPermissionRequest): acp.RequestPe
     : { outcome: { outcome: 'cancelled' } }
 }
 
+/** codex-acp's own notices, which it also sends as unattributed reply text. */
+const CODEX_NOTICE = /^(?:Warning: |Config warning: |\*Context compacted)/
+
+/**
+ * Whether an agent message chunk may be codex-acp reporting the turn's terminal
+ * error. Without the JetBrains AIR extension, codex-acp turns a failed turn (a
+ * model the account cannot use, a rejected request) into reply text - one chunk
+ * with no `messageId`, ending in a blank line - and still answers `end_turn`.
+ * The model's own reply always carries its item id.
+ */
+function unattributedCodexText(update: acp.ContentChunk): boolean {
+  return (
+    !update.messageId &&
+    update.content.type === 'text' &&
+    update.content.text.endsWith('\n\n') &&
+    !CODEX_NOTICE.test(update.content.text)
+  )
+}
+
+/**
+ * Folds the agent's `session/update` stream into Studio's activity events and the
+ * reply text. A new `messageId` starts a new paragraph: the previous message is
+ * flushed as its own event and the reply gets a blank line between the two.
+ *
+ * A tool call is one event however many times it is reported: every update is
+ * folded into what was already known and re-emitted under the same call id.
+ *
+ * With `holdUnattributed` (codex), text that may be the turn's terminal error is
+ * held back instead of shown: anything the agent does next proves the turn went
+ * on and releases it as reply text; a turn that ends on it failed with it.
+ */
+function transcript(
+  onEvent: AgentTurnInput['onEvent'] | undefined,
+  onDelta: AskInput['onDelta'] | undefined,
+  onContext?: AgentTurnInput['onContext'],
+  holdUnattributed = false,
+) {
+  let text = ''
+  let pendingMessage = ''
+  let held = ''
+  let lastMessageId: string | undefined
+  let costUsd: number | undefined
+  let context: AgentContextUsage | undefined
+  const toolCalls = new Map<string, AcpToolCallState>()
+  const shown = new Set<string>()
+
+  const flush = () => {
+    const message = pendingMessage.trim()
+    if (message && onEvent) onEvent({ kind: 'message', text: message })
+    pendingMessage = ''
+  }
+
+  const reportTool = (update: acp.ToolCall | acp.ToolCallUpdate) => {
+    const known = toolCalls.get(update.toolCallId)
+    const state = foldToolCall(known, update)
+    toolCalls.set(update.toolCallId, state)
+    // an update for a call never announced cannot be placed until it names the call
+    if (!state.title && !state.name) return
+    // nothing new to show - claude-agent-acp follows every call with a `_meta`-only
+    // update from its post-tool hook
+    if (known && shown.has(update.toolCallId) && !toolCallChanged(known, state)) return
+    if (!shown.has(update.toolCallId)) {
+      shown.add(update.toolCallId)
+      // what the agent said before calling the tool was said before it: the
+      // narration goes into the transcript first, in the order it happened
+      flush()
+    }
+    const tool = state.name ?? state.kind ?? state.title ?? 'tool'
+    onEvent?.({
+      kind: 'tool',
+      text: state.title ?? tool,
+      tool,
+      target: toolTarget(state),
+      call: { id: update.toolCallId, detail: toolCallDetail(state) },
+    })
+  }
+
+  const append = (chunk: string, messageId: string | undefined) => {
+    if (messageId && lastMessageId && messageId !== lastMessageId) {
+      flush()
+      if (text && !text.endsWith('\n')) {
+        text += '\n\n'
+        onDelta?.('\n\n')
+      }
+    }
+    lastMessageId = messageId ?? lastMessageId
+    pendingMessage += chunk
+    text += chunk
+    onDelta?.(chunk)
+  }
+
+  const release = () => {
+    if (!held) return
+    const chunk = held
+    held = ''
+    append(chunk, undefined)
+  }
+
+  const handle = (notification: acp.SessionNotification) => {
+    const update = notification.update
+    switch (update.sessionUpdate) {
+      case 'agent_message_chunk':
+        if (update.content.type !== 'text' || !update.content.text) return
+        if (holdUnattributed && unattributedCodexText(update)) {
+          held += update.content.text
+          return
+        }
+        release()
+        append(update.content.text, update.messageId ?? undefined)
+        return
+      case 'agent_thought_chunk':
+        release()
+        if (update.content.type === 'text' && update.content.text.trim())
+          onEvent?.({ kind: 'thinking', text: update.content.text.trim() })
+        return
+      case 'tool_call':
+      case 'tool_call_update':
+        release()
+        reportTool(update)
+        return
+      case 'plan': {
+        release()
+        const plan = planText(update.entries)
+        if (plan) onEvent?.({ kind: 'status', text: plan })
+        return
+      }
+      case 'usage_update': {
+        if (update.cost?.currency.toUpperCase() === 'USD') costUsd = update.cost.amount
+        const reported = contextUsage(update)
+        if (reported) {
+          context = reported
+          onContext?.(reported)
+        }
+        return
+      }
+      default:
+        return
+    }
+  }
+
+  return {
+    handle,
+    flush,
+    /** The text still held back when the turn ended: the turn's own error. */
+    takeHeld() {
+      const chunk = held.trim()
+      held = ''
+      return chunk || undefined
+    },
+    get text() {
+      return text
+    },
+    get costUsd() {
+      return costUsd
+    },
+    get context() {
+      return context
+    },
+  }
+}
+
+/** A usage report's context occupancy, when it names a window to measure against. */
+export function contextUsage(update: {
+  used: number
+  size: number
+}): AgentContextUsage | undefined {
+  const { used, size } = update
+  if (!Number.isFinite(used) || !Number.isFinite(size) || used < 0 || size <= 0) return undefined
+  return { used: Math.round(used), size: Math.round(size) }
+}
+
 async function executeAcp(
   options: AcpProviderOptions,
   input: AcpInput,
   ask: boolean,
 ): Promise<ExecutionResult> {
-  if (input.signal.aborted)
-    return {
-      sessionId: input.sessionId,
-      text: '',
-      isError: true,
-      errorMessage: 'canceled',
-      forkAttempted: false,
-    }
+  const failedBeforeStart = (errorMessage: string): ExecutionResult => ({
+    sessionId: input.sessionId,
+    text: '',
+    isError: true,
+    errorMessage,
+    forkAttempted: false,
+  })
+  if (input.signal.aborted) return failedBeforeStart('canceled')
 
   let env: Record<string, string>
   let mcpServers: acp.McpServer[]
@@ -171,61 +484,16 @@ async function executeAcp(
     env = providerEnvironment(options, input)
     mcpServers = acpMcpServers('mcpServers' in input ? input.mcpServers : [], input.root, env)
   } catch (error) {
-    return {
-      sessionId: input.sessionId,
-      text: '',
-      isError: true,
-      errorMessage: errorText(error),
-      forkAttempted: false,
-    }
+    return failedBeforeStart(errorText(error))
   }
 
-  let stderr = ''
-  let exited = false
-  let resolveExit!: (exit: ProcessExit) => void
-  const exit = new Promise<ProcessExit>((resolveProcessExit) => {
-    resolveExit = resolveProcessExit
-  })
-
-  let child: ReturnType<typeof spawn>
+  let agent: AcpAgentProcess
   try {
-    child = spawn(options.command[0], options.command.slice(1), {
-      cwd: input.root,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: childEnvironment(env),
-      detached: process.platform !== 'win32',
-    })
+    agent = spawnAcpAgent(options.provider, options.command, input.root, env)
   } catch (error) {
-    return {
-      sessionId: input.sessionId,
-      text: '',
-      isError: true,
-      errorMessage: `failed to spawn ${options.provider} ACP agent: ${errorText(error)}`,
-      forkAttempted: false,
-    }
+    return failedBeforeStart(`failed to spawn ${options.provider} ACP agent: ${errorText(error)}`)
   }
-
-  child.stderr?.setEncoding('utf8')
-  child.stderr?.on('data', (chunk: string) => {
-    stderr = (stderr + chunk).slice(-MAX_STDERR)
-  })
-  child.once('error', (error) => {
-    if (exited) return
-    exited = true
-    resolveExit({ code: null, signal: null, spawnError: error.message })
-  })
-  child.once('close', (code, signal) => {
-    if (exited) return
-    exited = true
-    resolveExit({ code, signal })
-  })
-
-  const processFailure = (processExit: ProcessExit): Error =>
-    new Error(
-      processExit.spawnError
-        ? `failed to spawn ${options.provider} ACP agent: ${processExit.spawnError}`
-        : `${options.provider} ACP agent exited ${processExit.code ?? processExit.signal ?? -1}${stderrSuffix(stderr)}`,
-    )
+  const { child, exit } = agent
 
   const withProcess = async <T>(
     promise: Promise<T>,
@@ -234,7 +502,7 @@ async function executeAcp(
   ): Promise<T> => {
     const races: Promise<T>[] = [
       promise,
-      exit.then((processExit) => Promise.reject(processFailure(processExit))),
+      exit.then((processExit) => Promise.reject(agent.failure(processExit, stderrSuffix))),
     ]
     if (timeoutMs > 0)
       races.push(
@@ -249,82 +517,13 @@ async function executeAcp(
     return Promise.race(races)
   }
 
-  let finalText = ''
-  let pendingMessage = ''
-  let pendingMessageId: string | undefined
-  let costUsd: number | undefined
-  const toolCalls = new Set<string>()
   const onEvent = 'onEvent' in input ? input.onEvent : undefined
-  const onDelta = 'onDelta' in input ? input.onDelta : undefined
-
-  const flushMessage = () => {
-    const text = pendingMessage.trim()
-    if (text && onEvent) onEvent({ kind: 'message', text })
-    pendingMessage = ''
-    pendingMessageId = undefined
-  }
-
-  const handleUpdate = (notification: acp.SessionNotification) => {
-    const update = notification.update
-    switch (update.sessionUpdate) {
-      case 'agent_message_chunk':
-        if (update.content.type !== 'text' || !update.content.text) return
-        if (
-          pendingMessage &&
-          update.messageId &&
-          pendingMessageId &&
-          update.messageId !== pendingMessageId
-        ) {
-          flushMessage()
-          if (finalText && !finalText.endsWith('\n')) {
-            finalText += '\n\n'
-            onDelta?.('\n\n')
-          }
-        }
-        pendingMessageId = update.messageId ?? pendingMessageId
-        pendingMessage += update.content.text
-        finalText += update.content.text
-        onDelta?.(update.content.text)
-        return
-      case 'agent_thought_chunk':
-        if (update.content.type === 'text' && update.content.text.trim())
-          onEvent?.({ kind: 'thinking', text: update.content.text.trim() })
-        return
-      case 'tool_call': {
-        toolCalls.add(update.toolCallId)
-        const tool = update.name ?? update.kind ?? update.title
-        onEvent?.({
-          kind: 'tool',
-          text: update.title,
-          tool,
-          target: toolTarget(update),
-        })
-        return
-      }
-      case 'tool_call_update': {
-        if (toolCalls.has(update.toolCallId) || (!update.title && !update.name)) return
-        toolCalls.add(update.toolCallId)
-        const tool = update.name ?? update.kind ?? update.title ?? 'tool'
-        onEvent?.({
-          kind: 'tool',
-          text: update.title ?? tool,
-          tool,
-          target: toolTarget(update),
-        })
-        return
-      }
-      case 'plan': {
-        const text = planText(update.entries)
-        if (text) onEvent?.({ kind: 'status', text })
-        return
-      }
-      case 'usage_update':
-        if (update.cost?.currency.toUpperCase() === 'USD') costUsd = update.cost.amount
-        return
-      default:
-        return
-    }
-  }
+  const reply = transcript(
+    onEvent,
+    'onDelta' in input ? input.onDelta : undefined,
+    'onContext' in input ? input.onContext : undefined,
+    options.provider === 'codex',
+  )
 
   let connection: acp.ClientConnection | undefined
   let context: acp.ClientContext | undefined
@@ -334,9 +533,8 @@ async function executeAcp(
   let forkAttempted = false
   let forceKillTimer: ReturnType<typeof setTimeout> | undefined
   let terminateTimer: ReturnType<typeof setTimeout> | undefined
-  let onAbort = () => {}
 
-  const stopAfterAbort = () => {
+  const onAbort = () => {
     if (terminateTimer) return
     if (context && activeSessionId)
       void context
@@ -347,63 +545,36 @@ async function executeAcp(
     forceKillTimer = setTimeout(() => terminateProcessTree(child, 'SIGKILL'), 2_100)
     forceKillTimer.unref?.()
   }
-
-  const stopChild = async () => {
-    try {
-      connection?.close()
-    } catch {
-      /* already closed */
-    }
-    try {
-      child.stdin?.end()
-    } catch {
-      /* already closed */
-    }
-    if (exited) return
-    await Promise.race([exit.then(() => undefined), wait(750)])
-    if (exited) return
-    terminateProcessTree(child)
-    await Promise.race([exit.then(() => undefined), wait(1_500)])
-    if (exited) return
-    terminateProcessTree(child, 'SIGKILL')
-    await Promise.race([exit.then(() => undefined), wait(250)])
-  }
-
-  onAbort = stopAfterAbort
   input.signal.addEventListener('abort', onAbort, { once: true })
 
   let outcome: ExecutionResult
   try {
-    const output = Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>
-    const source = Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>
-    const stream = acp.ndJsonStream(output, source)
     const app = acp
       .client({ name: 'astrale-domain-studio' })
       .onRequest(acp.methods.client.session.requestPermission, (request) =>
         permissionResponse(request.params),
       )
       .onNotification(acp.methods.client.session.update, (notification) =>
-        handleUpdate(notification.params),
+        reply.handle(notification.params),
       )
-    connection = app.connect(stream)
+    connection = app.connect(agent.stream())
     context = connection.agent
 
-    const initialized = await withProcess<acp.InitializeResponse>(
-      context.request(acp.methods.agent.initialize, {
-        protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { session: { configOptions: { boolean: {} } } },
-        clientInfo: { name: 'astrale-domain-studio', title: 'Astrale Domain Studio' },
-      }) as Promise<acp.InitializeResponse>,
-      'initialize',
+    const initialized = await initializeAgent(
+      context,
+      options.provider,
+      { name: 'astrale-domain-studio', title: 'Astrale Domain Studio' },
+      withProcess,
     )
     initializeResponse = initialized
-    if (initialized.protocolVersion !== acp.PROTOCOL_VERSION)
-      throw new Error(
-        `${options.provider} ACP negotiated unsupported protocol version ${initialized.protocolVersion}`,
-      )
 
     const capabilities = initialized.agentCapabilities?.sessionCapabilities
     const meta = providerSessionMeta(options.provider, input)
+    const sessionParams: acp.NewSessionRequest = {
+      cwd: input.root,
+      mcpServers,
+      ...(meta ? { _meta: meta } : {}),
+    }
     let setup: acp.NewSessionResponse | acp.ResumeSessionResponse | acp.ForkSessionResponse
 
     if (ask && input.sessionId && capabilities?.fork) {
@@ -411,9 +582,7 @@ async function executeAcp(
       const fork = await withProcess(
         context.request(acp.methods.agent.session.fork, {
           sessionId: input.sessionId,
-          cwd: input.root,
-          mcpServers,
-          ...(meta ? { _meta: meta } : {}),
+          ...sessionParams,
         }),
         'session fork',
       )
@@ -425,9 +594,7 @@ async function executeAcp(
           : await withProcess(
               context.request(acp.methods.agent.session.resume, {
                 sessionId: activeSessionId,
-                cwd: input.root,
-                mcpServers,
-                ...(meta ? { _meta: meta } : {}),
+                ...sessionParams,
               }),
               'fork resume',
             )
@@ -437,26 +604,21 @@ async function executeAcp(
       setup = await withProcess(
         context.request(acp.methods.agent.session.resume, {
           sessionId: input.sessionId,
-          cwd: input.root,
-          mcpServers,
-          ...(meta ? { _meta: meta } : {}),
+          ...sessionParams,
         }),
         'session resume',
       )
       activeSessionId = input.sessionId
     } else {
       const created = await withProcess(
-        context.request(acp.methods.agent.session.new, {
-          cwd: input.root,
-          mcpServers,
-          ...(meta ? { _meta: meta } : {}),
-        }),
+        context.request(acp.methods.agent.session.new, sessionParams),
         'session creation',
       )
       setup = created
       activeSessionId = created.sessionId
       ephemeral = ask
     }
+    const sessionId = activeSessionId
 
     onEvent?.({ kind: 'status', text: 'session started via ACP' })
 
@@ -466,19 +628,20 @@ async function executeAcp(
         throw new Error(`${options.provider} ACP mode \`${desiredMode}\` is unavailable`)
       if (setup.modes.currentModeId !== desiredMode)
         await withProcess(
-          context.request(acp.methods.agent.session.setMode, {
-            sessionId: activeSessionId,
-            modeId: desiredMode,
-          }),
+          context.request(acp.methods.agent.session.setMode, { sessionId, modeId: desiredMode }),
           'mode selection',
         )
     }
 
     let configOptions = setup.configOptions ?? []
-    const setConfig = async (config: acp.SessionConfigOption, category: string, value: string) => {
-      const response = await withProcess(
+    const setConfig = async (
+      config: acp.SessionConfigOption,
+      category: string,
+      value: string | boolean,
+    ) => {
+      const response = await withProcess<acp.SetSessionConfigOptionResponse>(
         context!.request(acp.methods.agent.session.setConfigOption, {
-          sessionId: activeSessionId!,
+          sessionId,
           configId: config.id,
           value,
         }),
@@ -493,6 +656,9 @@ async function executeAcp(
         throw new Error(`${options.provider} ACP agent did not expose its model selector`)
       await setConfig(config, 'model', input.model)
     }
+    const fast = fastConfig(configOptions)
+    if (fast && input.fastMode !== undefined)
+      await setConfig(fast, 'fast mode', fastValue(fast, input.fastMode))
     // The ladder belongs to the MODEL, so it is read after the model is set — and
     // a level this one does not offer lands on its nearest rung rather than
     // failing the turn. A model with no ladder at all (Haiku) is simply left alone.
@@ -506,37 +672,48 @@ async function executeAcp(
     if (input.signal.aborted) throw new Error('canceled')
     const promptResponse = await withProcess(
       context.request(acp.methods.agent.session.prompt, {
-        sessionId: activeSessionId,
-        prompt: [{ type: 'text', text: input.prompt }],
+        sessionId,
+        prompt: promptBlocks(
+          input.prompt,
+          'images' in input ? input.images : undefined,
+          initialized.agentCapabilities?.promptCapabilities?.image === true,
+        ),
       }),
       'prompt',
       0,
     )
-    flushMessage()
+    reply.flush()
+    const turnError = reply.takeHeld()
 
     const stoppedCleanly = promptResponse.stopReason === 'end_turn'
     const canceled = input.signal.aborted || promptResponse.stopReason === 'cancelled'
     outcome = {
-      sessionId: activeSessionId,
-      text: finalText.trim(),
+      sessionId,
+      text: reply.text.trim(),
       tokens: promptResponse.usage?.totalTokens,
-      costUsd,
-      isError: !stoppedCleanly,
+      costUsd: reply.costUsd,
+      context: reply.context,
+      isError: !stoppedCleanly || turnError !== undefined,
       errorMessage: stoppedCleanly
-        ? undefined
+        ? turnError
         : canceled
           ? 'canceled'
           : `agent stopped: ${promptResponse.stopReason}`,
       forkAttempted,
     }
   } catch (error) {
-    flushMessage()
+    reply.flush()
+    const turnError = reply.takeHeld()
     const canceled = input.signal.aborted
-    const message = canceled ? 'canceled' : errorText(error) + stderrSuffix(stderr)
+    const stderr = agent.stderr
+    const message = canceled
+      ? 'canceled'
+      : [turnError, errorText(error) + stderrSuffix(stderr)].filter(Boolean).join('\n\n')
     outcome = {
       sessionId: activeSessionId,
-      text: finalText.trim(),
-      costUsd,
+      text: reply.text.trim(),
+      costUsd: reply.costUsd,
+      context: reply.context,
       isError: true,
       errorMessage: message,
       resumeRejected:
@@ -559,7 +736,12 @@ async function executeAcp(
     input.signal.removeEventListener('abort', onAbort)
     if (terminateTimer) clearTimeout(terminateTimer)
     if (forceKillTimer) clearTimeout(forceKillTimer)
-    await stopChild()
+    try {
+      connection?.close()
+    } catch {
+      /* already closed */
+    }
+    await agent.shutdown(750, 1_500, 250)
   }
 
   return outcome
@@ -576,6 +758,7 @@ export async function runAcpTurn(
     costUsd: result.costUsd,
     numTurns: result.isError && !result.text ? undefined : 1,
     tokens: result.tokens,
+    context: result.context,
     isError: result.isError,
     errorMessage: result.errorMessage,
     resumeRejected: result.resumeRejected,

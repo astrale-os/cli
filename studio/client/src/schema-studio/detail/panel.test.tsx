@@ -12,7 +12,8 @@ const method = (name: string, input: IrMethod['input'] = { type: 'object' }): Ir
   input,
   output: { mode: 'value', schema: { type: 'boolean' } },
   static: false,
-  inheritance: 'default',
+  abstract: false,
+  executable: true,
 })
 
 const identity = classRef('kernel.astrale.ai', 'Identity')
@@ -47,15 +48,38 @@ fixture.ir!.importedClassesByKey = {
   }),
 }
 
-function render(selected: string): string {
+function render(selected: string, source = fixture): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <SchemaDetail bundle={fixture} selected={selected} />
+      <SchemaDetail bundle={source} selected={selected} />
     </QueryClientProvider>,
   )
 }
 
 describe('the Class detail panel', () => {
+  test('keeps parent contracts readable beside their local implementations', () => {
+    const contractBundle = bundle({
+      Base: nodeClass('Base', {
+        methods: { inspect: { ...method('inspect'), abstract: true, executable: false } },
+      }),
+      Child: nodeClass('Child', {
+        extendsRefs: [classRef('local.example.dev', 'Base')],
+        methods: { inspect: method('inspect') },
+      }),
+    })
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <SchemaDetail bundle={contractBundle} selected="class.Child" />
+      </QueryClientProvider>,
+    )
+    expect(html).toContain('data-anchor-ref="class.Child.method.inspect"')
+    expect(html).toContain('data-anchor-ref="class.Base.method.inspect"')
+    expect(html).toContain('>contract</span>')
+    expect(html).not.toContain('line-through')
+    expect(html).not.toContain('declared locally')
+    expect(html).not.toContain('overridden')
+  })
+
   test('lists own members first and inherited ones after, named by their Class', () => {
     const html = render('class.Invoice')
     const at = (ref: string) => html.indexOf(`data-anchor-ref="${ref}"`)
@@ -64,7 +88,8 @@ describe('the Class detail panel', () => {
     expect(at('class.Document.property.reference')).toBeLessThan(
       at('class.kernel.astrale.ai:class.Identity.property.sub'),
     )
-    expect(at('class.Invoice.method.settle')).toBeLessThan(at('class.Document.method.archive'))
+    expect(at('class.Invoice.method.settle')).toBeGreaterThan(-1)
+    expect(at('class.Document.method.archive')).toBe(-1)
     // `Document.reference`, the base named in front of the member
     expect(html).toContain('Document.</span>reference')
     expect(html).not.toContain('>Inherited<')

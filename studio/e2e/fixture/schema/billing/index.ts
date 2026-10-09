@@ -28,6 +28,7 @@ export const Invoice = nodeClass({
   properties: { total: number, paid: property(boolean, { required: false }) },
   methods: {
     settle: method({
+      abstract: true,
       description: 'Record a payment against this invoice.',
       auth: 'authorized',
       input: valueSchema<{ amount: number; note?: string }>()({

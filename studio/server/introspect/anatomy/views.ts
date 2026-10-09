@@ -1,5 +1,8 @@
+import type { SourceFile } from 'ts-morph'
+
 import type { SchemaIR, ViewInfo } from '../../../shared/types'
 
+import { schemaProject } from './schema-definition'
 import { buildFrontendViews, buildSchemaViewSources } from './views/routes'
 
 function mergeRoute(target: ViewInfo, incoming: ViewInfo): void {
@@ -10,37 +13,31 @@ function mergeRoute(target: ViewInfo, incoming: ViewInfo): void {
 }
 
 function canonicalViewInfo(slug: string, view: NonNullable<SchemaIR['views']>[string]): ViewInfo {
-  const targets =
-    view.target.kind === 'definition' ? view.target.definitions.map((ref) => ref.name) : []
   return {
     slug,
     kind: 'unknown',
     ...(view.description ? { description: view.description } : {}),
-    ...(targets.length === 1
-      ? { viewFor: targets[0] }
-      : targets.length > 1
-        ? { viewFor: targets }
-        : {}),
   }
 }
 
 /**
  * Join canonical View definitions with route/source metadata. Passing a
  * canonical map (including an empty map) makes it authoritative: static routes
- * cannot invent Views or override identity, target, or description.
+ * cannot invent Views or override identity or description.
  * Without admitted canonical Views, Studio does not invent authoring semantics.
  */
 export function buildViews(
   root: string,
-  _schemaDirName = 'schema',
+  schemaDirName = 'schema',
   canonicalViews?: NonNullable<SchemaIR['views']>,
+  schemaSources: readonly SourceFile[] = schemaProject(root, schemaDirName),
 ): ViewInfo[] {
   const merged = new Map<string, ViewInfo>()
   const admittedViews = canonicalViews ?? {}
   for (const [slug, view] of Object.entries(admittedViews)) {
     merged.set(slug, canonicalViewInfo(slug, view))
   }
-  for (const [slug, file] of buildSchemaViewSources(root, _schemaDirName)) {
+  for (const [slug, file] of buildSchemaViewSources(root, schemaSources)) {
     const current = merged.get(slug)
     if (current) current.file = file
   }

@@ -18,11 +18,11 @@ export {
   writeIdentityExport,
 } from './transfer'
 export { createRootIdentityRecipient, decodeRootIdentityTransfer } from './root-transfer'
-export { acceptProvisionedIdentity, submitIdentityProvision } from './registration'
+export { acceptRegisteredIdentity, submitIdentityRegistration } from './registration'
 export type {
-  IdentityProvisionSubmission,
+  IdentityRegistrationSubmission,
   IdentityRegistrationResult,
-  ProvisionedIdentityRegistration,
+  RegisteredIdentity,
 } from './registration'
 export type { Identity, IdentityStore, Registration } from './registry'
 export type { IdentityExport, IdentityFileOptions, IdentityImportOptions } from './transfer'

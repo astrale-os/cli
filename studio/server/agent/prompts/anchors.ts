@@ -33,6 +33,16 @@ function propType(s: JsonSchema | undefined, optionalOverride?: boolean): string
   return label + (optional ? '?' : '')
 }
 
+/** Whether a class property is optional: only a class that lists its required ones says. */
+function optionalIn(c: IrClass, property: string): boolean | undefined {
+  return c.required ? !c.required.includes(property) : undefined
+}
+
+/** A source doc on one line, cut to `max` characters. */
+function oneLine(doc: string, max: number): string {
+  return doc.replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
 function methodSig(name: string, m: IrMethod | IrFunction): string {
   const required = new Set(m.input.required ?? [])
   const params = Object.entries(m.input.properties ?? {})
@@ -46,7 +56,8 @@ function methodSig(name: string, m: IrMethod | IrFunction): string {
         : propType(m.output.schema)
   const tags = [
     'static' in m && m.static ? 'static' : '',
-    'inheritance' in m && m.inheritance === 'abstract' ? 'abstract' : '',
+    'abstract' in m && m.abstract ? 'contract' : '',
+    'executable' in m && m.executable ? 'local implementation required' : '',
     m.auth ?? '',
   ].filter(Boolean)
   return `${name}(${params})→${output}${tags.length ? ` [${tags.join(',')}]` : ''}`
@@ -73,7 +84,8 @@ export function describeAnchor(
 ): string {
   const span = overlay?.sourceSpans[ref]
   const loc = span ? `${span.file}:${span.startLine}` : ''
-  const doc = span?.doc ? ` — ${span.doc.replace(/\s+/g, ' ').trim().slice(0, 160)}` : ''
+  const at = loc ? `  (${loc})` : ''
+  const doc = span?.doc ? ` — ${oneLine(span.doc, 160)}` : ''
 
   // class.X.property.y / class.X.method.m
   const member = ref.match(/^class\.(.+)\.(property|method)\.([^.]+)$/)
@@ -81,9 +93,9 @@ export function describeAnchor(
     const [, cls, kind, name] = member
     const c = classByToken(ir, cls)
     if (c && kind === 'property' && c.properties?.[name])
-      return `**${c.name}.${name}** : ${propType(c.properties[name], c.required ? !c.required.includes(name) : undefined)}${loc ? `  (${loc})` : ''}${doc}`
+      return `**${c.name}.${name}** : ${propType(c.properties[name], optionalIn(c, name))}${at}${doc}`
     if (c && kind === 'method' && c.methods?.[name])
-      return `**${c.name}.${name}** — ${methodSig(name, c.methods[name])}${loc ? `  (${loc})` : ''}${doc}`
+      return `**${c.name}.${name}** — ${methodSig(name, c.methods[name])}${at}${doc}`
   }
 
   // class.X / edge.X (edges live in ir.classes too)
@@ -91,15 +103,11 @@ export function describeAnchor(
   if (cm && ir) {
     const c = classByToken(ir, cm[1])
     if (c) {
-      const L = [`**${c.name}** (${c.type})${loc ? `  (${loc})` : ''}${doc}`]
+      const L = [`**${c.name}** (${c.type})${at}${doc}`]
       const props = Object.entries(c.properties ?? {})
       if (props.length)
         L.push(
-          `  props: ${props
-            .map(
-              ([p, s]) => `${p}:${propType(s, c.required ? !c.required.includes(p) : undefined)}`,
-            )
-            .join(' · ')}`,
+          `  props: ${props.map(([p, s]) => `${p}:${propType(s, optionalIn(c, p))}`).join(' · ')}`,
         )
       const ms = Object.entries(c.methods ?? {})
       if (ms.length) L.push(`  methods: ${ms.map(([n, m]) => methodSig(n, m)).join(' · ')}`)
@@ -124,8 +132,7 @@ export function describeAnchor(
   const fm = ref.match(/^function\.([A-Za-z_$][\w$]*)$/)
   if (fm && ir) {
     const fn = ir.functions?.[fm[1]]
-    if (fn)
-      return `**${fn.name}** (function) — ${methodSig(fn.name, fn)}${loc ? `  (${loc})` : ''}${doc}`
+    if (fn) return `**${fn.name}** (function) — ${methodSig(fn.name, fn)}${at}${doc}`
   }
 
   // module / section / file / free — not a specific code element
@@ -144,7 +151,7 @@ export function resolveThreadAnchors(
     if (!a) return
     const span = overlay?.sourceSpans[a.ref]
     const loc = span
-      ? `${span.file}:${span.startLine}${span.doc ? ` — ${span.doc.replace(/\s+/g, ' ').trim().slice(0, 100)}` : ''}`
+      ? `${span.file}:${span.startLine}${span.doc ? ` — ${oneLine(span.doc, 100)}` : ''}`
       : a.file
         ? a.file
         : '(section / free-text anchor — not a specific code element)'

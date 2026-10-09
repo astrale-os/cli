@@ -1,9 +1,6 @@
-import { ChevronRight } from 'lucide-react'
 import * as React from 'react'
 
 import { cn } from '@/lib/utils'
-
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 
 /**
  * Studio kit — the shared building blocks every section is composed from.
@@ -94,6 +91,11 @@ const TONES: Record<string, string> = {
   fn: 'bg-schema-function/10 text-schema-function',
   muted: 'bg-muted text-muted-foreground',
 }
+const TILE_SIZES = {
+  sm: 'h-6 w-6 [&_svg]:h-3.5 [&_svg]:w-3.5',
+  md: 'h-8 w-8 [&_svg]:h-4 [&_svg]:w-4',
+  lg: 'h-9 w-9 [&_svg]:h-[18px] [&_svg]:w-[18px]',
+}
 export function IconTile({
   children,
   tone = 'muted',
@@ -103,22 +105,16 @@ export function IconTile({
 }: {
   children: React.ReactNode
   tone?: keyof typeof TONES | string
-  size?: 'sm' | 'md' | 'lg'
+  size?: keyof typeof TILE_SIZES
   className?: string
   style?: React.CSSProperties
 }) {
-  const sz =
-    size === 'lg'
-      ? 'h-9 w-9 [&_svg]:h-[18px] [&_svg]:w-[18px]'
-      : size === 'sm'
-        ? 'h-6 w-6 [&_svg]:h-3.5 [&_svg]:w-3.5'
-        : 'h-8 w-8 [&_svg]:h-4 [&_svg]:w-4'
   return (
     <div
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-md',
         TONES[tone] ?? tone,
-        sz,
+        TILE_SIZES[size],
         className,
       )}
       style={style}
@@ -237,29 +233,6 @@ export function Chip({
   )
 }
 
-// ── DetailsDisclosure: power-user detail, one click away ──
-export function DetailsDisclosure({
-  label = 'Details',
-  children,
-  className,
-}: {
-  label?: string
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <Collapsible className={className}>
-      <CollapsibleTrigger className="group/disc inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
-        <ChevronRight className="h-3 w-3 transition-transform group-data-[state=open]/disc:rotate-90" />
-        {label}
-      </CollapsibleTrigger>
-      <CollapsibleContent className="overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out">
-        <div className="pt-2">{children}</div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
 // ── MetaGrid: key/value technical detail ──
 export function MetaGrid({
   items,
@@ -277,26 +250,6 @@ export function MetaGrid({
         </React.Fragment>
       ))}
     </dl>
-  )
-}
-
-// ── CodeBlock ──
-export function CodeBlock({
-  children,
-  className,
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <pre
-      className={cn(
-        'max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 font-mono text-[11px] leading-relaxed text-muted-foreground',
-        className,
-      )}
-    >
-      {children}
-    </pre>
   )
 }
 

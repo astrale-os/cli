@@ -6,7 +6,14 @@
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
-import { Node, Project, SyntaxKind, type CallExpression, type SourceFile } from 'ts-morph'
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  type CallExpression,
+  type ObjectLiteralExpression,
+  type SourceFile,
+} from 'ts-morph'
 
 import { isPackageImportSpecifier, resolvePackageImport } from '../../package-imports'
 
@@ -145,27 +152,12 @@ function findExportedValue(
   return undefined
 }
 
-/** Get the value node of an object-literal property (handles shorthand). */
-export function getProp(obj: Node, name: string): Node | undefined {
-  if (!Node.isObjectLiteralExpression(obj)) return undefined
-  const prop = obj.getProperty(name)
-  if (!prop) return undefined
-  if (Node.isPropertyAssignment(prop)) return prop.getInitializer()
-  if (Node.isShorthandPropertyAssignment(prop)) return prop.getNameNode()
-  if (Node.isMethodDeclaration(prop)) return prop
-  return prop
-}
-
 /** First value/declaration node a name resolves to (definition, not reference). */
-export function firstValueDeclaration(node: Node): Node | undefined {
+function firstValueDeclaration(node: Node): Node | undefined {
   const idNode = Node.isIdentifier(node)
     ? node
     : node.getFirstDescendantByKind(SyntaxKind.Identifier)
-  if (!idNode || !Node.isIdentifier(idNode)) return undefined
-  const symbol = idNode.getSymbol()
-  if (!symbol) return undefined
-  const decls = symbol.getDeclarations()
-  return decls[0]
+  return idNode?.getSymbol()?.getDeclarations()[0]
 }
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
@@ -199,13 +191,18 @@ function firstExisting(base: string): string | undefined {
   return undefined
 }
 
+/** Stable identity of a syntax node across aliases: `<file>:<start offset>`. */
+export function nodeKey(node: Node): string {
+  return `${node.getSourceFile().getFilePath()}:${node.getStart()}`
+}
+
 /** Resolve a value to an object literal, following local/imported identifiers. */
 export function resolveObjectLiteral(
   node: Node,
   seen = new Set<string>(),
-): import('ts-morph').ObjectLiteralExpression | undefined {
+): ObjectLiteralExpression | undefined {
   const value = unwrapExpression(node)
-  const key = `${value.getSourceFile().getFilePath()}:${value.getStart()}`
+  const key = nodeKey(value)
   if (seen.has(key)) return undefined
   seen.add(key)
   if (Node.isObjectLiteralExpression(value)) return value

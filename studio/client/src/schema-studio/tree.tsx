@@ -1,11 +1,15 @@
 import {
+  AppWindow,
   Box,
+  Braces,
   ChevronDown,
   ChevronRight,
   Eye,
   EyeOff,
   FolderClosed,
   FolderOpen,
+  type LucideIcon,
+  ShieldCheck,
   Spline,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -13,7 +17,8 @@ import { useEffect, useRef, useState } from 'react'
 import { AnchorButton } from '@/components/anchor'
 import { cn } from '@/lib/utils'
 
-import { type MemberRef, type TreeNode } from './modules'
+import type { MemberKind, MemberRef, TreeNode } from './modules'
+
 import { moduleTint } from './palette'
 import { SchemaIcon } from './schema-icon'
 import { isHidden } from './visibility'
@@ -53,29 +58,37 @@ export function ModuleTree({
 }) {
   return (
     <div className="pb-1.5 text-[13px]" data-domain-id={controls.domainId}>
-      {root.children.map((c) => (
-        <Branch
-          key={c.path}
-          node={c}
-          depth={0}
-          indent={indent}
-          selected={selected}
-          onSelect={onSelect}
-          controls={controls}
-        />
-      ))}
-      {root.members.map((m) => (
-        <Member
-          key={m.selectId}
-          m={m}
-          depth={1}
-          indent={indent}
-          selected={selected}
-          onSelect={onSelect}
-          controls={controls}
-        />
-      ))}
+      <Level
+        node={root}
+        depth={0}
+        indent={indent}
+        selected={selected}
+        onSelect={onSelect}
+        controls={controls}
+      />
     </div>
+  )
+}
+
+interface LevelProps {
+  depth: number
+  indent: number
+  selected?: string
+  onSelect: (id: string) => void
+  controls: ModuleTreeControls
+}
+
+/** One level of the tree: a node's sub-folders first, then its own members. */
+function Level({ node, ...props }: LevelProps & { node: TreeNode }) {
+  return (
+    <>
+      {node.children.map((c) => (
+        <Branch key={c.path} node={c} {...props} />
+      ))}
+      {node.members.map((m) => (
+        <Member key={m.selectId} m={m} {...props} />
+      ))}
+    </>
   )
 }
 
@@ -86,18 +99,13 @@ function Branch({
   selected,
   onSelect,
   controls,
-}: {
-  node: TreeNode
-  depth: number
-  indent: number
-  selected?: string
-  onSelect: (id: string) => void
-  controls: ModuleTreeControls
-}) {
+}: LevelProps & { node: TreeNode }) {
   const [localOpen, setLocalOpen] = useState(true)
   const moduleId = `module.${node.path}`
   const active = selected === moduleId
-  const hasCanvasModule = node.members.length > 0
+  const hasCanvasModule = node.members.some(
+    (member) => member.kind === 'class' || member.kind === 'edge',
+  )
 
   // A folder with direct schema members owns a canvas module, so its collapse is
   // shared with the canvas. Pure parent folders only control the tree locally.
@@ -111,7 +119,7 @@ function Branch({
   const pad = { paddingLeft: indent + 8 + depth * 12 }
   const FolderIcon = open ? FolderOpen : FolderClosed
   return (
-    <div>
+    <div data-module-path={node.path}>
       <div
         data-tree-row=""
         data-anchor-ref={moduleId}
@@ -153,56 +161,44 @@ function Branch({
       </div>
       {open && (
         <div>
-          {node.children.map((c) => (
-            <Branch
-              key={c.path}
-              node={c}
-              depth={depth + 1}
-              indent={indent}
-              selected={selected}
-              onSelect={onSelect}
-              controls={controls}
-            />
-          ))}
-          {node.members.map((m) => (
-            <Member
-              key={m.selectId}
-              m={m}
-              depth={depth + 1}
-              indent={indent}
-              selected={selected}
-              onSelect={onSelect}
-              controls={controls}
-            />
-          ))}
+          <Level
+            node={node}
+            depth={depth + 1}
+            indent={indent}
+            selected={selected}
+            onSelect={onSelect}
+            controls={controls}
+          />
         </div>
       )}
     </div>
   )
 }
 
-function Member({
-  m,
-  depth,
-  indent,
-  selected,
-  onSelect,
-  controls,
-}: {
-  m: MemberRef
-  depth: number
-  indent: number
-  selected?: string
-  onSelect: (id: string) => void
-  controls: ModuleTreeControls
-}) {
+const MEMBER_ICONS: Record<MemberKind, LucideIcon> = {
+  class: Box,
+  edge: Spline,
+  policy: ShieldCheck,
+  function: Braces,
+  view: AppWindow,
+}
+
+const MEMBER_COLORS: Record<MemberKind, string> = {
+  class: 'text-schema-node',
+  edge: 'text-schema-edge',
+  policy: 'text-success',
+  function: 'text-schema-function',
+  view: 'text-schema-view',
+}
+
+function Member({ m, depth, indent, selected, onSelect, controls }: LevelProps & { m: MemberRef }) {
   const active = selected === m.selectId
   // `m.ref` (class.X / edge.X) is the hide-set key — NOT `m.selectId`, whose edges share the
   // class.X namespace and would collide with a same-named node class.
   const hidden = isHidden(m.ref, controls.hidden)
-  const dimmed = hidden
-  const Icon = m.kind === 'edge' ? Spline : Box
-  const color = m.kind === 'edge' ? 'text-schema-edge' : 'text-schema-node'
+  const canvasMember = m.kind === 'class' || m.kind === 'edge'
+  const Icon = MEMBER_ICONS[m.kind]
+  const color = MEMBER_COLORS[m.kind]
   const ref = useRef<HTMLDivElement>(null)
   // Auto-scroll: when this row becomes the selected one, nudge it into view.
   // 'nearest' only scrolls if it's off-screen, so visible selections don't jump.
@@ -213,14 +209,14 @@ function Member({
     <div
       ref={ref}
       data-tree-row=""
-      data-anchor-ref={m.selectId}
+      data-anchor-ref={m.kind === 'policy' ? undefined : m.ref}
       data-anchor-excerpt={`${m.kind} ${m.name}`}
       className={cn(
         'group flex w-full items-center rounded-md pr-2 hover:bg-accent',
         active && 'bg-accent',
-        dimmed && 'opacity-45',
+        hidden && 'opacity-45',
       )}
-      style={{ paddingLeft: indent + 8 + (depth + 1) * 12 + 12 }}
+      style={{ paddingLeft: indent + 26 + depth * 12 }}
       title={`${m.kind} ${m.name}`}
     >
       <button
@@ -238,26 +234,30 @@ function Member({
         )}
         <span className="truncate">{m.name}</span>
       </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          controls.toggleHidden(m.ref)
-        }}
-        title={hidden ? 'Show in canvas' : 'Hide in canvas'}
-        className={cn(
-          'ml-1 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground',
-          hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-        )}
-      >
-        {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-      </button>
-      <AnchorButton
-        domainId={controls.domainId}
-        anchorRef={{ ref: m.selectId, kind: 'schema' }}
-        excerpt={`${m.kind} ${m.name}`}
-        className="ml-1"
-      />
+      {canvasMember && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            controls.toggleHidden(m.ref)
+          }}
+          title={hidden ? 'Show in canvas' : 'Hide in canvas'}
+          className={cn(
+            'ml-1 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground',
+            hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}
+        >
+          {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      {m.kind !== 'policy' && (
+        <AnchorButton
+          domainId={controls.domainId}
+          anchorRef={{ ref: m.ref, kind: m.kind === 'view' ? 'section' : 'schema' }}
+          excerpt={`${m.kind} ${m.name}`}
+          className="ml-1"
+        />
+      )}
     </div>
   )
 }

@@ -141,18 +141,19 @@ export async function ensureOwnedInstance(
     return 'skipped'
   }
 
-  const { created, selectionError } = await deps.provision(slug)
+  const { created, bookmark, access } = await deps.provision(slug)
   if (created.state !== 'ready') {
     reportNotReady([created])
     return 'skipped'
   }
-  if (selectionError) {
-    const detail = selectionError instanceof Error ? selectionError.message : String(selectionError)
-    throw new AstraleError(
-      'INSTANCE_SELECTION_FAILED',
-      `Instance "${slug}" was provisioned, but the CLI could not select it: ${detail}`,
-      `Fix local CLI storage, then run \`astrale instance use ${slug}\`.`,
+  if (bookmark?.status === 'pending') {
+    throw new AstraleError(bookmark.code, bookmark.message, bookmark.hint)
+  }
+  if (access?.status !== 'completed') {
+    log.warn(
+      `Instance "${slug}" exists, but owner access is pending. Rerun instance create with the same Admin target options and the creator's WorkOS identity (--as, not --creds).`,
     )
+    return 'skipped'
   }
   hero(slug, created.url)
   return 'fixed'

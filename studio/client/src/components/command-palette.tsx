@@ -2,10 +2,24 @@ import type { DomainIntrospectionTiming, DomainSummary, StudioSchemaBundle } fro
 
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Command } from 'cmdk'
-import { AppWindow, ArrowRight, Box, Folder, Globe, Loader2, Plug, Spline, Tag } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import {
+  AppWindow,
+  ArrowRight,
+  Box,
+  Braces,
+  Folder,
+  Globe,
+  Loader2,
+  Map as MapIcon,
+  Plug,
+  Spline,
+  Tag,
+} from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
+import { TOUR_STEPS } from '@/components/tour'
 import { api, qk } from '@/lib/api'
+import { buildFunctionsModel } from '@/lib/functions'
 import { useWorkspace } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
 import { type SectionKey, useUI } from '@/lib/store'
@@ -23,12 +37,16 @@ const SECTIONS: { key: SectionKey; label: string }[] = [
 
 /** The domain-level overviews. They open in the schema section's right panel —
  *  reachable from here rather than from a permanent row of canvas buttons. */
-const OVERVIEWS: { key: 'domains' | 'views' | 'integrations'; label: string; icon: typeof Box }[] =
-  [
-    { key: 'domains', label: 'Imported domains', icon: Globe },
-    { key: 'views', label: 'Views', icon: AppWindow },
-    { key: 'integrations', label: 'Integrations', icon: Plug },
-  ]
+const OVERVIEWS: {
+  key: 'domains' | 'views' | 'functions' | 'integrations'
+  label: string
+  icon: typeof Box
+}[] = [
+  { key: 'domains', label: 'Imported domains', icon: Globe },
+  { key: 'views', label: 'Views', icon: AppWindow },
+  { key: 'functions', label: 'Functions', icon: Braces },
+  { key: 'integrations', label: 'Integrations', icon: Plug },
+]
 
 /** Summarise a JSON Schema property type for the muted meta column. */
 function propTypeLabel(
@@ -75,32 +93,24 @@ function Row({
 const ITEM_CLS =
   'flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground'
 
+/** What every searchable item carries: its domain, the text cmdk matches, and the meta column. */
+interface IndexEntry {
+  domainId: string
+  domainLabel: string
+  value: string
+  meta: string
+}
+
+interface NamedEntry extends IndexEntry {
+  name: string
+}
+
 interface SearchIndex {
-  classes: Array<{
-    domainId: string
-    domainLabel: string
-    name: string
-    value: string
-    meta: string
-  }>
-  edges: Array<{ domainId: string; domainLabel: string; name: string; value: string; meta: string }>
-  properties: Array<{
-    domainId: string
-    domainLabel: string
-    id: string
-    owner: string
-    prop: string
-    value: string
-    meta: string
-  }>
-  modules: Array<{
-    domainId: string
-    domainLabel: string
-    path: string
-    firstClass?: string
-    value: string
-    meta: string
-  }>
+  classes: NamedEntry[]
+  edges: NamedEntry[]
+  functions: NamedEntry[]
+  properties: Array<IndexEntry & { id: string; owner: string; prop: string }>
+  modules: Array<IndexEntry & { path: string; firstClass?: string }>
 }
 
 interface CachedDomainIndex {
@@ -111,9 +121,13 @@ interface CachedDomainIndex {
 const emptySearchIndex = (): SearchIndex => ({
   classes: [],
   edges: [],
+  functions: [],
   properties: [],
   modules: [],
 })
+
+const byValue = <T extends IndexEntry>(entries: T[]): T[] =>
+  entries.sort((a, b) => a.value.localeCompare(b.value))
 
 /**
  * Keep schema indexing tied to schema revisions, not component renders.
@@ -156,16 +170,11 @@ export class PaletteSearchIndexCache {
       return value
     })
     this.value = {
-      classes: indexes
-        .flatMap((entry) => entry.classes)
-        .sort((a, b) => a.value.localeCompare(b.value)),
-      edges: indexes.flatMap((entry) => entry.edges).sort((a, b) => a.value.localeCompare(b.value)),
-      properties: indexes
-        .flatMap((entry) => entry.properties)
-        .sort((a, b) => a.value.localeCompare(b.value)),
-      modules: indexes
-        .flatMap((entry) => entry.modules)
-        .sort((a, b) => a.value.localeCompare(b.value)),
+      classes: byValue(indexes.flatMap((entry) => entry.classes)),
+      edges: byValue(indexes.flatMap((entry) => entry.edges)),
+      functions: byValue(indexes.flatMap((entry) => entry.functions)),
+      properties: byValue(indexes.flatMap((entry) => entry.properties)),
+      modules: byValue(indexes.flatMap((entry) => entry.modules)),
     }
     this.revision = revision
     return this.value
@@ -208,7 +217,7 @@ function loadingDetail(
 
 function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): SearchIndex {
   const ir = bundle?.ir
-  if (!ir || !bundle) return { classes: [], edges: [], properties: [], modules: [] }
+  if (!ir || !bundle) return emptySearchIndex()
   const base = { domainId: domain.id, domainLabel: domain.origin }
 
   const classes = Object.values(ir.classes)
@@ -245,18 +254,32 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
       }
     })
 
+  // A standalone Function is a schema member like any other: findable by its own name,
+  // not only through the domain's Functions overview.
+  const functions = buildFunctionsModel(bundle).all.map((fn) => {
+    const worksOn = fn.boundClasses.join(' ')
+    const kind = fn.link?.kind ?? 'contract'
+    return {
+      ...base,
+      name: fn.name,
+      value: `${domain.origin} function ${fn.name} ${kind} ${worksOn}`,
+      meta: [domain.origin, kind, worksOn].filter(Boolean).join(' · '),
+    }
+  })
+
   const properties: SearchIndex['properties'] = []
   for (const candidate of Object.values(ir.classes)) {
     if (candidate.type !== 'node') continue
     for (const [property, schema] of Object.entries(candidate.properties)) {
       const optional = candidate.required ? !candidate.required.includes(property) : undefined
+      const type = propTypeLabel(schema, optional)
       properties.push({
         ...base,
         id: `class.${candidate.name}.property.${property}`,
         owner: candidate.name,
         prop: property,
-        value: `${domain.origin} ${candidate.name}.${property} property ${propTypeLabel(schema, optional)}`,
-        meta: `${domain.origin} · ${propTypeLabel(schema, optional)}`,
+        value: `${domain.origin} ${candidate.name}.${property} property ${type}`,
+        meta: `${domain.origin} · ${type}`,
       })
     }
   }
@@ -272,13 +295,14 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
     }
   })
 
-  return { classes, edges, properties, modules }
+  return { classes, edges, functions, properties, modules }
 }
 
 export function CommandPalette() {
   const open = useUI((s) => s.paletteOpen)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
   const setSection = useUI((s) => s.setSection)
+  const setTourOpen = useUI((s) => s.setTourOpen)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
   const setFocus = useUI((s) => s.setFocus)
@@ -287,6 +311,10 @@ export function CommandPalette() {
   const canvas = useCanvasDomains()
   const { data: domains = [] } = useWorkspace()
   const indexCache = useRef<PaletteSearchIndexCache | null>(null)
+  const [search, setSearch] = useState('')
+  useEffect(() => {
+    if (!open) setSearch('')
+  }, [open])
   if (!indexCache.current) indexCache.current = new PaletteSearchIndexCache()
   const bundleQueries = useQueries({
     queries: domains.map((domain) => paletteBundleQuery(domain.id, open)),
@@ -315,11 +343,39 @@ export function CommandPalette() {
 
   const close = () => setPaletteOpen(false)
 
+  // cmdk ranks items, not groups: the tour sits last, and comes first only when asked for.
+  const wantsHelp = /\b(tour|onboard|help|guide)/i.test(search)
+  const helpGroup = (
+    <Command.Group heading="Help">
+      <Command.Item
+        value="tour studio onboarding help"
+        className={ITEM_CLS}
+        onSelect={() => {
+          close()
+          setTourOpen(true)
+        }}
+      >
+        <Row icon={MapIcon} label="Studio tour" meta={`${TOUR_STEPS.length} steps`} />
+      </Command.Item>
+    </Command.Group>
+  )
+
   // Build once per Domain schema revision, not once per loading-phase poll.
   const index = indexCache.current.build(domains, bundles)
 
-  const showDomain = (domainId: string) => {
+  const pendingDetail =
+    load.pending.length > 0 ? loadingDetail(load.pending, introspection?.domains) : ''
+
+  /** Every schema result lands the same way: on the schema canvas, with its domain drawn. */
+  const openInSchema = (domainId: string, then?: () => void) => {
+    setSection('schema')
     if (!canvas.visible.has(domainId)) canvas.toggleOnCanvas(domainId)
+    then?.()
+    close()
+  }
+  const focusOnCanvas = (ref: string, domainId: string) => {
+    focusClass(ref, domainId)
+    revealOnCanvas(ref)
   }
 
   return (
@@ -341,6 +397,8 @@ export function CommandPalette() {
       <div className="flex items-center border-b px-3">
         <Command.Input
           autoFocus
+          value={search}
+          onValueChange={setSearch}
           placeholder="Search the schema…"
           className="h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
@@ -357,11 +415,8 @@ export function CommandPalette() {
             <p className="font-medium text-foreground">
               Preparing search index · {load.loaded.length}/{domains.length} domains
             </p>
-            <p
-              className="mt-0.5 truncate"
-              title={loadingDetail(load.pending, introspection?.domains)}
-            >
-              {loadingDetail(load.pending, introspection?.domains)}
+            <p className="mt-0.5 truncate" title={pendingDetail}>
+              {pendingDetail}
             </p>
           </div>
         </div>
@@ -374,6 +429,8 @@ export function CommandPalette() {
       )}
 
       <Command.List className="max-h-[60vh] overflow-y-auto overflow-x-hidden p-2">
+        {wantsHelp && helpGroup}
+
         <Command.Empty className="py-8 text-center text-sm text-muted-foreground">
           {load.pending.length > 0 ? 'No matches in the domains loaded so far' : 'No results'}
         </Command.Empty>
@@ -385,15 +442,28 @@ export function CommandPalette() {
                 key={`${c.domainId}:class.${c.name}`}
                 value={c.value}
                 className={ITEM_CLS}
-                onSelect={() => {
-                  setSection('schema')
-                  showDomain(c.domainId)
-                  focusClass(`class.${c.name}`, c.domainId)
-                  revealOnCanvas(`class.${c.name}`)
-                  close()
-                }}
+                onSelect={() =>
+                  openInSchema(c.domainId, () => focusOnCanvas(`class.${c.name}`, c.domainId))
+                }
               >
                 <Row icon={Box} label={c.name} meta={c.meta} />
+              </Command.Item>
+            ))}
+          </Command.Group>
+        )}
+
+        {index.functions.length > 0 && (
+          <Command.Group heading="Functions">
+            {index.functions.map((f) => (
+              <Command.Item
+                key={`${f.domainId}:function.${f.name}`}
+                value={f.value}
+                className={ITEM_CLS}
+                onSelect={() =>
+                  openInSchema(f.domainId, () => focusOnCanvas(`function.${f.name}`, f.domainId))
+                }
+              >
+                <Row icon={Braces} label={f.name} meta={f.meta} />
               </Command.Item>
             ))}
           </Command.Group>
@@ -406,17 +476,16 @@ export function CommandPalette() {
                 key={`${e.domainId}:edge.${e.name}`}
                 value={e.value}
                 className={ITEM_CLS}
-                onSelect={() => {
-                  setSection('schema')
-                  showDomain(e.domainId)
-                  // A relationship selects under `class.` like everything else on the canvas,
-                  // but it is a LINE: what the canvas brings into view is the pair of cards it
-                  // runs between, which only the `edge.` ref asks for.
-                  selectClass(`class.${e.name}`, e.domainId)
-                  setFocus(null)
-                  revealOnCanvas(`edge.${e.name}`)
-                  close()
-                }}
+                onSelect={() =>
+                  openInSchema(e.domainId, () => {
+                    // A relationship selects under `class.` like everything else on the canvas,
+                    // but it is a LINE: what the canvas brings into view is the pair of cards it
+                    // runs between, which only the `edge.` ref asks for.
+                    selectClass(`class.${e.name}`, e.domainId)
+                    setFocus(null)
+                    revealOnCanvas(`edge.${e.name}`)
+                  })
+                }
               >
                 <Row
                   icon={Spline}
@@ -438,13 +507,9 @@ export function CommandPalette() {
                 key={`${p.domainId}:${p.id}`}
                 value={p.value}
                 className={ITEM_CLS}
-                onSelect={() => {
-                  setSection('schema')
-                  showDomain(p.domainId)
-                  focusClass(`class.${p.owner}`, p.domainId)
-                  revealOnCanvas(`class.${p.owner}`)
-                  close()
-                }}
+                onSelect={() =>
+                  openInSchema(p.domainId, () => focusOnCanvas(`class.${p.owner}`, p.domainId))
+                }
               >
                 <Row
                   icon={Tag}
@@ -468,15 +533,11 @@ export function CommandPalette() {
                 key={`${m.domainId}:module.${m.path}`}
                 value={m.value}
                 className={ITEM_CLS}
-                onSelect={() => {
-                  setSection('schema')
-                  showDomain(m.domainId)
-                  if (m.firstClass) {
-                    focusClass(`class.${m.firstClass}`, m.domainId)
-                    revealOnCanvas(`class.${m.firstClass}`)
-                  }
-                  close()
-                }}
+                onSelect={() =>
+                  openInSchema(m.domainId, () => {
+                    if (m.firstClass) focusOnCanvas(`class.${m.firstClass}`, m.domainId)
+                  })
+                }
               >
                 <Row icon={Folder} label={m.path} meta={m.meta} />
               </Command.Item>
@@ -491,12 +552,7 @@ export function CommandPalette() {
                 key={`${domain.id}:overview.${o.key}`}
                 value={`open ${domain.origin} ${o.label} ${o.key} overview`}
                 className={ITEM_CLS}
-                onSelect={() => {
-                  setSection('schema')
-                  showDomain(domain.id)
-                  setPanelOverlay(o.key, domain.id)
-                  close()
-                }}
+                onSelect={() => openInSchema(domain.id, () => setPanelOverlay(o.key, domain.id))}
               >
                 <Row icon={o.icon} label={o.label} meta={domain.origin} />
               </Command.Item>
@@ -519,6 +575,8 @@ export function CommandPalette() {
             </Command.Item>
           ))}
         </Command.Group>
+
+        {!wantsHelp && helpGroup}
       </Command.List>
 
       <div className="flex items-center justify-end gap-3 border-t px-3 py-2 text-[11px] text-muted-foreground">

@@ -1,3 +1,4 @@
+import { PEER_ID } from './test'
 import { expect, test } from './test'
 
 test('Ask and comments keep the owning domain for a homonymous workspace node', async ({
@@ -9,9 +10,9 @@ test('Ask and comments keep the owning domain for a homonymous workspace node', 
   // The rail's eye puts another workspace domain on the canvas.
   await page.getByRole('button', { name: 'Show ops.studio-demo.astrale.ai on the canvas' }).click()
 
-  const peerNode = page.locator('.react-flow__node[data-id="workspace:peer:class.Company"]')
+  const peerNode = page.locator(`.react-flow__node[data-id="workspace:${PEER_ID}:class.Company"]`)
   await expect(peerNode).toBeVisible()
-  await expect(page.getByTestId('workspace-domain-peer')).toBeVisible()
+  await expect(page.getByTestId(`workspace-domain-${PEER_ID}`)).toBeVisible()
 
   await page.keyboard.press('a')
   await peerNode.click()
@@ -53,7 +54,7 @@ test('Ask and comments keep the owning domain for a homonymous workspace node', 
   const responsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
-      new URL(response.url()).pathname === '/api/domain/peer/comments',
+      new URL(response.url()).pathname === `/api/domain/${PEER_ID}/comments`,
   )
   await page.getByRole('button', { name: 'Comment', exact: true }).click()
   const response = await responsePromise
@@ -64,7 +65,7 @@ test('Ask and comments keep the owning domain for a homonymous workspace node', 
   }
   expect(comment.anchorRefs).toContainEqual(expect.objectContaining({ ref: 'class.Company' }))
 
-  const cleanup = await request.post('/api/domain/peer/comments', {
+  const cleanup = await request.post(`/api/domain/${PEER_ID}/comments`, {
     data: { action: 'delete', id: comment.id },
   })
   expect(cleanup.ok()).toBe(true)

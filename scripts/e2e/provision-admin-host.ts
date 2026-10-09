@@ -1,16 +1,14 @@
-import { invocation } from '@astrale-os/sdk/invocation'
+import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { AdminContract, callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
-import { derivedIdempotencyKey } from '../../src/lib/idempotency.js'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
-const transportKey = await derivedIdempotencyKey('e2e.provision-host', operationId)
 const result = await withAdminClientSession({}, async ({ session }) => {
   return callAdminMethod(
     session,
     AdminContract.fleet,
-    'provisionHost',
+    MethodKey('admin.astrale.ai:class.Fleet.method.provisionHost'),
     {
       id: required('ASTRALE_E2E_HOST_ID'),
       operationId,
@@ -27,7 +25,7 @@ const result = await withAdminClientSession({}, async ({ session }) => {
       },
       bootstrap: { authenticationTrust: { default: 'allow' } },
     },
-    { idempotencyKey: invocation.acceptIdempotencyKey(transportKey), timeoutMs: 15 * 60_000 },
+    { timeoutMs: 15 * 60_000 },
   )
 })
 

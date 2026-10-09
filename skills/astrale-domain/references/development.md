@@ -1,138 +1,142 @@
 # Development
 
-Use the generated project as the executable starting point. Inspect its installed SDK version and
-public exports before writing API syntax; treat them as authoritative.
+Start from the generated project and the installed SDK's public exports, not remembered syntax.
+The SDK owns building, deploying, and publishing the Domain; the Astrale CLI owns instances, installs,
+identities, and live calls.
 
-## Create
+Use the adapter and SDK session abstractions; do not configure a parallel token or endpoint pipeline.
+Issuer, served release, and redirect internals belong in `debugging.md` when the normal path fails.
 
-Start from the public scaffold and keep it load-bearing:
+## Scaffold and dependencies
 
 ```sh
-npx create-astrale-domain@beta contacts \
+npx create-astrale-domain@beta issues \
   --yes --adapter astrale --frontend react \
-  --origin contacts.example.dev --dir contacts --no-link
+  --origin issues.example --dir issues --no-link
 ```
 
-For release qualification, pin an exact published version or an immutable packed tarball. A normal
-Domain package declares `@astrale-os/sdk` plus its public deployment adapter. It does not declare
-Kernel implementation packages, Shell packages, a source checkout, or a workspace link.
+- Keep an existing scaffold rather than recreating its plumbing. For reproducible release checks,
+  use an exact published scaffolder/SDK/adapter cohort and retain the lockfile.
+- Domain code imports semantic `@astrale-os/sdk/*` facades, not Kernel packages or private SDK paths.
+  Declare the chosen adapter only; its transitive implementation adapter is not another direct dependency.
+- Declare libraries source actually imports: exact SDK-compatible `zod`, and frontend UI/React Shell
+  packages when used. Zod runtime identity matters; a structurally compatible second copy can fail compilation.
+- Keep the scaffolded `tsconfig.json` as the single TypeScript program for Worker code, Views, and
+  tests: `lib` includes the DOM, `types` is `["node", "vitest/globals"]`, and `skipLibCheck` is
+  `false`. Domain Workers run with `nodejs_compat`, Vitest supplies its globals, `vite.config.ts` and
+  third-party declarations assume Node or the DOM, and `skipLibCheck: false` keeps those declarations
+  verified. Do not narrow `types` to `[]` or split the project per runtime: neither catches a real
+  Worker defect, and the SDK and Kernel already type-check their Worker-facing surface against the
+  Worker environment.
 
-When authored source imports Zod for properties or callable contracts, declare `zod` directly in the
-Domain manifest. Strict pnpm consumers do not expose the SDK's transitive Zod installation to Domain
-source. Do not solve the missing import with a workspace link, hoisting flag, or private SDK path.
-
-## Authoring roots
-
-Keep these composition files narrow:
+## Composition and owners
 
 ```text
-schema/             authored language declarations and Policies
-functions/          Action and Workflow callable implementations
-integrations/       consumer-owned external contracts
-providers/          environment-backed implementations
-queries/            reusable graph observations
+schema/             business modules: classes, policies, functions, errors, types, states, core, views
+functions/          Actions and Workflows together
+queries/            graph observations and their projections
 mutations/          atomic graph changes
 rules/              pure business decisions
-views/ and ui/       frontend routing and presentation
-runtime.ts          integrations, initialize, Functions
-application.ts      Schema, Runtime, frontend, routes, requirements
-astrale.config.ts   deployment adapter and environments
+integrations/       consumer-owned external contracts
+providers/          environment-backed implementations
+routes/             optional native HTTP-to-callable declarations
+views/ and ui/      client orchestration and presentation
+runtime.ts          integrations, initialize, functions
+domain.ts           schema, runtime, frontend, optional routes, requirements
+astrale.config.ts   defineProject: domain, environments, optional tests
 ```
 
-Use one small owner file per meaningful callable, query, mutation, integration, provider, or view.
-Cross-owner imports go through the generated `#` facades.
-
-Application requirements are inert root composition, not another Domain layer. Do not create a
-top-level `requirements/` source tree: the Domain linter correctly rejects undeclared layers. Resolve
-an exact dependency inline in `requirements(...)` or export a resolved dependency witness beside the
-authored Schema, then keep `application.ts` limited to composition.
-
-## Runtime and Application
-
-Every Runtime-side module imports authored Schema handles only as types. A value import from a
-Runtime, Action, Workflow, Integration, Provider, Query, or Mutation can retain the build-only Schema
-DSL in the Worker closure; the SDK build boundary rejects that leak. Application/publication
-composition remains the value owner. Runtime realizes external Providers once and registers exact
-Action and Workflow definitions in one ordered Functions collection:
+- Create only applicable layers and business owners. Keep curated `#` facades and one meaningful
+  callable/Query/Mutation per file; do not manufacture empty layers or a universal repository.
+- Runtime imports aggregate Schema as a type and uses its admitted `domain`. Focused runtime-safe
+  errors, values, and StateMachines may be value imports; aggregate DSL declarations stay build-side.
 
 ```ts
+// runtime.ts — ordinary imports provide integrations, providers, functions, and Environment.
 import { defineRuntime } from '@astrale-os/sdk/runtime'
 import type { schema } from '#schema'
 
 export default defineRuntime<typeof schema>()({
   integrations,
   initialize(environment: Environment) {
-    return {
-      providers: {
-        openMeteo: createOpenMeteoProvider(environment),
-      },
-    }
+    return { providers: { weather: createWeatherProvider(environment) } }
   },
   functions,
 })
+
+// domain.ts
+import { defineDomain, requirements } from '@astrale-os/sdk/domain'
+import { K } from '@astrale-os/sdk/schema'
+// Import schema as a value here, plus runtime and frontend from their composition owners.
+export const domain = defineDomain({
+  schema, runtime, frontend,
+  requirements: requirements({ functions: [K.functions.query, K.functions.mutate] }),
+})
 ```
 
-Application is build/publication composition:
+- Initialize Providers once from admitted environment. No Provider I/O at module scope and no handlers,
+  authorization, or deployment effects in composition roots.
+- Requirements are inert Domain definition composition, not a top-level `requirements/` layer. Schema
+  dependencies pin definitions; installation requirements grant exact protected callable capabilities.
+
+## defineProject and environments
 
 ```ts
-import { defineApplication } from '@astrale-os/sdk/application'
-import { schema } from '#schema'
-import runtime from './runtime.js'
+// astrale.config.ts
+import { astrale } from '@astrale-os/adapter-astrale'
+import { defineProject } from '@astrale-os/sdk/project'
+import { domain } from './domain.js'
 
-export const application = defineApplication({ schema, runtime, frontend })
+export default defineProject({
+  domain,
+  environments: {
+    development: {
+      deployment: astrale({ secrets: '.env.dev' }),
+    },
+    production: {
+      deployment: astrale({ organization: '<Identity id>', secrets: '.env.prod' }),
+    },
+  },
+})
 ```
 
-Do not put Provider I/O, handler behavior, deployment effects, or authorization decisions in either
-composition root.
+- An Environment says how to deploy and with which secrets; it names no instance. Which instance runs
+  which release is the operator's choice at `astrale domain install -i <instance>`: a deploy never
+  installs. Deploy, install, versions, and secret rotation are in `release.md`.
+- `organization` names the Identity on the Admin instance (a User, or a Shell Group whose members and
+  CI deploy for it) that holds the Environment's deployment line. Every Environment but `development`
+  names one; a `development` Environment without one deploys on a line of the deploying identity.
+- When changing a shared Schema dependency, deploy every affected Domain, then install the coherent
+  root set together in one grouped install; follow `migration.md`.
+- The Domain definition already contains Runtime and frontend. `entrypoints.runtime` only overrides the
+  conventional loadable Runtime file; do not repeat those definitions in Project or adapter options.
+- Each deployment gets its own signing key, generated at deploy: there is no key file to keep or
+  distribute, and the Domain's key is distinct from the human CLI identity. Keep secret files beside
+  their owning config, or use explicit paths; never copy secrets into source.
+- Run commands from the owning project directory. Relative secret paths resolve there, not at a
+  parent monorepo root; environment names alone do not isolate deliberately shared provider resources.
 
-Use ordinary imports for pure helpers and Rules, bound Query/Mutation executors for graph access, and
-Integrations and Providers for environment-backed behavior.
-
-## Development session
-
-With the managed `astrale` adapter, the generated command is the complete development journey:
+## Development loop
 
 ```sh
-pnpm dev
+astrale auth login
+astrale instance list --json
+pnpm run deploy development                                   # prints the deployment URL; installs nothing
+astrale domain install <url> --allow-issuer-change -i <dev-instance>
 ```
 
-It resolves the configured instance or the Astrale CLI's active instance, acquires the CLI-shipped
-private Quick Tunnel, starts the Worker and optional Vite frontend with hot reload, verifies one
-exact local/public Release, reconciles its Kernel installation, and starts a non-opening local View
-host when the Domain declares a View. No Cloudflare account, separate tunnel command, copied URL, or
-manual development install is part of this path. The official standalone Astrale installer owns the
-pinned `astrale-cloudflared` companion; do not install or discover a separate ambient binary.
+- Prefer the Astrale adapter for managed deployment: it deploys on the Admin instance's Services
+  through the CLI session (`astrale call --admin`), with no Cloudflare account needed. Select another
+  adapter only when the user needs that provider directly.
+- There is no watch loop: iterate with the same two commands, by hand or by an agent. Each changed
+  build is a new preview at its own URL; installing it over the previous one is an issuer change on
+  the same line, which `--allow-issuer-change` consents to (at a terminal, typing the origin does).
+- The SDK CLI requires an explicit Environment for `deploy`. Iterate on a development instance you
+  own (one owner per instance, see `release.md`), not on production by convenience.
+- A failed build or deploy changes no instance, and a deployment nobody installs runs nowhere.
+  Domain development needs no local Kernel or hand-managed tunnel; do not add one without a real need.
 
-The printed Domain, Runtime, Public, Installed, View, and Ready coordinates are the session's live
-evidence. A runtime-only Domain skips Vite and View startup without warning. Source, runtime,
-declared-secret, and frontend changes retain the last good Release until a replacement verifies;
-configuration changes explicitly ask for a command restart.
-
-Stopping closes the View host, Worker/Vite, and owned Quick Tunnel, but deliberately retains the
-Kernel installation and a non-secret local reconciliation record. On the next `pnpm dev`, a changed
-Quick issuer is replaced only when that record still matches fresh Kernel introspection; drift
-fails safely with the exact manual uninstall command instead of risking another installation.
-Use stable ingress before putting continuity-bearing collaborative data into a development Domain:
-
-```sh
-pnpm dev --host https://contacts-dev.example --port 8787
-```
-
-An explicit host is externally owned and its installation remains after stop. It must already route
-to the strict local Worker port. The command starts no companion and never creates or deletes that
-ingress.
-
-Each real project root and environment owns an independent session, OS-allocated ports, public
-origin, and lifecycle. A second local lock excludes another session targeting the same instance and
-Domain origin, including from a different project. Different target coordinates may run together;
-a duplicate owner fails before ingress or Kernel mutation.
-
-The direct `cloudflare` adapter intentionally remains provider-local: `pnpm dev` starts only its
-local Worker and optional Vite frontend. It does not own a Kernel, public ingress, or installation.
-
-## Qualify before deployment
-
-Run the generated commands in this order so failures retain their owner:
+## Verification and handoff
 
 ```sh
 pnpm install
@@ -140,92 +144,23 @@ pnpm typecheck
 pnpm test
 pnpm lint
 pnpm build
+astrale get /:issues.example -i development --as operator --schema --json
+astrale introspect /:issues.example -i development --as operator
 ```
 
-Retain the package manifest and lockfile, resolved SDK/adapter/scaffolder versions, environment-owned
-CLI version, Node and package-manager versions, and the exact owner command behind each conclusion.
-A version range or remembered release is not evidence of what executed.
-
-When an agent runner receives Astrale skills from the CLI distribution, retain
-`astrale update --check --json` evidence for the resolved source revision, each skill tree, and each
-entrypoint. Record the builder's exact admitted skill projection and opener trace separately. This
-proves distribution and opening; it does not prove the builder followed the guidance or that a later
-latency change was caused by it.
-
-Keep an acceptance prompt about the business outcome. Put reusable product guidance in one versioned
-knowledge input and retain its digest; do not rely on an ambient installed skill whose source and
-version the runner cannot identify. Keep scenario-specific facts in the scenario and stable product
-facts in the owning skill or documentation.
-
-The SDK Domain linter is the architecture and semantic policy gate. Strict typecheck should keep
-`skipLibCheck` disabled.
-
-Qualification must inspect the production tree that build and deployment consume. Do not copy or
-hide source into a different topology before lint, typecheck, test, build, or pack. If a legitimate
-package shape is unsupported, retain the exact diagnostic and classify an SDK capability gap instead
-of manufacturing a pass.
-
-Treat emitted declarations and the packed consumer as public package evidence. A source tree can use
-only SDK facades yet still emit a Kernel specifier; minimize that as a facade defect rather than
-hiding it with a cast or shadow type. Distinguish runtime/peer dependencies from author-only
-devDependencies when qualifying the packed artifact.
-
-When replacing a generated single-Schema root with several public Schema subpaths, keep only package
-`imports` whose source and published targets are actually emitted. Do not retain broad scaffold
-aliases by habit or invent another packaging API: the ordinary package exports plus
-`astrale-domain package` are the compatibility surface. Exercise the tarball from a consumer outside
-the source workspace. With pnpm, pass `--ignore-workspace` so parent workspace discovery cannot turn
-that consumer into a source-topology test.
-
-## Build, deploy, install
-
-These are different lifecycle stages:
-
-```text
-Application -> Build -> Release -> adapter deployment -> Kernel installation
-```
-
-- `pnpm build` proves provider-neutral compilation and adapter preparation.
-- managed `pnpm dev` owns only the disposable development installation described above.
-- `pnpm prod` performs the configured provider deployment and returns observed deployment evidence.
-- `astrale domain publish --origin <origin> --name <name> --public-url <url>` registers that
-  observed deployment in the Admin catalog when product distribution requires it.
-- `astrale domain install <url> --direct -i <instance>` installs the deployed Release on one Kernel.
-
-Never infer installation from deployment. Fetch or inspect Publication/Bundle evidence and observe the
-installed revision through public Client or CLI behavior.
-
-Author-side tests and handoff files can report compilation, tests, and packing. They cannot certify
-isolated installation, live execution, external effects, graph state, or cleanup; the acceptance owner
-must observe those boundaries independently.
-
-### Multi-owner local services
-
-SDK tooling treats the directory where the Domain command runs as the project root: it discovers
-`astrale.config.ts` there and resolves a relative preset `secrets` path from that same directory. If
-one package launches owner-local Domains with `pnpm --dir messaging ...` and
-`pnpm --dir logistics ...`, then `secrets: '.env.dev'` means `messaging/.env.dev` and
-`logistics/.env.dev`, not the package-root `.env.dev`. Keep each gitignored file beside its owning
-config, or declare an explicit relative path to the actual owner-approved file. Never copy or print
-secret values to make paths agree.
-
-`build` returns before declared secrets are loaded, and `--help` returns before project discovery.
-They therefore do not prove that a service can start. Before an expensive integrated run, let the
-acceptance owner start each owner-local service through its exact public script and observe readiness;
-keep that bounded smoke separate from Domain installation and invocation.
-
-### Package-script argument forwarding
-
-Test operator entrypoints through the exact documented package script. With pnpm 12,
-`pnpm run cleanup:graph -- --instance ...` can expose one literal leading `--` in
-`process.argv.slice(2)`. An authored argument parser should normalize at most that one package-manager
-separator before parsing named flags, while still rejecting duplicate separators, missing values,
-unknown flags, and unrelated errors. A direct `node cleanup.mjs --instance ...` test or module-load
-check does not prove the public command contract Lab will execute.
-
-## Live evidence
-
-Use a fresh identity/session for protected calls. Prove authentication denial, callable-authority
-denial, and Policy denial as separate Kernel decisions. For a successful journey, exercise a
-top-level Action, receiver-bound Action, Workflow, Integration/Provider output, graph read, and View.
-Do not claim Workflow durability or exactly-once behavior unless a durable runner actually supplies it.
+- Typecheck/lint/build prove source boundaries, not installed behavior. Observe the exact release the
+  deployment serves (`/.well-known/astrale/release.json`), the installed Schema revision, and
+  representative calls before claiming deployment/integration success.
+- Build, deployment, and installation are separate stages. `astrale domain install <url> -i ...`
+  installs an already-deployed release; a deployment URL never serves other code, so new code reaches
+  an instance only by installing its new URL or version.
+- Retain exact SDK/adapter/CLI versions and relevant source/deployment revisions, not only manifest
+  ranges. Keep durable regression tests with code and ephemeral qualification output outside delivery.
+- Run checks on the tree actually built and deployed. Do not hide files, weaken typechecking, or forge
+  SDK types to satisfy the linter; minimize a genuine SDK gap and report the exact diagnostic.
+- When publishing a package, check emitted declarations and an isolated packed consumer. Avoid leaked
+  Kernel imports, private aliases, or workspace overrides; use `pnpm --ignore-workspace` outside the repo.
+- Test operator scripts through their documented package command. A direct module run does not prove
+  argument forwarding; handle a package-manager separator only when the chosen toolchain supplies one.
+- Build does not load all runtime secrets, and help does not start the project. Neither proves
+  initialization or credentials work; observe readiness and one actual invocation separately.

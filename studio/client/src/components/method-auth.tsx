@@ -3,11 +3,20 @@ import { schemaRefKey } from '@shared/types'
 import { FlaskConical, ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 
+import { PolicyCheckTree } from '@/components/policy-check-tree'
+import { PolicyLink } from '@/components/policy-link'
 import { Chip, IconTile } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useBundle } from '@/lib/hooks'
 import { type AuthCallable, methodAuth } from '@/lib/method-auth'
-import { decodePolicyCheck, indexPolicies, policyCheckLeaves, policyLabel } from '@/lib/policy'
+import {
+  decodePolicyCheck,
+  indexPolicies,
+  policyCheckLabel,
+  policyLabel,
+  policyObjectLabel,
+  type PolicyCheck,
+} from '@/lib/policy'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +25,12 @@ export const TRIGGER_TONE: Record<string, string> = {
   sky: 'text-schema-node',
   amber: 'text-warning',
   rose: 'text-destructive',
+}
+
+const AUTH_TILE_TONE = {
+  emerald: 'bg-success/10 text-success',
+  amber: 'bg-warning/10 text-warning',
+  sky: 'bg-schema-node/10 text-schema-node',
 }
 
 interface MethodAuthProps {
@@ -27,6 +42,12 @@ interface MethodAuthProps {
 interface MethodAuthBadgeProps extends MethodAuthProps {
   /** Use a non-interactive trigger when the badge sits inside a clickable Row. */
   interactive?: boolean
+}
+
+/** The callable's policy check, decoded once; undefined when absent or unreadable. */
+function usePolicyCheck(method?: AuthCallable) {
+  const raw = method?.policy
+  return useMemo(() => (raw === undefined ? undefined : decodePolicyCheck(raw)), [raw])
 }
 
 /** Row glyph; hover reveals the full card. */
@@ -70,10 +91,9 @@ function PolicyChecks({ method, domainId }: MethodAuthProps) {
   const { data: bundle } = useBundle(ownerDomainId)
   const ir = bundle?.ir ?? null
   const index = useMemo(() => (ir ? indexPolicies(ir) : null), [ir])
-  const raw = method?.policy
-  const check = useMemo(() => (raw === undefined ? undefined : decodePolicyCheck(raw)), [raw])
+  const check = usePolicyCheck(method)
 
-  if (raw === undefined) return null
+  if (method?.policy === undefined) return null
   if (!check) {
     return (
       <div className="border-t px-3 py-2 text-[12px] text-warning">
@@ -81,49 +101,61 @@ function PolicyChecks({ method, domainId }: MethodAuthProps) {
       </div>
     )
   }
-  const leaves = policyCheckLeaves(check)
-  const composed = !('check' in check)
   return (
     <div className="border-t px-3 py-2">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {composed ? ('allOf' in check ? 'Checks all of' : 'Checks any of') : 'Checks'}
+        Checks
       </div>
       <div className="mt-1.5 flex flex-col gap-1.5">
-        {leaves.map((leaf, i) => {
-          const key = schemaRefKey(leaf.check)
-          const policy = index?.byKey.get(key)
-          const name = index ? policyLabel(leaf.check, index.origin) : leaf.check.name
-          return (
-            <div key={i} className="flex items-start gap-2 text-[12px]">
-              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-              <div className="min-w-0 flex-1">
-                <span className="font-medium">{name}</span>
-                <span className="text-muted-foreground">
-                  {' '}
-                  on{' '}
-                  {leaf.object.kind === 'self'
-                    ? 'the receiver (self)'
-                    : leaf.object.kind === 'input'
-                      ? `input.${leaf.object.field}`
-                      : `${leaf.object.ref.kind} ${leaf.object.ref.name}`}
-                </span>
-                {policy?.description && (
-                  <p className="mt-0.5 leading-snug text-muted-foreground">{policy.description}</p>
+        <PolicyCheckTree
+          check={check}
+          renderCheck={(leaf) => {
+            const key = schemaRefKey(leaf.check)
+            const policy = index?.byKey.get(key)
+            const name = index ? policyLabel(leaf.check, index.origin) : leaf.check.name
+            return (
+              <div className="flex items-start gap-2 text-[12px]">
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                <div className="min-w-0 flex-1">
+                  {ownerDomainId ? (
+                    <PolicyLink
+                      policy={leaf.check}
+                      domainId={ownerDomainId}
+                      label={name}
+                      className="font-medium"
+                    />
+                  ) : (
+                    <span className="font-medium">{name}</span>
+                  )}
+                  <span className="text-muted-foreground">
+                    {' '}
+                    on{' '}
+                    {leaf.object.kind === 'self'
+                      ? 'the receiver (self)'
+                      : leaf.object.kind === 'input'
+                        ? `input.${leaf.object.field}`
+                        : `${leaf.object.ref.kind} ${leaf.object.ref.name}`}
+                  </span>
+                  {policy?.description && (
+                    <p className="mt-0.5 leading-snug text-muted-foreground">
+                      {policy.description}
+                    </p>
+                  )}
+                </div>
+                {policy && ownerDomainId && (
+                  <button
+                    type="button"
+                    onClick={() => openPolicy(key, ownerDomainId)}
+                    title="Prove this policy on the demo data (Tests)"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+                  >
+                    <FlaskConical className="h-3 w-3" /> Test
+                  </button>
                 )}
               </div>
-              {policy && ownerDomainId && (
-                <button
-                  type="button"
-                  onClick={() => openPolicy(key, ownerDomainId)}
-                  title="Prove this policy on the demo data (Tests)"
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
-                >
-                  <FlaskConical className="h-3 w-3" /> Test
-                </button>
-              )}
-            </div>
-          )
-        })}
+            )
+          }}
+        />
       </div>
     </div>
   )
@@ -138,7 +170,7 @@ export function MethodAuthCard({ method, domainId }: MethodAuthProps) {
   return (
     <div className="text-[13px]">
       <div className="flex items-start gap-2.5 p-3">
-        <IconTile tone={v.tone} size="sm">
+        <IconTile tone={AUTH_TILE_TONE[v.tone]} size="sm">
           <Icon />
         </IconTile>
         <div className="min-w-0">
@@ -164,26 +196,52 @@ export function MethodAuthCard({ method, domainId }: MethodAuthProps) {
   )
 }
 
-/** Inline pills naming the policies a callable checks — for rows that cannot hold a button. */
-export function PolicyChips({ method, origin }: { method?: AuthCallable; origin?: string }) {
-  const raw = method?.policy
-  const leaves = useMemo(() => {
-    const check = raw === undefined ? undefined : decodePolicyCheck(raw)
-    return check ? policyCheckLeaves(check) : []
-  }, [raw])
-  if (leaves.length === 0) return null
+/** Inline checks; a domain enables links when the surrounding row is not itself a button. */
+export function PolicyChips({
+  method,
+  origin,
+  domainId,
+}: {
+  method?: AuthCallable
+  origin?: string
+  domainId?: string
+}) {
+  const check = usePolicyCheck(method)
+  if (!check) return null
   return (
-    <>
-      {leaves.map((leaf, i) => (
-        <Chip key={i} tone="success" title="policy check — hover the shield for details">
-          {origin ? policyLabel(leaf.check, origin) : leaf.check.name}
-          {leaf.object.kind === 'self'
-            ? ''
-            : leaf.object.kind === 'input'
-              ? ` · input.${leaf.object.field}`
-              : ` · ${leaf.object.ref.name}`}
-        </Chip>
+    <Chip
+      tone="success"
+      title={domainId ? undefined : 'policy check — hover the shield for details'}
+    >
+      {domainId ? (
+        <LinkedPolicyCheck check={check} domainId={domainId} />
+      ) : (
+        policyCheckLabel(check, origin)
+      )}
+    </Chip>
+  )
+}
+
+function LinkedPolicyCheck({ check, domainId }: { check: PolicyCheck; domainId: string }) {
+  if ('check' in check)
+    return (
+      <span>
+        <PolicyLink policy={check.check} domainId={domainId} /> on{' '}
+        {policyObjectLabel(check.object, 'receiver')}
+      </span>
+    )
+  if ('sameNode' in check) return <span>{policyCheckLabel(check)}</span>
+  const items = 'allOf' in check ? check.allOf : check.anyOf
+  return (
+    <span>
+      (
+      {items.map((item, i) => (
+        <span key={i}>
+          {i > 0 && ('allOf' in check ? ' and ' : ' or ')}
+          <LinkedPolicyCheck check={item} domainId={domainId} />
+        </span>
       ))}
-    </>
+      )
+    </span>
   )
 }

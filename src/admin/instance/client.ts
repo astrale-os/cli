@@ -3,15 +3,15 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
-import { Query } from '@astrale-os/sdk/query'
+import { Query, Property } from '@astrale-os/sdk/query'
+import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
+import { resolveAdminFleet } from '../selection'
 import {
   AdminInstanceNotFoundError,
-  findOwnedInstance,
-  type DomainInstallReceipt,
   type InvitationInfo,
   type InstanceInfo,
   type InstanceState,
@@ -22,16 +22,17 @@ import {
 } from './model'
 
 export interface AdminInstanceContext {
+  readonly fleet?: string
   readonly session: ClientSession
   readonly graph: AdminGraphQueryApi
 }
 
 export interface AdminInstanceApi {
+  require(identifier: string): Promise<OwnedInstanceInfo>
   list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
   create(slug: string, requestedOperationId?: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
-  installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
   invite(identifier: string, email: string, expiresInDays?: number): Promise<InvitationInfo>
   retrieveRootIdentity(
     identifier: string,
@@ -43,14 +44,7 @@ export interface AdminInstanceApi {
 
 export interface AdminInstanceDependencies {
   readonly operationId?: (
-    kind:
-      | 'create'
-      | 'status'
-      | 'delete'
-      | 'install-domain'
-      | 'invite'
-      | 'retrieve-root'
-      | 'reconcile-invitation',
+    kind: 'create' | 'status' | 'delete' | 'invite' | 'retrieve-root' | 'reconcile-invitation',
   ) => string
 }
 
@@ -64,15 +58,17 @@ export async function connectAdminInstances(
   context: AdminInstanceContext,
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
+  if (context.fleet !== undefined) Path.parse(context.fleet)
   const operationId = dependencies.operationId ?? defaultOperationId
+  const fleet = (creation = false) => resolveAdminFleet(context, creation)
 
   const list = async (
     options: Readonly<{ includeRetired?: boolean }> = {},
   ): Promise<OwnedInstanceInfo[]> => {
     const output = await callAdminMethod(
       context.session,
-      AdminContract.fleet,
-      'listInstances',
+      await fleet(),
+      MethodKey.of(AdminContract.classes.Fleet, 'listInstances'),
       options.includeRetired === true ? { includeRetired: true } : {},
     )
     if (!Array.isArray(output)) throw new TypeError('Admin Instance inventory is invalid.')
@@ -84,10 +80,24 @@ export async function connectAdminInstances(
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
     const direct = directNodePath(identifier)
-    const found =
-      direct === undefined
-        ? findOwnedInstance(await list(), identifier)
-        : await readExactInstance(context.graph, direct)
+    let found: OwnedInstanceInfo | undefined
+    if (direct !== undefined) found = await readExactInstance(context.graph, direct)
+    else {
+      const nodes = await readAllNodes(
+        context.graph,
+        Query.from({ nodes: [AdminContract.classes.Instance] })
+          .filter({
+            predicate: Property(AdminContract.properties.instance.slug).equals(identifier),
+          })
+          .select({ kind: 'nodes', projection: { kind: 'value' } }),
+        { label: 'Instance slug lookup', maximum: 100, maximumPages: 2 },
+      )
+      const candidates = nodes
+        .map(instanceFromNode)
+        .filter((instance) => instance.state !== 'deleted')
+      if (candidates.length > 1) throw new Error('Instance slug is ambiguous.')
+      found = candidates[0]
+    }
     if (found === undefined) throw new AdminInstanceNotFoundError(identifier)
     return found
   }
@@ -97,46 +107,49 @@ export async function connectAdminInstances(
     identifier: string,
   ): Promise<InstanceInfo> => {
     const instance = await requireInstance(identifier)
-    const output = await callAdminMethod(context.session, Path.parse(instance.id), method, {
-      operationId: operationId(method),
-    })
+    const output = await callAdminMethod(
+      context.session,
+      Path.parse(instance.id),
+      MethodKey.of(AdminContract.classes.Instance, method),
+      {
+        operationId: operationId(method),
+      },
+    )
     return instanceFromSummary(output)
   }
 
   return Object.freeze({
     list,
+    require: requireInstance,
     async create(slug: string, requestedOperationId?: string) {
       const input = Object.freeze({
         operationId: requestedOperationId ?? operationId('create'),
         slug,
       })
       return instanceFromSummary(
-        await callAdminMethod(context.session, AdminContract.fleet, 'createInstance', input),
+        await callAdminMethod(
+          context.session,
+          await fleet(true),
+          MethodKey.of(AdminContract.classes.Fleet, 'createInstance'),
+          input,
+        ),
       )
     },
     status: (identifier: string) => invokeInstance('status', identifier),
     delete: (identifier: string) => invokeInstance('delete', identifier),
-    async installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt> {
-      const instance = await requireInstance(identifier)
-      const output = await callAdminMethod(
-        context.session,
-        Path.parse(instance.id),
-        'installDomain',
-        {
-          operationId: operationId('install-domain'),
-          domain: Path.parse(domain).raw,
-        },
-      )
-      return domainInstallReceipt(output)
-    },
     async invite(identifier: string, email: string, expiresInDays?: number) {
       const instance = await requireInstance(identifier)
       const invitation = memberInstanceInvitationFromSummary(
-        await callAdminMethod(context.session, Path.parse(instance.id), 'inviteUser', {
-          operationId: operationId('invite'),
-          email,
-          ...(expiresInDays === undefined ? {} : { expiresInDays }),
-        }),
+        await callAdminMethod(
+          context.session,
+          Path.parse(instance.id),
+          MethodKey.of(AdminContract.classes.Instance, 'inviteUser'),
+          {
+            operationId: operationId('invite'),
+            email,
+            ...(expiresInDays === undefined ? {} : { expiresInDays }),
+          },
+        ),
         'Admin Instance invitation does not match its requested scope.',
       )
       if (
@@ -151,10 +164,15 @@ export async function connectAdminInstances(
       const instance = await requireInstance(identifier)
       const requestId = operationId('retrieve-root')
       const transfer = rootIdentityTransfer(
-        await callAdminMethod(context.session, Path.parse(instance.id), 'retrieveRootIdentity', {
-          requestId,
-          recipient: { ...recipient },
-        }),
+        await callAdminMethod(
+          context.session,
+          Path.parse(instance.id),
+          MethodKey.of(AdminContract.classes.Instance, 'retrieveRootIdentity'),
+          {
+            requestId,
+            recipient: { ...recipient },
+          },
+        ),
       )
       if (
         transfer.requestId !== requestId ||
@@ -169,7 +187,12 @@ export async function connectAdminInstances(
     async statusInvitation(invitation: string) {
       const receiver = invitationReceiver(invitation)
       return instanceInvitationFromSummary(
-        await callAdminMethod(context.session, receiver, 'status', {}),
+        await callAdminMethod(
+          context.session,
+          receiver,
+          MethodKey.of(AdminContract.classes.Invitation, 'status'),
+          {},
+        ),
         receiver,
         'status',
       )
@@ -177,9 +200,14 @@ export async function connectAdminInstances(
     async reconcileInvitation(invitation: string) {
       const receiver = invitationReceiver(invitation)
       return instanceInvitationFromSummary(
-        await callAdminMethod(context.session, receiver, 'reconcile', {
-          operationId: operationId('reconcile-invitation'),
-        }),
+        await callAdminMethod(
+          context.session,
+          receiver,
+          MethodKey.of(AdminContract.classes.Invitation, 'reconcile'),
+          {
+            operationId: operationId('reconcile-invitation'),
+          },
+        ),
         receiver,
         'reconciliation',
       )
@@ -259,6 +287,9 @@ function instanceFromSummary(input: unknown): InstanceInfo {
   const issuer = optionalHttpUrl(value.issuer, 'Admin Instance issuer')
   return Object.freeze({
     id: requiredNodePath(value.id, 'Admin Instance id'),
+    ...(value.fleetId === undefined
+      ? {}
+      : { fleetId: requiredNodePath(value.fleetId, 'Admin Fleet id') }),
     slug: requiredString(value.slug, 'Admin Instance slug'),
     ...(value.operationId === undefined
       ? {}
@@ -287,26 +318,6 @@ function instanceFromSummary(input: unknown): InstanceInfo {
     ...(value.organizationId === undefined
       ? {}
       : { organizationId: requiredString(value.organizationId, 'Admin organization id') }),
-  })
-}
-
-function domainInstallReceipt(input: unknown): DomainInstallReceipt {
-  const value = record(input, 'Admin Domain install receipt')
-  const failure = value.failure === undefined ? undefined : record(value.failure, 'Admin failure')
-  if (typeof value.ok !== 'boolean') throw new TypeError('Admin Domain install outcome is invalid.')
-  return Object.freeze({
-    domain: requiredNodePath(value.domain, 'Admin Domain reference'),
-    instance: requiredNodePath(value.instance, 'Admin Instance reference'),
-    origin: requiredString(value.origin, 'Installed Domain origin'),
-    ok: value.ok,
-    ...(value.installedRevision === undefined
-      ? {}
-      : {
-          installedRevision: requiredString(value.installedRevision, 'Installed Domain revision'),
-        }),
-    ...(failure === undefined
-      ? {}
-      : { error: requiredString(failure.message, 'Admin Domain install failure') }),
   })
 }
 
@@ -369,7 +380,16 @@ interface InvitationSummary {
 function invitationFromSummary(input: unknown): InvitationSummary {
   const value = record(input, 'Admin Invitation summary')
   const state = value.state
-  if (state !== 'pending' && state !== 'accepted' && state !== 'revoked' && state !== 'expired') {
+  if (
+    state !== 'pending' &&
+    state !== 'accepted' &&
+    state !== 'registering' &&
+    state !== 'registered' &&
+    state !== 'completed' &&
+    state !== 'cancelled' &&
+    state !== 'expired' &&
+    state !== 'failed'
+  ) {
     throw new TypeError('Admin Invitation state is invalid.')
   }
   const access = value.access
@@ -469,14 +489,7 @@ function record(input: unknown, label: string): Readonly<Record<string, unknown>
 }
 
 function defaultOperationId(
-  kind:
-    | 'create'
-    | 'status'
-    | 'delete'
-    | 'install-domain'
-    | 'invite'
-    | 'retrieve-root'
-    | 'reconcile-invitation',
+  kind: 'create' | 'status' | 'delete' | 'invite' | 'retrieve-root' | 'reconcile-invitation',
 ): string {
   return randomOperationId('cli', 'instance', kind)
 }

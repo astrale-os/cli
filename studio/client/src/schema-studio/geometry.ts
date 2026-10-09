@@ -8,6 +8,8 @@ import {
   MODULE_COLLAPSED_H,
   MODULE_HEADER,
   MODULE_PAD,
+  FUNCTION_H,
+  FUNCTION_W,
   VIEW_H,
   VIEW_W,
 } from './palette'
@@ -16,17 +18,16 @@ export type Geometry = Record<string, NodePosition>
 
 const NEW_NODE_GAP = 20
 
+const numeric = (value: unknown): number | undefined =>
+  typeof value === 'number' ? value : undefined
+
 /** Persisted size is meaningful only for expanded module containers. */
 export function sizeOfNode(node: Node): { w?: number; h?: number } {
   if (node.type !== 'group') return {}
   // `style` first: it holds the size the last fit wrote, while `measured` is the DOM one
   // frame behind it — persisting the stale one puts the box back where the fit just left.
-  const width =
-    (typeof node.style?.width === 'number' ? node.style.width : undefined) ??
-    (typeof node.measured?.width === 'number' ? node.measured.width : undefined)
-  const height =
-    (typeof node.style?.height === 'number' ? node.style.height : undefined) ??
-    (typeof node.measured?.height === 'number' ? node.measured.height : undefined)
+  const width = numeric(node.style?.width) ?? numeric(node.measured?.width)
+  const height = numeric(node.style?.height) ?? numeric(node.measured?.height)
   return width !== undefined && height !== undefined
     ? { w: Math.round(width), h: Math.round(height) }
     : {}
@@ -107,6 +108,7 @@ interface Rect {
 const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
   classNode: { w: CLASS_W, h: CLASS_H },
   viewNode: { w: VIEW_W, h: VIEW_H },
+  functionNode: { w: FUNCTION_W, h: FUNCTION_H },
   moduleNode: { w: MODULE_BOX.min.w, h: MODULE_COLLAPSED_H },
   group: MODULE_BOX.min,
   workspaceDomain: DOMAIN_BOX.min,
@@ -119,9 +121,10 @@ const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
  */
 export function nodeSize(node: Node): { w: number; h: number } {
   const fallback = DEFAULT_SIZES[node.type ?? ''] ?? { w: CLASS_W, h: CLASS_H }
-  const width = typeof node.style?.width === 'number' ? node.style.width : fallback.w
-  const height = typeof node.style?.height === 'number' ? node.style.height : fallback.h
-  return { w: width, h: height }
+  return {
+    w: numeric(node.style?.width) ?? fallback.w,
+    h: numeric(node.style?.height) ?? fallback.h,
+  }
 }
 
 /**
@@ -219,7 +222,9 @@ export function normalizeContainerLayout(nodes: Node[]): Node[] {
   const children = new Map<string, Node[]>()
   for (const node of nodes) {
     if (!node.parentId || !containers.has(node.parentId)) continue
-    children.set(node.parentId, [...(children.get(node.parentId) ?? []), node])
+    const held = children.get(node.parentId)
+    if (held) held.push(node)
+    else children.set(node.parentId, [node])
   }
 
   const positions = new Map(nodes.map((node) => [node.id, node.position]))

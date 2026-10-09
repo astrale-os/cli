@@ -1,6 +1,7 @@
 import type { DomainBundle, DomainInfo, SchemaApi } from '@astrale-os/sdk/client/schema'
 
 import { ResponseError } from '@astrale-os/sdk/client'
+import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 
 import type { KernelCommandOpts } from '../connection'
@@ -10,7 +11,7 @@ import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
 import { failInput } from '../lib/log'
 import { output } from '../lib/output'
-import { describeCallableFromBundle, missingCallableDescription } from './call-describe'
+import { describeCallableFromBundle } from './call-describe'
 
 type IntrospectOpts = KernelCommandOpts & { bundle?: boolean }
 
@@ -42,7 +43,12 @@ export async function introspectCommand(
       if (wantsCallable) {
         const result = await readInstalledDomain(session.schema, origin, true)
         const described = describeCallableFromBundle(path, result.bundle)
-        if (described === undefined) throw missingCallableDescription(path.raw)
+        if (described === undefined)
+          throw new AstraleError(
+            'CALL_DESCRIBE_UNAVAILABLE',
+            `No callable matches ${path.raw} in the installed schema.`,
+            `Inspect installed methods with \`astrale introspect ${origin} --bundle\`.`,
+          )
         return described
       }
       return readInstalledDomain(session.schema, origin, opts.bundle === true)
@@ -96,14 +102,7 @@ function isSchemaNotFound(error: unknown): boolean {
 }
 
 export function parseIntrospectTarget(target: string): { origin: string; path: Path } {
-  if (target.startsWith('@')) {
-    throw new AstraleError(
-      'NOT_A_DOMAIN',
-      'introspect requires a Domain origin or Path, not an @id.',
-      'Example: astrale introspect kernel.astrale.ai  or  /:kernel.astrale.ai:class.Identity:whois',
-    )
-  }
-  const raw = target.startsWith('/') ? target : `/:${target}`
+  const raw = target.startsWith('/') || target.startsWith('@') ? target : `/:${target}`
   let path: Path
   try {
     path = Path.parse(raw)
@@ -113,10 +112,18 @@ export function parseIntrospectTarget(target: string): { origin: string; path: P
       error instanceof Error ? error.message : 'Invalid introspect target',
     )
   }
-  if (path.ast.anchor.kind !== 'domain') {
-    throw new AstraleError('NOT_A_DOMAIN', 'introspect requires a Domain-rooted Path or origin.')
+  const last = path.ast.steps.at(-1)
+  if (last?.kind === 'method' && last.dispatch === 'instance') {
+    return { origin: ClassKey.ref(last.class).origin, path }
   }
-  return { origin: path.ast.anchor.origin, path }
+  if (path.ast.anchor.kind !== 'domain') {
+    throw new AstraleError(
+      'NOT_A_DOMAIN',
+      'Use a Domain origin or an instance Method Path; a bare @id does not identify a schema.',
+    )
+  }
+  const origin = path.ast.anchor.origin
+  return { origin, path }
 }
 
 function isCallablePath(path: Path): boolean {
@@ -135,13 +142,15 @@ Behavior:
   (kernel.astrale.ai or /:kernel.astrale.ai) prints its exact revision,
   generation, publication, readiness, capabilities, and bindings. --bundle
   includes the schema bundle. A method or Function Path projects that
-  callable's input/output from the installed bundle.
+  callable's input/output from the installed bundle. Instance Method Paths
+  may start with @id; their qualified Method key selects the schema without
+  reading or invoking the receiver.
 
 Examples:
   $ astrale introspect kernel.astrale.ai
   $ astrale introspect /:kernel.astrale.ai --bundle
   $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
-  $ astrale introspect /:kernel.astrale.ai:function.journal
+  $ astrale introspect @note::notes.example:class.Note.method.archive
 `,
   arguments: [{ name: 'target', description: 'Domain origin or canonical Path' }],
   options: [{ flags: '--bundle', description: 'Include the installed schema bundle' }],

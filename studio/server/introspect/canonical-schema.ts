@@ -22,6 +22,7 @@ import type {
 } from '../../shared/types'
 
 import { isSchemaRevision } from '../../shared/types'
+import { dependencyFootprint, type DependencyFootprintSchema } from './dependency-footprint'
 
 type AnyRecord = Record<string, unknown>
 
@@ -55,12 +56,8 @@ export interface SchemaSdk {
       readonly closure: readonly CanonicalDomainSchemaV1[]
     }
   }
-  readonly schema: {
+  readonly schema: DependencyFootprintSchema & {
     resolve(input: any): ResolvedSchemaDomain
-    compareDependencyMeaning(
-      source: CanonicalDomainSchemaV1,
-      target: CanonicalDomainSchemaV1,
-    ): { readonly footprint: readonly unknown[] }
   }
   readonly ClassKey: {
     is(input: unknown): input is IrClassKey
@@ -144,7 +141,7 @@ export function extractCanonicalSchemaFromSdk(
   }
 }
 
-/** Project canonical Core data without importing Application or Runtime modules. */
+/** Project canonical Core data without importing Domain definition or Runtime modules. */
 export function projectCanonicalCore(
   root: CanonicalDomainSchemaV1,
 ): Pick<StudioCore, 'domain' | 'nodes' | 'edges'> {
@@ -208,7 +205,7 @@ function projectImports(
   // The DSL computes the exact reachable footprint. Studio no longer recurses
   // through JSON Schemas, policies, Views, and Core declarations to rediscover it.
   for (const dependency of closure) {
-    const footprint = sdk.schema.compareDependencyMeaning(domain.source, dependency).footprint
+    const footprint = dependencyFootprint(sdk.schema, domain.source, dependency)
     for (const candidate of footprint) {
       if (!sdk.ClassKey.is(candidate)) continue
       const ref = sdk.ClassKey.ref(candidate)
@@ -226,14 +223,17 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
   const declaration = asRecord(value) ?? {}
   const kind = declaration.kind === 'edge' ? 'edge' : 'node'
   const extendsRefs = refsOf(declaration.extends)
-  const propertyEntries = entriesOf(declaration.properties)
+  const propertyEntries = entriesOf(declaration.properties).map(
+    ([propertyName, raw]) => [propertyName, asRecord(raw)] as const,
+  )
   const propertyMetadata = Object.fromEntries(
-    propertyEntries.map(([propertyName, raw]) => {
-      const member = { ...(asRecord(raw) ?? {}) }
+    propertyEntries.map(([propertyName, property]) => {
+      const member = { ...(property ?? {}) }
       delete member.schema
       return [propertyName, jsonCopy(member)]
     }),
   )
+  const data = dataDeclaration(declaration.data)
   const policies = Object.fromEntries(
     entriesOf(declaration.policies).flatMap(([policyName, raw]) => {
       const ref = definitionRefOf(raw)
@@ -248,43 +248,40 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
     extends: extendsRefs.map((ref) => ref.name),
     extendsRefs,
     properties: Object.fromEntries(
-      propertyEntries.map(([propertyName, raw]) => [
+      propertyEntries.map(([propertyName, property]) => [
         propertyName,
-        studioSchema(asRecord(raw)?.schema),
+        studioSchema(property?.schema),
       ]),
     ),
-    required: propertyEntries.flatMap(([propertyName, raw]) =>
-      asRecord(raw)?.required === true ? [propertyName] : [],
+    required: propertyEntries.flatMap(([propertyName, property]) =>
+      property?.required === true ? [propertyName] : [],
     ),
     methods: Object.fromEntries(
       entriesOf(declaration.methods).map(([methodName, raw]) => [
         methodName,
-        projectMethod(methodName, raw),
+        projectMethod(methodName, raw, declaration.abstract === true),
       ]),
     ),
     ...(kind === 'edge' ? edgeFields(declaration) : {}),
+    // the SDK lets a Class carry its own glyph; without this the schema declared one
+    // and every surface still drew the generic box
     ...(typeof declaration.icon === 'string' ? { icon: declaration.icon } : {}),
     ...(typeof declaration.description === 'string'
       ? { description: declaration.description }
       : {}),
-    // the SDK lets a Class carry its own glyph; without this the schema declared one
-    // and every surface still drew the generic box
-    ...(typeof declaration.icon === 'string' ? { icon: declaration.icon } : {}),
     ...(Object.keys(propertyMetadata).length === 0 ? {} : { propertyMetadata }),
-    ...(dataDeclaration(declaration.data) ? { data: dataDeclaration(declaration.data) } : {}),
+    ...(data ? { data } : {}),
     ...(Object.keys(policies).length === 0 ? {} : { policies }),
   }
 }
 
-function projectMethod(name: string, value: unknown): IrMethod {
+function projectMethod(name: string, value: unknown, ownerAbstract: boolean): IrMethod {
   const declaration = asRecord(value) ?? {}
   return {
     ...projectFunction(name, declaration),
     static: declaration.static === true,
-    inheritance:
-      declaration.inheritance === 'abstract' || declaration.inheritance === 'sealed'
-        ? declaration.inheritance
-        : 'default',
+    abstract: declaration.abstract === true,
+    executable: declaration.abstract !== true || !ownerAbstract,
   }
 }
 
@@ -305,13 +302,8 @@ function projectFunction(name: string, value: unknown): IrFunction {
 
 function projectView(name: string, value: unknown): IrView {
   const declaration = asRecord(value) ?? {}
-  const target = asRecord(declaration.target)
   return {
     name,
-    target:
-      target?.kind === 'definition'
-        ? { kind: 'definition', definitions: refsOf(target.definitions) }
-        : { kind: 'domain' },
     ...(typeof declaration.description === 'string'
       ? { description: declaration.description }
       : {}),

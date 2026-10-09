@@ -49,16 +49,10 @@ export async function resolveClientPackage(
 
   const fingerprint = inputFingerprint(projectDir, inputs.packageFiles)
   const previous = cache.get(projectDir)
-  if (!force && previous?.fingerprint === fingerprint) {
-    return previous.value
-  }
+  if (!force && previous?.fingerprint === fingerprint) return previous.value
 
   const value = resolveDiscovery(projectDir, inputs.rootPackage, inputs.packageFiles)
-  const entry: CacheEntry = {
-    fingerprint,
-    value,
-  }
-  cache.set(projectDir, entry)
+  cache.set(projectDir, { fingerprint, value })
   return value
 }
 

@@ -2,17 +2,23 @@ import { MessageCircle, MessageSquare, PanelBottom, PanelLeft, PanelRight, X } f
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ResizeHandle, type ResizeState, strongestResizeState } from '@/components/ui/resize-handle'
 import { isRunActive, useDisplayRun } from '@/lib/agent'
-import { useActiveChatId, useModelCatalog } from '@/lib/chats'
+import { useUnreadAgentReplies } from '@/lib/agent-unread'
+import { useActiveChatId, useChatMutations, useChats, useModelCatalog } from '@/lib/chats'
+import { openCommentThreads } from '@/lib/comments'
 import { useHarness, useLoadout, useWorkspaceComments } from '@/lib/hooks'
-import { type PanelSide, useUI } from '@/lib/store'
+import { DOCK_HEIGHT, DOCK_WIDTH, type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { AgentComposer, AgentDropZone, AgentTab, AgentTranscript } from './agent-tab'
+import { ChatTabs } from './chat-tabs'
 import { CommentsTab } from './comments-tab'
 
 const MIN_SIZE = 260
 const MAX_SIZE = 900
+/** The column's default width, restored by a double click on its edge. */
+const PANEL_SIZE = 360
 
 /** The sides that dock a column. `bottom` is the floating dock and never does. */
 type DockedSide = Exclude<PanelSide, 'bottom'>
@@ -26,7 +32,7 @@ const SIDES: { side: PanelSide; icon: typeof PanelLeft; label: string; hint: str
     side: 'bottom',
     icon: PanelBottom,
     label: 'Bottom',
-    hint: 'Just a composer under the view — the chat opens in the middle',
+    hint: 'A chat floating over the bottom of the view',
   },
   { side: 'right', icon: PanelRight, label: 'Right', hint: 'A column right of the view' },
 ]
@@ -61,12 +67,16 @@ function useWaitingCount(): number {
   return data.reduce(
     (total, entry) =>
       total +
-      (entry.store?.comments.filter(
-        (comment) => comment.status === 'open' && comment.thread.at(-1)?.role === 'author',
-      ).length ?? 0),
+      openCommentThreads(entry.store?.comments).filter(
+        (comment) => comment.thread.at(-1)?.role === 'author',
+      ).length,
     0,
   )
 }
+
+/** The panel header's square icon buttons: the dock control and the close button. */
+const HEADER_BUTTON =
+  'grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
 
 /**
  * The work panel: the agent conversation and the comment threads, showing beside
@@ -88,6 +98,7 @@ export function WorkPanel() {
 function CollapsedRail({ side }: { side: DockedSide }) {
   const setPanelTab = useUI((s) => s.setPanelTab)
   const waiting = useWaitingCount()
+  const unread = useUnreadAgentReplies()
   return (
     <aside
       className={cn(
@@ -95,9 +106,13 @@ function CollapsedRail({ side }: { side: DockedSide }) {
         side === 'left' ? 'border-r' : 'border-l',
       )}
     >
-      <RailButton label="Agent" onClick={() => setPanelTab('agent')}>
-        <MessageCircle className="h-4 w-4" />
-      </RailButton>
+      {unread.length > 0 ? (
+        <UnreadAgentButton />
+      ) : (
+        <RailButton label="Agent" onClick={() => setPanelTab('agent')}>
+          <MessageCircle className="h-4 w-4" />
+        </RailButton>
+      )}
       <RailButton label="Comments" badge={waiting} onClick={() => setPanelTab('comments')}>
         <MessageSquare className="h-4 w-4" />
       </RailButton>
@@ -136,7 +151,10 @@ function ExpandedPanel({ side }: { side: DockedSide }) {
   const size = useUI((s) => s.panelSize)
   const setPanelSize = useUI((s) => s.setPanelSize)
   const setPanelOpen = useUI((s) => s.setPanelOpen)
-  const startResize = useResize(side, size, setPanelSize)
+  const dragFrom = useRef(size)
+  // the grip is on the edge facing the view: dragging toward the view widens the panel
+  const toward = side === 'left' ? 1 : -1
+  const clamp = (next: number) => Math.min(MAX_SIZE, Math.max(MIN_SIZE, next))
 
   return (
     <aside
@@ -155,18 +173,22 @@ function ExpandedPanel({ side }: { side: DockedSide }) {
       <PanelContent />
 
       {/* drag handle on the edge that faces the main view */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        onPointerDown={startResize}
-        title="Drag to resize"
+      <ResizeHandle
+        orientation="vertical"
+        label="Resize the panel"
         className={cn(
-          'group absolute top-0 z-20 h-full w-1.5 cursor-col-resize',
+          'top-0 h-full w-2',
           side === 'left' ? 'right-0 translate-x-1/2' : 'left-0 -translate-x-1/2',
         )}
-      >
-        <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-primary/50" />
-      </div>
+        value={size}
+        min={MIN_SIZE}
+        max={MAX_SIZE}
+        onDragStart={() => (dragFrom.current = size)}
+        onDrag={(dx) => setPanelSize(clamp(dragFrom.current + toward * dx))}
+        onStep={(dx) => setPanelSize(clamp(size + toward * dx))}
+        onLimit={(to) => setPanelSize(to === 'min' ? MIN_SIZE : MAX_SIZE)}
+        onReset={() => setPanelSize(PANEL_SIZE)}
+      />
     </aside>
   )
 }
@@ -187,10 +209,29 @@ function FloatingDock() {
   const setPanelTab = useUI((s) => s.setPanelTab)
   const waiting = useWaitingCount()
   const run = useDisplayRun()
+  const dockWidth = useUI((s) => s.dockWidth)
+  const dockHeight = useUI((s) => s.dockHeight)
+  const tabsLeft = useUI((s) => s.chatTabsSide === 'left')
+  const tabsWidth = useUI((s) => s.chatTabsWidth)
+  const { data: chats } = useChats()
+  const { data: harness } = useHarness()
+  // Opened on the agent, a left tab column runs from under the header down to the
+  // dock's bottom edge, beside the composer as well as the conversation. It floats
+  // over the dock rather than wrapping the composer, which has to stay the very same
+  // element: typing in it is what opened the dock, and remounting it would drop the
+  // caret. The conversation and the composer just make room for it.
+  const sideTabs = open && tab === 'agent' && tabsLeft
+  // the column's own cap is half the dock, and a percentage padding is of the dock too
+  const beside = sideTabs ? { paddingLeft: `min(${tabsWidth}px, 50%)` } : undefined
   const box = useRef<HTMLDivElement>(null)
+  const conversation = useRef<HTMLDivElement>(null)
+  const resize = useDockResize(box, conversation)
   // Closed, the dock is all the agent has on screen — a running turn has to show
   // on the bar itself. Open it needs nothing: the turn is unfolding right above.
   const working = !open && isRunActive(run)
+  const unread = useUnreadAgentReplies()
+  const attention = !open && unread.length > 0
+  const failed = unread.some((reply) => reply.failed)
 
   const field = useCallback(
     () => box.current?.querySelector<HTMLTextAreaElement>('[data-agent-composer]'),
@@ -215,6 +256,7 @@ function FloatingDock() {
         ref={box}
         data-testid="agent-dock"
         aria-busy={working || undefined}
+        data-agent-notification={attention ? (failed ? 'error' : 'unread') : undefined}
         onPointerDown={(event) => {
           // Anywhere on the resting bar means "open it" — not just the field. An
           // unreachable agent leaves that field disabled, and the bar is the only way
@@ -223,14 +265,23 @@ function FloatingDock() {
           setPanelTab('agent')
           field()?.focus()
         }}
+        // The width is the dock's own, grown or shrunk on both sides at once so it
+        // never leaves the middle; max-w-full keeps a narrow window from pushing
+        // it past the edges, whatever width was saved on a wider one.
+        style={{ width: dockWidth }}
         className={cn(
-          'pointer-events-auto relative flex max-h-full w-full max-w-3xl flex-col overflow-clip rounded-2xl border',
+          'pointer-events-auto relative flex max-h-full max-w-full flex-col overflow-clip rounded-2xl border',
           'shadow-[0_20px_60px_-28px_rgb(0_0_0/0.55)] backdrop-blur-xl transition-colors duration-300',
           // at rest it is a bar over a canvas, and seeing the canvas through it is the
           // point; opened it is something to read, and that wants a solid page
           open ? 'bg-card' : 'bg-card/80',
           // a working bar lifts off the canvas a little further
           working && 'ring-[3px] ring-primary/10',
+          attention &&
+            !working &&
+            (failed
+              ? 'border-destructive/60 ring-[3px] ring-destructive/15'
+              : 'border-success/60 ring-[3px] ring-success/15'),
         )}
       >
         {/* The edge breathes for as long as the turn runs — the sign you catch
@@ -252,10 +303,15 @@ function FloatingDock() {
             the panel header slid out of the top for good, leaving the dock with no
             way back to the threads and no way to close it. Clipping cannot scroll. */}
         <div
+          ref={conversation}
           inert={!open}
+          // A saved height taller than the window is simply shrunk: the box stops at
+          // max-h-full and this is the one child that can give way.
+          style={{ height: open ? dockHeight : 0 }}
           className={cn(
-            'flex min-h-0 flex-col overflow-clip transition-[height] duration-300 ease-out',
-            open ? 'h-[min(60vh,480px)]' : 'h-0',
+            'flex min-h-0 flex-col overflow-clip',
+            // following the pointer, not easing after it
+            !resize.resizing && 'transition-[height] duration-300 ease-out',
           )}
         >
           <PanelHeader closeLabel="Close the chat" onClose={close} />
@@ -263,10 +319,23 @@ function FloatingDock() {
               scrolls once something hands it a height. A block let it grow to its
               content instead, the clip above took everything past the box, and a
               long answer ended in nothing — no scrollbar, and no way to its end. */}
-          <div className="flex min-h-0 flex-1 flex-col border-t">
-            {tab === 'agent' ? <AgentTranscript /> : <CommentsTab />}
+          <div className="flex min-h-0 flex-1 flex-col border-t" style={beside}>
+            {tab === 'agent' ? <AgentTranscript tabs={!tabsLeft} /> : <CommentsTab />}
           </div>
         </div>
+
+        {sideTabs && (
+          // top-[41px]: under the h-10 header and the conversation's border-t
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[41px] z-20 flex">
+            <ChatTabs
+              chats={chats?.chats ?? []}
+              activeId={chats?.activeId}
+              harness={harness}
+              vertical
+              className="pointer-events-auto"
+            />
+          </div>
+        )}
 
         {/* The composer belongs to the agent: opened on the threads, the dock is a
             reading surface and shows them alone — no field, no chips, no queue,
@@ -275,30 +344,294 @@ function FloatingDock() {
             documents are on the server, so coming back finds the message exactly as
             it was left. At rest it stays whatever tab it would open on — the bar IS
             the dock, and there would otherwise be nothing on screen. */}
-        {(!open || tab === 'agent') && (
-          <AgentComposer
-            bar
-            expanded={open}
-            // opens on the agent, but never yanks you off the comments you opened it on
-            onFocus={() => !open && setPanelTab('agent')}
-            // The only way back to the threads while the dock RESTS: there is no tab
-            // strip until it opens, and the badge is how a reply announces itself.
-            // Opened, the strip says it better and this would only say it twice.
-            trailing={
-              open ? undefined : (
-                <RailButton
-                  label="Open comments"
-                  badge={waiting}
-                  onClick={() => setPanelTab('comments')}
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </RailButton>
-              )
-            }
+        {/* Opened, the edges resize it: the top edge sets how tall the conversation
+            is, the side edges how wide the whole dock is — both sides at once, so
+            it stays centred — and the top corners do both. At rest there is only
+            a bar, and every press on it means "open". */}
+        {open && (
+          <DockResize
+            onDragStart={resize.start}
+            onDrag={resize.drag}
+            onDragEnd={resize.end}
+            onReset={resize.reset}
+            onStep={resize.step}
           />
+        )}
+
+        {(!open || tab === 'agent') && (
+          <div className="shrink-0" style={beside}>
+            <AgentComposer
+              bar
+              expanded={open}
+              // opens on the agent, but never yanks you off the comments you opened it on
+              onFocus={() => !open && setPanelTab('agent')}
+              // The only way back to the threads while the dock RESTS: there is no tab
+              // strip until it opens, and the badge is how a reply announces itself.
+              // Opened, the strip says it better and this would only say it twice.
+              trailing={
+                open ? undefined : (
+                  <>
+                    <UnreadAgentButton />
+                    <RailButton
+                      label="Open comments"
+                      badge={waiting}
+                      onClick={() => setPanelTab('comments')}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </RailButton>
+                  </>
+                )
+              }
+            />
+          </div>
         )}
       </AgentDropZone>
     </div>
+  )
+}
+
+type DockEdge = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
+type DockSide = 'top' | 'left' | 'right'
+
+/**
+ * The dock's grips. The straight edges stop where the rounded corners begin (the
+ * corners are 16px, `rounded-2xl`), and each corner is its own grip that moves the two
+ * edges it joins, lighting both.
+ */
+const DOCK_EDGES: Record<
+  DockEdge,
+  { x: -1 | 0 | 1; y: boolean; cursor: string; className: string; label: string; sides: DockSide[] }
+> = {
+  top: {
+    x: 0,
+    y: true,
+    cursor: 'ns-resize',
+    className: 'inset-x-4 top-0 h-2',
+    label: 'Resize the chat height',
+    sides: ['top'],
+  },
+  left: {
+    x: -1,
+    y: false,
+    cursor: 'ew-resize',
+    className: 'inset-y-4 left-0 w-2',
+    label: 'Resize the chat width',
+    sides: ['left'],
+  },
+  right: {
+    x: 1,
+    y: false,
+    cursor: 'ew-resize',
+    className: 'inset-y-4 right-0 w-2',
+    label: 'Resize the chat width',
+    sides: ['right'],
+  },
+  'top-left': {
+    x: -1,
+    y: true,
+    cursor: 'nwse-resize',
+    className: 'left-0 top-0 h-4 w-4',
+    label: 'Resize the chat',
+    sides: ['top', 'left'],
+  },
+  'top-right': {
+    x: 1,
+    y: true,
+    cursor: 'nesw-resize',
+    className: 'right-0 top-0 h-4 w-4',
+    label: 'Resize the chat',
+    sides: ['top', 'right'],
+  },
+}
+
+const DOCK_EDGE_NAMES = Object.keys(DOCK_EDGES) as DockEdge[]
+
+/** Literal per side and state, so Tailwind sees every class it has to generate. */
+const DOCK_SIDE_TONE: Record<DockSide, Record<ResizeState, string>> = {
+  top: { idle: '', hover: 'border-t-primary/60', active: 'border-t-primary' },
+  left: { idle: '', hover: 'border-l-primary/60', active: 'border-l-primary' },
+  right: { idle: '', hover: 'border-r-primary/60', active: 'border-r-primary' },
+}
+
+/**
+ * The open dock's resize grips, and the edge they light.
+ *
+ * The dock is a rounded card, so a straight line laid over one side (what the columns
+ * draw) would stop short of its corners or cut across them. It lights its own outline
+ * instead: the border of the side being moved, following the curve into each corner.
+ * Same colour, same thickness and same timing as every other edge in the Studio.
+ */
+function DockResize({
+  onDragStart,
+  onDrag,
+  onDragEnd,
+  onReset,
+  onStep,
+}: {
+  onDragStart: (edge: DockEdge) => void
+  onDrag: (edge: DockEdge, dx: number, dy: number) => void
+  onDragEnd: () => void
+  onReset: () => void
+  onStep: (edge: DockEdge, dx: number, dy: number) => void
+}) {
+  const [states, setStates] = useState<Partial<Record<DockEdge, ResizeState>>>({})
+  const lit = (side: DockSide): ResizeState =>
+    DOCK_EDGE_NAMES.filter((edge) => DOCK_EDGES[edge].sides.includes(side)).reduce<ResizeState>(
+      (tone, edge) => strongestResizeState(tone, states[edge] ?? 'idle'),
+      'idle',
+    )
+
+  return (
+    <>
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute inset-0 z-20 rounded-2xl border-2 border-transparent transition-colors duration-150',
+          DOCK_SIDE_TONE.top[lit('top')],
+          DOCK_SIDE_TONE.left[lit('left')],
+          DOCK_SIDE_TONE.right[lit('right')],
+        )}
+      />
+      {DOCK_EDGE_NAMES.map((edge) => {
+        const { x, y, cursor, className, label } = DOCK_EDGES[edge]
+        const corner = x !== 0 && y
+        return (
+          <ResizeHandle
+            key={edge}
+            data-dock-resize={edge}
+            orientation={y && !corner ? 'horizontal' : 'vertical'}
+            role={corner ? 'presentation' : 'separator'}
+            label={label}
+            cursor={cursor}
+            className={className}
+            line={false}
+            onStateChange={(state) => setStates((all) => ({ ...all, [edge]: state }))}
+            onDragStart={() => onDragStart(edge)}
+            onDrag={(dx, dy) => onDrag(edge, dx, dy)}
+            onDragEnd={onDragEnd}
+            onReset={onReset}
+            onStep={(dx, dy) => onStep(edge, dx, dy)}
+          />
+        )
+      })}
+    </>
+  )
+}
+
+/**
+ * Drag the open dock's edges. Width moves both sides at once — a pixel dragged
+ * outward on one edge is a pixel on the other too — so the dock stays centred.
+ * Height is the conversation's, above a composer that never moves.
+ *
+ * Both are bounded by what the view has room for as the drag starts, not only by
+ * the stored limits: dragging past the window would store a size the dock cannot
+ * show, and dragging back would then do nothing for the first stretch.
+ */
+function useDockResize(
+  box: React.RefObject<HTMLElement | null>,
+  conversation: React.RefObject<HTMLElement | null>,
+) {
+  const setDockSize = useUI((s) => s.setDockSize)
+  const [resizing, setResizing] = useState(false)
+  const from = useRef({ width: 0, height: 0, maxWidth: 0, maxHeight: 0 })
+
+  /** The dock's size now, and the most the view has room for. */
+  const measure = useCallback(() => {
+    const dock = box.current
+    const chat = conversation.current
+    const frame = dock?.parentElement
+    if (!dock || !chat || !frame) return null
+    const frameStyle = getComputedStyle(frame)
+    const roomX =
+      frame.clientWidth - parseFloat(frameStyle.paddingLeft) - parseFloat(frameStyle.paddingRight)
+    const roomY =
+      frame.clientHeight - parseFloat(frameStyle.paddingTop) - parseFloat(frameStyle.paddingBottom)
+    // everything in the dock that is not the conversation: the composer, borders
+    const chrome = dock.offsetHeight - chat.offsetHeight
+    return {
+      width: dock.offsetWidth,
+      height: chat.offsetHeight,
+      maxWidth: Math.max(DOCK_WIDTH.min, Math.min(DOCK_WIDTH.max, roomX)),
+      maxHeight: Math.max(DOCK_HEIGHT.min, Math.min(DOCK_HEIGHT.max, roomY - chrome)),
+    }
+  }, [box, conversation])
+
+  /** Moves `edge` by (dx, dy) from `start`, within the view. */
+  const apply = useCallback(
+    (edge: DockEdge, start: typeof from.current, dx: number, dy: number) => {
+      const { x, y } = DOCK_EDGES[edge]
+      const next: { width?: number; height?: number } = {}
+      if (x !== 0)
+        next.width = Math.min(start.maxWidth, Math.max(DOCK_WIDTH.min, start.width + 2 * x * dx))
+      // the dock grows upward: dragging the top edge up makes it taller
+      if (y) next.height = Math.min(start.maxHeight, Math.max(DOCK_HEIGHT.min, start.height - dy))
+      setDockSize(next)
+    },
+    [setDockSize],
+  )
+
+  const start = useCallback(() => {
+    const now = measure()
+    if (!now) return
+    from.current = now
+    setResizing(true)
+  }, [measure])
+  const drag = useCallback(
+    (edge: DockEdge, dx: number, dy: number) => apply(edge, from.current, dx, dy),
+    [apply],
+  )
+  const end = useCallback(() => setResizing(false), [])
+  const step = useCallback(
+    (edge: DockEdge, dx: number, dy: number) => {
+      const now = measure()
+      if (now) apply(edge, now, dx, dy)
+    },
+    [apply, measure],
+  )
+  const reset = useCallback(
+    () => setDockSize({ width: DOCK_WIDTH.fallback, height: DOCK_HEIGHT.fallback }),
+    [setDockSize],
+  )
+
+  return { resizing, start, drag, end, step, reset }
+}
+
+/** The notice opens the chat that owns the reply, including replies from another tab. */
+function UnreadAgentButton() {
+  const unread = useUnreadAgentReplies()
+  const activeId = useActiveChatId()
+  const { select } = useChatMutations()
+  const setPanelTab = useUI((state) => state.setPanelTab)
+  const reply =
+    unread.find((entry) => entry.failed) ??
+    unread.find((entry) => entry.chatId === activeId) ??
+    unread[0]
+  if (!reply) return null
+  const label = reply.failed ? 'Read agent error' : 'Read unread agent reply'
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      data-testid="agent-unread"
+      onClick={() => {
+        if (reply.chatId !== activeId) select.mutate(reply.chatId)
+        setPanelTab('agent')
+      }}
+      className={cn(
+        'relative grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors hover:bg-accent',
+        reply.failed ? 'text-destructive' : 'text-success',
+      )}
+    >
+      <MessageCircle className="h-4 w-4" />
+      <span
+        aria-hidden
+        className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-current"
+      />
+      <span role="status" className="sr-only">
+        {reply.failed ? 'Agent needs attention' : 'Agent reply ready'}
+      </span>
+    </button>
   )
 }
 
@@ -354,6 +687,7 @@ function PanelHeader({
   const tab = useUI((s) => s.panelTab)
   const setPanelTab = useUI((s) => s.setPanelTab)
   const waiting = useWaitingCount()
+  const unread = useUnreadAgentReplies()
 
   return (
     <header className="flex h-10 shrink-0 items-center gap-1 px-2">
@@ -363,6 +697,7 @@ function PanelHeader({
           onClick={() => setPanelTab('agent')}
           icon={<MessageCircle />}
           label="Agent"
+          badge={unread.length}
           compact={compact}
         />
         <TabButton
@@ -381,7 +716,7 @@ function PanelHeader({
           title={closeLabel}
           aria-label={closeLabel}
           onClick={onClose}
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={HEADER_BUTTON}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -413,7 +748,7 @@ function DockPicker() {
           type="button"
           title="Where the panel sits"
           aria-label="Where the panel sits"
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={HEADER_BUTTON}
         >
           <Current className="h-3.5 w-3.5" />
         </button>
@@ -446,15 +781,13 @@ function DockPicker() {
 }
 
 /** A miniature of the layout: the filled part is where the panel goes. Bottom shows
- *  what it really costs — a bar, with the chat floating clear of it. */
+ *  the dock opened, one block like the columns: centred, and clear of the bottom
+ *  edge, since it floats over the view rather than docking to it. */
 function DockPreview({ side }: { side: PanelSide }) {
   if (side === 'bottom') {
     return (
       <span className="relative block h-8 w-11 overflow-hidden rounded border bg-card">
-        {/* the conversation, floating clear of the view */}
-        <span className="absolute left-1/2 top-[7px] h-3 w-5 -translate-x-1/2 rounded-[3px] border border-primary/50 bg-primary/25" />
-        {/* the bar, and all this layout costs */}
-        <span className="absolute inset-x-1 bottom-1 h-1 rounded-full bg-primary/60" />
+        <span className="absolute inset-x-[7px] bottom-[3px] h-4 rounded-[3px] bg-primary/60" />
       </span>
     )
   }
@@ -507,41 +840,5 @@ function TabButton({
         </span>
       )}
     </button>
-  )
-}
-
-/** Drag the panel's inner edge; the size persists across sessions. */
-function useResize(
-  side: DockedSide,
-  size: number,
-  setPanelSize: (next: number) => void,
-): (event: React.PointerEvent) => void {
-  const latest = useRef(size)
-  useEffect(() => {
-    latest.current = size
-  }, [size])
-
-  return useCallback(
-    (event: React.PointerEvent) => {
-      event.preventDefault()
-      const start = event.clientX
-      const startSize = latest.current
-      const onMove = (move: PointerEvent) => {
-        const delta = side === 'left' ? move.clientX - start : start - move.clientX
-        latest.current = Math.min(MAX_SIZE, Math.max(MIN_SIZE, startSize + delta))
-        setPanelSize(latest.current)
-      }
-      const onUp = () => {
-        document.removeEventListener('pointermove', onMove)
-        document.removeEventListener('pointerup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-      }
-      document.addEventListener('pointermove', onMove)
-      document.addEventListener('pointerup', onUp)
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-    },
-    [side, setPanelSize],
   )
 }

@@ -71,13 +71,3 @@ export const TooltipContent = React.forwardRef<
   </TooltipPrimitive.Portal>
 ))
 TooltipContent.displayName = 'TooltipContent'
-
-// ── Label ──
-export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
-  return (
-    <label
-      className={cn('text-sm font-medium leading-none text-muted-foreground', className)}
-      {...props}
-    />
-  )
-}

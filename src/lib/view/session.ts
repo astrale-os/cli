@@ -1,9 +1,10 @@
-import type { ResolvedView, ViewTransport } from '@astrale-os/shell'
+import type { ResolvedView } from '@astrale-os/shell'
 
 import { closeSync, fchmodSync, openSync } from 'node:fs'
 import { chmod, mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { AstraleError } from '../../errors'
 import { atomicWrite, paths } from '../../state/index'
 
 /**
@@ -31,8 +32,6 @@ export type ViewSessionRecord = {
 /** Everything the detached `view __serve` process needs, written before spawn. */
 export type ViewServeConfig = {
   session: ViewSessionRecord
-  /** Owner-local alternate document for this exact verified View placement. */
-  transport?: ViewTransport
   /** Kernel passthrough opts, re-resolved server-side for token mints. */
   kernel: { url?: string; instance?: string; as?: string; creds?: string; timeout?: string }
   /**
@@ -45,7 +44,20 @@ export type ViewServeConfig = {
   proxy: { kernelUrl: string; issuer: string; caFile?: string; direct: boolean }
   /** Exact HTTPS origins the operator consented to open from this View session. */
   externalOrigins: readonly string[]
+  /** Local identities explicitly allowed by the operator for this View session. */
+  identities?: readonly string[]
+  /**
+   * Budget for a session no page reports on any more. It is the net under the
+   * page-attachment rule, not the ordinary way a session ends: a browser that
+   * froze the tab or a machine that slept stops the heartbeat without the page
+   * ever leaving.
+   */
   idleMs: number
+  /**
+   * How long a released session waits after its last page leaves. A reload
+   * leaves and comes back, so the grace has to outlast one.
+   */
+  releaseGraceMs?: number
 }
 
 export const recordPath = (id: string, directory = VIEW_DIR): string =>
@@ -98,20 +110,25 @@ export async function removeSessionFiles(id: string, directory = VIEW_DIR): Prom
   ])
 }
 
+function isProcessMissing(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH'
+}
+
+/** Only ESRCH proves the process is gone; a denied or uncertain probe keeps its record. */
 export function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    return !isProcessMissing(error)
   }
 }
 
-/** List live sessions, removing records whose server process is gone. */
-export async function listSessions(): Promise<ViewSessionRecord[]> {
+/** List retained sessions, removing records only when their server process is gone. */
+export async function listSessions(directory = VIEW_DIR): Promise<ViewSessionRecord[]> {
   let entries: string[]
   try {
-    entries = await readdir(VIEW_DIR)
+    entries = await readdir(directory)
   } catch {
     return []
   }
@@ -120,37 +137,55 @@ export async function listSessions(): Promise<ViewSessionRecord[]> {
     if (!/^v-[0-9a-f]+\.json$/.test(entry)) continue
     let record: ViewSessionRecord
     try {
-      record = JSON.parse(await readFile(join(VIEW_DIR, entry), 'utf8')) as ViewSessionRecord
+      record = JSON.parse(await readFile(join(directory, entry), 'utf8')) as ViewSessionRecord
     } catch {
       continue
     }
     if (isAlive(record.pid)) live.push(record)
-    else await removeSessionFiles(record.id)
+    else await removeSessionFiles(record.id, directory)
   }
   return live.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
 const CLOSE_GRACE_MS = 2000
 
-/** SIGTERM the session server (SIGKILL after a grace period), drop its files. */
-export async function closeSession(record: ViewSessionRecord): Promise<void> {
-  if (isAlive(record.pid)) {
-    try {
-      process.kill(record.pid, 'SIGTERM')
-    } catch {
-      // already gone
-    }
-    const deadline = Date.now() + CLOSE_GRACE_MS
-    while (isAlive(record.pid) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-    if (isAlive(record.pid)) {
-      try {
-        process.kill(record.pid, 'SIGKILL')
-      } catch {
-        // already gone
+/** Return false if the process disappeared between the probe and the signal. */
+function signalSession(record: ViewSessionRecord, signal: NodeJS.Signals): boolean {
+  try {
+    process.kill(record.pid, signal)
+    return true
+  } catch (error) {
+    if (isProcessMissing(error)) return false
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new AstraleError(
+      'VIEW_SESSION_CLOSE_FAILED',
+      `Cannot close view session "${record.id}" (pid ${record.pid}): ${signal} failed: ${detail}. Session files were retained.`,
+      'The session is still listed. Retry from a process permitted to stop its server.',
+      { cause: error },
+    )
+  }
+}
+
+async function waitForProcessExit(pid: number): Promise<boolean> {
+  const deadline = Date.now() + CLOSE_GRACE_MS
+  while (isAlive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return !isAlive(pid)
+}
+
+/** Stop the session server, dropping its files only after its process is gone. */
+export async function closeSession(record: ViewSessionRecord, directory = VIEW_DIR): Promise<void> {
+  if (isAlive(record.pid) && signalSession(record, 'SIGTERM')) {
+    if (!(await waitForProcessExit(record.pid)) && signalSession(record, 'SIGKILL')) {
+      if (!(await waitForProcessExit(record.pid))) {
+        throw new AstraleError(
+          'VIEW_SESSION_CLOSE_FAILED',
+          `Cannot close view session "${record.id}" (pid ${record.pid}): process exit could not be confirmed after SIGKILL. Session files were retained.`,
+          'Check whether its server is running, then retry closing the retained session.',
+        )
       }
     }
   }
-  await removeSessionFiles(record.id)
+  await removeSessionFiles(record.id, directory)
 }

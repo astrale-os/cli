@@ -75,6 +75,11 @@ function assertInsideDot(domainRoot: string, target: string): string {
   return abs
 }
 
+/** Absolute path of a state file (allow-listed) — for reading/serving. */
+export function statePath(domainRoot: string, subpath: string): string {
+  return assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath))
+}
+
 export function ensureDir(domainRoot: string, subpath = ''): string {
   const target = subpath ? join(dotDir(domainRoot), subpath) : dotDir(domainRoot)
   assertInsideDot(domainRoot, target)
@@ -82,11 +87,14 @@ export function ensureDir(domainRoot: string, subpath = ''): string {
   return target
 }
 
-export function writeState(domainRoot: string, subpath: string, contents: string): void {
-  const target = join(dotDir(domainRoot), subpath)
-  const abs = assertInsideDot(domainRoot, target)
+function writeStateFile(domainRoot: string, subpath: string, data: string | Uint8Array): void {
+  const abs = statePath(domainRoot, subpath)
   mkdirSync(dirname(abs), { recursive: true })
-  writeFileSync(abs, contents)
+  writeFileSync(abs, data)
+}
+
+export function writeState(domainRoot: string, subpath: string, contents: string): void {
+  writeStateFile(domainRoot, subpath, contents)
 }
 
 export function writeJson(domainRoot: string, subpath: string, value: unknown): void {
@@ -95,19 +103,11 @@ export function writeJson(domainRoot: string, subpath: string, value: unknown): 
 
 /** Binary write (e.g. dropped documents), allow-listed to the dotted folder. */
 export function writeStateBuffer(domainRoot: string, subpath: string, data: Uint8Array): void {
-  const target = join(dotDir(domainRoot), subpath)
-  const abs = assertInsideDot(domainRoot, target)
-  mkdirSync(dirname(abs), { recursive: true })
-  writeFileSync(abs, data)
-}
-
-/** Absolute path of a state file (allow-listed) — for reading/serving. */
-export function statePath(domainRoot: string, subpath: string): string {
-  return assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath))
+  writeStateFile(domainRoot, subpath, data)
 }
 
 export function readState(domainRoot: string, subpath: string): string | null {
-  const target = assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath))
+  const target = statePath(domainRoot, subpath)
   if (!existsSync(target)) return null
   return readFileSync(target, 'utf8')
 }
@@ -126,19 +126,18 @@ export function readJson<T>(
 }
 
 export function listState(domainRoot: string, subpath: string): string[] {
-  const target = assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath))
+  const target = statePath(domainRoot, subpath)
   if (!existsSync(target)) return []
   return readdirSync(target)
 }
 
 export function removeState(domainRoot: string, subpath: string): void {
-  const target = join(dotDir(domainRoot), subpath)
-  const abs = assertInsideDot(domainRoot, target)
+  const abs = statePath(domainRoot, subpath)
   if (existsSync(abs)) rmSync(abs, { recursive: true, force: true })
 }
 
 export function stateExists(domainRoot: string, subpath: string): boolean {
-  return existsSync(assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath)))
+  return existsSync(statePath(domainRoot, subpath))
 }
 
 /** Initialise the dotted folder skeleton + a .cache/.gitignore (never touches the user's root .gitignore). */

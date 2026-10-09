@@ -1,7 +1,8 @@
-import type { InstanceInfo, OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
+import type { OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
-import { connectAdminInstances, findOwnedInstance } from '../admin/instance'
+import { connectAdminInstances, AdminInstanceNotFoundError } from '../admin/instance'
+import { resolveAdminFleet } from '../admin/selection'
 import { withAdminClientSession } from '../connection'
 import { AstraleError } from '../errors'
 
@@ -22,7 +23,7 @@ export {
 /** Resolve the Admin target and read only the caller-visible Instance inventory. */
 export function listOwnedInstances(options: AdminConnectionOptions, includeRetired = false) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).list({ includeRetired }),
+    (await connectAdminInstances({ ...context, fleet: options.fleet })).list({ includeRetired }),
   )
 }
 
@@ -30,15 +31,15 @@ export function listOwnedInstances(options: AdminConnectionOptions, includeRetir
 export function listOwnedInstancesWithIdentity(options: AdminConnectionOptions) {
   return withAdminClientSession(options, async (context) =>
     Object.freeze({
-      instances: await (await connectAdminInstances(context)).list(),
+      instances: await (await connectAdminInstances({ ...context, fleet: options.fleet })).list(),
       ...(context.identity === undefined ? {} : { identity: context.identity }),
     }),
   )
 }
 
 /** Reuse an already-open Admin session for a caller-visible Instance inventory. */
-export async function listOwnedInstancesInContext(context: ConnectionContext) {
-  return (await connectAdminInstances(context)).list()
+export async function listOwnedInstancesInContext(context: ConnectionContext, fleet?: string) {
+  return (await connectAdminInstances({ ...context, fleet: fleet })).list()
 }
 
 /** Create or resume one managed Instance from its durable Admin receipt. */
@@ -46,17 +47,20 @@ export function createOwnedInstance(
   options: AdminConnectionOptions,
   slug: string,
   operationId?: string,
+  onFleetSelected?: (fleet: string) => void,
 ) {
   return withAdminClientSession(options, async (context) => {
-    const instances = await connectAdminInstances(context)
+    const fleet = (await resolveAdminFleet({ ...context, fleet: options.fleet }, true)).raw
+    onFleetSelected?.(fleet)
+    const instances = await connectAdminInstances({ ...context, fleet })
     const plan = planInstanceCreate(await instances.list(), slug, operationId)
-    return plan.kind === 'ready' ? plan.instance : instances.create(slug, plan.operationId)
+    // Inventory is caller-visible, not proof of creation ownership. Even ready
+    // Instances must replay their receipt so Admin verifies its actor and input.
+    return instances.create(slug, plan.operationId)
   })
 }
 
-type InstanceCreatePlan =
-  | Readonly<{ kind: 'ready'; instance: InstanceInfo }>
-  | Readonly<{ kind: 'create'; operationId?: string }>
+type InstanceCreatePlan = Readonly<{ operationId?: string }>
 
 /** @internal Resolve creation from durable caller-visible Admin state. */
 export function planInstanceCreate(
@@ -64,17 +68,38 @@ export function planInstanceCreate(
   slug: string,
   operationId?: string,
 ): InstanceCreatePlan {
-  const existing = findOwnedInstance(inventory, slug)
-  if (existing?.state === 'ready') return Object.freeze({ kind: 'ready', instance: existing })
-  if (existing?.state === 'provisioning') {
+  const candidates = inventory.filter((instance) => instance.slug === slug)
+  if (candidates.length > 1) {
+    throw new AstraleError(
+      'INSTANCE_RECOVERY_AMBIGUOUS',
+      `More than one visible Admin Instance matches slug ${JSON.stringify(slug)}.`,
+      'Inspect their creation receipts before retrying; no operation was selected.',
+    )
+  }
+  const existing = candidates[0]
+  if (existing !== undefined && operationId !== undefined && existing.operationId !== operationId)
+    throw new AstraleError(
+      'INSTANCE_OPERATION_CONFLICT',
+      'This slug belongs to another creation operation.',
+      existing.operationId === undefined
+        ? 'Inspect the Instance in Admin.'
+        : `To recover that request, use --operation ${existing.operationId}.`,
+    )
+  // Admin owns whether a failed journey can resume from retained effects. A failed
+  // Instance is not proof that its provisioning Operation is terminal.
+  if (
+    existing?.state === 'ready' ||
+    existing?.state === 'provisioning' ||
+    existing?.state === 'failed'
+  ) {
     if (existing.operationId === undefined) {
       throw new AstraleError(
         'INSTANCE_RECOVERY_UNAVAILABLE',
-        `Instance ${JSON.stringify(slug)} is provisioning but its Admin receipt has no operation id.`,
-        'Upgrade the Admin Domain, then retry the same command.',
+        `Instance ${JSON.stringify(slug)} has no retained creation operation id.`,
+        'Inspect its Admin creation receipt before retrying; no new instance was requested.',
       )
     }
-    return Object.freeze({ kind: 'create', operationId: existing.operationId })
+    return Object.freeze({ operationId: existing.operationId })
   }
   if (existing !== undefined) {
     throw new AstraleError(
@@ -83,7 +108,7 @@ export function planInstanceCreate(
       'Run `astrale instance list` to inspect it.',
     )
   }
-  return Object.freeze({ kind: 'create', ...(operationId === undefined ? {} : { operationId }) })
+  return Object.freeze(operationId === undefined ? {} : { operationId })
 }
 
 /** Refresh one exact caller-visible Instance through its V2 receiver Method. */
@@ -138,4 +163,24 @@ export function reconcileOwnedInvitation(options: AdminConnectionOptions, invita
   return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).reconcileInvitation(invitation),
   )
+}
+
+/** Resolve a known Instance in its own Admin session, whichever Fleet holds it. */
+export function resolveOwnedInstance(options: AdminConnectionOptions, identifier: string) {
+  return withAdminClientSession(options, (context) =>
+    resolveOwnedInstanceInContext(context, identifier),
+  )
+}
+
+/** Resolve a known Instance independently of default placement. */
+export async function resolveOwnedInstanceInContext(
+  context: ConnectionContext,
+  identifier: string,
+) {
+  try {
+    return await (await connectAdminInstances(context)).require(identifier)
+  } catch (cause) {
+    if (cause instanceof AdminInstanceNotFoundError) return undefined
+    throw cause
+  }
 }

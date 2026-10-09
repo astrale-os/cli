@@ -21,15 +21,28 @@ export interface ConnectionOptions {
 }
 
 export interface AdminConnectionOptions extends ConnectionOptions {
+  readonly fleet?: string
   readonly admin?: string
   readonly adminUrl?: string
   readonly domainIssuer?: string
 }
 
+/** The Admin kernel a command runs on: a bookmark, a URL with its Admin Domain issuer, or neither (the configured Admin target). */
+export type AdminTargetSelection = Pick<
+  AdminConnectionOptions,
+  'admin' | 'adminUrl' | 'domainIssuer'
+>
+
 export interface ConnectionTarget {
   readonly url: string
   readonly kernelIssuer: IssuerId
+  /** Exact Domain issuer the selected identity is exchanged at. */
   readonly domainIssuer?: IssuerId
+  /**
+   * Origin of the installed Domain the selected identity is exchanged through; the source Kernel's
+   * pin names its issuer. Never set together with `domainIssuer`.
+   */
+  readonly domainOrigin?: string
   readonly slug?: string
   readonly defaultIdentity?: string
   readonly caFile?: string
@@ -42,7 +55,7 @@ export interface TargetDependencies {
 
 /** Stable local identity-registration key for the exact selected source Kernel. */
 export function registrationKeyForTarget(target: ConnectionTarget): string {
-  return target.slug ?? target.url
+  return target.kernelIssuer
 }
 
 /** Resolve the existing URL / instance / active precedence into one exact source Kernel. */
@@ -93,6 +106,25 @@ export function adminLookupOptions(options: AdminConnectionOptions): AdminTarget
   }
 }
 
+/**
+ * The options of an Admin session that a command opens beside its own target, such as reading the
+ * Admin registry for the instance that -i/--url select. The session keeps the Admin selection
+ * (--admin, --admin-url, --domain-issuer), the caller's identity (--as, else the default) and the
+ * session settings (--timeout, --ci). It drops the command's own target (-i/--url) and how that
+ * target is authenticated (--creds, --anonymous), so the target's raw credential never reaches
+ * Admin and the caller is never read as Public there.
+ */
+export function adminSessionOptions(options: AdminConnectionOptions): AdminConnectionOptions {
+  return Object.freeze({
+    ...(options.admin === undefined ? {} : { admin: options.admin }),
+    ...(options.adminUrl === undefined ? {} : { adminUrl: options.adminUrl }),
+    ...(options.domainIssuer === undefined ? {} : { domainIssuer: options.domainIssuer }),
+    ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+    ...(options.as === undefined ? {} : { as: options.as }),
+    ...(options.ci === undefined ? {} : { ci: options.ci }),
+  })
+}
+
 function connectionTarget(
   resolved: ResolvedInstanceTarget,
   urlOverride?: string,
@@ -103,6 +135,7 @@ function connectionTarget(
     ...(resolved.domainIssuer === undefined
       ? {}
       : { domainIssuer: issuer.accept(resolved.domainIssuer) }),
+    ...(resolved.domainOrigin === undefined ? {} : { domainOrigin: resolved.domainOrigin }),
     ...(resolved.name === undefined ? {} : { slug: resolved.name }),
     ...(resolved.defaultIdentity === undefined
       ? {}

@@ -1,9 +1,9 @@
 import type { IssuerId } from '@astrale-os/sdk/auth'
-import type { Fetch } from '@astrale-os/sdk/client'
+import type { ExchangeFailure, Fetch } from '@astrale-os/sdk/client'
 
-import { createAuth } from '@astrale-os/sdk/auth'
-import { credential, exchange as exchangeProtocol, grant } from '@astrale-os/sdk/auth'
-import { call, Client } from '@astrale-os/sdk/client'
+import { credential, grant } from '@astrale-os/sdk/auth'
+import { ExchangeError, ResponseError } from '@astrale-os/sdk/client'
+import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { SourceCredentialResolver } from './credential'
 import type { ConnectionTarget } from './target'
@@ -12,19 +12,86 @@ import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
 import { exchangeCallerProof } from '../lib/exchange-grant'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
+import { createInstalledIssuer } from './installed-issuer'
 import { cachedCredentialTtlSeconds, exchangeCredentialTtlSeconds } from './lifetime'
 
-const MAXIMUM_RESPONSE_BYTES = 256 * 1024
+/** CLI error code of each Client exchange failure; a Domain refusal keeps the Domain's own code. */
+const EXCHANGE_FAILURE_CODES: Readonly<Record<Exclude<ExchangeFailure, 'rejected'>, string>> =
+  Object.freeze({
+    discovery: 'TOKEN_EXCHANGE_DISCOVERY_FAILED',
+    unsupported: 'TOKEN_EXCHANGE_UNSUPPORTED',
+    unavailable: 'TOKEN_EXCHANGE_UNAVAILABLE',
+    'invalid-response': 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+    'source-exhausted': 'TOKEN_EXCHANGE_SOURCE_EXPIRED',
+  })
 
-/** Exchange exact authenticated User authority for a Domain bearer bound to this Kernel. */
+/**
+ * CLI codes of the exchange failures an issuer that moved since it was read causes: it no longer
+ * serves an exchange (issuer unknown), or the Domain refuses the delegation (2002 AUTH_INVALID).
+ */
+const MOVED_ISSUER_CODES: ReadonlySet<string> = new Set([
+  EXCHANGE_FAILURE_CODES.discovery,
+  EXCHANGE_FAILURE_CODES.unsupported,
+  EXCHANGE_FAILURE_CODES.unavailable,
+  '2002',
+])
+
+/**
+ * A target that names where its selected identity is exchanged: an exact Domain issuer, or the
+ * origin of the installed Domain whose issuer the source Kernel's pin names.
+ */
+export type ExchangeTarget = ConnectionTarget &
+  (
+    | { readonly domainIssuer: IssuerId }
+    | { readonly domainIssuer?: undefined; readonly domainOrigin: string }
+  )
+
+/** Where one target exchanges its selected identity. */
+export interface ExchangeIssuer {
+  /**
+   * The issuer a persisted credential may be selected with before any network I/O: an exact
+   * issuer, or the issuer an installed Domain's pin named when it was last read.
+   */
+  known(): Promise<IssuerId | undefined>
+  /** The issuer to exchange at; null when the Domain runs on the Kernel and the caller stays itself. */
+  current(session: () => ClientSession, signal: AbortSignal): Promise<IssuerId | null>
+  /**
+   * After an exchange at `failed` failed as a moved issuer would: the issuer to retry at, or
+   * undefined when the failure stands (the pin still names `failed`, or it cannot be read again).
+   */
+  moved(
+    failed: IssuerId,
+    session: () => ClientSession,
+    signal: AbortSignal,
+  ): Promise<IssuerId | null | undefined>
+}
+
+/**
+ * Exchange exact authenticated User authority for a Domain bearer bound to this Kernel.
+ *
+ * The Client owns the exchange itself (`session.exchange`). The CLI keeps what outlives one
+ * process: the persisted cache, the command-timeout lifetime rules, and its error codes. A target
+ * naming an installed Domain by origin exchanges at the issuer its pin names, as `installed` holds
+ * it (without one, the pin is read once for this resolver). A callable's resolved issuer remains
+ * installation-owned; only a target without an installed origin treats its issuer as exact.
+ */
 export function createExchangeCredentialResolver(
-  target: ConnectionTarget & { readonly domainIssuer: IssuerId },
+  target: ExchangeTarget,
   source: SourceCredentialResolver,
   fetch: Fetch,
   timeoutMs: number,
   cache = new ExchangeCredentialCache(),
+  installed?: ExchangeIssuer,
 ): SourceCredentialResolver {
-  requireExchangeTransport(target)
+  const domain =
+    installed ??
+    (target.domainIssuer === undefined
+      ? createInstalledIssuer(target.kernelIssuer, target.domainOrigin)
+      : exactIssuer(target.domainIssuer))
+  const installationOwned = installed !== undefined || target.domainIssuer === undefined
+  if (target.domainIssuer !== undefined) {
+    requireExchangeTransport(target.kernelIssuer, target.domainIssuer)
+  }
   const cacheTtlSeconds = cachedCredentialTtlSeconds(timeoutMs)
   const exchangeTtlSeconds = exchangeCredentialTtlSeconds(timeoutMs)
   return Object.freeze({
@@ -32,106 +99,242 @@ export function createExchangeCredentialResolver(
       requireLive(signal)
       const hintedIdentity = await readCacheIdentity(source)
       requireLive(signal)
-      if (hintedIdentity !== undefined) {
-        const cached = await cache.get(
-          Object.freeze({
-            kernelIssuer,
-            domainIssuer: target.domainIssuer,
-            sourceIssuer: hintedIdentity.issuer,
-            sourceSubject: hintedIdentity.subject,
-          }),
-          cacheTtlSeconds,
-        )
+      const known = await domain.known()
+      requireLive(signal)
+      // A remembered issuer can still exchange after its drain has ended. Validate its bearer on
+      // a read-only Kernel call before handing it to any business call; replaying a command or a
+      // failed business invocation would risk repeating side effects.
+      const checked = async (token: string) => {
+        if (installationOwned && known !== undefined) {
+          await confirmCredential(kernelIssuer, token, fetch, timeoutMs, signal)
+        }
         requireLive(signal)
+        return token
+      }
+      let refused: ResponseError | undefined
+      const persisted = async (identity: SourceIdentity) => {
+        if (known === undefined || refused !== undefined) return undefined
+        const cached = await cache.get(exchangeKey(kernelIssuer, known, identity), cacheTtlSeconds)
+        requireLive(signal)
+        if (cached === undefined) return undefined
+        try {
+          return await checked(cached)
+        } catch (cause) {
+          if (!(cause instanceof ResponseError) || cause.code !== 2002) throw cause
+          refused = cause
+          return undefined
+        }
+      }
+      if (hintedIdentity !== undefined) {
+        const cached = await persisted(hintedIdentity)
         if (cached !== undefined) return cached
       }
 
       const sourceToken = await source.resolve(kernelIssuer, signal)
       const sourceIdentity = sourceCacheIdentity(sourceToken)
       requireLive(signal)
+      if (!sameIdentity(hintedIdentity, sourceIdentity)) {
+        const cached = await persisted(sourceIdentity)
+        if (cached !== undefined) return cached
+      }
 
-      return await cache.getOrRefresh(
-        Object.freeze({
-          kernelIssuer,
-          domainIssuer: target.domainIssuer,
-          sourceIssuer: sourceIdentity.issuer,
-          sourceSubject: sourceIdentity.subject,
-        }),
-        cacheTtlSeconds,
-        async () => {
-          const delegationTtlSeconds = delegationLifetime(sourceToken, exchangeTtlSeconds)
-          const exchangeEndpoint = discoverExchangeEndpoint(target.domainIssuer, fetch, signal)
-          const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
-          try {
-            const delegated = delegate(
-              client,
-              sourceToken,
-              target.domainIssuer,
-              delegationTtlSeconds,
-              signal,
-            )
-            const [{ envelope, user }, endpoint] = await Promise.all([delegated, exchangeEndpoint])
+      const exchange = sourceSession(
+        kernelIssuer,
+        sourceToken,
+        fetch,
+        timeoutMs,
+        exchangeTtlSeconds,
+      )
+      const exchangeAt = (domainIssuer: IssuerId) => {
+        requireExchangeTransport(kernelIssuer, domainIssuer)
+        return cache.getOrRefresh(
+          exchangeKey(kernelIssuer, domainIssuer, sourceIdentity),
+          cacheTtlSeconds,
+          async () => {
+            const { session, ttlSeconds } = exchange.open()
+            const exchanged = await exchangeThrough(session, domainIssuer, ttlSeconds, signal)
+            const expiresAt = Math.floor(exchanged.expiresAt / 1_000)
+            const caller = carriedCaller(exchanged.credential, expiresAt)
+            if (caller.remainingSeconds < cacheTtlSeconds) {
+              throw new AstraleError(
+                'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
+                'The Domain exchange credential cannot cover the requested command timeout.',
+                `The Domain issuer returned ${Math.max(0, caller.remainingSeconds)} seconds but ${cacheTtlSeconds} are required. Use a shorter --timeout or update the Domain execution service.`,
+              )
+            }
             return {
-              ...(await exchange(
-                endpoint,
-                target.domainIssuer,
-                kernelIssuer,
-                envelope,
-                cacheTtlSeconds,
-                fetch,
-                signal,
-              )),
-              user,
+              credential: exchanged.credential,
+              expiresAt,
+              user: caller.user,
               sourceIssuer: sourceIdentity.issuer,
               sourceSubject: sourceIdentity.subject,
             }
-          } finally {
-            client.close()
-          }
-        },
-      )
+          },
+        )
+      }
+      const session = () => exchange.open().session
+      try {
+        const current = await domain.current(session, signal)
+        requireLive(signal)
+        // A Domain the Kernel hosts has no issuer to exchange at: the caller stays itself.
+        if (current === null) return sourceToken
+        try {
+          if (refused !== undefined) throw refused
+          return await checked(await exchangeAt(current))
+        } catch (failure) {
+          if (!issuerMayHaveMoved(failure)) throw failure
+          // Another concurrent resolution may already have updated `current`. The refused cached
+          // bearer was still issued by `known`; compare the pin against that issuer.
+          const failedIssuer = refused === undefined ? current : known!
+          const moved = await domain.moved(failedIssuer, session, signal)
+          requireLive(signal)
+          if (moved === undefined) throw failure
+          return moved === null ? sourceToken : await checked(await exchangeAt(moved))
+        }
+      } finally {
+        exchange.close()
+      }
     },
   })
 }
 
-async function delegate(
-  client: Client,
+/** An exact issuer is never re-read: its failures stand. */
+function exactIssuer(domainIssuer: IssuerId): ExchangeIssuer {
+  return Object.freeze({
+    known: async () => domainIssuer,
+    current: async () => domainIssuer,
+    moved: async () => undefined,
+  })
+}
+
+function issuerMayHaveMoved(failure: unknown): boolean {
+  return (
+    (failure instanceof AstraleError && MOVED_ISSUER_CODES.has(failure.code)) ||
+    (failure instanceof ResponseError && failure.code === 2002)
+  )
+}
+
+/** Confirm a remembered issuer's authority without invoking any application callable. */
+async function confirmCredential(
+  kernelIssuer: IssuerId,
+  token: string,
+  fetch: Fetch,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<void> {
+  const session = new ClientSession({
+    kernel: kernelIssuer,
+    fetch,
+    timeoutMs,
+    policy: {
+      maximumRouteAgeMs: 60_000,
+      ...(new URL(kernelIssuer).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
+    },
+    auth: { ttlSeconds: 1, resolve: () => ({ credential: token }) },
+  })
+  try {
+    await session.auth.whoami({ signal })
+  } finally {
+    session.close()
+  }
+}
+
+type SourceIdentity = Readonly<{ issuer: string; subject: string }>
+
+function exchangeKey(kernelIssuer: IssuerId, domainIssuer: IssuerId, identity: SourceIdentity) {
+  return Object.freeze({
+    kernelIssuer,
+    domainIssuer,
+    sourceIssuer: identity.issuer,
+    sourceSubject: identity.subject,
+  })
+}
+
+function sameIdentity(left: SourceIdentity | undefined, right: SourceIdentity): boolean {
+  return left?.issuer === right.issuer && left.subject === right.subject
+}
+
+/**
+ * One Client Session per resolution, authenticated as the source caller: it reads the installed
+ * issuer and runs the exchange, and opens only when either needs it.
+ */
+function sourceSession(
+  kernelIssuer: IssuerId,
   sourceToken: string,
+  fetch: Fetch,
+  timeoutMs: number,
+  exchangeTtlSeconds: number,
+) {
+  let opened: Readonly<{ session: ClientSession; ttlSeconds: number }> | undefined
+  return Object.freeze({
+    open() {
+      if (opened !== undefined) return opened
+      const ttlSeconds = delegationLifetime(sourceToken, exchangeTtlSeconds)
+      opened = Object.freeze({
+        ttlSeconds,
+        session: new ClientSession({
+          kernel: kernelIssuer,
+          fetch,
+          timeoutMs,
+          policy: {
+            maximumRouteAgeMs: 60_000,
+            ...(new URL(kernelIssuer).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
+          },
+          auth: { ttlSeconds, resolve: () => ({ credential: sourceToken }) },
+        }),
+      })
+      return opened
+    },
+    close() {
+      opened?.session.close()
+    },
+  })
+}
+
+/** One Client exchange; a delegation whose Kernel outcome is unknown is safe to request again. */
+async function exchangeThrough(
+  session: ClientSession,
   domainIssuer: IssuerId,
   ttlSeconds: number,
   signal: AbortSignal,
-): Promise<{ readonly envelope: string; readonly user: string }> {
-  const authenticated = client.as(sourceToken)
-  const auth = createAuth(async (path, input, options) => {
-    const result = await authenticated.call(call(path, input), {
-      ...options,
-      delegate: { ttlSeconds },
-    })
-    return result.value
-  })
-  const user = await auth.whoami({ signal })
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+): Promise<{ readonly credential: string; readonly expiresAt: number }> {
+  for (let attempt = 0; ; attempt += 1) {
     try {
-      const envelope = await auth.delegate(
-        user.id,
-        {
-          audience: domainIssuer,
-          ttlSeconds,
-          attenuation: { kind: 'identity', self: true },
-        },
-        { signal },
-      )
-      return Object.freeze({ envelope, user: user.id })
+      return await session.exchange(domainIssuer, { ttlSeconds, signal })
     } catch (cause) {
-      if (attempt === 2 || !unknownFunctionOutcome(cause)) throw cause
+      if (attempt < 2 && unknownFunctionOutcome(cause)) continue
+      throw exchangeFailure(cause, domainIssuer)
     }
   }
-  throw new Error('Token delegation returned no credential.')
+}
+
+/** Map a Client exchange failure to its CLI code; other failures keep their own identity. */
+function exchangeFailure(cause: unknown, domainIssuer: IssuerId): unknown {
+  if (!(cause instanceof ExchangeError)) return cause
+  if (cause.failure === 'rejected') {
+    const refused = (cause.cause as { readonly payload?: { readonly code?: unknown } } | undefined)
+      ?.payload
+    const message = cause.cause instanceof Error ? cause.cause.message : cause.message
+    return refused?.code === undefined
+      ? new AstraleError('TOKEN_EXCHANGE_PROTOCOL_ERROR', cause.message, undefined, { cause })
+      : new AstraleError(String(refused.code), message, undefined, { cause })
+  }
+  if (cause.failure === 'unsupported') {
+    return new AstraleError(
+      EXCHANGE_FAILURE_CODES.unsupported,
+      `Domain issuer ${domainIssuer} does not advertise token exchange.`,
+      'This command has no legacy token fallback.',
+      { cause },
+    )
+  }
+  return new AstraleError(EXCHANGE_FAILURE_CODES[cause.failure], cause.message, undefined, {
+    cause,
+  })
 }
 
 async function readCacheIdentity(
   source: SourceCredentialResolver,
-): Promise<Readonly<{ issuer: string; subject: string }> | undefined> {
+): Promise<SourceIdentity | undefined> {
   try {
     return await source.cacheIdentity?.()
   } catch {
@@ -139,7 +342,7 @@ async function readCacheIdentity(
   }
 }
 
-function sourceCacheIdentity(sourceToken: string): { issuer: string; subject: string } {
+function sourceCacheIdentity(sourceToken: string): SourceIdentity {
   const inspected = credential.inspect(sourceToken)
   if (
     typeof inspected.iss !== 'string' ||
@@ -188,142 +391,34 @@ function delegationLifetime(sourceToken: string, requiredTtlSeconds: number): nu
   return requiredTtlSeconds
 }
 
-async function discoverExchangeEndpoint(
-  domainIssuer: IssuerId,
-  fetch: Fetch,
-  signal: AbortSignal,
-): Promise<string> {
-  const configurationUrl = new URL(
-    exchangeProtocol.paths(domainIssuer).configuration,
-    domainIssuer,
-  ).toString()
-  const configurationResponse = await fetchExchange(
-    fetch,
-    configurationUrl,
-    {
-      method: 'GET',
-      redirect: 'error',
-      credentials: 'omit',
-      cache: 'no-store',
-      referrerPolicy: 'no-referrer',
-      headers: { accept: 'application/json' },
-      signal,
-    },
-    'Domain issuer discovery could not be reached.',
-  )
-  if (!configurationResponse.ok) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_DISCOVERY_FAILED',
-      `Domain issuer discovery failed with HTTP ${configurationResponse.status}.`,
-    )
-  }
-  const configuration = exchangeProtocol.acceptConfiguration(
-    await boundedJson(configurationResponse, signal),
-    domainIssuer,
-  )
-  const endpoint = configuration.token_exchange_endpoint
-  if (endpoint === undefined) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_UNSUPPORTED',
-      `Domain issuer ${domainIssuer} does not advertise token exchange.`,
-      'This command has no legacy token fallback.',
-    )
-  }
-  return endpoint
-}
-
-async function exchange(
-  endpoint: string,
-  domainIssuer: IssuerId,
-  kernelIssuer: IssuerId,
-  envelope: string,
-  requiredTtlSeconds: number,
-  fetch: Fetch,
-  signal: AbortSignal,
-): Promise<{ readonly credential: string; readonly expiresAt: number }> {
-  const response = await fetchExchange(
-    fetch,
-    endpoint,
-    {
-      method: 'POST',
-      redirect: 'error',
-      credentials: 'omit',
-      cache: 'no-store',
-      referrerPolicy: 'no-referrer',
-      headers: {
-        authorization: `Bearer ${envelope}`,
-        accept: exchangeProtocol.MEDIA_TYPE,
-      },
-      signal,
-    },
-    'Domain token exchange could not be reached.',
-  )
-  const body = await boundedJson(response, signal)
-  if (!response.ok) {
-    let admitted: exchangeProtocol.ErrorResponse
-    try {
-      admitted = exchangeProtocol.acceptErrorResponse(body)
-    } catch (cause) {
-      if (!(cause instanceof TypeError)) throw cause
-      throw new AstraleError(
-        'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-        `Token exchange failed with HTTP ${response.status} and an invalid error response.`,
-        cause instanceof Error ? cause.message : undefined,
-      )
-    }
-    throw new AstraleError(String(admitted.error.code), admitted.error.message)
-  }
-  requireExchangeResponseHeaders(response)
-  let exchanged: exchangeProtocol.Response
-  let inspected: ReturnType<typeof credential.inspect>
-  try {
-    exchanged = exchangeProtocol.acceptResponse(body)
-    inspected = credential.inspect(exchanged.token)
-  } catch (cause) {
-    if (!(cause instanceof TypeError)) throw cause
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      'Token exchange returned an invalid success response.',
-      cause.message,
-    )
-  }
-  if (
-    inspected.iss !== domainIssuer ||
-    inspected.aud !== kernelIssuer ||
-    inspected.claims.exp !== exchanged.expiresAt
-  ) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      'Token exchange returned a credential inconsistent with the requested Domain and Kernel.',
-    )
-  }
-  const remaining = effectiveExchangeLifetime(inspected, exchanged.expiresAt)
-  if (remaining < requiredTtlSeconds) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
-      'The Domain exchange credential cannot cover the requested command timeout.',
-      `The Domain issuer returned ${Math.max(0, remaining)} seconds but ${requiredTtlSeconds} are required. Use a shorter --timeout or update the Domain execution service.`,
-    )
-  }
-  return Object.freeze({ credential: exchanged.token, expiresAt: exchanged.expiresAt })
-}
-
-/** The outer Domain bearer and its carried Kernel proof must both survive the operation. */
-function effectiveExchangeLifetime(
-  inspected: ReturnType<typeof credential.inspect>,
+/**
+ * The caller-only Kernel proof the Domain bearer carries, its subject, and how long both the
+ * outer bearer and that proof still live.
+ */
+function carriedCaller(
+  token: string,
   outerExpiresAt: number,
-): number {
-  let proofExpiresAt: number
+): { readonly user: string; readonly remainingSeconds: number } {
   try {
+    const inspected = credential.inspect(token)
     const carried = exchangeCallerProof(grant.acceptUnresolved(inspected.claims.grant).expr)
     if (carried === undefined) {
       throw new TypeError('Domain credential does not carry an identity proof.')
     }
-    const value = credential.inspect(carried).claims.exp
-    if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    const proof = credential.inspect(carried)
+    const proofExpiresAt = proof.claims.exp
+    if (typeof proofExpiresAt !== 'number' || !Number.isSafeInteger(proofExpiresAt)) {
       throw new TypeError('Domain credential carries an identity proof without an expiration.')
     }
-    proofExpiresAt = value
+    if (typeof proof.sub !== 'string' || proof.sub.length === 0) {
+      throw new TypeError('Domain credential carries an identity proof without a subject.')
+    }
+    return Object.freeze({
+      user: proof.sub,
+      remainingSeconds: remainingCredentialLifetimeSeconds(
+        Math.min(outerExpiresAt, proofExpiresAt),
+      ),
+    })
   } catch (cause) {
     if (!(cause instanceof TypeError)) throw cause
     throw new AstraleError(
@@ -332,107 +427,17 @@ function effectiveExchangeLifetime(
       cause.message,
     )
   }
-  return remainingCredentialLifetimeSeconds(Math.min(outerExpiresAt, proofExpiresAt))
 }
 
-async function fetchExchange(
-  fetch: Fetch,
-  input: string,
-  init: RequestInit,
-  message: string,
-): Promise<Response> {
-  try {
-    return await fetch(input, init)
-  } catch (cause) {
-    if (init.signal?.aborted) throw cause
-    throw new AstraleError('TOKEN_EXCHANGE_UNAVAILABLE', message, undefined, { cause })
-  }
-}
-
-function requireExchangeTransport(
-  target: ConnectionTarget & { readonly domainIssuer: IssuerId },
-): void {
-  const kernel = new URL(target.kernelIssuer)
-  const domain = new URL(target.domainIssuer)
+function requireExchangeTransport(kernelIssuer: IssuerId, domainIssuer: IssuerId): void {
+  const kernel = new URL(kernelIssuer)
+  const domain = new URL(domainIssuer)
   if (domain.protocol === 'https:') return
   if (domain.protocol === 'http:' && kernel.protocol === 'http:') return
   throw new AstraleError(
     'TOKEN_EXCHANGE_INSECURE',
     'An HTTP Domain issuer is allowed only with an explicitly configured HTTP Kernel target.',
   )
-}
-
-function requireExchangeResponseHeaders(response: Response): void {
-  const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
-  if (contentType !== exchangeProtocol.MEDIA_TYPE) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      'Token exchange returned an unsupported Content-Type.',
-    )
-  }
-  if (
-    !response.headers
-      .get('cache-control')
-      ?.toLowerCase()
-      .split(',')
-      .some((v) => v.trim() === 'no-store')
-  ) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      'Token exchange response is missing Cache-Control: no-store.',
-    )
-  }
-}
-
-async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
-  const declared = response.headers.get('content-length')
-  if (
-    declared !== null &&
-    (!/^\d+$/u.test(declared) || Number(declared) > MAXIMUM_RESPONSE_BYTES)
-  ) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      'Issuer response exceeds the size limit.',
-    )
-  }
-  if (response.body === null) {
-    throw new AstraleError('TOKEN_EXCHANGE_PROTOCOL_ERROR', 'Issuer response body is missing.')
-  }
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  try {
-    for (;;) {
-      requireLive(signal)
-      const next = await reader.read()
-      if (next.done) break
-      size += next.value.byteLength
-      if (size > MAXIMUM_RESPONSE_BYTES) {
-        throw new AstraleError(
-          'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-          'Issuer response exceeds the size limit.',
-        )
-      }
-      chunks.push(next.value)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-  const bytes = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  try {
-    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown
-  } catch (cause) {
-    throw new AstraleError(
-      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      'Issuer response is not valid UTF-8 JSON.',
-      cause instanceof Error ? cause.message : undefined,
-    )
-  }
 }
 
 function requireLive(signal: AbortSignal): void {

@@ -61,13 +61,17 @@ describe('DESIGN — per-identity keys', () => {
   test('signAs(alice) works when alice has her own key', async () => {
     await persistKeypair('alice', { keysDir: tmp })
     const before = Math.floor(Date.now() / 1000)
-    const jwt = await signAs('alice', tmp)
+    const jwt = await signAs('alice', tmp, { issuer: 'https://identity.example' })
     expect(jwt.split('.').length).toBe(3)
     const claims = decodeJwt(jwt)
     expect(claims.iat).toBeUndefined()
     expect(claims.exp).toBeNumber()
     expect(claims.exp).toBeGreaterThanOrEqual(before + 3_600)
     expect(claims.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1_000) + 3_600)
+  })
+
+  test('signing requires an explicit issuer instead of assuming a local manager', async () => {
+    await expect(signAs('alice', tmp, { issuer: '' })).rejects.toThrow('requires its issuer')
   })
 
   /** @evidence TEST-CLI-KEYS-DISTINGUISHES-KERNEL-ROOT-GRANT */
@@ -109,7 +113,7 @@ describe('DESIGN — per-identity keys', () => {
     await writeFile(privatePath, JSON.stringify(privateJwk, null, 2))
     await writeFile(publicPath, JSON.stringify(publicJwk, null, 2))
 
-    const jwt = await signAs('alice', tmp)
+    const jwt = await signAs('alice', tmp, { issuer: 'https://identity.example' })
 
     expect(decodeProtectedHeader(jwt).alg).toBe('EdDSA')
   })
@@ -149,11 +153,15 @@ describe('DESIGN — per-identity keys', () => {
   /** @evidence TEST-CLI-KEYS-NO-MANAGER-FALLBACK */
   test('signAs(alice) never falls back to the manager key', async () => {
     await persistKeypair('manager', { keysDir: tmp })
-    await expect(signAs('alice', tmp)).rejects.toThrow(IdentityKeyMissingError)
+    await expect(signAs('alice', tmp, { issuer: 'https://identity.example' })).rejects.toThrow(
+      IdentityKeyMissingError,
+    )
   })
 
   test('signAs errors when no keys at all', async () => {
-    await expect(signAs('manager', tmp)).rejects.toThrow(IdentityKeyMissingError)
+    await expect(signAs('manager', tmp, { issuer: 'https://identity.example' })).rejects.toThrow(
+      IdentityKeyMissingError,
+    )
   })
 
   test('removeKeypair is idempotent', async () => {

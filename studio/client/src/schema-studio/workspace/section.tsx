@@ -2,11 +2,12 @@ import type { VisibilityState } from '@shared/types'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
-import { AlertTriangle } from 'lucide-react'
 import { useCallback, useEffect, useMemo } from 'react'
 
+import { ErrorBanner } from '@/components/error-banner'
 import { ScrollArea } from '@/components/ui/misc'
 import { api, qk } from '@/lib/api'
+import { buildFunctionsModel } from '@/lib/functions'
 import { useWorkspace } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
 import { useUI } from '@/lib/store'
@@ -16,11 +17,14 @@ import { buildViewsModel } from '@/lib/views'
 import { SchemaDetail } from '../detail'
 import { DomainsPanel } from '../domains-panel'
 import { DomainsRailHeader } from '../domains-rail'
+import { FunctionsPanel } from '../functions-panel'
 import { IntegrationsPanel } from '../integrations-panel'
 import { PanelShell } from '../panel-shell'
+import { SchemaPolicyDetail } from '../policy-detail'
 import { ModulesSidebar } from '../sidebar'
 import { ViewsPanel } from '../views-panel'
 import { toggleVisibilityRef } from '../visibility'
+import { WorkspaceFunctionsPanel } from './functions-panel'
 import { WorkspaceSchemaGraph } from './graph'
 import { useSchemaWorkspace } from './store'
 import { WorkspaceDomainTree } from './tree'
@@ -133,14 +137,9 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
     : undefined
   return (
     <div className="flex h-full flex-col" data-testid="workspace-schema-section">
-      {(errors.length > 0 || inputs.some((input) => input.bundle.error)) && (
-        <div className="flex items-start gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            {[...errors, ...inputs.flatMap((input) => input.bundle.error?.message ?? [])].join(' ')}
-          </span>
-        </div>
-      )}
+      <ErrorBanner
+        messages={[...errors, ...inputs.flatMap((input) => input.bundle.error?.message ?? [])]}
+      />
       <div className="flex min-h-0 flex-1">
         <ModulesSidebar onClearSelection={clearSelection} header={<DomainsRailHeader />}>
           <ScrollArea className="h-full">
@@ -173,6 +172,18 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
               <WorkspaceViewsPanel inputs={inputs} />
             )}
           </PanelShell>
+        ) : panelOverlay?.kind === 'functions' ? (
+          <PanelShell onClose={() => setPanelOverlay(null)}>
+            {overlayInput ? (
+              <FunctionsPanel
+                domainId={overlayInput.summary.id}
+                model={buildFunctionsModel(overlayInput.bundle)}
+                bundle={overlayInput.bundle}
+              />
+            ) : (
+              <WorkspaceFunctionsPanel inputs={inputs} />
+            )}
+          </PanelShell>
         ) : panelOverlay?.kind === 'domains' && overlayInput ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>
             <DomainsPanel
@@ -184,6 +195,13 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
         ) : panelOverlay?.kind === 'integrations' && overlayInput ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>
             <IntegrationsPanel domainId={overlayInput.summary.id} />
+          </PanelShell>
+        ) : detail?.startsWith('policy.') && selectionDomainId ? (
+          <PanelShell onClose={() => select(undefined)}>
+            <SchemaPolicyDetail
+              domainId={selectionDomainId}
+              policyKey={detail.slice('policy.'.length)}
+            />
           </PanelShell>
         ) : detail && selectionInput ? (
           <PanelShell onClose={() => select(undefined)}>

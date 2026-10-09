@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AgentRun } from '../../../shared/types'
+import type { AgentRun, StudioEvent } from '../../../shared/types'
 
 import { registerDomain, unregisterDomain, type DomainHandle } from '../../domain'
 import { readComments, upsertComment } from '../../state/comments'
@@ -26,12 +26,15 @@ import { setHarnessGateway } from '../harness/gateway/config'
 import { getHarness } from '../harness/selection'
 import { agentWorkspace } from '../workspace'
 import {
+  addAttachment,
+  attachmentOf,
   cancelRun,
   closeChat,
   dropQueued,
   editQueued,
   forgetChatOrigin,
   getSnapshot,
+  getToolCall,
   listChats,
   moveQueued,
   openChat,
@@ -41,7 +44,7 @@ import {
   switchChatHarness,
   updateChat,
 } from './coordinator'
-import { isRunActive } from './live-state'
+import { currentRun, isRunActive, setCurrentRun } from './live-state'
 import { persistRun, readRunHistory } from './transcript'
 
 const roots: string[] = []
@@ -74,13 +77,20 @@ function fixture(): DomainHandle {
   const root = mkdtempSync(join(tmpdir(), `studio-runner-${randomUUID()}-`))
   roots.push(root)
   mkdirSync(join(root, 'schema'))
-  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import domain from './domain.js'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
+`,
+  )
   writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
   writeFileSync(
-    join(root, 'application.ts'),
-    `import { defineApplication } from '@astrale-os/sdk/application'
+    join(root, 'domain.ts'),
+    `import { defineDomain } from '@astrale-os/sdk/domain'
 import { Test } from './schema/index.js'
-export default defineApplication({ schema: Test, runtime: {} as never })
+export default defineDomain({ schema: Test, runtime: {} as never })
 `,
   )
   const handle = registerDomain(root)!
@@ -154,7 +164,180 @@ function useMock(mode = 'normal', delay = '0'): void {
   process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = delay
 }
 
+/** The smallest valid PNG: one transparent pixel. */
+const PIXEL = Uint8Array.from(
+  atob(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  ),
+  (char) => char.charCodeAt(0),
+)
+
 describe.serial('agent runner invariants', () => {
+  test('an image goes with its message to the agent, stays in the history, and leaves with its chat', async () => {
+    useMock()
+    const handle = fixture()
+    const image = unwrap(addAttachment(undefined, { name: 'mockup.png', bytes: PIXEL }))
+    expect(image).toMatchObject({ name: 'mockup.png', mimeType: 'image/png', size: PIXEL.length })
+
+    // an image alone is a message: no text needed
+    const run = (await submitRun(() => {}, { attachments: [image.id] })).run!
+    expect(run.attachments).toEqual([image])
+    expect(run.summary).toBe('1 image')
+    expect(run.prompt?.turnPrompt).toContain('the user sent only the attached images')
+    expect(run.prompt?.turnPrompt).toContain(attachmentOf(undefined, image.id)!.path)
+
+    const settled = await waitForTerminal(handle.id)
+    expect(settled.status).toBe('succeeded')
+    // the harness was handed the bytes, not just told about them
+    expect(settled.events.map((event) => event.text)).toContain('looked at mockup.png')
+    const root = agentWorkspace().stateRoot
+    const stored = resolveChat(root, 'mock', chatId(handle))!
+    expect(readRunHistory(root, stored).at(-1)?.attachments).toEqual([image])
+
+    unwrap(closeChat(stored.id))
+    expect(attachmentOf(stored.id, image.id)).toBeUndefined()
+  })
+
+  test('a tool call is one step, its details are read on demand, and they leave with the chat', async () => {
+    useMock()
+    const handle = fixture()
+    const frames: StudioEvent[] = []
+    await submitRun((event) => frames.push(event), { message: 'read the threads' })
+    const run = await waitForTerminal(handle.id)
+    const chat = chatId(handle)
+
+    // announced, then settled: two reports of one call are one step, as it ended
+    const reads = run.events.filter((event) => event.kind === 'tool' && event.tool === 'Read')
+    expect(reads).toHaveLength(1)
+    const read = reads[0]!
+    expect(read).toMatchObject({ status: 'completed', revision: 2 })
+    // and every report reached the client under that step's id
+    expect(
+      frames.flatMap((frame) =>
+        frame.type === 'agent-event' && frame.event.id === read.id ? [frame.event.status] : [],
+      ),
+    ).toEqual(['in_progress', 'completed'])
+
+    // the details never ride the transcript: they are read when a step is opened
+    const root = agentWorkspace().stateRoot
+    const stored = resolveChat(root, 'mock', chat)!
+    expect(JSON.stringify(readRunHistory(root, stored))).not.toContain('file_path')
+    expect(getToolCall(chat, run.id, read.id)).toMatchObject({
+      title: 'Read .domain-studio/comments.json',
+      kind: 'read',
+      status: 'completed',
+      input: { file_path: '.domain-studio/comments.json' },
+    })
+    // only through the chat the run belongs to, and only by the ids a run has
+    const other = unwrap(openChat({}))
+    expect(getToolCall(other.id, run.id, read.id)).toBeUndefined()
+    expect(getToolCall(chat, '../runs/x', read.id)).toBeUndefined()
+    expect(getToolCall(chat, run.id, '__proto__')).toBeUndefined()
+
+    expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(true)
+    unwrap(closeChat(chat))
+    expect(stateExists(root, `tool-calls/${run.id}.json`)).toBe(false)
+  })
+
+  test('Continue sends a first turn again when it stopped before any session existed', async () => {
+    useMock('error')
+    const handle = fixture()
+    const failed = (await submitRun(() => {}, { message: 'build the billing domain' })).run!
+    expect((await waitForTerminal(handle.id)).status).toBe('failed')
+    expect(failed.sessionId).toBeUndefined()
+
+    // nothing for the agent to remember: the very same message goes again, with a
+    // note that part of the work may already be on disk
+    useMock()
+    const resumed = await submitRun(() => {}, { resume: true })
+    expect(resumed.error).toBeUndefined()
+    expect(resumed.run).toMatchObject({ instruction: 'build the billing domain', resumed: false })
+    expect(resumed.run?.prompt?.turnPrompt).toContain('build the billing domain')
+    expect(resumed.run?.prompt?.turnPrompt).toContain('A previous attempt at this message')
+    expect((await waitForTerminal(handle.id)).status).toBe('succeeded')
+
+    // a turn that finished leaves nothing to continue
+    expect((await submitRun(() => {}, { resume: true })).error).toContain('nothing to continue')
+  })
+
+  test('Continue resumes the same session once the agent had taken the turn up', async () => {
+    useMock()
+    const handle = fixture()
+    await submitRun(() => {}, { message: 'first' })
+    await waitForTerminal(handle.id)
+    await submitRun(() => {}, { message: 'second' })
+    const second = await waitForTerminal(handle.id)
+    // the studio went down mid-turn, after the agent had started working
+    setCurrentRun({ ...second, status: 'interrupted', error: 'the studio restarted' })
+
+    const resumed = (await submitRun(() => {}, { resume: true })).run!
+    expect(resumed).toMatchObject({ resumed: true, sessionId: 'mock-session' })
+    expect(resumed.instruction).toBeUndefined()
+    expect(resumed.summary).toBe('continue where it stopped')
+    expect(resumed.prompt?.turnPrompt).toContain('Resuming the SAME session')
+    expect(resumed.prompt?.turnPrompt).toContain('Domain Studio restarted')
+    expect(resumed.prompt?.turnPrompt).not.toContain('second')
+    await waitForTerminal(handle.id)
+    expect(currentRun(chatId(handle))?.status).toBe('succeeded')
+  })
+
+  test('the message streams in as it is written, then lands under the same id', async () => {
+    useMock()
+    const handle = fixture()
+    const frames: StudioEvent[] = []
+    await submitRun((event) => frames.push(event), { message: 'stream it' })
+    const run = await waitForTerminal(handle.id)
+
+    const message = run.events.findLast((event) => event.kind === 'message')!
+    const pieces = frames.flatMap((frame) => (frame.type === 'agent-draft' ? [frame] : []))
+    expect(pieces.length).toBeGreaterThan(0)
+    // one draft, assembled in order, that became the message itself
+    expect(new Set(pieces.map((piece) => piece.id))).toEqual(new Set([message.id]))
+    let text = ''
+    for (const piece of pieces) {
+      expect(piece.offset).toBe(text.length)
+      text += piece.text
+    }
+    expect(text).toBe(message.text)
+    // the draft is live only: it never outlives its turn
+    expect(run.draft).toBeUndefined()
+    // and the window's occupancy rode along, then stayed on the run
+    expect(frames.some((frame) => frame.type === 'agent-context')).toBe(true)
+    expect(run.context).toEqual({ used: 42_000, size: 200_000 })
+
+    // the next turn of the same conversation starts as full as this one left it
+    const next = await submitRun(() => {}, { message: 'and again' })
+    expect(next.run?.resumed).toBe(true)
+    expect(next.run?.context).toEqual({ used: 42_000, size: 200_000 })
+    await waitForTerminal(handle.id)
+  })
+
+  test('refuses an image the chat does not hold, and a file that is not an image', async () => {
+    useMock()
+    fixture()
+    expect(
+      (await submitRun(() => {}, { message: 'look', attachments: [randomUUID()] })).error,
+    ).toMatch(/unknown image/)
+    expect(
+      addAttachment(undefined, { name: 'notes.png', bytes: new TextEncoder().encode('hello') }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining('not a PNG') })
+  })
+
+  test('a message of images alone queues behind a turn and keeps them', async () => {
+    useMock('normal', '200')
+    const handle = fixture()
+    const image = unwrap(addAttachment(undefined, { name: 'after.png', bytes: PIXEL }))
+
+    await submitRun(() => {}, { message: 'first' })
+    const queued = (await submitRun(() => {}, { attachments: [image.id] })).queued!
+    expect(queued).toMatchObject({ text: '', attachments: [image] })
+    await waitForDrained(handle)
+    const root = agentWorkspace().stateRoot
+    const last = readRunHistory(root, resolveChat(root, 'mock', chatId(handle))!).at(-1)
+    expect(last?.attachments).toEqual([image])
+    expect(last?.events.map((event) => event.text)).toContain('looked at after.png')
+  })
+
   test('passes the selected harness model into the turn and its persisted prompt snapshot', async () => {
     useMock()
     const handle = fixture()
@@ -168,6 +351,56 @@ describe.serial('agent runner invariants', () => {
 
     expect(run.status).toBe('succeeded')
     expect(run.prompt?.model).toBe('mock-domain-model')
+  })
+
+  test('open threads ride a turn only when attached, by id or all at once', async () => {
+    useMock()
+    const handle = fixture()
+    const ask = (text: string) =>
+      upsertComment(handle.root, {
+        anchors: ['Test'],
+        anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
+        text,
+      })
+    const first = ask('first question')
+    const second = ask('second question')
+
+    // nothing attached: the message goes alone, the threads are only signalled
+    const plain = (await submitRun(() => {}, { message: 'unrelated work' })).run!
+    expect(plain.targetCommentIds).toEqual([])
+    expect(plain.prompt?.turnPrompt).toContain('2 open threads, 0 attached to this turn')
+    expect(plain.prompt?.turnPrompt).not.toContain('second question')
+    await waitForTerminal(handle.id)
+
+    // an empty composer with nothing attached is nothing to send
+    expect((await submitRun(() => {})).error).toContain('nothing to send')
+
+    const picked = (await submitRun(() => {}, { comments: [second.id] })).run!
+    expect(picked.targetCommentIds).toEqual([second.id])
+    expect(picked.prompt?.turnPrompt).toContain('second question')
+    expect(picked.prompt?.turnPrompt).not.toContain('first question')
+    await waitForTerminal(handle.id)
+    expect(readComments(handle.root).comments.find((item) => item.id === first.id)?.status).toBe(
+      'open',
+    )
+  })
+
+  test('a queued message keeps the threads it was sent with', async () => {
+    useMock('normal', '200')
+    const handle = fixture()
+    const comment = upsertComment(handle.root, {
+      anchors: ['Test'],
+      anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
+      text: 'answer me later',
+    })
+
+    await submitRun(() => {}, { message: 'first' })
+    const queued = (await submitRun(() => {}, { message: 'then this', comments: 'all' })).queued!
+    expect(queued.comments).toEqual([comment.id])
+    await waitForDrained(handle)
+    const root = agentWorkspace().stateRoot
+    const last = readRunHistory(root, resolveChat(root, 'mock', chatId(handle))!).at(-1)
+    expect(last?.targetCommentIds).toEqual([comment.id])
   })
 
   test('reserves setup synchronously and parks the next message behind the turn', async () => {
@@ -291,7 +524,7 @@ describe.serial('agent runner invariants', () => {
     })
     seedConversation(handle, 'stable-session', 2)
 
-    const started = await submitRun(() => {})
+    const started = await submitRun(() => {}, { comments: 'all' })
     expect(started.run?.status).toBe('running')
     const bridgeFile = bridgeFiles(handle.root)[0]!
     const { token } = JSON.parse(
@@ -331,7 +564,7 @@ describe.serial('agent runner invariants', () => {
     })
     seedConversation(handle, 'stable-session', 4)
 
-    await submitRun(() => {})
+    await submitRun(() => {}, { comments: 'all' })
     const thrown = await waitForTerminal(handle.id)
     expect(thrown).toMatchObject({
       status: 'failed',
@@ -347,7 +580,7 @@ describe.serial('agent runner invariants', () => {
     expect(bridgeFiles(handle.root)).toEqual([])
 
     process.env.DOMAIN_STUDIO_MOCK_MODE = 'badblock'
-    await submitRun(() => {})
+    await submitRun(() => {}, { comments: 'all' })
     const malformed = await waitForTerminal(handle.id)
     expect(malformed.status).toBe('failed')
     expect(malformed.error).toContain('malformed JSON')
@@ -371,7 +604,7 @@ describe.serial('agent runner invariants', () => {
     })
     expect(readComments(handle.root).comments.map((item) => item.id)).toEqual([comment.id])
 
-    await submitRun(() => {})
+    await submitRun(() => {}, { comments: 'all' })
     const run = await waitForTerminal(handle.id)
     expect(run).toMatchObject({
       status: 'succeeded',
@@ -427,23 +660,39 @@ describe.serial('agent runner invariants', () => {
     ).toEqual([expect.objectContaining({ instruction: 'in the second tab' })])
   })
 
-  test('a new tab opens on the star, or continues with the agent already open', () => {
+  test('a new tab continues the tab in front of you: agent, model, effort and speed', () => {
     delete process.env.DOMAIN_STUDIO_HARNESS
     const handle = fixture()
     // nothing starred: the first tab is the agent this machine has
     expect(unwrap(openChat({})).harness).toBe('claude')
 
-    // move the live conversation elsewhere and the next tab follows it — the
-    // agent that was live, since nothing states where chats should start
+    // move the live conversation elsewhere and the next tab follows it
     expect(unwrap(openChat({ harness: 'mock' })).harness).toBe('mock')
     expect(unwrap(openChat({})).harness).toBe('mock')
 
-    // starring one IS that statement, and it outranks the tab you happen to be in
+    // what you set in this tab is what the next one opens with
+    const tuned = unwrap(
+      updateChat(listChats().activeId, { model: 'mock-large', effort: 'high', fastMode: true }),
+    )
+    expect(unwrap(openChat({}))).toMatchObject({
+      harness: 'mock',
+      model: 'mock-large',
+      effort: 'high',
+      fastMode: true,
+    })
+    expect(tuned.id).not.toBe(listChats().activeId)
+
+    // a star does not pull a new tab away from the work in front of you
     // Studio settings are global; point that global at this test's root.
     initWorkspaceState(handle.root)
     updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus[1m]' } })
     expect(getHarness().id).toBe('claude')
-    expect(unwrap(openChat({})).harness).toBe('claude')
+    expect(unwrap(openChat({}))).toMatchObject({ harness: 'mock', model: 'mock-large' })
+
+    // asking for another agent keeps the effort and speed, never the other agent's model
+    const other = unwrap(openChat({ harness: 'claude' }))
+    expect(other).toMatchObject({ harness: 'claude', effort: 'high', fastMode: true })
+    expect(other.model).toBeUndefined()
   })
 
   test('a chat opened for a fresh domain carries its exact target into the first prompt', async () => {

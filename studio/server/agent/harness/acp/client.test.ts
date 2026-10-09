@@ -3,7 +3,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { AgentStreamEvent } from '../adapter'
+
 import { AcpClaudeHarness } from './claude'
+import { errorText, foldToolCall, toolCallDetail } from './client'
 import { AcpCodexHarness } from './codex'
 
 const roots: string[] = []
@@ -26,6 +29,7 @@ const effortId = provider === 'codex' ? 'reasoning_effort' : 'effort'
 let buffer = ''
 let promptRequest
 let currentModel = 'native'
+let currentFast = false
 
 const record = (value) => {
   if (log) appendFileSync(log, JSON.stringify(value) + '\\n')
@@ -56,6 +60,14 @@ const configOptions = () => [
       { value: 'native', name: 'Native' },
       { value: 'studio-model', name: 'Studio' },
     ],
+  },
+  {
+    id: 'fast-mode',
+    name: 'Fast mode',
+    category: 'model_config',
+    type: 'boolean',
+    currentValue: currentFast,
+    description: '1.5x speed, increased usage',
   },
   ...(process.env.FAKE_ACP_NO_EFFORT === '1'
     ? []
@@ -119,6 +131,7 @@ function handle(message) {
           protocolVersion: 1,
           agentInfo: { name: 'fake-acp', version: '0.test' },
           agentCapabilities: {
+            ...(process.env.FAKE_ACP_IMAGES === '1' ? { promptCapabilities: { image: true } } : {}),
             sessionCapabilities: {
               resume: {},
               delete: {},
@@ -158,6 +171,7 @@ function handle(message) {
       return
     case 'session/set_config_option':
       if (params.configId === 'model') currentModel = params.value
+      if (params.configId === 'fast-mode') currentFast = params.value
       send({ id: message.id, result: { configOptions: configOptions() } })
       return
     case 'session/delete':
@@ -177,7 +191,7 @@ function handle(message) {
         name: 'Read',
         kind: 'read',
         status: 'in_progress',
-        locations: [{ path: params.prompt[0].text === 'hang' ? '/tmp/hang' : '/repo/package.json' }],
+        locations: [{ path: params.prompt.find((block) => block.type === 'text')?.text === 'hang' ? '/tmp/hang' : '/repo/package.json' }],
       })
       update(params.sessionId, {
         sessionUpdate: 'plan',
@@ -189,11 +203,83 @@ function handle(message) {
         size: 200000,
         cost: { amount: 0.01, currency: 'USD' },
       })
+      if (mode === 'tools') {
+        // what claude-agent-acp sends for one Bash call: announced before its input
+        // has streamed in, refined with the command, then settled with the output
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'narration',
+          content: { type: 'text', text: 'I run the tests.' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tool-2',
+          title: 'Terminal',
+          kind: 'execute',
+          status: 'pending',
+          rawInput: {},
+          content: [],
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tool-2',
+          title: 'pnpm test',
+          kind: 'execute',
+          rawInput: { command: 'pnpm test', description: 'Run the suite' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tool-2',
+          status: 'completed',
+          rawOutput: '12 pass',
+          content: [{ type: 'content', content: { type: 'text', text: '12 pass' } }],
+        })
+        // its post-tool hook then reports the call once more, changing nothing shown
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tool-2',
+          _meta: { claudeCode: { toolName: 'Bash', toolResponse: { stdout: '12 pass' } } },
+        })
+        // an update for a call nobody announced, naming nothing: nothing to show
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'stray',
+          status: 'completed',
+        })
+      }
       update(params.sessionId, {
         sessionUpdate: 'agent_message_chunk',
         messageId: 'answer',
         content: { type: 'text', text: 'Hello' },
       })
+      if (mode === 'service-error') {
+        // codex-acp's report of a turn the service refused: unattributed text, then end_turn
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: "model 'gpt-6.1-sol' is not enabled\\n\\n" },
+        })
+        update(params.sessionId, { sessionUpdate: 'usage_update', used: 20, size: 200000 })
+        send({ id: message.id, result: { stopReason: 'end_turn' } })
+        return
+      }
+      if (mode === 'unattributed') {
+        // the same shape, followed by more of the turn: it was not the end after all
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Warning: config\\n\\n' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: ' and more\\n\\n' },
+        })
+        update(params.sessionId, {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'next',
+          content: { type: 'text', text: 'Done' },
+        })
+        send({ id: message.id, result: { stopReason: 'end_turn' } })
+        return
+      }
       if (mode === 'partial-fail') {
         send({ id: message.id, error: { code: -32000, message: 'late failure' } })
         return
@@ -317,6 +403,32 @@ describe('ACP harness adapter', () => {
     })
   }
 
+  test('a pinned agent not yet installed is available without downloading or spawning it', async () => {
+    const root = temporaryRoot('studio-acp-managed-health-')
+    const log = join(root, 'acp.jsonl')
+    const previous = {
+      home: process.env.ASTRALE_HOME,
+      bin: process.env.DOMAIN_STUDIO_CODEX_BIN,
+    }
+    process.env.ASTRALE_HOME = root
+    delete process.env.DOMAIN_STUDIO_CODEX_BIN
+    try {
+      const health = await new AcpCodexHarness(undefined, fakeAcpAgent(root, log)).health()
+      expect(health).toMatchObject({
+        ok: true,
+        cli: { source: 'managed', installed: false },
+      })
+      expect(health.bin?.startsWith(join(root, 'cache', 'agents', 'codex'))).toBe(true)
+      expect(health.detail).toContain('is installed by Studio on first use')
+      expect(existsSync(log)).toBe(false)
+      expect(existsSync(join(root, 'cache'))).toBe(false)
+    } finally {
+      if (previous.home === undefined) delete process.env.ASTRALE_HOME
+      else process.env.ASTRALE_HOME = previous.home
+      if (previous.bin !== undefined) process.env.DOMAIN_STUDIO_CODEX_BIN = previous.bin
+    }
+  })
+
   test('probes agent and model diagnostics through a disposable ACP session without prompting', async () => {
     const root = temporaryRoot('studio-acp-probe-')
     const log = join(root, 'acp.jsonl')
@@ -398,10 +510,97 @@ describe('ACP harness adapter', () => {
     expect(loadout.effort).toBeUndefined()
   })
 
+  test('folds every report of one tool call into one step that carries its details', async () => {
+    const root = temporaryRoot('studio-acp-tools-')
+    const events: AgentStreamEvent[] = []
+    const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
+
+    const result = await harness.run({
+      root,
+      prompt: 'run the tests',
+      env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: 'tools' },
+      signal: new AbortController().signal,
+      onEvent: (event) => events.push(event),
+    })
+
+    expect(result.finalText).toBe('I run the tests.\n\nHello world')
+    const reports = events.filter((event) => event.call?.id === 'tool-2')
+    // announced, refined with its command, settled with its output - and a last
+    // report that changed nothing is not one more
+    expect(reports).toHaveLength(3)
+    expect(reports[0]).toMatchObject({ text: 'Terminal', tool: 'execute', target: '' })
+    expect(reports.at(-1)).toMatchObject({
+      kind: 'tool',
+      text: 'pnpm test',
+      tool: 'execute',
+      target: 'pnpm test',
+      call: {
+        id: 'tool-2',
+        detail: {
+          title: 'pnpm test',
+          kind: 'execute',
+          status: 'completed',
+          input: { command: 'pnpm test', description: 'Run the suite' },
+          content: [{ type: 'text', text: '12 pass' }],
+          locations: [],
+        },
+      },
+    })
+    // shown as content already, the verbatim output is not kept a second time
+    expect(reports.at(-1)?.call?.detail.output).toBeUndefined()
+
+    const order = events.map((event) =>
+      event.call ? `call:${event.call.id}` : `${event.kind}:${event.text}`,
+    )
+    // what the agent said before calling the tool is in the transcript before it
+    expect(order.indexOf('message:I run the tests.')).toBeGreaterThan(-1)
+    expect(order.indexOf('message:I run the tests.')).toBeLessThan(order.indexOf('call:tool-2'))
+    expect(order.at(-1)).toBe('message:Hello world')
+    // an update for a call that was never announced, and names nothing, shows nothing
+    expect(order).not.toContain('call:stray')
+  })
+
+  test('keeps the verbatim output of a call that shows no content of its own', () => {
+    const announced = foldToolCall(undefined, {
+      toolCallId: 'exec-1',
+      title: 'ls',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { command: 'ls', cwd: '/repo' },
+    })
+    const settled = foldToolCall(announced, {
+      toolCallId: 'exec-1',
+      status: 'failed',
+      title: null,
+      rawOutput: { formatted_output: 'ls: denied', exit_code: 1 },
+      locations: [{ path: '/repo/a.ts', line: 3 }],
+    })
+
+    expect(toolCallDetail(settled)).toEqual({
+      title: 'ls',
+      kind: 'execute',
+      status: 'failed',
+      input: { command: 'ls', cwd: '/repo' },
+      content: [],
+      output: { formatted_output: 'ls: denied', exit_code: 1 },
+      locations: ['/repo/a.ts:3'],
+    })
+    // a diff keeps both sides; a file the call created has no "before"
+    expect(
+      toolCallDetail(
+        foldToolCall(settled, {
+          toolCallId: 'exec-1',
+          content: [{ type: 'diff', path: '/repo/new.ts', oldText: null, newText: 'export {}' }],
+        }),
+      ).content,
+    ).toEqual([{ type: 'diff', path: '/repo/new.ts', newText: 'export {}' }])
+  })
+
   test('runs Codex through ACP and maps MCP, configuration, permissions, usage, and events', async () => {
     const root = temporaryRoot('studio-acp-codex-')
     const log = join(root, 'acp.jsonl')
     const events: string[] = []
+    const contexts: unknown[] = []
     const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
 
     const result = await harness.run({
@@ -410,6 +609,7 @@ describe('ACP harness adapter', () => {
       appendSystemPrompt: 'Return the Studio machine block.',
       model: 'studio-model',
       effort: 'max',
+      fastMode: true,
       access: 'workspace',
       mcpServers: [
         {
@@ -425,13 +625,17 @@ describe('ACP harness adapter', () => {
       env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex' },
       signal: new AbortController().signal,
       onEvent: (event) => events.push(`${event.kind}:${event.text}`),
+      onContext: (context) => contexts.push(context),
     })
 
+    // the window's occupancy is reported as it arrives, and kept on the result
+    expect(contexts).toEqual([{ used: 12, size: 200000 }])
     expect(result).toMatchObject({
       sessionId: 'new-session',
       finalText: 'Hello world',
       tokens: 12,
       costUsd: 0.01,
+      context: { used: 12, size: 200000 },
       numTurns: 1,
       isError: false,
     })
@@ -457,6 +661,7 @@ describe('ACP harness adapter', () => {
       'session/set_mode',
       'session/set_config_option',
       'session/set_config_option',
+      'session/set_config_option',
       'session/prompt',
     ])
     const created = requests.find((message) => message.method === 'session/new')!
@@ -478,13 +683,45 @@ describe('ACP harness adapter', () => {
     )
     expect(configRequests.map((message) => message.params!.configId)).toEqual([
       'model',
+      'fast-mode',
       'reasoning_effort',
     ])
     // `max` is a rung Codex really has, so it is sent as asked rather than capped
-    expect(configRequests.map((message) => message.params!.value)).toEqual(['studio-model', 'max'])
+    expect(configRequests.map((message) => message.params!.value)).toEqual([
+      'studio-model',
+      true,
+      'max',
+    ])
     expect(requests.find((message) => message.id === 'permission-1')!.result).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow' },
     })
+  })
+
+  test('hands pasted images over as image blocks, only to an agent that takes them', async () => {
+    const root = temporaryRoot('studio-acp-images-')
+    const image = join(root, 'shot.png')
+    writeFileSync(image, Uint8Array.from([0x89, 0x50, 0x4e, 0x47]))
+    const harness = new AcpClaudeHarness('/opt/claude-test', fakeAcpAgent(root))
+    const prompted = async (images: '1' | '0') => {
+      const log = join(root, `acp-${images}.jsonl`)
+      const result = await harness.run({
+        root,
+        prompt: 'what is wrong here?',
+        images: [{ path: image, mimeType: 'image/png', name: 'shot.png' }],
+        env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'claude', FAKE_ACP_IMAGES: images },
+        signal: new AbortController().signal,
+        onEvent: () => {},
+      })
+      expect(result.isError).toBe(false)
+      return messages(log).find((message) => message.method === 'session/prompt')!.params!.prompt
+    }
+
+    expect(await prompted('1')).toEqual([
+      { type: 'image', mimeType: 'image/png', data: 'iVBORw==' },
+      { type: 'text', text: 'what is wrong here?' },
+    ])
+    // the prompt text already names each image's path for an agent that cannot see it
+    expect(await prompted('0')).toEqual([{ type: 'text', text: 'what is wrong here?' }])
   })
 
   test('resumes Claude Code through ACP with system prompt, full access, and Ultracode settings', async () => {
@@ -656,6 +893,38 @@ describe('ACP harness adapter', () => {
     expect(readLog(askLog).filter((entry) => entry.type === 'boot')).toHaveLength(1)
   })
 
+  test('a Codex turn the service refused fails with its message instead of replying it', async () => {
+    const root = temporaryRoot('studio-acp-service-error-')
+    const deltas: string[] = []
+    const events: AgentStreamEvent[] = []
+    const run = (mode: string) =>
+      new AcpCodexHarness('/opt/codex', fakeAcpAgent(root)).run({
+        root,
+        prompt: 'hello',
+        env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: mode },
+        signal: new AbortController().signal,
+        onEvent: (event) => events.push(event),
+        onDelta: (text) => deltas.push(text),
+      })
+
+    const refused = await run('service-error')
+    expect(refused).toMatchObject({
+      finalText: 'Hello',
+      isError: true,
+      errorMessage: "model 'gpt-6.1-sol' is not enabled",
+    })
+    expect(deltas.join('')).toBe('Hello')
+    expect(events.filter((event) => event.kind === 'message').map((event) => event.text)).toEqual([
+      'Hello',
+    ])
+
+    deltas.length = 0
+    const continued = await run('unattributed')
+    expect(continued).toMatchObject({ isError: false })
+    expect(continued.finalText).toBe('HelloWarning: config\n\n and more\n\nDone')
+    expect(deltas.join('')).toBe(continued.finalText)
+  })
+
   test('cancellation sends session/cancel and kills the ACP process group', async () => {
     const root = temporaryRoot('studio-acp-cancel-')
     const log = join(root, 'acp.jsonl')
@@ -691,4 +960,19 @@ describe('ACP harness adapter', () => {
     }
     expect(exited).toBe(true)
   }, 10_000)
+})
+
+test('a JSON-RPC failure keeps its code and data under a clean first line', () => {
+  const error = Object.assign(new Error('Internal error'), {
+    code: -32603,
+    data: { details: 'model overloaded' },
+  })
+  const text = errorText(error)
+  expect(text.split('\n')[0]).toBe('Internal error (JSON-RPC -32603)')
+  expect(text).toContain('"details": "model overloaded"')
+
+  // data the message already carries is not repeated
+  const same = Object.assign(new Error('Internal error: boom'), { code: -32603, data: 'boom' })
+  expect(errorText(same)).toBe('Internal error: boom (JSON-RPC -32603)')
+  expect(errorText(new Error('plain'))).toBe('plain')
 })

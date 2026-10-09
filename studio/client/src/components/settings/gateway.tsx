@@ -11,6 +11,8 @@ import { embeddedStudio, GatewayAuthFields, type GatewayAuthMode } from './gatew
 import { GatewayHeading, GatewayTextField } from './gateway-fields'
 import { validateGatewayDraft } from './gateway-validation'
 
+const DEFAULT_MODE: GatewayAuthMode = embeddedStudio ? 'host' : 'mint'
+
 interface GatewaySaveInput {
   config: {
     enabled: boolean
@@ -29,7 +31,7 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
   const [enabled, setEnabled] = useState(false)
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
-  const [mode, setMode] = useState<GatewayAuthMode>(embeddedStudio ? 'host' : 'mint')
+  const [mode, setMode] = useState<GatewayAuthMode>(DEFAULT_MODE)
   const [instance, setInstance] = useState('')
   const [token, setToken] = useState('')
   const [reveal, setReveal] = useState(false)
@@ -39,7 +41,7 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
     setEnabled(config?.enabled ?? false)
     setBaseUrl(config?.baseUrl ?? '')
     setModel(config?.model ?? '')
-    setMode(config?.auth.mode ?? (embeddedStudio ? 'host' : 'mint'))
+    setMode(config?.auth.mode ?? DEFAULT_MODE)
     setInstance(config?.auth.mode === 'mint' ? (config.auth.instance ?? '') : '')
     setToken(config?.auth.mode === 'token' ? config.auth.token : '')
     setReveal(false)
@@ -52,11 +54,15 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
   }
   const validationError = validateGatewayDraft(enabled, baseUrl, mode, token)
 
+  const invalidateGateway = () => {
+    queryClient.invalidateQueries({ queryKey: qk.harnessGateway })
+    queryClient.invalidateQueries({ queryKey: qk.loadout() })
+  }
+
   const save = useMutation({
     mutationFn: (input: GatewaySaveInput) => api.setHarnessGateway(input.config),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk.harnessGateway })
-      queryClient.invalidateQueries({ queryKey: qk.loadout() })
+      invalidateGateway()
       toast.success('Machine gateway saved')
     },
     onError: (error) => toast.error(String(error)),
@@ -65,8 +71,7 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
   const reset = useMutation({
     mutationFn: api.clearHarnessGateway,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk.harnessGateway })
-      queryClient.invalidateQueries({ queryKey: qk.loadout() })
+      invalidateGateway()
       toast.success('Gateway configuration cleared')
     },
     onError: (error) => toast.error(String(error)),

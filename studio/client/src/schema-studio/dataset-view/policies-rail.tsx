@@ -1,5 +1,5 @@
 import { schemaRefKey } from '@shared/types'
-import { AlertTriangle, Link2, ShieldCheck, Spline } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Link2, ShieldCheck, Spline } from 'lucide-react'
 
 import { type PolicyGuard, type PolicyIndex } from '@/lib/policy'
 import { cn } from '@/lib/utils'
@@ -29,10 +29,11 @@ export function PoliciesRail({
   onSelect: (key: string) => void
 }) {
   return (
-    <div className="text-sm py-2 border-b">
-      <div className="flex items-center gap-1.5 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <details className="group/policies text-sm py-2 border-b">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <ChevronRight className="h-3 w-3 transition-transform group-open/policies:rotate-90" />
         <ShieldCheck className="h-3.5 w-3.5" /> Policies
-      </div>
+      </summary>
       {index.policies.length === 0 && index.unsupported.length === 0 ? (
         <p className="px-3 pt-1 pb-2 text-[12px] text-muted-foreground">
           This domain declares no policy.
@@ -42,6 +43,7 @@ export function PoliciesRail({
           const key = schemaRefKey(policy.ref)
           const guard = guards.get(key) ?? 'object'
           const count = counts?.get(key)
+          const unproven = count === null || count === undefined
           const selected = key === selectedKey
           return (
             <button
@@ -76,19 +78,19 @@ export function PoliciesRail({
                 <span
                   className={cn(
                     'shrink-0 rounded-full px-1.5 text-[11px] tabular-nums',
-                    count === null || count === undefined
+                    unproven
                       ? 'text-muted-foreground'
                       : count > 0
                         ? 'bg-success/12 text-success'
                         : 'bg-muted text-muted-foreground',
                   )}
                   title={
-                    count === null || count === undefined
+                    unproven
                       ? 'Cannot be proven on this Dataset'
                       : `${count} proof${count === 1 ? '' : 's'} in this Dataset`
                   }
                 >
-                  {count === null || count === undefined ? '—' : count}
+                  {unproven ? '—' : count}
                 </span>
               )}
             </button>
@@ -107,6 +109,6 @@ export function PoliciesRail({
           <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{name}</span>
         </div>
       ))}
-    </div>
+    </details>
   )
 }

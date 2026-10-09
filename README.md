@@ -10,16 +10,13 @@
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
-The installer places one verified standalone toolchain at `~/.astrale/bin` by
-default: the public `astrale` executable and its private, release-pinned
-`astrale-cloudflared` companion. The companion's Apache 2.0 license is retained
-at `~/.astrale/licenses/cloudflared.txt`. The CLI executable contains the CLI,
+The installer places one verified standalone executable at `~/.astrale/bin/astrale`
+by default. The executable contains the CLI,
 [Domain Studio](studio/README.md), its Bun 1.4 runtime, the viewer, and the
 Astrale skills. Running the CLI, Studio, viewer, and Astrale skill manager does
 not require Node, npm, npx, or a separate Bun install. It follows the `latest`
-channel by default: the explicitly promoted release,
-which may still have a `-beta.N` version. Use `ASTRALE_CHANNEL=beta` to opt into
-every beta release.
+channel by default: the explicitly promoted release, which may still have a
+`-beta.N` version. Use `ASTRALE_CHANNEL=beta` to opt into every beta release.
 
 Optional installer environment:
 
@@ -30,15 +27,16 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 ```
 
 The CLI is distributed only as this standalone executable; the npm package is
-deprecated. If a package-managed copy is still on `PATH`, remove it with that
-package manager, run the installer above, and verify that `command -v astrale`
-resolves to `~/.astrale/bin/astrale` (or your explicit `ASTRALE_INSTALL_DIR`).
+deprecated.
 
-Generated Domains using `@astrale-os/adapter-astrale` consume the private
-companion automatically: `pnpm dev` creates temporary public ingress, runs the
-local Worker and optional frontend, reconciles the active development instance,
-and starts a local View host. Developers never invoke `astrale-cloudflared`
-directly and need no Cloudflare account.
+Generated Project Environments deploy remotely with either adapter.
+`pnpm run deploy <environment>` makes one immutable deployment, prints its URL
+and never installs; `astrale domain install <url> -i <instance>` pins that
+release on an instance. An Environment names no instance. The Astrale adapter
+deploys on the Admin instance's Services; the Cloudflare adapter deploys in the
+author's Cloudflare account. Domain development runs no local Worker or ingress.
+The astrale-domain skill's `references/release.md` describes deploy, install,
+publish and yank.
 
 ## Quickstart
 
@@ -56,12 +54,37 @@ astrale status
 astrale get @self --json
 ```
 
+Creation finalizes and verifies the selected WorkOS owner's access before bookmarking or selecting
+the instance. If interrupted, rerun your original `instance create` command with the same slug,
+Admin target options (`--admin`, `--admin-url`, `--domain-issuer`) and creator identity. Admin checks
+the original creation receipt and resumes the same Instance and reserved User. Existing bookmarks
+and selection remain untouched until human access succeeds. Creation preserves the active target,
+including a selection made by another CLI process while creation runs. With no active target, it
+selects the first created instance. To switch explicitly, run `astrale instance use <slug>`.
+A bookmark already naming another endpoint is preserved; the ready receipt includes a pending
+`bookmark` outcome with a command to register the new endpoint under an unused name. Automatic root
+import starts only after verified owner access and completed bookmarking, and is skipped on a
+bookmark conflict to preserve any existing root identity. It replaces an existing root alias only
+for the same exact Kernel issuer claim; an identity for another issuer is preserved and reported.
+Explicit `instance root import` retains its recovery behavior.
+JSON separates provisioning `state`, `access.status`, and `bookmark.status`; an unfinished journey
+returns a nonzero exit status without changing a successful provisioning receipt. An explicit Admin
+`--creds` bearer cannot produce a child-audience proof: replace it with `--as <identity>` for the
+creator's WorkOS identity while retaining the same Admin target options.
+Root recovery is independent and never substitutes for the human owner's access.
+
 If you already have a kernel URL, create a local bookmark:
 
 ```bash
 astrale instance bookmark staging --url https://kernel.example.com
 astrale instance use staging
 ```
+
+Local key registrations are scoped to the Kernel issuer, not a bookmark name or transport URL.
+Aliases for the same issuer share a registration; different issuers remain isolated. Registrations
+retained under old bookmark keys must be re-recorded with `astrale identity register <name>
+--node @existing-user -i <instance>` using an authorized caller. This reuses the existing identity
+and keypair; do not create a replacement User or key. No alias-based credential fallback is used.
 
 ## Agent Browser
 
@@ -102,13 +125,18 @@ astrale update --check
 astrale update
 ```
 
-`astrale update` checksum-verifies and upgrades the standalone CLI, pinned
-companion, license, and install metadata as one cohort, then invokes the new CLI
+`astrale update` checksum-verifies and upgrades the standalone CLI and install
+metadata together, then invokes the new CLI
 to install, update, or repair the skills embedded in that exact release. A
-same-version update repairs a missing or mismatched companion. It follows the
+same-version update checks the installed version. It follows the
 `latest` channel by default. Use `--check`,
 `--channel <channel>`, or `--version <version>` to control the release target;
 `--no-skills` is the explicit opt-out.
+
+Existing standalone CLIs can update directly to the single-binary release format.
+Retired two-binary releases are no longer installation or recovery targets.
+Old companion files are left untouched when upgrading; current Project
+development does not use them. See [release compatibility](docs/release.md#compatibility).
 
 An old package-managed or source build never overwrites files it does not own.
 It directs you to migrate to the official standalone executable instead, while
@@ -117,6 +145,23 @@ still updating installed Astrale skills and project SDK dependencies.
 On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version
 again**. It also detects stale local Astrale skills and offers to repair them.
+
+## Reporting an issue
+
+```sh
+astrale issue "Short title" --body "Context and details"
+cat issue.md | astrale issue "Short title" --project ./orders -i staging
+```
+
+A title and body are enough. Prefer optional `--project` and `-i` when known. The project selects
+local installed versions; `-i` selects the affected instance without connecting to it.
+
+Optionally add `Type: bug`, `Type: limitation` (including capability requests), or `Type: friction`.
+Keep the body brief: **Context** → **Reproduction** for bugs (exact inputs/steps, expected vs. actual
+result) or **Scenario** for limitations/friction (concrete task, obstacle, desired behavior) → **Impact**.
+Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
+
+If confirmation fails, use the printed `--retry` command. `--json` returns the issue ID and reference.
 
 ## Commands
 
@@ -137,15 +182,37 @@ Main command groups:
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
 
+`astrale view <origin>` opens a Domain's entrypoint View (`--view <slug>` picks
+another, `--list` prints them all); `astrale view /:<origin>:view.<slug>` opens
+one View exactly. Every View belongs to its Domain: none is opened for a node, and
+a View that shows one node selects it through its own internal routing.
+
+`astrale view --refresh <id>` re-resolves an open View against its retained
+instance and identity, then reloads the existing tab without changing its URL.
+If resolution fails, the previous placement remains available. Use
+`astrale view --sessions` to find session IDs and `astrale view --close <id>`
+to stop only that local session; neither command removes a deployment.
+
+To compare callers, opt into a session-local identity picker:
+
+```bash
+astrale view /:app.example:view.application -i staging --as alice --allow-identity bob charlie
+```
+
+The viewer offers the initial identity and the explicitly allowed local names. **Switch & reload**
+re-resolves the same View in its Domain and mints a fresh credential before reloading the entire page
+(unsaved changes are lost). Failure leaves the previous session usable. This does not change CLI
+defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
+
 ## Path Syntax
 
 ```
-/domain                        Domain node
-/domain/class.Name             Class node
+/:domain                       Domain node
+/:domain:class.Name            Class node
 /:domain:class.Name:method     Static method (semantic domain path)
-<nodePath>::method             Instance method dispatch
+<nodePath>::<domain>:class.<Class>.method.<name>             Instance method dispatch
 @nodeId                        Reference a node by UID
-@nodeId::method                Instance method on a node by UID
+@nodeId::<domain>:class.<Class>.method.<name>                Instance method on a node by UID
 ```
 
 The full grammar and examples are in `astrale --help`.
@@ -237,25 +304,29 @@ Global skills live under `~/.agents/skills`. Their ecosystem-compatible lock is
 
 ## Development
 
-Contributors use Node.js 26.7.0 by default and pnpm 12.0.0. Release executables
-are compiled and qualified with Bun 1.4.0.
+Contributors use Node.js 26.7.0 by default and pnpm 12.1.0. Release executables
+are compiled and qualified with Bun 1.4.2.
 
 ```bash
-# From the workspace root
-pnpm install
+# From a standalone clone of this repository
+AGENT_HARNESSES=codex bash scripts/setup/setup.sh
 
 # Run directly with Bun
-bun cli/bin/astrale.ts <command>
+bun bin/astrale.ts <command>
 
 # Build the CLI
-pnpm -C cli build
+pnpm build
 ```
 
+Cloud setup and verification: [agent setup](scripts/setup/README.md).
+
+Inside the Astrale umbrella workspace, run `pnpm setup` from that workspace root instead.
+
 The first source command that needs embedded Skills, Studio, or Viewer assets
-generates `cli/src/generated/embedded-assets.ts` automatically. Its input digest
-is cached under `cli/node_modules/.cache/astrale-cli`, so unchanged commands are
+generates `src/generated/embedded-assets.ts` automatically. Its input digest
+is cached under `node_modules/.cache/astrale-cli`, so unchanged commands are
 fast. The generated archive is local build output: do not commit it. Run
-`pnpm -C cli assets:ensure` to prepare it explicitly.
+`pnpm assets:ensure` to prepare it explicitly.
 
 ### Testing local changes live: `astrale-dev`
 
@@ -272,8 +343,80 @@ It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
 
+## Fleet catalog (deprecated)
+
+`astrale domain publish`, the catalog listing of `astrale domain list` and the bare-origin
+`astrale domain install <origin>` read and write the Admin Fleet catalog, which now only keeps a
+Fleet's default Domains (what every new Instance of the Fleet receives) until provisioning by
+version replaces it. They still work, unchanged for scripts, and warn a person that they are
+deprecated. Publish a version with `astrale-domain publish <environment>` in the Domain's project,
+list a Domain's versions with `astrale domain versions <origin>`, and install one with
+`astrale domain install <origin>@<version>` or by its deployment URL. The commands are removed in a
+later breaking release, once provisioning by version ships and no supported SDK installs by bare
+origin.
+
+## Fleet selection
+
+An explicit `--fleet <path>` keeps that exact target; authorization failure never falls back.
+Without it, the CLI reads the visible Fleet graph and checks the native `UseFleet` policy:
+it selects the sole usable Fleet. With multiple usable Fleets, it requires `--fleet` and lists
+the available choices; with none, it asks you to request access. No Fleet name or slug has priority,
+and no access is granted implicitly.
+Instance-only users retain read-only inventory through their visible Fleet when they have no
+usable Fleet. This does not authorize creation.
+
+The option accepts a Kernel path, not a slug, and remains limited to `instance create`,
+`instance list`, `domain list` and `domain publish`. Creation pins the resolved Fleet before
+its first call and across retries. Keep both the printed `--operation` and `--fleet` when
+resuming from another process. Policies on each callable remain authoritative if access changes.
+No Fleet discovery callable or wrapper command is introduced. These readers require the existing
+Fleet-slug backfill; missing names or slugs fail explicitly. An explicit historical `core.fleet`
+catalogue path remains supported while that Core node exists.
+
+Admin keeps one Domain per origin. A Fleet's catalog is the Domains it contains and the Domains it
+lists from another Fleet: `domain list` and `domain install <origin>` read both, and
+`domain publish --install-by-default` sets the Fleet's own default with
+`Fleet.configureDomainDefault`. Only the core Fleet catalogues a new origin; Admin refuses it on
+another Fleet with `CATALOG_ORIGIN_CONFLICT`.
+
+An explicit target avoids Fleet discovery entirely. Implicit resolution reads each directory page
+once and checks `UseFleet` with at most eight requests in flight; instance creation reuses the
+resolved target for its inventory, mutation, and retries.
+
+Read Fleets directly from the graph and use the generic callable command to create one:
+
+```bash
+astrale query --class '/:admin.astrale.ai:class.Fleet' -i admin
+astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"@<default-fleet-id>"}'
+astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
+astrale instance list --fleet '@<fleet-id>'
+astrale domain list --fleet '@<fleet-id>'
+```
+
+Creating a Fleet requires central Shell administrator authority and administration of the source
+Fleet. The new Fleet receives an independent catalogue copy; provision its own Host capacity
+before creating Instances. Host capacity is never borrowed from another Fleet.
+Use the observed ID of the Fleet whose reserved slug is `default` for `copyFrom`; protected Core
+namespace paths need not be visible to the caller's graph reads.
+
+An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation and
+Domain installation. These commands have no `--fleet` option; installation derives the catalogue
+from the Instance's containment. Keep the same `--operation` value when retrying creation.
+Fleet membership does not transfer personal Instance ownership.
+
+Upgrade catalogue readers before introducing multiple Fleets: origins and release digests are
+now scoped to a Fleet. Older CLI versions that query a global catalogue are incompatible with
+that data. Existing direct Instance method contracts and default routes remain supported.
+
+## View external navigation
+
+The View viewer admits external navigation origins declared by the installed View's publication.
+Opening a compatible View needs no provider-specific CLI flag. The existing
+`--allow-external-origin` option remains available for an additional explicit origin grant.
+Browser popup refusal is returned to the View so it can offer a retry.
+
 ## Releases
 
 Beta releases continue independently of the customer-facing `latest` channel.
-See [release operations](docs/release.md#promote-an-existing-release-to-latest) for the
-agent-ready preview, promotion, verification, and rollback commands.
+See [release operations](docs/release.md#promote-an-existing-release-to-latest) for
+preview, promotion, verification, and rollback commands.

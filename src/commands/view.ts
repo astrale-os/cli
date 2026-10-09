@@ -1,4 +1,4 @@
-import type { ResolvedView, ViewTransport } from '@astrale-os/shell'
+import type { ResolvedView } from '@astrale-os/shell'
 
 import chalk from 'chalk'
 import { randomBytes } from 'node:crypto'
@@ -10,7 +10,7 @@ import type { KernelCommandOpts } from '../connection'
 import type { ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
 import type { CommandDefinition } from '../program/index'
 
-import { expandSelfInPath, withClientSession } from '../connection'
+import { withClientSession } from '../connection'
 import { AstraleError } from '../errors'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
 import { readInstances } from '../lib/instance'
@@ -19,15 +19,15 @@ import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
 import { promptSelect } from '../lib/prompt'
-import { proveDevelopmentViewTransport } from '../lib/view/development/publication'
 import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
   candidateSlug,
+  type DomainViews,
   parseViewSpec,
   pickCandidate,
+  resolveDomainViews,
   resolveInstalledDomainView,
-  resolveViewCandidates,
   selectedView,
   type ViewCandidate,
 } from '../lib/view/resolve'
@@ -51,10 +51,8 @@ import { snapshotText, waitForSettledSnapshot } from '../lib/view/snapshot'
 
 export type ViewOpts = KernelCommandOpts &
   RawOutputOpts & {
-    target?: string
     view?: string
     list?: boolean
-    developmentLocalUrl?: string
     headed?: boolean
     browser?: boolean
     open?: boolean
@@ -62,8 +60,17 @@ export type ViewOpts = KernelCommandOpts &
     screenshot?: string
     sessions?: boolean
     close?: string | boolean
+    refresh?: string
     all?: boolean
     allowExternalOrigin?: string[]
+    allowIdentity?: string[]
+    /**
+     * Internal Studio host override. A Studio session is released when its
+     * dialog closes, so its idle budget is only the net for a page that stopped
+     * reporting; a terminal session has no host to release it and keeps the
+     * short default.
+     */
+    idleMs?: number
     /** Internal Studio host override; ordinary CLI calls resolve their own executable. */
     serveRuntime?: { file: string; args: string[] }
   }
@@ -73,7 +80,6 @@ const VIEW_PORT_SPAN = 20
 const IDLE_MS = 30 * 60_000
 const READY_TIMEOUT_MS = 8000
 const STATE_TIMEOUT_MS = 25_000
-const DEVELOPMENT_PUBLICATION_TIMEOUT_MS = 10_000
 const POLL_MS = 250
 /** Dedicated agent-browser profile for view sessions (no cookies involved). */
 const VIEW_PROFILE = `${BROWSER_DIR}/_view`
@@ -85,53 +91,47 @@ export async function resolveSession(
   opts: ViewOpts,
 ): Promise<{ view?: ResolvedView; candidates: ViewCandidate[] }> {
   const parsed = parseViewSpec(spec)
-  if (parsed.kind === 'target' && opts.target) {
-    fatal(new Error('Pass the target either as the positional or as --target, not both'))
-  }
   if (parsed.kind === 'view' && opts.view) {
     fatal(new Error('An explicit ViewPath cannot be combined with --view <slug>'))
   }
-  const { target, candidates } = await withClientSession(opts, async (context) => {
-    if (parsed.kind === 'view' && opts.target === undefined) {
+  const views = await withClientSession(opts, async (context): Promise<DomainViews> => {
+    if (parsed.kind === 'view') {
       const candidate = await resolveInstalledDomainView(context, parsed.path)
-      return { target: String(candidate.target), candidates: [candidate] }
+      return { domain: String(candidate.target), candidates: [candidate], entrypoint: candidate }
     }
-    const targetInput = parsed.kind === 'target' ? parsed.path : opts.target!
-    const { path: target } = await expandSelfInPath(targetInput, context)
-    return { target, candidates: await resolveViewCandidates(context, target) }
+    return resolveDomainViews(context, parsed.origin)
   })
 
   if (opts.list) {
-    return { candidates }
+    return { candidates: views.candidates }
   }
-  const selector = parsed.kind === 'view' ? parsed.path : opts.view
-  const picked = await chooseCandidate(candidates, target, selector, opts)
+  const picked = await chooseCandidate(views, opts.view, opts)
   return {
     view: selectedView(picked),
-    candidates,
+    candidates: views.candidates,
   }
 }
 
 async function chooseCandidate(
-  candidates: ViewCandidate[],
-  anchor: string,
+  views: DomainViews,
   selector: string | undefined,
   opts: ViewOpts,
 ): Promise<ViewCandidate> {
-  const picked = pickCandidate(candidates, anchor, selector)
+  const picked = pickCandidate(views, selector)
   if (picked !== 'ambiguous') return picked
+  const { candidates, domain } = views
   // promptSelect answers undefined when the terminal cannot be asked, so the
   // ambiguity error below stays the single non-interactive outcome.
   if (!isMachine(opts)) {
     const chosen = await promptSelect(
-      `${anchor} has ${candidates.length} views — open which?`,
+      `${domain} has ${candidates.length} views and no entrypoint - open which?`,
       candidates.map((c) => ({ name: `${candidateSlug(c)}  ${chalk.dim(c.url)}`, value: c })),
     )
     if (chosen) return chosen
   }
   throw new AstraleError(
     'AMBIGUOUS_VIEW',
-    `${anchor} resolves ${candidates.length} views — pick one with --view <slug>: ${candidates.map(candidateSlug).join(', ')}`,
+    `${domain} publishes ${candidates.length} views and no entrypoint - pick one with --view <slug>: ${candidates.map(candidateSlug).join(', ')}`,
   )
 }
 
@@ -234,10 +234,9 @@ async function newerThan(dir: string, mtimeMs: number): Promise<boolean> {
 }
 
 /** Spawn the detached session server (the CLI re-invoking itself) and wait for it. */
-async function startSession(
+export async function startViewSession(
   view: ResolvedView,
   opts: ViewOpts,
-  transport?: ViewTransport,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
   const connection = await withClientSession(opts, async ({ identity, target }) => ({
@@ -256,45 +255,37 @@ async function startSession(
       instances.active,
       connection.identity,
       runtime,
-      transport,
     ),
   )
 }
 
-interface DevelopmentSessionDependencies {
-  readonly prove: typeof proveDevelopmentViewTransport
-  readonly start: typeof startSession
-  readonly signal: () => AbortSignal
-}
-
-/** Prove the optional local transport before creating any persistent session state. */
-export async function startDevelopmentViewSession(
-  view: ResolvedView,
-  opts: ViewOpts,
-  dependencies: Partial<DevelopmentSessionDependencies> = {},
-): Promise<ViewSessionRecord> {
-  const prove = dependencies.prove ?? proveDevelopmentViewTransport
-  const start = dependencies.start ?? startSession
-  if (opts.developmentLocalUrl === undefined) return start(view, opts)
-  const signal =
-    dependencies.signal ?? (() => AbortSignal.timeout(DEVELOPMENT_PUBLICATION_TIMEOUT_MS))
-  const transport = await prove(view, opts.developmentLocalUrl, signal())
-  return start(view, opts, transport)
-}
-
 export function createViewServeConfig(
   record: ViewSessionRecord,
-  opts: Pick<ViewOpts, 'allowExternalOrigin' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'>,
+  opts: Pick<
+    ViewOpts,
+    | 'allowExternalOrigin'
+    | 'allowIdentity'
+    | 'as'
+    | 'creds'
+    | 'idleMs'
+    | 'instance'
+    | 'timeout'
+    | 'url'
+  >,
   kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
-  transport?: ViewTransport,
 ): ViewServeConfig {
+  if (opts.allowIdentity?.length && (opts.creds || !record.identity)) {
+    throw new AstraleError(
+      'INVALID_OPTION',
+      'Identity switching requires a named CLI identity, not --creds.',
+    )
+  }
   return {
     session: record,
-    ...(transport === undefined ? {} : { transport }),
     kernel: {
       url: opts.url,
-      instance: opts.instance,
-      as: opts.as,
+      instance: opts.instance ?? (opts.url === undefined ? record.instance : undefined),
+      as: opts.creds ? undefined : (opts.as ?? record.identity),
       creds: opts.creds,
       timeout: opts.timeout,
     },
@@ -305,7 +296,10 @@ export function createViewServeConfig(
       direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
     },
     externalOrigins: admitExternalOpenOrigins(opts.allowExternalOrigin),
-    idleMs: IDLE_MS,
+    ...(opts.allowIdentity?.length
+      ? { identities: [...new Set([record.identity!, ...opts.allowIdentity])] }
+      : {}),
+    idleMs: opts.idleMs ?? IDLE_MS,
   }
 }
 
@@ -321,7 +315,6 @@ async function startSessionLocked(
   activeInstance: string | undefined,
   selectedIdentity: string | undefined,
   runtime: { file: string; args: string[] },
-  transport: ViewTransport | undefined,
 ): Promise<ViewSessionRecord> {
   const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
   if (port === null) {
@@ -343,7 +336,7 @@ async function startSessionLocked(
     identity: opts.creds ? '(pre-signed creds)' : selectedIdentity,
     createdAt: new Date().toISOString(),
   }
-  const serveConfig = createViewServeConfig(record, opts, kernelTarget, transport)
+  const serveConfig = createViewServeConfig(record, opts, kernelTarget)
 
   await saveServeConfig(serveConfig)
   const logFd = await openSessionLog(id)
@@ -384,13 +377,15 @@ async function startSessionLocked(
 
 type PageState = { state: string; error?: string }
 
-async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
+export async function waitForPageState(record: ViewSessionRecord): Promise<PageState> {
   const deadline = Date.now() + STATE_TIMEOUT_MS
   let last: PageState = { state: 'waiting' }
   while (Date.now() < deadline) {
     try {
       last = (await (await fetch(`${record.pageUrl}state`)).json()) as PageState
-      if (last.state === 'connected' || last.state === 'plain' || last.state === 'failed') {
+      if (
+        ['connected', 'plain', 'failed', 'refreshing', 'degraded', 'expired'].includes(last.state)
+      ) {
         return last
       }
     } catch {
@@ -443,6 +438,12 @@ function describeState(state: PageState): string {
       return `failed — ${state.error ?? 'unknown error'}`
     case 'mounting':
       return 'still mounting (check again with a snapshot)'
+    case 'refreshing':
+      return 'renewing the session (View remains mounted)'
+    case 'degraded':
+      return 'session renewal failed (reconnecting automatically)'
+    case 'expired':
+      return 'session expired (reconnecting automatically)'
     default:
       return 'page not loaded yet'
   }
@@ -468,7 +469,7 @@ async function reportOpened(
   }
   const label = `/:${record.view.route.key}`
   log.success(`View session ${chalk.bold(record.id)} — ${chalk.bold(label)}`)
-  log.dim(`  target    ${record.view.target}`)
+  log.dim(`  domain    ${record.view.target}`)
   log.dim(
     `  identity  ${record.identity ?? '(default)'}  instance  ${record.instance ?? '(active)'}`,
   )
@@ -545,10 +546,27 @@ async function sessionsCommand(opts: ViewOpts): Promise<void> {
     return
   }
   for (const s of sessions) {
-    console.log(
-      `${chalk.bold(s.id)}  /:${s.view.route.key}  target ${s.view.target}  ${chalk.dim(s.pageUrl)}`,
+    console.log(`${chalk.bold(s.id)}  /:${s.view.route.key}  ${chalk.dim(s.pageUrl)}`)
+  }
+}
+
+async function refreshCommand(opts: ViewOpts): Promise<void> {
+  const session = (await listSessions()).find((session) => session.id === opts.refresh)
+  if (session === undefined) {
+    throw new AstraleError('VIEW_NOT_FOUND', `No view session "${opts.refresh}".`)
+  }
+  const response = await fetch(`${session.pageUrl}refresh`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) {
+    throw new AstraleError(
+      'VIEW_REFRESH_FAILED',
+      'Could not refresh the View; its previous placement is retained.',
     )
   }
+  if (isMachine(opts)) output({ session, state: 'refreshing' }, opts)
+  else log.success(`Refreshed ${session.id} — ${session.pageUrl}`)
 }
 
 export default {
@@ -557,28 +575,30 @@ export default {
   arguments: [
     {
       name: 'spec',
-      description: 'ViewPath (/:origin:view.slug) or target node (/path or @id)',
+      description: 'ViewPath (/:origin:view.slug) or Domain origin (origin or /:origin)',
       required: false,
     },
   ],
   options: [
     {
-      flags: '--target <path>',
-      description:
-        'Target node to open the view on (optional — some views are standalone); @self works',
+      flags: '--view <slug>',
+      description: 'With a Domain origin: open this View instead of the Domain entrypoint',
     },
-    { flags: '--view <slug>', description: 'Pick a view when the target resolves several' },
-    { flags: '--list', description: 'Resolve and print the candidate views; do not open' },
-    {
-      flags: '--development-local-url <origin>',
-      description: 'Internal: use an exact proven loopback transport for Domain development',
-    },
+    { flags: '--list', description: "Print the Domain's views; do not open" },
     { flags: '--headed', description: 'Visible agent-browser window' },
     { flags: '--browser', description: 'Open in the system default browser instead' },
     { flags: '--no-open', description: 'Start the session and print the URL only' },
     { flags: '--snapshot', description: 'Print an accessibility snapshot once the view is up' },
     { flags: '--screenshot <file>', description: 'Save a screenshot once the view is up' },
     { flags: '--sessions', description: 'List active view sessions' },
+    {
+      flags: '--allow-identity <name...>',
+      description: 'Allow switching to these local identities in the viewer (reloads the View)',
+    },
+    {
+      flags: '--refresh <id>',
+      description: 'Re-resolve and reload an open View in its existing tab',
+    },
     {
       flags: '--close [id]',
       description: 'Close a view session (bare: the only open one; with --all: every session)',
@@ -591,33 +611,48 @@ export default {
   ],
   afterHelpText: `
 What it does:
-  Renders ONE view — no GUI, no cookies, no WorkOS. Target-bound views resolve on
-  the kernel; an explicit Domain view resolves from authenticated installation
-  introspection. It then starts a loopback session server that supplies the shell
+  Renders ONE view - no GUI, no cookies, no WorkOS. Every View belongs to its
+  Domain: a Domain origin opens its entrypoint (or --view <slug>) from the
+  Domain's View catalog, and an explicit ViewPath resolves from authenticated
+  installation introspection. A View that shows one node selects it through its
+  own internal routing; there is no target node to pass.
+  It then starts a loopback session server that supplies the shell
   handshake (real handshake via @astrale-os/shell, token minted from YOUR CLI
   identity, kernel calls proxied), and opens the page headless in agent-browser.
   Driving stays agent-browser's job; auth follows --as/--creds/-i like any kernel
   command.
 
   A session stays up ~30 min idle (heartbeat while the page is open). The view
-  gets exactly what the GUI would hand it: one target-bound resolved placement,
+  gets exactly what the GUI would hand it: one Domain-bound resolved placement,
   an audience-bound credential for shell mounts, and the kernel endpoint.
 
 Examples:
-  $ astrale view @customer
+  $ astrale view crm.example.dev
+  $ astrale view crm.example.dev --view dashboard --snapshot
   $ astrale view /:crm.example.dev:view.dashboard
-  $ astrale view /:agents.astrale.ai:view.agent --target @f00d1234 --as alice
-  $ astrale view @customer --snapshot
-  $ astrale view /:integrations.astrale.ai:view.application --allow-external-origin https://connect.nango.dev https://connect.composio.dev
+  $ astrale view /:agents.astrale.ai:view.agent --as alice
+  $ astrale view /:integrations.astrale.ai:view.application
+  $ astrale view crm.example.dev --list
   $ astrale view --list
   $ astrale view --sessions ; astrale view --close --all
+  $ astrale view --refresh v-abc123
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
-    if (opts.close !== undefined) return closeCommand(opts)
+    if (opts.refresh !== undefined) return refreshCommand(opts)
+    if (opts.close !== undefined) return closeCommand(opts).catch((error) => fatal(error, opts))
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)
 
-    if (!spec) return fatal(new Error('Nothing to open — pass a ViewPath or target node.'))
+    if (!spec) {
+      return fatal(
+        new AstraleError(
+          'MISSING_ARG',
+          '`view` needs a ViewPath or Domain origin.',
+          'Run: astrale view crm.example.dev --snapshot',
+        ),
+        opts,
+      )
+    }
     const wantsAgentBrowser = !opts.list && !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
       return fatal(
@@ -632,14 +667,16 @@ Examples:
       process.exit(1)
     }
 
-    const { view, candidates } = await resolveSession(spec, opts)
+    const { view, candidates } = await resolveSession(spec, opts).catch((error) =>
+      fatal(error, opts),
+    )
     if (opts.list) {
       if (isMachine(opts)) output(candidates, opts)
-      else if (candidates.length === 0) log.dim('No views resolve here.')
+      else if (candidates.length === 0) log.dim('This Domain publishes no views.')
       else {
         for (const c of candidates) {
           console.log(
-            `${chalk.bold(candidateSlug(c))}  ${c.handshake}  ${c.origin}  ${chalk.dim(c.url)}  ${c.path}`,
+            `${chalk.bold(candidateSlug(c))}  ${c.handshake}  ${chalk.dim(c.url)}  ${c.path}`,
           )
         }
       }
@@ -647,9 +684,7 @@ Examples:
     }
     if (!view) throw new Error('View resolution completed without a selected view')
 
-    const record = await startDevelopmentViewSession(view, opts).catch((error) =>
-      fatal(error, opts),
-    )
+    const record = await startViewSession(view, opts).catch((error) => fatal(error, opts))
 
     let mode: 'agent' | 'system' | 'none' = 'none'
     if (wantsAgentBrowser) {

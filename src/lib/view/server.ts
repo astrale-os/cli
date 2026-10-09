@@ -1,18 +1,24 @@
 import type { AuthApi } from '@astrale-os/sdk/auth'
 import type { IssuerId } from '@astrale-os/sdk/auth'
+import type { SessionCredential } from '@astrale-os/sdk/client/session'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
+import { credential } from '@astrale-os/sdk/auth'
+import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 
 import type { ViewServeConfig } from './session'
 
 import { withClientSession } from '../../connection'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
-import { removeSessionFiles } from './session'
+import { exchangeViewCredential } from './exchange-credential'
+import { refreshViewPlacement } from './refresh'
+import { removeSessionFiles, saveRecord } from './session'
 
 export { ensureViewerAssets, viewerDistDir } from './assets'
 
@@ -21,21 +27,51 @@ export { ensureViewerAssets, viewerDistDir } from './assets'
  * credentials, receives its lifecycle reports, and proxies the view's kernel
  * calls (one mechanism for CORS, self-signed local CAs, and keeping the kernel
  * origin out of the page). Everything is nonce-scoped under `/s/<nonce>/`;
- * loopback-only. Exits after `idleMs` without a request — the host page's
- * heartbeat keeps a live session alive.
+ * loopback-only.
+ *
+ * A session belongs to the pages attached to it, never to whoever opened it.
+ * Each page announces itself on every heartbeat and says goodbye when it goes,
+ * so a host that is done with a session (Studio closing its dialog) releases it
+ * rather than killing it: the server then shuts down once the last page has
+ * left, and a View the operator opened in its own tab outlives the dialog it
+ * came from. `idleMs` remains the net under that rule, for a page that stopped
+ * reporting without ever leaving.
  */
 
 const VIEW_TOKEN_TTL_SECONDS = 4 * 60
-const TOKEN_REFRESH_MARGIN_MS = 60_000
-const FALLBACK_TOKEN_TTL_MS = VIEW_TOKEN_TTL_SECONDS * 1_000
+/**
+ * Delegation the mounted View must always be able to make from its bearer. It is the single
+ * threshold: this server renews the grant once it stops covering that delegation, and the host page
+ * anticipates against the same value from `/config.json`.
+ */
+export const VIEW_DELEGATION_TTL_SECONDS = 60
 const IDLE_SWEEP_MS = 60_000
+/**
+ * Grace between the last page leaving a released session and the shutdown. A
+ * reload leaves and comes back within a fraction of this on loopback; anything
+ * that has not come back by then is not coming back.
+ */
+const RELEASE_GRACE_MS = 10_000
+/**
+ * Reserved to the loopback host page and the host that opened the session.
+ * Reading the View's identity, minting against it, changing it and ending the
+ * session are the host's, never the embedded View's, whether or not this
+ * session was opened with identities to switch between.
+ */
+const HOST_ONLY_ROUTES = ['/config.json', '/identity', '/release', '/token']
 
 export type PageStatus = { state: string; error?: string; at: string }
 
-type TokenGrant = { token: string; expiresAt: number; kind: 'minted' }
+type GrantKind = 'minted' | 'exchanged'
+type TokenGrant = { token: string; expiresAt: number; kind: GrantKind }
+type GrantProvider = ReturnType<typeof createSessionCredentialProvider>
 
 export interface ViewServerDependencies {
   readonly connect: typeof withClientSession
+  readonly exchange?: typeof exchangeViewCredential
+  readonly persist?: typeof saveRecord
+  /** Seam for the tests: the shutdown path ends the process in production. */
+  readonly exit?: (code: number) => void
 }
 
 const DEFAULT_DEPENDENCIES: ViewServerDependencies = Object.freeze({
@@ -51,19 +87,108 @@ export function startViewServer(
   const hostDir = viewerDistDir()
   const proxyFetch = proxy.caFile ? fetchWithCaFile(proxy.caFile) : globalThis.fetch
   let status: PageStatus = { state: 'waiting', at: new Date().toISOString() }
-  let grant: TokenGrant | null = null
+  let grantKind: GrantKind = 'minted'
+  let grants = createGrantProvider()
   let lastActivity = Date.now()
+  let revision = 0
+  let refreshing: Promise<void> | undefined
+  let switching = false
+  /** Pages currently holding this session, by the id each one reports. */
+  const pages = new Map<string, number>()
+  /**
+   * Pages a host has handed back. A release races the last heartbeat the page
+   * had already sent, and a page that came back that way would hold the session
+   * for its whole idle budget without anything left to report it gone.
+   */
+  const dropped = new Set<string>()
+  /** Set once a host hands the session back; from then on the pages alone hold it. */
+  let released = false
+  let departure: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
+  let shutdownTask: Promise<void> | undefined
+  const exit = dependencies.exit ?? ((code: number) => process.exit(code))
 
-  /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
-  async function freshGrant(): Promise<TokenGrant> {
-    if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
-    grant = await dependencies.connect(
-      config.kernel,
-      async ({ auth, target }) => {
+  async function switchIdentity(identity: string): Promise<void> {
+    const kernel = { ...config.kernel, as: identity, creds: undefined }
+    const candidate = { ...config, kernel }
+    const view = await refreshViewPlacement(candidate, dependencies.connect)
+    const nextGrant = view.route.handshake === 'shell' ? await mintGrant(kernel, view) : null
+    await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, identity, view })
+    config.kernel = kernel
+    session.identity = identity
+    session.view = view
+    // A new provider is how the previous identity's grant is invalidated: a mint still in flight
+    // for it can only ever settle into the provider that started it.
+    grants = createGrantProvider(nextGrant ?? undefined)
+    revision += 1
+    status = { state: 'waiting', at: new Date().toISOString() }
+  }
+
+  async function refresh(): Promise<void> {
+    const view = await refreshViewPlacement(config, dependencies.connect)
+    await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, view })
+    session.view = view
+    grants = createGrantProvider()
+    revision += 1
+    status = { state: 'waiting', at: new Date().toISOString() }
+  }
+
+  /**
+   * Issue a caller-scoped bearer; raw CLI credentials never enter the browser session. Concurrent
+   * page requests share one mint, and a grant is reused until it stops covering the View's own
+   * delegation.
+   *
+   * Deliberately never started: this provider is request-scoped behind a client that already
+   * anticipates. The host page holds its own provider and starts it (`viewer/main.ts`), so the
+   * `POST /token` that reaches this server arrives on that page's own threshold timer and never on
+   * a user action. A timer here would instead mint delegations for a page that may have gone away,
+   * and hold the event loop against the server's idle shutdown.
+   */
+  function createGrantProvider(initial?: TokenGrant): GrantProvider {
+    if (initial !== undefined) grantKind = initial.kind
+    return createSessionCredentialProvider({
+      ttlSeconds: VIEW_DELEGATION_TTL_SECONDS,
+      mint: async (): Promise<SessionCredential> => {
+        const started = revision
+        const fresh = await mintGrant(config.kernel, session.view)
+        if (started !== revision)
+          throw new Error('View session changed; reload before requesting credentials.')
+        grantKind = fresh.kind
+        return { credential: fresh.token, expiresAt: fresh.expiresAt }
+      },
+      ...(initial === undefined
+        ? {}
+        : { initial: { credential: initial.token, expiresAt: initial.expiresAt } }),
+    })
+  }
+
+  async function mintGrant(
+    kernel: ViewServeConfig['kernel'],
+    view: ViewServeConfig['session']['view'],
+  ): Promise<TokenGrant> {
+    return dependencies.connect(
+      kernel,
+      async ({ auth, target, identity }) => {
+        // This session is bound to the Kernel it was opened against, exactly as
+        // its placement refresh is. A bookmark re-pointed since then mints
+        // nothing here: the View mounted from the old Kernel would receive a
+        // bearer for another one.
+        if (target.kernelIssuer !== proxy.issuer || target.url !== proxy.kernelUrl) {
+          throw new Error('The session bookmark now points to another Kernel. Open a new View.')
+        }
+        // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
+        if (view.route.issuer !== target.kernelIssuer && kernel.creds === undefined) {
+          const { domainOrigin: _bookmarkDomain, ...source } = target
+          const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
+            { ...kernel, ...(identity === undefined ? {} : { as: identity }) },
+            { ...source, domainIssuer: view.route.issuer },
+          )
+          return { ...exchanged, kind: 'exchanged' as const }
+        }
         const token = await mintViewCredential(auth, target.kernelIssuer)
         return {
           token,
-          expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
+          expiresAt: mintedExpiry(token),
           kind: 'minted' as const,
         }
       },
@@ -72,21 +197,23 @@ export function startViewServer(
         nestedTtlSeconds: VIEW_TOKEN_TTL_SECONDS,
       },
     )
-    return grant
   }
 
   const server = createServer((req, res) => {
     lastActivity = Date.now()
     void route(req, res).catch((error: unknown) => {
+      if (res.destroyed) return
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : new Error(String(error)))
+        return
+      }
       const message = error instanceof Error ? error.message : String(error)
       // CORS headers even on failures — the caller may be the cross-origin
       // view iframe, and an opaque error reads as a network failure there.
-      if (!res.headersSent) {
-        res.writeHead(502, {
-          'content-type': 'application/json',
-          ...corsHeaders(req.headers.origin),
-        })
-      }
+      res.writeHead(502, {
+        'content-type': 'application/json',
+        ...corsHeaders(req.headers.origin),
+      })
       res.end(JSON.stringify({ error: message }))
     })
   })
@@ -98,6 +225,34 @@ export function startViewServer(
       return
     }
     const sub = url.pathname.slice(base.length) || '/'
+
+    // A custom header prevents cross-origin simple requests; no preflight is admitted here.
+    if (HOST_ONLY_ROUTES.includes(sub)) {
+      const address = server.address()
+      const origin =
+        typeof address === 'object' && address !== null ? `http://127.0.0.1:${address.port}` : ''
+      if (
+        origin === '' ||
+        req.headers.host !== new URL(origin).host ||
+        (req.headers.origin !== undefined && req.headers.origin !== origin) ||
+        req.headers['x-astrale-view-host'] !== '1'
+      ) {
+        json(res, 403, { error: 'This operation is restricted to the View host.' })
+        return
+      }
+      // Only a page acting on the identity in force has to agree on the revision:
+      // reading the config is how a fresh page learns it, and a host releasing a
+      // session holds no page revision at all.
+      if (
+        config.identities?.length &&
+        sub !== '/config.json' &&
+        sub !== '/release' &&
+        req.headers['x-astrale-view-revision'] !== String(revision)
+      ) {
+        json(res, 409, { error: 'View session changed; reload before continuing.' })
+        return
+      }
+    }
 
     if (sub === '/k' || sub.startsWith('/k/')) {
       await proxyKernel(req, res, sub.slice('/k'.length), url.search)
@@ -114,31 +269,99 @@ export function startViewServer(
     if (sub === '/config.json' && req.method === 'GET') {
       json(res, 200, {
         view: session.view,
-        transport: config.transport,
         kernelUrl: proxy.direct ? proxy.kernelUrl : `${base}/k`,
         kernelIssuer: proxy.issuer,
         identity: session.identity ?? null,
         instance: session.instance ?? null,
         sessionId: session.id,
         externalOrigins: config.externalOrigins,
+        delegationTtlSeconds: VIEW_DELEGATION_TTL_SECONDS,
+        revision,
+        ...(config.identities ? { identities: config.identities } : {}),
       })
       return
     }
     if (sub === '/token' && req.method === 'POST') {
+      if (switching) {
+        json(res, 409, { error: 'Identity switch in progress.' })
+        return
+      }
       if (session.view.route.handshake !== 'shell') {
         json(res, 403, { error: 'plain views have no Astrale credential privilege' })
         return
       }
-      const fresh = await freshGrant()
-      json(res, 200, { token: fresh.token, expiresAt: fresh.expiresAt, kind: fresh.kind })
+      const fresh = await grants.acquire()
+      json(res, 200, { token: fresh.credential, expiresAt: fresh.expiresAt, kind: grantKind })
+      return
+    }
+    if (sub === '/identity' && req.method === 'POST') {
+      const body = await readJson(req)
+      const identity = body?.identity
+      if (
+        typeof identity !== 'string' ||
+        !config.identities?.includes(identity) ||
+        config.kernel.creds
+      ) {
+        json(res, 403, { error: 'Identity was not allowed for this View session.' })
+        return
+      }
+      if (switching || refreshing) {
+        json(res, 409, { error: 'View session update in progress.' })
+        return
+      }
+      // The body may have arrived after another page finished switching.
+      if (req.headers['x-astrale-view-revision'] !== String(revision)) {
+        json(res, 409, { error: 'View session changed; reload before continuing.' })
+        return
+      }
+      switching = true
+      try {
+        await switchIdentity(identity)
+        json(res, 200, { revision })
+      } finally {
+        switching = false
+      }
       return
     }
     if (sub === '/status' && req.method === 'POST') {
       const body = await readJson(req)
-      if (body && typeof body.state === 'string' && body.state !== 'alive') {
-        status = { state: body.state, error: asString(body.error), at: new Date().toISOString() }
+      const page = asString(body?.page)
+      const state = asString(body?.state)
+      if (page !== undefined) {
+        if (state === 'gone') depart(page)
+        else attach(page)
       }
-      res.writeHead(204).end()
+      // `gone` is the page leaving, not a state the View reached, so it never
+      // becomes the status a `--snapshot` run is waiting on.
+      if (state !== undefined && state !== 'alive' && state !== 'gone') {
+        status = { state, error: asString(body?.error), at: new Date().toISOString() }
+      }
+      json(res, 200, { revision })
+      return
+    }
+    if (sub === '/release' && req.method === 'POST') {
+      const body = await readJson(req)
+      const page = asString(body?.page)
+      released = true
+      if (page !== undefined) {
+        pages.delete(page)
+        dropped.add(page)
+      }
+      scheduleDeparture()
+      json(res, 200, { released: true, attached: pages.size })
+      return
+    }
+    if (sub === '/refresh' && req.method === 'POST') {
+      if (switching) {
+        json(res, 409, { error: 'Identity switch in progress.' })
+        return
+      }
+      // Concurrent requests share one resolution; a failed resolution retains the last good View.
+      refreshing ??= refresh().finally(() => {
+        refreshing = undefined
+      })
+      await refreshing
+      json(res, 200, { revision })
       return
     }
     if (sub === '/state' && req.method === 'GET') {
@@ -171,20 +394,59 @@ export function startViewServer(
     // Response bodies still stream through.
     const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
     const body = hasBody ? Buffer.concat(await collect(req)) : undefined
-    const upstream = await proxyFetch(target, {
-      method: req.method,
-      headers,
-      ...(body !== undefined ? { body } : {}),
-    } as RequestInit)
-    const responseHeaders: Record<string, string> = corsHeaders(origin)
-    const contentType = upstream.headers.get('content-type')
-    if (contentType) responseHeaders['content-type'] = contentType
-    res.writeHead(upstream.status, responseHeaders)
-    if (upstream.body) {
-      Readable.fromWeb(upstream.body as unknown as WebReadableStream).pipe(res)
-    } else {
-      res.end()
+    const controller = new AbortController()
+    const abort = () => {
+      if (!res.writableFinished) controller.abort()
     }
+    res.once('close', abort)
+    if (res.destroyed) abort()
+    try {
+      const upstream = await proxyFetch(target, {
+        method: req.method,
+        headers,
+        signal: controller.signal,
+        ...(body !== undefined ? { body } : {}),
+      } as RequestInit)
+      const responseHeaders: Record<string, string> = corsHeaders(origin)
+      const contentType = upstream.headers.get('content-type')
+      if (contentType) responseHeaders['content-type'] = contentType
+      res.writeHead(upstream.status, responseHeaders)
+      if (upstream.body) {
+        await pipeline(Readable.fromWeb(upstream.body as unknown as WebReadableStream), res)
+      } else {
+        res.end()
+      }
+    } finally {
+      res.off('close', abort)
+    }
+  }
+
+  /** A page is holding the session; anything scheduled against its absence is off. */
+  function attach(page: string): void {
+    if (dropped.has(page)) return
+    pages.set(page, Date.now())
+    if (departure === undefined) return
+    clearTimeout(departure)
+    departure = undefined
+  }
+
+  function depart(page: string): void {
+    pages.delete(page)
+    scheduleDeparture()
+  }
+
+  /**
+   * A released session with no page left is nobody's. Shut it down once the
+   * grace has passed without a page taking it back: a reload leaves and returns,
+   * and so does the tab the operator popped the View out into.
+   */
+  function scheduleDeparture(): void {
+    if (disposed || !released || pages.size > 0 || departure !== undefined) return
+    departure = setTimeout(() => {
+      departure = undefined
+      if (released && pages.size === 0) void shutdown(0)
+    }, config.releaseGraceMs ?? RELEASE_GRACE_MS)
+    departure.unref()
   }
 
   const idleTimer = setInterval(() => {
@@ -192,14 +454,41 @@ export function startViewServer(
   }, IDLE_SWEEP_MS)
   idleTimer.unref()
 
-  async function shutdown(code: number): Promise<void> {
+  /** The returned HTTP server owns exactly these timers and signal subscriptions. */
+  function dispose(): void {
+    if (disposed) return
+    disposed = true
     clearInterval(idleTimer)
-    server.close()
-    await removeSessionFiles(session.id)
-    process.exit(code)
+    if (departure !== undefined) {
+      clearTimeout(departure)
+      departure = undefined
+    }
+    process.off('SIGTERM', terminate)
+    process.off('SIGINT', interrupt)
   }
-  process.on('SIGTERM', () => void shutdown(0))
-  process.on('SIGINT', () => void shutdown(0))
+  // Stop owning background work as soon as close is requested, even if an in-flight HTTP request
+  // must finish before the close event. Closing a library-created server never exits its caller.
+  const closeHttpServer = server.close.bind(server)
+  server.close = (callback) => {
+    dispose()
+    return closeHttpServer(callback)
+  }
+  server.once('close', dispose)
+
+  function shutdown(code: number): Promise<void> {
+    if (shutdownTask !== undefined) return shutdownTask
+    if (disposed) return Promise.resolve()
+    shutdownTask = (async () => {
+      server.close()
+      await removeSessionFiles(session.id)
+      exit(code)
+    })()
+    return shutdownTask
+  }
+  const terminate = () => void shutdown(0)
+  const interrupt = () => void shutdown(0)
+  process.on('SIGTERM', terminate)
+  process.on('SIGINT', interrupt)
 
   server.listen(session.port, '127.0.0.1')
   return server
@@ -216,15 +505,27 @@ export async function mintViewCredential(
   })
 }
 
-function jwtExpiry(token: string): number | null {
+/**
+ * The issuer's own expiration is the only evidence of this credential's lifetime; the requested TTL
+ * is a request, never a grant. Issuance already refuses to return a credential this cannot read, so
+ * an unreadable one is a Kernel defect and fails closed rather than carrying an estimate into the
+ * browser, where Shell bounds its child delegation by exactly this value.
+ */
+function mintedExpiry(token: string): number {
+  let claimed: unknown
   try {
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as {
-      exp?: number
-    }
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : null
-  } catch {
-    return null
+    claimed = credential.inspect(token).claims.exp
+  } catch (cause) {
+    throw new TypeError('The minted View credential could not be read.', { cause })
   }
+  if (typeof claimed !== 'number' || !Number.isSafeInteger(claimed)) {
+    throw new TypeError('The minted View credential carries no usable expiration.')
+  }
+  const expiresAt = claimed * 1_000
+  if (!Number.isSafeInteger(expiresAt)) {
+    throw new TypeError('The minted View credential expiration is out of range.')
+  }
+  return expiresAt
 }
 
 function corsHeaders(origin: string | undefined): Record<string, string> {
@@ -245,14 +546,18 @@ function joinUrl(baseUrl: string, suffix: string): string {
 }
 
 function json(res: ServerResponse, code: number, body: unknown): void {
-  res.writeHead(code, { 'content-type': 'application/json' })
+  res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
 }
 
 async function serveAsset(res: ServerResponse, file: string, contentType: string): Promise<void> {
   try {
     const content = await readFile(file)
-    res.writeHead(200, { 'content-type': contentType, 'cache-control': 'no-store' })
+    res.writeHead(200, {
+      'content-type': contentType,
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+    })
     res.end(content)
   } catch {
     res.writeHead(404).end()

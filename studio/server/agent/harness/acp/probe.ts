@@ -1,21 +1,27 @@
 import * as acp from '@agentclientprotocol/sdk'
-import { spawn } from 'node:child_process'
-import { Readable, Writable } from 'node:stream'
 
 import type { HarnessLoadout } from '../../../../shared/types'
 import type { HarnessHealth, HarnessLoadoutOptions } from '../adapter'
+import type { ProcessExit } from './agent-process'
 import type { AcpProviderOptions } from './provider'
 
 import { isAgentEffort } from '../../../../shared/agent-effort'
-import { childEnvironment, terminateProcessTree } from '../process'
-import { effortConfig, effortOptions, modelConfig, modelOptions } from './options'
+import { terminateProcessTree } from '../process'
+import { initializeAgent, spawnAcpAgent } from './agent-process'
+import {
+  effortConfig,
+  effortOptions,
+  fastConfig,
+  fastEnabled,
+  modelConfig,
+  modelOptions,
+} from './options'
 import { providerEnvironment, providerSessionMeta } from './provider'
 
 const PROBE_TIMEOUT_MS = 30_000
 /** How long a failed request waits for the process to say what went wrong. */
 const EXIT_GRACE_MS = 250
 const CLEANUP_TIMEOUT_MS = 5_000
-const MAX_STDERR = 16_000
 
 interface AcpProbeSnapshot {
   initialized: acp.InitializeResponse
@@ -29,12 +35,6 @@ interface AcpProbeInput {
   model?: string
   signal?: AbortSignal
   createSession: boolean
-}
-
-interface ProcessExit {
-  code: number | null
-  signal: NodeJS.Signals | null
-  spawnError?: string
 }
 
 function errorText(error: unknown): string {
@@ -53,45 +53,14 @@ async function runAcpProbe(
   if (input.signal?.aborted) throw new Error('canceled')
 
   const env = providerEnvironment(options, { env: input.env })
-  let child: ReturnType<typeof spawn>
+  let agent: ReturnType<typeof spawnAcpAgent>
   try {
-    child = spawn(options.command[0], options.command.slice(1), {
-      cwd: input.root,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: childEnvironment(env),
-      detached: process.platform !== 'win32',
-    })
+    agent = spawnAcpAgent(options.provider, options.command, input.root, env)
   } catch (error) {
     throw new Error(`failed to spawn ${options.provider} ACP agent: ${errorText(error)}`)
   }
-
-  let stderr = ''
-  let exited = false
-  let resolveExit!: (exit: ProcessExit) => void
-  const exit = new Promise<ProcessExit>((resolve) => {
-    resolveExit = resolve
-  })
-  child.stderr?.setEncoding('utf8')
-  child.stderr?.on('data', (chunk: string) => {
-    stderr = (stderr + chunk).slice(-MAX_STDERR)
-  })
-  child.once('error', (error) => {
-    if (exited) return
-    exited = true
-    resolveExit({ code: null, signal: null, spawnError: error.message })
-  })
-  child.once('close', (code, signal) => {
-    if (exited) return
-    exited = true
-    resolveExit({ code, signal })
-  })
-
-  const processFailure = (result: ProcessExit): Error =>
-    new Error(
-      result.spawnError
-        ? `failed to spawn ${options.provider} ACP agent: ${result.spawnError}`
-        : `${options.provider} ACP agent exited ${result.code ?? result.signal ?? -1}${stderrSuffix(stderr)}`,
-    )
+  const { child, exit } = agent
+  const processFailure = (result: ProcessExit) => agent.failure(result, stderrSuffix)
 
   let rejectAbort: ((error: Error) => void) | undefined
   const aborted = input.signal
@@ -148,61 +117,27 @@ async function runAcpProbe(
     }
   }
 
-  const stopChild = async () => {
-    try {
-      child.stdin?.end()
-    } catch {
-      /* already closed */
-    }
-    if (exited) return
-    await Promise.race([
-      exit.then(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 250)),
-    ])
-    if (exited) return
-    terminateProcessTree(child)
-    await Promise.race([
-      exit.then(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 750)),
-    ])
-    if (!exited) terminateProcessTree(child, 'SIGKILL')
-  }
-
   let connection: acp.ClientConnection | undefined
   let context: acp.ClientContext | undefined
   let initialized: acp.InitializeResponse | undefined
   let sessionId: string | undefined
   try {
-    const output = Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>
-    const source = Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>
     const app = acp
       .client({ name: 'astrale-domain-studio-probe' })
       .onRequest(acp.methods.client.session.requestPermission, () => ({
         outcome: { outcome: 'cancelled' },
       }))
       .onNotification(acp.methods.client.session.update, () => {})
-    connection = app.connect(acp.ndJsonStream(output, source))
+    connection = app.connect(agent.stream())
     context = connection.agent
 
-    const response = await withProcess<acp.InitializeResponse>(
-      context.request(acp.methods.agent.initialize, {
-        protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { session: { configOptions: { boolean: {} } } },
-        clientInfo: {
-          name: 'astrale-domain-studio-probe',
-          title: 'Astrale Domain Studio Probe',
-        },
-      }) as Promise<acp.InitializeResponse>,
-      'initialize',
+    initialized = await initializeAgent(
+      context,
+      options.provider,
+      { name: 'astrale-domain-studio-probe', title: 'Astrale Domain Studio Probe' },
+      withProcess,
     )
-    initialized = response
-    if (response.protocolVersion !== acp.PROTOCOL_VERSION)
-      throw new Error(
-        `${options.provider} ACP negotiated unsupported protocol version ${response.protocolVersion}`,
-      )
-
-    if (!input.createSession)
-      return { initialized: response, nativeConfigOptions: [], configOptions: [] }
+    if (!input.createSession) return { initialized, nativeConfigOptions: [], configOptions: [] }
 
     const meta = providerSessionMeta(options.provider, { env: input.env })
     const setup = await withProcess(
@@ -230,7 +165,7 @@ async function runAcpProbe(
       )
       configOptions = selected.configOptions
     }
-    return { initialized: response, nativeConfigOptions, configOptions }
+    return { initialized, nativeConfigOptions, configOptions }
   } finally {
     const capabilities = initialized?.agentCapabilities?.sessionCapabilities
     if (sessionId && context && !input.signal?.aborted) {
@@ -253,7 +188,7 @@ async function runAcpProbe(
     } catch {
       /* already closed */
     }
-    await stopChild()
+    await agent.shutdown(250, 750)
   }
 }
 
@@ -303,6 +238,7 @@ export async function probeAcpLoadout(
     // Read the ladder AFTER the model override: it is the selected model that
     // decides which levels exist, and whether there are any at all.
     const effort = effortConfig(snapshot.configOptions)
+    const fast = fastConfig(snapshot.configOptions)
     const efforts = effortOptions(options.provider, effort)
     const nativeEffort = effortConfig(snapshot.nativeConfigOptions)?.currentValue
     const implementation = snapshot.initialized.agentInfo
@@ -317,6 +253,14 @@ export async function probeAcpLoadout(
       ...(isAgentEffort(effort?.currentValue) ? { effort: effort.currentValue } : {}),
       ...(isAgentEffort(nativeEffort) ? { nativeEffort } : {}),
       ...(efforts === undefined ? {} : { efforts }),
+      ...(fast
+        ? {
+            fastMode: {
+              enabled: fastEnabled(fast),
+              ...(fast.description ? { description: fast.description } : {}),
+            },
+          }
+        : {}),
       cwd: root,
       protocolVersion: snapshot.initialized.protocolVersion,
       agentName,

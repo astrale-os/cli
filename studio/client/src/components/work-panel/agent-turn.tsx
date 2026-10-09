@@ -1,41 +1,45 @@
-import type { AgentEvent, AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/types'
 
-import { Loader2, MessageSquare, TriangleAlert } from 'lucide-react'
+import { Copy, LogIn, MessageSquare } from 'lucide-react'
 
 import { Markdown } from '@/components/markdown'
+import { Button } from '@/components/ui/button'
+import { isRunActive } from '@/lib/agent'
 import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-/** The panel is narrow, and CSS truncation eats the END of a string — the only
- *  part of a path or URL that says anything. Long targets keep their tail. */
-const TARGET_BUDGET = 44
+import { echoesError, isStopped, StoppedTurnNotice } from './agent-error'
+import { AgentSteps, splitTurn, visibleDraft } from './agent-steps'
+import { MessageImages } from './images'
 
-export function compactTarget(target: string): string {
-  if (target.length <= TARGET_BUDGET) return target
-  const segments = target.split('/').filter(Boolean)
-  for (let take = 3; take >= 1; take -= 1) {
-    if (segments.length <= take) break
-    const tail = `…/${segments.slice(-take).join('/')}`
-    if (tail.length <= TARGET_BUDGET) return tail
-  }
-  return `…${target.slice(1 - TARGET_BUDGET)}`
+export { activityLabel, compactTarget } from './agent-steps'
+
+export interface AgentAuthFailure {
+  title: string
+  command: string
 }
 
 /**
- * What the agent is doing right now, in one line — never the whole event log, and
- * never a raw status string ("session started" tells a reader nothing).
+ * ACP providers currently return authentication failures as unstructured text.
+ * Keep that implementation detail out of the conversation while retaining a
+ * deliberately narrow match: an unrelated 401 from a tool must remain visible.
  */
-export function activityLabel(run: AgentRun): string {
-  for (const event of [...run.events].reverse()) {
-    if (event.kind === 'tool')
-      return [event.tool, event.target && compactTarget(event.target)].filter(Boolean).join(' · ')
-    if (event.kind === 'thinking') return 'Thinking…'
-  }
-  return 'Working…'
-}
+export function agentAuthFailure(run: AgentRun): AgentAuthFailure | undefined {
+  if (!run.error || (run.harness !== 'claude' && run.harness !== 'codex')) return undefined
+  const error = run.error.toLowerCase()
+  const authenticationFailure =
+    /failed to authenticate|authentication (?:failed|required)|not (?:logged|signed) in|login required/.test(
+      error,
+    ) ||
+    (/oauth|auth token|credentials/.test(error) &&
+      /expired|refresh|missing|invalid|unauthorized/.test(error))
+  if (!authenticationFailure) return undefined
 
-const isProse = (event: AgentEvent) => event.kind === 'message'
+  return run.harness === 'codex'
+    ? { title: 'Your Codex session has expired', command: 'codex login' }
+    : { title: 'Your Claude Code session has expired', command: 'claude auth login' }
+}
 
 /** How many comment threads this turn answered in place. */
 export function answeredThreads(run: AgentRun): number {
@@ -49,23 +53,40 @@ export function answeredThreads(run: AgentRun): number {
 
 /**
  * One exchange: what you asked, then what came back. The steps in between stay
- * out of the way — a turn is only legible once it is a message, not a log.
+ * out of the way — a turn is only legible once it is a message, not a log — and
+ * fold into one line that unfolds on demand.
  */
-export function AgentTurn({ run, onResume }: { run: AgentRun; onResume?: () => void }) {
-  const messages = run.events.filter(isProse)
-  const active = run.status === 'running' || run.status === 'queued'
+export function AgentTurn({
+  run,
+  onContinue,
+}: {
+  run: AgentRun
+  /** offered on the last turn only: picks it up where it stopped */
+  onContinue?: () => void
+}) {
+  const { steps, answer } = splitTurn(run)
+  const active = isRunActive(run)
+  const stopped = isStopped(run)
+  // the stopped notice below says why the turn ended; a message saying the same is dropped
+  const messages = stopped
+    ? answer.filter((message) => !echoesError(message.text, run.error))
+    : answer
   const answered = answeredThreads(run)
   const setPanelTab = useUI((state) => state.setPanelTab)
+  const authFailure = agentAuthFailure(run)
+  const images = run.attachments ?? []
+  const draft = visibleDraft(run)
 
   return (
     <div className="space-y-2.5">
+      {images.length > 0 && <MessageImages chatId={run.chatId} attachments={images} />}
       {run.instruction ? (
         <div className="flex justify-end">
           <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-muted px-3 py-2 text-[13px] leading-relaxed">
             {run.instruction}
           </div>
         </div>
-      ) : (
+      ) : images.length ? null : (
         <div className="flex justify-end">
           <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">
             {run.summary}
@@ -73,32 +94,24 @@ export function AgentTurn({ run, onResume }: { run: AgentRun; onResume?: () => v
         </div>
       )}
 
-      {(messages.length > 0 || active || run.error) && (
+      {(messages.length > 0 || steps.length > 0 || active || !!run.error || stopped) && (
         <div className="flex">
           <div className="min-w-0 flex-1 space-y-2 text-[13px]">
+            <AgentSteps run={run} steps={steps} />
             {messages.map((message) => (
               <Markdown key={message.id} text={message.text} />
             ))}
-            {active && (
-              <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-                <span className="truncate">{activityLabel(run)}</span>
-              </div>
+            {/* the message as it is being written, with a caret where the next word lands */}
+            {draft && (
+              <Markdown
+                text={draft}
+                className="[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:animate-pulse [&>:last-child]:after:text-primary [&>:last-child]:after:content-['▍']"
+              />
             )}
-            {!active && run.error && (
-              <div className="flex items-start gap-1.5 text-[12px] text-destructive">
-                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span className="min-w-0 flex-1">{run.error}</span>
-              </div>
-            )}
-            {run.status === 'interrupted' && onResume && (
-              <button
-                type="button"
-                onClick={onResume}
-                className="text-[12px] font-medium text-primary transition-opacity hover:opacity-80"
-              >
-                Continue
-              </button>
+            {!active && authFailure ? (
+              <AuthFailureNotice failure={authFailure} onContinue={onContinue} />
+            ) : (
+              stopped && <StoppedTurnNotice run={run} onContinue={onContinue} />
             )}
             {/* The count, never the replies themselves: a turn that answered threads says
                 so from the moment the first reply lands — reading them is one click away. */}
@@ -112,14 +125,58 @@ export function AgentTurn({ run, onResume }: { run: AgentRun; onResume?: () => v
                 Answered {answered} comment {answered === 1 ? 'thread' : 'threads'}
               </button>
             )}
-            {!active && messages.length === 0 && !run.error && answered === 0 && (
-              <p className="text-[12px] text-muted-foreground">
-                {run.status === 'canceled' ? 'Stopped.' : 'Done — no message.'}
-              </p>
+            {run.status === 'succeeded' && messages.length === 0 && answered === 0 && (
+              <p className="text-[12px] text-muted-foreground">Done — no message.</p>
             )}
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** A turn the agent could not run because its CLI is signed out: how to sign back in. */
+function AuthFailureNotice({
+  failure,
+  onContinue,
+}: {
+  failure: AgentAuthFailure
+  onContinue?: () => void
+}) {
+  return (
+    <div
+      role="alert"
+      className="space-y-2.5 rounded-lg border border-destructive/25 bg-destructive/5 p-3"
+    >
+      <div className="flex items-start gap-2">
+        <LogIn className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium text-foreground">{failure.title}</p>
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            Sign in again from a terminal. Your conversation is saved, so you can continue this turn
+            without losing your work.
+          </p>
+        </div>
+      </div>
+      <code className="block rounded-md bg-muted px-2.5 py-2 font-mono text-[11px] text-foreground">
+        {failure.command}
+      </code>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onClick={() => void navigator.clipboard.writeText(failure.command)}
+        >
+          <Copy />
+          Copy command
+        </Button>
+        {onContinue && (
+          <Button type="button" size="xs" onClick={onContinue}>
+            I’ve signed in, continue
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

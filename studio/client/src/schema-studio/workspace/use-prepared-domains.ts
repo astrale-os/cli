@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { buildFunctionsModel } from '@/lib/functions'
 import { buildViewsModel } from '@/lib/views'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
+import { functionGraphKey } from '../function-graph'
 import { viewGraphKey } from '../view-graph'
 import { prepareWorkspaceDomain, type WorkspaceDomainProjection } from './projection'
 
@@ -17,6 +19,10 @@ export function domainPreparationKey(
     input.bundle.renderFingerprint,
     // Views come from anatomy, which the render fingerprint does not cover.
     viewGraphKey(buildViewsModel(input.anatomy, input.bundle)),
+    // A Function's own declaration IS covered by the fingerprint, but the Action or
+    // Workflow wired to it lives in the overlay, which is not — and that is the glyph
+    // its pill wears.
+    functionGraphKey(buildFunctionsModel(input.bundle)),
     Object.keys(input.visibility.hidden).sort().join(','),
     input.visibility.showInheritedEdges,
     Object.entries(input.layout.positions)
@@ -121,24 +127,24 @@ export function usePreparedWorkspaceDomains(
 ): { domains: WorkspaceDomainProjection[]; ready: boolean } {
   const [state, setState] = useState<PreparedWorkspaceState>({ selection: null, domains: [] })
   const cache = useRef(new Map<string, { key: string; projection: WorkspaceDomainProjection }>())
-  const preparationKey = useMemo(
+  // Each key builds the domain's views and functions models, so it is computed once here and
+  // the effect reuses it for the same `inputs` rather than rebuilding it.
+  const domainKeys = useMemo(
     () =>
-      inputs
-        .map((input) => domainPreparationKey(input, collapsedModules[input.summary.id] ?? []))
-        .join('::'),
+      inputs.map((input) => domainPreparationKey(input, collapsedModules[input.summary.id] ?? [])),
     [collapsedModules, inputs],
   )
+  const preparationKey = domainKeys.join('::')
 
   useEffect(() => {
     let cancelled = false
     Promise.all(
-      inputs.map(async (input) => {
+      inputs.map(async (input, index) => {
         const domainId = input.summary.id
-        const collapsed = collapsedModules[domainId] ?? []
-        const key = domainPreparationKey(input, collapsed)
+        const key = domainKeys[index]!
         const cached = cache.current.get(domainId)
         if (cached?.key === key) return { ...cached.projection, input }
-        const projection = await prepareWorkspaceDomain(input, collapsed)
+        const projection = await prepareWorkspaceDomain(input, collapsedModules[domainId] ?? [])
         if (!cancelled) cache.current.set(domainId, { key, projection })
         return projection
       }),

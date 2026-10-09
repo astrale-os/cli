@@ -119,6 +119,28 @@ function ledgeredSurface(root: Command): readonly object[] {
 }
 
 describe('program composition', () => {
+  test('issue accepts a retry without a title and keeps the affected instance distinct from Admin', async () => {
+    const program = await buildProgram()
+    const issue = program.commands.find((command) => command.name() === 'issue')!
+    const seen: unknown[] = []
+    issue.action((title: string | undefined, options: Record<string, unknown>) => {
+      seen.push({ title, ...options })
+    })
+    await program.parseAsync([
+      'node',
+      'astrale',
+      'issue',
+      '--retry',
+      '00000000-0000-4000-8000-000000000001',
+    ])
+    expect(seen).toEqual([{ title: undefined, retry: '00000000-0000-4000-8000-000000000001' }])
+    expect(issue.options.find((option) => option.long === '--instance')?.description).toContain(
+      'Affected instance',
+    )
+    expect(issue.options.some((option) => option.long === '--url')).toBe(false)
+    expect(issue.options.some((option) => option.long === '--anonymous')).toBe(false)
+    expect(issue.options.some((option) => option.long === '--admin')).toBe(true)
+  })
   /** @evidence TEST-CLI-PROGRAM-MATCHES-LEDGERED-SURFACE */
   test('matches the complete ledgered command and help surface', async () => {
     const surface = ledgeredSurface(await buildProgram())
@@ -126,6 +148,10 @@ describe('program composition', () => {
 
     expect(paths).toEqual([
       '',
+      '__domain-registry',
+      '__domain-registry bundle',
+      '__domain-registry publish',
+      '__domain-registry yank',
       '__view-serve',
       'admin',
       'admin status',
@@ -142,6 +168,7 @@ describe('program composition', () => {
       'domain list',
       'domain publish',
       'domain uninstall',
+      'domain versions',
       'get',
       'identity',
       'identity create',
@@ -176,6 +203,7 @@ describe('program composition', () => {
       'instance status',
       'instance use',
       'introspect',
+      'issue',
       'logs',
       'mutate',
       'query',
@@ -271,12 +299,15 @@ describe('help contract — IdP/auth surface is registered', () => {
     identityRegister?.outputHelp()
 
     expect(identityRegister?.description()).toBe(
-      'Register an existing local key identity through one atomic provision',
+      'Register a local key identity on an existing Identity Node',
     )
     expect(help).toContain('Existing local identity name')
     expect(help).toContain('astrale identity create alice')
     expect(help).toContain('Register never creates or replaces the')
     expect(help).not.toContain('Atomically provision a local key identity')
+    expect(help).toContain('--node <nodePath>')
+    expect(help).not.toContain('--class')
+    expect(help).not.toContain('--props')
   })
 })
 
@@ -284,7 +315,9 @@ describe('help contract — admin target surface is registered', () => {
   test('admin group and admin-target flags are visible', async () => {
     const program = await buildProgram()
     const names = allCommands(program).map((command) => command.name())
-    const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
+    const instanceCreate = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'create')
 
     expect(names).toContain('admin')
     expect(names).toContain('status')
@@ -292,6 +325,7 @@ describe('help contract — admin target surface is registered', () => {
     expect(program.helpInformation()).toContain('admin')
     expect(instanceCreate?.helpInformation()).toContain('--admin <name>')
     expect(instanceCreate?.helpInformation()).toContain('--admin-url <url>')
+    expect(instanceCreate?.helpInformation()).toContain('--operation <id>')
 
     const adminUse = program.commands
       .find((command) => command.name() === 'admin')
@@ -301,14 +335,22 @@ describe('help contract — admin target surface is registered', () => {
     expect(adminUse?.helpInformation()).not.toContain('--issuer <url>')
   })
 
-  test('instance create delegates infrastructure placement to Admin', async () => {
+  test('public instance commands expose no Kernel operator target', async () => {
     const program = await buildProgram()
-    const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
+    const instanceCreate = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'create')
     const help = instanceCreate?.helpInformation() ?? ''
 
-    expect(help).toContain('Provision an instance through the Admin control plane')
-    expect(help).not.toContain('Host')
-    expect(help).not.toContain('Fleet')
+    expect(help).toContain('Create an instance through Admin and verify owner access')
+    expect(help).not.toContain('--host')
+    expect(help).not.toContain('Kernel Host')
+    const root = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'root')
+      ?.commands.find((command) => command.name() === 'import')
+    expect(root?.helpInformation()).not.toContain('--host')
+    expect(help).toContain('--fleet')
     expect(help).not.toContain('--host-id')
     expect(help).not.toContain('--no-use')
     expect(help).not.toContain('Instance.init')
@@ -599,4 +641,24 @@ describe('help contract — skill is single-source, not duplicated', () => {
       expect(readFileSync(mirror, 'utf8')).toBe(readFileSync(canonical, 'utf8'))
     },
   )
+})
+
+test('exposes Fleet selection only on the four Fleet-targeted commands', async () => {
+  const program = await buildProgram()
+  expect(program.commands.some((command) => command.name() === 'fleet')).toBe(false)
+  const selected: string[] = []
+  const visit = (commands: typeof program.commands, prefix = '') => {
+    for (const command of commands) {
+      const path = `${prefix}${command.name()}`
+      if (command.options.some((option) => option.long === '--fleet')) selected.push(path)
+      visit(command.commands, `${path} `)
+    }
+  }
+  visit(program.commands)
+  expect(selected.sort()).toEqual([
+    'domain list',
+    'domain publish',
+    'instance create',
+    'instance list',
+  ])
 })

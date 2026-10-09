@@ -9,13 +9,14 @@ import {
   FileText,
   FileType,
   Hash,
+  Loader2,
   Paperclip,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import { FilePickButton } from '@/components/composer'
+import { FilePickButton, useFilePicker } from '@/components/composer'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -23,6 +24,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { api, qk } from '@/lib/api'
 import { useWorkspace, useWorkspaceDocuments } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
+
+/** The shape every chip on the composer wears, whatever it carries. */
+export const CHIP = 'group flex h-6 max-w-[220px] items-center rounded-full border pl-2 text-[11px]'
 
 export function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -53,7 +57,7 @@ export function kindOf(doc: { name: string; type: string }): {
   return { Icon: FileIcon, label: (name.split('.').pop() ?? 'file').slice(0, 4).toUpperCase() }
 }
 
-export const isMarkdown = (doc: DocMeta) =>
+const isMarkdown = (doc: DocMeta) =>
   doc.type === 'text/markdown' || /\.(md|mdx|markdown)$/i.test(doc.name)
 
 /**
@@ -93,22 +97,52 @@ export function AttachButton({
           Attach to domain
         </p>
         {domains.map((domain) => (
-          <div
+          <DomainAttachRow
             key={domain.id}
-            className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent"
-          >
-            <span className="min-w-0 flex-1 truncate text-[12px]">{domain.origin}</span>
-            <DomainAttachButton
-              domainId={domain.id}
-              onPicked={() => {
-                setOpen(false)
-                onPicked?.()
-              }}
-            />
-          </div>
+            domainId={domain.id}
+            origin={domain.origin}
+            onPicked={() => {
+              setOpen(false)
+              onPicked?.()
+            }}
+          />
         ))}
       </PopoverContent>
     </Popover>
+  )
+}
+
+/**
+ * One domain of the paperclip's list, and the whole row is the choice: the clip
+ * was already pressed, so a second one on every row would only say it again.
+ */
+function DomainAttachRow({
+  domainId,
+  origin,
+  onPicked,
+}: {
+  domainId: string
+  origin: string
+  onPicked: () => void
+}) {
+  const { upload } = useDocumentMutations(domainId)
+  const { pick, field } = useFilePicker({ onFiles: (files) => upload.mutate(files), onPicked })
+  return (
+    <>
+      <button
+        type="button"
+        onClick={pick}
+        disabled={upload.isPending}
+        aria-label={`Attach a document to ${origin}`}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:opacity-50"
+      >
+        <span className="min-w-0 flex-1 truncate">{origin}</span>
+        {upload.isPending && (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+        )}
+      </button>
+      {field}
+    </>
   )
 }
 
@@ -226,13 +260,11 @@ function DomainDocumentChips({
   )
 }
 
-/** The shape every chip on the composer wears, whatever it carries. */
-export const CHIP = 'group flex h-6 max-w-[220px] items-center rounded-full border pl-2 text-[11px]'
-
-/** Upload / remove, shared by the paperclip, the chips and the drop target. */
-export function useDocumentMutations(domainId: string) {
+/** Upload / remove, shared by the paperclip and the chips. */
+function useDocumentMutations(domainId: string) {
   const qc = useQueryClient()
-  const invalidate = () => qc.invalidateQueries({ queryKey: qk.documents(domainId) })
+  const queryKey = qk.documents(domainId)
+  const invalidate = () => qc.invalidateQueries({ queryKey })
   const upload = useMutation({
     mutationFn: (files: File[]) => api.uploadDocuments(domainId, files),
     onSuccess: invalidate,
@@ -243,16 +275,16 @@ export function useDocumentMutations(domainId: string) {
   const remove = useMutation({
     mutationFn: (docId: string) => api.deleteDocument(domainId, docId),
     onMutate: async (docId: string) => {
-      await qc.cancelQueries({ queryKey: qk.documents(domainId) })
-      const previous = qc.getQueryData<DocMeta[]>(qk.documents(domainId))
+      await qc.cancelQueries({ queryKey })
+      const previous = qc.getQueryData<DocMeta[]>(queryKey)
       qc.setQueryData<DocMeta[]>(
-        qk.documents(domainId),
+        queryKey,
         (current) => current?.filter((doc) => doc.id !== docId) ?? current,
       )
       return { previous }
     },
     onError: (error, _docId, context) => {
-      if (context?.previous) qc.setQueryData(qk.documents(domainId), context.previous)
+      if (context?.previous) qc.setQueryData(queryKey, context.previous)
       toast.error(`Could not remove the document — ${String((error as Error)?.message ?? error)}`)
     },
     onSettled: invalidate,
@@ -320,7 +352,7 @@ function EditDialog({
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
               event.preventDefault()
-              save()
+              void save()
             }
           }}
           placeholder={

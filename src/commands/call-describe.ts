@@ -1,6 +1,7 @@
 import type { Path } from '@astrale-os/sdk/graph/path'
 import type { ResolvedFunction, ResolvedMethod } from '@astrale-os/sdk/schema'
 
+import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { bundle, schema } from '@astrale-os/sdk/schema'
 
 import { AstraleError } from '../errors'
@@ -16,7 +17,6 @@ export interface CallableDescription {
   readonly auth?: unknown
   readonly input?: unknown
   readonly output?: unknown
-  readonly candidates?: readonly CallableDescription[]
 }
 
 /** Resolve one callable from an admitted installed Domain bundle. */
@@ -24,44 +24,48 @@ export function describeCallableFromBundle(
   path: Path,
   input: unknown,
 ): CallableDescription | undefined {
-  if (path.ast.anchor.kind !== 'domain') return undefined
-  const origin = path.ast.anchor.origin
   const last = path.ast.steps.at(-1)
   if (last === undefined) return undefined
+  const methodClass =
+    last.kind === 'method' && last.dispatch === 'instance' ? ClassKey.ref(last.class) : undefined
+  const origin =
+    methodClass?.origin ?? (path.ast.anchor.kind === 'domain' ? path.ast.anchor.origin : undefined)
+  if (origin === undefined) return undefined
   const domain = schema.resolve(bundle.accept(input).root)
   if (domain.origin !== origin) return undefined
 
   if (last.kind === 'method') {
     const ownerStep = path.ast.steps.at(-2)
-    if (ownerStep?.kind === 'projection' && ownerStep.projection.kind === 'class') {
-      const owner = domain.classes[ownerStep.projection.name]
-      if (owner?.kind !== 'node') return undefined
-      const method = namedMethod(
-        last.dispatch === 'static' ? owner.static.methods : owner.methods,
-        last.name,
-        last.dispatch,
-      )
-      return method === undefined
-        ? undefined
-        : description(path, origin, owner.ref.name, method, last.dispatch)
-    }
-
-    const matches = Object.values(domain.classes).flatMap((owner) => {
-      if (owner.kind !== 'node') return []
-      const method = namedMethod(owner.methods, last.name, last.dispatch)
-      return method === undefined
-        ? []
-        : [description(path, origin, owner.ref.name, method, last.dispatch)]
-    })
-    if (matches.length === 1) return matches[0]
-    if (matches.length > 1) {
+    const ownerName =
+      methodClass?.name ??
+      (ownerStep?.kind === 'projection' && ownerStep.projection.kind === 'class'
+        ? ownerStep.projection.name
+        : undefined)
+    const owner = ownerName === undefined ? undefined : domain.classes[ownerName]
+    if (owner?.kind !== 'node') return undefined
+    const isStatic = last.dispatch === 'static'
+    const methods = isStatic ? owner.static.methods : owner.methods
+    const method = [...methods].find((method) => method.name === last.name)
+    if (method !== undefined)
       return Object.freeze({
         path: path.raw,
         origin,
-        method: last.name,
+        class: owner.ref.name,
+        method: method.name,
         dispatch: last.dispatch,
-        candidates: Object.freeze(matches),
+        ...callableFields(method),
       })
+    const opposite = isStatic ? owner.methods : owner.static.methods
+    if ([...opposite].some((method) => method.name === last.name)) {
+      const classPath = `/:${origin}:class.${owner.ref.name}`
+      const corrected = isStatic
+        ? `${classPath}::${origin}:class.${owner.ref.name}.method.${last.name}`
+        : `${classPath}:${last.name}`
+      throw new AstraleError(
+        'CALL_DISPATCH_MISMATCH',
+        `${owner.ref.name}.${last.name} is ${isStatic ? 'an instance method requiring a receiver' : 'a static method'}.`,
+        `Inspect its schema with \`astrale introspect ${corrected}\`.${isStatic ? ' To call it, replace the Class receiver with an observed instance Path.' : ''}`,
+      )
     }
     return undefined
   }
@@ -77,40 +81,6 @@ export function describeCallableFromBundle(
     })
   }
   return undefined
-}
-
-export function missingCallableDescription(path: string): AstraleError {
-  return new AstraleError(
-    'CALL_DESCRIBE_UNAVAILABLE',
-    `No callable schema is installed for ${path}.`,
-    'Use a Domain-rooted Path such as /:kernel.astrale.ai:class.Identity:whois. Method Paths are not Function nodes.',
-  )
-}
-
-function namedMethod(
-  methods: Iterable<ResolvedMethod>,
-  name: string,
-  dispatch: 'static' | 'instance',
-): ResolvedMethod | undefined {
-  const expectedStatic = dispatch === 'static'
-  return [...methods].find((method) => method.name === name && method.static === expectedStatic)
-}
-
-function description(
-  path: Path,
-  origin: string,
-  className: string,
-  callable: ResolvedMethod,
-  dispatch: 'static' | 'instance',
-): CallableDescription {
-  return Object.freeze({
-    path: path.raw,
-    origin,
-    class: className,
-    method: callable.name,
-    dispatch,
-    ...callableFields(callable),
-  })
 }
 
 function callableFields(callable: ResolvedFunction | ResolvedMethod): Partial<CallableDescription> {

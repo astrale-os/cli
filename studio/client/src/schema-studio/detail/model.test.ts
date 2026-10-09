@@ -10,7 +10,8 @@ const method = (name: string): IrMethod => ({
   input: { type: 'object', properties: {} },
   output: { mode: 'value', schema: { type: 'boolean' } },
   static: false,
-  inheritance: 'default',
+  abstract: false,
+  executable: true,
 })
 
 describe('member lists', () => {
@@ -19,7 +20,7 @@ describe('member lists', () => {
     Document: nodeClass('Document', {
       properties: { reference: { type: 'string' }, issuedOn: { type: 'string' } },
       required: ['reference'],
-      methods: { archive: method('archive'), settle: method('settle') },
+      methods: { archive: method('archive'), settle: { ...method('settle'), abstract: true } },
     }),
     Invoice: nodeClass('Invoice', {
       extendsRefs: [classRef('local.example.dev', 'Document'), kernel],
@@ -34,7 +35,7 @@ describe('member lists', () => {
       ref: kernel,
       properties: { sub: { type: 'string' } },
       required: ['sub'],
-      methods: { whoami: method('whoami') },
+      methods: { whoami: { ...method('whoami'), abstract: true } },
     }),
   }
 
@@ -47,12 +48,11 @@ describe('member lists', () => {
       ['Document', 'issuedOn', true],
       ['Identity', 'sub', false],
     ])
-    expect(lists.methods.map((m) => [m.owner?.name ?? '', m.name, m.overridden])).toEqual([
-      ['', 'settle', false],
-      ['Document', 'archive', false],
-      // the base's version of a method this Class re-declares is listed, and says so
-      ['Document', 'settle', true],
-      ['Identity', 'whoami', false],
+    expect(lists.methods.map((m) => [m.owner?.name ?? '', m.name])).toEqual([
+      ['', 'settle'],
+      // The base contract remains inspectable beside its local implementation.
+      ['Document', 'settle'],
+      ['Identity', 'whoami'],
     ])
   })
 

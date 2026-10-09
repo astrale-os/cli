@@ -13,19 +13,18 @@ import { Eye, ShieldCheck, Zap } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { MethodAuthBadge } from '@/components/method-auth'
-import { Chip } from '@/components/studio-kit'
+import { PolicyCheckTree } from '@/components/policy-check-tree'
 import { methodGlyph } from '@/lib/friendly'
 import {
   type PolicyCheckLeaf,
   type PolicyIndex,
   decodePolicyCheck,
-  policyCheckLeaves,
   policyLabel,
 } from '@/lib/policy'
 
 import type { PolicyObject } from './policy-evaluate'
 
-import { inheritedGroupsOfClass, resolveClass } from '../inheritance'
+import { resolveClass } from '../inheritance'
 import { classRefOf } from './policy-graph'
 import { checkObjectWords } from './policy-words'
 
@@ -76,24 +75,13 @@ export function NodeAccess({
     [bundle, ir, node.className],
   )
   const read = cls?.policies?.read
-  const callables = useMemo(() => {
-    if (!cls) return []
-    const own = Object.entries(cls.methods).map(([name, method]) => ({
-      name,
-      method,
-      owner: cls.name,
-    }))
-    // inherited groups only resolve for local classes; an imported class shows its own
-    const inherited =
-      cls.origin === ir?.domain
-        ? inheritedGroupsOfClass(bundle, cls.name).flatMap((group) =>
-            group.methods
-              .filter((m) => !m.overridden)
-              .map((m) => ({ name: m.name, method: m.method, owner: group.owner })),
-          )
-        : []
-    return [...own, ...inherited]
-  }, [bundle, cls, ir?.domain])
+  const callables = useMemo(
+    () =>
+      Object.entries(cls?.methods ?? {})
+        .filter(([, method]) => method.executable && !method.static)
+        .map(([name, method]) => ({ name, method })),
+    [cls],
+  )
 
   if (!ir || !cls) return null
 
@@ -127,40 +115,30 @@ export function NodeAccess({
           <p className="mt-1 text-[12px] text-muted-foreground">This class declares no method.</p>
         ) : (
           <div className="mt-1.5 divide-y overflow-hidden rounded-md border bg-card">
-            {callables.map(({ name, method, owner }) => {
-              const glyph = methodGlyph(method)
-              const Glyph = glyph.icon ?? Zap
+            {callables.map(({ name, method }) => {
+              const Glyph = methodGlyph(method).icon ?? Zap
               const check =
                 method.policy === undefined ? undefined : decodePolicyCheck(method.policy)
-              const leaves = check ? policyCheckLeaves(check) : []
-              const composed = check && !('check' in check)
               return (
-                <div key={`${owner}.${name}`} className="px-2.5 py-1.5">
+                <div key={`${cls.name}.${name}`} className="px-2.5 py-1.5">
                   <div className="flex items-center gap-1.5 text-[12px]">
                     <Glyph className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="font-medium">{name}</span>
                     <MethodAuthBadge method={method} domainId={bundle.domainId} />
-                    {method.static && <Chip tone="default">static</Chip>}
-                    {owner !== cls.name && (
-                      <span className="text-[11px] text-muted-foreground">from {owner}</span>
-                    )}
                   </div>
-                  {leaves.length > 0 && (
-                    <div className="mt-1 flex flex-wrap items-center gap-1 pl-5">
-                      {composed && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {'allOf' in check ? 'all of' : 'any of'}
-                        </span>
-                      )}
-                      {leaves.map((leaf, i) => (
-                        <PolicyButton
-                          key={i}
-                          leaf={leaf}
-                          index={index}
-                          self={node.path}
-                          onProbe={onProbe}
-                        />
-                      ))}
+                  {check && (
+                    <div className="mt-1 pl-5 text-[11px]">
+                      <PolicyCheckTree
+                        check={check}
+                        renderCheck={(leaf) => (
+                          <PolicyButton
+                            leaf={leaf}
+                            index={index}
+                            self={node.path}
+                            onProbe={onProbe}
+                          />
+                        )}
+                      />
                     </div>
                   )}
                   {method.policy !== undefined && !check && (

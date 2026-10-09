@@ -48,7 +48,7 @@ const tone = ([lightness, chroma]: Tone, hue: number) => `oklch(${lightness} ${c
 /**
  * Tint for a module hue. Without a scheme the colour is a `light-dark()` pair —
  * the browser picks the side, so a theme switch repaints without re-rendering.
- * Pass a scheme where the value lands in an SVG *attribute* (the minimap), which
+ * Pass a scheme where the value lands in an SVG *attribute*, which
  * would not resolve a CSS function.
  */
 export function moduleTint(hue: number, scheme?: 'light' | 'dark'): ModuleTint {
@@ -68,6 +68,13 @@ export const VIEW_W = 168
 export const VIEW_H = 32
 /** The view hue (matching `--schema-view`), for surfaces that need a literal colour. */
 export const VIEW_HUE = 205
+/** Rendered size of a function node. Same pill metrics as a view — both are callables
+ *  or screens hanging off the classes, and one shape for "not a class" keeps the
+ *  canvas readable at a glance; the hue is what tells them apart. */
+export const FUNCTION_W = 168
+export const FUNCTION_H = 32
+/** The function hue (matching `--schema-function`). */
+export const FUNCTION_HUE = 300
 /** Module box insets: children start below the header, padded on every side. */
 export const MODULE_HEADER = 38
 export const MODULE_PAD = 18
@@ -77,3 +84,6 @@ export const MODULE_COLLAPSED_H = 34
 export const DOMAIN_PAD = 52
 /** Room the floating agent dock takes at the bottom of a view: canvas controls sit above it. */
 export const DOCK_CLEARANCE = 88
+
+/** Base weight for unselected schema relationships, including external endpoints. */
+export const EDGE_WIDTH = 1.3

@@ -2,7 +2,7 @@ import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/type
 import type { ChatResult } from './run/coordinator'
 
 import { badRequest, json, notFound, type AgentRouteContext } from '../api/http'
-import { asJsonRecord, asString } from '../json'
+import { asBoolean, asJsonRecord, asString } from '../json'
 import { decodeAnchorRef } from '../state/comments'
 import { type AskRequest, runAsk } from './ask'
 import { handleBridge } from './bridge/routes'
@@ -20,6 +20,8 @@ import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './
 import { emitStudioEvent } from './notify'
 import { buildSystemPrompt } from './prompts/system'
 import {
+  addAttachment,
+  attachmentOf,
   cancelRun,
   chatHarness,
   chatModel,
@@ -30,9 +32,12 @@ import {
   getHistory,
   getSessionId,
   getSnapshot,
+  getToolCall,
   listChats,
   moveQueued,
   openChat,
+  removeAttachment,
+  reorderChats,
   selectChat,
   sendQueuedNow,
   setSessionId,
@@ -46,6 +51,26 @@ import { agentWorkspace } from './workspace'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** The non-empty string entries of a request array, in order; nothing when there are none. */
+function idList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = value.filter((entry): entry is string => typeof entry === 'string' && !!entry)
+  return ids.length ? ids : undefined
+}
+
+/** A submit's `comments`: `'all'`, or the ids of the threads to attach — none otherwise. */
+function commentSelection(value: unknown): { comments?: 'all' | string[] } {
+  if (value === 'all') return { comments: 'all' }
+  const ids = idList(value)
+  return ids ? { comments: ids } : {}
+}
+
+/** A submit's `attachments`: the ids of the images it carries, in order. */
+function attachmentSelection(value: unknown): { attachments?: string[] } {
+  const ids = idList(value)
+  return ids ? { attachments: ids } : {}
 }
 
 /** Chat operations fail on user-supplied ids, so their errors are 400s, not 500s. */
@@ -62,6 +87,7 @@ async function harnessPresence(id: string): Promise<HarnessPresence> {
     bin: health.bin ?? harness.id,
     ok: health.ok,
     version: health.version,
+    ...(health.cli ? { cli: health.cli } : {}),
     message: health.ok
       ? (health.detail ?? `Detected${health.version ? ` — ${health.version}` : ''}`)
       : (health.detail ?? `${harness.label} is not detected. Is it installed and on your PATH?`),
@@ -126,8 +152,10 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
     if (req.method === 'GET') {
       const snapshot = await getSnapshot(chatParam)
       if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+        const now = performance.now()
+        const ms = (from: number, to: number) => Math.round((to - from) * 10) / 10
         console.log(
-          `    timing agent snapshot total=${Math.round((performance.now() - routeStarted) * 10) / 10}ms sweep-wait=${Math.round((sweepReady - routeStarted) * 10) / 10}ms snapshot=${Math.round((performance.now() - sweepReady) * 10) / 10}ms`,
+          `    timing agent snapshot total=${ms(routeStarted, now)}ms sweep-wait=${ms(routeStarted, sweepReady)}ms snapshot=${ms(sweepReady, now)}ms`,
         )
       }
       return json(snapshot)
@@ -141,6 +169,7 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
       const title = asString(body.title)
       const model = asString(body.model)
       const effort = asString(body.effort)
+      const fastMode = asBoolean(body.fastMode)
       const newDomainId = asString(body.newDomainId)
       switch (asString(body.action) ?? 'open') {
         case 'open':
@@ -155,12 +184,19 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
           return chatJson(selectChat(chatBody ?? ''))
         case 'close':
           return chatJson(closeChat(chatBody ?? ''))
+        case 'reorder': {
+          // every window shows the same strip, so the others are told to resync
+          const result = reorderChats(idList(body.order) ?? [])
+          if (result.ok) emitStudioEvent(notify, { type: 'chats' })
+          return chatJson(result)
+        }
         case 'update':
           return chatJson(
             updateChat(chatBody ?? '', {
               ...(title === undefined ? {} : { title }),
               ...(model === undefined ? {} : { model }),
               ...(effort === undefined ? {} : { effort }),
+              ...(fastMode === undefined ? {} : { fastMode }),
             }),
           )
         case 'switch-harness':
@@ -180,9 +216,41 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
       await submitRun(notify, {
         message: typeof body.message === 'string' ? body.message : undefined,
         resume: body.resume === true,
+        ...commentSelection(body.comments),
+        ...attachmentSelection(body.attachments),
         ...(chatBody === undefined ? {} : { chatId: chatBody }),
       }),
     )
+  }
+  // One image per upload, sent the moment it is pasted: each chip in the composer
+  // then fills in on its own, and one refused image does not take the others down.
+  if (rest === '/agent/attachments' && req.method === 'POST') {
+    const form = await req.formData().catch(() => undefined)
+    const file = form?.get('file')
+    if (!(file instanceof File)) return badRequest('expected one image in the `file` field')
+    return chatJson(
+      addAttachment(chatParam, {
+        name: file.name,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      }),
+    )
+  }
+  const attachment = rest.match(/^\/agent\/attachments\/([^/]+)$/)
+  if (attachment) {
+    const id = decodeURIComponent(attachment[1]!)
+    if (req.method === 'DELETE') return json({ ok: removeAttachment(chatParam, id) })
+    if (req.method !== 'GET') return badRequest('GET or DELETE')
+    const found = attachmentOf(chatParam, id)
+    if (!found) return notFound()
+    return new Response(Bun.file(found.path), {
+      headers: {
+        'content-type': found.attachment.mimeType,
+        'content-disposition': 'inline',
+        'x-content-type-options': 'nosniff',
+        // an id names one image for good: its bytes never change
+        'cache-control': 'private, max-age=31536000, immutable',
+      },
+    })
   }
   if (rest === '/agent/queue' && req.method === 'POST') {
     const messageId = asString(body.id) ?? ''
@@ -201,16 +269,23 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
         return queued(dropQueued(chatBody, messageId))
       case 'move':
         return queued(moveQueued(chatBody, messageId, body.direction === 'down' ? 'down' : 'up'))
-      case 'send': {
-        const result = await sendQueuedNow(notify, chatBody, messageId)
-        return result.ok ? json(result.value) : badRequest(result.error)
-      }
+      case 'send':
+        return chatJson(await sendQueuedNow(notify, chatBody, messageId))
       default:
         return badRequest(`unknown queue action: ${asString(body.action) ?? ''}`)
     }
   }
   if (rest === '/agent/history' && req.method === 'GET')
     return chatJson(getHistory(chatParam, Number(url.searchParams.get('limit')) || undefined))
+  // A step's details are read when someone opens it, never with the transcript.
+  if (rest === '/agent/tool-call' && req.method === 'GET') {
+    const call = getToolCall(
+      chatParam,
+      url.searchParams.get('run') ?? '',
+      url.searchParams.get('event') ?? '',
+    )
+    return call ? json(call) : notFound()
+  }
   if (rest === '/agent/cancel' && req.method === 'POST') return json({ ok: cancelRun(chatBody) })
   if (rest === '/agent/session') {
     if (req.method === 'GET') return json(getSessionId(chatParam))

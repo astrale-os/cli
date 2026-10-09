@@ -25,6 +25,11 @@ export function selectedClassName(id: string): string {
   return id.startsWith('class.') ? id.slice('class.'.length) : id
 }
 
+/** The selection id that opens a Class: its bare name at home, its exact key when imported. */
+export function classSelectionId(ref: IrClassRef, domain: string | undefined): string {
+  return ref.origin === domain ? `class.${ref.name}` : `class.${classRefKey(ref)}`
+}
+
 /** Where an inherited member comes from — enough to prefix it and to anchor it. */
 export interface MemberOwner {
   name: string
@@ -47,7 +52,6 @@ export interface PropertyEntry {
 export interface MethodEntry {
   name: string
   method: IrMethod
-  overridden: boolean
   owner?: MemberOwner
 }
 
@@ -72,7 +76,6 @@ export function memberLists(
   const methods: MethodEntry[] = Object.entries(member.methods).map(([name, method]) => ({
     name,
     method,
-    overridden: false,
   }))
   if (!withInherited) return { properties, methods }
 
@@ -89,8 +92,8 @@ export function memberLists(
     for (const [name, schema, optional] of group.props) {
       properties.push({ name, schema, optional, owner })
     }
-    for (const { name, method, overridden } of group.methods) {
-      methods.push({ name, method, overridden, owner })
+    for (const { name, method } of group.methods) {
+      methods.push({ name, method, owner })
     }
   }
   return { properties, methods }

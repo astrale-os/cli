@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 
 import { useAgentLive } from '@/lib/agent'
 import { api, qk } from '@/lib/api'
+import { useActiveChatId } from '@/lib/chats'
 import { createDomainWithBrief, type NewDomainPhase, readName } from '@/lib/new-domain'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -89,6 +90,7 @@ export function NewDomainCard({
   const setSection = useUI((state) => state.setSection)
   const setPanelTab = useUI((state) => state.setPanelTab)
   const setAgentDraft = useUI((state) => state.setAgentDraft)
+  const activeChatId = useActiveChatId()
   const canvas = useCanvasDomains()
 
   const reading = readName(name)
@@ -124,7 +126,7 @@ export function NewDomainCard({
         uploadDocuments: api.uploadDocuments,
         submit: async (id, text) => {
           const chat = await api.openChat(undefined, id)
-          return api.agentSubmit(text, chat.id)
+          return { ...(await api.agentSubmit(text, chat.id)), chatId: chat.id }
         },
         onPhase: enter,
       },
@@ -143,8 +145,10 @@ export function NewDomainCard({
     await queryClient.invalidateQueries({ queryKey: qk.workspace })
     land(outcome.id, outcome.run)
     if (outcome.error) {
-      // the message never left; put it where pressing Enter sends it again
-      if (outcome.unsent) setAgentDraft(outcome.unsent)
+      // the message never left; put it where pressing Enter sends it again — the
+      // new domain's own chat when the send opened one, otherwise the chat that
+      // is on screen, since the failure came before there was another
+      if (outcome.unsent) setAgentDraft(outcome.chatId ?? activeChatId, outcome.unsent)
       toast.error(
         `${outcome.origin ?? reading.slug} was created, but the agent did not start — ${outcome.error}`,
       )

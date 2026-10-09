@@ -5,10 +5,15 @@ import type { AcpProvider } from './command'
 export interface AcpProviderOptions {
   provider: AcpProvider
   bin: string
+  /** `bin` is the build Studio pinned and installed, not one the user manages */
+  managed?: boolean
   command: string[]
 }
 
-type AcpInput = Pick<AgentTurnInput | AskInput, 'access' | 'appendSystemPrompt' | 'effort' | 'env'>
+type AcpInput = Pick<
+  AgentTurnInput | AskInput,
+  'access' | 'appendSystemPrompt' | 'effort' | 'env' | 'fastMode'
+>
 
 function parseObject(value: string | undefined, name: string): Record<string, unknown> {
   if (!value) return {}
@@ -54,6 +59,8 @@ export function providerEnvironment(
   const env = { ...(input.env ?? {}) }
   if (options.provider === 'claude') {
     env.CLAUDE_CODE_EXECUTABLE = options.bin
+    // A pinned build must stay the build the adapter was written for.
+    if (options.managed) env.DISABLE_AUTOUPDATER = '1'
     return env
   }
 

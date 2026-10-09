@@ -1,3 +1,7 @@
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
 import type { CommandDefinition } from '../program/index'
 
 import pkg from '../../package.json' with { type: 'json' }
@@ -17,6 +21,7 @@ import {
 } from '../lib/sdk-deps'
 import { checkAstraleSkills, SKILL_CONFIGURE_COMMAND, type SkillCheckResult } from '../lib/skills'
 import { DEFAULT_UPDATE_CHANNEL, packageManagedUpdateError, updateAstrale } from '../lib/update'
+import { ASTRALE_HOME } from '../state'
 import { configureAstraleSkills, renderSkillConfigureOutcome } from './skills/configure'
 
 type UpdateOpts = RawOutputOpts & {
@@ -197,7 +202,7 @@ export async function cliStale(
         current: running,
       }
     }
-    if (r.status === 'updated' || r.status === 'repaired') {
+    if (r.status === 'updated') {
       return {
         stale: false,
         managed: false,
@@ -207,10 +212,10 @@ export async function cliStale(
       }
     }
     return {
-      stale: r.status === 'available' || r.status === 'repair-available',
+      stale: r.status === 'available',
       managed: false,
       current: r.currentVersion,
-      latest: r.status === 'repair-available' ? r.currentVersion : r.latestVersion,
+      latest: r.latestVersion,
       channel: r.channel,
     }
   } catch (error) {
@@ -266,6 +271,33 @@ async function refreshSkillsWithUpdatedBinary(bin: string, interactive: boolean)
   )
 }
 
+/**
+ * Each release pins its own Claude Code and Codex for Studio, so only the NEW
+ * binary knows which to fetch. Start it detached to install them now, so the
+ * first chat after an update does not wait on the download. Only on a machine
+ * whose Studio already installed an agent; the child fetches just those agents.
+ */
+export function prefetchStudioAgents(
+  bin: string,
+  home = ASTRALE_HOME,
+  spawnImpl: typeof spawn = spawn,
+): boolean {
+  if (!existsSync(join(home, 'cache', 'agents'))) return false
+  try {
+    const child = spawnImpl(bin, ['__studio-agents-prefetch'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.on('error', () => undefined)
+    child.unref()
+    return true
+  } catch {
+    // Studio downloads them on first use instead.
+    return false
+  }
+}
+
 async function sdkStale(): Promise<StaleReport['sdk']> {
   if (!inDomainProject() || foreignPackageManager()) {
     return { stale: false, inProject: inDomainProject(), outdated: [] }
@@ -295,9 +327,9 @@ export default {
   ],
   afterHelpText: `
 Behavior:
-  Keeps three things current, in order. (1) The CLI toolchain: updates official
-  standalone installs; the CLI, pinned private provider, license, and metadata
-  are checksum-verified and replaced as one recoverable cohort; externally managed
+  Keeps three things current, in order. (1) The CLI: updates official
+  standalone installs; the CLI is checksum-verified and replaced together with
+  its install metadata. Externally managed
   processes are directed to the standalone installer and never overwritten. (2) The Astrale
   agent skills: aligns an existing cohort with the exact CLI release, repairs
   inconsistent installs, and verifies the result. If skills are absent, an
@@ -307,7 +339,9 @@ Behavior:
   the lockfile, honoring your registry + supply-chain age policy; run "pnpm
   install" to materialize). (4) The project configuration: a bare
   "export default deploy({ ... })" in astrale.config.ts is rewritten, on confirm, as the
-  "defineProject({ deployment })" the SDK now requires.
+  "defineProject({ deployment })" the SDK now requires. (5) Studio agents: once
+  the CLI is replaced, the new release downloads its pinned Claude Code / Codex
+  builds in the background, for the agents Studio already installed here.
 
   The default release channel is latest; --channel overrides it for one run.
   --check is a dry run (binary + skills + SDK deps; exit 10 if anything is available) and
@@ -385,12 +419,6 @@ Examples:
         log.success(`Updated astrale ${result.previousVersion} -> ${result.currentVersion}`)
         log.dim(`  channel: ${result.channel}`)
         log.dim(`  binary: ${result.bin}`)
-      } else if (result.status === 'repaired') {
-        log.success(`Repaired Astrale toolchain ${result.currentVersion}`)
-        log.dim(`  binary: ${result.bin}`)
-      } else if (result.status === 'repair-available') {
-        log.info(`Astrale toolchain repair available: ${result.currentVersion}`)
-        anyAvailable = true
       } else if (result.status === 'managed') {
         const warning = packageManagedUpdateError(result.executable)
         log.warn(
@@ -417,6 +445,10 @@ Examples:
       } else if (!opts.check) {
         log.dim('  Astrale skills skipped (--no-skills)')
       }
+
+      // The agents Studio runs are pinned per release: fetch the new ones now.
+      if (result.status === 'updated' && prefetchStudioAgents(result.bin) && !isMachine(opts))
+        log.dim('  Downloading the Studio agents pinned by this release in the background')
 
       // Axis C — first-party @astrale-os/* deps in the current domain project.
       // Runs on --check too (reports availability); --yes applies without a prompt.

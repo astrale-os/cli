@@ -21,7 +21,9 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
 
   // One agent for the workspace: its routes are not addressed by domain.
   if (path === '/api/agent' || path.startsWith('/api/agent/')) {
-    const body = req.method === 'POST' ? await readJsonRecord(req) : {}
+    // an image upload is multipart: its route reads the form itself
+    const multipart = req.headers.get('content-type')?.startsWith('multipart/form-data')
+    const body = req.method === 'POST' && !multipart ? await readJsonRecord(req) : {}
     const agent = await handleAgentRoute({
       req,
       url,

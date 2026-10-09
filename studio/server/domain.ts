@@ -1,6 +1,6 @@
 /** SDK V1 project discovery and the in-process Studio registry. */
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   Node,
   Project,
@@ -10,13 +10,19 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
+import { workspaceKey } from './home'
+import {
+  LEGACY_APPLICATION_MODULES,
+  LEGACY_DEFINE_APPLICATION,
+  LEGACY_PROJECT_APPLICATION_KEY,
+} from './legacy/application-project'
 import { isPackageImportSpecifier, resolvePackageImport } from './package-imports'
 
 export interface DomainHandle {
   readonly id: string
   readonly root: string
   readonly configFile: string
-  readonly applicationFile: string
+  readonly domainFile: string
   readonly schemaDirName: string
   readonly schemaDir: string
   readonly schemaIndex: string
@@ -25,39 +31,19 @@ export interface DomainHandle {
 
 const registry = new Map<string, DomainHandle>()
 
-export function makeId(root: string): string {
-  return basename(resolve(root)).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain'
-}
-
-/**
- * The module that composes a domain, and the factory it calls.
- *
- * Both changed with the SDK — an `application.ts` calling `defineApplication`
- * became a `domain.ts` calling `defineDomain` — and both shapes are in the wild:
- * a workspace holds domains scaffolded months apart, and `create-astrale-domain`
- * only ever emits the current one. Studio reads either, in the order below, so a
- * freshly scaffolded domain is discovered like any other.
- */
-const COMPOSITION_MODULES: readonly string[] = ['application', 'domain']
-const COMPOSITION_FACTORIES: readonly { module: string; name: string }[] = [
-  { module: '@astrale-os/sdk/application', name: 'defineApplication' },
-  { module: '@astrale-os/sdk', name: 'defineApplication' },
-  { module: '@astrale-os/sdk', name: 'defineDomain' },
-]
-
+const DOMAIN_MODULES = new Set(['@astrale-os/sdk/domain', '@astrale-os/sdk'])
 const PROJECT_MODULES = new Set(['@astrale-os/sdk/project', '@astrale-os/sdk'])
-const DEPLOYMENT_MODULES = new Set(['@astrale-os/sdk/deployment', '@astrale-os/sdk'])
 const TESTING_MODULES = new Set(['@astrale-os/sdk/testing'])
 
 /** What `astrale.config.ts` declares through `defineProject`, read statically. */
 export interface ProjectConfigAnalysis {
-  /** Application module of `deployment: deploy({ application })`, resolved to a source file. */
-  readonly applicationFile: string | null
+  /** Domain definition module of `defineProject({ domain })`, resolved to a source file. */
+  readonly domainFile: string | null
   /** Dataset module coordinates of `tests: tests({ datasets: [dataset('…')] })`, in order. */
   readonly datasets: readonly string[]
 }
 
-const NO_PROJECT: ProjectConfigAnalysis = Object.freeze({ applicationFile: null, datasets: [] })
+const NO_PROJECT: ProjectConfigAnalysis = Object.freeze({ domainFile: null, datasets: [] })
 
 /**
  * Read the Project declared by `astrale.config.ts` without executing it: the configuration is
@@ -71,26 +57,26 @@ export function analyzeProjectConfig(root: string): ProjectConfigAnalysis {
   if (!existsSync(config)) return NO_PROJECT
   const source = addSourceFile(config)
   if (source === null) return NO_PROJECT
-  for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isSdkCall(call, source, 'defineProject', PROJECT_MODULES)) continue
-    const input = resolveLocalValue(call.getArguments()[0], source)
-    if (!input || !Node.isObjectLiteralExpression(input)) continue
-    return Object.freeze({
-      applicationFile: applicationOf(objectPropertyValue(input, 'deployment'), source, project),
-      datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
-    })
-  }
-  return NO_PROJECT
+  const exported = source.getExportAssignments().find((entry) => !entry.isExportEquals())
+  const call = resolveLocalValue(exported?.getExpression(), source)
+  if (!call || !Node.isCallExpression(call)) return NO_PROJECT
+  if (!isSdkCall(call, source, 'defineProject', PROJECT_MODULES)) return NO_PROJECT
+  const input = resolveLocalValue(call.getArguments()[0], source)
+  if (!input || !Node.isObjectLiteralExpression(input)) return NO_PROJECT
+  return Object.freeze({
+    domainFile: domainOf(
+      objectPropertyValue(input, 'domain') ??
+        objectPropertyValue(input, LEGACY_PROJECT_APPLICATION_KEY),
+      source,
+      project,
+    ),
+    datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
+  })
 }
 
-function applicationOf(node: Node | undefined, source: SourceFile, root: string): string | null {
-  const deployment = resolveLocalValue(node, source)
-  if (!deployment || !Node.isCallExpression(deployment)) return null
-  if (!isSdkCall(deployment, source, 'deploy', DEPLOYMENT_MODULES)) return null
-  const input = resolveLocalValue(deployment.getArguments()[0], source)
-  if (!input || !Node.isObjectLiteralExpression(input)) return null
-  const application = objectPropertyValue(input, 'application')
-  return application ? importedModuleOf(application, source, root) : null
+function domainOf(node: Node | undefined, source: SourceFile, root: string): string | null {
+  const domain = resolveLocalValue(node, source)
+  return domain ? importedModuleOf(domain, source, root) : null
 }
 
 function datasetsOf(node: Node | undefined, source: SourceFile): string[] {
@@ -119,8 +105,11 @@ function datasetsOf(node: Node | undefined, source: SourceFile): string[] {
 /** The module an identifier is imported from (named, aliased or default), resolved inside the root. */
 function importedModuleOf(node: Node, source: SourceFile, root: string): string | null {
   const value = unwrap(node)
-  if (!Node.isIdentifier(value)) return null
-  const name = value.getText()
+  return Node.isIdentifier(value) ? moduleImportingName(value.getText(), source, root) : null
+}
+
+/** The module that binds local `name` (named, aliased or default import), resolved inside the root. */
+function moduleImportingName(name: string, source: SourceFile, root: string): string | null {
   for (const declaration of source.getImportDeclarations()) {
     const named = declaration
       .getNamedImports()
@@ -132,56 +121,31 @@ function importedModuleOf(node: Node, source: SourceFile, root: string): string 
   return null
 }
 
-/**
- * Resolve the composition module: the Project declared by `astrale.config.ts` first, then the
- * root `application.ts` / `domain.ts` convention, then the config's own composition import for
- * projects that predate `defineProject`.
- */
-export function resolveApplicationEntry(root: string): string | null {
-  const project = resolve(root)
-  const declared = analyzeProjectConfig(project).applicationFile
-  if (declared !== null) return declared
-  for (const name of COMPOSITION_MODULES) {
-    const conventional = join(project, `${name}.ts`)
-    if (existsSync(conventional)) return conventional
-  }
-  const config = join(project, 'astrale.config.ts')
-  if (!existsSync(config)) return null
-  let source: string
-  try {
-    source = readFileSync(config, 'utf8')
-  } catch {
-    return null
-  }
-  for (const match of source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/gu)) {
-    const specifier = match[1]
-    if (
-      !specifier?.startsWith('.') ||
-      !COMPOSITION_MODULES.includes(basename(specifier).replace(/\.[^.]+$/u, ''))
-    ) {
-      continue
-    }
-    const selected = resolveSourceFile(project, specifier)
-    if (selected !== null) return selected
-  }
-  return null
+/** Resolve only the Domain definition declared by the exported Project. */
+export function resolveDomainEntry(root: string): string | null {
+  return analyzeProjectConfig(root).domainFile
 }
 
 /**
  * Resolve the authored Schema module selected by the composition's `schema` binding.
  *
- * Application is the composition source of truth, but importing it would also load
- * Runtime, Frontend, integrations, and any authored top-level effects. Studio follows
+ * The Domain definition is the composition source of truth, but importing it would also
+ * load Runtime, Frontend, integrations, and any authored top-level effects. Studio follows
  * the Schema binding statically instead, then imports only that module in its isolated
  * extractor subprocess.
  */
-export function resolveSchemaEntry(root: string, applicationFile: string): string | null {
+export function resolveSchemaEntry(root: string, domainFile: string): string | null {
   const project = resolve(root)
-  const source = addSourceFile(applicationFile)
+  const source = addSourceFile(domainFile)
   if (source === null) return null
 
   for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isCompositionCall(call, source)) continue
+    if (
+      !isSdkCall(call, source, 'defineDomain', DOMAIN_MODULES) &&
+      !isSdkCall(call, source, LEGACY_DEFINE_APPLICATION, LEGACY_APPLICATION_MODULES)
+    ) {
+      continue
+    }
     const input = resolveLocalValue(call.getArguments()[0], source)
     if (!input || !Node.isObjectLiteralExpression(input)) continue
     const schema = objectPropertyValue(input, 'schema')
@@ -195,22 +159,23 @@ export function resolveSchemaEntry(root: string, applicationFile: string): strin
 export function isDomainDir(root: string): boolean {
   const project = resolve(root)
   if (!existsSync(join(project, 'astrale.config.ts'))) return false
-  const application = resolveApplicationEntry(project)
-  return application !== null && resolveSchemaEntry(project, application) !== null
+  const domain = resolveDomainEntry(project)
+  return domain !== null && resolveSchemaEntry(project, domain) !== null
 }
 
 export function registerDomain(root: string): DomainHandle | null {
   const project = resolve(root)
-  const applicationFile = resolveApplicationEntry(project)
-  if (applicationFile === null || !existsSync(join(project, 'astrale.config.ts'))) return null
-  const schemaIndex = resolveSchemaEntry(project, applicationFile)
+  const configFile = join(project, 'astrale.config.ts')
+  const domainFile = resolveDomainEntry(project)
+  if (domainFile === null || !existsSync(configFile)) return null
+  const schemaIndex = resolveSchemaEntry(project, domainFile)
   if (schemaIndex === null) return null
   const schemaDir = dirname(schemaIndex)
   const handle: DomainHandle = {
-    id: makeId(project),
+    id: workspaceKey(project),
     root: project,
-    configFile: join(project, 'astrale.config.ts'),
-    applicationFile,
+    configFile,
+    domainFile,
     schemaDirName: relative(project, schemaDir).replaceAll('\\', '/') || '.',
     schemaDir,
     schemaIndex,
@@ -219,7 +184,7 @@ export function registerDomain(root: string): DomainHandle | null {
   if (
     current?.root === handle.root &&
     current.configFile === handle.configFile &&
-    current.applicationFile === handle.applicationFile &&
+    current.domainFile === handle.domainFile &&
     current.schemaIndex === handle.schemaIndex
   ) {
     return current
@@ -251,11 +216,34 @@ export function depsInstalled(root: string): boolean {
   }
 }
 
-function resolveSourceFile(root: string, specifier: string): string | null {
-  return sourceCandidates(resolve(root, specifier)).find(isFile) ?? null
-}
+/**
+ * Parsed config/Domain definition sources, keyed by path and reused while the file's text is
+ * byte-identical. The workspace rescan analyzes every domain twice (`isDomainDir`, then
+ * `registerDomain`) every tick; re-reading the text is cheap, re-parsing it is not. The
+ * key is the content itself (not mtime), so any edit is seen on the very next call.
+ * Only the parse is cached: module resolution (`isFile`, `imports` maps) stays live.
+ */
+const parsedSources = new Map<string, { readonly text: string; readonly source: SourceFile }>()
 
 function addSourceFile(file: string): SourceFile | null {
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch {
+    parsedSources.delete(file)
+    return null
+  }
+  const cached = parsedSources.get(file)
+  if (cached?.text === text) return cached.source
+  const source = parseSourceFile(file)
+  // Cache only when the parse provably saw `text` (a write between the read and the
+  // parse, or any normalization, simply leaves the entry out).
+  if (source !== null && source.getFullText() === text) parsedSources.set(file, { text, source })
+  else parsedSources.delete(file)
+  return source
+}
+
+function parseSourceFile(file: string): SourceFile | null {
   try {
     const project = new Project({
       useInMemoryFileSystem: false,
@@ -335,13 +323,6 @@ function isSdkCall(
     )
 }
 
-/** True when `call` invokes one of the composition factories a domain module may use. */
-function isCompositionCall(call: CallExpression, source: SourceFile): boolean {
-  return COMPOSITION_FACTORIES.some((factory) =>
-    isSdkCall(call, source, factory.name, new Set([factory.module])),
-  )
-}
-
 function objectPropertyValue(object: ObjectLiteralExpression, name: string) {
   const property = object.getProperty(name)
   if (property && Node.isPropertyAssignment(property)) return property.getInitializer()
@@ -354,16 +335,7 @@ function schemaModuleOf(node: Node, source: SourceFile, root: string): string | 
   if (Node.isIdentifier(value)) {
     const initializer = source.getVariableDeclaration(value.getText())?.getInitializer()
     if (initializer) return schemaModuleOf(initializer, source, root)
-    for (const declaration of source.getImportDeclarations()) {
-      const imported = declaration
-        .getNamedImports()
-        .some((named) => (named.getAliasNode()?.getText() ?? named.getName()) === value.getText())
-      const defaultImported = declaration.getDefaultImport()?.getText() === value.getText()
-      if (imported || defaultImported) {
-        return resolveAuthoredModule(root, source, declaration.getModuleSpecifierValue())
-      }
-    }
-    return null
+    return moduleImportingName(value.getText(), source, root)
   }
   if (Node.isPropertyAccessExpression(value) && Node.isIdentifier(value.getExpression())) {
     const namespace = value.getExpression().getText()
@@ -384,7 +356,7 @@ function resolveAuthoredModule(root: string, from: SourceFile, specifier: string
   } else if (isPackageImportSpecifier(specifier)) {
     // Read the Domain's own `imports` map rather than asking the host resolver:
     // a compiled standalone cannot resolve an external package's aliases, and
-    // rejected every Domain whose Application imports `#schema`.
+    // rejected every Domain whose definition imports `#schema`.
     candidates = resolvePackageImport(specifier, fromDir).flatMap(sourceCandidates)
   } else {
     return null

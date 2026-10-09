@@ -102,7 +102,6 @@ export type SchemaChangeKind =
   | 'function-metadata-changed'
   | 'view-added'
   | 'view-removed'
-  | 'view-changed'
   | 'view-metadata-changed'
   | 'policy-added'
   | 'policy-removed'
@@ -211,6 +210,10 @@ export interface WorkspacePanelUiState {
   tab: 'agent' | 'comments'
   side: 'left' | 'right' | 'bottom'
   size: number
+  /** Width of the centred bottom dock; it grows on both sides and stays centred. */
+  dockWidth: number
+  /** Height of the conversation the bottom dock opens above its composer. */
+  dockHeight: number
 }
 
 /** Machine-side placement of the domains/modules rail. */
@@ -230,6 +233,8 @@ export interface WorkspaceUiState {
   readerDomainId?: string
   /** How relationship edges are drawn across the workspace canvases. */
   edgeStyle: 'curved' | 'orthogonal'
+  /** Width of the shared right-hand detail panel; absent in older saved states. */
+  detailWidth?: number
   panel: WorkspacePanelUiState
   rail: WorkspaceRailUiState
   schema: WorkspaceSchemaUiState

@@ -14,8 +14,12 @@ strictPeerDependencies: true
 blockExoticSubdeps: true
 lockfileIncludeTarballUrl: true
 
-# Quarantine every external release for seven days. Only Astrale publications
-# bypass the quarantine.
+# Quarantine every external release for seven days. Astrale publications bypass
+# the quarantine, and so does Studio's agent stack: the ACP adapters and the
+# Claude Code / Codex builds they drive ship together several times a week, and
+# Studio runs exactly the CLI its adapter pins (`pnpm run agents:pin`), so a week
+# of delay is a week of agents behind the models and fixes users already have.
+# Every other dependency those packages pull in stays quarantined.
 minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
@@ -26,6 +30,10 @@ minimumReleaseAgeExclude:
   - '@astrale/*'
   - '@jsr/astrale__*'
   - 'create-astrale-domain'
+  - '@agentclientprotocol/*'
+  - '@anthropic-ai/claude-agent-sdk'
+  - '@anthropic-ai/claude-agent-sdk-*'
+  - '@openai/codex'
 verifyDepsBeforeRun: false
 
 # Native build scripts required by the standalone CLI dependency graph.
@@ -33,3 +41,10 @@ allowBuilds:
   esbuild: true
   lightningcss: true
   msgpackr-extract: true
+  # wrangler's runtime, reached through the Studio fixtures' Cloudflare adapter.
+  workerd: true
+# Third-party `.d.ts` files reach their peer `@types` packages by walking parent
+# directories, which only works while dependencies live inside the project tree.
+# A machine-level global virtual store relocates them outside it and silently
+# breaks type resolution, so pin the per-project store for this workspace.
+virtualStoreType: project

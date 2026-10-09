@@ -21,28 +21,26 @@ function resolveDraft(
 ): CommentDraft | null {
   if (!target) return null
   const scopedDomainId = targetElementDomainId(target)
+  const draft = (
+    domainId: string,
+    targetElement: HTMLElement,
+    anchor: CommentDraft['anchor'],
+    excerpt: string,
+  ): CommentDraft => ({ mode, domainId, targetElement, anchor, excerpt, x, y })
 
   // 1) an element explicitly marked commentable (detail props/methods, section items…)
   const tagged = target.closest<HTMLElement>('[data-anchor-ref]')
   if (tagged?.dataset.anchorRef) {
     const ref = tagged.dataset.anchorRef
+    // An owner stamped ON the anchor wins: the rail's domain rows name a domain the
+    // canvas may not be drawing at all, so there is no `data-domain-id` around them to
+    // read — and falling through to unrelated selection state would file the thread
+    // on the wrong one (see `anchorData`).
     const domainId =
       tagged.dataset.anchorDomainId ?? targetElementDomainId(tagged) ?? scopedDomainId
     if (!domainId) return null
     const excerpt = (tagged.dataset.anchorExcerpt || tagged.textContent || ref).trim().slice(0, 80)
-    return {
-      mode,
-      // An owner stamped ON the anchor wins: the rail's domain rows name a domain the
-      // canvas may not be drawing at all, so there is no `data-domain-id` around them to
-      // read — and falling through to unrelated selection state would file the thread
-      // on the wrong one (see `anchorData`).
-      domainId,
-      targetElement: tagged,
-      anchor: { ref, kind: anchorKindForRef(ref) },
-      excerpt,
-      x,
-      y,
-    }
+    return draft(domainId, tagged, { ref, kind: anchorKindForRef(ref) }, excerpt)
   }
 
   // 2) a graph node — a class box or a (collapsed/expanded) module box
@@ -54,27 +52,9 @@ function resolveDraft(
     const domainId = identity.domainId ?? targetElementDomainId(node) ?? scopedDomainId
     if (!domainId) return null
     if (ref?.startsWith('class.'))
-      return {
-        mode,
-        domainId,
-        targetElement: node,
-        anchor: { ref, kind: 'schema' },
-        excerpt: ref.slice(6),
-        x,
-        y,
-      }
-    if (ref?.startsWith('module.')) {
-      const path = ref.slice('module.'.length)
-      return {
-        mode,
-        domainId,
-        targetElement: node,
-        anchor: { ref, kind: 'section' },
-        excerpt: path,
-        x,
-        y,
-      }
-    }
+      return draft(domainId, node, { ref, kind: 'schema' }, ref.slice('class.'.length))
+    if (ref?.startsWith('module.'))
+      return draft(domainId, node, { ref, kind: 'section' }, ref.slice('module.'.length))
   }
 
   // 3) a graph edge (relationship)
@@ -84,15 +64,7 @@ function resolveDraft(
     const ref = flowEdgeAnchorRef(edgeId)
     const domainId = flowEdgeOwnerDomainId(edgeId) ?? targetElementDomainId(edge) ?? scopedDomainId
     if (ref && domainId)
-      return {
-        mode,
-        domainId,
-        targetElement: edge,
-        anchor: { ref, kind: 'schema' },
-        excerpt: ref.slice(5),
-        x,
-        y,
-      }
+      return draft(domainId, edge, { ref, kind: 'schema' }, ref.slice('edge.'.length))
   }
 
   // Empty canvas and generic page chrome are deliberately not targets: every
@@ -127,7 +99,6 @@ export function CommentModeOverlay() {
   const toggleAskMode = useUI((s) => s.toggleAskMode)
   const setCommentDraft = useUI((s) => s.setCommentDraft)
   const active = commentMode || askMode
-  const mode: 'comment' | 'ask' = askMode ? 'ask' : 'comment'
 
   useEffect(() => {
     if (!active) return
@@ -150,9 +121,8 @@ export function CommentModeOverlay() {
     const onClick = (e: MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      const st = useUI.getState()
-      const m: 'comment' | 'ask' = st.askMode ? 'ask' : 'comment'
-      const draft = resolveDraft(e.target as HTMLElement | null, m, e.clientX, e.clientY)
+      const mode = useUI.getState().askMode ? 'ask' : 'comment'
+      const draft = resolveDraft(e.target as HTMLElement | null, mode, e.clientX, e.clientY)
       exit()
       if (!draft) return
       // open on the next frame so this click finishes before the popover mounts —
@@ -191,7 +161,7 @@ export function CommentModeOverlay() {
 
   if (!active) return null
 
-  const ask = mode === 'ask'
+  const ask = askMode
   return (
     <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center">
       <div className="flex items-center gap-2 rounded-full border border-primary/40 bg-card px-4 py-1.5 text-xs font-medium shadow-[0_8px_24px_-12px_rgb(0_0_0/0.25)]">

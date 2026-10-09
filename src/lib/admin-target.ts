@@ -87,6 +87,7 @@ export const AdminTargetConfigSchema = z
 export type AdminTargetConfig = z.infer<typeof AdminTargetConfigSchema>
 
 export type AdminTargetCommandOpts = {
+  fleet?: string
   admin?: string
   adminUrl?: string
   domainIssuer?: string
@@ -139,10 +140,7 @@ export function resolveAdminTargetFromStore(
   const override = readOverride(opts)
   if (override) {
     if (override.kind === 'instance' && opts.domainIssuer !== undefined) {
-      throw new AstraleError(
-        'INVALID_FLAG',
-        '--domain-issuer is only valid with --admin-url or --url.',
-      )
+      throw new AstraleError('INVALID_FLAG', '--domain-issuer is only valid with --admin-url.')
     }
     return override.kind === 'url'
       ? directTarget({
@@ -196,13 +194,23 @@ function readOverride(opts: AdminTargetCommandOpts):
       source: AdminTargetSource
     }
   | null {
+  // -i/--instance and --url select the instance a command acts on everywhere else. Reusing them
+  // for the Admin kernel sent `domain list -i <instance>` to a non-Admin kernel, so refuse them.
+  const instanceSelector = [
+    opts.instance === undefined ? null : '-i/--instance',
+    opts.url === undefined ? null : '--url',
+  ].filter((label): label is string => label !== null)
+  if (instanceSelector.length > 0) {
+    throw new AstraleError(
+      'INVALID_FLAG',
+      `${instanceSelector.join(' and ')} ${instanceSelector.length > 1 ? 'select' : 'selects'} an instance, not the Admin kernel.`,
+      'Use --admin <bookmark> or --admin-url <url> to choose the Admin kernel for this operation.',
+    )
+  }
+
   const selected = [
     opts.adminUrl ? { label: '--admin-url', kind: 'url' as const, value: opts.adminUrl } : null,
     opts.admin ? { label: '--admin', kind: 'instance' as const, value: opts.admin } : null,
-    opts.url ? { label: '--url', kind: 'url' as const, value: opts.url } : null,
-    opts.instance
-      ? { label: '-i/--instance', kind: 'instance' as const, value: opts.instance }
-      : null,
   ].filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 
   if (selected.length > 1) {
@@ -287,4 +295,9 @@ function requireDomainIssuer(value: string | undefined, label: string): string {
     `${label} has no Domain issuer for token exchange.`,
     'Configure domainIssuer or pass --domain-issuer <url>; there is no legacy token fallback.',
   )
+}
+
+export const FLEET_OPTION = {
+  flags: '--fleet <path>',
+  description: 'Fleet path (required when more than one Fleet is usable)',
 }

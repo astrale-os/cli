@@ -1,60 +1,36 @@
 import type { StaleReport } from '@shared/types'
 
 import { expect, test } from 'bun:test'
-import { renderToStaticMarkup } from 'react-dom/server'
 
-import { actionable, updateCommand, UpdateInstructions } from './updates-badge'
+import { packageUpdatePrompt, packageUpdateSummary } from './updates-badge'
 
 const report: StaleReport = {
   stale: true,
-  cli: {
-    stale: true,
-    managed: false,
-    current: '1.0.0-beta.77',
-    latest: '1.0.0-beta.78',
-    channel: 'beta',
-  },
-  skills: { status: 'update-available' },
+  cli: { stale: false, managed: true },
+  skills: { status: 'current' },
   sdk: {
     stale: true,
     inProject: true,
-    outdated: [{ pkg: '@astrale-os/sdk', current: '0.5.0-beta.106', latest: '0.5.0-beta.107' }],
+    outdated: [
+      { pkg: '@astrale-os/sdk', current: '0.5.0-beta.106', latest: '0.5.0-beta.107' },
+      { pkg: '@astrale-os/ui', current: '0.4.0', latest: '0.5.0' },
+    ],
   },
 }
 
-test('the terminal update command enters the exact domain and materializes stale SDK deps', () => {
-  expect(updateCommand("/work/Marc's domain", report)).toBe(
-    `cd '/work/Marc'"'"'s domain' && astrale update && pnpm install`,
+test('the quiet package hint names every exact upgrade', () => {
+  expect(packageUpdateSummary(report)).toBe(
+    '@astrale-os/sdk 0.5.0-beta.106 → 0.5.0-beta.107 · @astrale-os/ui 0.4.0 → 0.5.0',
   )
-  expect(
-    updateCommand('/work/domain', {
-      ...report,
-      sdk: { stale: false, inProject: true, outdated: [] },
-    }),
-  ).toBe(`cd '/work/domain' && astrale update`)
 })
 
-test('the update instructions make the stop-update-relaunch boundary explicit', () => {
-  const html = renderToStaticMarkup(
-    <UpdateInstructions report={report} domainPath="/work/domain with spaces" />,
-  )
+test('the prepared agent message is exact, scoped, and remains an instruction rather than a command', () => {
+  const prompt = packageUpdatePrompt('billing.example.com', report)
 
-  expect(html).toContain('Astrale CLI')
-  expect(html).toContain('@astrale-os/sdk')
-  expect(html).toContain('astrale update &amp;&amp; pnpm install')
-  expect(html).toContain('Ctrl-C')
-  expect(html).toContain('relaunch your previous')
-  expect(html).toContain('aria-label="Copy update command"')
-  expect(html).not.toContain('Update now')
-})
-
-test('an externally managed CLI alone is not presented as an actionable update', () => {
-  expect(
-    actionable({
-      stale: true,
-      cli: { stale: true, managed: true },
-      skills: { status: 'current' },
-      sdk: { stale: false, inProject: false, outdated: [] },
-    }),
-  ).toBe(false)
+  expect(prompt).toContain('billing.example.com domain')
+  expect(prompt).toContain('- @astrale-os/sdk: 0.5.0-beta.106 → 0.5.0-beta.107')
+  expect(prompt).toContain('- @astrale-os/ui: 0.4.0 → 0.5.0')
+  expect(prompt).toContain("run the domain's checks")
+  expect(prompt).toContain('Do not change unrelated packages')
+  expect(prompt).not.toContain('astrale update')
 })

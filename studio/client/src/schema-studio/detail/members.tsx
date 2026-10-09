@@ -1,10 +1,11 @@
-import type { IrMethod, JsonSchema, StudioSchemaBundle } from '@shared/types'
+import type { IrCallable, JsonSchema, StudioSchemaBundle } from '@shared/types'
 
 import { Binary, ChevronRight, Info, type LucideIcon, Waves } from 'lucide-react'
 import { type HTMLAttributes, type ReactNode, type Ref, useEffect, useState } from 'react'
 
 import { AnchorButton, useRevealedAnchor } from '@/components/anchor'
 import { TRIGGER_TONE } from '@/components/method-auth'
+import { PolicyLink } from '@/components/policy-link'
 import { Chip, DescriptionText, MetaGrid, Row, Surface } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { describe, typeLabel } from '@/lib/format'
@@ -269,7 +270,7 @@ export function MethodRow({
   }, [revealedNow])
   const revealed = useRevealedAnchor(mref)
 
-  const contractOnly = link && !link.implemented
+  const contractOnly = entry.method.executable && link && !link.implemented
   const unlinked = link?.unlinked
 
   return (
@@ -288,20 +289,13 @@ export function MethodRow({
             )}
           />
           <Glyph className={cn('h-3.5 w-3.5 shrink-0', GLYPH_TEXT[glyph.tone])} />
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-[13px] font-medium leading-5',
-              entry.overridden && 'text-muted-foreground line-through',
-            )}
-          >
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">
             <OwnerPrefix owner={entry.owner} />
             {entry.name}
           </span>
           {/* compact method facts only — the contract itself waits for the click */}
           {entry.method.static && <Chip tone="outline">static</Chip>}
-          {entry.method.inheritance === 'sealed' && <Chip tone="warning">sealed</Chip>}
-          {entry.method.inheritance === 'abstract' && <Chip tone="fn">contract</Chip>}
-          {entry.overridden && <Chip tone="default">overridden</Chip>}
+          {entry.method.abstract && <Chip tone="fn">contract</Chip>}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {unlinked && <Chip tone="default">unlinked</Chip>}
         </button>
@@ -312,7 +306,7 @@ export function MethodRow({
         />
       </div>
       {open && (
-        <MethodDetail
+        <CallableDetail
           bundle={bundle}
           owner={declaring}
           method={entry.method}
@@ -332,7 +326,7 @@ function Note({ children }: { children: ReactNode }) {
 // inside them: the label column carries the structure, so the eye reads the facts down
 // one edge instead of through a stack of boxes. Technical types, Policy descriptions
 // and auth wording wait on hover.
-function MethodDetail({
+export function CallableDetail({
   bundle,
   owner,
   method,
@@ -340,7 +334,7 @@ function MethodDetail({
 }: {
   bundle: StudioSchemaBundle
   owner: string
-  method: IrMethod
+  method: IrCallable
   /** the source comment when there is one, else the declared description */
   doc?: string
 }) {
@@ -408,7 +402,7 @@ function PolicyLine({
 }: {
   bundle: StudioSchemaBundle
   owner: string
-  method: IrMethod
+  method: IrCallable
   check?: ParsedPolicyCheck
 }) {
   const verdict = methodAuth(method)
@@ -422,6 +416,11 @@ function PolicyLine({
       </div>
       {check ? (
         <PolicyTree bundle={bundle} owner={owner} check={check} />
+      ) : 'abstract' in method &&
+        method.abstract &&
+        'executable' in method &&
+        !method.executable ? (
+        <Note>abstract contract — Policy is declared on the implementation</Note>
       ) : method.auth === 'authorized' ? (
         <div>
           <Note>no Policy pinned</Note>
@@ -451,7 +450,7 @@ function PolicyCheckText({
         description && 'cursor-help',
       )}
     >
-      <span className="font-mono text-foreground/90">{check.policy.name}</span>
+      <PolicyLink policy={check.policy} domainId={bundle.domainId} className="font-mono" />
       {foreign && (
         <span className="text-muted-foreground">· {originLabel(check.policy.origin)}</span>
       )}
@@ -482,6 +481,13 @@ function PolicyTree({
   owner: string
   check: ParsedPolicyCheck
 }) {
+  if (check.kind === 'sameNode')
+    return (
+      <span>
+        {policyObjectLabel(check.left, owner)} is the same Node as{' '}
+        {policyObjectLabel(check.right, owner)}
+      </span>
+    )
   if (check.kind === 'check') {
     return (
       <div>
@@ -555,7 +561,7 @@ function FieldLine({
 }
 
 // What comes back: its kind, then a structured value's fields beneath.
-function ReturnLines({ output }: { output: IrMethod['output'] }) {
+function ReturnLines({ output }: { output: IrCallable['output'] }) {
   if (output.mode === 'binary') return <FieldLine label="Binary" icon={Binary} />
   const schema = output.mode === 'stream' ? output.item : output.schema
   const kind = friendlyFieldType(schema).label

@@ -21,6 +21,11 @@ const child = Bun.spawn([executable, serverEntry, fixture, '--port', port, '--no
     ...process.env,
     // Machine-global Studio state must never make an E2E run read or write the user's home.
     ASTRALE_HOME: astraleHome,
+    // The model picker probes every agent, which would download Studio's pinned
+    // builds (~200 MB) into that fresh home on every run. Browser tests drive no
+    // real agent, so they keep whatever the PATH has, as before the pin.
+    DOMAIN_STUDIO_CLAUDE_BIN: process.env.DOMAIN_STUDIO_CLAUDE_BIN ?? 'claude',
+    DOMAIN_STUDIO_CODEX_BIN: process.env.DOMAIN_STUDIO_CODEX_BIN ?? 'codex',
     DOMAIN_STUDIO_CLI_DESCRIPTOR: JSON.stringify({
       version: 1,
       executable,

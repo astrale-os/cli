@@ -32,8 +32,7 @@ function primaryAnchor(comment: Comment): { ref: string; file?: string } | null 
 }
 
 function latestThreadEntry(comment: Comment): ThreadEntry | null {
-  const thread = comment.thread ?? []
-  return thread.length > 0 ? thread[thread.length - 1] : null
+  return comment.thread?.at(-1) ?? null
 }
 
 function formatBytes(n: number): string {
@@ -85,6 +84,13 @@ export function buildMachineStateBlock(
   return ['```json', JSON.stringify(machineState, null, 2), '```', ''].join('\n')
 }
 
+/** One `## heading` with a `### title` + body per item; nothing at all when there are none. */
+function pushContextSection(lines: string[], heading: string, items: ContextItem[]): void {
+  if (items.length === 0) return
+  lines.push(`## ${heading}`, '')
+  for (const item of items) lines.push(`### ${item.title}`, '', item.body, '')
+}
+
 export function buildCopyMarkdown(parts: CopyParts): string {
   const {
     origin,
@@ -129,28 +135,10 @@ export function buildCopyMarkdown(parts: CopyParts): string {
   }
 
   // ── Saved context notes ──
-  if (userContext.length > 0) {
-    lines.push('## Saved context notes')
-    lines.push('')
-    for (const item of userContext) {
-      lines.push(`### ${item.title}`)
-      lines.push('')
-      lines.push(item.body)
-      lines.push('')
-    }
-  }
+  pushContextSection(lines, 'Saved context notes', userContext)
 
   // ── Context (auto) — optional, caller already filtered ──
-  if (autoContext.length > 0) {
-    lines.push('## Auto context')
-    lines.push('')
-    for (const item of autoContext) {
-      lines.push(`### ${item.title}`)
-      lines.push('')
-      lines.push(item.body)
-      lines.push('')
-    }
-  }
+  pushContextSection(lines, 'Auto context', autoContext)
 
   // ── Open comments & questions ──
   lines.push('## Open comments & questions')

@@ -19,6 +19,7 @@ import {
   type PolicyTerm,
   isEdgeStep,
   policyLabel,
+  variableClass,
 } from '@/lib/policy'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +28,25 @@ type VariableClasses = ReadonlyMap<number, IrSchemaRef>
 
 /** "an Actor", "a Group" — a variable reads as one instance of its class. */
 const anInstance = (name: string): string => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`
+
+/** The shared terms, each in the words and tone the canvas marks cards with. */
+const RESERVED_TERMS: Record<
+  Exclude<PolicyTerm, { kind: 'variable' | 'ref' }>['kind'],
+  [string, ReactNode, string]
+> = {
+  subject: ['Subject', <UserRound key="s" className="h-3 w-3" />, 'bg-primary/10 text-primary'],
+  object: ['Object', <Box key="o" className="h-3 w-3" />, 'bg-schema-node/10 text-schema-node'],
+  source: [
+    'Edge source',
+    <Box key="src" className="h-3 w-3" />,
+    'bg-schema-edge/12 text-schema-edge',
+  ],
+  target: [
+    'Edge target',
+    <Box key="tgt" className="h-3 w-3" />,
+    'bg-schema-edge/12 text-schema-edge',
+  ],
+}
 
 function TermChip({
   term,
@@ -46,24 +66,13 @@ function TermChip({
       </span>
     )
   }
-  const reserved: Record<
-    Exclude<PolicyTerm, { kind: 'variable' }>['kind'],
-    [string, ReactNode, string]
-  > = {
-    subject: ['Subject', <UserRound key="s" className="h-3 w-3" />, 'bg-primary/10 text-primary'],
-    object: ['Object', <Box key="o" className="h-3 w-3" />, 'bg-schema-node/10 text-schema-node'],
-    source: [
-      'Edge source',
-      <Box key="src" className="h-3 w-3" />,
-      'bg-schema-edge/12 text-schema-edge',
-    ],
-    target: [
-      'Edge target',
-      <Box key="tgt" className="h-3 w-3" />,
-      'bg-schema-edge/12 text-schema-edge',
-    ],
-  }
-  const [label, icon, tone] = reserved[term.kind]
+  if (term.kind === 'ref')
+    return (
+      <span className="rounded-md bg-muted px-1.5 py-px font-medium">
+        {term.ref.kind} {policyLabel(term.ref, origin)}
+      </span>
+    )
+  const [label, icon, tone] = RESERVED_TERMS[term.kind]
   return (
     <span
       className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium', tone)}
@@ -78,7 +87,10 @@ function collectVariables(pattern: PolicyPattern, into: Map<number, IrSchemaRef>
   if ('allOf' in pattern) pattern.allOf.forEach((p) => collectVariables(p, into))
   else if ('anyOf' in pattern) pattern.anyOf.forEach((p) => collectVariables(p, into))
   else if ('exists' in pattern) {
-    for (const node of pattern.exists.nodes) into.set(node.variable.id, node.class)
+    for (const node of pattern.exists.nodes) {
+      const cls = variableClass(node)
+      if (cls) into.set(node.variable.id, cls)
+    }
     collectVariables(pattern.exists.where, into)
   }
 }
@@ -111,25 +123,11 @@ export function PatternWords({
       collectVariables(pattern, found)
       return found
     })()
-  if ('allOf' in pattern) {
+  if ('allOf' in pattern || 'anyOf' in pattern) {
+    const parts = 'allOf' in pattern ? pattern.allOf : pattern.anyOf
     return (
-      <Lines label="all of">
-        {pattern.allOf.map((p, i) => (
-          <PatternWords
-            key={i}
-            pattern={p}
-            origin={origin}
-            variables={variables}
-            undirected={undirected}
-          />
-        ))}
-      </Lines>
-    )
-  }
-  if ('anyOf' in pattern) {
-    return (
-      <Lines label="any of">
-        {pattern.anyOf.map((p, i) => (
+      <Lines label={'allOf' in pattern ? 'all of' : 'any of'}>
+        {parts.map((p, i) => (
           <PatternWords
             key={i}
             pattern={p}
@@ -143,7 +141,12 @@ export function PatternWords({
   }
   if ('exists' in pattern) {
     const names = pattern.exists.nodes
-      .map((node) => anInstance(policyLabel(node.class, origin)))
+      .map((node) => {
+        const cls = variableClass(node)
+        return cls
+          ? `${anInstance(policyLabel(cls, origin))}${'class' in node ? ' (exact class)' : ''}`
+          : 'a Node'
+      })
       .join(', ')
     return (
       <Lines label={`there is ${names} such that`}>
@@ -156,6 +159,14 @@ export function PatternWords({
       </Lines>
     )
   }
+  if ('sameNode' in pattern)
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+        <TermChip term={pattern.sameNode.left} variables={variables} origin={origin} />
+        <span className="text-muted-foreground">is the same Node as</span>
+        <TermChip term={pattern.sameNode.right} variables={variables} origin={origin} />
+      </div>
+    )
   if (!isEdgeStep(pattern)) return null
   const twoWay = undirected?.(pattern.class) === true
   const repeat = pattern.repeat

@@ -18,6 +18,7 @@ import type { AcpProvider } from './command'
 import { isAgentEffort } from '../../../../shared/agent-effort'
 
 export type SelectConfigOption = Extract<acp.SessionConfigOption, { type: 'select' }>
+export type FastConfigOption = Extract<acp.SessionConfigOption, { type: 'select' | 'boolean' }>
 
 function selectByCategory(
   options: acp.SessionConfigOption[],
@@ -38,6 +39,27 @@ export function modelConfig(options: acp.SessionConfigOption[]): SelectConfigOpt
 export function effortConfig(options: acp.SessionConfigOption[]): SelectConfigOption | undefined {
   const option = options.find((candidate) => candidate.category === 'thought_level')
   return option?.type === 'select' ? option : undefined
+}
+
+/** Fast mode is a model configuration, currently `fast-mode` in Codex ACP. Match
+ * the advertised option rather than the provider so Claude gains it as soon as
+ * its ACP adapter exposes the same protocol capability. */
+export function fastConfig(options: acp.SessionConfigOption[]): FastConfigOption | undefined {
+  const option = options.find(
+    (candidate) =>
+      candidate.id === 'fast-mode' ||
+      (candidate.category === 'model_config' && /fast/i.test(candidate.name)),
+  )
+  return option?.type === 'boolean' || option?.type === 'select' ? option : undefined
+}
+
+export function fastEnabled(config: FastConfigOption | undefined): boolean {
+  if (!config) return false
+  return config.type === 'boolean' ? config.currentValue : config.currentValue === 'on'
+}
+
+export function fastValue(config: FastConfigOption, enabled: boolean): string | boolean {
+  return config.type === 'boolean' ? enabled : enabled ? 'on' : 'off'
 }
 
 /** Flatten a select's rows, groups included, into `[value, name, description]`. */

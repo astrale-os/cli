@@ -4,9 +4,10 @@ import { NO_HOST_CAPABILITIES } from '@astrale-os/shell'
 import { describe, expect, test } from 'bun:test'
 
 import {
-  handleOpenIntent,
-  installOpenIntentHandler,
-  type OpenIntentHost,
+  domainViewPath,
+  handleViewOpenIntent,
+  installViewOpenHandler,
+  type ViewOpenHost,
 } from '../view/open-intent'
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const
@@ -14,70 +15,63 @@ const target = (value: string) => value as ResolvedView['target']
 const issuer = (value: string) => value as ResolvedView['route']['issuer']
 const revision = (character: string) => digest(character) as ResolvedView['route']['revision']
 
-const profile: ResolvedView = {
-  target: target('@person-1'),
-  route: {
-    key: 'shell.test:view.profile',
-    declaration: {
-      target: {
-        kind: 'definition',
-        definitions: [{ origin: 'shell.test', kind: 'class', name: 'Person' }],
-      },
+function domainView(name: string): ResolvedView {
+  return {
+    target: target('/:shell.test'),
+    route: {
+      key: `shell.test:view.${name}` as ResolvedView['route']['key'],
+      declaration: { target: { kind: 'domain' } },
+      href: `https://shell.test/${name}`,
+      handshake: 'shell',
+      issuer: issuer('https://shell.test'),
+      etag: digest('a'),
+      revision: revision('b'),
     },
-    href: 'https://shell.test/profile',
-    handshake: 'shell',
-    issuer: issuer('https://shell.test'),
-    etag: digest('a'),
-    revision: revision('b'),
-  },
-}
-const card: ResolvedView = {
-  target: target('@person-1'),
-  route: {
-    key: 'shell.test:view.card',
-    declaration: {
-      target: {
-        kind: 'definition',
-        definitions: [{ origin: 'shell.test', kind: 'class', name: 'Person' }],
-      },
-    },
-    href: 'https://shell.test/card',
-    handshake: 'none',
-    issuer: issuer('https://shell.test'),
-    etag: digest('c'),
-    revision: revision('d'),
-  },
+  }
 }
 
-function openMessage(viewId?: string, correlationId?: string): IntentMessage<'open'> {
+function openMessage(
+  view: string,
+  correlationId?: string,
+  requestTarget?: string,
+): IntentMessage<'view.open'> {
   return {
     type: 'intent',
     version: 1,
     envelope: {
-      name: 'open',
-      payload: { nodeId: 'person-1', ...(viewId ? { viewId } : {}) },
+      name: 'view.open',
+      payload: {
+        view: view as IntentMessage<'view.open'>['envelope']['payload']['view'],
+        ...(requestTarget === undefined
+          ? {}
+          : {
+              target: requestTarget as IntentMessage<'view.open'>['envelope']['payload']['target'] &
+                string,
+            }),
+      },
       sender: { windowId: 'old-window' },
       ...(correlationId ? { correlationId } : {}),
     },
   }
 }
 
-function mounted(windowId: string, onClose?: () => void): MountedWindow {
+function mounted(windowId: string, view: ResolvedView, onClose?: () => void): MountedWindow {
   return {
     windowId,
     window: {
       windowId,
-      functionId: 'shell.test:view.profile',
-      targetNodeId: '@person-1',
+      functionId: String(view.route.key),
+      targetNodeId: String(view.target),
       children: [],
-      view: profile,
-      location: { target: '@person-1', params: {} },
+      view,
+      location: { target: view.target, params: {} },
       presentation: { kind: 'inline', constrained: false },
       isolation: 'shared',
       state: 'ready',
       credential: { state: 'none' },
       capabilities: NO_HOST_CAPABILITIES,
     },
+    view,
     handle: { element: {} as HTMLElement },
     credential: { state: 'none' },
     presentation: { kind: 'inline', constrained: false },
@@ -86,195 +80,161 @@ function mounted(windowId: string, onClose?: () => void): MountedWindow {
       onClose?.()
       return { kind: 'closed' }
     },
+    onNavigate: () => () => undefined,
+    traverse: async () => {
+      throw new Error('This View keeps no history to move.')
+    },
   }
 }
 
-function harness(views: readonly ResolvedView[] = [profile, card]) {
+function harness() {
   const events: string[] = []
-  const sent: { windowId: string; message: IntentMessage }[] = []
-  const old = mounted('old-window', () => events.push('close:old-window'))
+  const replies: { windowId: string; result: unknown }[] = []
+  const old = mounted('old-window', domainView('home'), () => events.push('close:old-window'))
   let current: MountedWindow | null = old
-  const shell = {
-    views: {
-      resolve: async (node: string) => {
-        events.push(`resolve:${node}`)
-        return views
-      },
-    },
-  } as unknown as Pick<Shell, 'views'>
-  const host: OpenIntentHost = {
+  const host: ViewOpenHost = {
     current: () => current,
     setCurrent: (next) => {
       events.push(`current:${next.windowId}`)
       current = next
     },
-    mount: async (view) => {
-      events.push(`mount:${view.route.key}:${view.target}`)
-      return mounted('new-window')
+    open: async (path) => {
+      events.push(`open:${path}`)
+      return mounted('new-window', domainView(path.slice(path.lastIndexOf('.') + 1)))
     },
-    opened: (view) => events.push(`opened:${view.route.key}:${view.target}`),
+    opened: (next) => events.push(`opened:${next.view.route.key}:${next.view.target}`),
     failed: (error) => events.push(`failed:${error instanceof Error ? error.message : error}`),
-    reply: (message, windowId) => {
+    reply: (message, result) => {
       if (!message.envelope.correlationId) return
       events.push(`reply:${message.envelope.sender.windowId}`)
-      sent.push({
-        windowId: message.envelope.sender.windowId,
-        message: {
-          type: 'intent',
-          version: 1,
-          envelope: {
-            name: 'intentReply',
-            payload: {
-              correlationId: message.envelope.correlationId,
-              result: { windowId },
-            },
-            sender: { windowId: 'root' },
-          },
-        },
-      })
+      replies.push({ windowId: message.envelope.sender.windowId, result })
     },
     reject: (message, error) => {
       if (!message.envelope.correlationId) return
-      events.push(`reply:${message.envelope.sender.windowId}`)
-      sent.push({
+      events.push(`reject:${message.envelope.sender.windowId}`)
+      replies.push({
         windowId: message.envelope.sender.windowId,
-        message: {
-          type: 'intent',
-          version: 1,
-          envelope: {
-            name: 'intentReply',
-            payload: {
-              correlationId: message.envelope.correlationId,
-              error: { message: error instanceof Error ? error.message : String(error) },
-            },
-            sender: { windowId: 'root' },
-          },
-        },
+        result: { error: error instanceof Error ? error.message : String(error) },
       })
     },
   }
-  return { events, sent, shell, host, current: () => current }
+  return { events, replies, host, current: () => current }
 }
 
-describe('open intent host', () => {
+describe('view.open host', () => {
   /** @evidence TEST-CLI-VIEW-OPEN-PRESERVES-RESOLVED-SELECTION */
-  test('uses the complete resolved placement and replies before retiring the requester', async () => {
+  test('opens the View on its Domain and replies before retiring the requester', async () => {
     const h = harness()
-    await handleOpenIntent(h.shell, h.host, openMessage(undefined, 'corr-1'))
+    await handleViewOpenIntent(h.host, openMessage('shell.test:view.card', 'corr-1'))
 
     expect(h.events).toEqual([
-      'resolve:person-1',
-      'mount:shell.test:view.profile:@person-1',
+      'open:/:shell.test:view.card',
       'current:new-window',
-      'opened:shell.test:view.profile:@person-1',
+      'opened:shell.test:view.card:/:shell.test',
       'reply:old-window',
       'close:old-window',
     ])
     expect(h.current()?.windowId).toBe('new-window')
-    expect(h.sent[0]).toMatchObject({
-      windowId: 'old-window',
-      message: {
-        envelope: {
-          payload: { correlationId: 'corr-1', result: { windowId: 'new-window' } },
-        },
-      },
-    })
+    expect(h.replies).toEqual([
+      { windowId: 'old-window', result: { windowId: 'new-window', presentation: 'inline' } },
+    ])
   })
 
-  test('selects an explicit canonical View key without flattening its placement', async () => {
+  test('accepts the Domain path as the only explicit target', async () => {
     const h = harness()
-    await handleOpenIntent(h.shell, h.host, openMessage('shell.test:view.card'))
+    await handleViewOpenIntent(
+      h.host,
+      openMessage('shell.test:view.card', undefined, '/:shell.test'),
+    )
 
-    expect(h.events).toContain('mount:shell.test:view.card:@person-1')
-    expect(h.sent).toEqual([])
+    expect(h.events).toContain('open:/:shell.test:view.card')
   })
 
-  test('keeps the current view and rejects a correlated resolution failure', async () => {
-    const h = harness([])
-    await handleOpenIntent(h.shell, h.host, openMessage(undefined, 'corr-fail'))
+  test('refuses to open a View for a node and keeps the current View', async () => {
+    const h = harness()
+    await handleViewOpenIntent(
+      h.host,
+      openMessage('shell.test:view.card', 'corr-node', '@person-1'),
+    )
 
     expect(h.current()?.windowId).toBe('old-window')
     expect(h.events).toEqual([
-      'resolve:person-1',
-      'reply:old-window',
-      'failed:No view resolves for this node',
+      'reject:old-window',
+      expect.stringContaining('failed:Views open on their Domain only'),
     ])
   })
 
   /** @evidence TEST-CLI-VIEW-HANDSHAKE-FAILS-CLOSED */
-  test('makes one replacement mount attempt and never retries as a different placement mode', async () => {
-    const h = harness([profile])
+  test('makes one replacement attempt and keeps the current View when it fails', async () => {
+    const h = harness()
     let attempts = 0
-    h.host.mount = async (view) => {
+    h.host.open = async () => {
       attempts++
-      h.events.push(`mount:${view.route.handshake}:failed`)
       throw new Error('handshake failed')
     }
 
-    await handleOpenIntent(h.shell, h.host, openMessage(undefined, 'corr-mount'))
+    await handleViewOpenIntent(h.host, openMessage('shell.test:view.card', 'corr-mount'))
 
     expect(attempts).toBe(1)
     expect(h.current()?.windowId).toBe('old-window')
-    expect(h.events).toEqual([
-      'resolve:person-1',
-      'mount:shell:failed',
-      'reply:old-window',
-      'failed:handshake failed',
-    ])
+    expect(h.events).toEqual(['reject:old-window', 'failed:handshake failed'])
   })
 
   test('serializes overlapping opens', async () => {
-    let handler: ((message: IntentMessage<'open'>) => Promise<void>) | undefined
+    let handler: ((message: IntentMessage<'view.open'>) => Promise<void>) | undefined
     let releaseFirst!: () => void
     const firstGate = new Promise<void>((resolve) => {
       releaseFirst = resolve
     })
-    let resolveCount = 0
-    const base = harness([profile])
+    let opens = 0
+    const base = harness()
     const events = base.events
     const shell = {
-      ...base.shell,
-      views: {
-        resolve: async () => {
-          resolveCount += 1
-          events.push(`resolve:${resolveCount}`)
-          if (resolveCount === 1) await firstGate
-          return [profile]
-        },
-      },
-      onIntent: (_name: 'open', next: typeof handler) => {
+      onIntent: (_name: 'view.open', next: typeof handler) => {
         handler = next
         return () => {}
       },
-    } as unknown as Shell
-    const host = {
+    } as unknown as Pick<Shell, 'onIntent'>
+    const host: ViewOpenHost = {
       ...base.host,
-      mount: async () => {
-        const id = `new-${resolveCount}`
-        events.push(`mount:${id}`)
-        return mounted(id, () => events.push(`close:${id}`))
+      open: async () => {
+        opens += 1
+        const id = `new-${opens}`
+        events.push(`open:${id}`)
+        if (opens === 1) await firstGate
+        return mounted(id, domainView('card'), () => events.push(`close:${id}`))
       },
     }
-    installOpenIntentHandler(shell, host)
+    installViewOpenHandler(shell, host)
 
-    const first = handler!(openMessage())
-    const second = handler!(openMessage())
+    const first = handler!(openMessage('shell.test:view.card'))
+    const second = handler!(openMessage('shell.test:view.card'))
     await Promise.resolve()
-    expect(events).toEqual(['resolve:1'])
+    expect(events).toEqual(['open:new-1'])
     releaseFirst()
     await Promise.all([first, second])
     expect(events).toEqual([
-      'resolve:1',
-      'mount:new-1',
+      'open:new-1',
       'current:new-1',
-      'opened:shell.test:view.profile:@person-1',
+      'opened:shell.test:view.card:/:shell.test',
       'close:old-window',
-      'resolve:2',
-      'mount:new-2',
+      'open:new-2',
       'current:new-2',
-      'opened:shell.test:view.profile:@person-1',
+      'opened:shell.test:view.card:/:shell.test',
       'close:new-1',
     ])
     expect(base.current()?.windowId).toBe('new-2')
+  })
+})
+
+describe('domainViewPath', () => {
+  test('maps a View key to its declaration path', () => {
+    expect(domainViewPath({ view: 'crm.example:view.dashboard' })).toBe(
+      '/:crm.example:view.dashboard',
+    )
+  })
+
+  test('refuses a malformed key', () => {
+    expect(() => domainViewPath({ view: 'crm.example' })).toThrow('Invalid View key')
   })
 })

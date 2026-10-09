@@ -1,4 +1,6 @@
-import type { Comment } from '../../../../shared/types'
+import { statSync } from 'node:fs'
+
+import type { AgentToolCall, Comment } from '../../../../shared/types'
 import type { AgentHarness, AgentTurnInput, AgentTurnResult, AskInput, AskResult } from '../adapter'
 
 import { readComments } from '../../../state/comments'
@@ -7,16 +9,28 @@ import { applyMockDomainEdit } from './domain-edit'
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve()
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-      { once: true },
-    )
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
   })
+}
+
+/** `DOMAIN_STUDIO_MOCK_EXPECT_MODEL` pins the model a test expects Studio to send. */
+function unexpectedModel(model: string | undefined): string | undefined {
+  const expected = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
+  return expected && model !== expected
+    ? `mock expected model ${expected}, received ${model ?? '(default)'}`
+    : undefined
+}
+
+function authorReply(text: string) {
+  return { id: crypto.randomUUID(), role: 'author' as const, type: 'text' as const, text }
 }
 
 export class MockHarness implements AgentHarness {
@@ -35,11 +49,8 @@ export class MockHarness implements AgentHarness {
   }
 
   async run(input: AgentTurnInput): Promise<AgentTurnResult> {
-    const expectedModel = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
-    if (expectedModel && input.model !== expectedModel)
-      throw new Error(
-        `mock expected model ${expectedModel}, received ${input.model ?? '(default)'}`,
-      )
+    const modelMismatch = unexpectedModel(input.model)
+    if (modelMismatch) throw new Error(modelMismatch)
     const mode = process.env.DOMAIN_STUDIO_MOCK_MODE || 'normal'
     const extraDelay = Number(process.env.DOMAIN_STUDIO_MOCK_DELAY_MS || 0)
     if ((mode === 'resumefail' || mode === 'resumefailafterevent') && input.sessionId) {
@@ -60,11 +71,25 @@ export class MockHarness implements AgentHarness {
       }
     }
     const store = readComments(input.root)
+    // like a real agent, answer only the threads this turn attached — the ones it names
     const open = store.comments.filter(
-      (comment) => comment.status === 'open' && comment.thread.at(-1)?.role !== 'author',
+      (comment) =>
+        comment.status === 'open' &&
+        comment.thread.at(-1)?.role !== 'author' &&
+        input.prompt.includes(comment.id),
     )
 
     input.onEvent({ kind: 'status', text: 'session started' })
+    // like an ACP agent, say how full the conversation's window is as the turn goes
+    const contextUsed = Number(process.env.DOMAIN_STUDIO_MOCK_CONTEXT_USED || 42_000)
+    input.onContext?.({ used: contextUsed, size: 200_000 })
+    // like a real agent, look at what was sent: an image that never arrives is the bug
+    const images = (input.images ?? []).filter((image) => statSync(image.path).size > 0)
+    if (images.length)
+      input.onEvent({
+        kind: 'status',
+        text: `looked at ${images.map((image) => image.name).join(', ')}`,
+      })
     await sleep(250, input.signal)
     if (extraDelay > 0) await sleep(extraDelay, input.signal)
     if (mode === 'error') throw new Error('mock harness failure (test)')
@@ -73,26 +98,76 @@ export class MockHarness implements AgentHarness {
       text: `Reviewing ${open.length} open thread(s) and the current schema.`,
     })
     await sleep(300, input.signal)
-    input.onEvent({
-      kind: 'tool',
-      text: 'Read',
-      tool: 'Read',
-      target: '.domain-studio/comments.json',
-    })
+    // Reported the way an ACP agent reports a call: announced with its input,
+    // then again once it ran, with what it gave back - one step either way.
+    const readCall = (detail: Partial<AgentToolCall>) =>
+      input.onEvent({
+        kind: 'tool',
+        text: 'Read',
+        tool: 'Read',
+        target: '.domain-studio/comments.json',
+        call: {
+          id: 'mock-read',
+          detail: {
+            title: 'Read .domain-studio/comments.json',
+            kind: 'read',
+            input: { file_path: '.domain-studio/comments.json' },
+            content: [],
+            locations: ['.domain-studio/comments.json'],
+            ...detail,
+          },
+        },
+      })
+    readCall({ status: 'in_progress' })
     await sleep(250, input.signal)
+    readCall({
+      status: 'completed',
+      content: [
+        {
+          type: 'text',
+          text: `\`\`\`json\n${JSON.stringify({ open: open.map((comment) => comment.id) }, null, 2)}\n\`\`\``,
+        },
+      ],
+    })
 
     const seed = open[0]?.thread.at(-1)?.text ?? 'note'
     const edit = input.signal.aborted ? null : applyMockDomainEdit(input.root, seed)
     if (edit) {
-      input.onEvent({ kind: 'tool', text: 'Edit', tool: 'Edit', target: edit.file })
+      input.onEvent({
+        kind: 'tool',
+        text: 'Edit',
+        tool: 'Edit',
+        target: edit.file,
+        call: {
+          id: 'mock-edit',
+          detail: {
+            title: `Edit ${edit.file}`,
+            kind: 'edit',
+            status: 'completed',
+            input: { file_path: edit.file, property: edit.prop },
+            content: [
+              {
+                type: 'diff',
+                path: edit.file,
+                oldText: '  props: {',
+                newText: `  props: {\n    /** Added by the agent in response to a studio comment. */\n    ${edit.prop}: z.string().optional(),`,
+              },
+            ],
+            locations: [edit.file],
+          },
+        },
+      })
       await sleep(300, input.signal)
     }
-    input.onEvent({
-      kind: 'message',
-      text: edit
-        ? `Added a \`${edit.prop}\` property to \`${edit.file}\` and answered the open threads.`
-        : 'Answered the open threads.',
-    })
+    const message = edit
+      ? `Added a \`${edit.prop}\` property to \`${edit.file}\` and answered the open threads.`
+      : 'Answered the open threads.'
+    // like an ACP agent, the message streams in before it is final
+    for (const word of message.match(/\S+\s*/g) ?? []) {
+      input.onDelta?.(word)
+      await sleep(Number(process.env.DOMAIN_STUDIO_MOCK_STREAM_MS || 15), input.signal)
+    }
+    input.onEvent({ kind: 'message', text: message })
 
     const replyText = edit
       ? `Done — implemented this by adding \`${edit.prop}\` to \`${edit.file}\`. (mock agent)`
@@ -114,21 +189,9 @@ export class MockHarness implements AgentHarness {
       status: 'closed',
       thread: [
         ...comment.thread,
-        {
-          id: crypto.randomUUID(),
-          role: 'author' as const,
-          type: 'text' as const,
-          text: replyText,
-        },
+        authorReply(replyText),
         ...(mode === 'liveandblockdifferent'
-          ? [
-              {
-                id: crypto.randomUUID(),
-                role: 'author' as const,
-                type: 'text' as const,
-                text: 'Additional final detail. (mock agent)',
-              },
-            ]
+          ? [authorReply('Additional final detail. (mock agent)')]
           : []),
       ],
     }))
@@ -158,13 +221,8 @@ export class MockHarness implements AgentHarness {
   }
 
   async ask(input: AskInput): Promise<AskResult> {
-    const expectedModel = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
-    if (expectedModel && input.model !== expectedModel)
-      return {
-        text: '',
-        isError: true,
-        errorMessage: `mock expected model ${expectedModel}, received ${input.model ?? '(default)'}`,
-      }
+    const modelMismatch = unexpectedModel(input.model)
+    if (modelMismatch) return { text: '', isError: true, errorMessage: modelMismatch }
     const expectedSession = process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION
     if (expectedSession && input.sessionId !== expectedSession)
       return {

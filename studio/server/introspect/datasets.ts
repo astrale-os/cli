@@ -6,9 +6,7 @@
  * the same node/edge shape the Core canvas renders. Never throws: every failure is data.
  */
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
 import type {
   StudioCoreEdge,
@@ -20,10 +18,10 @@ import type {
 } from '../../shared/types'
 import type { DomainHandle } from '../domain'
 
-import { parseClassRefKey } from '../../shared/types'
-import { studioCliCommand } from '../cli'
+import { parseClassRefKey, parseSchemaRefKey, schemaRefKey } from '../../shared/types'
 import { analyzeProjectConfig, depsInstalled } from '../domain'
 import { asJsonArray, asJsonRecord, asString, asStringArray, parseJson } from '../json'
+import { runExtractorIsland } from './runtime'
 
 const EXTRACTOR = new URL('./dataset-extractor.ts', import.meta.url).pathname
 
@@ -44,6 +42,7 @@ export interface DatasetJson {
     }[]
   }
   variables: Record<string, string[]>
+  references: Record<string, string>
 }
 
 export type DatasetExtractResult =
@@ -66,7 +65,8 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
   const nodes = asJsonArray(graph?.nodes)
   const edges = asJsonArray(graph?.edges)
   const variables = asJsonRecord(record.variables)
-  if (!id || !origin || !revision || !nodes || !edges || !variables) return undefined
+  const references = asJsonRecord(record.references)
+  if (!id || !origin || !revision || !nodes || !edges || !variables || !references) return undefined
 
   const decodedNodes: DatasetJson['graph']['nodes'] = []
   for (const entry of nodes) {
@@ -97,6 +97,14 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
     else if (many) decodedVariables[name] = many
     else return undefined
   }
+  const decodedReferences: Record<string, string> = {}
+  const nodeIds = new Set(decodedNodes.map(({ id }) => id))
+  for (const [path, value] of Object.entries(references)) {
+    if (typeof value !== 'string' || !nodeIds.has(value)) return undefined
+    const ref = path.startsWith('/:') ? parseSchemaRefKey(path.slice(2)) : undefined
+    if (!ref || /[/:\s]/u.test(ref.origin) || /[/:\s]/u.test(ref.name)) return undefined
+    decodedReferences[schemaRefKey(ref)] = value
+  }
   const title = asString(record.title)
   const description = asString(record.description)
   return {
@@ -106,6 +114,7 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
     domain: { origin, revision },
     graph: { nodes: decodedNodes, edges: decodedEdges },
     variables: decodedVariables,
+    references: decodedReferences,
   }
 }
 
@@ -115,24 +124,18 @@ export async function runtimeExtractDataset(
   domainDir: string,
   timeoutMs = 60_000,
 ): Promise<DatasetExtractResult> {
-  let launchDirectory: string | undefined
   try {
-    launchDirectory = await mkdtemp(join(tmpdir(), 'astrale-studio-launch-'))
-    let command: string[]
-    try {
-      command = studioCliCommand(['__studio-datasets', modulePath, domainDir])
-    } catch {
-      // Direct Studio development remains supported outside `astrale studio`.
-      command = [process.execPath, EXTRACTOR, modulePath, domainDir]
-    }
-    const proc = Bun.spawn(command, { cwd: launchDirectory, stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => proc.kill(9), timeoutMs)
-    const out = await new Response(proc.stdout).text()
-    await proc.exited
-    clearTimeout(timer)
+    const { stdout: out, stderr } = await runExtractorIsland(
+      '__studio-datasets',
+      EXTRACTOR,
+      [modulePath, domainDir],
+      timeoutMs,
+    )
     if (!out.trim()) {
-      const err = await new Response(proc.stderr).text()
-      return { ok: false, error: { message: err.trim() || 'dataset extractor produced no output' } }
+      return {
+        ok: false,
+        error: { message: stderr.trim() || 'dataset extractor produced no output' },
+      }
     }
     const parsed = asJsonRecord(parseJson(out))
     if (!parsed) return { ok: false, error: { message: 'dataset extractor produced invalid JSON' } }
@@ -150,10 +153,6 @@ export async function runtimeExtractDataset(
     return { ok: true, dataset }
   } catch (e: unknown) {
     return { ok: false, error: { message: String((e as Error)?.message ?? e) } }
-  } finally {
-    if (launchDirectory !== undefined) {
-      await rm(launchDirectory, { recursive: true, force: true }).catch(() => undefined)
-    }
   }
 }
 
@@ -193,6 +192,7 @@ export function projectDataset(
     nodes,
     edges,
     variables: dataset.variables,
+    references: dataset.references,
   }
 }
 

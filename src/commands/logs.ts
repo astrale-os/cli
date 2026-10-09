@@ -1,13 +1,15 @@
 import { Path } from '@astrale-os/sdk/graph/path'
 import { K } from '@astrale-os/sdk/schema'
 import chalk from 'chalk'
+import { z } from 'zod'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { Column, ListProjection } from '../lib/output'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInPath, runKernelCommand } from '../connection'
-import { failInput } from '../lib/log'
+import { AstraleError } from '../errors'
+import { failInput, log } from '../lib/log'
 import { isMachine, output, presentList } from '../lib/output'
 
 const JOURNAL_PATH = Path.project(K.functions.journal.ref).raw
@@ -20,6 +22,7 @@ type LogsOpts = KernelCommandOpts & {
   topic?: string
   topicPrefix?: string
   principal?: string
+  caller?: string
   limit?: string
   cursor?: string
   follow?: boolean
@@ -32,7 +35,13 @@ export interface JournalRecord {
   readonly payload: unknown
   readonly occurredAt?: string
   readonly committedAt?: string
+  /** Executor that authenticated the recorded operation (a Domain acting for a user included). */
   readonly principal?: string
+  /**
+   * Identity whose authority the operation exercised, recorded only when it differs from the
+   * principal (astrale-os/kernel#959); absent on direct calls and on records from older Kernels.
+   */
+  readonly caller?: string
   readonly correlation?: JournalCorrelation
   readonly correlationId?: string
   readonly causationId?: string
@@ -48,9 +57,32 @@ export interface JournalCorrelation {
   readonly spanId?: string
 }
 
+/** Journal generation and positions at the time of the read. `id` changes when the journal is recreated. */
+export interface JournalFrontier {
+  readonly id: string
+  readonly first?: number
+  readonly committed: number
+  readonly durable: number
+}
+
+/** Records the reader can no longer receive, or a cursor the Kernel refused. Never an ordinary empty page. */
+export type JournalGap =
+  | { readonly kind: 'retention'; readonly frontier: JournalFrontier }
+  | {
+      readonly kind: 'recovery'
+      readonly from: number
+      readonly through: number
+      readonly frontier: JournalFrontier
+    }
+  | { readonly kind: 'generation'; readonly frontier: JournalFrontier }
+  | { readonly kind: 'cursor'; readonly reason: 'stale' | 'selection' | 'visibility' }
+
+/** A page without a cursor reached the end of the selection. */
 export interface JournalPage {
   readonly records: readonly JournalRecord[]
   readonly cursor?: string
+  readonly frontier?: JournalFrontier
+  readonly gap?: JournalGap
 }
 
 export interface JournalInput {
@@ -62,7 +94,9 @@ export interface JournalInput {
   readonly limit: number
 }
 
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+const ISO_TIMESTAMP = z.iso.datetime({ offset: true })
+const MILLISECOND_TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3}0*)?(?:Z|[+-]\d{2}:\d{2})$/
 const CURSOR_TOKEN = /^[A-Za-z0-9._:+=/-]{8,}$/
 
 /** Map flags to the exact public journal syscall input without legacy glob/sequence lowering. */
@@ -94,10 +128,12 @@ export function buildJournalInput(opts: LogsOpts): JournalInput {
 function timestampFlag(name: string, raw: string | undefined): string | undefined {
   const value = nonEmpty(raw)
   if (value === undefined) return undefined
-  if (!ISO_TIMESTAMP.test(value) || Number.isNaN(Date.parse(value))) {
-    throw new TypeError(`${name} must be an ISO-8601 timestamp (e.g. 2026-08-19T16:51:10.049Z)`)
+  if (!ISO_TIMESTAMP.safeParse(value).success || !MILLISECOND_TIMESTAMP.test(value)) {
+    throw new TypeError(
+      `${name} must be a valid ISO-8601 timestamp with a timezone and at most millisecond precision (e.g. 2026-08-19T16:51:10.049Z)`,
+    )
   }
-  return value
+  return new Date(value).toISOString()
 }
 
 function cursorFlag(raw: string): string {
@@ -108,7 +144,7 @@ function cursorFlag(raw: string): string {
   return value
 }
 
-/** Validate the record fields the CLI presentation consumes and retain the opaque cursor. */
+/** Validate the record fields the CLI presentation consumes and retain the cursor, frontier and gap. */
 export function acceptJournalPage(input: unknown): JournalPage {
   if (!isRecord(input) || !Array.isArray(input.records)) {
     throw new TypeError('Kernel journal response must contain a records array')
@@ -120,12 +156,62 @@ export function acceptJournalPage(input: unknown): JournalPage {
   return Object.freeze({
     records: Object.freeze(records),
     ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+    ...(input.frontier === undefined
+      ? {}
+      : { frontier: acceptFrontier(input.frontier, 'frontier') }),
+    ...(input.gap === undefined ? {} : { gap: acceptGap(input.gap) }),
+  })
+}
+
+/** One sentence naming what the reader lost or why its cursor was refused. */
+export function describeJournalGap(gap: JournalGap): string {
+  switch (gap.kind) {
+    case 'retention':
+      return gap.frontier.first === undefined
+        ? 'Journal records after this cursor were evicted by retention'
+        : `Journal records before #${gap.frontier.first} were evicted by retention`
+    case 'recovery':
+      return `Journal records #${gap.from}–#${gap.through} were lost during journal recovery`
+    case 'generation':
+      return 'The journal was recreated; records of the previous journal are gone'
+    case 'cursor':
+      return {
+        stale: 'The Kernel no longer accepts this journal cursor',
+        selection: 'This journal cursor belongs to another topic, principal or time selection',
+        visibility: 'This journal cursor was issued under other read authority',
+      }[gap.reason]
+  }
+}
+
+/**
+ * The Kernel records `caller` only when it differs from the principal, so a record without one
+ * was a direct call made by its principal. Exact for records written by a Kernel with
+ * astrale-os/kernel#959; on records from an older Kernel this falls back to the principal, even
+ * when that principal is a Domain acting for a user.
+ */
+function effectiveCaller(record: JournalRecord): string | undefined {
+  return record.caller ?? record.principal
+}
+
+/**
+ * Keep the records whose effective caller is exactly `caller`. The journal syscall has no caller
+ * input, so the filter applies to each returned page; the cursor still advances past the page.
+ */
+export function selectCallerRecords(page: JournalPage, caller: string | undefined): JournalPage {
+  const wanted = nonEmpty(caller)
+  if (wanted === undefined) return page
+  return Object.freeze({
+    ...page,
+    records: Object.freeze(page.records.filter((record) => effectiveCaller(record) === wanted)),
   })
 }
 
 async function fetchPage(context: ConnectionContext, opts: LogsOpts): Promise<JournalPage> {
-  return acceptJournalPage(
-    await context.session.call(createPathCall(JOURNAL_PATH, buildJournalInput(opts))),
+  return selectCallerRecords(
+    acceptJournalPage(
+      await context.session.call(createPathCall(JOURNAL_PATH, buildJournalInput(opts))),
+    ),
+    opts.caller,
   )
 }
 
@@ -139,6 +225,7 @@ async function runOnce(opts: LogsOpts): Promise<void> {
       else {
         presentList([...page.records], format, journalProjection)
         if (page.cursor) process.stderr.write(`  cursor: ${page.cursor}\n`)
+        if (page.gap) log.warn(describeJournalGap(page.gap))
       }
     },
   })
@@ -149,7 +236,16 @@ type FollowDependencies = {
   readonly pause: (milliseconds: number) => Promise<void>
 }
 
-/** Follow one admitted journal stream. Dependencies are explicit so routing is proven at the command boundary. */
+/**
+ * Follow one admitted journal stream. Dependencies are explicit so routing is proven at the command boundary.
+ *
+ * The journal syscall is a finite read: a page that reaches the end of the journal carries no cursor,
+ * so the next poll repeats the previous cursor and re-reads its tail. Records are emitted at most
+ * once per journal generation by sequence. A new cursor means the Kernel stopped before the end, so
+ * the next page is read at once; the follow waits only once it has caught up. A gap is reported on
+ * stderr; after retention or a new generation the Kernel returns no cursor, and the follow resumes
+ * at the oldest retained record.
+ */
 export async function followLogs(
   opts: LogsOpts,
   dependencies: FollowDependencies = {
@@ -164,14 +260,45 @@ export async function followLogs(
     fn: async (context): Promise<never> => {
       const resolved = await resolveLogsOpts(opts, context)
       let cursor = resolved.cursor
+      let emitted: { readonly journal?: string; readonly sequence: number } = { sequence: 0 }
       for (;;) {
         const page = await fetchPage(context, { ...resolved, cursor })
-        for (const record of page.records) printRecord(record, opts)
-        cursor = page.cursor ?? cursor
+        if (page.gap?.kind === 'cursor') {
+          throw new AstraleError(
+            'JOURNAL_CURSOR_INVALID',
+            describeJournalGap(page.gap),
+            'Restart without --cursor, or with --since, to read from a known position.',
+          )
+        }
+        if (page.gap !== undefined) reportGap(page.gap, opts)
+        if (page.frontier !== undefined && page.frontier.id !== emitted.journal) {
+          emitted = { journal: page.frontier.id, sequence: 0 }
+        }
+        for (const record of page.records) {
+          if (record.sequence <= emitted.sequence) continue
+          printRecord(record, opts)
+          emitted = { ...emitted, sequence: record.sequence }
+        }
+        if (page.cursor !== undefined && page.cursor !== cursor) {
+          cursor = page.cursor
+          continue
+        }
+        if (page.cursor === undefined && page.gap !== undefined && cursor !== undefined) {
+          cursor = undefined
+          continue
+        }
         await dependencies.pause(FOLLOW_INTERVAL_MS)
       }
     },
   })
+}
+
+/** Diagnostics never share stdout with the record stream; machine modes get one JSON line. */
+function reportGap(gap: JournalGap, opts: LogsOpts): void {
+  const message = describeJournalGap(gap)
+  if (isMachine(opts) || opts.format === 'json') {
+    process.stderr.write(`${JSON.stringify({ warning: 'JOURNAL_GAP', message, gap })}\n`)
+  } else log.warn(message)
 }
 
 function journalProjection(records: JournalRecord[]): ListProjection {
@@ -180,6 +307,7 @@ function journalProjection(records: JournalRecord[]): ListProjection {
     { key: 'timestamp', header: 'TIME', color: chalk.dim },
     { key: 'topic', header: 'TOPIC', color: chalk.cyan },
     { key: 'principal', header: 'PRINCIPAL', color: chalk.dim },
+    { key: 'caller', header: 'CALLER', color: chalk.dim },
   ]
   return {
     columns,
@@ -188,6 +316,7 @@ function journalProjection(records: JournalRecord[]): ListProjection {
       timestamp: record.timestamp,
       topic: record.topic,
       principal: record.principal ?? '',
+      caller: effectiveCaller(record) ?? '',
     })),
     paths: records.map((record) => String(record.sequence)),
   }
@@ -199,7 +328,7 @@ function printRecord(record: JournalRecord, opts: LogsOpts): void {
     return
   }
   process.stdout.write(
-    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')}\n`,
+    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')} ${chalk.dim(effectiveCaller(record) ?? '')}\n`,
   )
 }
 
@@ -240,6 +369,7 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
   }
   const correlationId = structuredCorrelationId ?? legacyCorrelationId
   const principal = optionalText(input.principal, index, 'principal')
+  const caller = optionalText(input.caller, index, 'caller')
   return Object.freeze({
     sequence: input.sequence as number,
     timestamp,
@@ -250,6 +380,7 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
       ? {}
       : { committedAt: input.committedAt as string }),
     ...(principal === undefined ? {} : { principal }),
+    ...(caller === undefined ? {} : { caller }),
     ...(correlation === undefined ? {} : { correlation }),
     ...(correlationId === undefined ? {} : { correlationId }),
     ...(optionalIdentifier(input.causationId, index, 'causationId') === undefined
@@ -289,6 +420,61 @@ function acceptCorrelation(input: unknown, index: number): JournalCorrelation | 
   )
 }
 
+function acceptFrontier(input: unknown, field: string): JournalFrontier {
+  if (
+    !isRecord(input) ||
+    typeof input.id !== 'string' ||
+    input.id.trim() === '' ||
+    !isPosition(input.committed) ||
+    !isPosition(input.durable) ||
+    (input.first !== undefined && !isSequence(input.first))
+  ) {
+    throw new TypeError(`Kernel journal ${field} is invalid`)
+  }
+  return Object.freeze({
+    id: input.id,
+    ...(input.first === undefined ? {} : { first: input.first as number }),
+    committed: input.committed as number,
+    durable: input.durable as number,
+  })
+}
+
+const cursorGapReasons = ['stale', 'selection', 'visibility'] as const
+
+function acceptGap(input: unknown): JournalGap {
+  if (isRecord(input)) {
+    const reason = cursorGapReasons.find((candidate) => candidate === input.reason)
+    if (input.kind === 'cursor' && reason !== undefined) {
+      return Object.freeze({ kind: 'cursor', reason })
+    }
+    if (input.kind === 'retention' || input.kind === 'generation') {
+      return Object.freeze({ kind: input.kind, frontier: acceptFrontier(input.frontier, 'gap') })
+    }
+    if (
+      input.kind === 'recovery' &&
+      isSequence(input.from) &&
+      isSequence(input.through) &&
+      input.through >= input.from
+    ) {
+      return Object.freeze({
+        kind: 'recovery',
+        from: input.from,
+        through: input.through,
+        frontier: acceptFrontier(input.frontier, 'gap'),
+      })
+    }
+  }
+  throw new TypeError('Kernel journal gap is invalid')
+}
+
+function isPosition(input: unknown): input is number {
+  return Number.isSafeInteger(input) && (input as number) >= 0
+}
+
+function isSequence(input: unknown): input is number {
+  return Number.isSafeInteger(input) && (input as number) >= 1
+}
+
 function optionalIdentifier(input: unknown, index: number, field: string): string | undefined {
   const value = optionalText(input, index, field)
   if (value === undefined) return undefined
@@ -319,9 +505,15 @@ function positiveInteger(flag: string, raw: string): number {
 
 async function resolveLogsOpts(opts: LogsOpts, context: ConnectionContext): Promise<LogsOpts> {
   const principal = nonEmpty(opts.principal)
-  if (principal !== '@self') return opts
+  const caller = nonEmpty(opts.caller)
+  if (principal !== '@self' && caller !== '@self') return opts
   const { path } = await expandSelfInPath('@self', context)
-  return { ...opts, principal: path.startsWith('@') ? path.slice(1) : path }
+  const self = path.startsWith('@') ? path.slice(1) : path
+  return {
+    ...opts,
+    ...(principal === '@self' ? { principal: self } : {}),
+    ...(caller === '@self' ? { caller: self } : {}),
+  }
 }
 
 function nonEmpty(input: string | undefined): string | undefined {
@@ -338,23 +530,44 @@ export default {
   description: 'Read or follow the authorized Kernel journal',
   afterHelpText: `
 Behavior:
-  Calls the public Kernel journal syscall and emits its { records, cursor }
-  page. Topic selection is exact or prefix-based; cursors and timestamps are
-  opaque strings owned by the journal backend. --follow reuses one Client Session
-  and advances only with the returned cursor. With --json, follow output is
-  NDJSON with one complete admitted record per line; YAML follow is unsupported.
+  Calls the public Kernel journal syscall and emits its { records, cursor, frontier, gap }
+  page. Topic selection is exact or prefix-based; cursors are opaque backend tokens.
+  A page without a cursor reached the end of the journal. A gap names records lost
+  to retention or recovery, a recreated journal, or a refused cursor.
+  Timestamps accept ISO-8601 with a timezone and millisecond precision; offsets
+  are converted to canonical UTC (e.g. 2026-08-19T16:51:10.000Z).
+  --follow reuses one Client Session, advances with the returned cursors and emits
+  each record once. It reads the next page at once while the Kernel returns a new
+  cursor, and polls every 2 s once caught up. With --json, follow output is NDJSON with one complete admitted
+  record per line; YAML follow is unsupported. Gaps are reported on stderr (one JSON
+  line with warning JOURNAL_GAP in machine modes), and after retention or a recreated
+  journal the follow resumes at the oldest retained record. A refused cursor ends the
+  follow with JOURNAL_CURSOR_INVALID.
+
+  --principal filters in the Kernel by the executing principal: a Domain acting
+  for a user (managed CLI, Console, astrale call) is the principal of its
+  records. --caller keeps the records whose caller, the identity whose authority
+  the operation exercised, matches; it filters each returned page, so --limit
+  bounds the page before the filter. The Kernel records caller only when it
+  differs from the principal, so the effective caller is caller, else principal;
+  CALLER shows it. This is exact for records written by a Kernel with
+  astrale-os/kernel#959; records from an older Kernel fall back to the
+  principal, so a Domain acting for a user appears as the caller there. JSON
+  output keeps the record as written. Both accept @self.
 
 Examples:
   $ astrale logs -i staging --limit 50
   $ astrale logs --topic op:function.failed
   $ astrale logs --topic-prefix op:function. --follow
+  $ astrale logs --caller @self --topic-prefix op:function.
 `,
   options: [
     { flags: '--since <timestamp>', description: 'Inclusive journal timestamp lower bound' },
     { flags: '--until <timestamp>', description: 'Inclusive journal timestamp upper bound' },
     { flags: '--topic <topic>', description: 'Match one exact topic' },
     { flags: '--topic-prefix <prefix>', description: 'Match one topic prefix' },
-    { flags: '--principal <id>', description: 'Filter by triggering identity ID' },
+    { flags: '--principal <id>', description: 'Filter by executing principal identity ID' },
+    { flags: '--caller <id>', description: 'Filter by effective caller identity ID' },
     { flags: '--limit <n>', description: `Maximum records (default: ${DEFAULT_LIMIT})` },
     { flags: '--cursor <token>', description: 'Resume from an opaque journal cursor' },
     { flags: '--follow', description: 'Poll using returned cursors until interrupted' },

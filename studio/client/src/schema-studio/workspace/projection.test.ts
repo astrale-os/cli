@@ -58,11 +58,40 @@ function anatomy(views: DomainAnatomy['views'], origin: string): DomainAnatomy {
 }
 
 describe('workspace projection', () => {
-  test("a domain's views arrive as nodes of the domain, bound to what they render", async () => {
+  test('unselected relationships keep the same weight within and across domain boundaries', () => {
+    const remote = classRef('remote.example.dev', 'Remote')
+    const local = domainBundle('local', 'local.example.dev', {
+      User: nodeClass('User'),
+      Team: nodeClass('Team'),
+      member_of: edgeClass('member_of', [
+        { name: 'user', types: ['User'] },
+        { name: 'team', types: ['Team'] },
+      ]),
+      assigned_to: edgeClass('assigned_to', [
+        { name: 'user', types: ['User'] },
+        { name: 'remote', types: ['Remote'], refs: [remote] },
+      ]),
+    })
+    local.overlay.sourceSpans = {
+      'class.User': { file: 'schema/users/user.ts', startLine: 1, endLine: 2 },
+      'class.Team': { file: 'schema/teams/team.ts', startLine: 1, endLine: 2 },
+    }
+    local.ir!.importsByKey['remote.example.dev:class.Remote'] = {
+      origin: remote.origin,
+      ref: remote,
+      key: 'remote.example.dev:class.Remote',
+    }
+    const result = composeWorkspaceCanvas([prepared(local)])
+    expect(result.edges).toHaveLength(2)
+    expect(result.edges[0]!.style?.strokeWidth).toBe(1.3)
+    expect(result.edges[1]!.style?.strokeWidth).toBe(result.edges[0]!.style?.strokeWidth)
+  })
+
+  test("a domain's views arrive as nodes of the domain, bound to no class", async () => {
     const value = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
     const input = prepared(value).input
     input.anatomy = anatomy(
-      [{ slug: 'board', kind: 'spa', mount: '/ui/board', viewFor: 'User' }],
+      [{ slug: 'board', kind: 'spa', mount: '/ui/board' }],
       'local.example.dev',
     )
     // every id already placed, so the layout is a repaint — no ELK worker in a unit test
@@ -77,9 +106,7 @@ describe('workspace projection', () => {
     const result = await prepareWorkspaceDomain(input, [])
 
     expect(result.nodes.map((node) => node.id)).toContain('view.board')
-    expect(result.edges).toContainEqual(
-      expect.objectContaining({ source: 'view.board', target: 'class.User' }),
-    )
+    expect(result.edges.filter((edge) => edge.source === 'view.board')).toEqual([])
   })
 
   test('resolves an exact dependency Class to the selected Domain frame', () => {
@@ -209,6 +236,46 @@ describe('workspace projection', () => {
       expect.objectContaining({
         id: `workspace-extends:${qualifiedNodeId('child', 'class.Child')}:${qualifiedNodeId('base', 'class.Base')}`,
       }),
+    )
+  })
+
+  test('exposes Kernel Identity for inspection without drawing Kernel inheritance', () => {
+    const identity = classRef('kernel.astrale.ai', 'Identity')
+    const local = domainBundle('local', 'local.example.dev', {
+      User: nodeClass('User', { extendsRefs: [identity] }),
+    })
+    local.ir!.importsByKey = {
+      'kernel.astrale.ai:class.Identity': {
+        origin: identity.origin,
+        ref: identity,
+        key: 'kernel.astrale.ai:class.Identity',
+      },
+    }
+    local.ir!.importedClassesByKey = {
+      'kernel.astrale.ai:class.Identity': nodeClass('Identity', {
+        origin: identity.origin,
+        ref: identity,
+      }),
+    }
+
+    const result = composeWorkspaceCanvas([prepared(local)])
+    const identityNode = result.nodes.find(
+      (node) => node.id === workspaceExternalMemberNodeId(identity.origin, identity.name, 'class'),
+    )
+
+    expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toEqual([])
+    expect(identityNode).toMatchObject({
+      selectable: true,
+      data: {
+        selectionDomainId: 'local',
+        selectionId: 'class.kernel.astrale.ai:class.Identity',
+      },
+    })
+
+    const withoutInheritance = prepared(local)
+    withoutInheritance.input.visibility.showInheritedEdges = false
+    expect(composeWorkspaceCanvas([withoutInheritance]).nodes).toContainEqual(
+      expect.objectContaining({ id: identityNode!.id }),
     )
   })
 

@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS, FLEET_OPTION } from '../../lib/admin-target'
 import { isMachine, output } from '../../lib/output'
 import { promptText } from '../../lib/prompt'
 import { provisionInstance, type ProvisionOpts } from '../../lib/provision-instance'
@@ -20,12 +20,22 @@ function slugError(value: string): true | string {
 
 export default {
   name: 'create',
-  description: 'Provision an instance through the Admin control plane',
+  description: 'Create an instance through Admin and verify owner access',
   afterHelpText: `
 Behavior:
   Requests a new Instance from the configured Admin Domain. The caller must be
   logged in with WorkOS. Admin owns infrastructure placement. The new instance
-  becomes the active instance.
+  is bookmarked after its owner access is finalized and verified. An existing
+  active target is preserved; with no active target, the new instance becomes active.
+  A bookmark name already pointing elsewhere is preserved and reported separately
+  from the successful creation, with a command to bookmark under an unused name.
+  To switch afterwards, run astrale instance use <bookmark-name>. If finalization
+  is interrupted, rerun the same create command with the same Admin target options
+  (--admin, --admin-url, --domain-issuer), Fleet (--fleet), operation (--operation)
+  and creator's WorkOS identity (--as).
+  Admin verifies and resumes its retained creation receipt; the Instance and
+  reserved owner are not recreated.
+  An unfinished journey returns a nonzero exit status with the retained receipt.
 
   Run with no slug in a terminal and it prompts for one (validated live). With
   no TTY — or --ci / --no-prompt — the slug argument is required up front, so
@@ -36,7 +46,14 @@ Examples:
   $ astrale instance create demo
 `,
   arguments: [{ name: 'id', description: 'Instance slug', required: false }],
-  options: [...ADMIN_TARGET_OPTIONS],
+  options: [
+    ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
+    {
+      flags: '--operation <id>',
+      description: 'Reuse an exact create operation id for explicit retry and recovery',
+    },
+  ],
   action: async (id: string | undefined, opts: ProvisionOpts) => {
     try {
       // Prompt for the slug when omitted, with live validation. A terminal the
@@ -55,10 +72,25 @@ Examples:
         )
       }
 
-      const { created } = await provisionInstance(id, opts)
+      const { created, access, bookmark } = await provisionInstance(id, opts)
+
+      if (
+        created.state !== 'ready' ||
+        access?.status !== 'completed' ||
+        bookmark?.status === 'pending'
+      ) {
+        process.exitCode = 1
+      }
 
       if (isMachine(opts)) {
-        output(created, opts)
+        output(
+          {
+            ...created,
+            ...(access === undefined ? {} : { access }),
+            ...(bookmark === undefined ? {} : { bookmark }),
+          },
+          opts,
+        )
         return
       }
     } catch (e) {

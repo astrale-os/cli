@@ -2,9 +2,11 @@ import type { DomainCatalogEntry } from '@shared/types'
 import type { Node } from '@xyflow/react'
 
 import {
+  rectsOverlap,
   WORKSPACE_DOMAIN_GAP,
   type WorkspaceDomainFrame,
   type WorkspacePoint,
+  type WorkspaceRect,
   type WorkspaceSize,
 } from './geometry'
 
@@ -39,11 +41,6 @@ interface ExternalFrame extends WorkspaceExternalCluster {
   position: WorkspacePoint
   size: WorkspaceSize
   layout: ExternalFrameLayout
-}
-
-interface Rect {
-  position: WorkspacePoint
-  size: WorkspaceSize
 }
 
 const EXTERNAL_WIDTH = 216
@@ -117,20 +114,44 @@ export const workspaceExternalMemberNodeId = (
 ) =>
   `workspace-external-member:${encodeURIComponent(origin)}:${definition ? `${definition}:` : ''}${encodeURIComponent(name)}`
 
-function overlaps(a: Rect, b: Rect, gap: number): boolean {
-  return (
-    a.position.x < b.position.x + b.size.width + gap &&
-    a.position.x + a.size.width + gap > b.position.x &&
-    a.position.y < b.position.y + b.size.height + gap &&
-    a.position.y + a.size.height + gap > b.position.y
-  )
+/**
+ * How much room each domain keeps free on its right for the imported frames that are laid
+ * out beside it. Only frames the reader never moved count: those follow their domain, so a
+ * domain placed next to it must leave them their spot rather than push them down below.
+ */
+export function externalLanes(
+  clusters: WorkspaceExternalCluster[],
+  savedPositions: Record<string, WorkspacePoint>,
+): Record<string, number> {
+  const lanes: Record<string, number> = {}
+  for (const cluster of clusters) {
+    if (savedPositions[cluster.origin]) continue
+    for (const domainId of cluster.ownerDomainIds) {
+      lanes[domainId] = EXTERNAL_WIDTH + WORKSPACE_DOMAIN_GAP
+    }
+  }
+  return lanes
+}
+
+/**
+ * Where the external frames that already have a position sit — what a domain placed for
+ * the first time has to fit around, since a saved frame never moves to make room.
+ */
+export function savedExternalRects(
+  clusters: WorkspaceExternalCluster[],
+  savedPositions: Record<string, WorkspacePoint>,
+): WorkspaceRect[] {
+  return clusters.flatMap((cluster) => {
+    const position = savedPositions[cluster.origin]
+    return position ? [{ position, size: externalFrameLayout(cluster).size }] : []
+  })
 }
 
 function initialPosition(
   frame: Omit<ExternalFrame, 'position'>,
   domainsById: Map<string, WorkspaceDomainFrame>,
   domainFrames: WorkspaceDomainFrame[],
-  obstacles: Rect[],
+  obstacles: WorkspaceRect[],
 ): WorkspacePoint {
   const owners = frame.ownerDomainIds
     .map((domainId) => domainsById.get(domainId))
@@ -148,7 +169,7 @@ function initialPosition(
   while (true) {
     const candidate = { position: { x, y }, size: frame.size }
     const collision = obstacles.find((obstacle) =>
-      overlaps(candidate, obstacle, EXTERNAL_VERTICAL_GAP),
+      rectsOverlap(candidate, obstacle, EXTERNAL_VERTICAL_GAP),
     )
     if (!collision) return candidate.position
     y = collision.position.y + collision.size.height + EXTERNAL_VERTICAL_GAP
@@ -167,7 +188,7 @@ function layoutExternalFrames(
       return { ...cluster, layout, size: layout.size }
     })
   const domainsById = new Map(domainFrames.map((frame) => [frame.domainId, frame]))
-  const obstacles: Rect[] = domainFrames.map(({ position, size }) => ({ position, size }))
+  const obstacles: WorkspaceRect[] = domainFrames.map(({ position, size }) => ({ position, size }))
 
   for (const frame of frames) {
     const position = savedPositions[frame.origin]
@@ -224,12 +245,12 @@ export function projectExternalFrames(
         id: workspaceExternalMemberNodeId(frame.origin, member.name, member.definition),
         type: 'extMember',
         parentId: frameNodeId,
-        // A member rides with its frame. Unlike a class, it is not ours to place: the frame
+        // A member rides with its frame. Unlike a local class, it is not ours to place: the frame
         // is a fixed list whose height is that list's length, so a moved member would have
         // nowhere to be persisted and would snap back on the next projection. It is
-        // therefore TRANSPARENT to the pointer — React Flow gives every node `pointer-events:
-        // all` (the canvas has an `onNodeClick`), and a card that swallows the press would
-        // leave a dead zone in the middle of the very block the reader is trying to drag.
+        // therefore not draggable. Pointer gestures pass through to the frame so React
+        // Flow can drag the whole block. The frame resolves a simple click back to the
+        // member under the pointer, keeping imported Classes inspectable.
         //
         // And for the same reason it carries no `extent: 'parent'`, natural as that would
         // look on a card that lives inside a box: there is no drag to bound. It was not
@@ -238,13 +259,15 @@ export function projectExternalFrames(
         // its frame's own origin, dropping the offset below. One visible flash per drop,
         // and the only node on the canvas that had one.
         draggable: false,
-        selectable: false,
+        selectable: true,
         position: { x: 12, y },
         data: {
           name: member.name,
           kind,
           definition: member.definition,
           inert: member.connected !== true,
+          selectionDomainId: frame.ownerDomainIds[0],
+          selectionId: `class.${frame.origin}:class.${member.name}`,
         },
         style: { width: 192, height: height - 8, pointerEvents: 'none' },
       })
@@ -255,4 +278,25 @@ export function projectExternalFrames(
     nodes,
     positions: Object.fromEntries(frames.map((frame) => [frame.origin, frame.position])),
   }
+}
+
+/**
+ * Move the imported frames already on the canvas to where a fresh projection lays them out,
+ * leaving everything else as painted. Only a frame nobody placed can differ — a placed one
+ * projects to its own record — so this is how those follow a domain that was just dropped.
+ */
+export function followExternalFrames(current: Node[], projected: Node[]): Node[] {
+  const positions = new Map(
+    projected.filter((node) => node.type === 'extDomain').map((node) => [node.id, node.position]),
+  )
+  let changed = false
+  const next = current.map((node) => {
+    const position = node.type === 'extDomain' ? positions.get(node.id) : undefined
+    if (!position || (position.x === node.position.x && position.y === node.position.y)) {
+      return node
+    }
+    changed = true
+    return { ...node, position }
+  })
+  return changed ? next : current
 }

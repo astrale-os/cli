@@ -24,7 +24,6 @@ export function ThreadPopover({
   threads: Comment[]
   onClose: () => void
 }) {
-  const ownerDomainId = domainId
   const [composing, setComposing] = useState(false)
   const hasThreads = threads.length > 0
 
@@ -50,14 +49,14 @@ export function ThreadPopover({
       {hasThreads && (
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           {threads.map((comment) => (
-            <ThreadView key={comment.id} domainId={ownerDomainId} comment={comment} />
+            <ThreadView key={comment.id} domainId={domainId} comment={comment} />
           ))}
         </div>
       )}
 
       {!hasThreads || composing ? (
         <NewComment
-          domainId={ownerDomainId}
+          domainId={domainId}
           anchor={anchor}
           excerpt={excerpt}
           autoFocus

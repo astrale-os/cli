@@ -9,6 +9,11 @@ export function invocationCredentialTtlSeconds(timeoutMs: number): number {
   return Math.max(MINIMUM_CREDENTIAL_TTL_SECONDS, invocationWindowSeconds(timeoutMs))
 }
 
+/** An explicit bearer cannot refresh; require only the command window and receipt margin. */
+export function explicitCredentialTtlSeconds(timeoutMs: number): number {
+  return invocationWindowSeconds(timeoutMs)
+}
+
 /** Keep the parent carrier valid through the command deadline and nested credential lifetime. */
 export function nestedCredentialCarrierTtlSeconds(
   timeoutMs: number,

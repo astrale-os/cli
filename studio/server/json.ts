@@ -29,6 +29,15 @@ export function asStringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined
 }
 
+/** Decode every element of an array, dropping the ones `decode` rejects. */
+export function decodeEach<T>(value: unknown, decode: JsonDecoder<T>): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.flatMap((item) => {
+    const decoded = decode(item)
+    return decoded === undefined ? [] : [decoded]
+  })
+}
+
 export function asStringRecord(value: unknown): Record<string, string> | undefined {
   const record = asJsonRecord(value)
   if (!record || Object.values(record).some((item) => typeof item !== 'string')) return undefined

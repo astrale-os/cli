@@ -33,32 +33,19 @@ test('release archive is byte-reproducible and carries the exact toolchain closu
   const root = mkdtempSync(join(tmpdir(), 'astrale-release-archive-'))
   try {
     const binaryPath = join(root, 'astrale')
-    const cloudflaredPath = join(root, 'astrale-cloudflared')
-    const licensePath = join(root, 'LICENSE')
     const firstPath = join(root, 'first.tar.gz')
     const secondPath = join(root, 'second.tar.gz')
     const binary = Buffer.from('exact compiled binary bytes\n')
-    const cloudflared = Buffer.from('exact provider tool bytes\n')
-    const license = Buffer.from('exact provider license bytes\n')
     writeFileSync(binaryPath, binary, { mode: 0o755 })
-    writeFileSync(cloudflaredPath, cloudflared, { mode: 0o755 })
-    writeFileSync(licensePath, license, { mode: 0o644 })
 
-    const first = spawnSync(
-      process.execPath,
-      [packer, binaryPath, cloudflaredPath, licensePath, firstPath],
-      { encoding: 'utf8' },
-    )
+    const first = spawnSync(process.execPath, [packer, binaryPath, firstPath], { encoding: 'utf8' })
     assert.equal(first.status, 0, first.stderr)
 
     chmodSync(binaryPath, 0o644)
-    chmodSync(cloudflaredPath, 0o644)
     utimesSync(binaryPath, new Date('2037-01-02T03:04:05Z'), new Date('2037-01-02T03:04:05Z'))
-    const second = spawnSync(
-      process.execPath,
-      [packer, binaryPath, cloudflaredPath, licensePath, secondPath],
-      { encoding: 'utf8' },
-    )
+    const second = spawnSync(process.execPath, [packer, binaryPath, secondPath], {
+      encoding: 'utf8',
+    })
     assert.equal(second.status, 0, second.stderr)
 
     const compressed = readFileSync(firstPath)
@@ -79,39 +66,29 @@ test('release archive is byte-reproducible and carries the exact toolchain closu
 
     const listed = spawnSync('tar', ['-tzf', firstPath], { encoding: 'utf8' })
     assert.equal(listed.status, 0, listed.stderr)
-    assert.equal(listed.stdout, 'astrale\nastrale-cloudflared\nLICENSE.cloudflared\n')
+    assert.equal(listed.stdout, 'astrale\n')
 
     const extracted = join(root, 'extracted')
     mkdirSync(extracted)
     const unpacked = spawnSync('tar', ['-xzf', firstPath, '-C', extracted], { encoding: 'utf8' })
     assert.equal(unpacked.status, 0, unpacked.stderr)
     assert.deepEqual(readFileSync(join(extracted, 'astrale')), binary)
-    assert.deepEqual(readFileSync(join(extracted, 'astrale-cloudflared')), cloudflared)
-    assert.deepEqual(readFileSync(join(extracted, 'LICENSE.cloudflared')), license)
     assert.equal(statSync(join(extracted, 'astrale')).mode & 0o777, 0o755)
-    assert.equal(statSync(join(extracted, 'astrale-cloudflared')).mode & 0o777, 0o755)
-    assert.equal(statSync(join(extracted, 'LICENSE.cloudflared')).mode & 0o777, 0o644)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('release archive rejects any empty cohort member without creating an asset', () => {
+test('release archive rejects an empty executable without creating an asset', () => {
   const root = mkdtempSync(join(tmpdir(), 'astrale-release-archive-empty-'))
   try {
     const binaryPath = join(root, 'astrale')
-    const cloudflaredPath = join(root, 'astrale-cloudflared')
-    const licensePath = join(root, 'LICENSE')
     const assetPath = join(root, 'astrale.tar.gz')
     writeFileSync(binaryPath, '')
-    writeFileSync(cloudflaredPath, 'provider')
-    writeFileSync(licensePath, 'license')
 
-    const packed = spawnSync(
-      process.execPath,
-      [packer, binaryPath, cloudflaredPath, licensePath, assetPath],
-      { encoding: 'utf8' },
-    )
+    const packed = spawnSync(process.execPath, [packer, binaryPath, assetPath], {
+      encoding: 'utf8',
+    })
     assert.notEqual(packed.status, 0)
     assert.match(packed.stderr, /astrale release file must be non-empty/u)
     assert.equal(existsSync(assetPath), false)

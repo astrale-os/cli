@@ -157,12 +157,13 @@ function Entries({ domainId, comment }: { domainId: string; comment: Comment }) 
           entry.role === 'author' &&
           comment.status === 'open' &&
           index === comment.thread.length - 1
+        const name = speaker(entry.role)
         return (
           <div key={entry.id} className="flex gap-2">
-            <Avatar role={entry.role} name={speaker(entry.role)} />
+            <Avatar role={entry.role} name={name} />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
-                <span className="text-[13px] font-medium">{speaker(entry.role)}</span>
+                <span className="text-[13px] font-medium">{name}</span>
                 {index === 0 && (
                   <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
                     {relativeTime(comment.createdAt)}

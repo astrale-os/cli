@@ -29,12 +29,11 @@ export function NodeCommentPin({
   excerpt: string
   className?: string
 }) {
-  const ownerDomainId = domainId
-  const { openThreads, orphaned } = useAnchorThreads(anchorRef, ownerDomainId)
+  const { openThreads, orphaned } = useAnchorThreads(anchorRef, domainId)
   const myId = useId()
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
-  const openKey = anchorKey(ownerDomainId, anchorRef)
+  const openKey = anchorKey(domainId, anchorRef)
   const open = openRef === openKey && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
   if (openThreads.length === 0) return null
@@ -48,7 +47,7 @@ export function NodeCommentPin({
         <button
           type="button"
           data-anchor-ref={anchorRef}
-          data-domain-id={ownerDomainId}
+          data-domain-id={domainId}
           title="View comments"
           onClick={(e) => {
             e.stopPropagation()
@@ -71,11 +70,11 @@ export function NodeCommentPin({
         align="end"
         className="w-80"
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(ownerDomainId, anchorRef, openThreads)) event.preventDefault()
+          if (hasUnsentDraft(domainId, anchorRef, openThreads)) event.preventDefault()
         }}
       >
         <ThreadPopover
-          domainId={ownerDomainId}
+          domainId={domainId}
           anchor={{ ref: anchorRef, kind }}
           excerpt={excerpt}
           threads={openThreads}

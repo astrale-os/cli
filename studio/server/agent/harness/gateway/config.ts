@@ -59,17 +59,24 @@ function decodeConfig(value: unknown): HarnessGatewayConfig | undefined {
   return asJsonRecord(value) ? normalize(value) : undefined
 }
 
-function validateEnabledConfig(config: HarnessGatewayConfig): void {
-  if (!config.enabled) return
-  if (!config.baseUrl) throw new Error('gateway base URL is required while enabled')
+/** The origin of an enabled gateway's base URL; throws the human error for one no
+ *  harness can call. */
+function enabledGatewayOrigin(baseUrl: string): string {
+  if (!baseUrl) throw new Error('gateway base URL is required while enabled')
   let url: URL
   try {
-    url = new URL(config.baseUrl)
+    url = new URL(baseUrl)
   } catch {
-    throw new Error(`invalid gateway base URL: ${config.baseUrl}`)
+    throw new Error(`invalid gateway base URL: ${baseUrl}`)
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:')
     throw new Error('gateway base URL must use http:// or https://')
+  return url.origin
+}
+
+function validateEnabledConfig(config: HarnessGatewayConfig): void {
+  if (!config.enabled) return
+  enabledGatewayOrigin(config.baseUrl)
   if (config.auth.mode === 'token' && !config.auth.token)
     throw new Error('gateway static token is required in token mode')
 }
@@ -137,19 +144,9 @@ export type HarnessEnvResult =
 export async function resolveHarnessEnv(): Promise<HarnessEnvResult> {
   const cfg = resolveHarnessGateway()
   if (!cfg || !cfg.enabled) return { ok: true, env: {} }
-  if (!cfg.baseUrl) return { ok: false, error: 'gateway base URL is required while enabled' }
-  let audience: string
-  try {
-    const url = new URL(cfg.baseUrl)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:')
-      return { ok: false, error: 'gateway base URL must use http:// or https://' }
-    audience = url.origin
-  } catch {
-    return { ok: false, error: `invalid gateway base URL: ${cfg.baseUrl}` }
-  }
   let token: string
   try {
-    token = await acquireGatewayToken(cfg, audience)
+    token = await acquireGatewayToken(cfg, enabledGatewayOrigin(cfg.baseUrl))
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) }
   }

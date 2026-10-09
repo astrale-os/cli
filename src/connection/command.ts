@@ -2,13 +2,13 @@ import chalk from 'chalk'
 
 import type { CredentialIntent } from './credential'
 import type { ConnectionContext } from './session'
-import type { ConnectionOptions } from './target'
+import type { AdminTargetSelection, ConnectionOptions } from './target'
 
 import { formatElapsed } from '../lib/format'
 import { spinner } from '../lib/log'
 import { isMachine, present } from '../lib/output'
 import { formatKernelError } from './errors'
-import { withClientSession } from './session'
+import { withAdminClientSession, withClientSession } from './session'
 
 export interface KernelCommandOpts extends ConnectionOptions {
   readonly raw?: boolean
@@ -33,6 +33,8 @@ export interface OperationRecovery {
 export async function runKernelCommand<T>(input: {
   readonly opts: KernelCommandOpts
   readonly label: string
+  /** Run on the Admin kernel, selected like `domain` Admin commands select it, not -i/--url/active. */
+  readonly admin?: AdminTargetSelection
   readonly recovery?: OperationRecovery
   readonly credential?: CredentialIntent
   readonly fn: (context: ConnectionContext) => Promise<T>
@@ -48,7 +50,18 @@ export async function runKernelCommand<T>(input: {
   const startTime = performance.now()
 
   try {
-    const result = await withClientSession(opts, fn, input.credential)
+    const result = await (input.admin === undefined
+      ? withClientSession(opts, fn, input.credential)
+      : withAdminClientSession(
+          {
+            ...opts,
+            admin: input.admin.admin,
+            adminUrl: input.admin.adminUrl,
+            domainIssuer: input.admin.domainIssuer,
+          },
+          fn,
+          input.credential,
+        ))
     const elapsed = performance.now() - startTime
 
     spin?.succeed(`${label} ${chalk.dim(formatElapsed(elapsed))}`)

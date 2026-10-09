@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync, type Stats } from 'node:fs'
+import { join, relative } from 'node:path'
 import { Node, Project, type SourceFile } from 'ts-morph'
 
 export function readTextSafe(file: string): string {
@@ -10,39 +10,35 @@ export function readTextSafe(file: string): string {
   }
 }
 
-export function listFiles(dir: string): string[] {
+/** Entry names of `dir` whose stat passes `keep`, in readdir order; [] when unreadable. */
+export function listEntries(dir: string, keep: (stat: Stats) => boolean): string[] {
   try {
-    return readdirSync(dir)
-      .filter((e) => {
-        try {
-          return statSync(join(dir, e)).isFile()
-        } catch {
-          return false
-        }
-      })
-      .sort()
+    return readdirSync(dir).filter((entry) => {
+      try {
+        return keep(statSync(join(dir, entry)))
+      } catch {
+        return false
+      }
+    })
   } catch {
     return []
   }
+}
+
+export function listFiles(dir: string): string[] {
+  return listEntries(dir, (stat) => stat.isFile()).sort()
 }
 
 export function listDirs(dir: string): string[] {
-  try {
-    return readdirSync(dir)
-      .filter((e) => {
-        try {
-          return statSync(join(dir, e)).isDirectory()
-        } catch {
-          return false
-        }
-      })
-      .sort()
-  } catch {
-    return []
-  }
+  return listEntries(dir, (stat) => stat.isDirectory()).sort()
 }
 
-const SOURCE_FILE = /\.[cm]?[jt]sx?$/
+/** `file` relative to `root`, with POSIX separators. */
+export function relativePosix(root: string, file: string): string {
+  return relative(root, file).replaceAll('\\', '/')
+}
+
+export const SOURCE_FILE = /\.[cm]?[jt]sx?$/
 const SKIP_SOURCE_DIRS = new Set(['__tests__', 'node_modules', '.git', '.astrale', '.dist', 'dist'])
 
 export function listSourceFiles(dir: string): string[] {
@@ -134,11 +130,11 @@ export function objectValue(node: Node | undefined, source: SourceFile): Node | 
 export function objectProperty(object: Node, name: string, source: SourceFile): Node | null {
   if (!Node.isObjectLiteralExpression(object)) return null
   for (const property of object.getProperties()) {
-    if (Node.isPropertyAssignment(property) && property.getName() === name) {
-      return localValue(property.getInitializer(), source)
-    }
-    if (Node.isShorthandPropertyAssignment(property) && property.getName() === name) {
-      return localValue(property.getNameNode(), source)
+    if (
+      (Node.isPropertyAssignment(property) || Node.isShorthandPropertyAssignment(property)) &&
+      property.getName() === name
+    ) {
+      return propertyValue(property, source)
     }
   }
   return null

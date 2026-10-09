@@ -1,6 +1,7 @@
 import { PanelLeftOpen } from 'lucide-react'
-import { type ReactNode, createContext, useContext } from 'react'
+import { type ReactNode, createContext, useContext, useRef } from 'react'
 
+import { ResizeHandle } from '@/components/ui/resize-handle'
 import { useUI } from '@/lib/store'
 
 /**
@@ -10,6 +11,7 @@ import { useUI } from '@/lib/store'
  */
 const MIN = 180
 const MAX = 560
+const DEFAULT_WIDTH = 240
 
 /**
  * The rail's own close button, offered to whatever header it was given: the header owns
@@ -45,26 +47,8 @@ export function ModulesSidebar({
     onClearSelection()
   }
 
-  const startResize = (event: React.PointerEvent) => {
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = width
-    let latest = startWidth
-    const onMove = (move: PointerEvent) => {
-      latest = Math.min(MAX, Math.max(MIN, startWidth + (move.clientX - startX)))
-      setWidth(latest)
-    }
-    const onUp = () => {
-      document.removeEventListener('pointermove', onMove)
-      document.removeEventListener('pointerup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.addEventListener('pointermove', onMove)
-    document.addEventListener('pointerup', onUp)
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }
+  const dragFrom = useRef(width)
+  const clamp = (next: number) => Math.min(MAX, Math.max(MIN, next))
 
   // Closed, the rail keeps a strip of itself rather than disappearing: the same button
   // that shut it is where you left it, so reopening never becomes a hunt.
@@ -104,15 +88,19 @@ export function ModulesSidebar({
       </CollapseContext.Provider>
       <div className="min-h-0 flex-1">{children}</div>
       {/* drag handle straddling the right border */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        onPointerDown={startResize}
-        title="Drag to resize"
-        className="group absolute right-0 top-0 z-20 h-full w-1.5 translate-x-1/2 cursor-col-resize"
-      >
-        <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-primary/50" />
-      </div>
+      <ResizeHandle
+        orientation="vertical"
+        label="Resize the domains rail"
+        className="right-0 top-0 h-full w-2 translate-x-1/2"
+        value={width}
+        min={MIN}
+        max={MAX}
+        onDragStart={() => (dragFrom.current = width)}
+        onDrag={(dx) => setWidth(clamp(dragFrom.current + dx))}
+        onStep={(dx) => setWidth(clamp(width + dx))}
+        onLimit={(to) => setWidth(to === 'min' ? MIN : MAX)}
+        onReset={() => setWidth(DEFAULT_WIDTH)}
+      />
     </div>
   )
 }

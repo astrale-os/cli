@@ -11,8 +11,12 @@ export async function formatKernelError(
   machine: boolean,
   urlArg = '',
   debug = false,
-  options: { recovery?: OperationRecovery } = {},
+  options: {
+    recovery?: OperationRecovery
+    /** Members the command adds beside a Kernel refusal's `--json` document, never over its own. */
+    fields?: Readonly<Record<string, unknown>>
+  } = {},
 ): Promise<void> {
-  renderFailure(classifyFailure(error), machine, urlArg, options.recovery)
+  renderFailure(classifyFailure(error), machine, urlArg, options.recovery, options.fields)
   if (debug) printFailureDebug(error, urlArg)
 }

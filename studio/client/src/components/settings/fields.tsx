@@ -7,6 +7,7 @@ import {
 } from '@shared/settings-values'
 
 import { SettingsHint } from './hint'
+import { SettingsHeading } from './row'
 
 interface FieldDef {
   key: keyof StudioSettings
@@ -64,6 +65,10 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
   },
 ]
 
+/** The accepted range of a numeric field; text fields have none. */
+const limitsOf = (field: FieldDef) =>
+  field.type === 'number' ? STUDIO_NUMERIC_LIMITS[field.key as NumericStudioSetting] : undefined
+
 export function generalSettingsPatch(
   values: Record<string, string>,
   current: StudioSettings,
@@ -74,10 +79,10 @@ export function generalSettingsPatch(
       const raw = values[field.key] ?? ''
       if (field.type === 'number') {
         const value = parseStudioNumericSetting(field.key as NumericStudioSetting, raw)
-        if (value === null)
-          throw new Error(
-            `${field.label} must be a whole number from ${STUDIO_NUMERIC_LIMITS[field.key as NumericStudioSetting].min} to ${STUDIO_NUMERIC_LIMITS[field.key as NumericStudioSetting].max} ms`,
-          )
+        if (value === null) {
+          const { min, max } = limitsOf(field)!
+          throw new Error(`${field.label} must be a whole number from ${min} to ${max} ms`)
+        }
         patch[field.key] = value
       } else {
         patch[field.key] = raw.trim() || (current[field.key] as string)
@@ -95,36 +100,29 @@ export function SettingsFields({
 }) {
   return SECTIONS.map((section) => (
     <div key={section.title}>
-      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {section.title}
-      </div>
+      <SettingsHeading>{section.title}</SettingsHeading>
       <div className="divide-y divide-border rounded-lg border bg-card">
-        {section.fields.map((field) => (
-          <div key={field.key} className="flex items-center gap-3 px-3 py-2">
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]">
-              <span className="truncate">{field.label}</span>
-              <SettingsHint text={field.hint} />
-            </span>
-            <input
-              type={field.type}
-              min={
-                field.type === 'number'
-                  ? STUDIO_NUMERIC_LIMITS[field.key as NumericStudioSetting].min
-                  : undefined
-              }
-              max={
-                field.type === 'number'
-                  ? STUDIO_NUMERIC_LIMITS[field.key as NumericStudioSetting].max
-                  : undefined
-              }
-              step={field.type === 'number' ? 1 : undefined}
-              value={values[field.key] ?? ''}
-              onChange={(event) => onChange(field.key, event.target.value)}
-              placeholder={field.placeholder}
-              className="w-32 shrink-0 rounded-md border bg-card px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-primary"
-            />
-          </div>
-        ))}
+        {section.fields.map((field) => {
+          const limits = limitsOf(field)
+          return (
+            <div key={field.key} className="flex items-center gap-3 px-3 py-2">
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]">
+                <span className="truncate">{field.label}</span>
+                <SettingsHint text={field.hint} />
+              </span>
+              <input
+                type={field.type}
+                min={limits?.min}
+                max={limits?.max}
+                step={limits ? 1 : undefined}
+                value={values[field.key] ?? ''}
+                onChange={(event) => onChange(field.key, event.target.value)}
+                placeholder={field.placeholder}
+                className="w-32 shrink-0 rounded-md border bg-card px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-primary"
+              />
+            </div>
+          )
+        })}
       </div>
     </div>
   ))

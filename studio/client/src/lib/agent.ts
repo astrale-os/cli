@@ -3,16 +3,24 @@
  *
  * The authoritative run lives on the server; here we mirror it: seed from
  * GET /agent (react-query), then keep it fresh from the SSE stream (`agent-run`
- * replaces the run, `agent-event` appends one activity event). Tabs run
- * independently, so the mirror is keyed by chat id — a turn streaming into a
- * background tab must not overwrite what the foreground one shows.
+ * replaces the run, `agent-event` adds one activity event - or, for a tool call
+ * reported again, replaces its step). Tabs run independently, so the mirror is
+ * keyed by chat id - a turn streaming into a background tab must not overwrite
+ * what the foreground one shows.
  */
-import type { AgentEvent, AgentRun } from '@shared/types'
+import type {
+  AgentContextUsage,
+  AgentDraft,
+  AgentEvent,
+  AgentRun,
+  ChatAttachment,
+} from '@shared/types'
 
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 
+import { useAgentUnread } from './agent-unread'
 import { api, qk } from './api'
 import { useActiveChatId } from './chats'
 
@@ -22,10 +30,16 @@ interface AgentLiveState {
   setRun: (run: AgentRun) => void
   /** forget a run this client put up itself — see `pendingRun` */
   dropRun: (chatId: string, runId: string) => void
-  appendEvent: (chatId: string, runId: string, event: AgentEvent) => void
+  /** add one activity event, or bring a step already shown up to date */
+  putEvent: (chatId: string, runId: string, event: AgentEvent) => void
+  /** how full the run's context window is now, as the agent just reported it */
+  putContext: (chatId: string, runId: string, context: AgentContextUsage) => void
+  /** more of the message the agent is writing - see the `agent-draft` event */
+  putDraft: (chatId: string, runId: string, id: string, offset: number, text: string) => void
 }
 
-const TERMINAL: Record<AgentRun['status'], number> = {
+/** How far a run has got; every terminal status ranks the same, and none regresses. */
+const PROGRESS: Record<AgentRun['status'], number> = {
   queued: 0,
   running: 1,
   succeeded: 2,
@@ -36,20 +50,81 @@ const TERMINAL: Record<AgentRun['status'], number> = {
 
 const NO_RUNS: AgentRun[] = []
 
+/** How far a copy of one event has got: a step reported again only ever moves forward. */
+const revisionOf = (event: AgentEvent) => event.revision ?? 0
+
+/**
+ * Two copies of one run's events, as one: the longer list - `preferred` on a tie -
+ * with every step at the furthest revision either copy has seen. Two copies that
+ * are each ahead on something (the stream on new events, a snapshot on a step it
+ * caught settling) must not trade one for the other.
+ */
+export function mergeEvents(preferred: AgentEvent[], other: AgentEvent[]): AgentEvent[] {
+  const [base, rest] = preferred.length >= other.length ? [preferred, other] : [other, preferred]
+  const ahead = new Map<string, AgentEvent>()
+  for (const event of rest) if (event.revision !== undefined) ahead.set(event.id, event)
+  if (!ahead.size) return base
+  let changed = false
+  const merged = base.map((event) => {
+    const further = ahead.get(event.id)
+    if (!further || revisionOf(further) <= revisionOf(event)) return event
+    changed = true
+    return further
+  })
+  return changed ? merged : base
+}
+
+/**
+ * Two copies of a run's draft, as one. The same draft is as far as the longer copy
+ * got; a different one is the newer message - unless it is already written out as
+ * an event, in which case it is over and the other is what is being written.
+ */
+export function mergeDraft(
+  preferred: AgentDraft | undefined,
+  other: AgentDraft | undefined,
+  events: AgentEvent[],
+): AgentDraft | undefined {
+  const written = (draft: AgentDraft | undefined) =>
+    !!draft && events.some((event) => event.id === draft.id)
+  const a = written(preferred) ? undefined : preferred
+  const b = written(other) ? undefined : other
+  if (a && b && a.id === b.id) return a.text.length >= b.text.length ? a : b
+  return a ?? b
+}
+
+/** A draft with one more piece of text in place, or unchanged when the piece cannot be placed. */
+export function extendDraft(
+  draft: AgentDraft | undefined,
+  id: string,
+  offset: number,
+  text: string,
+): AgentDraft | undefined {
+  if (draft?.id === id) {
+    // a piece past the end means one went missing: the next snapshot repairs it
+    if (offset > draft.text.length) return draft
+    return { id, text: draft.text.slice(0, offset) + text }
+  }
+  // a new message starts at its beginning; joined midway it waits for a snapshot
+  return offset === 0 ? { id, text } : draft
+}
+
 export const useAgentLive = create<AgentLiveState>((set) => ({
   runs: {},
   // merge-forward: the HTTP submit response and the SSE stream race; never let an
   // earlier snapshot of the SAME run regress the event list or the terminal status.
-  setRun: (run) =>
+  setRun: (run) => {
+    useAgentUnread.getState().completed(run)
     set((s) => {
       const cur = s.runs[run.chatId]
       if (cur && cur.id === run.id) {
-        const events = run.events.length >= cur.events.length ? run.events : cur.events
-        const status = TERMINAL[run.status] >= TERMINAL[cur.status] ? run.status : cur.status
-        return { runs: { ...s.runs, [run.chatId]: { ...cur, ...run, events, status } } }
+        const events = mergeEvents(run.events, cur.events)
+        const status = PROGRESS[run.status] >= PROGRESS[cur.status] ? run.status : cur.status
+        const draft = mergeDraft(run.draft, cur.draft, events)
+        return { runs: { ...s.runs, [run.chatId]: { ...cur, ...run, events, status, draft } } }
       }
       return { runs: { ...s.runs, [run.chatId]: run } }
-    }),
+    })
+  },
   dropRun: (chatId, runId) =>
     set((s) => {
       // guarded by id: a real run that already took this one's place stays
@@ -58,14 +133,56 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       delete runs[chatId]
       return { runs }
     }),
-  appendEvent: (chatId, runId, event) =>
+  putEvent: (chatId, runId, event) =>
     set((s) => {
       const cur = s.runs[chatId]
       if (!cur || cur.id !== runId) return s
-      if (cur.events.some((e) => e.id === event.id)) return s
-      return { runs: { ...s.runs, [chatId]: { ...cur, events: [...cur.events, event] } } }
+      const index = cur.events.findIndex((e) => e.id === event.id)
+      if (index < 0)
+        return { runs: { ...s.runs, [chatId]: { ...cur, events: [...cur.events, event] } } }
+      // the same step reported again: it keeps its place, and only moves forward
+      if (revisionOf(event) <= revisionOf(cur.events[index]!)) return s
+      const events = cur.events.with(index, event)
+      return { runs: { ...s.runs, [chatId]: { ...cur, events } } }
+    }),
+  putContext: (chatId, runId, context) =>
+    set((s) => {
+      const cur = s.runs[chatId]
+      if (!cur || cur.id !== runId) return s
+      return { runs: { ...s.runs, [chatId]: { ...cur, context } } }
+    }),
+  putDraft: (chatId, runId, id, offset, text) =>
+    set((s) => {
+      const cur = s.runs[chatId]
+      if (!cur || cur.id !== runId || cur.events.some((event) => event.id === id)) return s
+      const draft = extendDraft(cur.draft, id, offset, text)
+      if (draft === cur.draft) return s
+      return { runs: { ...s.runs, [chatId]: { ...cur, draft } } }
     }),
 }))
+
+/**
+ * How full a chat's conversation is, read off its turns, newest first.
+ *
+ * The window belongs to the CONVERSATION, not the turn: a turn that has not
+ * reported yet (the one just sent, or one still starting) is as full as the
+ * turn before it left it. A turn that started a NEW conversation is where that
+ * stops - nothing before it is in this window - and a chat with no
+ * conversation at all has nothing in its window either.
+ */
+export function conversationContext(
+  turns: AgentRun[],
+  conversation: boolean,
+): AgentContextUsage | undefined {
+  const last = turns.at(-1)
+  if (!conversation && !isRunActive(last)) return undefined
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const turn = turns[index]!
+    if (turn.context) return turn.context
+    if (turn.resumed === false) return undefined
+  }
+  return undefined
+}
 
 /**
  * The turn a submit is about to become, put up from the keystroke.
@@ -86,6 +203,8 @@ export function pendingRun(input: {
   /** what was typed; empty when the turn only carries documents and threads */
   message: string
   summary: string
+  /** the images it carries, already uploaded — the turn shows them from the start */
+  attachments?: ChatAttachment[]
 }): AgentRun {
   return {
     id: input.id,
@@ -96,6 +215,7 @@ export function pendingRun(input: {
     createdAt: new Date().toISOString(),
     summary: input.summary,
     ...(input.message ? { instruction: input.message } : {}),
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     targetCommentIds: [],
     events: [],
   }
@@ -121,10 +241,15 @@ export function harnessLink(available: boolean | undefined, failed = false): Har
   return failed ? 'unreachable' : 'connecting'
 }
 
+/** The chat a hook was asked about, or the active tab when none was named. */
+function useChatOrActive(chatId?: string): string | undefined {
+  const active = useActiveChatId()
+  return chatId ?? active
+}
+
 /** Initial snapshot for one chat (harness availability + most-recent run). */
 export function useAgentSnapshot(chatId?: string) {
-  const active = useActiveChatId()
-  const chat = chatId ?? active
+  const chat = useChatOrActive(chatId)
   return useQuery({
     queryKey: qk.agent(chat),
     queryFn: () => api.agentSnapshot(chat),
@@ -148,8 +273,7 @@ export function useAgentSnapshot(chatId?: string) {
 
 /** One chat's conversation: past turns from disk, with the live one appended. */
 export function useAgentTurns(chatId?: string): AgentRun[] {
-  const active = useActiveChatId()
-  const chat = chatId ?? active
+  const chat = useChatOrActive(chatId)
   const history = useQuery({
     queryKey: qk.agentHistory(chat),
     queryFn: () => api.agentHistory(chat),
@@ -182,18 +306,19 @@ export function reconcileRun(live: AgentRun | undefined, stored: AgentRun | null
   // snapshot holds another window's run before the stream delivers it
   if (stored.id !== live.id)
     return Date.parse(stored.createdAt) > Date.parse(live.createdAt) ? stored : live
+  const events = mergeEvents(live.events, stored.events)
   return {
     ...live,
     ...stored,
-    status: TERMINAL[stored.status] > TERMINAL[live.status] ? stored.status : live.status,
-    events: live.events.length >= stored.events.length ? live.events : stored.events,
+    status: PROGRESS[stored.status] > PROGRESS[live.status] ? stored.status : live.status,
+    events,
+    draft: mergeDraft(live.draft, stored.draft, events),
   }
 }
 
 /** The run to display for a chat: the live (SSE) copy, corrected by the server. */
 export function useDisplayRun(chatId?: string): AgentRun | null {
-  const active = useActiveChatId()
-  const chat = chatId ?? active
+  const chat = useChatOrActive(chatId)
   const live = useAgentLive((s) => (chat ? s.runs[chat] : undefined))
   const snap = useAgentSnapshot(chat)
   const stored = snap.data?.run ?? null

@@ -11,18 +11,20 @@ afterEach(() => {
 })
 
 function project(nested: boolean) {
-  const root = mkdtempSync(join(tmpdir(), 'studio-anatomy-application-'))
+  const root = mkdtempSync(join(tmpdir(), 'studio-anatomy-domain-'))
   roots.push(root)
   const owner = nested ? join(root, 'domain') : root
   mkdirSync(join(owner, 'schema'), { recursive: true })
   writeFileSync(join(root, 'package.json'), '{}\n')
   writeFileSync(
     join(root, 'astrale.config.ts'),
-    nested
-      ? "import application from './domain/application.js'\nexport default { application }\n"
-      : 'export default {}\n',
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import { domain } from '${nested ? './domain/domain.js' : './domain.js'}'
+export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
+`,
   )
-  writeFileSync(join(owner, 'application.ts'), 'export const application = {}\n')
+  writeFileSync(join(owner, 'domain.ts'), 'export const domain = {}\n')
   writeFileSync(
     join(owner, 'schema/index.ts'),
     "defineSchema('example.astrale.ai', { classes: {} })\n",
@@ -30,12 +32,12 @@ function project(nested: boolean) {
   return { root, schemaDirName: nested ? 'domain/schema' : 'schema' }
 }
 
-test('overview anchors a root Application', () => {
+test('overview anchors a root Domain definition', () => {
   const input = project(false)
-  expect(buildAnatomy(input).overview.applicationFile).toBe('application.ts')
+  expect(buildAnatomy(input).overview.domainFile).toBe('domain.ts')
 })
 
-test('overview preserves the config-imported nested Application path', () => {
+test('overview preserves the config-imported nested Domain definition path', () => {
   const input = project(true)
-  expect(buildAnatomy(input).overview.applicationFile).toBe('domain/application.ts')
+  expect(buildAnatomy(input).overview.domainFile).toBe('domain/domain.ts')
 })

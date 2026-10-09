@@ -11,14 +11,15 @@ import remarkGfm from 'remark-gfm'
 
 import { cn } from '@/lib/utils'
 
+// Agent prose sits inside compact panels: its top-level headings step down to one size.
+const heading: Components['h1'] = ({ node, ...p }) => (
+  <h3 className="mb-1 mt-1.5 text-[13px] font-semibold first:mt-0" {...p} />
+)
+
 const MD: Components = {
   p: ({ node, ...p }) => <p className="mb-2 leading-relaxed last:mb-0" {...p} />,
-  h1: ({ node, ...p }) => (
-    <h3 className="mb-1 mt-1.5 text-[13px] font-semibold first:mt-0" {...p} />
-  ),
-  h2: ({ node, ...p }) => (
-    <h3 className="mb-1 mt-1.5 text-[13px] font-semibold first:mt-0" {...p} />
-  ),
+  h1: heading,
+  h2: heading,
   h3: ({ node, ...p }) => (
     <h4 className="mb-1 mt-1.5 text-[13px] font-semibold first:mt-0" {...p} />
   ),

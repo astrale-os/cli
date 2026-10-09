@@ -13,10 +13,12 @@
  */
 import type { QueuedMessage } from '@shared/types'
 
+import { imagesLabel } from '@shared/attachments'
 import {
   ChevronDown,
   ChevronUp,
   FastForward,
+  Image as ImageIcon,
   Loader2,
   ListOrdered,
   Pencil,
@@ -169,50 +171,64 @@ function QueuedRow({
     )
   }
 
+  const images = message.attachments?.length ?? 0
+  // a message may be images alone: then that is what the row calls it
+  const label = firstLine(message.text) || imagesLabel(images)
+
   return (
     <div className="group/row flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-card">
       <Position value={position} />
       <span
         className="min-w-0 flex-1 truncate text-[12px] text-foreground"
         // the row shows one line; the whole message is one hover away
-        title={message.text}
+        title={message.text || label}
       >
-        {firstLine(message.text)}
+        {label}
       </span>
+      {images > 0 && (
+        <span
+          className="flex shrink-0 items-center gap-0.5 text-[11px] text-muted-foreground"
+          title={imagesLabel(images)}
+          aria-label={imagesLabel(images)}
+        >
+          <ImageIcon className="h-3 w-3" />
+          {images}
+        </span>
+      )}
       {/* the controls appear under the pointer, or the strip would read as a
           column of buttons rather than a list of messages. They keep their width
           at both ends of the queue: an arrow that vanishes moves the others. */}
       <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100">
         <RowAction
           icon={ChevronUp}
-          label={`Move "${firstLine(message.text)}" earlier`}
+          label={`Move "${label}" earlier`}
           title="Send this one sooner"
           disabled={first}
           onClick={() => onMove('up')}
         />
         <RowAction
           icon={ChevronDown}
-          label={`Move "${firstLine(message.text)}" later`}
+          label={`Move "${label}" later`}
           title="Send this one later"
           disabled={last}
           onClick={() => onMove('down')}
         />
         <RowAction
           icon={Pencil}
-          label={`Edit "${firstLine(message.text)}"`}
+          label={`Edit "${label}"`}
           title="Edit before it is sent"
           onClick={() => setEditing(true)}
         />
         <RowAction
           icon={FastForward}
-          label={`Send "${firstLine(message.text)}" now`}
+          label={`Send "${label}" now`}
           title={running ? 'Send now — stops the turn in progress' : 'Send now'}
           disabled={busy}
           onClick={onSendNow}
         />
         <RowAction
           icon={Trash2}
-          label={`Delete "${firstLine(message.text)}"`}
+          label={`Delete "${label}"`}
           title="Delete without sending"
           destructive
           onClick={onRemove}

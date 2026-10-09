@@ -30,8 +30,16 @@ export type SectionKey = WorkspaceSection
 
 const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'tests', 'process']
 
+/** The draft key for "no chat yet" — the chat list is a fetch, and the composer is
+ *  on screen before it lands. No chat id can collide with it: chat ids are non-empty. */
+const NO_CHAT = ''
+
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
+/** Where the agent's chat tabs sit: a strip of marks on top, or a column of titles on the left. */
+/** Where the chat tabs sit: a column on the conversation's left, or a strip above it
+ *  showing each agent's mark alone (`top`) or with every tab's title (`top-titled`). */
+export type ChatTabsSide = 'left' | 'top' | 'top-titled'
 
 /** How every canvas draws a relationship: a curve between the cards, or right-angled traces. */
 export type EdgeStyle = WorkspaceUiState['edgeStyle']
@@ -43,12 +51,35 @@ export type PanelTab = WorkspacePanelUiState['tab']
  *  over the middle of the screen when you click in. */
 export type PanelSide = WorkspacePanelUiState['side']
 
+/** The bottom dock's size bounds, in px. The server clamps to the same ones. */
+export const DOCK_WIDTH = { min: 420, max: 1600, fallback: 880 } as const
+export const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 } as const
+
+/** Bounds the persisted projection holds the other panel sizes to. */
+const PANEL_SIZE = { min: 260, max: 900 } as const
+const RAIL_WIDTH = { min: 180, max: 560 } as const
+const DETAIL_WIDTH = { min: 320, max: 900 } as const
+/** The chat tab column's width bounds, in px. */
+export const CHAT_TABS_WIDTH = { min: 120, max: 480, fallback: 160 } as const
+
+function clampTo({ min, max }: { min: number; max: number }, value: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
+
 function loadStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
     const value = localStorage.getItem(key) as T | null
     if (value && allowed.includes(value)) return value
   } catch {}
   return fallback
+}
+
+function loadStoredWidth(key: string, bounds: { min: number; max: number; fallback: number }) {
+  try {
+    const value = Number(localStorage.getItem(key))
+    if (Number.isFinite(value) && value > 0) return clampTo(bounds, value)
+  } catch {}
+  return bounds.fallback
 }
 
 function storeBrowserPreference(key: string, value: string): void {
@@ -77,19 +108,37 @@ interface UIState {
   resolvedTheme: 'light' | 'dark'
   /** edge drawing preference, persisted in this workspace's machine-side UI state */
   edgeStyle: EdgeStyle
+  /** chat tab placement, persisted in this browser */
+  chatTabsSide: ChatTabsSide
+  /** the chat tab column's width when it sits on the left, persisted in this browser */
+  chatTabsWidth: number
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
   panelTab: PanelTab
   panelSide: PanelSide
-  /** panel width in px when docked left/right; the bottom dock has no size to keep */
+  /** panel width in px when docked left/right */
   panelSize: number
+  /** The bottom dock's own size: its width, grown on both sides so it stays centred,
+   *  and the height of the conversation it opens above the composer. */
+  dockWidth: number
+  dockHeight: number
   /** domains/modules rail furniture, scoped to this scanned workspace */
   modulesWidth: number
+  detailWidth: number
   modulesCollapsed: boolean
-  /** What is typed in the agent composer. It lives here, not in the composer, so that
-   *  closing the floating chat — or re-docking the panel — never throws a message away. */
-  agentDraft: string
+  /** What is typed in the agent composer, per chat. It lives here, not in the composer,
+   *  so that closing the floating chat — or re-docking the panel — never throws a message
+   *  away; and it is keyed by chat because a draft belongs to the agent it was written
+   *  for. Switching tabs empties the field and coming back fills it again, which is the
+   *  same message still being written, not a new one.
+   *
+   *  The `NO_CHAT` key holds what was typed before the chat list landed; `adoptAgentDraft`
+   *  hands it to the first real chat, so an early keystroke is not lost either. */
+  agentDrafts: Record<string, string>
+  /** The open threads the user attached to the next agent turn, by id. None by default:
+   *  an open thread is signalled beside the composer, and only rides a turn once chosen. */
+  agentComments: string[]
   selectedClass?: string
   /**
    * Which domain `selectedClass` and `focusId` belong to. A class ref is LOCAL
@@ -99,11 +148,12 @@ interface UIState {
   selectionDomainId?: string
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
-  /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains / Integrations
-   *  overview) instead of the selected-class detail. Cleared by selecting a class / navigating. */
+  /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Functions / Domains /
+   *  Integrations overview) instead of the selected-class detail. Cleared by selecting a
+   *  class / navigating. */
   panelOverlay: {
-    kind: 'views' | 'domains' | 'integrations'
-    /** Domains and Integrations are local; Views may span the whole canvas. */
+    kind: 'views' | 'functions' | 'domains' | 'integrations'
+    /** Domains and Integrations are local; Views and Functions may span the whole canvas. */
     domainId?: string
   } | null
   /** comment-mode draft: the floating composer target + screen position */
@@ -136,10 +186,14 @@ interface UIState {
   /** The new-domain composer, centred over everything: a name, a first message,
    *  and the domain that does not exist yet between them. */
   newDomainOpen: boolean
+  /** The onboarding tour. It never opens by itself: Settings and ⌘K start it. */
+  tourOpen: boolean
   /** A policy another section asked Tests to open on its demo data; Tests takes it and clears it. */
   probePolicy: string | null
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
+  setChatTabsSide: (side: ChatTabsSide) => void
+  setChatTabsWidth: (width: number) => void
   /** Go to Tests with this policy selected — the way Process and the detail panel hand one over. */
   openPolicy: (policy: string, domainId?: string) => void
   setProbePolicy: (policy: string | null) => void
@@ -149,19 +203,32 @@ interface UIState {
   setPanelTab: (tab: PanelTab) => void
   setPanelSide: (side: PanelSide) => void
   setPanelSize: (size: number) => void
+  setDockSize: (size: { width?: number; height?: number }) => void
   setModulesWidth: (width: number) => void
+  setDetailWidth: (width: number) => void
   setModulesCollapsed: (collapsed: boolean) => void
-  setAgentDraft: (text: string) => void
+  /** Write this chat's draft. `undefined` writes the pre-chat one — see `agentDrafts`. */
+  setAgentDraft: (chatId: string | undefined, text: string) => void
+  /** Give the pre-chat draft to a chat, once there is one to give it to. */
+  adoptAgentDraft: (chatId: string) => void
+  /** A closed chat takes its draft with it: nothing can be sent to it any more. */
+  dropAgentDraft: (chatId: string) => void
+  /** Replace the threads attached to the next agent turn — see `agentComments`. */
+  setAgentComments: (ids: string[]) => void
   /** Jump to whatever an anchor points at: the right section, the member that declares
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string, domainId: string) => void
-  setPanelOverlay: (kind: 'views' | 'domains' | 'integrations' | null, domainId?: string) => void
+  setPanelOverlay: (
+    kind: 'views' | 'functions' | 'domains' | 'integrations' | null,
+    domainId?: string,
+  ) => void
   /** `domainId` names the owner; it is required for a real selection. */
   selectClass: (n?: string, domainId?: string) => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
   focusClass: (id: string, domainId: string) => void
   /** Drop the selection and its graph focus — what clicking empty space means. Leaves an
-   *  open overlay panel (Views / Domains / Integrations) alone: it is not a selection. */
+   *  open overlay panel (Views / Functions / Domains / Integrations) alone: it is not a
+   *  selection. */
   clearSelection: () => void
   setFocus: (id: string | null) => void
   toggleCardinality: () => void
@@ -174,6 +241,12 @@ interface UIState {
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
   setNewDomainOpen: (b: boolean) => void
+  setTourOpen: (b: boolean) => void
+}
+
+/** This chat's draft, or what was typed before there was a chat to key it by. */
+export function agentDraftOf(drafts: Record<string, string>, chatId?: string): string {
+  return drafts[chatId ?? NO_CHAT] ?? ''
 }
 
 /** `edge.X` selects like a class (both live in the `class.` selection namespace). */
@@ -186,7 +259,7 @@ function revealSelection(ref: string): string {
 function revealFocus(ref: string): string | null {
   if (ref.startsWith('edge.')) return null
   const selection = revealSelection(ref)
-  return selection.startsWith('class.') ? selection : null
+  return selection.startsWith('class.') || selection.startsWith('function.') ? selection : null
 }
 /** What the canvas is asked to bring into view. An `edge.` ref stays an edge ref: the canvas
  *  frames the cards its paths run between, and knows to drop the request if it draws none. */
@@ -202,15 +275,21 @@ export const useUI = create<UIState>((set) => ({
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
   edgeStyle: 'curved',
+  chatTabsSide: loadStored('studio.chatTabs', ['left', 'top', 'top-titled'] as const, 'left'),
+  chatTabsWidth: loadStoredWidth('studio.chatTabsWidth', CHAT_TABS_WIDTH),
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
   panelOpen: false,
   panelTab: 'agent',
   panelSide: 'bottom',
   panelSize: 360,
+  dockWidth: DOCK_WIDTH.fallback,
+  dockHeight: DOCK_HEIGHT.fallback,
   modulesWidth: 240,
+  detailWidth: 420,
   modulesCollapsed: false,
-  agentDraft: '',
+  agentDrafts: {},
+  agentComments: [],
   focusId: null,
   panelOverlay: null,
   commentDraft: null,
@@ -224,6 +303,7 @@ export const useUI = create<UIState>((set) => ({
   paletteOpen: false,
   settingsOpen: false,
   newDomainOpen: false,
+  tourOpen: false,
   probePolicy: null,
   openPolicy: (probePolicy, readerDomainId) => {
     set({
@@ -242,6 +322,15 @@ export const useUI = create<UIState>((set) => ({
     set({ theme, resolvedTheme: paintTheme(theme) })
   },
   setEdgeStyle: (edgeStyle) => set({ edgeStyle }),
+  setChatTabsSide: (chatTabsSide) => {
+    storeBrowserPreference('studio.chatTabs', chatTabsSide)
+    set({ chatTabsSide })
+  },
+  setChatTabsWidth: (width) => {
+    const chatTabsWidth = clampTo(CHAT_TABS_WIDTH, width)
+    storeBrowserPreference('studio.chatTabsWidth', String(chatTabsWidth))
+    set({ chatTabsWidth })
+  },
   setSection: (section) => {
     // Schema and Core are two canvases over the same domain with DISJOINT selection
     // namespaces (`class.X` vs a core path), so crossing between them starts clean —
@@ -268,26 +357,49 @@ export const useUI = create<UIState>((set) => ({
     set({ panelSide, panelOpen })
   },
   setPanelSize: (panelSize) => set({ panelSize }),
+  setDockSize: ({ width, height }) =>
+    set((s) => ({
+      dockWidth: width === undefined ? s.dockWidth : clampTo(DOCK_WIDTH, width),
+      dockHeight: height === undefined ? s.dockHeight : clampTo(DOCK_HEIGHT, height),
+    })),
   setModulesWidth: (modulesWidth) => set({ modulesWidth }),
+  setDetailWidth: (detailWidth) => set({ detailWidth }),
   setModulesCollapsed: (modulesCollapsed) => set({ modulesCollapsed }),
-  setAgentDraft: (agentDraft) => set({ agentDraft }),
+  setAgentDraft: (chatId, text) =>
+    set((s) => ({ agentDrafts: { ...s.agentDrafts, [chatId ?? NO_CHAT]: text } })),
+  adoptAgentDraft: (chatId) =>
+    set((s) => {
+      const pending = s.agentDrafts[NO_CHAT]
+      // Nothing waiting, or the chat is already being written to: leave both alone.
+      if (!pending || s.agentDrafts[chatId]) return {}
+      const { [NO_CHAT]: _dropped, ...rest } = s.agentDrafts
+      return { agentDrafts: { ...rest, [chatId]: pending } }
+    }),
+  dropAgentDraft: (chatId) =>
+    set((s) => {
+      if (!(chatId in s.agentDrafts)) return {}
+      const { [chatId]: _closed, ...rest } = s.agentDrafts
+      return { agentDrafts: rest }
+    }),
+  setAgentComments: (agentComments) => set({ agentComments }),
   revealAnchor: (ref, domainId) => {
-    const section: SectionKey = ref.startsWith('section.')
-      ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')
+    const named = ref.startsWith('section.')
+      ? ref.slice('section.'.length).split('.')[0]
       : ref.startsWith('core.')
         ? 'core'
         : 'schema'
-    const target = SECTION_KEYS.includes(section) ? section : 'schema'
+    const target = SECTION_KEYS.find((key) => key === named) ?? 'schema'
     // A property or method is revealed INSIDE the member that declares it — selecting
     // the field itself would select a canvas node that does not exist.
     const selection = detailRefFor(ref)
-    set(() => ({
+    set({
       section: target,
       panelOverlay: null,
       revealedRef: ref,
       selectionDomainId: domainId,
       ...(selection.startsWith('class.') ||
       selection.startsWith('edge.') ||
+      selection.startsWith('function.') ||
       selection.startsWith('module.')
         ? {
             selectedClass: revealSelection(selection),
@@ -299,7 +411,7 @@ export const useUI = create<UIState>((set) => ({
           selection.startsWith('domain.')
           ? { revealTarget: selection }
           : {}),
-    }))
+    })
   },
   setPanelOverlay: (kind, domainId) =>
     set({ panelOverlay: kind ? { kind, ...(domainId ? { domainId } : {}) } : null }),
@@ -322,20 +434,20 @@ export const useUI = create<UIState>((set) => ({
         revealTarget: null,
         // A same-named class in ANOTHER domain is a different node: focus follows the
         // selection there rather than staying pinned on the one it used to mean.
-        focusId: selectedClass?.startsWith('class.')
-          ? selectedClass
-          : owner === s.selectionDomainId
-            ? s.focusId
-            : null,
+        focusId:
+          selectedClass?.startsWith('class.') || selectedClass?.startsWith('function.')
+            ? selectedClass
+            : owner === s.selectionDomainId
+              ? s.focusId
+              : null,
       }
     }),
   focusClass: (id, domainId) =>
     set((s) => {
-      const owner = domainId
-      const same = s.focusId === id && s.selectionDomainId === owner
+      const same = s.focusId === id && s.selectionDomainId === domainId
       return {
         selectedClass: id,
-        selectionDomainId: owner,
+        selectionDomainId: domainId,
         panelOverlay: null,
         revealedRef: null,
         revealTarget: null,
@@ -369,27 +481,31 @@ export const useUI = create<UIState>((set) => ({
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setNewDomainOpen: (newDomainOpen) => set({ newDomainOpen }),
+  setTourOpen: (tourOpen) => set({ tourOpen }),
 }))
 
 /** The small persistent projection of the UI store; transient selections stay in memory. */
 export function uiWorkspaceSnapshot(state = useUI.getState()): Pick<
   WorkspaceUiState,
-  'section' | 'edgeStyle' | 'panel' | 'rail'
+  'section' | 'edgeStyle' | 'panel' | 'rail' | 'detailWidth'
 > & {
   readerDomainId: string | null
 } {
   return {
     section: state.section,
     edgeStyle: state.edgeStyle,
+    detailWidth: clampTo(DETAIL_WIDTH, state.detailWidth),
     readerDomainId: state.readerDomainId ?? null,
     panel: {
       open: state.panelOpen,
       tab: state.panelTab,
       side: state.panelSide,
-      size: Math.min(900, Math.max(260, Math.round(state.panelSize))),
+      size: clampTo(PANEL_SIZE, state.panelSize),
+      dockWidth: clampTo(DOCK_WIDTH, state.dockWidth),
+      dockHeight: clampTo(DOCK_HEIGHT, state.dockHeight),
     },
     rail: {
-      width: Math.min(560, Math.max(180, Math.round(state.modulesWidth))),
+      width: clampTo(RAIL_WIDTH, state.modulesWidth),
       collapsed: state.modulesCollapsed,
     },
   }
@@ -405,7 +521,10 @@ export function hydrateWorkspaceUi(state: WorkspaceUiState): void {
     panelTab: state.panel.tab,
     panelSide: state.panel.side,
     panelSize: state.panel.size,
+    dockWidth: state.panel.dockWidth,
+    dockHeight: state.panel.dockHeight,
     modulesWidth: state.rail.width,
+    detailWidth: state.detailWidth ?? 420,
     modulesCollapsed: state.rail.collapsed,
   })
 }

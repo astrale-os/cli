@@ -3,6 +3,8 @@ import type { StoredChat } from '../chats'
 import {
   AGENT_ACCESS_LEVELS,
   AGENT_EFFORT_LEVELS,
+  AGENT_TOOL_STATUSES,
+  type AgentContextUsage,
   type AgentEvent,
   type AgentPromptSnapshot,
   type AgentRun,
@@ -10,6 +12,8 @@ import {
 } from '../../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
 import { listState, readJson, removeState, writeJson } from '../../state/store'
+import { decodeAttachments } from '../attachments'
+import { deleteToolCalls } from './tool-calls'
 
 /**
  * Transcripts live beside the machine-global chats they belong to in the Studio home:
@@ -46,6 +50,8 @@ function decodeAgentEvent(value: unknown): AgentEvent | undefined {
     return undefined
   const tool = asString(record?.tool)
   const target = asString(record?.target)
+  const status = AGENT_TOOL_STATUSES.find((candidate) => candidate === record?.status)
+  const revision = asFiniteNumber(record?.revision)
   const commentId = asString(record?.commentId)
   return {
     id,
@@ -54,6 +60,8 @@ function decodeAgentEvent(value: unknown): AgentEvent | undefined {
     text,
     ...(tool === undefined ? {} : { tool }),
     ...(target === undefined ? {} : { target }),
+    ...(status === undefined ? {} : { status }),
+    ...(revision === undefined || !Number.isInteger(revision) || revision < 1 ? {} : { revision }),
     ...(commentId === undefined ? {} : { commentId }),
   }
 }
@@ -82,6 +90,14 @@ function decodeMergeResult(value: unknown): MergeResult | undefined {
     schemaMismatch,
     ...(pastedSchemaVersion === undefined ? {} : { pastedSchemaVersion }),
   }
+}
+
+function decodeContext(value: unknown): AgentContextUsage | undefined {
+  const record = asJsonRecord(value)
+  const used = asFiniteNumber(record?.used)
+  const size = asFiniteNumber(record?.size)
+  if (used === undefined || size === undefined || used < 0 || size <= 0) return undefined
+  return { used, size }
 }
 
 function decodePrompt(value: unknown): AgentPromptSnapshot | undefined {
@@ -147,12 +163,14 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     return decoded ? [decoded] : []
   })
   const instruction = asString(record.instruction)
+  const attachments = decodeAttachments(record.attachments)
   const finishedAt = asString(record.finishedAt)
   const sessionId = asString(record.sessionId)
   const resumed = asBoolean(record.resumed)
   const costUsd = asFiniteNumber(record.costUsd)
   const numTurns = asFiniteNumber(record.numTurns)
   const tokens = asFiniteNumber(record.tokens)
+  const context = decodeContext(record.context)
   const error = asString(record.error)
   const liveReplies = asFiniteNumber(record.liveReplies)
   const merge = decodeMergeResult(record.merge)
@@ -167,12 +185,14 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     targetCommentIds,
     events,
     ...(instruction === undefined ? {} : { instruction }),
+    ...(attachments === undefined ? {} : { attachments }),
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(resumed === undefined ? {} : { resumed }),
     ...(costUsd === undefined ? {} : { costUsd }),
     ...(numTurns === undefined ? {} : { numTurns }),
     ...(tokens === undefined ? {} : { tokens }),
+    ...(context === undefined ? {} : { context }),
     ...(error === undefined ? {} : { error }),
     ...(liveReplies === undefined ? {} : { liveReplies }),
     ...(merge === undefined ? {} : { merge }),
@@ -198,8 +218,7 @@ export function readLastRun(root: string, chat: StoredChat): AgentRun | null {
   if (last.status === 'running' || last.status === 'queued') {
     last.status = 'interrupted'
     last.finishedAt = last.finishedAt ?? new Date().toISOString()
-    last.error =
-      'the studio restarted during this turn — your conversation is preserved; submit again to continue'
+    last.error = 'the studio restarted during this turn'
     persistRun(root, last, true)
   }
   return last
@@ -237,14 +256,19 @@ export function readRunHistory(root: string, chat: StoredChat, limit = 40): Agen
     .map(({ prompt: _prompt, ...turn }) => turn)
 }
 
-/** The full transcript a fork summarizes — prompts included would be pure weight. */
+/** The full transcript a fork summarizes, every stored turn with its frozen prompt. */
 export function readChatTranscript(root: string, chat: StoredChat): AgentRun[] {
   return chatRuns(root, chat)
 }
 
 /** Erase a closed tab's transcripts; a deleted chat leaves nothing to re-read. */
 export function deleteChatRuns(root: string, chat: StoredChat): void {
-  for (const run of chatRuns(root, chat)) {
+  const runs = chatRuns(root, chat)
+  deleteToolCalls(
+    root,
+    runs.map((run) => run.id),
+  )
+  for (const run of runs) {
     try {
       removeState(root, runFile(run.id))
     } catch {

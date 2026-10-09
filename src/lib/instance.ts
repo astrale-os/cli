@@ -1,11 +1,11 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 
 import type { AstraleConfig } from './config'
 
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
-import { ExchangeCredentialCache, INSTANCES_PATH } from '../state/index'
+import { atomicWrite, withFileLock } from '../state/files'
+import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -34,7 +34,14 @@ export const InstanceEntrySchema = z.object({
   organizationId: z.string().optional(),
 })
 
+/**
+ * Format of the bookmark registry this release writes. Unlabelled registries remain readable;
+ * every write rewrites the whole registry in this format.
+ */
+export const INSTANCE_STORE_VERSION = 1 as const
+
 export const InstanceStoreSchema = z.object({
+  version: z.literal(INSTANCE_STORE_VERSION).optional(),
   active: z.string(),
   instances: z.record(z.string(), InstanceEntrySchema),
 })
@@ -60,7 +67,10 @@ export type ResolvedInstance = {
   kind: InstanceKind | 'managed'
   url: string
   issuer?: string
+  /** Exact Domain issuer the bookmark's users are exchanged at. */
   domainIssuer?: string
+  /** Installed Domain the bookmark's users are exchanged through; the Kernel pin names its issuer. */
+  domainOrigin?: string
   createdAt?: string
   defaultIdentity?: string
   caFile?: string
@@ -77,6 +87,11 @@ function seed(): InstanceStore {
   return { active: '', instances: {} }
 }
 
+/**
+ * Normalize a parsed registry, preserving every explicit Domain issuer regardless of its format
+ * label. `changed` reports normalized content; the returned store carries no format label, which
+ * only an encoded registry holds.
+ */
 export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
   let changed = false
   const instances: Record<string, InstanceEntry> = {}
@@ -92,16 +107,10 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
-    const domainIssuer =
-      entry.domainIssuer ??
-      (entry.slug !== undefined && entry.name !== undefined
-        ? managedShellDomainIssuer(normalizedUrl)
-        : undefined)
     const next: InstanceEntry = {
       ...entry,
       url: normalizedUrl,
       issuer: normalizedIssuer,
-      domainIssuer,
       kind: 'bookmark',
     }
     // VALUE comparison only. The old `next !== entry` (object identity) was
@@ -113,8 +122,7 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     if (
       entry.kind !== 'bookmark' ||
       normalizedUrl !== entry.url ||
-      normalizedIssuer !== entry.issuer ||
-      domainIssuer !== entry.domainIssuer
+      normalizedIssuer !== entry.issuer
     ) {
       changed = true
     }
@@ -139,7 +147,7 @@ export function resetInstancesMemo(): void {
 
 export async function readInstances(
   _config?: AstraleConfig,
-  opts: { persist?: boolean } = {},
+  _opts: { persist?: boolean } = {},
 ): Promise<InstanceStore> {
   if (instancesMemo) return instancesMemo
   let raw: string
@@ -160,19 +168,41 @@ export async function readInstances(
     return instancesMemo
   }
 
-  const { store, changed } = sanitizeStore(parsed)
+  const { store } = sanitizeStore(parsed)
   instancesMemo = store
-  // Self-heal a stale/unnormalized store on read — but never from a read-only
-  // caller (`opts.persist: false`, e.g. status / `setup --plan`). Any mutating
-  // path reads with the default and rewrites, so healing still happens there.
-  if (changed && opts.persist !== false) writeInstances(store).catch(() => undefined)
+  // Reads never publish a stale snapshot. Normalization is persisted by the
+  // next locked mutation, after rereading the current on-disk registry.
   return store
 }
 
-export async function writeInstances(store: InstanceStore): Promise<void> {
-  await mkdir(dirname(INSTANCES_PATH), { recursive: true })
-  await writeFile(INSTANCES_PATH, JSON.stringify(store, null, 2) + '\n')
-  instancesMemo = store
+/** Serialize the complete read/modify/replace transition across CLI processes. */
+async function mutateInstances<Value>(transition: (store: InstanceStore) => Value): Promise<Value> {
+  return withFileLock(`${INSTANCES_PATH}.lock`, async () => {
+    let raw: string | undefined
+    try {
+      raw = await readFile(INSTANCES_PATH, 'utf8')
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+    }
+    // Unlike a diagnostic read, a write must never replace corrupt/unreadable
+    // evidence with an empty registry.
+    const store =
+      raw === undefined ? seed() : sanitizeStore(InstanceStoreSchema.parse(JSON.parse(raw))).store
+    const value = transition(store)
+    await atomicWrite(INSTANCES_PATH, encodeInstanceStore(store))
+    instancesMemo = store
+    return value
+  })
+}
+
+/** Every write publishes the whole registry in this release's format. */
+function encodeInstanceStore(store: InstanceStore): string {
+  const encoded: InstanceStore = {
+    version: INSTANCE_STORE_VERSION,
+    active: store.active,
+    instances: store.instances,
+  }
+  return `${JSON.stringify(encoded, null, 2)}\n`
 }
 
 function collectIdentifiers(store: InstanceStore, skipKey?: string): Map<string, string> {
@@ -242,32 +272,36 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
   const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
   validateUrl(normalizedUrl)
 
-  const store = await readInstances()
-  if (store.instances[key]) {
-    throw new Error(
-      `Instance "${key}" already exists. Remove it first with: astrale instance forget ${key}`,
-    )
-  }
-  assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[])
+  return mutateInstances((store) => {
+    if (store.instances[key]) {
+      throw new Error(
+        `Instance "${key}" already exists. Remove it first with: astrale instance forget ${key}`,
+      )
+    }
+    assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[])
 
-  const entry: InstanceEntry = {
-    ...opts,
-    url: normalizedUrl,
-    issuer: opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : opts.issuer,
-    domainIssuer: opts.domainIssuer ? normalizeIssuerUrl(opts.domainIssuer) : opts.domainIssuer,
-    kind: 'bookmark',
-    createdAt: new Date().toISOString(),
-  }
-  store.instances[key] = entry
-  if (!store.active) store.active = key
-  await writeInstances(store)
-  return entry
+    const entry: InstanceEntry = {
+      ...opts,
+      url: normalizedUrl,
+      issuer: opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : opts.issuer,
+      domainIssuer: opts.domainIssuer ? normalizeIssuerUrl(opts.domainIssuer) : opts.domainIssuer,
+      kind: 'bookmark',
+      createdAt: new Date().toISOString(),
+    }
+    store.instances[key] = entry
+    if (!store.active) store.active = key
+    return entry
+  })
 }
 
 export async function upsertInstance(
   key: string,
   opts: AddInstanceOpts = {},
-  behavior: Readonly<{ activateWhenEmpty?: boolean }> = {},
+  behavior: Readonly<{
+    activateWhenEmpty?: boolean
+    /** Drop the exact Domain issuer the existing bookmark carries before applying `opts`. */
+    dropDomainIssuer?: boolean
+  }> = {},
 ): Promise<{ entry: InstanceEntry; created: boolean }> {
   validateName(key, 'Instance')
   if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
@@ -275,16 +309,29 @@ export async function upsertInstance(
   const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
   validateUrl(normalizedUrl)
 
-  const store = await readInstances()
+  return mutateInstances((store) => upsertBookmark(store, key, opts, normalizedUrl, behavior))
+}
+
+function upsertBookmark(
+  store: InstanceStore,
+  key: string,
+  opts: AddInstanceOpts,
+  normalizedUrl: string,
+  behavior: Readonly<{ activateWhenEmpty?: boolean; dropDomainIssuer?: boolean }> = {},
+): { entry: InstanceEntry; created: boolean } {
   assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[], key)
 
   const existing = store.instances[key]
+  const kept =
+    behavior.dropDomainIssuer === true && existing !== undefined
+      ? withoutDomainIssuer(existing)
+      : existing
   const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
   const normalizedDomainIssuer = opts.domainIssuer
     ? normalizeIssuerUrl(opts.domainIssuer)
     : undefined
   const entry: InstanceEntry = {
-    ...existing,
+    ...kept,
     ...definedEntry(opts),
     url: normalizedUrl,
     ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
@@ -294,8 +341,54 @@ export async function upsertInstance(
   }
   store.instances[key] = entry
   if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
-  await writeInstances(store)
   return { entry, created: !existing }
+}
+
+/** Register a verified creation without changing existing bookmark ownership or selection. */
+export async function bookmarkCreatedInstance(
+  input: Readonly<{
+    slug: string
+    url: string
+    organizationId?: string
+    defaultIdentity?: string
+  }>,
+): Promise<{ name: string; entry: InstanceEntry }> {
+  validateName(input.slug, 'Instance')
+  if (RESERVED_SLUGS.has(input.slug)) throw new ReservedSlugError(input.slug)
+  const url = normalizeInstanceKernelUrl(input.url)
+  validateUrl(url)
+
+  return mutateInstances((store) => {
+    const existingKey = resolveInstanceKey(store, input.slug)
+    if (existingKey !== null) {
+      const entry = store.instances[existingKey]!
+      if (entry.url !== url) {
+        const quotedUrl = `'${url.replaceAll("'", "'\\''")}'`
+        throw new AstraleError(
+          'INSTANCE_BOOKMARK_CONFLICT',
+          `Instance "${input.slug}" is ready, but bookmark "${existingKey}" already names ${entry.url}. The existing bookmark and active target were preserved.`,
+          `Choose an unused bookmark name: astrale instance bookmark <new-name> --url ${quotedUrl}${input.defaultIdentity ? ` --as ${input.defaultIdentity}` : ''}`,
+        )
+      }
+      // A ready receipt replay must not rewrite aliases, trust or the bookmark's identity.
+      return { name: existingKey, entry }
+    }
+    const { entry } = upsertBookmark(
+      store,
+      input.slug,
+      {
+        url,
+        issuer: url,
+        slug: input.slug,
+        name: input.slug,
+        mode: 'remote',
+        ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+        ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
+      },
+      url,
+    )
+    return { name: input.slug, entry }
+  })
 }
 
 /**
@@ -316,7 +409,6 @@ export async function upsertManagedBookmark(
   const store = await readInstances()
   const previousUrl = store.instances[input.key]?.url
   const url = normalizeInstanceKernelUrl(input.url)
-  const domainIssuer = managedShellDomainIssuer(url)
   const { entry } = await upsertInstance(
     input.key,
     {
@@ -326,11 +418,14 @@ export async function upsertManagedBookmark(
       name: input.slug,
       kind: 'bookmark',
       mode: 'remote',
-      ...(domainIssuer === undefined ? {} : { domainIssuer }),
       ...(input.organizationId ? { organizationId: input.organizationId } : {}),
       ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
     },
-    { activateWhenEmpty: input.activateWhenEmpty },
+    {
+      activateWhenEmpty: input.activateWhenEmpty,
+      // A managed route exchanges through its installed Shell: `instance use` resets any issuer.
+      dropDomainIssuer: managedShellOrigin(url) !== undefined,
+    },
   )
   return {
     entry,
@@ -338,48 +433,112 @@ export async function upsertManagedBookmark(
   }
 }
 
-/** Resolve the trusted Shell issuer for an Astrale-managed public Instance route. */
-export function managedShellDomainIssuer(input: string): string | undefined {
+/** Origin of the Shell Domain, the same on every Astrale-managed Instance. */
+export const SHELL_ORIGIN = 'shell.astrale.ai'
+
+/**
+ * The Domain an Astrale-managed public Instance route exchanges its users through: the installed
+ * Shell. Only its origin is fixed; its issuer is whatever the Kernel pin names.
+ */
+export function managedShellOrigin(input: string): typeof SHELL_ORIGIN | undefined {
   let url: URL
   try {
     url = new URL(input)
   } catch {
     return undefined
   }
-  if (url.protocol !== 'https:') return undefined
-  if (url.hostname.endsWith('.beta.astrale.ai')) return 'https://shell.beta.astrale.ai'
-  if (url.hostname.endsWith('.astrale.ai')) return 'https://shell.astrale.ai'
-  return undefined
+  return url.protocol === 'https:' && url.hostname.endsWith('.astrale.ai')
+    ? SHELL_ORIGIN
+    : undefined
+}
+
+/**
+ * Where a bookmark's users are exchanged: at its explicit exact Domain issuer when it names one,
+ * otherwise through the installed Shell for a bookmark `instance use` wrote for a managed route.
+ */
+export function bookmarkExchangeDomain(
+  entry: Pick<InstanceEntry, 'slug' | 'name' | 'domainIssuer'>,
+  url: string,
+): Readonly<{ domainOrigin?: string; domainIssuer?: string }> {
+  if (entry.domainIssuer !== undefined) return { domainIssuer: entry.domainIssuer }
+  const shell = managedBookmarkShell(entry, url)
+  return shell === undefined ? {} : { domainOrigin: shell }
+}
+
+function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {
+  const { domainIssuer: _replaced, ...rest } = entry
+  return rest
+}
+
+function managedBookmarkShell(
+  entry: Pick<InstanceEntry, 'slug' | 'name'>,
+  url: string,
+): typeof SHELL_ORIGIN | undefined {
+  return entry.slug !== undefined && entry.name !== undefined ? managedShellOrigin(url) : undefined
 }
 
 export async function removeInstance(key: string): Promise<void> {
-  const store = await readInstances()
-  const removed = store.instances[key]
-  if (!removed) throw new Error(`Instance "${key}" not found`)
-  delete store.instances[key]
-  if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
-  await writeInstances(store)
-  await new ExchangeCredentialCache().deleteKernel(removed.issuer ?? removed.url!)
+  const removed = await mutateInstances((store) => {
+    const removed = store.instances[key]
+    if (!removed) throw new Error(`Instance "${key}" not found`)
+    delete store.instances[key]
+    if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
+    return removed
+  })
+  await forgetKernel(removed.issuer ?? removed.url!)
+}
+
+/** Remove only the bookmark still naming the deleted Admin Instance's exact Kernel. */
+export async function removeDeletedInstanceBookmark(target: {
+  readonly slug: string
+  readonly url: string
+  readonly issuer?: string
+}): Promise<void> {
+  const url = bookmarkCoordinate(target.url)
+  const issuer = bookmarkCoordinate(target.issuer)
+  if ((!url && !issuer) || (target.url && !url) || (target.issuer && !issuer)) return
+
+  const removed = await mutateInstances((store) => {
+    const key = resolveInstanceKey(store, target.slug)
+    const entry = key === null ? undefined : store.instances[key]
+    if (
+      !key ||
+      !entry ||
+      bookmarkCoordinate(entry.url) !== (url ?? issuer) ||
+      (issuer !== undefined && bookmarkCoordinate(entry.issuer ?? entry.url) !== issuer)
+    )
+      return undefined
+
+    delete store.instances[key]
+    if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
+    return entry
+  })
+  if (removed) await forgetKernel(removed.issuer ?? removed.url!)
+}
+
+async function forgetKernel(kernelIssuer: string): Promise<void> {
+  await new ExchangeCredentialCache().deleteKernel(kernelIssuer)
+  await new InstallationCache().deleteKernel(kernelIssuer)
+}
+
+function bookmarkCoordinate(value: string | undefined): string | undefined {
+  if (!value || !URL.canParse(value)) return undefined
+  const parsed = new URL(value)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined
+  return normalizeInstanceKernelUrl(value)
 }
 
 export async function setActive(identifier: string): Promise<string> {
-  const store = await readInstances()
-  const key = resolveInstanceKey(store, identifier)
-  if (!key) {
-    throw new Error(
-      `Instance "${identifier}" is not bookmarked. Run: astrale instance bookmark ${identifier} --url <url>`,
-    )
-  }
-  store.active = key
-  await writeInstances(store)
-  return key
-}
-
-export async function clearActive(identifier: string): Promise<void> {
-  const store = await readInstances()
-  if (store.active !== identifier) return
-  store.active = Object.keys(store.instances)[0] ?? ''
-  await writeInstances(store)
+  return mutateInstances((store) => {
+    const key = resolveInstanceKey(store, identifier)
+    if (!key) {
+      throw new Error(
+        `Instance "${identifier}" is not bookmarked. Run: astrale instance bookmark ${identifier} --url <url>`,
+      )
+    }
+    store.active = key
+    return key
+  })
 }
 
 export async function getActive(config?: AstraleConfig): Promise<InstanceEntry & { name: string }> {
@@ -410,12 +569,13 @@ export async function resolveInstance(
         `  Or pass --url <kernel-url> directly.`,
     )
   }
+  const url = normalizeInstanceKernelUrl(entry.url)
   return {
     name: key,
     kind: 'bookmark',
-    url: normalizeInstanceKernelUrl(entry.url),
+    url,
     issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer,
-    domainIssuer: entry.domainIssuer,
+    ...bookmarkExchangeDomain(entry, url),
     createdAt: entry.createdAt,
     defaultIdentity: entry.defaultIdentity,
     caFile: entry.caFile,

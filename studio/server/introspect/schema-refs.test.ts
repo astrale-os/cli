@@ -10,7 +10,8 @@ test('enumerates local and exact imported Class anchors without collapsing homon
     params: {},
     returns: {},
     static: false,
-    inheritance: 'default' as const,
+    abstract: false as const,
+    executable: true,
   }
   const bundle = {
     ir: {

@@ -1,8 +1,8 @@
 import { agentWorkspace } from '../agent/workspace'
 /** Workspace-wide routes that do not require a DomainHandle. */
-import { introspectionStatus, invalidate } from '../cache'
+import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
-import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
+import { listInstances, setActiveInstance } from '../instances/active'
 import { asJsonRecord, asString } from '../json'
 import { updateSettings } from '../state/settings'
 import { readWorkspaceUiState, updateWorkspaceUiState } from '../state/workspace-ui'
@@ -10,6 +10,7 @@ import { settingsRoot, studioSettings } from '../studio-settings'
 import { buildCatalog } from '../workspace/catalog'
 import { createDomain } from '../workspace/create'
 import { detectGit } from '../workspace/git'
+import { getStudioRuntime } from '../workspace/runtime'
 import { badRequest, json, readJsonRecord, type Notify } from './http'
 
 export async function handleWorkspaceRoute(
@@ -17,6 +18,14 @@ export async function handleWorkspaceRoute(
   path: string,
   notify: Notify,
 ): Promise<Response | null> {
+  if (path === '/api/workspace/runtime' && req.method === 'GET') {
+    try {
+      return json(await getStudioRuntime())
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 502)
+    }
+  }
+
   if (path === '/api/workspace') {
     // The registry answers this, NOT the bundles. Every read of the studio is gated
     // on this list — it is what turns "Connecting to studio…" into an interface —
@@ -51,9 +60,25 @@ export async function handleWorkspaceRoute(
     return json(introspectionStatus())
   }
 
+  if (path === '/api/workspace/refresh' && req.method === 'POST') {
+    const domains = allDomains()
+    await Promise.all(
+      domains.map(async (handle) => {
+        // Keep agent runs entirely outside this path. A manual refresh only replaces
+        // derived domain reads; clients retain their current query data while this
+        // rebuild runs, so the canvas never blanks between generations.
+        // `invalidate(…, 'all')` drops the domain's Datasets too.
+        invalidate(handle.id, 'all')
+        await rebuildAndAnnounce(handle.id, notify)
+        notify({ type: 'datasets', domainId: handle.id })
+      }),
+    )
+    return json({ refreshed: domains.length })
+  }
+
   if (path === '/api/workspace/create' && req.method === 'POST') {
     const body = await readJsonRecord(req)
-    const result = await createDomain(asString(body.name) ?? '', await activeInstanceName())
+    const result = await createDomain(asString(body.name) ?? '')
     if (result.ok) notify({ type: 'workspace', domains: allDomains().map((domain) => domain.id) })
     return json(result)
   }
