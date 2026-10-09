@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.134](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.133...cli/v1.0.0-beta.134) (2026-10-09)
+
+
+### Features
+
+* **commands:** omit attenuation when issuing service tokens ([#542](https://github.com/astrale-os/cli/issues/542)) ([5330c39](https://github.com/astrale-os/cli/commit/5330c3931a656ef7b122cee9659c6e3d168507e8))
+* **commands:** show the Shell User an Instance invitation reserves ([#567](https://github.com/astrale-os/cli/issues/567)) ([ce6f5ca](https://github.com/astrale-os/cli/commit/ce6f5ca982b72d6165fb30f5e6e1d7c9656a85b1))
+
+
+### Bug Fixes
+
+* **lib:** heal stale Domain issuers before application calls ([#627](https://github.com/astrale-os/cli/issues/627)) ([772b953](https://github.com/astrale-os/cli/commit/772b95379e38a2feeb1bdfa62fac5d201bf5e657))
+
 ## [1.0.0-beta.133](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.132...cli/v1.0.0-beta.133) (2026-10-08)
 
 
