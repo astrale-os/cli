@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.135](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.134...cli/v1.0.0-beta.135) (2026-10-09)
+
+
+### Features
+
+* promote qualified CLI releases to latest ([#411](https://github.com/astrale-os/cli/issues/411)) ([465c2c1](https://github.com/astrale-os/cli/commit/465c2c1fbcc71091f395a41678cd425f24263343))
+
+
+### Bug Fixes
+
+* **viewer:** adopt handshake v2 with separate host credentials ([#631](https://github.com/astrale-os/cli/issues/631)) ([11c5028](https://github.com/astrale-os/cli/commit/11c5028fbe5b8ee2dade0c3392c487076cf3a9c3))
+
 ## [1.0.0-beta.134](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.133...cli/v1.0.0-beta.134) (2026-10-09)
 
 
