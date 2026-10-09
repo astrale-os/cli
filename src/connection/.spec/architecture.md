@@ -8,7 +8,7 @@ terminates.
 
 When a target also names an exact Domain issuer, or the origin of an installed Domain, the connection
 owner obtains a Domain token through the Kernel Client's `session.exchange(issuer)`, which runs the
-`whoami -> delegate(attenuation) -> issuer exchange` journey and admits the Domain response. The
+`whoami -> delegate -> issuer exchange` journey and admits the Domain response. The
 connection owner keeps only what outlives one Client call: the persisted cache, the command-timeout
 lifetime rules, retry of a delegation whose outcome is unknown, and the mapping of each Client
 `ExchangeError` failure reason to a stable CLI error code. The resulting Domain token crosses into
