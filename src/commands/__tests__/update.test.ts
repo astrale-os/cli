@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -55,7 +55,7 @@ describe('CLI update staleness', () => {
       {},
       {
         update: async ({ channel }) => {
-          expect(channel).toBe('beta')
+          expect(channel).toBe('latest')
           return {
             status: 'up-to-date',
             currentVersion: '1.0.0-beta.0',
@@ -113,6 +113,42 @@ describe('CLI update staleness', () => {
 })
 
 describe('CLI update application', () => {
+  test('leaves authored project configuration unchanged during an automatic update', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'astrale-update-project-'))
+    const config = `import { deploy } from '@astrale-os/sdk/deployment'
+export default deploy({ application, adapter })
+`
+    try {
+      writeFileSync(
+        join(project, 'package.json'),
+        JSON.stringify({
+          dependencies: { '@astrale-os/sdk': '0.6.0-beta.18' },
+        }),
+      )
+      writeFileSync(join(project, 'astrale.config.ts'), config)
+      const proc = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, '../../../bin/astrale.ts'),
+          'update',
+          '--yes',
+          '--no-skills',
+          '--no-deps',
+        ],
+        { cwd: project, stdout: 'pipe', stderr: 'pipe' },
+      )
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ])
+      expect(exitCode, `${stdout}\n${stderr}`).toBe(0)
+      expect(readFileSync(join(project, 'astrale.config.ts'), 'utf8')).toBe(config)
+    } finally {
+      rmSync(project, { recursive: true, force: true })
+    }
+  })
+
   test('shows activity while updating in an interactive terminal', async () => {
     const root = join(import.meta.dir, '../../..')
     const result = await runInTerminal(

@@ -31,7 +31,7 @@ export const CLI_CONNECTION_ADMIN_CALL = defineLaw({
 export const CLI_CONNECTION_DOMAIN_EXCHANGE = defineLaw({
   id: 'CLI-CONNECTION-DOMAIN-EXCHANGE',
   statement:
-    'A target with an explicit Domain issuer first admits an exact live caller-only exchange credential selected by the persisted IdP issuer and subject; any credential that adds Domain self or other authority is rejected. Only a miss resolves fresh source authority and asks the Kernel Client to exchange it at that Domain issuer (whoami at the exact Kernel, explicit self attenuation for that User and Domain audience, the discovered standard endpoint), maps each Client exchange failure reason to its CLI error code, and returns a Domain token bound back to the same Kernel. Missing or mismatched local identity metadata falls through, and there is no inferred issuer or legacy broker fallback.',
+    'A target with an explicit Domain issuer first admits an exact live caller-only exchange credential selected by the persisted IdP issuer and subject; any credential that adds Domain self or other authority is rejected. Only a miss resolves fresh source authority and asks the Kernel Client to exchange it at that Domain issuer (whoami at the exact Kernel, a delegation preserving that User for the Domain audience, the discovered standard endpoint), maps each Client exchange failure reason to its CLI error code, and returns a Domain token bound back to the same Kernel. Missing or mismatched local identity metadata falls through, and there is no inferred issuer or legacy broker fallback.',
   tests: [
     {
       file: '__tests__/credential.test.ts',

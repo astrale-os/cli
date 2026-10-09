@@ -13,3 +13,10 @@ Astrale OS is a graph-based operating system. This autonomous repository is the 
 - The default CLI cloud setup prepares Chromium, `agent-browser`, `chrome-devtools`, and their corresponding skills, plus the browsers required by the project's Playwright versions.
 - For Studio or Viewer interface changes, launch the application and verify the changed interactions and visible states in Chromium before considering the work complete. Load the `agent-browser` skill for quick UI smoke checks; use the `chrome-devtools-cli` skill for console, network, and deeper browser diagnosis.
 - Use the checked-in Playwright suites (`pnpm --dir studio test:e2e` and `pnpm test:viewer:browser`) for browser regression checks. The dedicated CI job remains an additional check; it does not replace browser verification during development.
+
+## CLI release operations
+
+For publishing, promoting, verifying, or rolling back a release, follow
+[docs/release.md](docs/release.md). Use the promotion script in read-only mode
+unless the user explicitly requests promotion of an exact release. A request
+to implement or test the workflow does not authorize moving public channels.

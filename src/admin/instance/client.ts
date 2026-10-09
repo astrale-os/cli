@@ -372,9 +372,16 @@ interface InvitationSummary {
   readonly instance?: string
   readonly invitedBy?: string
   readonly claimedBy?: string
+  readonly target?: InvitationTarget
   readonly createdAt: string
   readonly expiresAt?: string
   readonly acceptedAt?: string
+}
+
+/** The Shell User Admin reserved on the invited Instance; acceptance registers onto it. */
+interface InvitationTarget {
+  readonly instance: string
+  readonly user: string
 }
 
 function invitationFromSummary(input: unknown): InvitationSummary {
@@ -410,6 +417,7 @@ function invitationFromSummary(input: unknown): InvitationSummary {
     ...(value.claimedBy === undefined
       ? {}
       : { claimedBy: requiredNodePath(value.claimedBy, 'Admin Invitation claimant') }),
+    ...(value.target === undefined ? {} : { target: invitationTarget(value.target) }),
     createdAt: requiredString(value.createdAt, 'Admin Invitation creation time'),
     ...(value.expiresAt === undefined
       ? {}
@@ -420,12 +428,34 @@ function invitationFromSummary(input: unknown): InvitationSummary {
   })
 }
 
+function invitationTarget(input: unknown): InvitationTarget {
+  const value = record(input, 'Admin Invitation target')
+  return Object.freeze({
+    instance: nodeId(value.instance, 'Admin Invitation target Instance'),
+    user: nodeId(value.user, 'Admin Invitation target User'),
+  })
+}
+
+/** Admin records target Nodes as bare IDs; the CLI prints them as `@id` Paths. */
+function nodeId(input: unknown, label: string): string {
+  const value = requiredString(input, label)
+  return requiredNodePath(value.startsWith('@') ? value : `@${value}`, label)
+}
+
 function memberInstanceInvitationFromSummary(input: unknown, scopeError: string): InvitationInfo {
-  const invitation = invitationFromSummary(input)
+  const { target, ...invitation } = invitationFromSummary(input)
   if (invitation.instance === undefined || invitation.access !== 'member') {
     throw new TypeError(scopeError)
   }
-  return Object.freeze({ ...invitation, access: 'member', instance: invitation.instance })
+  if (target !== undefined && target.instance !== invitation.instance) {
+    throw new TypeError(scopeError)
+  }
+  return Object.freeze({
+    ...invitation,
+    access: 'member',
+    instance: invitation.instance,
+    ...(target === undefined ? {} : { user: target.user }),
+  })
 }
 
 function instanceState(input: unknown): InstanceState {

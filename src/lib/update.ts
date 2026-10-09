@@ -22,7 +22,7 @@ import { replaceStandaloneBinary } from './standalone-binary'
 export { replaceStandaloneBinary, type StandaloneBinaryReplacement } from './standalone-binary'
 
 const DEFAULT_REPO = 'astrale-os/cli'
-export const DEFAULT_UPDATE_CHANNEL = 'beta'
+export const DEFAULT_UPDATE_CHANNEL = 'latest'
 
 export const InstallMetadataSchema = z.object({
   method: z.literal('script'),

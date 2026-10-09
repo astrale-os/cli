@@ -1,0 +1,60 @@
+name: Promote to latest
+run-name: Promote ${{ inputs.release }} (apply=${{ inputs.apply }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Exact CLI release tag (cli/v1.0.0-beta.N).
+        required: true
+        type: string
+      apply:
+        description: Move latest to these existing binaries. Leave disabled to verify without writing.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Verify exact release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: node scripts/promote.mjs "$RELEASE"
+  promote:
+    needs: preview
+    if: inputs.apply
+    runs-on: ubuntu-latest
+    environment: cli-release
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: cli-release-channel-publication
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Promote verified binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: node scripts/promote.mjs "$RELEASE" --apply

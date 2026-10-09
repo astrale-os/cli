@@ -26,7 +26,7 @@ function runGh(args) {
   }
 }
 
-async function localAssets(directory) {
+export async function localAssets(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = entries
     .filter((entry) => entry.isFile())

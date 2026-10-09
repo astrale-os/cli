@@ -92,3 +92,76 @@ also exercise this migration using their newly built executable.
   every published version is deprecated.
 - `.github/CODEOWNERS` documents release ownership, and the release contract
   tests detect policy drift; neither is currently a merge requirement.
+
+## Promote an existing release to latest
+
+The installer and new CLI builds default to `latest`, the manually selected release. Ordinary
+Release Please publication still advances `beta`; it never advances `latest`. A beta version remains
+a beta version when promoted. `latest` is our explicit download tag, independent of GitHub's automatic
+“Latest release” designation. The CLI npm package stays frozen.
+
+Only current single-binary releases can be promoted. Historical two-binary manifests are
+rejected before any public write, including during rollback.
+
+From a checkout with Node and authenticated `gh`:
+
+```bash
+# Discover exact cli/v tags; ignore the moving beta/latest channel releases.
+gh release list --repo astrale-os/cli --limit 20 --json tagName,publishedAt
+
+# Read-only: qualify the source workflow, download all six assets, and verify their hashes.
+node scripts/promote.mjs cli/v1.0.0-beta.133
+```
+
+After the workflow is on `main`:
+
+```bash
+# Preview, no public writes and no environment approval.
+gh workflow run promote.yml --repo astrale-os/cli --ref main \
+  -f release=cli/v1.0.0-beta.133
+
+# Apply only when the user requests this exact release.
+gh workflow run promote.yml --repo astrale-os/cli --ref main \
+  -f release=cli/v1.0.0-beta.133 -f apply=true
+
+gh run list --repo astrale-os/cli --workflow promote.yml --limit 10 \
+  --json databaseId,displayTitle,status,conclusion,url
+gh run watch <matching-run-id> --repo astrale-os/cli --exit-status
+gh release view latest --repo astrale-os/cli --json tagName,body,assets
+astrale update --channel latest --check --json
+```
+
+Apply uses the existing protected `cli-release` environment and `GITHUB_TOKEN`, and serializes with
+ordinary channel publication. The existing environment rules apply; promotion adds no new approval
+gate. The script checks a successful binary publication qualification
+on the exact release commit (including reusable CLI Release jobs within Release Please), all archive
+hashes, checksums, and the manifest. It copies the existing archives without rebuilding, sets only the
+copied manifest's `channel` to `latest`, and verifies the resulting ref and all six assets. It never
+executes tooling from the selected old release.
+
+### First activation
+
+There is no public `latest` CLI channel until the first authorized promotion. **Seed it before
+rolling out the installer default change**, otherwise bare installation will fail with a missing
+manifest. An authorized operator can seed a qualified existing release with
+`node scripts/promote.mjs <exact-cli-tag> --apply` from this checkout before merging. Then merge the
+changes, release a CLI beta containing the new updater default, and promote that version. This setup
+change alone must not seed or publish anything.
+
+Old binaries still default to `beta`, including when an old release is selected for rollback. Use
+`astrale update --channel latest` explicitly to move those installations to the selected channel.
+New binaries use `latest` by default; `--channel beta` opts into the moving beta for that run. For
+installation before activation or for deliberate beta consumption, use `ASTRALE_CHANNEL=beta`.
+No implicit fallback to beta is used when latest is absent or unavailable.
+
+### Rerun and rollback
+
+Rerun the same promotion to finish an interrupted upload. To roll back, select a previous qualified single-binary
+`cli/v...` release with the same command. The manifest and archives retain that exact version;
+`astrale update --channel latest` permits moving to it even if older than the installed version.
+SDK and CLI releases are promoted separately: verify the intended pair against the deployed Kernel.
+
+GitHub channel refs and six release assets cannot change atomically. During replacement an installer
+may see inconsistent hashes and fail safely; retry after the promotion succeeds. A failed promotion
+may leave a partial channel, so rerun it before declaring success. Local `--apply` is for authorized
+bootstrap/recovery using an existing `gh` login; do not run it concurrently with workflow publication.

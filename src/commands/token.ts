@@ -78,11 +78,7 @@ export async function issueToken(
 ): Promise<MintedCredential> {
   if (audience === kernel) return auth.mint({ ttlSeconds })
   const self = await auth.whoami()
-  return auth.delegate(self.id, {
-    audience,
-    ttlSeconds,
-    attenuation: { kind: 'identity', self: true },
-  })
+  return auth.delegate(self.id, { audience, ttlSeconds })
 }
 
 export function parseTtl(raw: string | undefined): number {
@@ -109,9 +105,9 @@ export default {
   afterHelpText: `
 Behavior:
   Mints a token for the selected authenticated identity for 240 seconds by default.
-  The default Kernel audience produces a top-level Grant credential reusable with
-  --creds. A different --audience produces a delegated service envelope. --for is
-  an alias of --as.
+  The default Kernel audience produces a top-level Kernel bearer credential for the
+  selected identity, reusable with --creds. A different --audience produces a
+  delegated service envelope. --for is an alias of --as.
 
   Every receiver must admit the exact token audience. A service-audience token can
   be sent as a Bearer token only to that service's authenticated endpoint. The

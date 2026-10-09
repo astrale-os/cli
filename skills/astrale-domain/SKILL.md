@@ -32,7 +32,7 @@ phased workflow below; an existing public scaffold already satisfies its foundat
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
 - Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
-- Model sign-in users, invite/register existing people, or assign Shell groups: read `references/users.md`.
+- Model sign-in users, invite/register existing people, assign Shell groups, or make someone an instance administrator: read `references/users.md`.
 - Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication mode, or Policy: read `references/policies.md`.
 - Build or review browser views, mounted UI, View access, View resolution, or frontend design: read
   `references/views.md` and apply `astrale-frontend-design` for product-interface layout,

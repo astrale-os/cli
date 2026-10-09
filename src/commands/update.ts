@@ -275,7 +275,7 @@ export default {
     { flags: '--check', description: 'Only check whether an update is available' },
     {
       flags: '--channel <name>',
-      description: 'Update from a release channel (alpha, beta, rc, canary, stable)',
+      description: 'Update from a release channel (latest, alpha, beta, rc, canary, stable)',
       default: DEFAULT_UPDATE_CHANNEL,
     },
     { flags: '--version <version>', description: 'Update to an exact version tag' },
@@ -307,7 +307,7 @@ Behavior:
   "defineProject({ domain, environments })" explicitly when updating an older
   project; SDK dependency updates change versions, not authored configuration.
 
-  The default release channel is beta; --channel overrides it for one run.
+  The default release channel is latest; --channel overrides it for one run.
   --check is a dry run (binary + skills + SDK deps; exit 10 if anything is available) and
   never writes. With --json it emits a unified staleness report
   ({ stale, cli, skills, sdk }) for tooling. --yes applies existing updates

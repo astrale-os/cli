@@ -173,8 +173,11 @@ WorkOS acceptance alone grants nothing: Admin registers the child Shell user
 with the recipient's own credential, then adds Instance membership, when they
 sign in to the Instance from the invitation link.
 `instance invitation status <id>` performs one read-only observation of the
-retained Invitation. `completed` means access is materialized; `accepted`,
-`registering`, and `registered` are intermediate states, not completed access.
+retained Invitation. Its `user` is the Shell User reserved on the Instance,
+which an Instance administrator can assign to Core `admin` (see the
+astrale-domain `references/users.md`). `completed` means access is
+materialized; `accepted`, `registering`, and `registered` are intermediate
+states, not completed access.
 The command requires the exact Invitation id and does not change its state.
 `instance invitation reconcile <id>` is diagnostic recovery, not the normal
 invitation journey.
@@ -378,8 +381,8 @@ astrale identity register operator \
 ```
 
 `astrale token` issues an audience-bound credential for the selected authenticated identity. When
-the audience is the target Kernel issuer (the default), it mints a top-level Grant credential that
-can be reused with `--creds`. A different `--audience` creates a delegated service envelope for that
+the audience is the target Kernel issuer (the default), it mints a top-level Kernel bearer credential
+for the selected identity that can be reused with `--creds`. A different `--audience` creates a delegated service envelope for that
 receiver instead. TTL defaults to 240 seconds so ordinary tokens remain short beneath the one-hour
 local operator proof; an explicit TTL still cannot outlive the selected source credential. Use
 `--raw` for shell assignment.

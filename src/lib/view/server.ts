@@ -58,7 +58,7 @@ const RELEASE_GRACE_MS = 10_000
  * session are the host's, never the embedded View's, whether or not this
  * session was opened with identities to switch between.
  */
-const HOST_ONLY_ROUTES = ['/config.json', '/identity', '/release', '/token']
+const HOST_ONLY_ROUTES = ['/config.json', '/identity', '/release', '/token', '/kernel-token']
 
 export type PageStatus = { state: string; error?: string; at: string }
 
@@ -89,6 +89,7 @@ export function startViewServer(
   let status: PageStatus = { state: 'waiting', at: new Date().toISOString() }
   let grantKind: GrantKind = 'minted'
   let grants = createGrantProvider()
+  let kernelGrants = createGrantProvider(undefined, false)
   let lastActivity = Date.now()
   let revision = 0
   let refreshing: Promise<void> | undefined
@@ -120,6 +121,7 @@ export function startViewServer(
     // A new provider is how the previous identity's grant is invalidated: a mint still in flight
     // for it can only ever settle into the provider that started it.
     grants = createGrantProvider(nextGrant ?? undefined)
+    kernelGrants = createGrantProvider(undefined, false)
     revision += 1
     status = { state: 'waiting', at: new Date().toISOString() }
   }
@@ -129,6 +131,7 @@ export function startViewServer(
     await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, view })
     session.view = view
     grants = createGrantProvider()
+    kernelGrants = createGrantProvider(undefined, false)
     revision += 1
     status = { state: 'waiting', at: new Date().toISOString() }
   }
@@ -144,16 +147,16 @@ export function startViewServer(
    * a user action. A timer here would instead mint delegations for a page that may have gone away,
    * and hold the event loop against the server's idle shutdown.
    */
-  function createGrantProvider(initial?: TokenGrant): GrantProvider {
+  function createGrantProvider(initial?: TokenGrant, forView = true): GrantProvider {
     if (initial !== undefined) grantKind = initial.kind
     return createSessionCredentialProvider({
       ttlSeconds: VIEW_DELEGATION_TTL_SECONDS,
       mint: async (): Promise<SessionCredential> => {
         const started = revision
-        const fresh = await mintGrant(config.kernel, session.view)
+        const fresh = await mintGrant(config.kernel, forView ? session.view : undefined)
         if (started !== revision)
           throw new Error('View session changed; reload before requesting credentials.')
-        grantKind = fresh.kind
+        if (forView) grantKind = fresh.kind
         return { credential: fresh.token, expiresAt: fresh.expiresAt }
       },
       ...(initial === undefined
@@ -164,7 +167,7 @@ export function startViewServer(
 
   async function mintGrant(
     kernel: ViewServeConfig['kernel'],
-    view: ViewServeConfig['session']['view'],
+    view?: ViewServeConfig['session']['view'],
   ): Promise<TokenGrant> {
     return dependencies.connect(
       kernel,
@@ -177,7 +180,11 @@ export function startViewServer(
           throw new Error('The session bookmark now points to another Kernel. Open a new View.')
         }
         // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
-        if (view.route.issuer !== target.kernelIssuer && kernel.creds === undefined) {
+        if (
+          view !== undefined &&
+          view.route.issuer !== target.kernelIssuer &&
+          kernel.creds === undefined
+        ) {
           const { domainOrigin: _bookmarkDomain, ...source } = target
           const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
             { ...kernel, ...(identity === undefined ? {} : { as: identity }) },
@@ -281,7 +288,7 @@ export function startViewServer(
       })
       return
     }
-    if (sub === '/token' && req.method === 'POST') {
+    if ((sub === '/token' || sub === '/kernel-token') && req.method === 'POST') {
       if (switching) {
         json(res, 409, { error: 'Identity switch in progress.' })
         return
@@ -290,8 +297,15 @@ export function startViewServer(
         json(res, 403, { error: 'plain views have no Astrale credential privilege' })
         return
       }
-      const fresh = await grants.acquire()
-      json(res, 200, { token: fresh.credential, expiresAt: fresh.expiresAt, kind: grantKind })
+      // The host calls the Kernel as the caller; the child receives its Domain's credential.
+      // Never authenticate a Kernel whoami/read with the child's exchanged Domain bearer.
+      const forView = sub === '/token'
+      const fresh = await (forView ? grants : kernelGrants).acquire()
+      json(res, 200, {
+        token: fresh.credential,
+        expiresAt: fresh.expiresAt,
+        kind: forView ? grantKind : 'minted',
+      })
       return
     }
     if (sub === '/identity' && req.method === 'POST') {

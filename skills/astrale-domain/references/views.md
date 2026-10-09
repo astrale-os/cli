@@ -58,13 +58,13 @@ export const frontend = defineFrontend({
   frontend build declarations, not React providers. Declare the packages actually imported by the frontend.
 - `<Astrale>` defaults to the sandboxed child handshake and supplies loading/error boundaries.
   Wrap projected Query/Mutation hooks in `<DomainProvider schema={schema}>`; keep the application's router.
-  Pass the same schemas to `preload={{ domains: [...] }}` so their binding starts with the boot.
 - `useSelf()` is the caller's identity, synchronous and free. `useUser()` reads the User node and may
   suspend: use it only to show profile properties.
-- `useDomain(schema)` returns a verified installed binding and may suspend. Pass its resolved callable
+- `useDomain(schema)` binds synchronously and asks the Kernel nothing. Pass its resolved callable
   to `useAction`; do not reconstruct method keys, forge bound nodes, or resolve another client per component.
-- A local frontend compiled against a newer Schema can fail binding against an older installation.
-  Compare both revisions and update the coherent deployment; reloading or casting the binding cannot fix it.
+- A local frontend compiled against another Schema revision than the installation fails at its first
+  request the Kernel refuses. Compare both revisions and update the coherent deployment; reloading or
+  casting the binding cannot fix it.
 
 ```tsx
 // frontend/src/main.tsx — router and schema are the application's existing owners.
@@ -75,7 +75,7 @@ import { schema } from '#schema'
 import { router } from './router'
 
 createRoot(document.getElementById('root')!).render(
-  <Astrale preload={{ domains: [schema] }}>
+  <Astrale>
     <DomainProvider schema={schema}>
       <RouterProvider router={router} />
     </DomainProvider>
@@ -110,12 +110,12 @@ Choose the boundary from product semantics; callable access and direct graph acc
 
 | Intended contract | Use |
 | --- | --- |
-| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session; Policy evaluates the complete Grant |
+| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session; Policy evaluates its caller |
 | Give an actor that owns the Class or holds its exact capability direct graph access | Direct Query with that actor as principal |
 | Expose a calculated, aggregated, redacted, or graph-independent stable result | Function with explicit callable admission; implement it as an Action or Workflow as appropriate |
 
 The host owns session selection, exchange, and refresh; View code keeps using the supplied client.
-See `policies.md` for both authority planes and `debugging.md` for exchange mechanics.
+See `policies.md` for the principal ceiling and the caller, and `debugging.md` for exchange mechanics.
 
 - Instance `useAction.run` accepts `{ id: NodeId }`; a returned ID does not require a second Class read
   or a fabricated `BoundNode`. Validate only genuinely untrusted raw values entering that boundary.
