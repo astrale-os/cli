@@ -2,7 +2,8 @@ import type { Fetch } from '@astrale-os/sdk/client'
 
 import { z } from 'zod'
 
-import { resolveAdminTarget } from './admin-target'
+import { resolveAdminTarget, type AdminTargetCommandOpts } from './admin-target'
+import { fetchWithCaFile } from './ca-fetch'
 import { readConfig } from './config'
 import { accessTokenForAudience, BUILTIN_WORKOS_IDP_NAME, classifyRefreshFailure } from './idp'
 import { ensureFreshSession } from './idp-session'
@@ -31,18 +32,24 @@ const MAXIMUM_RETRY_DELAY_MS = 5_000
  * A human login through the built-in WorkOS IdP completes Admin's prepared access; other logins
  * hold none there. The login itself never fails because of it.
  */
-export async function activateLoggedInAccount(login: {
-  readonly identityName: string
-  readonly idpName: string
-  readonly clientCredentials?: boolean
-}): Promise<AccountActivation | undefined> {
+export async function activateLoggedInAccount(
+  login: {
+    readonly identityName: string
+    readonly idpName: string
+    readonly clientCredentials?: boolean
+  },
+  admin: Pick<AdminTargetCommandOpts, 'admin' | 'adminUrl' | 'domainIssuer'> = {},
+): Promise<AccountActivation | undefined> {
   if (login.idpName !== BUILTIN_WORKOS_IDP_NAME || login.clientCredentials) return undefined
-  return activateAccount(login.identityName).catch((): AccountActivation => 'unavailable')
+  return activateAccount(login.identityName, admin).catch((): AccountActivation => 'unavailable')
 }
 
 /** Resume what an administrator prepared for this WorkOS account on Admin, such as a Fleet invitation. */
-export async function activateAccount(identityName: string): Promise<AccountActivation> {
-  const admin = await resolveAdminTarget({}, await readConfig())
+export async function activateAccount(
+  identityName: string,
+  target: Pick<AdminTargetCommandOpts, 'admin' | 'adminUrl' | 'domainIssuer'> = {},
+): Promise<AccountActivation> {
+  const admin = await resolveAdminTarget(target, await readConfig())
   const kernel = new URL(admin.kernelIssuer)
   const endpoint = new URL('/v1/account-activation', admin.domainIssuer)
   if (
@@ -54,19 +61,26 @@ export async function activateAccount(identityName: string): Promise<AccountActi
   )
     return 'unavailable'
   try {
-    return await requestAccountActivation({
-      endpoint: endpoint.href,
-      instanceOrigin: kernel.origin,
-      credential: async () => {
-        const session = await ensureFreshSession(identityName, {
-          audience: kernel.href,
-          minimumRemainingSeconds: 150,
-        })
-        const token = accessTokenForAudience(session, kernel.href)
-        if (!token) throw new Error('No primary credential for the Admin audience is available.')
-        return token
+    return await requestAccountActivation(
+      {
+        endpoint: endpoint.href,
+        instanceOrigin: kernel.origin,
+        credential: async () => {
+          const session = await ensureFreshSession(identityName, {
+            audience: kernel.href,
+            minimumRemainingSeconds: 150,
+          })
+          const token = accessTokenForAudience(session, kernel.href)
+          if (!token) throw new Error('No primary credential for the Admin audience is available.')
+          return token
+        },
       },
-    })
+      {
+        // An Admin bookmark's CA file covers this request as it covers the Admin connection.
+        fetch: admin.caFile ? fetchWithCaFile(admin.caFile) : globalThis.fetch,
+        sleep: wait,
+      },
+    )
   } catch (cause) {
     // An account outside Admin's organization holds nothing there for a login to complete.
     if (classifyRefreshFailure(cause) === 'org-rejected') return 'ready'
@@ -83,7 +97,7 @@ export async function requestAccountActivation(
   },
   dependencies: { fetch: Fetch; sleep: (ms: number) => Promise<void> } = {
     fetch: globalThis.fetch,
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    sleep: wait,
   },
 ): Promise<AccountActivation> {
   const token = await input.credential()
@@ -124,3 +138,5 @@ export async function requestAccountActivation(
     if (signal.aborted) return 'pending'
   }
 }
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))

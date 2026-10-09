@@ -50,7 +50,12 @@ export const authStep: SetupStep = {
     log.step('Sign in with your Astrale account (a URL + code will appear) …')
     const login = await loginViaIdp({ use: true })
     log.success(`Signed in as "${login.identityName}"`)
-    const access = await activateLoggedInAccount(login)
+    // Setup records its Admin target in a later step; activate on the one it was given now.
+    const access = await activateLoggedInAccount(login, {
+      admin: ctx.opts.admin,
+      adminUrl: ctx.opts.adminUrl,
+      domainIssuer: ctx.opts.domainIssuer,
+    })
     if (access && access !== 'ready') log.warn(ACCOUNT_ACTIVATION_WARNINGS[access])
     return 'fixed'
   },
