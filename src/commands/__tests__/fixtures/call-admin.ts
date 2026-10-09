@@ -3,6 +3,7 @@ import type { ClientSessionOptions, SessionAuth } from '@astrale-os/sdk/client/s
 
 import { credential as credentials } from '@astrale-os/sdk/auth'
 import * as clientSession from '@astrale-os/sdk/client/session'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { mock } from 'bun:test'
 import { appendFile } from 'node:fs/promises'
 
@@ -19,7 +20,21 @@ async function record(event: Record<string, unknown>): Promise<void> {
 }
 
 class FakeAdminKernelSession {
-  readonly auth = Object.freeze({})
+  readonly auth = Object.freeze({
+    whoami: async () => {
+      const resolved = await this.options.auth?.resolve(
+        { target: Path.parse('/:kernel.astrale.ai:class.Identity:whoami').raw, input: {} },
+        new AbortController().signal,
+      )
+      const presented = credentials.inspect(resolved!.credential!)
+      await record({
+        kind: 'confirm',
+        kernel: this.options.kernel,
+        credentialIssuer: presented.iss,
+      })
+      return { id: 'admin-user' }
+    },
+  })
   readonly schema = Object.freeze({
     inspect: async (origin: string) => {
       await record({ kind: 'inspect', kernel: this.options.kernel, origin })

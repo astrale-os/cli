@@ -161,6 +161,7 @@ async function runResolvedClientSession<Value>(
   installations?: InstallationCache,
 ): Promise<Value> {
   let remembered: string | undefined
+  let installedOrigin = target.domainOrigin
   if (credential.principal === 'callable') {
     const origin = callableOrigin(credential.path)
     if (
@@ -171,6 +172,7 @@ async function runResolvedClientSession<Value>(
     ) {
       credential = { principal: 'caller' }
     } else {
+      installedOrigin = origin
       const known = await rememberedInstallation(installations, target.kernelIssuer, origin)
       if (known !== undefined) {
         target = withCallableIssuer(target, known.issuer ?? undefined)
@@ -191,9 +193,12 @@ async function runResolvedClientSession<Value>(
     }
   }
   const installed =
-    target.domainOrigin === undefined
+    installedOrigin === undefined ||
+    options.creds !== undefined ||
+    options.anonymous === true ||
+    credential.principal === 'caller'
       ? undefined
-      : createInstalledIssuer(target.kernelIssuer, target.domainOrigin, installations)
+      : createInstalledIssuer(target.kernelIssuer, installedOrigin, installations)
   const connection = open(target, timeoutMs, options, config, credential, installed)
   try {
     return await action(

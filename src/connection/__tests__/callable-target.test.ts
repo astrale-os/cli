@@ -42,7 +42,10 @@ function harness(publishedIssuer = serviceIssuer, failure?: Error) {
     return {
       context: {
         target: selected,
+        graph: {},
+        auth: {},
         session: {
+          auth: {},
           schema: {
             async inspect(origin: string) {
               inspected.push(origin)
