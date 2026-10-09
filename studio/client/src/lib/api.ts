@@ -4,6 +4,7 @@ import type {
   AgentSubmitResult,
   AgentSystemPromptInfo,
   AgentSessionInfo,
+  AgentToolCall,
   AnchorRef,
   ChatAttachment,
   ChatInfo,
@@ -25,6 +26,7 @@ import type {
   InstancesState,
   IntrospectionStatus,
   StudioSettings,
+  StudioRuntime,
   LayoutState,
   MergeResult,
   NodePosition,
@@ -71,6 +73,7 @@ const docRawPath = (id: string, docId: string) =>
 
 export const api = {
   workspace: () => get<DomainSummary[]>('/api/workspace'),
+  studioRuntime: () => get<StudioRuntime>('/api/workspace/runtime'),
   refreshWorkspace: () => post<{ refreshed: number }>('/api/workspace/refresh', {}),
   workspaceState: () => get<WorkspaceUiState>('/api/workspace/state'),
   updateWorkspaceState: (
@@ -95,7 +98,7 @@ export const api = {
   anatomy: (id: string) => get<DomainAnatomy>(`${d(id)}/anatomy`),
   viewRuntime: (id: string, slug: string) =>
     get<ViewRuntime>(`${d(id)}/views/${encodeURIComponent(slug)}/runtime`),
-  launchView: (id: string, slug: string, request: { preparationId: string; targetId?: string }) =>
+  launchView: (id: string, slug: string, request: { preparationId: string }) =>
     post<ViewSessionResult>(`${d(id)}/views/${encodeURIComponent(slug)}/session`, request),
   releaseViewSession: (id: string, sessionId: string, page: string) =>
     post<{ ok: true }>(`${d(id)}/views/sessions/release`, { sessionId, page }),
@@ -134,6 +137,11 @@ export const api = {
   agentSnapshot: (chatId?: string) => get<AgentRunSnapshot>(`/api/agent${chatQuery(chatId)}`),
   /** every terminal turn one chat kept, oldest first — its transcript */
   agentHistory: (chatId?: string) => get<AgentRun[]>(`/api/agent/history${chatQuery(chatId)}`),
+  /** what one tool call of a turn was given and gave back - read when its step is opened */
+  agentToolCall: (chatId: string, runId: string, eventId: string) =>
+    get<AgentToolCall>(
+      `/api/agent/tool-call?${new URLSearchParams({ chat: chatId, run: runId, event: eventId })}`,
+    ),
   /**
    * Run the message now, or park it behind the turn already running. `comments` are the
    * open threads the turn carries — none unless named, `'all'` for every one;
@@ -205,6 +213,9 @@ export const api = {
     }),
   selectChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'select', chatId }),
   closeChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'close', chatId }),
+  /** arrange the tabs; tabs `order` leaves out keep their place after the named ones */
+  reorderChats: (order: string[]) =>
+    post<ChatList>('/api/agent/chats', { action: 'reorder', order }),
   updateChat: (
     chatId: string,
     patch: { title?: string; model?: string; effort?: string; fastMode?: boolean },
@@ -274,6 +285,7 @@ export const api = {
 
 export const qk = {
   workspace: ['workspace'] as const,
+  studioRuntime: ['studio-runtime'] as const,
   workspaceState: ['workspace-state'] as const,
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,
@@ -297,6 +309,9 @@ export const qk = {
   agentSession: (chatId?: string) =>
     chatId ? (['agent-session', chatId] as const) : (['agent-session'] as const),
   agentSystemPrompt: ['agent-system-prompt'] as const,
+  /** one revision of a tool call's details: a revision never changes once read */
+  agentToolCall: (runId: string, eventId: string, revision: number) =>
+    ['agent-tool-call', runId, eventId, revision] as const,
   chats: ['chats'] as const,
   models: ['agent-models'] as const,
   harness: ['harness'] as const,

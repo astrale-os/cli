@@ -10,6 +10,13 @@ import type { MergeResult } from './workspace'
 /** Kinds of activity the studio surfaces while a local agent runs a turn. */
 export type AgentEventKind = 'status' | 'thinking' | 'message' | 'tool' | 'reply' | 'error'
 
+/**
+ * Where one tool call stands - ACP's own lifecycle (`ToolCallStatus`): announced
+ * `pending`, `in_progress` while it runs, then settled one way or the other.
+ */
+export const AGENT_TOOL_STATUSES = ['pending', 'in_progress', 'completed', 'failed'] as const
+export type AgentToolStatus = (typeof AGENT_TOOL_STATUSES)[number]
+
 export interface AgentEvent {
   id: string
   ts: string
@@ -19,8 +26,51 @@ export interface AgentEvent {
   tool?: string
   /** for kind:'tool' — a compact target (file path, command, pattern) */
   target?: string
+  /** for kind:'tool' - where the call stands, as the agent last reported it */
+  status?: AgentToolStatus
+  /**
+   * for kind:'tool' - how many times the call's details were recorded. The
+   * details themselves (`AgentToolCall`) never ride the transcript: they are read
+   * on demand, and this number moving is how a reader holding them open knows to
+   * read them again. Absent, the harness recorded none.
+   */
+  revision?: number
   /** for kind:'reply' — the comment id the reply landed on */
   commentId?: string
+}
+
+/**
+ * One thing a tool call gave back, as the agent chose to show it - ACP's
+ * `ToolCallContent`. Text is usually markdown (an agent fences a command's
+ * output); `truncated` says a long one was cut to its head.
+ */
+export type AgentToolContent =
+  | { type: 'text'; text: string; truncated?: boolean }
+  /** a file the call changed: its text before (absent when the call created it) and after */
+  | { type: 'diff'; path: string; oldText?: string; newText: string; truncated?: boolean }
+  /** something named rather than shown - an image, a linked or embedded file - with
+   *  its text when it carried some */
+  | { type: 'resource'; label: string; text?: string; truncated?: boolean }
+
+/**
+ * What one tool call was given and gave back: the detail behind a step, read on
+ * demand from GET /agent/tool-call. Everything here is the agent's own report
+ * over ACP, bounded - a long value keeps its head and says it was cut.
+ */
+export interface AgentToolCall {
+  /** the agent's own words for the call: the command it runs, the file it reads */
+  title: string
+  /** ACP's category for it: read, edit, delete, move, search, execute, think, fetch… */
+  kind?: string
+  status?: AgentToolStatus
+  /** what the tool was given (ACP `rawInput`) */
+  input?: unknown
+  /** what it gave back, as the agent chose to show it (ACP `content`) */
+  content: AgentToolContent[]
+  /** what it gave back verbatim (ACP `rawOutput`) - kept only when `content` shows nothing */
+  output?: unknown
+  /** the files it read or changed, `path` or `path:line` */
+  locations: string[]
 }
 
 /**
@@ -110,6 +160,14 @@ export interface AgentRun {
   numTurns?: number
   /** total token usage reported by the harness for this turn */
   tokens?: number
+  /** how full the conversation's context window is, as the agent last reported it */
+  context?: AgentContextUsage
+  /**
+   * The message the agent is writing right now, as it streams in. Live only: it
+   * becomes the `message` event that carries the same `id` once the agent stops
+   * writing it (it calls a tool, or the turn ends), and is never stored.
+   */
+  draft?: AgentDraft
   error?: string
   /** how many threads the agent answered live via the bridge tools this turn */
   liveReplies?: number
@@ -117,6 +175,25 @@ export interface AgentRun {
   merge?: MergeResult
   /** exact prompt inputs sent to the harness for this turn */
   prompt?: AgentPromptSnapshot
+}
+
+/**
+ * How much of the model's context window the conversation occupies - ACP's
+ * `usage_update`. Reported by the agent as the turn goes, so it moves mid-turn
+ * and carries over to the next turn of the same conversation.
+ */
+export interface AgentContextUsage {
+  /** tokens currently in context */
+  used: number
+  /** the context window's total size, in tokens */
+  size: number
+}
+
+/** A message still being written - see `AgentRun.draft`. */
+export interface AgentDraft {
+  /** the id the finished message event will carry */
+  id: string
+  text: string
 }
 
 /**
@@ -262,6 +339,23 @@ export interface HarnessCapabilities {
   gateway: 'anthropic' | 'responses' | 'none'
 }
 
+/**
+ * The agent CLI the ACP server drives. Studio pins the build each adapter was
+ * written for and installs it on first use (`managed`); a `custom` executable is
+ * one the environment forced, held to that pin only by a warning.
+ */
+export interface HarnessCli {
+  source: 'managed' | 'custom'
+  /** managed: the pinned build; custom: what `--version` reported, when it did */
+  version?: string
+  /** false until a managed build has been downloaded — it is on first use */
+  installed: boolean
+  /** custom: why Studio is not running its own build */
+  reason?: string
+  /** custom: why this version may not work with the bundled adapter */
+  warning?: string
+}
+
 /** One local agent, probed over ACP: is it here, and which server answered. */
 export interface HarnessPresence {
   id: string
@@ -271,6 +365,8 @@ export interface HarnessPresence {
   ok: boolean
   /** the ACP agent server's version — not the CLI's own */
   version?: string
+  /** the agent CLI behind that server */
+  cli?: HarnessCli
   /** human message — the ACP handshake, or install / PATH guidance when not ok */
   message: string
   capabilities: HarnessCapabilities

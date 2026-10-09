@@ -21,7 +21,7 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('hashes current Application and vertical authoring files', () => {
+test('hashes the current Domain definition and vertical authoring files', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-current-baseline-'))
   roots.push(root)
   for (const dir of [
@@ -36,7 +36,7 @@ test('hashes current Application and vertical authoring files', () => {
   }
   for (const file of [
     'schema/index.ts',
-    'application.ts',
+    'domain.ts',
     'runtime.ts',
     'functions/risk/index.ts',
     'providers/mail/index.ts',
@@ -50,7 +50,7 @@ test('hashes current Application and vertical authoring files', () => {
   writeFileSync(join(root, 'README.md'), 'not part of the anatomy fileset\n')
 
   expect(Object.keys(hashAnatomyFiles(root, 'schema')).sort()).toEqual([
-    'application.ts',
+    'domain.ts',
     'functions/risk/index.ts',
     'package.json',
     'providers/mail/index.ts',
@@ -62,16 +62,16 @@ test('hashes current Application and vertical authoring files', () => {
   ])
 })
 
-test('hashes a config-selected nested Application explicitly', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-nested-application-baseline-'))
+test('hashes a config-selected nested Domain definition explicitly', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-nested-domain-baseline-'))
   roots.push(root)
   mkdirSync(join(root, 'domain/schema'), { recursive: true })
-  const application = join(root, 'domain/application.ts')
-  writeFileSync(application, 'nested Application\n')
+  const domainFile = join(root, 'domain/domain.ts')
+  writeFileSync(domainFile, 'nested Domain definition\n')
   writeFileSync(join(root, 'domain/schema/index.ts'), 'selected Schema\n')
 
-  expect(hashAnatomyFiles(root, 'domain/schema', application)).toMatchObject({
-    'domain/application.ts': expect.any(String),
+  expect(hashAnatomyFiles(root, 'domain/schema', domainFile)).toMatchObject({
+    'domain/domain.ts': expect.any(String),
     'domain/schema/index.ts': expect.any(String),
   })
 })

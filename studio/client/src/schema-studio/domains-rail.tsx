@@ -161,18 +161,14 @@ export function DomainRow({
       {onToggleVisible && (
         <button
           type="button"
-          aria-pressed={visible}
           aria-label={`${visible ? 'Hide' : 'Show'} ${origin} on the canvas`}
           title={`${visible ? 'Hide' : 'Show'} on canvas`}
           onClick={onToggleVisible}
-          className={cn(
-            'grid h-7 w-7 shrink-0 place-items-center rounded-md border transition-all',
-            visible
-              ? 'border-primary/25 bg-primary/12 text-primary shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-primary)_8%,transparent)] hover:bg-primary/20'
-              : 'border-transparent text-muted-foreground/55 hover:border-border hover:bg-accent hover:text-foreground',
-          )}
+          // The greyed row already says a domain is off the canvas, so the toggle waits
+          // for the pointer and draws what a click does: a closed eye hides, an open eye shows.
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-transparent text-muted-foreground transition-all opacity-0 hover:border-border hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
         >
-          {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+          {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       )}
     </div>

@@ -29,7 +29,7 @@ document.querySelector('#slow')!.addEventListener('click', () => {
 })
 async function nested(origin: string) {
   try {
-    await shell.openView({
+    await shell.mountView({
       host: document.querySelector('#nested-host') as HTMLElement,
       view: {
         target: '/:browser-fixture.example' as ResolvedView['target'],

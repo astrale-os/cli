@@ -1,7 +1,11 @@
+import type { Node } from '@xyflow/react'
+
 import { expect, test } from 'bun:test'
 
 import {
   externalFrameLayout,
+  externalLanes,
+  followExternalFrames,
   projectExternalFrames,
   workspaceExternalMemberNodeId,
   workspaceExternalNodeId,
@@ -130,4 +134,47 @@ test('a domain of this workspace can be drawn straight from its grey frame', () 
   const frame = nodes.find((node) => node.id === workspaceExternalNodeId('peer.astrale.ai'))!
 
   expect(frame.data.domainId).toBe('peer')
+})
+
+test('an imported frame nobody moved follows its domain, a moved one stays put', () => {
+  const clusters = [cluster('alpha.astrale.ai'), cluster('kernel.astrale.ai')]
+  const saved = { 'kernel.astrale.ai': { x: 900, y: 600 } }
+  const moved = { ...owner, position: { x: 300, y: 400 } }
+
+  const before = projectExternalFrames(clusters, [owner], saved)
+  const after = projectExternalFrames(clusters, [moved], saved)
+
+  expect(after.positions['alpha.astrale.ai']).toEqual({
+    x: before.positions['alpha.astrale.ai']!.x + 300,
+    y: before.positions['alpha.astrale.ai']!.y + 400,
+  })
+  expect(after.positions['kernel.astrale.ai']).toEqual(saved['kernel.astrale.ai'])
+})
+
+test('a domain keeps room on its right only for the imported frames that follow it', () => {
+  const clusters = [
+    cluster('alpha.astrale.ai'),
+    { ...cluster('kernel.astrale.ai'), ownerDomainIds: ['billing'] },
+  ]
+
+  expect(externalLanes(clusters, { 'kernel.astrale.ai': { x: 0, y: 0 } })).toEqual({
+    issues: 216 + WORKSPACE_DOMAIN_GAP,
+  })
+})
+
+test('a dropped domain repaints the imported frames that follow it, and nothing else', () => {
+  const frame = (id: string, x: number, y: number, type = 'extDomain'): Node => ({
+    id,
+    type,
+    position: { x, y },
+    data: {},
+  })
+  const current = [frame('domain', 0, 0, 'workspaceDomain'), frame('alpha', 10, 10)]
+  const projected = [frame('domain', 50, 50, 'workspaceDomain'), frame('alpha', 60, 60)]
+
+  const next = followExternalFrames(current, projected)
+
+  expect(next[0]).toBe(current[0])
+  expect(next[1]!.position).toEqual({ x: 60, y: 60 })
+  expect(followExternalFrames(next, projected)).toBe(next)
 })

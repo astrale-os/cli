@@ -115,6 +115,25 @@ export const workspaceExternalMemberNodeId = (
   `workspace-external-member:${encodeURIComponent(origin)}:${definition ? `${definition}:` : ''}${encodeURIComponent(name)}`
 
 /**
+ * How much room each domain keeps free on its right for the imported frames that are laid
+ * out beside it. Only frames the reader never moved count: those follow their domain, so a
+ * domain placed next to it must leave them their spot rather than push them down below.
+ */
+export function externalLanes(
+  clusters: WorkspaceExternalCluster[],
+  savedPositions: Record<string, WorkspacePoint>,
+): Record<string, number> {
+  const lanes: Record<string, number> = {}
+  for (const cluster of clusters) {
+    if (savedPositions[cluster.origin]) continue
+    for (const domainId of cluster.ownerDomainIds) {
+      lanes[domainId] = EXTERNAL_WIDTH + WORKSPACE_DOMAIN_GAP
+    }
+  }
+  return lanes
+}
+
+/**
  * Where the external frames that already have a position sit — what a domain placed for
  * the first time has to fit around, since a saved frame never moves to make room.
  */
@@ -259,4 +278,25 @@ export function projectExternalFrames(
     nodes,
     positions: Object.fromEntries(frames.map((frame) => [frame.origin, frame.position])),
   }
+}
+
+/**
+ * Move the imported frames already on the canvas to where a fresh projection lays them out,
+ * leaving everything else as painted. Only a frame nobody placed can differ — a placed one
+ * projects to its own record — so this is how those follow a domain that was just dropped.
+ */
+export function followExternalFrames(current: Node[], projected: Node[]): Node[] {
+  const positions = new Map(
+    projected.filter((node) => node.type === 'extDomain').map((node) => [node.id, node.position]),
+  )
+  let changed = false
+  const next = current.map((node) => {
+    const position = node.type === 'extDomain' ? positions.get(node.id) : undefined
+    if (!position || (position.x === node.position.x && position.y === node.position.y)) {
+      return node
+    }
+    changed = true
+    return { ...node, position }
+  })
+  return changed ? next : current
 }

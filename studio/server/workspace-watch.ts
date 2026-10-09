@@ -1,6 +1,6 @@
 /**
  * workspace-watch.ts — keeps the domain registry in sync with the workspace while
- * the studio is running. A domain dropped in (or one whose config + Application
+ * the studio is running. A domain dropped in (or one whose config + Domain definition
  * schema binding just became complete) is registered, booted, and announced over
  * SSE; one whose composition vanished is unregistered. It reuses
  * `scanWorkspace` (detection) + `bootDomain` (lifecycle), so there is no second
@@ -41,7 +41,7 @@ export function watchWorkspace(
     const before = new Set(previous.keys())
     let refreshed = false
 
-    // 1. drop domains whose Application composition vanished.
+    // 1. drop domains whose Domain definition vanished.
     for (const h of allDomains()) {
       if (isDomainDir(h.root)) continue
       stoppers.get(h.id)?.()
@@ -50,7 +50,7 @@ export function watchWorkspace(
       console.log(`  Domain Studio — domain removed: ${h.id}`)
     }
 
-    // 2. Register + boot new domains. If Application now selects another Schema
+    // 2. Register + boot new domains. If the Domain definition now selects another Schema
     //    module, replace the old per-domain watcher and invalidate its cached bundle.
     for (const h of scanWorkspace(root)) {
       const prior = previous.get(h.id)

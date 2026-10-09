@@ -10,13 +10,15 @@ import {
 } from '@astrale-os/shell'
 
 import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
-import { installOpenIntentHandler } from '../src/lib/view/open-intent'
+import { installViewOpenHandler } from '../src/lib/view/open-intent'
 import { accessibleIframeAdapter, viewTitle } from './frame'
 
 /**
  * The `astrale view` host page: a thin consumer of Shell's exact V2 mount
- * contract. Its nonce-scoped server supplies one target-bound Host placement;
+ * contract. Its nonce-scoped server supplies one Domain-bound Host placement;
  * this page never reconstructs parallel URL, target, key, or handshake inputs.
+ * A View it hosts may open another View of a Domain (`view.open`); it never opens
+ * a View for a node.
  */
 
 type Config = {
@@ -94,6 +96,17 @@ function el(id: string): HTMLElement {
 
 function setStatus(state: string): void {
   el('status-dot').dataset.state = state
+  const label = el('status-label')
+  label.textContent =
+    {
+      connected: 'Connected',
+      plain: 'View loaded',
+      waiting: 'Connecting…',
+      refreshing: 'Renewing session…',
+      degraded: 'Session renewal failed',
+      expired: 'Session expired',
+      failed: 'Disconnected',
+    }[state] ?? state
 }
 
 function fail(error: unknown): void {
@@ -202,30 +215,76 @@ async function main(): Promise<void> {
       envelopeTransport: 'http',
     },
     adapter: accessibleIframeAdapter(createIframeShellAdapter()),
-    // `astrale view` is explicit host approval of the exact installed route;
-    // Shell has already rejected invalid or unsupported iframe requirements.
-    iframePolicy: () => true,
+    // No iframe policy: as in the GUI and the Console, a View receives the Shell's shared browser
+    // profile, and a requirement beyond it is refused here rather than granted only locally.
     externalOpen: (request) => openExternalBrowserWindow(window, request),
   })
   await shell.init()
 
   const container = el('frame')
   let mounted: MountedWindow | null = null
+  const sessionError = el('session-error')
+  const sessionMessage = el('session-message')
+  const sessionRetry = el('session-retry') as HTMLButtonElement
+
+  // Shell owns credential expiry, retry, and lifecycle. Project the selected Window's current
+  // snapshot; renewing its credential must never replace the frame or discard the user's input.
+  const showWindowStatus = () => {
+    if (mounted === null) return
+    const current = shell.windows.get(mounted.windowId)
+    const credential = current?.credential
+    let state: string
+    let message = ''
+    if (current === undefined || current.state === 'failed' || current.state === 'closed') {
+      state = 'failed'
+      message = 'View disconnected. Reopen the View to reconnect.'
+    } else if (current.state !== 'ready') {
+      state = 'waiting'
+    } else if (credential?.state === 'expired') {
+      state = 'expired'
+      message = 'Session expired. Reconnecting automatically, or retry now.'
+    } else if (credential?.state === 'degraded') {
+      state = 'degraded'
+      message = 'Session renewal failed. Reconnecting automatically.'
+    } else if (credential?.state === 'refreshing') {
+      state = credential.expiresAt > Date.now() ? 'refreshing' : 'expired'
+      if (state === 'expired') message = 'Session expired. Reconnecting…'
+    } else {
+      state = mounted.view.route.handshake === 'shell' ? 'connected' : 'plain'
+    }
+    setStatus(state)
+    sessionError.hidden = message === ''
+    sessionMessage.textContent = message
+    sessionRetry.hidden = state !== 'expired'
+    sessionRetry.disabled = credential?.state !== 'expired'
+    report(state, message || undefined)
+  }
+  shell.onWindowChange(showWindowStatus)
+  sessionRetry.onclick = () => {
+    const credential =
+      mounted === null ? undefined : shell.windows.get(mounted.windowId)?.credential
+    if (credential?.state === 'expired') {
+      // The owner publishes both failure and recovery. Its background retry remains active.
+      void credential.retry().catch(() => {})
+    }
+  }
+
+  const heldCredential = async () => {
+    if (tokens === null) return undefined
+    const held = await tokens.acquire()
+    return {
+      token: held.credential,
+      expiresAt: held.expiresAt,
+      refresh: async () => {
+        const next = await tokens!.acquire()
+        return { token: next.credential, expiresAt: next.expiresAt }
+      },
+    }
+  }
 
   const mount = async (view: ResolvedView): Promise<MountedWindow> => {
-    const held = view.route.handshake === 'shell' ? await tokens!.acquire() : undefined
-    const credential =
-      held === undefined
-        ? undefined
-        : {
-            token: held.credential,
-            expiresAt: held.expiresAt,
-            refresh: async () => {
-              const next = await tokens!.acquire()
-              return { token: next.credential, expiresAt: next.expiresAt }
-            },
-          }
-    return shell.openView({
+    const credential = view.route.handshake === 'shell' ? await heldCredential() : undefined
+    return shell.mountView({
       host: container,
       view,
       capabilities: hostCapabilities,
@@ -234,19 +293,29 @@ async function main(): Promise<void> {
     })
   }
 
-  installOpenIntentHandler(shell, {
+  installViewOpenHandler(shell, {
     current: () => mounted,
     setCurrent: (next) => {
       mounted = next
+      showWindowStatus()
     },
-    mount,
-    opened: (selected) => {
-      showPlacement(selected)
+    open: async (view) => {
+      const credential = await heldCredential()
+      return shell.openView({
+        host: container,
+        view,
+        capabilities: hostCapabilities,
+        handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
+        ...(credential === undefined ? {} : { credential }),
+      })
+    },
+    opened: (next) => {
+      showPlacement(next.view)
       el('error').style.display = 'none'
     },
     failed: showIntentError,
-    reply: (message, windowId) => {
-      replyToIntent(shell.children, message.envelope.sender.windowId, message, { windowId })
+    reply: (message, result) => {
+      replyToIntent(shell.children, message.envelope.sender.windowId, message, result)
     },
     reject: (message, error) => {
       rejectIntent(shell.children, message.envelope.sender.windowId, message, error)
@@ -256,13 +325,7 @@ async function main(): Promise<void> {
   // One placement means one mount attempt. Shell-handshake failures remain
   // failures; changing them to `none` would grant a different public contract.
   mounted = await mount(cfg.view)
-  if (route.handshake === 'shell') {
-    setStatus('connected')
-    report('connected')
-  } else {
-    setStatus('plain')
-    report('plain')
-  }
+  showWindowStatus()
   setInterval(() => report('alive'), HEARTBEAT_MS)
 }
 

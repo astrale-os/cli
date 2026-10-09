@@ -36,6 +36,9 @@ Prefer a small number of strong regions, clear hierarchy, compact spacing, and c
 Do not add decorative gradients, pills, oversized metrics, animation, or ornamental copy by default.
 Each visual device must communicate structure, state, priority, or affordance.
 
+Do not use a cream or off-white background, italic accent words in headlines, numbered
+"01/02/03" section labels, monospace labels, or pill-shaped buttons.
+
 ## Make Interaction States Precise
 
 Model the relevant initial, loading, empty, ready, submitting, success, failure, unauthorized, and

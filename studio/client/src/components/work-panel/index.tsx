@@ -5,13 +5,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ResizeHandle, type ResizeState, strongestResizeState } from '@/components/ui/resize-handle'
 import { isRunActive, useDisplayRun } from '@/lib/agent'
 import { useUnreadAgentReplies } from '@/lib/agent-unread'
-import { useActiveChatId, useChatMutations, useModelCatalog } from '@/lib/chats'
+import { useActiveChatId, useChatMutations, useChats, useModelCatalog } from '@/lib/chats'
 import { openCommentThreads } from '@/lib/comments'
 import { useHarness, useLoadout, useWorkspaceComments } from '@/lib/hooks'
 import { DOCK_HEIGHT, DOCK_WIDTH, type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { AgentComposer, AgentDropZone, AgentTab, AgentTranscript } from './agent-tab'
+import { ChatTabs } from './chat-tabs'
 import { CommentsTab } from './comments-tab'
 
 const MIN_SIZE = 260
@@ -31,7 +32,7 @@ const SIDES: { side: PanelSide; icon: typeof PanelLeft; label: string; hint: str
     side: 'bottom',
     icon: PanelBottom,
     label: 'Bottom',
-    hint: 'Just a composer under the view — the chat opens in the middle',
+    hint: 'A chat floating over the bottom of the view',
   },
   { side: 'right', icon: PanelRight, label: 'Right', hint: 'A column right of the view' },
 ]
@@ -210,6 +211,18 @@ function FloatingDock() {
   const run = useDisplayRun()
   const dockWidth = useUI((s) => s.dockWidth)
   const dockHeight = useUI((s) => s.dockHeight)
+  const tabsLeft = useUI((s) => s.chatTabsSide === 'left')
+  const tabsWidth = useUI((s) => s.chatTabsWidth)
+  const { data: chats } = useChats()
+  const { data: harness } = useHarness()
+  // Opened on the agent, a left tab column runs from under the header down to the
+  // dock's bottom edge, beside the composer as well as the conversation. It floats
+  // over the dock rather than wrapping the composer, which has to stay the very same
+  // element: typing in it is what opened the dock, and remounting it would drop the
+  // caret. The conversation and the composer just make room for it.
+  const sideTabs = open && tab === 'agent' && tabsLeft
+  // the column's own cap is half the dock, and a percentage padding is of the dock too
+  const beside = sideTabs ? { paddingLeft: `min(${tabsWidth}px, 50%)` } : undefined
   const box = useRef<HTMLDivElement>(null)
   const conversation = useRef<HTMLDivElement>(null)
   const resize = useDockResize(box, conversation)
@@ -306,10 +319,23 @@ function FloatingDock() {
               scrolls once something hands it a height. A block let it grow to its
               content instead, the clip above took everything past the box, and a
               long answer ended in nothing — no scrollbar, and no way to its end. */}
-          <div className="flex min-h-0 flex-1 flex-col border-t">
-            {tab === 'agent' ? <AgentTranscript /> : <CommentsTab />}
+          <div className="flex min-h-0 flex-1 flex-col border-t" style={beside}>
+            {tab === 'agent' ? <AgentTranscript tabs={!tabsLeft} /> : <CommentsTab />}
           </div>
         </div>
+
+        {sideTabs && (
+          // top-[41px]: under the h-10 header and the conversation's border-t
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[41px] z-20 flex">
+            <ChatTabs
+              chats={chats?.chats ?? []}
+              activeId={chats?.activeId}
+              harness={harness}
+              vertical
+              className="pointer-events-auto"
+            />
+          </div>
+        )}
 
         {/* The composer belongs to the agent: opened on the threads, the dock is a
             reading surface and shows them alone — no field, no chips, no queue,
@@ -333,29 +359,31 @@ function FloatingDock() {
         )}
 
         {(!open || tab === 'agent') && (
-          <AgentComposer
-            bar
-            expanded={open}
-            // opens on the agent, but never yanks you off the comments you opened it on
-            onFocus={() => !open && setPanelTab('agent')}
-            // The only way back to the threads while the dock RESTS: there is no tab
-            // strip until it opens, and the badge is how a reply announces itself.
-            // Opened, the strip says it better and this would only say it twice.
-            trailing={
-              open ? undefined : (
-                <>
-                  <UnreadAgentButton />
-                  <RailButton
-                    label="Open comments"
-                    badge={waiting}
-                    onClick={() => setPanelTab('comments')}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </RailButton>
-                </>
-              )
-            }
-          />
+          <div className="shrink-0" style={beside}>
+            <AgentComposer
+              bar
+              expanded={open}
+              // opens on the agent, but never yanks you off the comments you opened it on
+              onFocus={() => !open && setPanelTab('agent')}
+              // The only way back to the threads while the dock RESTS: there is no tab
+              // strip until it opens, and the badge is how a reply announces itself.
+              // Opened, the strip says it better and this would only say it twice.
+              trailing={
+                open ? undefined : (
+                  <>
+                    <UnreadAgentButton />
+                    <RailButton
+                      label="Open comments"
+                      badge={waiting}
+                      onClick={() => setPanelTab('comments')}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </RailButton>
+                  </>
+                )
+              }
+            />
+          </div>
         )}
       </AgentDropZone>
     </div>
@@ -753,15 +781,13 @@ function DockPicker() {
 }
 
 /** A miniature of the layout: the filled part is where the panel goes. Bottom shows
- *  what it really costs — a bar, with the chat floating clear of it. */
+ *  the dock opened, one block like the columns: centred, and clear of the bottom
+ *  edge, since it floats over the view rather than docking to it. */
 function DockPreview({ side }: { side: PanelSide }) {
   if (side === 'bottom') {
     return (
       <span className="relative block h-8 w-11 overflow-hidden rounded border bg-card">
-        {/* the conversation, floating clear of the view */}
-        <span className="absolute left-1/2 top-[7px] h-3 w-5 -translate-x-1/2 rounded-[3px] border border-primary/50 bg-primary/25" />
-        {/* the bar, and all this layout costs */}
-        <span className="absolute inset-x-1 bottom-1 h-1 rounded-full bg-primary/60" />
+        <span className="absolute inset-x-[7px] bottom-[3px] h-4 rounded-[3px] bg-primary/60" />
       </span>
     )
   }

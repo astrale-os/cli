@@ -79,3 +79,14 @@ export const CLI_STATE_EXCHANGE_CACHE = defineLaw({
     },
   ],
 })
+
+export const CLI_STATE_INSTALLATION_CACHE = defineLaw({
+  id: 'CLI-STATE-INSTALLATION-CACHE',
+  statement:
+    'The durable installation Artifact maps an exact source Kernel issuer and Domain origin to what the CLI remembers of that installation: the Domain issuer its pin named when last read, or null for a Kernel-hosted Domain. A record is a hint, never authority: a consented reinstall can move the issuer within one installation, so only a fact whose staleness fails closed at token exchange or Kernel admission is recorded, and its reader forgets it after a failure that relied on it; a fact an upgrade changes without failing closed (revision, bindings, readiness) is never served from it. It carries no credential. Records older than the maximum age, from the future, or without a canonical issuer are misses; publication is owner-private and atomic, bounded in size, and removed with the Kernel bookmark. A record is trusted only while it can still be forgotten: without a writable directory every record is a miss, and a deletion that cannot rewrite the store removes the whole file.',
+  tests: [
+    { file: '__tests__/installations.test.ts', id: 'TEST-CLI-INSTALLATION-CACHE-PARTITION' },
+    { file: '__tests__/installations.test.ts', id: 'TEST-CLI-INSTALLATION-CACHE-BOUNDED' },
+    { file: '__tests__/installations.test.ts', id: 'TEST-CLI-INSTALLATION-CACHE-EVICTABLE' },
+  ],
+})

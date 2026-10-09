@@ -32,7 +32,7 @@ function fixtureRoot(label: string): string {
 function currentFixture(): DomainHandle {
   const root = fixtureRoot('canonical-runtime')
   const schemaIndex = join(root, 'schema/index.ts')
-  const applicationFile = join(root, 'application.ts')
+  const domainFile = join(root, 'domain.ts')
   writeFileSync(
     schemaIndex,
     `
@@ -46,18 +46,18 @@ function currentFixture(): DomainHandle {
       export const schema = defineSchema('documents.runtime.test', {
         dependencies: { directory: DirectorySchema },
         classes: { Document },
-        views: { editor: view({ target: Document }) },
+        views: { editor: view({ description: 'Edit documents.' }) },
         core: { nodes: { welcome } },
       })
       export const installedBundle = bundle.create(schema)
     `,
   )
-  writeFileSync(applicationFile, `throw new Error('Application entry was imported')\n`)
+  writeFileSync(domainFile, `throw new Error('Domain definition entry was imported')\n`)
   return {
     id: 'documents-runtime-test',
     root,
     configFile: join(root, 'astrale.config.ts'),
-    applicationFile,
+    domainFile,
     schemaDirName: 'schema',
     schemaDir: join(root, 'schema'),
     schemaIndex,
@@ -78,7 +78,7 @@ describe('SDK V1 schema extractor', () => {
       },
       ir: {
         domain: 'documents.runtime.test',
-        views: { editor: { target: { kind: 'definition' } } },
+        views: { editor: { name: 'editor', description: 'Edit documents.' } },
         importsByKey: {
           'directory.runtime.test:class.Named': {
             ref: { origin: 'directory.runtime.test', kind: 'class', name: 'Named' },
@@ -127,7 +127,7 @@ describe('SDK V1 schema extractor', () => {
     })
   })
 
-  test('extracts Core through the pure Schema entry without importing Application', async () => {
+  test('extracts Core through the pure Schema entry without importing the Domain definition', async () => {
     const handle = currentFixture()
     const bundle = await buildBundle(handle)
     expect(buildCore(handle, bundle)).toMatchObject({

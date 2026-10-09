@@ -22,8 +22,15 @@ export async function resolveCallableTarget(
   schema: Pick<SchemaApi, 'inspect'>,
 ): Promise<ConnectionTarget> {
   const installed = await schema.inspect(origin)
-  const domainIssuer = installed.publication?.identity.issuer
-  const { domainIssuer: _bookmarkDomain, ...source } = target
+  return withCallableIssuer(target, installed.publication?.identity.issuer)
+}
+
+/** The callable's Domain issuer replaces the bookmark's Domain; a Kernel-hosted Domain has none. */
+export function withCallableIssuer(
+  target: ConnectionTarget,
+  domainIssuer: string | undefined,
+): ConnectionTarget {
+  const { domainIssuer: _bookmarkIssuer, domainOrigin: _bookmarkOrigin, ...source } = target
   return {
     ...source,
     ...(domainIssuer === undefined || domainIssuer === target.kernelIssuer

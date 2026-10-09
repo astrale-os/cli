@@ -14,7 +14,6 @@ import { useViewsModel } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { anchorData, schemaMemberRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
-import { viewsForClass } from '@/lib/views'
 
 import { FunctionRow } from '../functions-panel'
 import { ancestryOfClass, isKernelClass, resolveClass } from '../inheritance'
@@ -96,10 +95,8 @@ export function SchemaDetail({
   const lists = memberLists(bundle, name, member, local && !isEdge)
   const ancestry = ancestryOfClass(bundle, member.extendsRefs ?? [])
   const policies = Object.entries(member.policies ?? {})
-  const classViews = local && !isEdge ? viewsForClass(viewsModel, name) : []
   // Standalone Functions that name this Class. A Method is declared ON the Class and reads
-  // as one of its members; a Function merely works on it, so it sits with the Views —
-  // the other things that point AT a Class without belonging to it.
+  // as one of its members; a Function merely works on it, so it sits apart from them.
   const classFunctions = local && !isEdge ? functionsForClass(functionsModel, name) : []
 
   return (
@@ -211,21 +208,6 @@ export function SchemaDetail({
                 />
               ))}
             </MemberList>
-          </Group>
-        )}
-
-        {classViews.length > 0 && (
-          <Group label="Views">
-            <div className="flex flex-col gap-0.5">
-              {classViews.map((view) => (
-                <ViewRow
-                  key={view.slug}
-                  domainId={bundle.domainId}
-                  view={view}
-                  icon={member.icon}
-                />
-              ))}
-            </div>
           </Group>
         )}
 

@@ -3,19 +3,13 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StaleReport, StudioSchemaBundle, ViewInfo } from '../shared/types'
+import type { StaleReport, ViewInfo } from '../shared/types'
 
-import {
-  studioActiveInstanceName,
-  type StudioViewTargetQuery,
-  type StudioViewTargetQueryResult,
-} from '../../src/lib/view/studio-runtime'
+import { studioActiveInstanceName } from '../../src/lib/view/studio-runtime'
 import { STUDIO_CLI_DESCRIPTOR_ENV } from './cli'
 import { listInstances, setActiveInstance } from './instances/active'
 import { clearViewPreparations, rememberViewPreparation } from './views/preparation'
-import { readRememberedTarget } from './views/selection-repository'
 import { launchViewSession } from './views/session'
-import { listViewTargets } from './views/target'
 import { getUpdates } from './workspace/updates'
 
 interface FakeResponse {
@@ -322,131 +316,16 @@ describe('workspace update CLI orchestration', () => {
   })
 })
 
-const view = {
-  slug: 'issue-detail',
-  kind: 'unknown',
-  viewFor: 'Issue',
-} satisfies ViewInfo
-
-const bundle = {
-  ir: {
-    views: {
-      'issue-detail': {
-        name: 'issue-detail',
-        target: {
-          kind: 'definition',
-          definitions: [{ origin: 'issues.example.dev', kind: 'class', name: 'Issue' }],
-        },
-      },
-    },
-  },
-} as unknown as StudioSchemaBundle
-
-const queryArgs = [
-  'query',
-  '--class',
-  '/:issues.example.dev:class.Issue',
-  '--limit',
-  '201',
-  '--json',
-  '-i',
-  'staging',
-]
-
-const targetQuery = {
-  graph: {
-    nodes: [
-      {
-        id: 'issue-1',
-        props: {
-          'kernel.astrale.ai:interface.Named.property.name': 'First issue',
-        },
-      },
-    ],
-  },
-}
+const view = { slug: 'issues', kind: 'unknown' } satisfies ViewInfo
 
 describe('View CLI orchestration', () => {
-  test('queries exact target coordinates once and preserves malformed/nonzero failures', async () => {
-    const calls: Array<{
-      instance: string
-      queries: readonly StudioViewTargetQuery[]
-      timeoutMs: number
-    }> = []
-    const responses: Array<Omit<StudioViewTargetQueryResult, 'definition'>> = [
-      { ok: true, value: targetQuery, detail: '' },
-      { ok: true, value: { graph: { nodes: 'invalid' } }, detail: '' },
-      { ok: false, value: null, detail: 'Instance is offline.' },
-    ]
-    const query = async (
-      instance: string,
-      queries: readonly StudioViewTargetQuery[],
-      timeoutMs: number,
-    ): Promise<StudioViewTargetQueryResult[]> => {
-      calls.push({ instance, queries, timeoutMs })
-      const response = responses.shift()!
-      return queries.map(({ definition }) => ({ definition, ...response }))
-    }
-
-    expect(
-      await listViewTargets('/workspace', 'issues.example.dev', view, bundle, 'staging', 2000, {
-        query,
-      }),
-    ).toEqual({
-      status: 'available',
-      items: [
-        {
-          id: 'issue-1',
-          ref: '@issue-1',
-          className: 'Issue',
-          classOrigin: 'issues.example.dev',
-          label: 'First issue',
-        },
-      ],
-      selected: null,
-      stale: null,
-      truncated: false,
-    })
-    expect(
-      await listViewTargets('/workspace', 'issues.example.dev', view, bundle, 'staging', 2000, {
-        query,
-      }),
-    ).toMatchObject({ status: 'unavailable', items: [] })
-    expect(
-      await listViewTargets('/workspace', 'issues.example.dev', view, bundle, 'staging', 2000, {
-        query,
-      }),
-    ).toMatchObject({ status: 'unavailable', reason: 'Instance is offline.' })
-    expect(calls).toEqual([
-      { instance: 'staging', queries: [{ definition: queryArgs[2], limit: 201 }], timeoutMs: 2000 },
-      { instance: 'staging', queries: [{ definition: queryArgs[2], limit: 201 }], timeoutMs: 2000 },
-      { instance: 'staging', queries: [{ definition: queryArgs[2], limit: 201 }], timeoutMs: 2000 },
-    ])
-  })
-
-  test('launches against the selected target, trusts route.href, and remembers the target', async () => {
+  test('launches the Domain View by its ViewPath and trusts route.href', async () => {
     const fake = installFakeCli([])
     const preparation = rememberViewPreparation({
       root: fake.root,
       origin: 'issues.example.dev',
       slug: view.slug,
       instance: 'staging',
-      targetRequired: true,
-      targets: {
-        status: 'available',
-        items: [
-          {
-            id: 'issue-1',
-            ref: '@issue-1',
-            className: 'Issue',
-            classOrigin: 'issues.example.dev',
-            label: 'First issue',
-          },
-        ],
-        selected: null,
-        stale: null,
-        truncated: false,
-      },
     })
     const opened: unknown[] = []
 
@@ -455,8 +334,8 @@ describe('View CLI orchestration', () => {
         fake.root,
         'issues.example.dev',
         view,
-        bundle,
-        { preparationId: preparation.id, targetId: 'issue-1' },
+        null,
+        { preparationId: preparation.id },
         2000,
         {
           activeInstance: async () => 'staging',
@@ -466,7 +345,7 @@ describe('View CLI orchestration', () => {
             return {
               id: 'v-a1b2',
               pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-              view: { route: { href: 'https://shell.example.dev/views/issue-1' } },
+              view: { route: { href: 'https://shell.example.dev/views/issues' } },
             } as never
           },
         },
@@ -475,25 +354,11 @@ describe('View CLI orchestration', () => {
       status: 'ready',
       sessionId: 'v-a1b2',
       pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-      viewUrl: 'https://shell.example.dev/views/issue-1',
-      target: {
-        id: 'issue-1',
-        ref: '@issue-1',
-        className: 'Issue',
-        classOrigin: 'issues.example.dev',
-        label: 'First issue',
-      },
-    })
-    expect(readRememberedTarget(fake.root, 'staging', 'issue-detail')).toEqual({
-      id: 'issue-1',
-      className: 'Issue',
-      classOrigin: 'issues.example.dev',
-      label: 'First issue',
+      viewUrl: 'https://shell.example.dev/views/issues',
     })
     expect(opened).toEqual([
       {
-        viewPath: '/:issues.example.dev:view.issue-detail',
-        targetRef: '@issue-1',
+        viewPath: '/:issues.example.dev:view.issues',
         instance: 'staging',
         timeoutMs: 20_000,
         idleMs: 8 * 60 * 60_000,
@@ -511,14 +376,6 @@ describe('View CLI orchestration', () => {
       origin: 'issues.example.dev',
       slug: standalone.slug,
       instance: 'staging',
-      targetRequired: false,
-      targets: {
-        status: 'available',
-        items: [],
-        selected: null,
-        stale: null,
-        truncated: false,
-      },
     })
 
     const malformed = await launchViewSession(

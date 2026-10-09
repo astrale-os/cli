@@ -70,6 +70,11 @@ export function renderCommanderError(
     )
   }
 
+  if (error.code === 'commander.conflictingOption') {
+    const usage = usageFor(matched.path, matched.command)
+    return maybeMachine([error.message, '', 'Usage:', `  astrale ${usage}`].join('\n'), machine)
+  }
+
   const suggestions = nearestCommands(tokens.join(' '), catalog)
   return maybeMachine(
     [

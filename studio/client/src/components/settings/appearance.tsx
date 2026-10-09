@@ -1,4 +1,4 @@
-import { type EdgeStyle, type Theme, useUI } from '@/lib/store'
+import { type ChatTabsSide, type EdgeStyle, type Theme, useUI } from '@/lib/store'
 
 import { SettingRow, SettingSelect, SettingsHeading } from './row'
 
@@ -13,12 +13,20 @@ const EDGE_STYLES: { value: EdgeStyle; label: string }[] = [
   { value: 'orthogonal', label: 'Right angles' },
 ]
 
+const CHAT_TABS: { value: ChatTabsSide; label: string }[] = [
+  { value: 'left', label: 'Left, with titles' },
+  { value: 'top', label: 'Top' },
+  { value: 'top-titled', label: 'Top, with titles' },
+]
+
 /** Visual preferences: theme follows the browser; canvas geometry follows the workspace. */
 export function AppearanceSettings() {
   const theme = useUI((state) => state.theme)
   const setTheme = useUI((state) => state.setTheme)
   const edgeStyle = useUI((state) => state.edgeStyle)
   const setEdgeStyle = useUI((state) => state.setEdgeStyle)
+  const chatTabsSide = useUI((state) => state.chatTabsSide)
+  const setChatTabsSide = useUI((state) => state.setChatTabsSide)
   return (
     <div>
       <SettingsHeading>Appearance</SettingsHeading>
@@ -41,6 +49,21 @@ export function AppearanceSettings() {
             onChange={(event) => setEdgeStyle(event.target.value as EdgeStyle)}
           >
             {EDGE_STYLES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </SettingSelect>
+        </SettingRow>
+        <SettingRow
+          label="Chat tabs"
+          description="In a resizable column beside the conversation, or above it with or without each title. Applies to this browser."
+        >
+          <SettingSelect
+            value={chatTabsSide}
+            onChange={(event) => setChatTabsSide(event.target.value as ChatTabsSide)}
+          >
+            {CHAT_TABS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

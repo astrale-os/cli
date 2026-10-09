@@ -13,8 +13,10 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
   ]
   const source = files.map((path) => readFileSync(path, 'utf8')).join('\n')
 
+  // `defineDomain` is current again: astrale-os/sdk#603 (0.6.0-beta.11) gave the name to the Domain
+  // definition and removed `defineApplication`.
   for (const removed of [
-    'defineDomain',
+    'defineApplication',
     'bindWorkflow',
     'remoteMethod',
     'remoteInterface',
@@ -22,6 +24,10 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
     'frontendArtifact',
     'viteFrontend',
     'viewFor',
+    'useTargetPath',
+    'useViewsFor',
+    'setTarget',
+    'pickView',
     'createInlineStep',
     'defineCore',
     'definePolicy',
@@ -29,7 +35,13 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
   ]) {
     assert.doesNotMatch(source, new RegExp(`\\b${removed}\\b`), removed)
   }
+  assert.doesNotMatch(
+    source,
+    /@astrale-os\/sdk\/application\b/,
+    'removed @astrale-os/sdk/application',
+  )
   assert.doesNotMatch(source, /from ['"]@astrale-os\/kernel-(?:core|dsl)/)
+  assert.doesNotMatch(source, /view\(\{[^}]*\btarget\s*:/, 'class-targeted View')
   assert.doesNotMatch(source, /auth:\s*['"](?:required|optional|public)['"]/, 'removed auth mode')
   assert.doesNotMatch(
     source,
@@ -39,6 +51,7 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
   assert.doesNotMatch(source, /return\s*\{\s*deps\s*:/)
   assert.doesNotMatch(source, /context\.work\b/)
   assert.doesNotMatch(source, /context\.activation\b/)
+  assert.doesNotMatch(source, /\.union\.(?:invoke|query|mutate)\b/, 'removed union authority mode')
 })
 
 test('the Domain skill router reaches existing reference files without orphaned guides', () => {

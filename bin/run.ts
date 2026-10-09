@@ -30,6 +30,8 @@ async function runInternalMode(): Promise<boolean> {
   else if (mode === '__studio-acp-codex') await import('@agentclientprotocol/codex-acp')
   else if (mode === '__studio-acp-claude')
     await import('@agentclientprotocol/claude-agent-acp/dist/index.js')
+  else if (mode === '__studio-agents-prefetch')
+    await (await import('../studio/server/agent/harness/acp/prefetch')).prefetchAgentBinaries()
   else throw new Error(`unknown internal mode: ${mode}`)
   return true
 }

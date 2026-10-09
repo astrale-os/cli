@@ -4,16 +4,18 @@
  * module operates on an existing one).
  *
  * Flow: validate the slug → `create-astrale-domain <slug> --yes` in the
- * workspace root (the managed `astrale` adapter is its default; we stamp the
- * active instance so prod targets it) → `pnpm install` in the new dir so the
- * domain is fully introspectable + deployable → register + (re)boot it (the live
- * watcher may have already booted a deps-less static fallback while we were
- * installing; we stop that and boot fresh) → warm its bundle. The caller
- * broadcasts the `workspace` event so every client refetches the domain list.
+ * workspace root (the managed `astrale` adapter is its default; the scaffold
+ * names no instance, the operator picks one when installing the URL a deploy
+ * prints) → `pnpm install` in the new dir so the domain is fully
+ * introspectable + deployable → register + (re)boot it (the live watcher may
+ * have already booted a deps-less static fallback while we were installing; we
+ * stop that and boot fresh) → warm its bundle. The caller broadcasts the
+ * `workspace` event so every client refetches the domain list.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { SCAFFOLDER } from '../../../src/lib/scaffolder'
 import { getBundle } from '../cache'
 import { registerDomain } from '../domain'
 import { findSchemaDefinition } from '../introspect/anatomy-extras'
@@ -24,21 +26,10 @@ import { stoppers, workspaceRoot } from '../workspace-state'
  *  must start/end alphanumeric. Also guards the filesystem target (no `/`, no `..`, no leading dot). */
 const SLUG = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
-/**
- * Which create-astrale-domain to scaffold with — NOT `@latest`.
- *
- * `latest` is the scaffolder's last STABLE release, and it is a generation
- * behind: it writes a domain against `@astrale-os/sdk` 0.4.x, whose schema lives
- * in `@astrale-os/kernel-core` and which has no `@astrale-os/sdk/schema` at all.
- * Studio — and every domain in a real workspace — is on the 0.5 line, so a
- * domain created that way opened on an empty canvas: nothing could read it.
- *
- * A RANGE rather than the `beta` dist-tag, because a tag resolves to exactly one
- * version and npm environments commonly quarantine very recent releases (a few
- * days old); asking for `@beta` then fails outright, while a range simply takes
- * the newest version actually being served.
- */
-const SCAFFOLDER = '>=0.3.0-beta.0'
+/** The npx argv that scaffolds `name` non-interactively: the shared scaffolder range, no instance. */
+export function scaffoldArgs(name: string): string[] {
+  return ['--yes', SCAFFOLDER, name, '--yes']
+}
 
 export interface CreateDomainResult {
   ok: boolean
@@ -71,9 +62,13 @@ async function run(
   }
 }
 
+export interface CreateDomainDependencies {
+  run: typeof run
+}
+
 export async function createDomain(
   rawName: string,
-  instance: string | null,
+  deps: CreateDomainDependencies = { run },
 ): Promise<CreateDomainResult> {
   const name = rawName.trim().toLowerCase()
   if (!name || name.length > 64 || !SLUG.test(name)) {
@@ -94,16 +89,8 @@ export async function createDomain(
     }
   }
 
-  // 1. Scaffold (non-interactive). `--yes` accepts defaults (astrale adapter, template);
-  //    `--instance` stamps the active instance into the managed prod target.
-  const scaffoldArgs = [
-    '--yes',
-    `create-astrale-domain@${SCAFFOLDER}`,
-    name,
-    '--yes',
-    ...(instance ? ['--instance', instance] : []),
-  ]
-  const scaffold = await run('npx', scaffoldArgs, root)
+  // 1. Scaffold (non-interactive). `--yes` accepts defaults (astrale adapter, template).
+  const scaffold = await deps.run('npx', scaffoldArgs(name), root)
   const scaffolded = registerDomain(dir)
   if (!scaffolded) {
     return {
@@ -121,7 +108,7 @@ export async function createDomain(
   // 2. Install deps so the domain is fully introspectable + deployable. Best-effort:
   //    a scaffolded-but-uninstalled domain still loads (static fallback), so a failed
   //    install is a soft warning, not a hard failure.
-  const install = await run('pnpm', ['install'], dir)
+  const install = await deps.run('pnpm', ['install'], dir)
 
   // 3. Register + boot with deps present. The live watcher may have already booted a
   //    deps-less fallback for this dir mid-install — stop it and boot fresh.

@@ -36,6 +36,10 @@ const NO_CHAT = ''
 
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
+/** Where the agent's chat tabs sit: a strip of marks on top, or a column of titles on the left. */
+/** Where the chat tabs sit: a column on the conversation's left, or a strip above it
+ *  showing each agent's mark alone (`top`) or with every tab's title (`top-titled`). */
+export type ChatTabsSide = 'left' | 'top' | 'top-titled'
 
 /** How every canvas draws a relationship: a curve between the cards, or right-angled traces. */
 export type EdgeStyle = WorkspaceUiState['edgeStyle']
@@ -55,6 +59,8 @@ export const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 } as const
 const PANEL_SIZE = { min: 260, max: 900 } as const
 const RAIL_WIDTH = { min: 180, max: 560 } as const
 const DETAIL_WIDTH = { min: 320, max: 900 } as const
+/** The chat tab column's width bounds, in px. */
+export const CHAT_TABS_WIDTH = { min: 120, max: 480, fallback: 160 } as const
 
 function clampTo({ min, max }: { min: number; max: number }, value: number): number {
   return Math.min(max, Math.max(min, Math.round(value)))
@@ -66,6 +72,14 @@ function loadStored<T extends string>(key: string, allowed: readonly T[], fallba
     if (value && allowed.includes(value)) return value
   } catch {}
   return fallback
+}
+
+function loadStoredWidth(key: string, bounds: { min: number; max: number; fallback: number }) {
+  try {
+    const value = Number(localStorage.getItem(key))
+    if (Number.isFinite(value) && value > 0) return clampTo(bounds, value)
+  } catch {}
+  return bounds.fallback
 }
 
 function storeBrowserPreference(key: string, value: string): void {
@@ -94,6 +108,10 @@ interface UIState {
   resolvedTheme: 'light' | 'dark'
   /** edge drawing preference, persisted in this workspace's machine-side UI state */
   edgeStyle: EdgeStyle
+  /** chat tab placement, persisted in this browser */
+  chatTabsSide: ChatTabsSide
+  /** the chat tab column's width when it sits on the left, persisted in this browser */
+  chatTabsWidth: number
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
@@ -168,10 +186,14 @@ interface UIState {
   /** The new-domain composer, centred over everything: a name, a first message,
    *  and the domain that does not exist yet between them. */
   newDomainOpen: boolean
+  /** The onboarding tour. It never opens by itself: Settings and ⌘K start it. */
+  tourOpen: boolean
   /** A policy another section asked Tests to open on its demo data; Tests takes it and clears it. */
   probePolicy: string | null
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
+  setChatTabsSide: (side: ChatTabsSide) => void
+  setChatTabsWidth: (width: number) => void
   /** Go to Tests with this policy selected — the way Process and the detail panel hand one over. */
   openPolicy: (policy: string, domainId?: string) => void
   setProbePolicy: (policy: string | null) => void
@@ -219,6 +241,7 @@ interface UIState {
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
   setNewDomainOpen: (b: boolean) => void
+  setTourOpen: (b: boolean) => void
 }
 
 /** This chat's draft, or what was typed before there was a chat to key it by. */
@@ -252,6 +275,8 @@ export const useUI = create<UIState>((set) => ({
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
   edgeStyle: 'curved',
+  chatTabsSide: loadStored('studio.chatTabs', ['left', 'top', 'top-titled'] as const, 'left'),
+  chatTabsWidth: loadStoredWidth('studio.chatTabsWidth', CHAT_TABS_WIDTH),
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
   panelOpen: false,
@@ -278,6 +303,7 @@ export const useUI = create<UIState>((set) => ({
   paletteOpen: false,
   settingsOpen: false,
   newDomainOpen: false,
+  tourOpen: false,
   probePolicy: null,
   openPolicy: (probePolicy, readerDomainId) => {
     set({
@@ -296,6 +322,15 @@ export const useUI = create<UIState>((set) => ({
     set({ theme, resolvedTheme: paintTheme(theme) })
   },
   setEdgeStyle: (edgeStyle) => set({ edgeStyle }),
+  setChatTabsSide: (chatTabsSide) => {
+    storeBrowserPreference('studio.chatTabs', chatTabsSide)
+    set({ chatTabsSide })
+  },
+  setChatTabsWidth: (width) => {
+    const chatTabsWidth = clampTo(CHAT_TABS_WIDTH, width)
+    storeBrowserPreference('studio.chatTabsWidth', String(chatTabsWidth))
+    set({ chatTabsWidth })
+  },
   setSection: (section) => {
     // Schema and Core are two canvases over the same domain with DISJOINT selection
     // namespaces (`class.X` vs a core path), so crossing between them starts clean —
@@ -446,6 +481,7 @@ export const useUI = create<UIState>((set) => ({
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setNewDomainOpen: (newDomainOpen) => set({ newDomainOpen }),
+  setTourOpen: (tourOpen) => set({ tourOpen }),
 }))
 
 /** The small persistent projection of the UI store; transient selections stay in memory. */

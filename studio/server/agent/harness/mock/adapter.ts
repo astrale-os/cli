@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs'
 
-import type { Comment } from '../../../../shared/types'
+import type { AgentToolCall, Comment } from '../../../../shared/types'
 import type { AgentHarness, AgentTurnInput, AgentTurnResult, AskInput, AskResult } from '../adapter'
 
 import { readComments } from '../../../state/comments'
@@ -80,6 +80,9 @@ export class MockHarness implements AgentHarness {
     )
 
     input.onEvent({ kind: 'status', text: 'session started' })
+    // like an ACP agent, say how full the conversation's window is as the turn goes
+    const contextUsed = Number(process.env.DOMAIN_STUDIO_MOCK_CONTEXT_USED || 42_000)
+    input.onContext?.({ used: contextUsed, size: 200_000 })
     // like a real agent, look at what was sent: an image that never arrives is the bug
     const images = (input.images ?? []).filter((image) => statSync(image.path).size > 0)
     if (images.length)
@@ -95,26 +98,76 @@ export class MockHarness implements AgentHarness {
       text: `Reviewing ${open.length} open thread(s) and the current schema.`,
     })
     await sleep(300, input.signal)
-    input.onEvent({
-      kind: 'tool',
-      text: 'Read',
-      tool: 'Read',
-      target: '.domain-studio/comments.json',
-    })
+    // Reported the way an ACP agent reports a call: announced with its input,
+    // then again once it ran, with what it gave back - one step either way.
+    const readCall = (detail: Partial<AgentToolCall>) =>
+      input.onEvent({
+        kind: 'tool',
+        text: 'Read',
+        tool: 'Read',
+        target: '.domain-studio/comments.json',
+        call: {
+          id: 'mock-read',
+          detail: {
+            title: 'Read .domain-studio/comments.json',
+            kind: 'read',
+            input: { file_path: '.domain-studio/comments.json' },
+            content: [],
+            locations: ['.domain-studio/comments.json'],
+            ...detail,
+          },
+        },
+      })
+    readCall({ status: 'in_progress' })
     await sleep(250, input.signal)
+    readCall({
+      status: 'completed',
+      content: [
+        {
+          type: 'text',
+          text: `\`\`\`json\n${JSON.stringify({ open: open.map((comment) => comment.id) }, null, 2)}\n\`\`\``,
+        },
+      ],
+    })
 
     const seed = open[0]?.thread.at(-1)?.text ?? 'note'
     const edit = input.signal.aborted ? null : applyMockDomainEdit(input.root, seed)
     if (edit) {
-      input.onEvent({ kind: 'tool', text: 'Edit', tool: 'Edit', target: edit.file })
+      input.onEvent({
+        kind: 'tool',
+        text: 'Edit',
+        tool: 'Edit',
+        target: edit.file,
+        call: {
+          id: 'mock-edit',
+          detail: {
+            title: `Edit ${edit.file}`,
+            kind: 'edit',
+            status: 'completed',
+            input: { file_path: edit.file, property: edit.prop },
+            content: [
+              {
+                type: 'diff',
+                path: edit.file,
+                oldText: '  props: {',
+                newText: `  props: {\n    /** Added by the agent in response to a studio comment. */\n    ${edit.prop}: z.string().optional(),`,
+              },
+            ],
+            locations: [edit.file],
+          },
+        },
+      })
       await sleep(300, input.signal)
     }
-    input.onEvent({
-      kind: 'message',
-      text: edit
-        ? `Added a \`${edit.prop}\` property to \`${edit.file}\` and answered the open threads.`
-        : 'Answered the open threads.',
-    })
+    const message = edit
+      ? `Added a \`${edit.prop}\` property to \`${edit.file}\` and answered the open threads.`
+      : 'Answered the open threads.'
+    // like an ACP agent, the message streams in before it is final
+    for (const word of message.match(/\S+\s*/g) ?? []) {
+      input.onDelta?.(word)
+      await sleep(Number(process.env.DOMAIN_STUDIO_MOCK_STREAM_MS || 15), input.signal)
+    }
+    input.onEvent({ kind: 'message', text: message })
 
     const replyText = edit
       ? `Done — implemented this by adding \`${edit.prop}\` to \`${edit.file}\`. (mock agent)`

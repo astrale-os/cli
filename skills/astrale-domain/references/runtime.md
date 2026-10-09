@@ -186,7 +186,7 @@ export const issueNotClosable = error({
   the caller must independently pass admission. See `policies.md` and `users.md`.
 
 ```ts
-import { defineApplication, requirements } from '@astrale-os/sdk/application'
+import { defineDomain, requirements } from '@astrale-os/sdk/domain'
 import { K, schema as language } from '@astrale-os/sdk/schema'
 import { schema } from '#schema'
 
@@ -195,7 +195,7 @@ import { schema } from '#schema'
 // This supplies Domain-principal usability; Messaging.send still checks its caller.
 const Messaging = language.resolve(schema).dependencies.messaging
 
-export const application = defineApplication({
+export const domain = defineDomain({
   schema, runtime,
   requirements: requirements({
     functions: [K.functions.query, K.functions.mutate, Messaging.functions.send],
@@ -221,11 +221,11 @@ export const application = defineApplication({
 - Use top-level `routes/` only for a needed native wire surface: webhook, passthrough, or compatibility API.
   Ordinary SDK Functions and frontend navigation do not need this layer.
 - A route maps HTTP method/path, receiver, headers/body, and credentials to an admitted callable.
-  Keep behavior in `functions/`, not the route; compose the route collection in `application.ts`.
+  Keep behavior in `functions/`, not the route; compose the route collection in `domain.ts`.
 
 ```ts
 // routes/document/download-document-route.ts
-import { route } from '@astrale-os/sdk/application'
+import { route } from '@astrale-os/sdk/domain'
 import { downloadDocument } from '#functions/document'
 
 export const downloadDocumentRoute = route(downloadDocument, {

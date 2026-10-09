@@ -8,6 +8,7 @@ import {
   Position,
   getBezierPath,
   useInternalNode,
+  useStoreApi,
 } from '@xyflow/react'
 import { type RefObject, useLayoutEffect, useRef } from 'react'
 
@@ -15,11 +16,12 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import {
-  edgeLabelRect,
-  placeEdgeLabel,
+  edgeLabelKey,
+  layoutEdgeLabels,
   type EdgeLabelObstacle,
   type EdgeLabelObstacleIndex,
   type EdgeLabelObstacleSource,
+  type EdgeLabelRequest,
   type EdgePathSample,
 } from './edge-label-layout'
 import { type FloatingEdgePort, SMART_EDGE_RENDER_OPTIONS } from './edge-routing'
@@ -183,33 +185,88 @@ function hideLabel(element: HTMLDivElement | null) {
   if (element) element.style.visibility = 'hidden'
 }
 
-function placeLabelElement(
-  id: string,
-  element: HTMLDivElement | null,
-  samples: EdgePathSample[],
-  obstacles: EdgeLabelObstacleSource,
-  additionalObstacles: EdgeLabelObstacle[],
-  preferredDistance: number,
-  maxPathDistance?: number,
-): EdgeLabelObstacle | null {
-  if (!element) return null
-  const size = {
-    width: Math.max(element.offsetWidth, 16),
-    height: Math.max(element.offsetHeight, 12),
-  }
-  const point = placeEdgeLabel(samples, size, obstacles, {
-    preferredDistance,
-    maxPathDistance,
-    additionalObstacles,
-  })
-  if (!point) {
-    hideLabel(element)
-    return null
+interface EdgeLabelJob {
+  requests: Array<EdgeLabelRequest & { element: HTMLDivElement }>
+  hidden: Array<HTMLDivElement | null>
+}
+
+/**
+ * Every label of one canvas is placed in a single pass, so a label knows where its neighbours
+ * went and slides away from them instead of landing on top. Edges only register how to read their
+ * labels; any change (a mount, a path the router redrew, a selection) asks for one batched relayout
+ * of the whole canvas, run before the next paint. The pass reads every size first and writes every
+ * position after, so the browser lays the page out once rather than once per label.
+ */
+class EdgeLabelCoordinator {
+  private readonly jobs = new Map<string, () => EdgeLabelJob>()
+  private scheduled = false
+
+  register(id: string, collect: () => EdgeLabelJob): () => void {
+    this.jobs.set(id, collect)
+    this.schedule()
+    return () => {
+      if (this.jobs.get(id) === collect) this.jobs.delete(id)
+      this.schedule()
+    }
   }
 
-  element.style.transform = `translate(-50%, -50%) translate(${point.x}px, ${point.y}px)`
-  element.style.visibility = 'visible'
-  return { id, ...edgeLabelRect(point, size) }
+  schedule() {
+    if (this.scheduled) return
+    this.scheduled = true
+    queueMicrotask(() => {
+      this.scheduled = false
+      this.flush()
+    })
+  }
+
+  private flush() {
+    const jobs = [...this.jobs.values()].map((collect) => collect())
+    const requests = jobs.flatMap((job) => job.requests)
+    const placements = layoutEdgeLabels(requests)
+    for (const job of jobs) job.hidden.forEach(hideLabel)
+    for (const request of requests) {
+      const rect = placements.get(edgeLabelKey(request.edgeId, request.slot))
+      if (!rect) {
+        hideLabel(request.element)
+        continue
+      }
+      const x = rect.x + rect.width / 2
+      const y = rect.y + rect.height / 2
+      request.element.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`
+      request.element.style.visibility = 'visible'
+    }
+  }
+}
+
+/**
+ * One coordinator per React Flow instance: labels of two canvases never push each other. Keyed on
+ * the store's own `getState`, the one identity every edge of an instance shares; `useStoreApi()`
+ * wraps it in a new object per component.
+ */
+const LABEL_COORDINATORS = new WeakMap<object, EdgeLabelCoordinator>()
+
+function labelCoordinatorFor(store: object): EdgeLabelCoordinator {
+  let coordinator = LABEL_COORDINATORS.get(store)
+  if (!coordinator) {
+    coordinator = new EdgeLabelCoordinator()
+    LABEL_COORDINATORS.set(store, coordinator)
+  }
+  return coordinator
+}
+
+function measuredRequest(
+  element: HTMLDivElement | null,
+  request: Omit<EdgeLabelRequest, 'size'>,
+): (EdgeLabelRequest & { element: HTMLDivElement }) | null {
+  if (!element) return null
+  return {
+    ...request,
+    element,
+    size: {
+      width: Math.max(element.offsetWidth, 16),
+      height: Math.max(element.offsetHeight, 12),
+    },
+  }
 }
 
 function useEdgeLabelLayout({
@@ -231,58 +288,57 @@ function useEdgeLabelLayout({
   targetChip?: FloatingEdgeEnd
   selected: boolean
 }) {
+  const storeIdentity = useStoreApi().getState
   useLayoutEffect(() => {
-    const update = () => {
+    const coordinator = labelCoordinatorFor(storeIdentity)
+    const collect = (): EdgeLabelJob => {
       const path = elements.path.current?.querySelector<SVGPathElement>(
         'path.react-flow__edge-path',
       )
       const samples = renderedPathSamples(path ?? null, geometry)
       const pathLength = samples.at(-1)?.distance ?? 0
-      const occupied: EdgeLabelObstacle[] = []
-
-      if (hasMainLabel) {
-        const placed = placeLabelElement(
-          `${id}:label`,
-          elements.main.current,
-          samples,
-          obstacles,
-          occupied,
-          pathLength / 2,
-        )
-        if (placed) occupied.push(placed)
-      } else hideLabel(elements.main.current)
-
-      if (sourceChip && pathLength >= MIN_CHIP_PATH_LENGTH) {
-        const placed = placeLabelElement(
-          `${id}:source`,
-          elements.source.current,
-          samples,
-          obstacles,
-          occupied,
-          ENDPOINT_CHIP_DISTANCE,
-          40,
-        )
-        if (placed) occupied.push(placed)
-      } else hideLabel(elements.source.current)
-
-      if (targetChip && pathLength >= MIN_CHIP_PATH_LENGTH) {
-        placeLabelElement(
-          `${id}:target`,
-          elements.target.current,
-          samples,
-          obstacles,
-          occupied,
-          Math.max(0, pathLength - ENDPOINT_CHIP_DISTANCE),
-          40,
-        )
-      } else hideLabel(elements.target.current)
+      const showChips = pathLength >= MIN_CHIP_PATH_LENGTH
+      const base = { edgeId: id, samples, obstacles }
+      const requests = [
+        hasMainLabel
+          ? measuredRequest(elements.main.current, {
+              ...base,
+              slot: 0,
+              preferredDistance: pathLength / 2,
+            })
+          : null,
+        sourceChip && showChips
+          ? measuredRequest(elements.source.current, {
+              ...base,
+              slot: 1,
+              preferredDistance: ENDPOINT_CHIP_DISTANCE,
+              maxPathDistance: 40,
+            })
+          : null,
+        targetChip && showChips
+          ? measuredRequest(elements.target.current, {
+              ...base,
+              slot: 2,
+              preferredDistance: Math.max(0, pathLength - ENDPOINT_CHIP_DISTANCE),
+              maxPathDistance: 40,
+            })
+          : null,
+      ].filter((request) => request !== null)
+      return {
+        requests,
+        hidden: [
+          hasMainLabel ? null : elements.main.current,
+          sourceChip && showChips ? null : elements.source.current,
+          targetChip && showChips ? null : elements.target.current,
+        ],
+      }
     }
 
-    update()
+    const unregister = coordinator.register(id, collect)
     const group = elements.path.current
     let mutationObserver: MutationObserver | null = null
     if (group && typeof MutationObserver !== 'undefined') {
-      mutationObserver = new MutationObserver(update)
+      mutationObserver = new MutationObserver(() => coordinator.schedule())
       mutationObserver.observe(group, {
         attributes: true,
         attributeFilter: ['d'],
@@ -293,8 +349,19 @@ function useEdgeLabelLayout({
 
     return () => {
       mutationObserver?.disconnect()
+      unregister()
     }
-  }, [elements, geometry, hasMainLabel, id, obstacles, selected, sourceChip, targetChip])
+  }, [
+    elements,
+    geometry,
+    hasMainLabel,
+    id,
+    obstacles,
+    selected,
+    sourceChip,
+    targetChip,
+    storeIdentity,
+  ])
 }
 
 export function FloatingEdge(props: EdgeProps) {
@@ -312,7 +379,10 @@ export function FloatingEdge(props: EdgeProps) {
   const selected = d?.selected === true
   // The <g> that carries the edge's focus class is not this label's ancestor — React Flow
   // portals labels into its own layer — so the class has to be repeated here by hand.
-  const focusCls = d?.focus === 'on' ? 'is-on' : d?.focus === 'dim' ? 'is-dimmed' : undefined
+  const focusCls = cn(
+    d?.focus === 'on' ? 'is-on' : d?.focus === 'dim' ? 'is-dimmed' : undefined,
+    selected && 'is-selected',
+  )
   const sourceChip = showCardinality ? d?.sourceEnd : undefined
   const targetChip = showCardinality ? d?.targetEnd : undefined
   const pathRef = useRef<SVGGElement>(null)

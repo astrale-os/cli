@@ -2,7 +2,17 @@ import type { AgentRun } from '@shared/types'
 
 import { expect, test } from 'bun:test'
 
-import { harnessLink, isRunActive, pendingRun, reconcileRun, useAgentLive } from './agent'
+import {
+  conversationContext,
+  extendDraft,
+  mergeDraft,
+  harnessLink,
+  isRunActive,
+  mergeEvents,
+  pendingRun,
+  reconcileRun,
+  useAgentLive,
+} from './agent'
 
 const run = (patch: Partial<AgentRun> = {}): AgentRun => ({
   id: 'run-1',
@@ -111,4 +121,96 @@ test('a read that gave up is unreachable, not a spinner that never stops', () =>
   expect(harnessLink(undefined, true)).toBe('unreachable')
   // an answer beats the failure of a LATER read — the harness is known either way
   expect(harnessLink(true, true)).toBe('ready')
+})
+
+const tool = (revision: number, status: 'in_progress' | 'completed') => ({
+  id: 'call',
+  ts: '2026-09-01T10:00:01.000Z',
+  kind: 'tool' as const,
+  text: 'pnpm test',
+  tool: 'execute',
+  status,
+  revision,
+})
+
+test('a tool call reported again updates its step in place, and never goes back', () => {
+  const live = useAgentLive.getState()
+  live.setRun(run({ id: 'run-tools', chatId: 'tools', events: [] }))
+  live.putEvent('tools', 'run-tools', tool(1, 'in_progress'))
+  live.putEvent('tools', 'run-tools', {
+    id: 'note',
+    ts: '2026-09-01T10:00:02.000Z',
+    kind: 'message',
+    text: 'Running the suite.',
+  })
+  live.putEvent('tools', 'run-tools', tool(2, 'completed'))
+  // a late copy of an older report must not undo the newer one
+  live.putEvent('tools', 'run-tools', tool(1, 'in_progress'))
+
+  const events = useAgentLive.getState().runs.tools!.events
+  expect(events.map((event) => event.id)).toEqual(['call', 'note'])
+  expect(events[0]).toMatchObject({ status: 'completed', revision: 2 })
+})
+
+test('two copies of a run keep the longer list, each step at its furthest revision', () => {
+  // the stream saw a new event; the snapshot saw the call settle
+  const streamed = [tool(1, 'in_progress'), { ...tool(1, 'in_progress'), id: 'next' }]
+  const snapshot = [tool(2, 'completed')]
+
+  const merged = mergeEvents(streamed, snapshot)
+  expect(merged.map((event) => event.id)).toEqual(['call', 'next'])
+  expect(merged[0]).toMatchObject({ status: 'completed', revision: 2 })
+  // nothing newer on the other side: the very same list comes back
+  expect(mergeEvents(snapshot, [tool(1, 'in_progress')])).toBe(snapshot)
+  expect(
+    reconcileRun(run({ events: streamed }), run({ events: snapshot }))?.events[0],
+  ).toMatchObject({ revision: 2 })
+})
+
+test('the context window carries over turns of one conversation, and empties with a new one', () => {
+  const full = { used: 150_000, size: 200_000 }
+  const earlier = run({ id: 'a', status: 'succeeded', resumed: false, context: full })
+  // the turn just sent has not reported yet: the window is as the last one left it
+  const sent = pendingRun({ id: 'p', chatId: 'c', harness: 'claude', message: 'go', summary: 'go' })
+  expect(conversationContext([earlier, sent], true)).toEqual(full)
+  // a turn that started a new conversation owns nothing from before it
+  const fresh = run({ id: 'b', resumed: false })
+  expect(conversationContext([earlier, fresh], true)).toBeUndefined()
+  // and a chat with no conversation behind it measures nothing
+  expect(conversationContext([earlier], false)).toBeUndefined()
+  expect(conversationContext([], false)).toBeUndefined()
+})
+
+test('a context report lands on the run it belongs to, and nowhere else', () => {
+  useAgentLive.setState({ runs: { c: run() } })
+  useAgentLive.getState().putContext('c', 'other-run', { used: 1, size: 10 })
+  expect(useAgentLive.getState().runs.c?.context).toBeUndefined()
+  useAgentLive.getState().putContext('c', 'run-1', { used: 5, size: 10 })
+  expect(useAgentLive.getState().runs.c?.context).toEqual({ used: 5, size: 10 })
+})
+
+test('a streamed message grows in place, and a missed piece waits for the snapshot', () => {
+  let draft = extendDraft(undefined, 'm1', 0, 'Hel')
+  draft = extendDraft(draft, 'm1', 3, 'lo')
+  expect(draft).toEqual({ id: 'm1', text: 'Hello' })
+  // the same piece twice lands once
+  expect(extendDraft(draft, 'm1', 3, 'lo')).toEqual({ id: 'm1', text: 'Hello' })
+  // a gap is not papered over
+  expect(extendDraft(draft, 'm1', 9, '!')).toBe(draft)
+  // joined midway through a new message: nothing to place it after
+  expect(extendDraft(draft, 'm2', 4, 'xx')).toBe(draft)
+  expect(extendDraft(draft, 'm2', 0, 'Next')).toEqual({ id: 'm2', text: 'Next' })
+})
+
+test('a draft already written out as a message is over', () => {
+  const events = [{ id: 'm1', ts: 'now', kind: 'message' as const, text: 'Hello' }]
+  expect(mergeDraft({ id: 'm1', text: 'Hello' }, undefined, events)).toBeUndefined()
+  expect(mergeDraft({ id: 'm1', text: 'Hel' }, { id: 'm1', text: 'Hello' }, [])).toEqual({
+    id: 'm1',
+    text: 'Hello',
+  })
+  expect(mergeDraft({ id: 'm1', text: 'Hello' }, { id: 'm2', text: 'Ne' }, events)).toEqual({
+    id: 'm2',
+    text: 'Ne',
+  })
 })

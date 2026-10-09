@@ -1,11 +1,32 @@
 # Views
 
-Schema names the View; Application frontend composition owns its URL, document, and handshake.
+Schema names the View; the Domain definition's frontend composition owns its URL, document, and handshake.
 The React host owns the session, not the business Domain's runtime.
+
+## Domain Views and internal routing
+
+- Every View belongs to its own Domain. The Shell opens it by declaration path
+  (`/:<origin>:view.<name>`) or as the Domain entrypoint, never for a Class or a node. Declare
+  `view({ description? })`; a View declaration names no Class.
+- A screen about one node (an issue, an invoice) is an internal route of the Domain frontend, such as
+  `/issues/$issue`. Read the node from the router (`useParams`, `useSearch`) and pass it to the named
+  Query. The Shell hands the View no node to render and cannot tell which View renders a node.
+- Link to another screen of the same Domain with the router. Open another Domain's View with
+  `openView({ view: '/:<origin>:view.<name>' })` (or its Domain entrypoint) and let that View route
+  internally; never pass it a node to render.
+- The handshake's `targetNodeId` is deprecated and always the Domain path; do not branch on it.
 
 ## Declare the surface
 
 ```ts
+// schema/schema.ts: the Schema names the Domain and its entrypoint View.
+export const schema = defineSchema('work.example', {
+  name: 'Work',
+  entrypoint: 'application',
+  views: { application: view({}) },
+})
+
+// domain.ts
 import { defineFrontend, vite } from '@astrale-os/sdk/view'
 import { schema } from '#schema'
 
@@ -13,9 +34,13 @@ export const frontend = defineFrontend({
   schema,
   source: vite(),
   routes: { application: { path: '/application', handshake: 'shell' } },
-  entrypoint: 'application',
 })
 ```
+
+- Every Schema declares the Domain `name` the Shell shows, and at most one `entrypoint` among its
+  Views: the View the Shell opens for the application. Both are projected into the graph (the Domain
+  Node `name`, an `entrypoint` Edge), where the Shell lists them; a Domain without an entrypoint is
+  not listed. `defineFrontend` no longer takes an `entrypoint`.
 
 - Use `handshake: 'shell'` for host-provided session/client access; `none` is for standalone public documents.
   A View declaration has no callable auth mode: its graph reads and calls retain their own authorization.
@@ -33,6 +58,9 @@ export const frontend = defineFrontend({
   frontend build declarations, not React providers. Declare the packages actually imported by the frontend.
 - `<Astrale>` defaults to the sandboxed child handshake and supplies loading/error boundaries.
   Wrap projected Query/Mutation hooks in `<DomainProvider schema={schema}>`; keep the application's router.
+  Pass the same schemas to `preload={{ domains: [...] }}` so their binding starts with the boot.
+- `useSelf()` is the caller's identity, synchronous and free. `useUser()` reads the User node and may
+  suspend: use it only to show profile properties.
 - `useDomain(schema)` returns a verified installed binding and may suspend. Pass its resolved callable
   to `useAction`; do not reconstruct method keys, forge bound nodes, or resolve another client per component.
 - A local frontend compiled against a newer Schema can fail binding against an older installation.
@@ -47,7 +75,7 @@ import { schema } from '#schema'
 import { router } from './router'
 
 createRoot(document.getElementById('root')!).render(
-  <Astrale>
+  <Astrale preload={{ domains: [schema] }}>
     <DomainProvider schema={schema}>
       <RouterProvider router={router} />
     </DomainProvider>
@@ -93,7 +121,7 @@ See `policies.md` for the principal ceiling and the caller, and `debugging.md` f
   or a fabricated `BoundNode`. Validate only genuinely untrusted raw values entering that boundary.
 - After a successful call, refresh affected observations. Start with supported invalidation options,
   then narrow costly refreshes; optimistic UI does not prove persistence and must recover on refusal.
-- Distinguish loading, empty, missing target, auth failure, expected error, and pending mutation.
+- Distinguish loading, empty, missing routed record, auth failure, expected error, and pending mutation.
   Preserve editable input on failure; show safe actionable refusal details, not transport internals.
 - Keep IDs, digests, SHAs, and technical Paths out of product labels and fallback text; show business
   names or a meaningful unavailable state. Reserve technical coordinates for explicitly developer-facing diagnostics.
@@ -124,7 +152,7 @@ astrale identity list --json
 astrale get @self -i staging --as alice --json
 astrale introspect /:issues.example:class.Issue:close -i staging --as alice
 astrale view /:issues.example:view.application -i staging --as alice
-astrale view @issue-id --list -i staging --as alice
+astrale view issues.example --list -i staging --as alice
 astrale logs -i staging --as alice --topic-prefix op:function. --limit 20
 astrale view --sessions
 astrale view --close <session-id>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import net from 'node:net'
 
-import { findFreePort, portFree } from '../port'
+import { findFreePort, portAnswers, portFree } from '../port'
 
 function listen(port: number): Promise<net.Server> {
   return new Promise((resolve, reject) => {
@@ -33,6 +33,20 @@ describe('port', () => {
       const next = await findFreePort(base as number, 10)
       expect(next).not.toBeNull()
       expect(next as number).toBeGreaterThan(base as number)
+    } finally {
+      await close(srv)
+    }
+  })
+
+  it('portAnswers: true only while something accepts connections on the port', async () => {
+    const p = await findFreePort(48000, 200)
+    expect(p).not.toBeNull()
+    expect(await portAnswers(p as number, '127.0.0.1')).toBe(false)
+    // ::1 may be unavailable (IPv6 disabled): that must read as "nobody answers", not hang.
+    expect(await portAnswers(p as number, '::1')).toBe(false)
+    const srv = await listen(p as number)
+    try {
+      expect(await portAnswers(p as number, '127.0.0.1')).toBe(true)
     } finally {
       await close(srv)
     }

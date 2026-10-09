@@ -25,7 +25,9 @@ Load detailed domain knowledge from the references that matches the goal.
 Use this router to load only the references owned by the current task. For new Domains, also use the
 phased workflow below; an existing public scaffold already satisfies its foundation phase.
 
-- Scaffold, deploy, install, test, or configure TypeScript for a domain: read `references/development.md`.
+- Scaffold, test, or configure TypeScript and Environments for a domain: read `references/development.md`.
+- Deploy, install, publish or yank a version, roll back, rotate a deployment's secret, or decide who
+  owns a development instance: read `references/release.md`.
 - Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/schema.md` first. Always read it for schema work.
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
@@ -51,14 +53,15 @@ order and load a reference only when its phase begins.
 
 1. **Foundation:** Inspect the workspace first. When no public scaffold exists, read
    `references/development.md`; read `references/domains.md` only when deciding whether to reuse a
-   native Domain. When the workspace already declares the SDK, deployment adapter, Application, and
+   native Domain. When the workspace already declares the SDK, deployment adapter, Domain definition, and
    Runtime, keep that plumbing and move directly to Schema.
 2. **Schema:** Before authoring the schema, read `references/schema.md`; for sign-in users and groups,
    also read `references/users.md` before inventing identity or onboarding vocabulary.
 3. **Callables:** Before implementing callables, read `references/runtime.md` and
    `references/policies.md`. If an external system is involved, also read `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
-   implementing it. Views are Schema declarations, not fields on the SDK Domain definition.
+   implementing it. Views are Schema declarations, not fields on the SDK Domain definition. Every View
+   belongs to its Domain; node screens are internal routes of its frontend, not Class-bound Views.
 5. **Demo data:** For a Domain with a meaningful sample graph, author a small Dataset under `tests/`,
    referenced from `astrale.config.ts`. Read `references/datasets.md` first; do not invent graph data
    for an API-only Domain or expand a focused edit into unrelated demo work.

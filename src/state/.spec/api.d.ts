@@ -20,6 +20,7 @@ export interface Paths {
   readonly idpSessionsDir: string
   readonly exchangeCredentials: string
   readonly sessionRoutes: string
+  readonly installations: string
   idpDir(name: string): string
   idpSession(identityName: string): string
 }
@@ -39,6 +40,44 @@ export const IDPS_PATH: string
 export const IDP_SESSIONS_DIR: string
 export const EXCHANGE_CREDENTIALS_PATH: string
 export const SESSION_ROUTES_PATH: string
+export const INSTALLATIONS_PATH: string
+
+/**
+ * What the CLI remembers about one Domain installed on one Kernel. Only facts whose staleness fails
+ * closed belong here (a moved issuer fails at token exchange or Kernel admission, and its reader
+ * forgets it); facts an upgrade changes without failing need revalidation and never live here.
+ */
+export interface Installation {
+  /** Issuer the installed pin named when read, or null when the Domain executes on the Kernel. */
+  readonly issuer: string | null
+}
+
+export namespace installations {
+  interface Artifact {
+    readonly version: 1
+    readonly entries: Record<string, Entry>
+  }
+
+  interface Entry extends Installation {
+    /** Unix time in milliseconds of the installation read that produced this entry. */
+    readonly observedAt: number
+  }
+}
+
+/** Remember each Domain installation per source Kernel; installation state, never authority. */
+/**
+ * A record is trusted only while the cache can still forget it: without a writable directory every
+ * record is a miss, and a record that cannot be rewritten away is removed with the whole file.
+ */
+export class InstallationCache {
+  constructor(path?: string, maximumAgeMs?: number, lock?: FileLockOptions)
+  get(kernelIssuer: string, origin: string, now?: number): Promise<Installation | undefined>
+  set(kernelIssuer: string, origin: string, installation: Installation, now?: number): Promise<void>
+  delete(kernelIssuer: string, origin: string): Promise<void>
+  deleteKernel(kernelIssuer: string): Promise<void>
+}
+
+export const INSTALLATION_CACHE: InstallationCache
 
 export namespace exchange {
   interface Artifact {

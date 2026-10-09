@@ -24,14 +24,6 @@ describe('view session runtime', () => {
           origin: 'issues.astrale.ai',
           slug: 'dashboard',
           instance: 'local',
-          targetRequired: false,
-          targets: {
-            status: 'available',
-            items: [],
-            selected: null,
-            stale: null,
-            truncated: false,
-          },
           expiresAt: Date.now() + 60_000,
         }),
         open: async (input) => {
@@ -68,40 +60,32 @@ describe('view session runtime', () => {
     expect(result).toMatchObject({
       status: 'ready',
       sessionId: 'v-a1b2',
-      target: null,
     })
   })
 
   test('reads the verified placement URL from the current CLI session route', () => {
     expect(
-      readyViewSession(
-        {
-          session: {
-            id: 'v-a1b2',
-            pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-            view: { route: { href: 'https://issues.example/ui/issue' } },
-          },
+      readyViewSession({
+        session: {
+          id: 'v-a1b2',
+          pageUrl: 'http://127.0.0.1:4419/s/nonce/',
+          view: { route: { href: 'https://issues.example/ui/issue' } },
         },
-        null,
-      ),
+      }),
     ).toEqual({
       status: 'ready',
       sessionId: 'v-a1b2',
       pageUrl: 'http://127.0.0.1:4419/s/nonce/',
       viewUrl: 'https://issues.example/ui/issue',
-      target: null,
     })
     expect(
-      readyViewSession(
-        {
-          session: {
-            id: 'v-old',
-            pageUrl: 'http://127.0.0.1:4419/s/old/',
-            view: { url: 'https://legacy.invalid/view' },
-          },
-        } as never,
-        null,
-      ),
+      readyViewSession({
+        session: {
+          id: 'v-old',
+          pageUrl: 'http://127.0.0.1:4419/s/old/',
+          view: { url: 'https://legacy.invalid/view' },
+        },
+      } as never),
     ).toBeNull()
   })
 })

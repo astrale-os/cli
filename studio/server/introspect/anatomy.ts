@@ -13,7 +13,7 @@ import { join } from 'node:path'
 
 import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/types'
 
-import { resolveApplicationEntry } from '../domain'
+import { resolveDomainEntry } from '../domain'
 import { asJsonRecord, asString, parseJson } from '../json'
 import { studioSettings } from '../studio-settings'
 import { buildClientTree, buildEnvFields, buildViews, findSchemaDefinition } from './anatomy-extras'
@@ -68,17 +68,17 @@ function buildOverview(
 
   const config = readConfigPreview(root)
 
-  const application = resolveApplicationEntry(root)
-  const applicationSrc = application === null ? '' : readTextSafe(application)
+  const domainFile = resolveDomainEntry(root)
+  const domainSrc = domainFile === null ? '' : readTextSafe(domainFile)
   const origin =
     schemaOrigin ??
-    applicationSrc.match(DEFINE_SCHEMA_ORIGIN)?.[1] ??
+    domainSrc.match(DEFINE_SCHEMA_ORIGIN)?.[1] ??
     readTextSafe(join(root, schemaDirName, 'index.ts')).match(DEFINE_SCHEMA_ORIGIN)?.[1] ??
     ''
 
   return {
     origin,
-    applicationFile: application === null ? undefined : relativePosix(root, application),
+    domainFile: domainFile === null ? undefined : relativePosix(root, domainFile),
     adapter: config.adapter,
     prodTarget: config.prodTarget,
     devSecrets: config.devSecrets,

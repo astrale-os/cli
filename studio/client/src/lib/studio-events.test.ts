@@ -65,7 +65,22 @@ test('live agent events merge directly and only terminal runs refresh history', 
       runId: 'run-1',
       event,
     }),
-  ).toEqual([{ type: 'append-agent-event', chatId: 'chat-1', runId: 'run-1', event }])
+  ).toEqual([{ type: 'put-agent-event', chatId: 'chat-1', runId: 'run-1', event }])
+  expect(
+    studioEventEffects({
+      type: 'agent-context',
+      chatId: 'chat-1',
+      runId: 'run-1',
+      context: { used: 10, size: 100 },
+    }),
+  ).toEqual([
+    {
+      type: 'put-agent-context',
+      chatId: 'chat-1',
+      runId: 'run-1',
+      context: { used: 10, size: 100 },
+    },
+  ])
   expect(
     studioEventEffects({
       type: 'agent-run',

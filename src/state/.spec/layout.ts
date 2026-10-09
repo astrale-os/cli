@@ -6,6 +6,7 @@ export default defineLayout({
     'exchange-credentials.ts',
     'files.ts',
     'identities.ts',
+    'installations.ts',
     'index.ts',
     'paths.ts',
     'session-routes.ts',
