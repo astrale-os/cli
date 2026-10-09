@@ -3,16 +3,20 @@ import type { Transport } from '@astrale-os/sdk/client'
 import { issuer } from '@astrale-os/sdk/auth'
 import { call, Client } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
+import { invocationPath } from '@astrale-os/sdk/deployment/release'
 import { NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { invocation } from '@astrale-os/sdk/invocation'
+import { MEDIA_TYPE, encode } from '@astrale-os/sdk/release'
+import { defineSchema } from '@astrale-os/sdk/schema'
 
+import { deploymentReleaseFor } from '../../../__tests__/fixtures/publication'
 import { FileSessionRouteStore } from '../../session-routes'
 
 const routePath = process.argv[2]
 if (routePath === undefined) throw new Error('route artifact path is required')
 
-const sourceEndpoint = 'https://source.kernel.test/invoke'
+const sourceEndpoint = `https://source.kernel.test${invocationPath()}`
 const sourceIssuer = issuer.accept('https://source.kernel.test')
 const destinationEndpoint = 'https://destination.application.test/invoke'
 const target = Path.id(NodeId('session-route-fresh-process'))
@@ -24,14 +28,14 @@ const route = invocation.acceptRoute({
   via: {
     kind: 'via',
     issuer: sourceIssuer,
-    publication: {
+    release: {
       origin: 'destination.application.test',
       identity: {
         issuer: 'https://destination.application.test',
         subject: 'destination.application.test',
       },
       revision: `sha256:${'1'.padStart(64, '0')}`,
-      etag: `sha256:${'1'.padStart(64, '0')}`,
+      digest: `sha256:${'1'.padStart(64, '0')}`,
     },
   },
 })
@@ -60,13 +64,15 @@ const session = new ClientSession({
   kernel: sourceIssuer,
   fetch: async () =>
     new Response(
-      JSON.stringify({
-        protocol: 'astrale-invocation',
-        version: 1,
-        issuer: sourceIssuer,
-        endpoints: { http: sourceEndpoint },
-      }),
-      { headers: { 'content-type': 'application/json' } },
+      Buffer.from(
+        encode(
+          deploymentReleaseFor(
+            defineSchema('source.kernel.test', { name: 'Route fixture' }),
+            sourceIssuer,
+          ).document,
+        ),
+      ),
+      { headers: { 'content-type': MEDIA_TYPE } },
     ),
   pool: {
     clientFor(

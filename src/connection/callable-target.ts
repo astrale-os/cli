@@ -22,7 +22,7 @@ export async function resolveCallableTarget(
   schema: Pick<SchemaApi, 'inspect'>,
 ): Promise<ConnectionTarget> {
   const installed = await schema.inspect(origin)
-  return withCallableIssuer(target, installed.publication?.identity.issuer)
+  return withCallableIssuer(target, installed.release?.identity.issuer)
 }
 
 /** The callable's Domain issuer replaces the bookmark's Domain; a Kernel-hosted Domain has none. */

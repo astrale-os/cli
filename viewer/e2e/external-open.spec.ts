@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { answerKernel } from './kernel'
+import { fulfillKernel } from './kernel'
 
 const temporary = mkdtempSync(join(tmpdir(), 'astrale-view-browser-'))
 const childFile = join(temporary, 'child.js')
@@ -33,8 +33,8 @@ test('published requirements grant only each mounted View and isolate its provid
   let provider = 'https://provider-a.example'
   let revision = 0
   await context.route('https://**/*', async (route) => {
-    if (await answerKernel(route)) return
     const url = new URL(route.request().url())
+    if (url.hostname === 'kernel.example') return fulfillKernel(route)
     if (url.hostname.startsWith('provider-'))
       return route.fulfill({ contentType: 'text/html', body: '<title>Provider ready</title>' })
     if (url.hostname === 'view.example' || url.hostname === 'nested.view.example') {
@@ -53,7 +53,7 @@ test('published requirements grant only each mounted View and isolate its provid
         href: `https://view.example/?provider=${encodeURIComponent(provider)}`,
         handshake: 'shell',
         issuer: 'https://browser-fixture.example',
-        etag: `sha256:${(revision === 0 ? 'a' : 'b').repeat(64)}`,
+        release: `sha256:${(revision === 0 ? 'a' : 'b').repeat(64)}`,
         revision: `sha256:${'d'.repeat(64)}`,
         host: { navigation: { external: { origins: [provider] } } },
       },
@@ -115,7 +115,7 @@ test('published requirements grant only each mounted View and isolate its provid
   await expect(nested.locator('#status')).toHaveText('opened')
   await nestedPopup.close()
 
-  // A new publication must replace the old origins in the next handshake.
+  // A new release must replace the old origins in the next handshake.
   provider = 'https://provider-b.example'
   revision += 1
   await page.reload()

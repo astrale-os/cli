@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { fulfillKernel } from './kernel'
+
 /**
  * Who a View session belongs to, proven in a browser against the real session
  * server: the operator pops a View out into their own tab, the Studio dialog
@@ -46,7 +48,7 @@ test.beforeAll(async () => {
           href: 'https://view.example/board',
           handshake: 'none',
           issuer: 'https://ownership.example',
-          etag: `sha256:${'a'.repeat(64)}`,
+          release: `sha256:${'a'.repeat(64)}`,
           revision: `sha256:${'b'.repeat(64)}`,
         },
       },
@@ -113,6 +115,7 @@ test.afterAll(() => {
 test('a popped-out View outlives the dialog that opened it, and ends with its own tab', async ({
   context,
 }) => {
+  await context.route('https://kernel.example/**', fulfillKernel)
   await context.route('https://view.example/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<title>Board</title>' }),
   )

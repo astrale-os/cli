@@ -1,9 +1,4 @@
-import {
-  legacyDependencyFootprint,
-  type LegacyDependencyFootprintSchema,
-} from './legacy/dependency-footprint'
-
-export interface DependencyFootprintSchema extends LegacyDependencyFootprintSchema {
+export interface DependencyFootprintSchema {
   readonly compatibility?: {
     compareMeaning(request: {
       readonly scope: { readonly kind: 'dependency'; readonly dependent: any }
@@ -17,14 +12,14 @@ export interface DependencyFootprintSchema extends LegacyDependencyFootprintSche
   }
 }
 
-/** Prefer the inspected Domain's canonical compatibility owner; never retry its errors as legacy. */
+/** Read dependency reachability through the inspected Domain's canonical compatibility owner. */
 export function dependencyFootprint(
   schema: DependencyFootprintSchema,
   dependent: unknown,
   dependency: unknown,
 ): readonly unknown[] {
   if (schema.compatibility === undefined) {
-    return legacyDependencyFootprint(schema, dependent, dependency)
+    throw new TypeError('The inspected Domain SDK does not expose schema.compatibility.')
   }
   const comparison = schema.compatibility.compareMeaning({
     scope: { kind: 'dependency', dependent },

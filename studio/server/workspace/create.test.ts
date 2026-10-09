@@ -23,7 +23,7 @@ test('workspace creation annotates the schema definition behind a current barrel
   writeFileSync(
     definition,
     `export const ORIGIN = 'application.example.dev' as const
-const input = { classes: {} } as const
+const input = { name: 'Test Domain', classes: {} } as const
 export const schema = defineSchema(ORIGIN, input)
 `,
   )

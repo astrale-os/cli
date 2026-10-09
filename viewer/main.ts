@@ -220,8 +220,7 @@ async function main(): Promise<void> {
       envelopeTransport: 'http',
     },
     adapter: accessibleIframeAdapter(createIframeShellAdapter()),
-    // No iframe policy: as in the GUI and the Console, a View receives the Shell's shared browser
-    // profile, and a requirement beyond it is refused here rather than granted only locally.
+    // Every View receives the Shell's fixed browser profile, including nested Views.
     externalOpen: (request) => openExternalBrowserWindow(window, request),
   })
   await shell.init()

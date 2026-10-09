@@ -29,15 +29,12 @@ const OTHER_LINE = deployment('shell-dddddddddddddddd', 'bbbbbbbbbbbbbbbb')
 const LEGACY = 'https://shell-v3.beta.astrale.ai'
 const digest = (seed: string) => `sha256:${seed.repeat(64)}` as const
 
-function served(url: string, pin: 'release' | 'legacy' = 'release'): ServedDeployment {
+function served(url: string): ServedDeployment {
   return {
     origin: 'shell.astrale.ai',
     issuer: url,
     revision: 'r1',
-    pin:
-      pin === 'release'
-        ? { kind: 'release', release: digest('1'), build: digest('2') }
-        : { kind: 'legacy', document: 3, etag: digest('3') },
+    pin: { kind: 'release', release: digest('1'), build: digest('2') },
   } as ServedDeployment
 }
 
@@ -355,7 +352,6 @@ describe('first install notice', () => {
     expect(firstInstallNotice(served(S1), S1)).toBe(
       `origin shell.astrale.ai claimed by unverified deployment ${S1}`,
     )
-    expect(firstInstallNotice(served(LEGACY, 'legacy'), LEGACY)).toBeUndefined()
     expect(
       firstInstallNotice(
         { ...served(S1), origin: 'shell.astrale.app' },

@@ -24,17 +24,13 @@ function domainView(name: string): ResolvedView {
       href: `https://shell.test/${name}`,
       handshake: 'shell',
       issuer: issuer('https://shell.test'),
-      etag: digest('a'),
+      release: digest('a'),
       revision: revision('b'),
     },
   }
 }
 
-function openMessage(
-  view: string,
-  correlationId?: string,
-  requestTarget?: string,
-): IntentMessage<'view.open'> {
+function openMessage(view: string, correlationId?: string): IntentMessage<'view.open'> {
   return {
     type: 'intent',
     version: 1,
@@ -42,12 +38,6 @@ function openMessage(
       name: 'view.open',
       payload: {
         view: view as IntentMessage<'view.open'>['envelope']['payload']['view'],
-        ...(requestTarget === undefined
-          ? {}
-          : {
-              target: requestTarget as IntentMessage<'view.open'>['envelope']['payload']['target'] &
-                string,
-            }),
       },
       sender: { windowId: 'old-window' },
       ...(correlationId ? { correlationId } : {}),
@@ -62,7 +52,6 @@ function mounted(windowId: string, view: ResolvedView, onClose?: () => void): Mo
     window: {
       windowId,
       functionId: String(view.route.key),
-      targetNodeId: String(view.target),
       children: [],
       view,
       location: { target: view.target, params: {} },
@@ -76,6 +65,7 @@ function mounted(windowId: string, view: ResolvedView, onClose?: () => void): Mo
     handle: { element: {} as HTMLElement },
     credential: { state: 'none' },
     presentation: { kind: 'inline', constrained: false },
+    ready: Promise.resolve(),
     focus() {},
     close: async () => {
       onClose?.()
@@ -141,27 +131,14 @@ describe('view.open host', () => {
     ])
   })
 
-  test('accepts the Domain path as the only explicit target', async () => {
-    const h = harness()
-    await handleViewOpenIntent(
-      h.host,
-      openMessage('shell.test:view.card', undefined, '/:shell.test'),
-    )
-
-    expect(h.events).toContain('open:/:shell.test:view.card')
-  })
-
   test('refuses to open a View for a node and keeps the current View', async () => {
     const h = harness()
-    await handleViewOpenIntent(
-      h.host,
-      openMessage('shell.test:view.card', 'corr-node', '@person-1'),
-    )
+    await handleViewOpenIntent(h.host, openMessage('@person-1', 'corr-node'))
 
     expect(h.current()?.windowId).toBe('old-window')
     expect(h.events).toEqual([
       'reject:old-window',
-      expect.stringContaining('failed:Views open on their Domain only'),
+      expect.stringContaining('failed:Invalid View key'),
     ])
   })
 

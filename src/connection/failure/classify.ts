@@ -1,5 +1,11 @@
 import { AuthValueError } from '@astrale-os/sdk/auth'
-import { ClientError, ProtocolError, ResponseError, TransportError } from '@astrale-os/sdk/client'
+import {
+  ClientError,
+  ProtocolError,
+  ResponseError,
+  SessionError,
+  TransportError,
+} from '@astrale-os/sdk/client'
 import { NodeUnavailableError } from '@astrale-os/sdk/client'
 import { PathError } from '@astrale-os/sdk/graph/path'
 
@@ -28,10 +34,7 @@ export function classifyFailure(error: unknown): FailureDiagnostic {
       ...(error.reason === undefined ? {} : { reason: error.reason }),
     }
   }
-  if (error instanceof ClientError) {
-    const failure = sessionFailure(error)
-    if (failure !== undefined) return simple(lifecycleCode(failure), error.message)
-  }
+  if (error instanceof SessionError) return simple(lifecycleCode(error.failure), error.message)
   if (error instanceof ProtocolError) return simple('PROTOCOL_ERROR', error.message)
   if (error instanceof NodeUnavailableError)
     return simple(
@@ -60,15 +63,11 @@ function lifecycleCode(value: TransportError['phase'] | SessionFailure): string 
 function transportContext(error: TransportError): TransportDiagnosticContext | undefined {
   const evidence = error as TransportError & {
     readonly context?: unknown
-    readonly delivery?: unknown
-    readonly invocation?: unknown
   }
   if (record(evidence.context)) {
     if (
       evidence.context.kind === 'acquisition' &&
-      (evidence.context.resource === 'release' ||
-        evidence.context.resource === 'publication' ||
-        evidence.context.resource === 'bundle')
+      (evidence.context.resource === 'release' || evidence.context.resource === 'bundle')
     ) {
       return { kind: 'acquisition', resource: evidence.context.resource }
     }
@@ -85,19 +84,7 @@ function transportContext(error: TransportError): TransportDiagnosticContext | u
       }
     }
   }
-  if (evidence.delivery !== 'not-sent' && evidence.delivery !== 'unknown') return undefined
-  return {
-    kind: 'invocation',
-    delivery: evidence.delivery,
-    ...(evidence.invocation === undefined ? {} : { invocation: evidence.invocation }),
-  }
-}
-
-function sessionFailure(error: ClientError): SessionFailure | undefined {
-  const failure = (error as ClientError & { readonly failure?: unknown }).failure
-  return failure === 'cancelled' || failure === 'closed' || failure === 'timeout'
-    ? failure
-    : undefined
+  return undefined
 }
 
 function record(input: unknown): input is Readonly<Record<string, unknown>> {

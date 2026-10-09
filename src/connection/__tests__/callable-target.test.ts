@@ -52,7 +52,7 @@ function harness(publishedIssuer = serviceIssuer, failure?: Error) {
               if (failure) throw failure
               return {
                 origin,
-                publication: { identity: { issuer: publishedIssuer } },
+                release: { identity: { issuer: publishedIssuer } },
               } as DomainInfo
             },
           },

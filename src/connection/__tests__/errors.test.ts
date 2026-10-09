@@ -23,9 +23,9 @@ describe('formatKernelError', () => {
       return true
     }) as typeof process.stderr.write
     const error = Object.assign(
-      transportFailure('Publication discovery request failed.', 'unknown', {
+      transportFailure('Release discovery request failed.', 'unknown', {
         kind: 'acquisition',
-        resource: 'publication',
+        resource: 'release',
       }),
       {
         url: 'https://localhost:8443/kernel/host',
@@ -40,10 +40,10 @@ describe('formatKernelError', () => {
 
     expect(JSON.parse(writes[0]!)).toMatchObject({
       error: 'TRANSPORT_ERROR',
-      message: 'Publication discovery request failed.',
+      message: 'Release discovery request failed.',
       url: 'https://localhost:8443/kernel/host',
       phase: 'unknown',
-      transport: { kind: 'acquisition', resource: 'publication' },
+      transport: { kind: 'acquisition', resource: 'release' },
     })
     expect(writes[0]).not.toContain('ECONNREFUSED')
   })

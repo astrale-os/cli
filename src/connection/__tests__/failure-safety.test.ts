@@ -3,7 +3,7 @@ import { Path } from '@astrale-os/sdk/graph/path'
 import { expect, test } from 'bun:test'
 
 import { formatKernelError } from '../errors'
-import { legacyTransportFailure, sessionFailure, transportFailure } from './failure-fixtures'
+import { sessionFailure, transportFailure } from './failure-fixtures'
 
 /** @evidence TEST-CLI-CONNECTION-FAILURE-SAFETY */
 test('unknown and empty native failures never become ordinary diagnostics', async () => {
@@ -36,9 +36,9 @@ test('Session and acquisition failures remain typed without unsafe recovery advi
 
   const acquisition = await capture(() =>
     formatKernelError(
-      transportFailure('Publication failed.', 'unknown', {
+      transportFailure('Release failed.', 'unknown', {
         kind: 'acquisition',
-        resource: 'publication',
+        resource: 'release',
       }),
       true,
       '',
@@ -48,14 +48,17 @@ test('Session and acquisition failures remain typed without unsafe recovery advi
   )
   expect(JSON.parse(acquisition)).toMatchObject({
     error: 'TRANSPORT_ERROR',
-    transport: { kind: 'acquisition', resource: 'publication' },
+    transport: { kind: 'acquisition', resource: 'release' },
   })
   expect(acquisition).not.toContain('must-not-leak')
 
-  const legacy = await capture(() =>
-    formatKernelError(legacyTransportFailure('Legacy send failed.', 'send', 'not-sent'), true),
+  const invocation = await capture(() =>
+    formatKernelError(
+      transportFailure('Send failed.', 'send', { kind: 'invocation', delivery: 'not-sent' }),
+      true,
+    ),
   )
-  expect(JSON.parse(legacy)).toMatchObject({
+  expect(JSON.parse(invocation)).toMatchObject({
     error: 'TRANSPORT_ERROR',
     transport: { kind: 'invocation', delivery: 'not-sent' },
   })

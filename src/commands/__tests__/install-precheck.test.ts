@@ -67,25 +67,29 @@ const icon = classIcon.neutral
 const Member = nodeClass({ icon })
 const Badge = nodeClass({ icon })
 /** Shell R1 declares Member; R2 drops it for Badge (breaking); R1b adds Badge beside it. */
-const ShellR1 = defineSchema(SHELL, { classes: { Member } })
-const ShellR2 = defineSchema(SHELL, { classes: { Badge } })
-const ShellR1b = defineSchema(SHELL, { classes: { Member, Badge } })
+const ShellR1 = defineSchema(SHELL, { name: 'Test Domain', classes: { Member } })
+const ShellR2 = defineSchema(SHELL, { name: 'Test Domain', classes: { Badge } })
+const ShellR1b = defineSchema(SHELL, { name: 'Test Domain', classes: { Member, Badge } })
 /** CRM 1.1.0 extends Shell R1's Member; CRM 1.2.0 was rebuilt against R2 and extends Badge. */
 const CrmR1 = defineSchema(CRM, {
+  name: 'Test Domain',
   dependencies: { shell: ShellR1 },
   classes: { Profile: nodeClass({ extends: [Member], icon }) },
 })
 const CrmR2 = defineSchema(CRM, {
+  name: 'Test Domain',
   dependencies: { shell: ShellR2 },
   classes: { Card: nodeClass({ extends: [Badge], icon }) },
 })
 /** Notes depends on Shell R1 and uses nothing in it: every Shell revision holds for it. */
 const NotesR1 = defineSchema(NOTES, {
+  name: 'Test Domain',
   dependencies: { shell: ShellR1 },
   classes: { Note: nodeClass({ icon }) },
 })
 /** Tasks uses nothing of Shell structurally but declares Member as a capability. */
 const TasksR1 = defineSchema(TASKS, {
+  name: 'Test Domain',
   dependencies: { shell: ShellR1 },
   classes: { Task: nodeClass({ icon }) },
 })
@@ -93,6 +97,7 @@ const TasksR1 = defineSchema(TASKS, {
 /** Ledger depends on CRM only; its Entry extends CRM's Profile, so it reaches Shell's Member through CRM. */
 const LEDGER = 'ledger.example.test'
 const LedgerR1 = defineSchema(LEDGER, {
+  name: 'Test Domain',
   dependencies: { crm: CrmR1 },
   classes: { Entry: nodeClass({ extends: [CrmR1.classes.Profile!.ref], icon }) },
 })
@@ -123,18 +128,23 @@ function directory(version: 'v1' | 'dropped' | 'narrowed') {
     },
     target: { as: 'group', accepts: [Group], incoming: '0..*' },
   })
-  return defineSchema(DIRECTORY, { classes: { Principal, Auditable, Member, Group, member_of } })
+  return defineSchema(DIRECTORY, {
+    name: 'Test Domain',
+    classes: { Principal, Auditable, Member, Group, member_of },
+  })
 }
 const DirectoryR1 = directory('v1')
 /** Roster uses nothing of the directory structurally and declares its Member as a capability. */
 const ROSTER = 'roster.example.test'
 const RosterR1 = defineSchema(ROSTER, {
+  name: 'Test Domain',
   dependencies: { directory: DirectoryR1 },
   classes: { Shift: nodeClass({ icon }) },
 })
 /** Staff's only use of the directory is a Policy pattern that matches its member_of Edge. */
 const STAFF = 'staff.example.test'
 const StaffR1 = defineSchema(STAFF, {
+  name: 'Test Domain',
   dependencies: { directory: DirectoryR1 },
   policies: {
     membership: policy({
@@ -396,10 +406,10 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
       [
         {
           kind: 'skipped',
-          reference: 'https://legacy.example.test',
+          reference: 'https://unreadable.example.test',
           origin: SHELL,
           revision: R.shell2,
-          reason: 'legacy',
+          reason: 'release-unread',
         },
       ],
       installed.map(installedFrom),
@@ -409,7 +419,7 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
     expect(verdict).toMatchObject({
       compared: 0,
       dependents: [],
-      skipped: [{ reference: 'https://legacy.example.test', reason: 'legacy' }],
+      skipped: [{ reference: 'https://unreadable.example.test', reason: 'release-unread' }],
     })
   })
 
@@ -495,6 +505,7 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
     const notes = Array.from({ length: 10 }, (_, index) =>
       built(
         defineSchema(`n${index}.example.test`, {
+          name: 'Test Domain',
           dependencies: { shell: ShellR1 },
           classes: { Note: nodeClass({ icon }) },
         }),

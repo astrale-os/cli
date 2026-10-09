@@ -1,6 +1,7 @@
 import type { InstalledRelease, InstallRequest, InstallResult } from '@astrale-os/sdk/client/schema'
 import type { Command } from 'commander'
 
+import { defineSchema } from '@astrale-os/sdk/schema'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { CommanderError } from 'commander'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -9,6 +10,7 @@ import { join, relative } from 'node:path'
 
 import type { ServedDeployment } from '../../lib/domain-release'
 
+import { deploymentReleaseFor } from '../../__tests__/fixtures/publication'
 import { connectAdminRegistry } from '../../admin/registry'
 import {
   digestOf,
@@ -20,7 +22,6 @@ import {
   type FakeRelease,
 } from '../../admin/registry/__tests__/fake-admin'
 import { callCommand } from '../../commands/call'
-import { installsOnKernel } from '../../commands/domain/install'
 import { installByReference } from '../../commands/domain/release-install'
 import { buildProgram } from '../index'
 
@@ -423,6 +424,11 @@ function served(source: Deployment): ServedDeployment {
     origin: source.origin,
     issuer: source.url,
     revision: REVISION,
+    release: deploymentReleaseFor(
+      defineSchema(source.origin, { name: 'Skill fixture' }),
+      source.url,
+      source.buildDigest,
+    ).document,
     pin: { kind: 'release', release: source.releaseDigest, build: source.buildDigest },
   }
 }
@@ -522,9 +528,6 @@ const INSTALLS: Readonly<
     after: [D.published],
   },
 }
-
-/** The Fleet catalog install by bare origin, which goes to Admin and is not part of this flow. */
-const CATALOG_INSTALLS = new Set(['astrale domain install crm.example -i staging'])
 
 class ExitError extends Error {
   constructor(readonly code: number | string | null | undefined) {
@@ -651,9 +654,7 @@ describe('release-flow install examples run against a fake registry and Kernel',
 
   test('the table covers exactly the install examples of the release flow', () => {
     const written = new Set(flow().map((example) => example.source))
-    expect(
-      [...written].filter((source) => !(source in INSTALLS) && !CATALOG_INSTALLS.has(source)),
-    ).toEqual([])
+    expect([...written].filter((source) => !(source in INSTALLS))).toEqual([])
     expect(Object.keys(INSTALLS).filter((source) => !written.has(source))).toEqual([])
   })
 
@@ -663,11 +664,7 @@ describe('release-flow install examples run against a fake registry and Kernel',
       const parsed = (await parse(example)).parsed!
       expect(parsed.command, example.source).toBe('domain install')
       const [references, opts] = parsed.args as [string[], Record<string, unknown>]
-      if (scenario === undefined) {
-        expect(installsOnKernel(references, false), example.source).toBe(false)
-        continue
-      }
-      expect(installsOnKernel(references, false), example.source).toBe(true)
+      expect(scenario, example.source).toBeDefined()
       stdout = ''
       stderr = ''
       const { requests, failure } = await runInstall(references, opts, scenario.before)

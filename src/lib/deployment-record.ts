@@ -6,7 +6,7 @@ import {
   type DeploymentRecordV1,
 } from '@astrale-os/sdk/deployment/address'
 
-import { cancel } from './domain-publication'
+import { cancel } from './deployment-document'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 

@@ -39,7 +39,7 @@ async function nested(origin: string) {
           href: `https://nested.view.example/?provider=${encodeURIComponent(origin)}`,
           handshake: 'shell',
           issuer: 'https://browser-fixture.example' as ResolvedView['route']['issuer'],
-          etag: `sha256:${'c'.repeat(64)}`,
+          release: `sha256:${'c'.repeat(64)}`,
           revision: `sha256:${'d'.repeat(64)}` as ResolvedView['route']['revision'],
           host: { navigation: { external: { origins: [origin] } } },
         },

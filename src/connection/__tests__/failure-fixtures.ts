@@ -1,39 +1,30 @@
-import { ClientError, TransportError } from '@astrale-os/sdk/client'
+import { SessionError, TransportError } from '@astrale-os/sdk/client'
 
 import type { TransportDiagnosticContext } from '../failure/model'
 
-type CompatibleTransportPhase = TransportError['phase'] | 'unknown'
-
 export function transportFailure(
   message: string,
-  phase: CompatibleTransportPhase,
+  phase: TransportError['phase'],
   context: TransportDiagnosticContext,
 ): TransportError {
-  const error = new Error(message) as TransportError & {
-    context: TransportDiagnosticContext
-  }
-  Object.setPrototypeOf(error, TransportError.prototype)
-  Object.assign(error, { name: 'TransportError', phase, context })
-  return error
-}
-
-export function legacyTransportFailure(
-  message: string,
-  phase: CompatibleTransportPhase,
-  delivery: 'not-sent' | 'unknown',
-): TransportError {
-  const error = new Error(message) as TransportError & { delivery: typeof delivery }
-  Object.setPrototypeOf(error, TransportError.prototype)
-  Object.assign(error, { name: 'TransportError', phase, delivery })
-  return error
+  return context.kind === 'acquisition'
+    ? TransportError.acquisition(message, { phase, resource: context.resource })
+    : TransportError.invocation(message, {
+        phase,
+        delivery: context.delivery,
+        ...(context.invocation === undefined
+          ? {}
+          : {
+              invocation: context.invocation as Parameters<
+                typeof TransportError.invocation
+              >[1]['invocation'],
+            }),
+      })
 }
 
 export function sessionFailure(
   message: string,
   failure: 'cancelled' | 'closed' | 'timeout',
-): ClientError {
-  const error = new Error(message) as ClientError & { failure: typeof failure }
-  Object.setPrototypeOf(error, ClientError.prototype)
-  Object.assign(error, { name: 'SessionError', failure })
-  return error
+): SessionError {
+  return new SessionError(message, { failure })
 }

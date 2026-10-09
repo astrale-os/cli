@@ -101,8 +101,6 @@ export type DependentProposal =
 export type SkippedReason =
   /** The CLI could not read what the reference's deployment serves. */
   | 'release-unread'
-  /** The deployment serves a legacy v2/v3 document, which the pre-check does not evaluate. */
-  | 'legacy'
   /** The release's Schema Bundle could not be read, or is not the one the release names. */
   | 'bundle-unread'
   /** The pre-check itself failed; the install is still sent and the Kernel decides. */

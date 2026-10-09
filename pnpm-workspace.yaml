@@ -40,7 +40,6 @@ verifyDepsBeforeRun: false
 allowBuilds:
   esbuild: true
   lightningcss: true
-  msgpackr-extract: true
   # wrangler's runtime, reached through the Studio fixtures' Cloudflare adapter.
   workerd: true
 # Third-party `.d.ts` files reach their peer `@types` packages by walking parent
