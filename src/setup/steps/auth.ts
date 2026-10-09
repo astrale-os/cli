@@ -1,5 +1,6 @@
 import type { SetupContext, SetupStep } from '../types'
 
+import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activate-account'
 import { readLocalStatus } from '../../lib/local-status'
 import { log } from '../../lib/log'
 import { loginViaIdp } from '../../lib/login-flow'
@@ -47,8 +48,10 @@ export const authStep: SetupStep = {
     }
 
     log.step('Sign in with your Astrale account (a URL + code will appear) …')
-    const { identityName } = await loginViaIdp({ use: true })
-    log.success(`Signed in as "${identityName}"`)
+    const login = await loginViaIdp({ use: true })
+    log.success(`Signed in as "${login.identityName}"`)
+    const access = await activateLoggedInAccount(login)
+    if (access && access !== 'ready') log.warn(ACCOUNT_ACTIVATION_WARNINGS[access])
     return 'fixed'
   },
 }
