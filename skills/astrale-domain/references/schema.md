@@ -77,7 +77,7 @@ URLs and caller-assigned paths are not semantic node identifiers.
   `functions/`, `errors/`, `types/`, `states/`, `core/`, and `views/`. Do not manufacture empty directories.
 - `classes/` includes node and edge Classes; `functions/` includes Methods and top-level Functions.
   Keep one declaration per file and curated facades; reserve root kinds for genuinely shared declarations.
-- `types/` owns portable values, not Policies. Keep `policy: ({ check, self }) => check(mayEdit, self)`
+- `types/` owns portable values, not Policies. Keep `policy: ({ check, self }) => check(managesProject, self)`
   inline with its callable; reusable graph predicates belong in `policies/`.
 - Infer composition types from authored values where possible, rather than maintaining an interface
   that repeats Schema fields. Do not cast away a genuine published-declaration or admission problem.

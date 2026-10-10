@@ -322,23 +322,23 @@ const D = {
   issues150: { origin: 'issues.example', ...deployment('issues-1.5.0', url('p', 'm')) },
   issues151: { origin: 'issues.example', ...deployment('issues-1.5.1', url('p', 'n')) },
   issues152: { origin: 'issues.example', ...deployment('issues-1.5.2', url('p', 'o')) },
-  agenciesStgPrevious: {
-    origin: 'agencies.example',
-    ...deployment('agencies-stg-1', url('s', 'a')),
+  projectsStgPrevious: {
+    origin: 'projects.example',
+    ...deployment('projects-stg-1', url('s', 'a')),
   },
-  agenciesStgNext: { origin: 'agencies.example', ...deployment('agencies-stg-2', url('s', 'b')) },
-  employeesStgPrevious: {
-    origin: 'employees.example',
-    ...deployment('employees-stg-1', url('t', 'a')),
+  projectsStgNext: { origin: 'projects.example', ...deployment('projects-stg-2', url('s', 'b')) },
+  teamsStgPrevious: {
+    origin: 'teams.example',
+    ...deployment('teams-stg-1', url('t', 'a')),
   },
-  employeesStgNext: {
-    origin: 'employees.example',
-    ...deployment('employees-stg-2', url('t', 'b')),
+  teamsStgNext: {
+    origin: 'teams.example',
+    ...deployment('teams-stg-2', url('t', 'b')),
   },
-  agencies142: { origin: 'agencies.example', ...deployment('agencies-1.4.2', url('q', 'k')) },
-  agencies150: { origin: 'agencies.example', ...deployment('agencies-1.5.0', url('q', 'm')) },
-  employees152: { origin: 'employees.example', ...deployment('employees-1.5.2', url('r', 'k')) },
-  employees200: { origin: 'employees.example', ...deployment('employees-2.0.0', url('r', 'm')) },
+  projects142: { origin: 'projects.example', ...deployment('projects-1.4.2', url('q', 'k')) },
+  projects150: { origin: 'projects.example', ...deployment('projects-1.5.0', url('q', 'm')) },
+  teams152: { origin: 'teams.example', ...deployment('teams-1.5.2', url('r', 'k')) },
+  teams200: { origin: 'teams.example', ...deployment('teams-2.0.0', url('r', 'm')) },
   a200: { origin: 'a.example', ...deployment('a-2.0.0', url('e', 'k')) },
   a210: { origin: 'a.example', ...deployment('a-2.1.0', url('e', 'm')) },
   b200: { origin: 'b.example', ...deployment('b-2.0.0', url('f', 'k')) },
@@ -348,13 +348,13 @@ const D = {
   crmStgNext: { origin: 'crm.example', ...deployment('crm-stg-2', url('c', 'b')) },
   crmOther: { origin: 'crm.example', ...deployment('crm-other', url('g', 'b')) },
   crmUrl: { origin: 'crm.example', ...deployment('crm-url', 'https://crm.example') },
-  agenciesUrl: {
-    origin: 'agencies.example',
-    ...deployment('agencies-url', 'https://agencies.example'),
+  projectsUrl: {
+    origin: 'projects.example',
+    ...deployment('projects-url', 'https://projects.example'),
   },
-  employeesUrl: {
-    origin: 'employees.example',
-    ...deployment('employees-url', 'https://employees.example'),
+  teamsUrl: {
+    origin: 'teams.example',
+    ...deployment('teams-url', 'https://teams.example'),
   },
   published: {
     origin: 'published.example.test',
@@ -367,8 +367,8 @@ const PLACEHOLDER_URLS = {
   '<url>': D.issuesDevNext.url,
   '<new-deployment-url>': D.crmStgNext.url,
   '<deployment-url>': D.crmOther.url,
-  $URL_A: D.agenciesStgNext.url,
-  $URL_B: D.employeesStgNext.url,
+  $URL_A: D.projectsStgNext.url,
+  $URL_B: D.teamsStgNext.url,
   $PUBLISHED_APPLICATION_URL: D.published.url,
 } as const
 
@@ -400,13 +400,13 @@ const REGISTRY: FakeDomain[] = [
     ['1.5.1', D.issues151],
     ['1.5.2', D.issues152],
   ]),
-  registryDomain('agencies.example', [
-    ['1.4.2', D.agencies142],
-    ['1.5.0', D.agencies150],
+  registryDomain('projects.example', [
+    ['1.4.2', D.projects142],
+    ['1.5.0', D.projects150],
   ]),
-  registryDomain('employees.example', [
-    ['1.5.2', D.employees152],
-    ['2.0.0', D.employees200],
+  registryDomain('teams.example', [
+    ['1.5.2', D.teams152],
+    ['2.0.0', D.teams200],
   ]),
   registryDomain('a.example', [
     ['2.0.0', D.a200],
@@ -462,8 +462,8 @@ const INSTALLS: Readonly<
   // release.md
   'astrale domain install <url> -i acme-dev': { before: [], after: [D.issuesDevNext] },
   'astrale domain install "$URL_A" "$URL_B" --allow-issuer-change -i acme-stg': {
-    before: [D.agenciesStgPrevious, D.employeesStgPrevious],
-    after: [D.agenciesStgNext, D.employeesStgNext],
+    before: [D.projectsStgPrevious, D.teamsStgPrevious],
+    after: [D.projectsStgNext, D.teamsStgNext],
     consent: 'same',
   },
   'astrale domain install issues.example@1.5 -i acme-prod': { before: [], after: [D.issues151] },
@@ -472,10 +472,10 @@ const INSTALLS: Readonly<
     after: [D.issues150],
     consent: 'same',
   },
-  'astrale domain install agencies.example@1.5.0 employees.example@2.0.0 --allow-issuer-change -i acme-prod':
+  'astrale domain install projects.example@1.5.0 teams.example@2.0.0 --allow-issuer-change -i acme-prod':
     {
-      before: [D.agencies142, D.employees152],
-      after: [D.agencies150, D.employees200],
+      before: [D.projects142, D.teams152],
+      after: [D.projects150, D.teams200],
       consent: 'same',
     },
   'astrale domain install issues.example@1.4.2 --allow-issuer-change -i acme-prod': {
@@ -491,8 +491,8 @@ const INSTALLS: Readonly<
   },
   // migration.md
   'astrale domain install "$URL_A" "$URL_B" --allow-issuer-change -i staging': {
-    before: [D.agenciesStgPrevious, D.employeesStgPrevious],
-    after: [D.agenciesStgNext, D.employeesStgNext],
+    before: [D.projectsStgPrevious, D.teamsStgPrevious],
+    after: [D.projectsStgNext, D.teamsStgNext],
     consent: 'same',
   },
   'astrale domain install a.example@2.1.0 b.example@3.0.0 --allow-issuer-change -i production': {
@@ -502,15 +502,15 @@ const INSTALLS: Readonly<
   },
   // astrale-cli/SKILL.md
   'astrale domain install https://crm.example -i staging': { before: [], after: [D.crmUrl] },
-  'astrale domain install https://agencies.example https://employees.example -i staging': {
+  'astrale domain install https://projects.example https://teams.example -i staging': {
     before: [],
-    after: [D.agenciesUrl, D.employeesUrl],
+    after: [D.projectsUrl, D.teamsUrl],
   },
   'astrale domain install crm.example@1.5 -i production': { before: [], after: [D.crm150] },
-  'astrale domain install agencies.example@1.5.0 https://employees.example --allow-issuer-change -i staging':
+  'astrale domain install projects.example@1.5.0 https://teams.example --allow-issuer-change -i staging':
     {
       before: [],
-      after: [D.agencies150, D.employeesUrl],
+      after: [D.projects150, D.teamsUrl],
     },
   'astrale domain install <new-deployment-url> --allow-issuer-change -i staging': {
     before: [D.crmStgPrevious],
