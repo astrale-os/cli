@@ -36,6 +36,10 @@ Behavior:
   Admin verifies and resumes its retained creation receipt; the Instance and
   reserved owner are not recreated.
   An unfinished journey returns a nonzero exit status with the retained receipt.
+  A refused creation fails its operation, for example INSTANCE_CAPACITY_UNAVAILABLE
+  when the Fleet has no ready consumer Host: the command stops at once and names
+  the operation and the cause. Replaying that --operation returns the same
+  refusal; once the cause is fixed, rerun without --operation.
 
   Run with no slug in a terminal and it prompts for one (validated live). With
   no TTY — or --ci / --no-prompt — the slug argument is required up front, so
