@@ -4,6 +4,7 @@ import type { QueryAST } from '@astrale-os/sdk/query'
 
 import { ResponseError } from '@astrale-os/sdk/client'
 import { NodeId } from '@astrale-os/sdk/graph/node'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import {
   BUNDLE_MEDIA_TYPE,
@@ -18,7 +19,7 @@ import type { AdminRegistryContext } from '../client'
 import { AdminContract } from '../../contract'
 
 /**
- * A fake Admin registry with the read and change rules of Admin's one `Domain` registry
+ * A fake Admin registry with the claim, read and change rules of Admin's one `Domain` registry
  * (CT26/CT27): a Domain is read by its admins and installers and by the members of a Fleet whose
  * catalog lists it (ObserveDomain), a Publication by the Domain's admins and installers only
  * (ReadPublication), `publish` and `yank`/`unyank` are domain_admin only, a version is written
@@ -44,7 +45,8 @@ export interface FakePublication {
 export interface FakeDomain {
   readonly id: string
   readonly origin: string
-  readonly admins: ReadonlySet<string>
+  /** Mutable: first claim gives a Domain without an administrator to its claimer. */
+  readonly admins: Set<string>
   readonly installers: ReadonlySet<string>
   /** Members of a Fleet whose catalog lists the Domain: they read it, not its Publications. */
   readonly catalogReaders?: ReadonlySet<string>
@@ -119,6 +121,12 @@ export interface FakeAdminOptions {
   readonly releases?: readonly FakeRelease[]
   /** A refusal `publish` answers instead of reading the deployment. */
   readonly publishRefusal?: () => unknown
+  /** Callers that are no Admin account: the Kernel refuses them a claim. */
+  readonly strangers?: ReadonlySet<string>
+  /** Astrale operators, who alone claim an origin under `astrale.ai`. */
+  readonly operators?: ReadonlySet<string>
+  /** A refusal `Domain.create` answers instead of deciding the claim. */
+  readonly claimRefusal?: () => unknown
   /** What Admin's Services answered the retention mark of a publish. */
   readonly retention?: 'marked' | 'failed' | 'not-applicable'
   /** Bundle bytes the deployments serve instead of the ones their release describes. */
@@ -167,9 +175,35 @@ export function fakeAdmin(options: FakeAdminOptions) {
     }
   }
 
+  /** First claim (`Domain.create`), as Admin decides it. */
+  const claim = (origin: string) => {
+    if (options.strangers?.has(caller) === true) throw refusal(2004, 'ACCESS_DENIED')
+    if (options.claimRefusal !== undefined) throw options.claimRefusal()
+    if (
+      (origin === 'astrale.ai' || origin.endsWith('.astrale.ai')) &&
+      options.operators?.has(caller) !== true
+    )
+      throw declared(4001, 'DOMAIN_ORIGIN_RESERVED', { origin })
+    let domain = options.domains.find((entry) => entry.origin === origin)
+    if (domain === undefined) {
+      domain = {
+        id: `claimed-${options.domains.length + 1}`,
+        origin,
+        admins: new Set([caller]),
+        installers: new Set(),
+        publications: [],
+      }
+      options.domains.push(domain)
+    } else if (domain.admins.size === 0) domain.admins.add(caller)
+    else if (!domain.admins.has(caller))
+      throw declared(4001, 'DOMAIN_CONFLICT', { reason: 'registered-to-another-administrator' })
+    return { id: `@${domain.id}`, origin, name: origin }
+  }
+
   const call = async (request: Call) => {
     const target = String(request.target)
     calls.push({ target, input: request.input })
+    if (target === CLAIM) return claim((request.input as { readonly origin: string }).origin)
     const [receiver, method] = target.split('::')
     const id = receiver!.slice(1)
     if (method === String(methodKey('Domain', 'publish'))) {
@@ -268,6 +302,9 @@ export function fakeAdmin(options: FakeAdminOptions) {
     },
   }
 }
+
+/** The static `Domain.create` target, as the CLI's Admin contract addresses it. */
+const CLAIM = String(Path.staticMethod(Path.project(AdminContract.classes.Domain), 'create'))
 
 function methodKey(className: 'Domain' | 'Publication', name: string): string {
   return `admin.astrale.ai:class.${className}.method.${name}`

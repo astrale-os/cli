@@ -149,6 +149,7 @@ export async function buildProgram(): Promise<Command> {
     hidden: true,
     commands: [
       withKernelOptions((await import('../commands/domain-registry/bundle')).default),
+      withKernelOptions((await import('../commands/domain-registry/claim')).default),
       withKernelOptions((await import('../commands/domain-registry/publish')).default),
       withKernelOptions((await import('../commands/domain-registry/yank')).default),
     ],

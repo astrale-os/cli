@@ -16,8 +16,15 @@ version readable" from "absent or not permitted"; the two latter are one refusal
 `REGISTRY_DOMAIN_NOT_FOUND`, so nothing reveals a Domain the caller cannot read. No read lists who
 holds access (AM-53): access is Admin's to show.
 
-Changes are Admin Methods: `Domain.publish` on the Domain's Node and `Publication.yank` /
-`unyank` on the Publication's Node. Admin's Policies decide who may call them, and Admin's
+An origin is claimed before its first version. `claim` calls Admin's static `Domain.create` with
+the origin alone: first claim gives an origin no one has to its caller, who becomes the first
+administrator of its Domain, and Admin does not verify who owns the origin. A caller who already
+administers the Domain gets the same answer, so a rerun is safe. An origin another account holds
+is `REGISTRY_ORIGIN_CLAIMED`; an origin under `astrale.ai`, which only Astrale operators register,
+is `REGISTRY_ORIGIN_RESERVED`; a caller that is no Admin account is `REGISTRY_FORBIDDEN`.
+
+The other changes are Admin Methods on a Node: `Domain.publish` on the Domain's Node and
+`Publication.yank` / `unyank` on the Publication's Node. Admin's Policies decide who may call them, and Admin's
 absence check makes a rerun safe: the same version and release digest answer `unchanged`. The
 publish result passes Admin's retention mark through (`marked`, `failed`, `not-applicable`);
 rerunning the same publish marks a `failed` deployment again.
