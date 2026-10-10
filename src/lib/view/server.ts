@@ -1,10 +1,10 @@
 import type { AuthApi } from '@astrale-os/sdk/auth'
 import type { IssuerId } from '@astrale-os/sdk/auth'
-import type { SessionCredential } from '@astrale-os/sdk/client/session'
+import type { Credentials, SessionCredential } from '@astrale-os/sdk/client/session'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
 import { credential } from '@astrale-os/sdk/auth'
-import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
+import { credentials } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
@@ -64,7 +64,6 @@ export type PageStatus = { state: string; error?: string; at: string }
 
 type GrantKind = 'minted' | 'exchanged'
 type TokenGrant = { token: string; expiresAt: number; kind: GrantKind }
-type GrantProvider = ReturnType<typeof createSessionCredentialProvider>
 
 export interface ViewServerDependencies {
   readonly connect: typeof withClientSession
@@ -147,9 +146,9 @@ export function startViewServer(
    * a user action. A timer here would instead mint delegations for a page that may have gone away,
    * and hold the event loop against the server's idle shutdown.
    */
-  function createGrantProvider(initial?: TokenGrant, forView = true): GrantProvider {
+  function createGrantProvider(initial?: TokenGrant, forView = true): Credentials {
     if (initial !== undefined) grantKind = initial.kind
-    return createSessionCredentialProvider({
+    return credentials({
       ttlSeconds: VIEW_DELEGATION_TTL_SECONDS,
       mint: async (): Promise<SessionCredential> => {
         const started = revision
