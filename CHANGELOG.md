@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.137](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.136...cli/v1.0.0-beta.137) (2026-10-10)
+
+
+### Features
+
+* **commands:** claim a Domain origin through the registry plumbing ([#637](https://github.com/astrale-os/cli/issues/637)) ([9fbeeda](https://github.com/astrale-os/cli/commit/9fbeedad0364b3fe2f354a963f31433a2ef790e9))
+
+
+### Bug Fixes
+
+* **lib:** recover asset lock ownership and adopt the published cohort ([#640](https://github.com/astrale-os/cli/issues/640)) ([6929b87](https://github.com/astrale-os/cli/commit/6929b87c39f6d681ed60904593e4411793611495))
+
 ## [1.0.0-beta.136](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.135...cli/v1.0.0-beta.136) (2026-10-10)
 
 
