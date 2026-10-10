@@ -97,26 +97,21 @@ function openAccountSession(kernelIssuer, privateJwk) {
 }
 ```
 
-To use the `exchange` option instead of `can_use`, hold the self proof in a provider: Domain
+To use the `exchange` option instead of `can_use`, hold the self proof in `credentials`: Domain
 credentials are cached per source credential, so a `resolve` that signs a new proof on every call
 also exchanges on every call.
 
 ```js
-import { credential } from '@astrale-os/sdk/auth'
-import { connect, createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
+import { connect, credentials } from '@astrale-os/sdk/client/session'
 
 function openExchangingAccountSession(kernelIssuer, privateJwk) {
   return connect({
     url: kernelIssuer,
-    auth: createSessionCredentialProvider({
-      ttlSeconds: 60,
-      mint: async () => {
-        const proof = await selfCredential(kernelIssuer, privateJwk)
-        return { credential: proof, expiresAt: credential.inspect(proof).claims.exp * 1_000 }
-      },
-    }),
+    // The proof is a compact JWT: `credentials` reads its expiry from `exp` and signs a new one
+    // only when it no longer covers the 60-second delegation.
+    auth: credentials(() => selfCredential(kernelIssuer, privateJwk)),
     // A Domain credential never outlives the 3-minute proof; keep it above 65 seconds.
-    exchange: { ttlSeconds: 120 },
+    exchange: { mode: 'auto', ttlSeconds: 120 },
   })
 }
 ```
