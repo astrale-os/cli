@@ -6,6 +6,7 @@ import {
   readdir,
   readlink,
   rename,
+  rmdir,
   rm,
   stat,
   writeFile,
@@ -245,28 +246,47 @@ export async function writeEmbeddedAssetCache(root: string, inputDigest: string)
 }
 
 /**
- * Has the process that took the lock died without releasing it?
+ * Read the exact owner witness published with the cache lock.
  *
  * It happens: the Studio's introspection driver gives its extractor subprocess a
  * hard deadline and SIGKILLs it, and a SIGKILLed process never reaches the
  * `finally` that removes the lock. Every CLI call takes this lock — even one that
- * only checks the assets are already current — so an abandoned lock otherwise
- * wedges the whole CLI until it goes stale, and each call that gives up in the
- * meantime looks like a broken domain rather than a busy one.
+ * only checks the assets are already current — so dead owners must be recovered
+ * without deleting a newer acquisition at the same path.
  *
- * Unreadable or unowned locks are left alone: `LOCK_STALE_MS` is still the
- * backstop. New locks publish their owner together with the directory.
+ * A live PID retains ownership irrespective of mtime. An invalid PID witness
+ * keeps the stale-age backstop; directories with unknown contents are preserved.
+ * New locks publish their unique owner together with the directory.
  */
-async function lockOwnerIsGone(lock: string): Promise<boolean> {
-  const owner = Number(await readFile(join(lock, LOCK_OWNER_FILE), 'utf8').catch(() => ''))
-  if (!Number.isInteger(owner) || owner <= 0) return false
+async function readLockOwner(lock: string): Promise<{ file: string; pid?: number } | undefined> {
+  const entries = await readdir(lock).catch(() => [])
+  if (entries.length !== 1) return undefined
+  const file = entries[0]!
+  if (file !== LOCK_OWNER_FILE && !file.startsWith(`${LOCK_OWNER_FILE}.`)) return undefined
+  const pid = Number(await readFile(join(lock, file), 'utf8').catch(() => ''))
+  return { file, ...(Number.isInteger(pid) && pid > 0 ? { pid } : {}) }
+}
+
+function lockOwnerIsGone(pid: number): boolean {
   try {
     // signal 0 checks for the process without touching it
-    process.kill(owner, 0)
+    process.kill(pid, 0)
     return false
   } catch (error) {
     // EPERM means someone else's process holds it — alive, just not ours
     return errorCode(error) === 'ESRCH'
+  }
+}
+
+async function removeOwnedLock(lock: string, ownerFile: string): Promise<void> {
+  // A stale observer names only the owner it observed, never a successor's
+  // unique file. A successor makes the directory nonempty, so rmdir cannot
+  // remove it even if it replaced the emptied directory between these calls.
+  await rm(join(lock, ownerFile), { force: true })
+  try {
+    await rmdir(lock)
+  } catch (error) {
+    if (!['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(errorCode(error) ?? '')) throw error
   }
 }
 
@@ -277,10 +297,12 @@ export async function withEmbeddedAssetLock<T>(root: string, action: () => Promi
   // Prepare a nonempty directory before making it the lock. A process killed
   // during preparation leaves no published ownerless lock. Rename cannot replace
   // another nonempty owner directory, so simultaneous contenders stay exclusive.
-  const prepared = `${lock}.${process.pid}.${randomUUID()}.tmp`
+  const token = `${process.pid}.${randomUUID()}`
+  const ownerFile = `${LOCK_OWNER_FILE}.${token}`
+  const prepared = `${lock}.${token}.tmp`
   await mkdir(prepared)
   try {
-    await writeFile(join(prepared, LOCK_OWNER_FILE), `${process.pid}\n`)
+    await writeFile(join(prepared, ownerFile), `${process.pid}\n`)
     const deadline = Date.now() + LOCK_WAIT_MS
     while (true) {
       try {
@@ -288,12 +310,15 @@ export async function withEmbeddedAssetLock<T>(root: string, action: () => Promi
         break
       } catch (error) {
         if (!['EEXIST', 'ENOTEMPTY'].includes(errorCode(error) ?? '')) throw error
+        const owner = await readLockOwner(lock)
         const lockMetadata = await stat(lock).catch(() => undefined)
         if (
-          (lockMetadata && Date.now() - lockMetadata.mtimeMs > LOCK_STALE_MS) ||
-          (await lockOwnerIsGone(lock))
+          owner &&
+          (owner.pid !== undefined
+            ? lockOwnerIsGone(owner.pid)
+            : lockMetadata && Date.now() - lockMetadata.mtimeMs > LOCK_STALE_MS)
         ) {
-          await rm(lock, { recursive: true, force: true })
+          await removeOwnedLock(lock, owner.file)
           continue
         }
         if (Date.now() >= deadline)
@@ -307,6 +332,6 @@ export async function withEmbeddedAssetLock<T>(root: string, action: () => Promi
   try {
     return await action()
   } finally {
-    await rm(lock, { recursive: true, force: true })
+    await removeOwnedLock(lock, ownerFile)
   }
 }
