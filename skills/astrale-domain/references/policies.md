@@ -132,8 +132,9 @@ export const rename = method({
 - Every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
   Edge-Policy branch references `source`, `target`, or both. The `subject`, every referenced protected term,
   and every scoped existential variable must form one connected proof graph. A branch saying only “caller
-  belongs to a group” is not resource-scoped and rejects; check membership instead:
-  `check(isSelf, ref(group))` with `isSelf` matching `sameNode(subject, object)`.
+  belongs to a group” is not resource-scoped and rejects. In an authorized callable, check membership
+  instead: `check(isSelf, ref(group))` with `isSelf` matching `sameNode(subject, object)`. Keep the group
+  a fixed `ref`: a group is its own member, so an input object admits any caller passing its own id.
 - State a fact a group holds as one Edge from `subject`. Do not walk `extends_with` from `subject` for it:
   the walk reads raw Edges and skips the constraints and exclusions of the groups it crosses. One Identity
   satisfies a whole branch, so facts that different groups may supply are one check each; a Class read
@@ -156,7 +157,8 @@ export const rename = method({
 - Refactoring into named helpers does not reset those budgets. Simplify the actual proof topology
   when `PL_BUDGET` rejects; do not move authorization into a handler or drop an alternative to compile.
 - These are Schema admission ceilings, not guaranteed runtime scan capacity. Verify the installed
-  DSL's limits before relying on a boundary value. Group ancestry needs no repeat: `subject` spans it.
+  DSL's limits before relying on a boundary value. The caller's group ancestry needs no repeat:
+  `subject` spans it. A repeat from any other term still stops at its bound.
 
 ## Scope existential Node witnesses deliberately
 
