@@ -79,12 +79,12 @@ For a non-Root principal, an authorized Function requires both:
 - Name a Policy as the sentence its subject completes, in the Domain's words: a verb, each business
   entity crossed in order, the object last (`managesProject`, `managesWorkspaceOfProject`). Say what
   a Kernel hop means, not how it walks: `extendsGroup` for `sameNode` against a group,
-  `declaresClassOfDocument` for `instance_of` then `of_domain`. An Edge Policy names its endpoint by
-  entity (`ownsService`); a composition joins its operands (`managesProjectOrOwnsProject`) and splits
-  into checks when too long to name. A long name is fine; an ambiguous one is not. Never name the
-  permission granted (`can…`, `may…`: the slot or callable names it), use a graph mechanics word
-  (`source`, `target`, `super`, `subject`, `caller`), or drop a business hop. A check then reads as a
-  sentence: `check(managesWorkspaceOfProject, self)`.
+  `ownsClassOfDocument` for `of_domain` then `instance_of`. An Edge Policy names its endpoint by
+  its `as` name (`ownsService`); a composition joins its operands (`managesProjectOrOwnsProject`) and
+  splits into checks when too long to name. A long name is fine; an ambiguous one is not. Never name
+  the permission granted (`can…`, `may…`: the slot or callable names it), use a graph mechanics word
+  (`source`, `target`, `sub`, `super`, `subject`, `object`, `caller`), or drop a business hop. A check
+  then reads as a sentence: `check(managesWorkspaceOfProject, self)`.
 - Project convention: give each match Policy a `description` stating the subject, protected object or
   endpoints, and condition, naming the business relation when one exists. Keep reusable graph predicates
   in the module's `policies/`, never `types/`; place a callable's check inline in its declaration.

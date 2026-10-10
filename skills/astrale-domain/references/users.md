@@ -39,20 +39,20 @@ import { K, KernelSchema, classIcon, defineSchema, nodeClass, policy } from '@as
 import { UserRound, Users } from '@astrale-os/sdk/schema/icons'
 import { z } from 'zod'
 
-// schema/policies/declares-user-or-group-class-of-member.ts
-export const declaresUserOrGroupClassOfMember = policy({
-  description: 'Shell may traverse our direct User/Group subclasses to maintain membership.',
+// schema/policies/owns-user-or-group-class.ts
+export const ownsUserOrGroupClass = policy({
+  description: 'Shell may traverse instances of our direct User/Group subclasses to maintain membership.',
   match: ({ allOf, anyOf, sameNode, exists, object, ref, subject }) =>
     exists(({ node }) => {
       const memberClass = node()
-      const userOrGroup = node()
+      const userOrGroupClass = node()
       return allOf(
         { source: object, class: K.classes.instance_of.ref, target: memberClass },
-        { source: memberClass, class: K.classes.extends.ref, target: userOrGroup },
-        { source: userOrGroup, class: K.classes.of_domain.ref, target: subject },
+        { source: memberClass, class: K.classes.extends.ref, target: userOrGroupClass },
+        { source: userOrGroupClass, class: K.classes.of_domain.ref, target: subject },
         anyOf(
-          sameNode(userOrGroup, ref(S.classes.User.ref)),
-          sameNode(userOrGroup, ref(S.classes.Group.ref)),
+          sameNode(userOrGroupClass, ref(S.classes.User.ref)),
+          sameNode(userOrGroupClass, ref(S.classes.Group.ref)),
         ),
       )
     }),
@@ -63,14 +63,14 @@ export const Employee = nodeClass({
   icon: classIcon.lucide(UserRound),
   extends: [S.classes.User],
   properties: { employeeNumber: z.string().min(1) },
-  policies: { traverse: declaresUserOrGroupClassOfMember },
+  policies: { traverse: ownsUserOrGroupClass },
 })
 
 // schema/modules/team/classes/team.ts
 export const Team = nodeClass({
   icon: classIcon.lucide(Users),
   extends: [S.classes.Group],
-  policies: { traverse: declaresUserOrGroupClassOfMember },
+  policies: { traverse: ownsUserOrGroupClass },
 })
 
 // schema/schema.ts
@@ -78,15 +78,14 @@ export const schema = defineSchema('work.example', {
   name: 'Work',
   dependencies: { kernel: KernelSchema, shell: ShellSchema },
   classes: { Employee, Team },
-  policies: { declaresUserOrGroupClassOfMember },
+  policies: { ownsUserOrGroupClass },
 })
 ```
 
 - The Policy identifies Shell through protected Schema ownership, not a configured Domain NodeId.
   Parent-Class Policies do not replace the concrete foreign Class's traversal agreement.
-- Preserve existing traversal with `policy.anyOf(existingTraverse, declaresUserOrGroupClassOfMember)`;
-  do not replace business access or broaden `read`/writes. Deeper inheritance needs an explicitly
-  verified pattern.
+- Preserve existing traversal with `policy.anyOf(existingTraverse, ownsUserOrGroupClass)`; do not
+  replace business access or broaden `read`/writes. Deeper inheritance needs an explicitly verified pattern.
 
 ## Invite or register, without substituting the identity
 
