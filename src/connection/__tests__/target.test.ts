@@ -105,13 +105,13 @@ describe('connection target', () => {
         managed: async (slug) => ({
           id: 'managed-id',
           slug,
-          url: `https://${slug}.eu.beta.astrale.ai`,
+          url: `https://${slug}.eu.astrale.ai`,
           state: 'ready',
         }),
       }),
     ).toEqual({
-      url: 'https://bryan.eu.beta.astrale.ai/api',
-      kernelIssuer: issuer.accept('https://bryan.eu.beta.astrale.ai/api'),
+      url: 'https://bryan.eu.astrale.ai/api',
+      kernelIssuer: issuer.accept('https://bryan.eu.astrale.ai/api'),
       domainOrigin: 'shell.astrale.ai',
       slug: 'bryan',
     })

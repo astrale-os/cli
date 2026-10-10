@@ -110,7 +110,7 @@ describe('bookmark registry write ownership', () => {
 })
 
 describe('managed bookmark Shell exchange on write', () => {
-  const url = 'https://bryan.eu.beta.astrale.ai/api'
+  const url = 'https://bryan.eu.astrale.ai/api'
 
   async function stored(home: string) {
     return JSON.parse(await readFile(join(home, 'instances.json'), 'utf8')).instances.bryan
@@ -171,7 +171,7 @@ describe('managed bookmark Shell exchange on write', () => {
             kind: 'bookmark',
           },
           team: {
-            url: 'https://team.eu.beta.astrale.ai/api',
+            url: 'https://team.eu.astrale.ai/api',
             domainIssuer: 'https://shell.beta.astrale.ai',
             slug: 'team',
             name: 'team',

@@ -14,7 +14,7 @@ function request(publication: Record<string, unknown>, top: Record<string, unkno
     publication: {
       origin: 'issues.astrale.ai',
       version: '1.5.0',
-      url: 'https://issues-0123.svc.eu.beta.astrale.ai',
+      url: 'https://issues-0123.services.astrale.ai',
       releaseDigest: DIGEST,
       dirty: false,
       ...publication,
@@ -41,7 +41,7 @@ describe('publish request (CT29 PublishRequestV1)', () => {
       publication: {
         origin: 'issues.astrale.ai',
         version: '1.5.0',
-        url: 'https://issues-0123.svc.eu.beta.astrale.ai',
+        url: 'https://issues-0123.services.astrale.ai',
         releaseDigest: DIGEST,
         commit: 'a'.repeat(40),
         dirty: false,

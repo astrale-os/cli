@@ -27,7 +27,7 @@ const store: InstanceStore = {
       domainIssuer: 'https://bookmarked-admin-domain.example.com',
     },
     bryan: {
-      url: 'https://bryan.eu.beta.astrale.ai/api',
+      url: 'https://bryan.eu.astrale.ai/api',
       slug: 'bryan',
       name: 'bryan',
     },
@@ -51,7 +51,7 @@ const directAdminConfig: AstraleConfig = {
     name: 'admin',
     url: 'https://admin.eu.astrale.ai/api',
     kernelIssuer: 'https://admin.eu.astrale.ai/api',
-    domainIssuer: 'https://admin.beta.astrale.ai',
+    domainIssuer: 'https://admin.astrale.ai',
   },
 }
 
@@ -99,7 +99,7 @@ describe('resolveInstanceTarget', () => {
       source: 'admin',
       url: 'https://admin.eu.astrale.ai/api',
       kernelIssuer: 'https://admin.eu.astrale.ai/api',
-      domainIssuer: 'https://admin.beta.astrale.ai',
+      domainIssuer: 'https://admin.astrale.ai',
     })
     expect(managedCalls).toEqual([])
   })
@@ -145,7 +145,7 @@ describe('resolveInstanceTarget', () => {
     )
     expect(resolved).toMatchObject({
       source: 'bookmark',
-      kernelIssuer: 'https://bryan.eu.beta.astrale.ai/api',
+      kernelIssuer: 'https://bryan.eu.astrale.ai/api',
       domainOrigin: 'shell.astrale.ai',
     })
     expect(resolved).not.toHaveProperty('domainIssuer')

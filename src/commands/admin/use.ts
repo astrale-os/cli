@@ -28,7 +28,7 @@ Behavior:
 
 Examples:
   $ astrale admin use admin
-  $ astrale admin use --url https://admin.eu.astrale.ai/api --domain-issuer https://admin.beta.astrale.ai
+  $ astrale admin use --url https://admin.eu.astrale.ai/api --domain-issuer https://admin.astrale.ai
   $ astrale admin status
 `,
   arguments: [{ name: 'bookmark', description: 'Bookmarked admin instance', required: false }],

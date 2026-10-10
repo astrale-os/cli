@@ -6,7 +6,6 @@ import {
   DEFAULT_ADMIN_TARGET_NAME,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
   DEFAULT_ADMIN_TARGET_URL,
-  defaultAdminTargetForChannel,
   resolveAdminTargetFromStore,
 } from '../admin-target'
 import { DEFAULT_CONFIG, type AstraleConfig } from '../config'
@@ -34,15 +33,9 @@ const instances: InstanceStore = {
 }
 
 describe('resolveAdminTargetFromStore', () => {
-  test('derives hosted Admin defaults from the release channel', () => {
-    expect(defaultAdminTargetForChannel('beta')).toEqual({
-      url: 'https://admin.eu.beta.astrale.ai/api',
-      domainIssuer: 'https://admin.beta.astrale.ai',
-    })
-    expect(defaultAdminTargetForChannel('stable')).toEqual({
-      url: 'https://admin.eu.astrale.ai/api',
-      domainIssuer: 'https://admin.astrale.ai',
-    })
+  test('defaults to the hosted production Admin', () => {
+    expect(DEFAULT_ADMIN_TARGET_URL).toBe('https://admin.eu.astrale.ai/api')
+    expect(DEFAULT_ADMIN_DOMAIN_ISSUER).toBe('https://admin.astrale.ai')
   })
 
   test('uses hosted admin default without active instance coupling', () => {
@@ -75,33 +68,33 @@ describe('resolveAdminTargetFromStore', () => {
     })
   })
 
-  test('keeps an exact beta Domain issuer separate from the Admin Kernel target', () => {
+  test('keeps an exact Domain issuer separate from the Admin Kernel target', () => {
     const config: AstraleConfig = {
       ...DEFAULT_CONFIG,
       admin: {
-        url: 'https://admin.eu.beta.astrale.ai/api',
-        kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
-        domainIssuer: 'https://admin.beta.astrale.ai',
+        url: 'https://admin.eu.astrale.ai/api',
+        kernelIssuer: 'https://admin.eu.astrale.ai/api',
+        domainIssuer: 'https://admin.astrale.ai',
       },
     }
 
     expect(resolveAdminTargetFromStore({}, config, instances)).toMatchObject({
-      url: 'https://admin.eu.beta.astrale.ai/api',
-      kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
-      domainIssuer: 'https://admin.beta.astrale.ai',
+      url: 'https://admin.eu.astrale.ai/api',
+      kernelIssuer: 'https://admin.eu.astrale.ai/api',
+      domainIssuer: 'https://admin.astrale.ai',
       source: 'config-url',
       configured: true,
     })
 
     expect(
       resolveAdminTargetFromStore(
-        { adminUrl: 'https://override.eu.beta.astrale.ai/api' },
+        { adminUrl: 'https://override.eu.astrale.ai/api' },
         config,
         instances,
       ),
     ).toMatchObject({
-      url: 'https://override.eu.beta.astrale.ai/api',
-      domainIssuer: 'https://admin.beta.astrale.ai',
+      url: 'https://override.eu.astrale.ai/api',
+      domainIssuer: 'https://admin.astrale.ai',
     })
   })
 
@@ -198,7 +191,7 @@ describe('resolveAdminTargetFromStore', () => {
 
   /** @evidence TEST-CLI-ADMIN-REGISTRY-ISSUER-KEPT */
   test('keeps an explicit issuer for Admin calls through a parsed bookmark', () => {
-    const url = 'https://bryan.eu.beta.astrale.ai/api'
+    const url = 'https://bryan.eu.astrale.ai/api'
     // Every bookmark store reaches Admin resolution through the registry read.
     const { store } = sanitizeStore({
       active: 'bryan',

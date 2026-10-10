@@ -5,30 +5,13 @@ import type { InstanceStore } from './instance'
 
 import { AstraleError } from '../errors'
 import { readInstances, resolveInstanceKey } from './instance'
-import { DEFAULT_UPDATE_CHANNEL } from './update'
 import { isHttpUrl } from './validation'
 
 export const DEFAULT_ADMIN_TARGET_NAME = 'admin'
 
-export function defaultAdminTargetForChannel(channel: string): {
-  readonly url: string
-  readonly domainIssuer: string
-} {
-  return channel === 'stable'
-    ? {
-        url: 'https://admin.eu.astrale.ai/api',
-        domainIssuer: 'https://admin.astrale.ai',
-      }
-    : {
-        url: 'https://admin.eu.beta.astrale.ai/api',
-        domainIssuer: 'https://admin.beta.astrale.ai',
-      }
-}
-
-const DEFAULT_ADMIN_TARGET = defaultAdminTargetForChannel(DEFAULT_UPDATE_CHANNEL)
-
-export const DEFAULT_ADMIN_TARGET_URL = DEFAULT_ADMIN_TARGET.url
-export const DEFAULT_ADMIN_DOMAIN_ISSUER = DEFAULT_ADMIN_TARGET.domainIssuer
+/** The hosted Admin of Astrale's single production environment, whatever the release channel. */
+export const DEFAULT_ADMIN_TARGET_URL = 'https://admin.eu.astrale.ai/api'
+export const DEFAULT_ADMIN_DOMAIN_ISSUER = 'https://admin.astrale.ai'
 
 export const DEFAULT_ADMIN_TARGET_CONFIG = {
   name: DEFAULT_ADMIN_TARGET_NAME,
