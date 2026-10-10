@@ -632,6 +632,11 @@ async function runInstall(
           if (source === undefined) throw new Error(`no fake deployment at ${address}`)
           return served(source)
         },
+        // The advisory pre-check reads each root's bundle; offline, it reads as unreachable
+        // ('bundle-unread'). A real fetch put a DNS lookup of a *.test host inside the test timeout.
+        readBundle: async (_release, address) => {
+          throw new Error(`no fake bundle at ${address}`)
+        },
         now: () => 0,
         sleep: async () => {},
       },

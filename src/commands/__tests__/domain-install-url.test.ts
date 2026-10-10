@@ -184,6 +184,11 @@ function harness(options: {
         if (read === undefined) throw new DeploymentReadError(`GET ${url} failed.`)
         return read()
       },
+      // The advisory pre-check reads each root's bundle; offline, it reads as unreachable
+      // ('bundle-unread'). A real fetch put a DNS lookup of a *.test host inside the test timeout.
+      readBundle: async (_release, url) => {
+        throw new DeploymentReadError(`GET ${url} bundle failed.`)
+      },
       now: options.now ?? (() => 0),
       sleep: async (ms: number) => {
         sleeps.push(ms)
