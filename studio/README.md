@@ -300,3 +300,18 @@ server and shared unit test. `pnpm --dir studio test` runs only the complete
 Studio unit suite, and `pnpm --dir studio typecheck` checks its server/client
 boundary. `pnpm --dir studio test:e2e` builds the client and runs the Chromium
 smoke against a real canonical fixture; CI runs that browser gate separately.
+
+
+## Retained local data formats
+
+Studio reads older `agentModels` preferences as the current single `agentModel` preference,
+and gateway `apiKey` settings as `auth: { mode: 'token', token }`. Saving these settings through
+Studio writes the current shape. These readers preserve existing user settings; the files are
+not disposable caches.
+
+Documents use `context/docs/<readable-name>` inside each project's `.domain-studio/` directory.
+Their index stays at `context/documents/index.json`. On domain opening, UUID-named documents
+from `context/documents/` are copied, then committed to the index atomically, before the old file
+is removed. A failed index write keeps the previous index and original bytes; reopening retries
+the migration. An interruption can leave an unindexed copy, but the indexed document remains
+readable. Do not remove the old directory: it still contains the current index.

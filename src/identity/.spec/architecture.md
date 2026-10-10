@@ -4,8 +4,8 @@ Identity owns local identity selection and the coordination between the State re
 Keys, and IdP sessions. State owns durable registry decoding and locking; Keys owns JWK admission,
 pair proof, and private files. Commands own prompts and presentation, not persistence mechanics.
 
-Identity transfer accepts the retained unversioned plaintext envelope and the current V1 plaintext
-or compact-JWE representation. Admission completes before mutation. Import checks the registry under
+Identity transfer accepts only the V1 envelope, as plaintext JSON or compact JWE. Unversioned
+exports are rejected. Admission completes before mutation. Import checks the registry under
 its file lock, persists the admitted keypair, and only then publishes the identity entry. Export
 proves the stored pair and atomically writes one mode-`0600` user-selected file.
 

@@ -1,6 +1,6 @@
 ---
 name: astrale-cli
-description: Reference for the Astrale CLI (binary `astrale`, package `@astrale-os/cli`) - setup, graph reads and mutations, kernel calls, instances, domains, identities, delegation, journals, views, output, debugging, and local storage.
+description: Reference for the standalone Astrale CLI (`astrale`) - setup, graph reads and mutations, kernel calls, instances, domains, identities, delegation, journals, views, output, debugging, and local storage.
 ---
 
 # Astrale CLI
@@ -17,8 +17,8 @@ astrale <command> --help
 ```
 
 - Binary: `astrale`
-- Package: `@astrale-os/cli`
-- Runtime: Node 22 or newer; source development defaults to Node 26 and also supports Node 24 and Bun
+- Distribution: standalone executable with an embedded Bun runtime; no Node/npm/Bun installation is required to run it. The npm distribution is retired.
+- Source development: use the repository's pinned toolchain.
 - Dev entrypoint: `bun cli/bin/astrale.ts <command>`
 
 ## Command Surface
@@ -335,6 +335,12 @@ URL or version. Reinstalling the URL an instance already runs changes nothing.
 
 ## Identity And Delegation
 
+Identity import accepts the versioned IdentityExport V1 envelope, either plaintext JSON or
+passphrase-encrypted compact JWE. Unversioned exports are rejected; do not remove the version
+field or invent missing identity metadata to bypass admission. Use `astrale identity import --help`
+and `astrale identity export --help` for the transfer options.
+
+
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`
 creates a local key identity. Registration targets an existing Identity Node;
 it never creates a Node, changes business properties, assigns a Group, or replaces
@@ -617,6 +623,12 @@ by this recovery.
 
 Optional roots are `ASTRALE_HOME`, `ASTRALE_KEYS_DIR`, and
 `ASTRALE_DATA_DIR`.
+
+Studio preferences live under `<ASTRALE_HOME>/studio/`: `settings.json` stores one
+`agentModel: { harness, model } | null`; `harness-gateway.json` stores gateway `auth` with
+`mode: mint | token | host`. Old `agentModels` and gateway `apiKey` fields are read for
+compatibility; saving through Studio writes the current format. Do not delete those files
+as caches: they contain user preferences and may contain a gateway credential.
 
 ## Source Map
 

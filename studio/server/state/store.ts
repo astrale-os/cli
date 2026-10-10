@@ -14,10 +14,10 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
-  writeFileSync,
 } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 
+import { atomicWriteSync } from '../../../src/state/files'
 import { isMachineStateRoot } from '../home'
 import { parseJson, type JsonDecoder } from '../json'
 
@@ -89,8 +89,7 @@ export function ensureDir(domainRoot: string, subpath = ''): string {
 
 function writeStateFile(domainRoot: string, subpath: string, data: string | Uint8Array): void {
   const abs = statePath(domainRoot, subpath)
-  mkdirSync(dirname(abs), { recursive: true })
-  writeFileSync(abs, data)
+  atomicWriteSync(abs, data)
 }
 
 export function writeState(domainRoot: string, subpath: string, contents: string): void {
