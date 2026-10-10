@@ -272,9 +272,9 @@ deploy and with which secrets; they name no instance and do not use the CLI's ac
 
 ```bash
 astrale domain install https://crm.example -i staging
-astrale domain install https://agencies.example https://employees.example -i staging
+astrale domain install https://projects.example https://teams.example -i staging
 astrale domain install crm.example@1.5 -i production
-astrale domain install agencies.example@1.5.0 https://employees.example --allow-issuer-change -i staging
+astrale domain install projects.example@1.5.0 https://teams.example --allow-issuer-change -i staging
 astrale domain install <new-deployment-url> --allow-issuer-change -i staging
 astrale domain install <deployment-url> --allow-issuer-change=crm.example -i staging
 astrale domain uninstall crm.example -i staging

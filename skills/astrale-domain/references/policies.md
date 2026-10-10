@@ -77,11 +77,12 @@ For a non-Root principal, an authorized Function requires both:
 ## Declare the business rule at its owner
 
 - Name a Policy as the sentence that follows its subject: every hop from the subject to the object,
-  in order, the object last (`managesProject`, `managesWorkspaceOfProject`, `memberOfGroup`). An Edge
-  Policy names its endpoint (`ownsSourceService`); a composition joins its operands
-  (`managesProjectOrAuthoredReport`). A long name is fine; an ambiguous one is not. Never name the
-  permission granted (`can…`, `may…`: the slot or callable names it), add `caller` or `subject`, or
-  drop a hop. A check then reads as a sentence: `check(managesWorkspaceOfProject, self)`.
+  in order, the object last (`managesProject`, `managesWorkspaceOfProject`, and `extendsGroup` for
+  `sameNode` against a group). An Edge Policy names its endpoint (`ownsSourceService`); a composition
+  joins its operands (`managesProjectOrOwnsProject`) and splits into checks when too long to name. A
+  long name is fine; an ambiguous one is not. Never name the permission granted (`can…`, `may…`: the
+  slot or callable names it), add `caller` or `subject`, or drop a hop. A check then reads as a
+  sentence: `check(managesWorkspaceOfProject, self)`.
 - Project convention: give each match Policy a `description` stating the subject, protected object or
   endpoints, and condition, naming the business relation when one exists. Keep reusable graph predicates
   in the module's `policies/`, never `types/`; place a callable's check inline in its declaration.
@@ -135,16 +136,16 @@ group. Kernel decides each Policy for every Identity of that composition, so `su
 - State a fact a group holds as one Edge from or to `subject`. Never walk `extends_with` (one hop or a
   `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, skips the constraints
   and exclusions of the groups it crosses, and spends a leaf and a variable of the branch budget.
-- Check membership in a fixed group against that group: `check(memberOfGroup, ref(group))`, with
-  `memberOfGroup` matching `sameNode(subject, object)`. Keep the group a fixed `ref`: a group is its own
-  member, so an input object admits any caller passing its own id.
+- Check membership in a fixed group against that group: `check(extendsGroup, ref(group))`, with
+  `extendsGroup` matching `sameNode(subject, object)`. Keep the group a fixed `ref`: the composition
+  includes the caller itself, so an input object admits any caller passing its own id.
 - One Identity satisfies a whole Policy branch. When two facts may come from different groups, such as
   a Role from one Team and the management of a Project from another, write one check per fact: each check
   tries the whole composition on its own.
 
 ```ts
 // Wrong: re-walks the composition by hand and skips its constraints and exclusions.
-export const managesProjectByWalk = policy({
+export const extendsGroupManagingProject = policy({
   match: ({ allOf, edge, exists, object, subject }) =>
     exists(({ node }) => {
       const holder = node()
@@ -168,11 +169,11 @@ export const managesProject = policy({
 // Two facts, possibly from two groups: one check each.
 // In an authorized Function or Method:
 policy: ({ allOf, check, input, ref }) =>
-  allOf(check(memberOfGroup, ref(editors)), check(managesProject, input.project)),
+  allOf(check(extendsGroup, ref(editors)), check(managesProject, input.project)),
 // In a Node Class:
 policies: {
   read: ({ allOf, check, ref, self }) =>
-    allOf(check(memberOfGroup, ref(editors)), check(managesProject, self)),
+    allOf(check(extendsGroup, ref(editors)), check(managesProject, self)),
 },
 ```
 

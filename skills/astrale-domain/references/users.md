@@ -39,8 +39,8 @@ import { K, KernelSchema, classIcon, defineSchema, nodeClass, policy } from '@as
 import { UserRound, Users } from '@astrale-os/sdk/schema/icons'
 import { z } from 'zod'
 
-// schema/policies/declares-base-class-of-member.ts
-export const declaresBaseClassOfMember = policy({
+// schema/policies/declares-base-of-class-of-member.ts
+export const declaresBaseOfClassOfMember = policy({
   description: 'Shell may traverse our direct User/Group subclasses to maintain membership.',
   match: ({ allOf, anyOf, sameNode, exists, object, ref, subject }) =>
     exists(({ node }) => {
@@ -60,14 +60,14 @@ export const Employee = nodeClass({
   icon: classIcon.lucide(UserRound),
   extends: [S.classes.User],
   properties: { employeeNumber: z.string().min(1) },
-  policies: { traverse: declaresBaseClassOfMember },
+  policies: { traverse: declaresBaseOfClassOfMember },
 })
 
 // schema/modules/team/classes/team.ts
 export const Team = nodeClass({
   icon: classIcon.lucide(Users),
   extends: [S.classes.Group],
-  policies: { traverse: declaresBaseClassOfMember },
+  policies: { traverse: declaresBaseOfClassOfMember },
 })
 
 // schema/schema.ts
@@ -75,13 +75,13 @@ export const schema = defineSchema('work.example', {
   name: 'Work',
   dependencies: { kernel: KernelSchema, shell: ShellSchema },
   classes: { Employee, Team },
-  policies: { declaresBaseClassOfMember },
+  policies: { declaresBaseOfClassOfMember },
 })
 ```
 
 - The Policy identifies Shell through protected Schema ownership, not a configured Domain NodeId.
   Parent-Class Policies do not replace the concrete foreign Class's traversal agreement.
-- Preserve existing traversal with `policy.anyOf(existingTraverse, declaresBaseClassOfMember)`; do not
+- Preserve existing traversal with `policy.anyOf(existingTraverse, declaresBaseOfClassOfMember)`; do not
   replace business access or broaden `read`/writes. Deeper inheritance needs an explicitly verified pattern.
 
 ## Invite or register, without substituting the identity
