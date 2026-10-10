@@ -7,10 +7,10 @@ returned Method summary is decoded locally before it reaches a command; connecti
 no schema discovery, introspection, or graph read.
 
 Automatic creation invokes `Fleet.createInstance`. Status and deletion first resolve a
-caller-visible Instance through the ordinary inventory and then invoke that exact Instance receiver;
-the deprecated Fleet catalog install (`../legacy/catalog`) resolves its Instance the same way. An explicit Node Path may still be resolved through one exact caller-authorized
-graph lookup. The adapter creates internal operation IDs but preserves the existing CLI projection
-and selection-required experience.
+caller-visible Instance through the ordinary inventory and then invoke that exact Instance receiver.
+An explicit Node Path may still be resolved through one exact caller-authorized graph lookup. The
+adapter creates internal operation IDs but preserves the existing CLI projection and
+selection-required experience.
 
 Instance invitation creation invokes the exact resolved Instance. Invitation status invokes the
 exact retained Invitation receiver and returns its recorded lifecycle without provider refresh,
