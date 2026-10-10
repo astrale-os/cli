@@ -104,7 +104,7 @@ describe('acceptJournalPage', () => {
       records: [
         {
           sequence: 7,
-          timestamp: '2026-08-11T12:00:00.000Z',
+          occurredAt: '2026-08-11T12:00:00.000Z',
           topic: 'op:function.completed',
           payload: { durationMs: 4 },
           principal: 'caller',
@@ -117,7 +117,7 @@ describe('acceptJournalPage', () => {
       records: [
         {
           sequence: 7,
-          timestamp: '2026-08-11T12:00:00.000Z',
+          occurredAt: '2026-08-11T12:00:00.000Z',
           topic: 'op:function.completed',
           payload: { durationMs: 4 },
           principal: 'caller',
@@ -205,7 +205,7 @@ describe('acceptJournalPage', () => {
     expect(describeJournalGap({ kind: 'cursor', reason: 'selection' })).toContain('selection')
   })
 
-  test('admits journal v2 records that use occurredAt instead of timestamp', () => {
+  test('admits current journal records with complete structured correlation', () => {
     const page = acceptJournalPage({
       records: [
         {
@@ -229,7 +229,6 @@ describe('acceptJournalPage', () => {
     expect(page.records[0]).toMatchObject({
       sequence: 10241,
       topic: 'function.invoke',
-      timestamp: '2026-08-19T16:51:10.049Z',
       occurredAt: '2026-08-19T16:51:10.049Z',
       committedAt: '2026-08-19T16:51:10.070Z',
       correlation: {
@@ -241,7 +240,6 @@ describe('acceptJournalPage', () => {
         traceId: 'trace-1',
         spanId: 'span-1',
       },
-      correlationId: 'cf862a64-3aa1-4343-ba86-f9b516c4ff95',
     })
   })
 
@@ -296,40 +294,24 @@ describe('acceptJournalPage', () => {
     ).toThrow('at most 256 UTF-8 bytes')
   })
 
-  test('keeps legacy identity compatibility coherent with structured correlation', () => {
-    const record = {
-      sequence: 1,
-      topic: 'function.invoke',
-      occurredAt: '2026-08-19T16:51:10.049Z',
-      payload: {},
-    }
-    expect(
-      acceptJournalPage({
-        records: [{ ...record, correlationId: 'legacy-only', causationId: 'legacy-cause' }],
-      }).records[0],
-    ).toMatchObject({ correlationId: 'legacy-only', causationId: 'legacy-cause' })
-    expect(
-      acceptJournalPage({
-        records: [
-          {
-            ...record,
-            correlationId: 'same',
-            correlation: { invocationId: 'same' },
-          },
-        ],
-      }).records[0],
-    ).toMatchObject({ correlationId: 'same', correlation: { invocationId: 'same' } })
+  test('requires occurredAt and reads correlation only from its structured owner', () => {
+    const record = { sequence: 1, topic: 'function.invoke', payload: {} }
     expect(() =>
-      acceptJournalPage({
-        records: [
-          {
-            ...record,
-            correlationId: 'legacy',
-            correlation: { invocationId: 'structured' },
-          },
-        ],
-      }),
-    ).toThrow('conflicting correlation identifiers')
+      acceptJournalPage({ records: [{ ...record, timestamp: '2026-08-19T16:51:10.049Z' }] }),
+    ).toThrow('missing occurredAt')
+    const admitted = acceptJournalPage({
+      records: [
+        {
+          ...record,
+          occurredAt: '2026-08-19T16:51:10.049Z',
+          correlationId: 'legacy',
+          correlation: { invocationId: 'current' },
+        },
+      ],
+    }).records[0]
+    expect(admitted).toMatchObject({ correlation: { invocationId: 'current' } })
+    expect(admitted).not.toHaveProperty('correlationId')
+    expect(admitted).not.toHaveProperty('timestamp')
   })
 
   test('serializes one complete structured record per machine-follow line', () => {

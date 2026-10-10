@@ -39,7 +39,6 @@ export type IdentityStateErrorCode =
   | 'IDENTITY_STATE_INVALID'
   | 'IDENTITY_STATE_VERSION_UNSUPPORTED'
   | 'IDENTITY_STATE_UNREADABLE'
-  | 'IDENTITY_STATE_BACKUP_CONFLICT'
 
 export class IdentityStateError extends Error {
   readonly code: IdentityStateErrorCode
@@ -92,15 +91,12 @@ const IdentityStoreFields = {
   identities: z.record(z.string(), IdentitySchema),
 }
 
-const IdentityStoreSchema: z.ZodType<IdentityStore> = z.object(IdentityStoreFields).strict()
-
 const IdentityFileV1Schema = z
   .object({ version: z.literal(IDENTITY_STORE_VERSION), ...IdentityStoreFields })
   .strict()
 
 interface DecodedIdentityStore {
   readonly store: IdentityStore
-  readonly legacyBytes?: string
 }
 
 export async function readIdentityStore(
@@ -119,9 +115,6 @@ export async function updateIdentityStore<Value>(
     async () => {
       const current = await readDecoded(options)
       const update = await transition(current.store)
-      if (current.legacyBytes !== undefined) {
-        await preserveLegacyBackup(path, current.legacyBytes)
-      }
       await atomicWrite(path, encodeV1(update.next))
       return update.value
     },
@@ -172,11 +165,11 @@ async function readDecoded(options: IdentityStoreOptions): Promise<DecodedIdenti
     }
   }
 
-  try {
-    return { store: IdentityStoreSchema.parse(input), legacyBytes: raw }
-  } catch (error) {
-    throw invalidState(path, error)
-  }
+  throw new IdentityStateError(
+    'IDENTITY_STATE_VERSION_UNSUPPORTED',
+    path,
+    `Identity state at ${path} has no supported version. Rename this file to preserve it, then run astrale auth login or astrale identity create. Keep the keys directory unchanged.`,
+  )
 }
 
 function hasVersion(input: unknown): input is { readonly version: unknown } {
@@ -192,31 +185,6 @@ function seed(_now: Date): IdentityStore {
 
 function encodeV1(store: IdentityStore): string {
   return `${JSON.stringify({ version: IDENTITY_STORE_VERSION, ...store }, null, 2)}\n`
-}
-
-async function preserveLegacyBackup(path: string, legacyBytes: string): Promise<void> {
-  const backupPath = `${path}.v0.bak`
-  try {
-    const existing = await readFile(backupPath, 'utf-8')
-    if (existing !== legacyBytes) {
-      throw new IdentityStateError(
-        'IDENTITY_STATE_BACKUP_CONFLICT',
-        backupPath,
-        `Legacy identity backup at ${backupPath} does not match the file being migrated`,
-      )
-    }
-  } catch (error) {
-    if (error instanceof IdentityStateError) throw error
-    if ((error as { code?: string }).code !== 'ENOENT') {
-      throw new IdentityStateError(
-        'IDENTITY_STATE_UNREADABLE',
-        backupPath,
-        `Could not read legacy identity backup at ${backupPath}`,
-        error,
-      )
-    }
-    await atomicWrite(backupPath, legacyBytes)
-  }
 }
 
 function invalidState(path: string, cause?: unknown): IdentityStateError {

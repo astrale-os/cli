@@ -1,4 +1,5 @@
 import { upsertIdpIdentity } from '../identity/registry'
+import { readIdentityStore } from '../state/index'
 import {
   decodeTokenClaims,
   exchangeAuthorizationCode,
@@ -73,6 +74,8 @@ export type LoginResult = {
  * leaves a half-written cache.
  */
 export async function loginViaIdp(opts: LoginFlowOpts): Promise<LoginResult> {
+  // Reject unsupported local state before requesting credentials or publishing a session.
+  await readIdentityStore()
   const idpName = await resolveIdpName(opts.idp)
   const previous = opts.name && !opts.clientId ? await readIdpSession(opts.name) : null
   const savedClientId = previous?.idp === idpName ? previous.clientId : undefined

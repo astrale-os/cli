@@ -20,6 +20,7 @@ const OperatesIn = edgeClass.directed({
 })
 
 export const StudioPeerE2ESchema = defineSchema('ops.studio-demo.astrale.ai', {
+  name: 'Test Domain',
   classes: { Company, Region, OperatesIn },
 })
 

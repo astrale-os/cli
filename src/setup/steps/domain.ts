@@ -29,7 +29,7 @@ export function scaffoldArgs(name: string): string[] {
 export function nextSteps(name: string): string[] {
   return [
     `cd ${name} && pnpm install && pnpm run deploy development`,
-    'astrale domain install <url> --direct -i <instance>',
+    'astrale domain install <url> -i <instance>',
   ]
 }
 

@@ -45,6 +45,7 @@ const edit = (field: string) =>
     },
   })
 const source = defineSchema('host.astrale.ai', {
+  name: 'Test Domain',
   classes: {
     Manager: nodeClass({
       icon: classIcon.neutral,
@@ -136,6 +137,7 @@ describe('describeCallableFromBundle', () => {
     )
     const wrongBundle = bundle.create(
       defineSchema('other.astrale.ai', {
+        name: 'Test Domain',
         classes: {
           Manager: nodeClass({ icon: classIcon.neutral, methods: { edit: edit('foreign') } }),
         },

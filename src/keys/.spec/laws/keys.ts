@@ -10,13 +10,13 @@ export const CLI_KEYS_IDENTITY_ISOLATED = defineLaw({
   ],
 })
 
-export const CLI_KEYS_LEGACY_READABLE = defineLaw({
-  id: 'CLI-KEYS-LEGACY-READABLE',
+export const CLI_KEYS_JWK_ALGORITHM = defineLaw({
+  id: 'CLI-KEYS-JWK-ALGORITHM',
   statement:
-    'Manager filenames and unstamped supported legacy algorithms remain readable without changing another identity key coordinate.',
+    'Every subject uses the same filename convention; supported JWK key types and curves determine the algorithm when optional alg is absent.',
   tests: [
-    { file: '__tests__/keys.test.ts', id: 'TEST-CLI-KEYS-LEGACY-FILENAMES' },
-    { file: '__tests__/algorithm.test.ts', id: 'TEST-CLI-KEYS-INFERS-LEGACY-ALGORITHM' },
+    { file: '__tests__/keys.test.ts', id: 'TEST-CLI-KEYS-SUBJECT-FILENAMES' },
+    { file: '__tests__/algorithm.test.ts', id: 'TEST-CLI-KEYS-INFERS-JWK-ALGORITHM' },
   ],
 })
 

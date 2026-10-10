@@ -9,8 +9,8 @@ describe('inferAlg', () => {
     expect(inferAlg({ alg: 'EdDSA' })).toBe('EdDSA')
   })
 
-  /** @evidence TEST-CLI-KEYS-INFERS-LEGACY-ALGORITHM */
-  test('infers supported algorithms for legacy unstamped key files', () => {
+  /** @evidence TEST-CLI-KEYS-INFERS-JWK-ALGORITHM */
+  test('derives supported algorithms from JWK key type and curve when alg is absent', () => {
     expect(inferAlg({ kty: 'EC', crv: 'P-256' })).toBe('ES256')
     expect(inferAlg({ kty: 'OKP', crv: 'Ed25519' })).toBe('EdDSA')
   })

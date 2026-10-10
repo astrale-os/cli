@@ -112,7 +112,7 @@ export function setIdentityMode(name: string, mode: IdentityMode): Promise<void>
 /** Detect the retained compact-JWE representation without decoding it. */
 export function isEncryptedIdentityExport(raw: string): boolean
 
-/** Decode legacy plaintext, V1 plaintext, or compact-JWE content into one admitted V1 envelope. */
+/** Decode V1 plaintext or compact-JWE content into one admitted V1 envelope. */
 export function decodeIdentityExport(raw: string, passphrase?: string): Promise<IdentityExport>
 
 /** Encode one admitted envelope as plaintext JSON or compact JWE. */

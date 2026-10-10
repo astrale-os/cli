@@ -35,19 +35,21 @@ export const InstanceEntrySchema = z.object({
 })
 
 /**
- * Format of the bookmark registry this release writes. Unlabelled registries remain readable;
- * every write rewrites the whole registry in this format.
+ * The sole admitted on-disk bookmark registry format.
  */
 export const INSTANCE_STORE_VERSION = 1 as const
 
 export const InstanceStoreSchema = z.object({
-  version: z.literal(INSTANCE_STORE_VERSION).optional(),
+  version: z.literal(INSTANCE_STORE_VERSION),
   active: z.string(),
-  instances: z.record(z.string(), InstanceEntrySchema),
+  instances: z.record(z.string(), InstanceEntrySchema.extend({ url: z.string().min(1) })),
 })
 
 export type InstanceEntry = z.infer<typeof InstanceEntrySchema>
-export type InstanceStore = z.infer<typeof InstanceStoreSchema>
+export interface InstanceStore {
+  active: string
+  instances: Record<string, InstanceEntry>
+}
 
 export type AddInstanceOpts = {
   url?: string
@@ -88,22 +90,16 @@ function seed(): InstanceStore {
 }
 
 /**
- * Normalize a parsed registry, preserving every explicit Domain issuer regardless of its format
- * label. `changed` reports normalized content; the returned store carries no format label, which
- * only an encoded registry holds.
+ * Normalize a parsed registry, preserving every explicit Domain issuer. `changed` reports
+ * normalized content; the returned store carries no format label, which only an encoded registry holds.
  */
 export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
   let changed = false
   const instances: Record<string, InstanceEntry> = {}
 
   for (const [key, entry] of Object.entries(store.instances)) {
-    if (key === 'manager') {
-      changed = true
-      continue
-    }
     if (!entry.url) {
-      changed = true
-      continue
+      throw new AstraleError('INSTANCE_STATE_INVALID', `Bookmark "${key}" has no connection URL.`)
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
@@ -137,7 +133,7 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
 let instancesMemo: InstanceStore | null = null
 
 /**
- * Invalidate the one-process bookmark snapshot. Long-lived compatibility
+ * Invalidate the one-process bookmark snapshot. Long-lived
  * consumers call this before a read so CLI writes made by another process are
  * observable; one-shot commands normally never need it.
  */
@@ -160,8 +156,9 @@ export async function readInstances(
 
   let parsed: InstanceStore
   try {
-    parsed = InstanceStoreSchema.parse(JSON.parse(raw))
+    parsed = decodeInstanceStore(raw)
   } catch (e) {
+    if (e instanceof AstraleError) throw e
     const reason = e instanceof z.ZodError ? 'invalid schema' : 'corrupt JSON'
     log.warn(`Could not read instances at ${INSTANCES_PATH} (${reason}) — using empty registry`)
     instancesMemo = seed()
@@ -186,8 +183,7 @@ async function mutateInstances<Value>(transition: (store: InstanceStore) => Valu
     }
     // Unlike a diagnostic read, a write must never replace corrupt/unreadable
     // evidence with an empty registry.
-    const store =
-      raw === undefined ? seed() : sanitizeStore(InstanceStoreSchema.parse(JSON.parse(raw))).store
+    const store = raw === undefined ? seed() : sanitizeStore(decodeInstanceStore(raw)).store
     const value = transition(store)
     await atomicWrite(INSTANCES_PATH, encodeInstanceStore(store))
     instancesMemo = store
@@ -195,9 +191,26 @@ async function mutateInstances<Value>(transition: (store: InstanceStore) => Valu
   })
 }
 
+function decodeInstanceStore(raw: string): InstanceStore {
+  const input: unknown = JSON.parse(raw)
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    (!Object.hasOwn(input, 'version') ||
+      (input as { version?: unknown }).version !== INSTANCE_STORE_VERSION)
+  ) {
+    throw new AstraleError(
+      'INSTANCE_STATE_VERSION_UNSUPPORTED',
+      `Instance state at ${INSTANCES_PATH} has no supported version.`,
+      'Rename this file to preserve it, then run astrale instance use <name> or astrale instance bookmark <name> --url <url>. Keep the keys directory unchanged.',
+    )
+  }
+  return InstanceStoreSchema.parse(input)
+}
+
 /** Every write publishes the whole registry in this release's format. */
 function encodeInstanceStore(store: InstanceStore): string {
-  const encoded: InstanceStore = {
+  const encoded = {
     version: INSTANCE_STORE_VERSION,
     active: store.active,
     instances: store.instances,

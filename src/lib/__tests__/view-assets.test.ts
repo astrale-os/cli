@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { embeddedAssetDir } from '../embedded-assets'
+import { embeddedAssetDir, embeddedFiles } from '../embedded-assets'
 import { ensureViewerAssets, viewerDistDir } from '../view/assets'
 
 const temporaryDirectories: string[] = []
@@ -50,7 +50,7 @@ describe('viewer asset resolution', () => {
     expect(source).toContain('#frame {\n        flex: 1;\n        min-width: 0;')
   })
 
-  test('skips partial candidates and prefers complete package-owned assets', async () => {
+  test('does not load complete sibling assets outside the package when its bundle is partial', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-view-candidates-'))
     temporaryDirectories.push(root)
     const prefix = join(root, '.npm-global')
@@ -65,10 +65,28 @@ describe('viewer asset resolution', () => {
     await mkdir(legacy, { recursive: true })
     await writeFile(bundle, '')
     await writeFile(join(published, 'main.js'), '')
-    await writeFile(join(legacy, 'main.js'), '')
-    await writeFile(join(legacy, 'index.html'), '')
+    await writeFile(join(legacy, 'main.js'), 'retired sibling script')
+    await writeFile(join(legacy, 'index.html'), 'retired sibling page')
 
-    expect(viewerDistDir(pathToFileURL(bundle).href, entry)).toBe(legacy)
+    expect(viewerDistDir(pathToFileURL(bundle).href, entry)).toBe(published)
+    const previous = process.env.ASTRALE_HOME
+    process.env.ASTRALE_HOME = root
+    try {
+      const recovered = await ensureViewerAssets(pathToFileURL(bundle).href, entry)
+      expect(recovered).toBe(embeddedAssetDir('viewer', root))
+      for (const filename of ['main.js', 'index.html']) {
+        const embedded = embeddedFiles('viewer').find((file) => file.path === `viewer/${filename}`)
+        expect(embedded).toBeDefined()
+        expect(await readFile(join(recovered, filename))).toEqual(
+          Buffer.from(embedded!.contents, 'base64'),
+        )
+      }
+      expect(await readFile(join(legacy, 'main.js'), 'utf8')).toBe('retired sibling script')
+      expect(await readFile(join(legacy, 'index.html'), 'utf8')).toBe('retired sibling page')
+    } finally {
+      if (previous === undefined) delete process.env.ASTRALE_HOME
+      else process.env.ASTRALE_HOME = previous
+    }
 
     await writeFile(join(published, 'index.html'), '')
     expect(viewerDistDir(pathToFileURL(bundle).href, entry)).toBe(published)

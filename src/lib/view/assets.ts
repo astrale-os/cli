@@ -15,9 +15,8 @@ export function viewerDistDir(moduleUrl = import.meta.url, entry = process.argv[
   const moduleDirectory = dirname(fileURLToPath(moduleUrl))
   const published = join(moduleDirectory, '..', 'viewer', 'dist')
   const source = join(moduleDirectory, '..', '..', '..', 'viewer', 'dist')
-  const legacy = join(dirname(entry), '..', 'viewer', 'dist')
   const standalone = entry.startsWith('/$bunfs/') ? embeddedAssetDir('viewer') : undefined
-  const complete = [standalone, published, source, legacy].find(
+  const complete = [standalone, published, source].find(
     (candidate): candidate is string => candidate !== undefined && hasViewerBundle(candidate),
   )
   if (complete) return complete

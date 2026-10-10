@@ -94,6 +94,7 @@ describe('instance status', () => {
   test('probes an explicit local bookmark without rewriting its registry', async () => {
     const issuer = `http://127.0.0.1:${server.port}`
     const registry = `${JSON.stringify({
+      version: 1,
       active: 'local',
       instances: {
         local: {

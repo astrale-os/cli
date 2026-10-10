@@ -44,8 +44,6 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > Projects are discovered exclusively through the default-exported `defineProject`
 > in `astrale.config.ts`. Studio follows the Project's `domain` binding
 > to a `defineDomain` module, then its `schema` binding to authored source.
-> Projects on an SDK older than 0.6.0-beta.11 (`application` / `defineApplication`)
-> are still read, through `studio/server/legacy/application-project.ts`.
 > Deployment targets belong to `environments`; Studio does not execute the adapters.
 > Test datasets come from the same Project's `tests: tests({ datasets: [...] })`.
 > Module filenames are unrestricted; there is no conventional-file fallback.

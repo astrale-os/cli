@@ -27,8 +27,8 @@ describe('DESIGN — per-identity keys', () => {
     await rm(tmp, { recursive: true, force: true })
   })
 
-  /** @evidence TEST-CLI-KEYS-LEGACY-FILENAMES */
-  test('keypairPaths routes manager to legacy filenames', () => {
+  /** @evidence TEST-CLI-KEYS-SUBJECT-FILENAMES */
+  test('keypairPaths uses the subject filename convention for manager too', () => {
     const p = keypairPaths('manager', tmp)
     expect(p.privatePath.endsWith('manager.private.jwk')).toBe(true)
     expect(p.publicPath.endsWith('manager.public.jwk')).toBe(true)

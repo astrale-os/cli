@@ -10,5 +10,6 @@ export const PaymentProcessor = nodeClass({
 })
 
 export const PaymentsSchema = defineSchema('payments.studio-demo.astrale.ai', {
+  name: 'Test Domain',
   classes: { PaymentProcessor },
 })

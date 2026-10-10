@@ -83,7 +83,6 @@ const TOOL_INPUTS = [
   'introspect/island.ts',
   'introspect/canonical-schema.ts',
   'introspect/dependency-footprint.ts',
-  'introspect/legacy/dependency-footprint.ts',
   'introspect/overlay.ts',
   'introspect/overlay-tsmorph.ts',
   'introspect/source-overlay/handlers.ts',

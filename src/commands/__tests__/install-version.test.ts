@@ -9,6 +9,7 @@ import type { withAdminClientSession } from '../../connection'
 import type { ServedDeployment } from '../../lib/domain-release'
 import type { ReferenceInstallDependencies } from '../domain/release-install'
 
+import { deploymentReleaseFor } from '../../__tests__/fixtures/publication'
 import { connectAdminRegistry } from '../../admin/registry'
 import {
   fakeAdmin,
@@ -20,7 +21,6 @@ import {
 } from '../../admin/registry/__tests__/fake-admin'
 import { transportFailure } from '../../connection/__tests__/failure-fixtures'
 import { DeploymentReadError } from '../../lib/domain-release'
-import { installsOnKernel } from '../domain/install'
 import { installByReference, openInstallRegistry } from '../domain/release-install'
 import { isVersionReference } from '../domain/version-reference'
 
@@ -35,7 +35,7 @@ const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
 const ORIGIN = 'agencies.test'
 const INSTALLER = 'installer'
 const OUTSIDER = 'outsider'
-const REVISION = schema.revision(defineSchema(ORIGIN, {}))
+const REVISION = schema.revision(defineSchema(ORIGIN, { name: 'Test Domain' }))
 const INVOCATION = {
   source: 'https://kernel.test',
   id: 'install-version',
@@ -81,6 +81,8 @@ function served(source: FakeRelease, origin = ORIGIN): ServedDeployment {
     issuer: source.url,
     revision: REVISION,
     pin: { kind: 'release', release: source.releaseDigest, build: source.buildDigest },
+    release: deploymentReleaseFor(defineSchema(origin, { name: 'Test Domain' }), source.url)
+      .document,
   }
 }
 
@@ -483,27 +485,6 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
       },
     })
   })
-
-  test('a deployment that serves only the legacy domain.json is not the published release', async () => {
-    const legacy: ServedDeployment = {
-      origin: ORIGIN,
-      issuer: releases.v151.url,
-      revision: REVISION,
-      pin: { kind: 'legacy', document: 3, etag: `sha256:${'6'.repeat(64)}` },
-    }
-    const install = run({ served: { [releases.v151.url]: async () => legacy } })
-
-    await expect(
-      installByReference([`${ORIGIN}@1.5`], JSON_OUTPUT, install.deps),
-    ).rejects.toBeInstanceOf(ExitError)
-
-    expect(install.requests).toEqual([])
-    expect(JSON.parse(stderr)).toMatchObject({
-      error: 'PUBLICATION_RELEASE_MISMATCH',
-      details: { served: null },
-    })
-  })
-
   test('an unreadable deployment is installed with the Publication digest; the Kernel decides', async () => {
     const guard = () =>
       new ResponseError(4001 as never, 'Schema revision conflict.', INVOCATION, {
@@ -557,7 +538,7 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
     })
   })
 
-  test('a Kernel without the installed listing cannot pin a version: refused before any install', async () => {
+  test('an installed-list refusal propagates without downgrading or installing', async () => {
     const install = run({
       listing: async () => {
         throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
@@ -573,7 +554,11 @@ describe('install by version (Résolution [.78020]-[.78492])', () => {
 
     expect(install.requests).toEqual([])
     expect(install.reads).toEqual([])
-    expect(JSON.parse(stderr)).toMatchObject({ error: 'KERNEL_RELEASE_UNSUPPORTED' })
+    expect(JSON.parse(stderr)).toMatchObject({
+      error: 'RESPONSE_ERROR',
+      code: 1003,
+      reason: { code: 'FUNCTION_INPUT_INVALID' },
+    })
   })
 
   test('two references to one origin are refused: two versions before Admin, a version and a URL after the read', async () => {
@@ -773,12 +758,5 @@ describe('reference routing ([.78896]: the syntax decides)', () => {
     expect(isVersionReference('issues.astrale.ai')).toBe(false)
     expect(isVersionReference('https://issues.astrale.ai@1.5.0')).toBe(false)
     expect(isVersionReference('http://localhost:8787')).toBe(false)
-  })
-
-  test('URLs and versions go to the instance Kernel; a catalog origin never mixes with them', () => {
-    expect(installsOnKernel(['issues.astrale.ai@1.5'], false)).toBe(true)
-    expect(installsOnKernel(['issues.astrale.ai@1.5', 'https://a.dev'], false)).toBe(true)
-    expect(installsOnKernel(['issues.astrale.ai@1.5', 'crm.acme.dev'], false)).toBe(false)
-    expect(installsOnKernel(['crm.acme.dev'], false)).toBe(false)
   })
 })

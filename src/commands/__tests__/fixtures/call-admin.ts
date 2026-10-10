@@ -38,7 +38,7 @@ class FakeAdminKernelSession {
   readonly schema = Object.freeze({
     inspect: async (origin: string) => {
       await record({ kind: 'inspect', kernel: this.options.kernel, origin })
-      return { origin, publication: { identity: { issuer: servicesIssuer } } }
+      return { origin, release: { identity: { issuer: servicesIssuer } } }
     },
   })
 

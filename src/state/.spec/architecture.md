@@ -6,10 +6,12 @@ environment coordinates once. `atomicWrite` publishes one complete `0600` file t
 same-directory temporary file. `withFileLock` bounds cross-process read-modify-write exclusion and
 releases its lock on every terminal path.
 
-The identity registry decodes the legacy unversioned shape and current V1 envelope into one semantic
-`IdentityStore`. Reads never migrate. The first successful mutation of a legacy file preserves its
-exact bytes at `identities.json.v0.bak` before publishing V1. Invalid or newer files remain untouched
-and fail closed. Identity orchestration owns key and IdP-session effects above this module.
+The identity registry admits only the V1 envelope into one semantic `IdentityStore`. Missing files
+seed an empty store without writing. Unversioned, invalid, and unsupported-version files remain
+untouched and fail before any transition. To recover an old local registry, rename its file to
+preserve the bytes, then authenticate again; keep the keys directory unchanged. Identity
+orchestration owns key and IdP-session effects above this module and validates the registry before
+requesting login credentials.
 
 The exchange registry owns a versioned `exchange.Artifact`. Each V2 entry is keyed by the atomic
 `(Kernel issuer, Domain issuer, source issuer, source subject)` identity and stores one inspected
@@ -31,7 +33,7 @@ change product correctness.
 Authentication logout and identity deletion remove this artifact together with exchanged Domain
 credentials so locally retired authority does not leave reusable destination bearers behind.
 
-Shape decoding, migrations, and backup policy remain with each semantic registry. Commands do not
+Shape decoding and format admission remain with each semantic registry. Commands do not
 call these primitives directly, and Kernel Client owns no CLI filesystem state.
 
 ```mermaid
@@ -39,8 +41,7 @@ flowchart LR
   C[CLI command] --> I[identity orchestration]
   I --> R[IdentityStore transition]
   R --> L[withFileLock]
-  L --> B[legacy backup when needed]
-  B --> A[atomicWrite V1]
+  L --> A[atomicWrite V1]
   A --> F[identities.json]
   P[createPaths] --> R
 ```

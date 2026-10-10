@@ -51,7 +51,7 @@ const resolved = [
     href: 'https://ai-gateway.astrale.ai/ui/chat',
     handshake: 'shell' as const,
     issuer: 'https://ai-gateway.astrale.ai',
-    etag: `sha256:${'a'.repeat(64)}`,
+    release: `sha256:${'a'.repeat(64)}`,
     revision: `sha256:${'b'.repeat(64)}`,
     declaration: { target: { kind: 'domain' as const } },
   }),
@@ -60,7 +60,7 @@ const resolved = [
     href: 'https://ai-gateway.astrale.ai/ui/model',
     handshake: 'none' as const,
     issuer: 'https://ai-gateway.astrale.ai',
-    etag: `sha256:${'c'.repeat(64)}`,
+    release: `sha256:${'c'.repeat(64)}`,
     revision: `sha256:${'d'.repeat(64)}`,
     declaration: { target: { kind: 'domain' as const } },
   }),
@@ -70,22 +70,21 @@ const installedDomain = {
   domain: {
     origin: 'ai-gateway.astrale.ai',
     revision: resolved[1].revision,
-    publication: {
+    release: {
       origin: 'ai-gateway.astrale.ai',
       identity: {
         issuer: resolved[1].issuer,
         subject: 'ai-gateway.astrale.ai',
       },
       revision: resolved[1].revision,
-      etag: resolved[1].etag,
+      digest: resolved[1].release,
     },
     bindings: {
       callables: [],
-      views: resolved.map(({ key, href, handshake, iframe }) => ({
+      views: resolved.map(({ key, href, handshake }) => ({
         view: key,
         href,
         handshake,
-        ...(iframe === undefined ? {} : { iframe }),
       })),
     },
   },
@@ -106,9 +105,12 @@ const installedDomain = {
 }
 
 describe('view session resolution', () => {
-  test('preserves published host requirements when selecting an explicit installed Domain View', async () => {
+  test('preserves host requirements without reading retired iframe requirements on an installed View', async () => {
     const { resolveSession } = await import('../view')
     const host = { navigation: { external: { origins: ['https://provider.example'] } } }
+    const readIframe = mock(() => {
+      throw new Error('Retired iframe requirements must not be read.')
+    })
     bundleMock.mockImplementationOnce(async () => ({
       ...installedDomain,
       domain: {
@@ -117,7 +119,9 @@ describe('view session resolution', () => {
           ...installedDomain.domain.bindings,
           views: installedDomain.domain.bindings.views.map((binding) =>
             binding.view.endsWith(':view.model')
-              ? { ...binding, handshake: 'shell', host }
+              ? Object.defineProperty({ ...binding, handshake: 'shell', host }, 'iframe', {
+                  get: readIframe,
+                })
               : binding,
           ),
         },
@@ -125,6 +129,8 @@ describe('view session resolution', () => {
     }))
     const result = await resolveSession('/:ai-gateway.astrale.ai:view.model', {})
     expect(result.view?.route.host).toEqual(host)
+    expect(result.view?.route).not.toHaveProperty('iframe')
+    expect(readIframe).not.toHaveBeenCalled()
     expect(viewsForMock).not.toHaveBeenCalled()
   })
 

@@ -83,6 +83,8 @@ test('joins canonical Bundle Views with defineFrontend route metadata', () => {
     `import { defineSchema, view } from '@astrale-os/sdk/schema'
 export const ORIGIN = 'current.example.dev' as const
 const schemaInput = {
+  name: 'Test Domain',
+  entrypoint: 'issue',
   classes: {},
   views: {
     issue: view({
@@ -100,7 +102,6 @@ export const frontend = defineFrontend({
   schema,
   source: vite(),
   routes: { issue: '/ui/issues/:id' },
-  entrypoint: 'issue',
 })
 `,
   )
@@ -132,7 +133,8 @@ test('discovers Vite frontend default routes from canonical View names', () => {
   mkdirSync(join(root, 'views', 'summary'), { recursive: true })
   writeFileSync(
     join(root, 'schema', 'index.ts'),
-    `export const schema = defineSchema('generated.example.dev', {
+    `export const schema = defineSchema('generated.example.dev', { name: 'Test Domain',
+  entrypoint: 'summary',
   views: { summary: view({}) },
 })
 `,
@@ -143,7 +145,6 @@ test('discovers Vite frontend default routes from canonical View names', () => {
 export const frontend = defineFrontend({
   schema,
   source,
-  entrypoint: 'summary',
 })
 `,
   )
@@ -179,7 +180,7 @@ export default defineProject({ domain, environments: { development: { deployment
   mkdirSync(join(root, 'schema'), { recursive: true })
   writeFileSync(
     join(root, 'schema', 'index.ts'),
-    `export const schema = defineSchema('static.invalid', {
+    `export const schema = defineSchema('static.invalid', { name: 'Test Domain',
   views: {
     account: view({ description: 'Static guess.' }),
     sourceOnly: view({ description: 'Static guess.' }),

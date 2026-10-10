@@ -27,6 +27,7 @@ import { Document, Party } from './shared/index.js'
 import { AboutAccount, Message, MessageOn, RaisedBy, Ticket } from './support/index.js'
 
 export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
+  name: 'Test Domain',
   dependencies: { payments: PaymentsSchema },
   classes: {
     Party,

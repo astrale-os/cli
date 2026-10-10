@@ -37,6 +37,7 @@ async function run(
   temporary.push(directory)
   const registryPath = join(directory, 'instances.json')
   const store = {
+    version: 1,
     active: options.active ?? 'other',
     instances: {
       demo: {

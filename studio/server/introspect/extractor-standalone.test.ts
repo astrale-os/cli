@@ -53,7 +53,7 @@ export const Document = nodeClass({ icon: classIcon.neutral, properties: {} })
     `import { defineSchema } from '@astrale-os/sdk/schema'
 import { Document } from '#schema/document'
 if (process.cwd() !== ${JSON.stringify(expectedCwd)}) throw new Error('Schema evaluated outside its Domain')
-export const schema = defineSchema('standalone.extractor.test', {
+export const schema = defineSchema('standalone.extractor.test', { name: 'Test Domain',
   classes: { Document },
 })
 `,

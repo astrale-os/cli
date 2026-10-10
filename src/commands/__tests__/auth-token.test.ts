@@ -14,6 +14,7 @@ beforeEach(async () => {
     join(tmp, 'identities.json'),
     JSON.stringify(
       {
+        version: 1,
         default: 'alice',
         identities: {
           alice: {

@@ -10,7 +10,6 @@ import type { AdminTargetCommandOpts } from '../../lib/admin-target'
 
 import { compareVersions, connectAdminRegistry, RegistryError } from '../../admin/registry'
 import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
-import { AstraleError } from '../../errors'
 import { mapBounded } from '../../lib/concurrency'
 import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment-record'
 import { renderTable } from '../../lib/table'
@@ -50,21 +49,16 @@ export interface InstalledDomainV1 {
   readonly version?: string
   /**
    * The deployment's name, printed verbatim (AM-57): the version naming it, else the CT28
-   * `deploymentName` of its record (`1.4.2 + 7 commits · a1b2c3d · staging`); `legacy` for a
-   * legacy v2/v3 pin, `unknown` for a release no Publication and no record names.
+   * `deploymentName` of its record (`1.4.2 + 7 commits · a1b2c3d · staging`); `unknown` for a
+   * release no Publication and no record names.
    */
   readonly name: string
   /** The highest stable, non-yanked version above the installed one, when one is known. */
   readonly available?: string
 }
 
-/** A release pin, the only kind a Publication or a deployment record can name. */
-type ReleasePin = Extract<InstalledPin, { readonly kind: 'release' }>
-
 /** The name of a release pin that neither a Publication nor a record names. */
 export const UNKNOWN_NAME = 'unknown'
-/** The name of a legacy v2/v3 pin: a Publication names releases only. */
-export const LEGACY_NAME = 'legacy'
 
 /** Deployment records read at once; each is one GET to the deployment's dispatcher. */
 const RECORD_READS = 6
@@ -90,7 +84,6 @@ export function describeInstalled(
     url: installed.url,
     pin: installed.pin,
   }
-  if (installed.pin.kind !== 'release') return Object.freeze({ ...base, name: LEGACY_NAME })
   const pin = installed.pin
   const exact = publications.filter((entry) => entry.releaseDigest === pin.release)
   const sameBuild =
@@ -176,10 +169,10 @@ function issuerKey(input: string): string {
 }
 
 export interface InstalledListDependencies {
-  /** Read the installed releases on the instance Kernel; `undefined` from a Kernel without them. */
+  /** Read the installed releases on the selected instance Kernel. */
   readonly installed: (opts: KernelCommandOpts) => Promise<{
     readonly kernel: string
-    readonly releases: readonly InstalledRelease[] | undefined
+    readonly releases: readonly InstalledRelease[]
   }>
   /**
    * Open the Admin registry as the caller, with the options `adminSessionOptions` keeps: never the
@@ -219,17 +212,12 @@ export async function listInstalled(
 ): Promise<InstalledListV1> {
   const deps = { ...defaultDependencies, ...dependencies }
   const { kernel, releases } = await deps.installed(opts)
-  if (releases === undefined) throw listingUnsupported()
-  const pinned = releases.filter(
-    (entry): entry is InstalledRelease & { readonly pin: ReleasePin } =>
-      entry.pin.kind === 'release',
-  )
-  const origins = [...new Set(pinned.map((entry) => entry.origin))]
+  const origins = [...new Set(releases.map((entry) => entry.origin))]
   const [publications, records] = await Promise.all([
     origins.length === 0
       ? new Map<string, readonly PublicationSummaryV1[]>()
       : deps.registry(adminSessionOptions(opts), (registry) => readPublications(registry, origins)),
-    mapBounded(pinned, RECORD_READS, async (entry) => [entry, await deps.record(entry)] as const),
+    mapBounded(releases, RECORD_READS, async (entry) => [entry, await deps.record(entry)] as const),
   ])
   const recordOf = new Map<InstalledRelease, DeploymentRecordV1 | undefined>(records)
   return Object.freeze({
@@ -262,20 +250,12 @@ async function readPublications(
   return new Map(indexes)
 }
 
-function listingUnsupported(): AstraleError {
-  return new AstraleError(
-    'KERNEL_RELEASE_UNSUPPORTED',
-    'This Kernel does not list installed releases, so it cannot say what runs on the instance.',
-    'Read one Domain with `astrale introspect <origin> -i <instance>`; the listing needs a Host release whose Kernel lists installed releases.',
-  )
-}
-
 /** The human listing of Résolution [.79737]: ORIGIN, VERSION, DIGEST and AVAILABLE. */
 export function installedRows(list: InstalledListV1): Array<Record<string, string>> {
   return list.domains.map((domain) => ({
     origin: domain.origin,
     version: domain.version ?? domain.name,
-    digest: shortDigest(domain.pin.kind === 'release' ? domain.pin.release : domain.pin.etag),
+    digest: shortDigest(domain.pin.release),
     available: domain.available ?? '—',
   }))
 }

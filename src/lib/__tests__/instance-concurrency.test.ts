@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -67,6 +67,35 @@ describe('bookmark registry write ownership', () => {
     expect(Object.keys(store.instances).sort()).toEqual(['first', 'second'])
   })
 
+  test('refuses unversioned reads and writes, then recreates bookmarks only after explicit recovery', async () => {
+    const home = await fixture()
+    const path = join(home, 'instances.json')
+    const saved = JSON.stringify({ active: 'manager', instances: {} })
+    await writeFile(path, saved)
+    await mkdir(join(home, 'keys'))
+    const privatePath = join(home, 'keys', 'manager.private.jwk')
+    await writeFile(privatePath, 'retained private key bytes')
+    for (const body of [
+      'await registry.readInstances();',
+      "await registry.upsertInstance('manager', {url:'https://new.test'});",
+    ]) {
+      const result = await command(home, body)
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('Rename this file to preserve it')
+      expect(await readFile(path, 'utf8')).toBe(saved)
+    }
+    await rename(path, `${path}.saved`)
+    expect(
+      await command(
+        home,
+        "await registry.upsertInstance('manager', {url:'https://new.test'}); registry.resetInstancesMemo(); const store = await registry.readInstances(); if (store.active !== 'manager' || store.instances.manager?.url !== 'https://new.test') throw new Error(JSON.stringify(store));",
+      ),
+    ).toEqual({ code: 0, stderr: '' })
+    expect(JSON.parse(await readFile(path, 'utf8')).version).toBe(1)
+    expect(await readFile(`${path}.saved`, 'utf8')).toBe(saved)
+    expect(await readFile(privatePath, 'utf8')).toBe('retained private key bytes')
+  })
+
   test('retains corrupt evidence instead of replacing it with a new registry', async () => {
     const home = await fixture()
     const path = join(home, 'instances.json')
@@ -98,6 +127,7 @@ describe('managed bookmark Shell exchange on write', () => {
       await writeFile(
         join(home, 'instances.json'),
         JSON.stringify({
+          version: 1,
           active: 'bryan',
           instances: {
             bryan: {
@@ -122,14 +152,14 @@ describe('managed bookmark Shell exchange on write', () => {
     },
   )
 
-  /** @evidence TEST-CLI-INSTANCE-REGISTRY-LABELLED-ON-WRITE */
-  test('a bookmark write labels an earlier registry and preserves explicit issuers on all bookmarks', async () => {
+  /** @evidence TEST-CLI-INSTANCE-REGISTRY-ISSUERS-RETAINED */
+  test('a V1 bookmark write preserves explicit issuers on all bookmarks', async () => {
     const home = await fixture()
     const path = join(home, 'instances.json')
-    // An earlier release wrote the registry without a format label.
     await writeFile(
       path,
       JSON.stringify({
+        version: 1,
         active: 'bryan',
         instances: {
           bryan: {
@@ -151,7 +181,7 @@ describe('managed bookmark Shell exchange on write', () => {
       }),
     )
 
-    // The first write labels the whole registry and preserves both bookmarks' explicit issuers.
+    // A locked write retains both bookmarks' explicit issuers.
     const touched = await command(
       home,
       `await registry.upsertInstance('bryan', {url:${JSON.stringify(url)}, defaultIdentity:'alice'});`,

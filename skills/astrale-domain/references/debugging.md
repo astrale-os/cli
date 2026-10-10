@@ -36,8 +36,7 @@ use SDK bindings rather than reconstruct these coordinates.
 - Keep independent URLs for bundles, external discovery, provider routes, callbacks, and probes.
   A Router may proxy a Kernel without changing its canonical issuer.
 - Authentication identifies an exact `(iss, sub)` pair, not a Domain origin. The verified release
-  (`/.well-known/astrale/release.json`; `domain.json` for a legacy direct-mode Worker or a Host before
-  v4) binds semantic origin, issuer/subject, and concrete endpoints; compare those rather than
+  (`/.well-known/astrale/release.json`) binds semantic origin, issuer/subject, and concrete endpoints; compare those rather than
   hostnames alone.
 - One Kernel can publish intrinsic `kernel.astrale.ai` and host installed `projects.example` at the same
   issuer. Select the installed product by its Domain origin, not the intrinsic release's origin.

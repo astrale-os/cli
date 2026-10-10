@@ -80,6 +80,14 @@ astrale instance bookmark staging --url https://kernel.example.com
 astrale instance use staging
 ```
 
+Local `identities.json` and `instances.json` registries require `version: 1`; portable identity
+imports likewise require the V1 export envelope. An unversioned registry is refused without
+conversion. If the CLI reports one, rename that specific file in `ASTRALE_HOME` (by default
+`~/.astrale`) to retain its bytes, keeping the `keys` directory unchanged. Then run `astrale auth
+login` and select an Instance with `astrale instance use <name>`, or bookmark its new URL. Login
+validates the identity registry before requesting a token or writing a session. Existing keys can
+still be imported using a V1 identity export; do not discard them to reset local bookmarks.
+
 Local key registrations are scoped to the Kernel issuer, not a bookmark name or transport URL.
 Aliases for the same issuer share a registration; different issuers remain isolated. Registrations
 retained under old bookmark keys must be re-recorded with `astrale identity register <name>
@@ -343,17 +351,13 @@ It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
 
-## Fleet catalog (deprecated)
+## Domain installation
 
-`astrale domain publish`, the catalog listing of `astrale domain list` and the bare-origin
-`astrale domain install <origin>` read and write the Admin Fleet catalog, which now only keeps a
-Fleet's default Domains (what every new Instance of the Fleet receives) until provisioning by
-version replaces it. They still work, unchanged for scripts, and warn a person that they are
-deprecated. Publish a version with `astrale-domain publish <environment>` in the Domain's project,
-list a Domain's versions with `astrale domain versions <origin>`, and install one with
-`astrale domain install <origin>@<version>` or by its deployment URL. The commands are removed in a
-later breaking release, once provisioning by version ships and no supported SDK installs by bare
-origin.
+Publish versions with `astrale-domain publish <environment>` in the Domain project, inspect them
+with `astrale domain versions <origin>`, and install `<origin>@<version>` or deployment URLs with
+`astrale domain install`. Deployments serve canonical `release.json` documents. `astrale domain
+list` lists the selected instance's readable installed releases, using the active instance unless
+`-i` or `--url` selects one explicitly.
 
 ## Fleet selection
 
@@ -366,18 +370,12 @@ Instance-only users retain read-only inventory through their visible Fleet when 
 usable Fleet. This does not authorize creation.
 
 The option accepts a Kernel path, not a slug, and remains limited to `instance create`,
-`instance list`, `domain list` and `domain publish`. Creation pins the resolved Fleet before
+`instance list`. Creation pins the resolved Fleet before
 its first call and across retries. Keep both the printed `--operation` and `--fleet` when
 resuming from another process. Policies on each callable remain authoritative if access changes.
 No Fleet discovery callable or wrapper command is introduced. These readers require the existing
 Fleet-slug backfill; missing names or slugs fail explicitly. An explicit historical `core.fleet`
 catalogue path remains supported while that Core node exists.
-
-Admin keeps one Domain per origin. A Fleet's catalog is the Domains it contains and the Domains it
-lists from another Fleet: `domain list` and `domain install <origin>` read both, and
-`domain publish --install-by-default` sets the Fleet's own default with
-`Fleet.configureDomainDefault`. Only the core Fleet catalogues a new origin; Admin refuses it on
-another Fleet with `CATALOG_ORIGIN_CONFLICT`.
 
 An explicit target avoids Fleet discovery entirely. Implicit resolution reads each directory page
 once and checks `UseFleet` with at most eight requests in flight; instance creation reuses the
@@ -399,18 +397,14 @@ before creating Instances. Host capacity is never borrowed from another Fleet.
 Use the observed ID of the Fleet whose reserved slug is `default` for `copyFrom`; protected Core
 namespace paths need not be visible to the caller's graph reads.
 
-An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation and
-Domain installation. These commands have no `--fleet` option; installation derives the catalogue
-from the Instance's containment. Keep the same `--operation` value when retrying creation.
+An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation These commands have no `--fleet` option. Domain URL installs authenticate directly to the selected
+Instance; version installs resolve their deployment in the Admin registry first. Keep the same `--operation` value when retrying creation.
 Fleet membership does not transfer personal Instance ownership.
 
-Upgrade catalogue readers before introducing multiple Fleets: origins and release digests are
-now scoped to a Fleet. Older CLI versions that query a global catalogue are incompatible with
-that data. Existing direct Instance method contracts and default routes remain supported.
 
 ## View external navigation
 
-The View viewer admits external navigation origins declared by the installed View's publication.
+The View viewer admits external navigation origins declared by the installed View's release.
 Opening a compatible View needs no provider-specific CLI flag. The existing
 `--allow-external-origin` option remains available for an additional explicit origin grant.
 Browser popup refusal is returned to the View so it can offer a retry.

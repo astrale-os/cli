@@ -126,7 +126,7 @@ function fixture(identities?: boolean, external = true): ViewServeConfig {
           issuer: (external
             ? 'https://app.test'
             : 'https://kernel.test') as ViewServeConfig['session']['view']['route']['issuer'],
-          etag: `sha256:${'a'.repeat(64)}`,
+          release: `sha256:${'a'.repeat(64)}`,
           revision:
             `sha256:${'b'.repeat(64)}` as ViewServeConfig['session']['view']['route']['revision'],
           declaration: { target: { kind: 'domain' } },

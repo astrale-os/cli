@@ -2,7 +2,7 @@ import { MEDIA_TYPE } from '@astrale-os/sdk/release'
 import { defineSchema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
-import { deploymentReleaseFor, releaseFor } from '../../__tests__/fixtures/publication'
+import { deploymentReleaseFor } from '../../__tests__/fixtures/publication'
 import {
   DeploymentReadError,
   MAXIMUM_BUNDLE_BYTES,
@@ -13,11 +13,11 @@ import {
 
 const URL_V4 = 'https://crm-production-0123456789abcdef.deployments.example.test'
 const URL_V3 = 'https://crm.example.test'
-const schema = defineSchema('crm.example.test', {})
+const schema = defineSchema('crm.example.test', { name: 'Test Domain' })
 const deployment = deploymentReleaseFor(schema, URL_V4)
 const release = deployment.document
 const bundleBytes = deployment.build.schema.bundle.bytes().slice()
-const publication = releaseFor(schema, URL_V3).publication
+const removedDocument = { version: 3, origin: schema.origin }
 
 interface Seen {
   readonly url: string
@@ -64,32 +64,19 @@ describe('deployment pre-read', () => {
     await readServedDeployment(`${URL_V4}/some/path`, undefined, fetch)
     expect(seen.map(({ url }) => url)).toEqual([`${URL_V4}/.well-known/astrale/release.json`])
   })
-
-  test('reads the legacy domain.json only when release.json is absent', async () => {
+  test.each([
+    ['missing release', () => new Response('missing', { status: 404 })],
+    ['wrong media type', () => new Response('<html>', { status: 200 })],
+  ] as const)('rejects %s without ever reading domain.json', async (_label, response) => {
     const { seen, fetch } = serve({
-      '/.well-known/astrale/domain.json': () => Response.json(publication),
+      '/.well-known/astrale/release.json': response,
+      '/.well-known/astrale/domain.json': () => Response.json(removedDocument),
     })
-
-    await expect(readServedDeployment(URL_V3, undefined, fetch)).resolves.toEqual({
-      origin: 'crm.example.test',
-      issuer: URL_V3,
-      revision: publication.schema.revision,
-      pin: { kind: 'legacy', document: publication.version, etag: publication.etag },
+    await expect(readServedDeployment(URL_V3, undefined, fetch)).rejects.toMatchObject({
+      name: 'DeploymentReadError',
+      retryable: false,
     })
-    expect(seen.map(({ url }) => url)).toEqual([
-      `${URL_V3}/.well-known/astrale/release.json`,
-      `${URL_V3}/.well-known/astrale/domain.json`,
-    ])
-  })
-
-  test('reads the legacy domain.json when release.json answers 2xx under another media type', async () => {
-    const { fetch } = serve({
-      '/.well-known/astrale/release.json': () => new Response('<html>', { status: 200 }),
-      '/.well-known/astrale/domain.json': () => Response.json(publication),
-    })
-    await expect(readServedDeployment(URL_V3, undefined, fetch)).resolves.toMatchObject({
-      pin: { kind: 'legacy' },
-    })
+    expect(seen.map(({ url }) => url)).toEqual([`${URL_V3}/.well-known/astrale/release.json`])
   })
 
   test('marks a 503 (not serving yet) retryable, with its Retry-After', async () => {
@@ -106,7 +93,7 @@ describe('deployment pre-read', () => {
   test('never reads an unavailable release as a legacy pin', async () => {
     const { seen, fetch } = serve({
       '/.well-known/astrale/release.json': () => new Response('boom', { status: 500 }),
-      '/.well-known/astrale/domain.json': () => Response.json(publication),
+      '/.well-known/astrale/domain.json': () => Response.json(removedDocument),
     })
     const error = await readServedDeployment(URL_V3, undefined, fetch).catch((cause) => cause)
     expect(error).toBeInstanceOf(DeploymentReadError)
@@ -120,30 +107,16 @@ describe('deployment pre-read', () => {
         new Response(JSON.stringify({ ...release, digest: `sha256:${'0'.repeat(64)}` }), {
           headers: { 'content-type': MEDIA_TYPE },
         }),
-      '/.well-known/astrale/domain.json': () => Response.json(publication),
+      '/.well-known/astrale/domain.json': () => Response.json(removedDocument),
     })
     await expect(readServedDeployment(URL_V4, undefined, fetch)).rejects.toThrow(
       'returned an invalid Domain release',
     )
   })
-
-  test('marks a 503 legacy domain.json retryable', async () => {
-    const { fetch } = serve({
-      '/.well-known/astrale/domain.json': () => new Response('later', { status: 503 }),
-    })
-    await expect(readServedDeployment(URL_V3, undefined, fetch)).rejects.toMatchObject({
-      retryable: true,
-    })
-  })
-
-  test('compares pins by their one meaning per variant', () => {
+  test('compares exact release and build digests', () => {
     const pin = { kind: 'release', release: release.digest, build: release.build.digest } as const
     expect(samePin(pin, { ...pin })).toBe(true)
     expect(samePin(pin, { ...pin, build: `sha256:${'c'.repeat(64)}` })).toBe(false)
-    const legacy = { kind: 'legacy', document: 3, etag: publication.etag } as const
-    expect(samePin(legacy, { ...legacy })).toBe(true)
-    expect(samePin(legacy, pin)).toBe(false)
-    expect(samePin(pin, legacy)).toBe(false)
   })
 })
 

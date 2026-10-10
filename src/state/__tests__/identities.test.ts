@@ -49,11 +49,6 @@ describe('identity state', () => {
     expect(missing).toEqual({ default: '', identities: {} })
     await expect(readFile(path, 'utf-8')).rejects.toThrow()
 
-    await writeFile(path, legacy)
-    expect((await readIdentityStore({ path })).default).toBe('manager')
-    expect(await readFile(path, 'utf-8')).toBe(legacy)
-    await expect(readFile(`${path}.v0.bak`, 'utf-8')).rejects.toThrow()
-
     const current = `${JSON.stringify({ version: IDENTITY_STORE_VERSION, ...missing })}\n`
     await writeFile(path, current)
     expect((await readIdentityStore({ path })).identities).toEqual({})
@@ -62,7 +57,11 @@ describe('identity state', () => {
 
   /** @evidence TEST-CLI-STATE-IDENTITY-FAILS-CLOSED */
   test('rejects malformed and unsupported state without replacing it', async () => {
-    for (const raw of ['{', JSON.stringify({ version: 2, default: 'manager', identities: {} })]) {
+    for (const raw of [
+      '{',
+      legacy,
+      JSON.stringify({ version: 2, default: 'manager', identities: {} }),
+    ]) {
       await writeFile(path, raw)
       const error = await readIdentityStore({ path }).catch((caught) => caught)
       expect(error).toBeInstanceOf(IdentityStateError)
@@ -73,23 +72,24 @@ describe('identity state', () => {
     }
   })
 
-  /** @evidence TEST-CLI-STATE-IDENTITY-MIGRATES */
-  test('backs up exact legacy bytes before the first V1 mutation', async () => {
-    await writeFile(path, legacy)
-
-    await updateIdentityStore(
-      (current) => ({ next: { ...current, default: 'alice' }, value: undefined }),
-      { path },
-    )
-
-    expect(await readFile(`${path}.v0.bak`, 'utf-8')).toBe(legacy)
-    expect((await stat(`${path}.v0.bak`)).mode & 0o777).toBe(0o600)
-    const written = JSON.parse(await readFile(path, 'utf-8')) as {
-      version: number
-      default: string
-    }
-    expect(written).toMatchObject({ version: 1, default: 'alice' })
+  /** @evidence TEST-CLI-STATE-IDENTITY-UNVERSIONED-REFUSED */
+  test('rejects unversioned mutations before running a transition or changing retained bytes', async () => {
+    await writeFile(path, legacy, { mode: 0o600 })
+    let invoked = false
+    await expect(
+      updateIdentityStore(
+        (current) => {
+          invoked = true
+          return { next: current, value: undefined }
+        },
+        { path },
+      ),
+    ).rejects.toThrow(/Rename this file.*Keep the keys directory unchanged/)
+    expect(invoked).toBe(false)
+    expect(await readFile(path, 'utf-8')).toBe(legacy)
     expect((await stat(path)).mode & 0o777).toBe(0o600)
+    await expect(readFile(`${path}.lock`, 'utf-8')).rejects.toThrow()
+    await expect(readFile(`${path}.v0.bak`, 'utf-8')).rejects.toThrow()
   })
 
   /** @evidence TEST-CLI-STATE-IDENTITY-CONCURRENT */

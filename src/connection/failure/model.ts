@@ -1,5 +1,5 @@
 export type TransportDiagnosticContext =
-  | { readonly kind: 'acquisition'; readonly resource: 'release' | 'publication' | 'bundle' }
+  | { readonly kind: 'acquisition'; readonly resource: 'release' | 'bundle' }
   | {
       readonly kind: 'invocation'
       readonly delivery: 'not-sent' | 'unknown'

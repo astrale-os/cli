@@ -27,7 +27,7 @@ export default defineProject({ domain, environments: { development: { deployment
   writeFileSync(join(owner, 'domain.ts'), 'export const domain = {}\n')
   writeFileSync(
     join(owner, 'schema/index.ts'),
-    "defineSchema('example.astrale.ai', { classes: {} })\n",
+    "defineSchema('example.astrale.ai', { name: 'Test Domain', classes: {} })\n",
   )
   return { root, schemaDirName: nested ? 'domain/schema' : 'schema' }
 }

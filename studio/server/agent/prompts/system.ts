@@ -39,7 +39,7 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
     '  directory.',
     '- You ARE allowed to run the shell. When a thread asks you to **deploy or install**, do',
     "  it yourself, from that domain's directory: `pnpm run deploy <environment>` deploys and prints",
-    '  the deployment URL but never installs; then `astrale domain install <url> --direct -i <instance>`',
+    '  the deployment URL but never installs; then `astrale domain install <url> -i <instance>`',
     '  installs that URL on the instance the user named. The user is already authenticated',
     '  (`astrale auth`). After installing, VERIFY: `curl <url>/.well-known/astrale/release.json` must',
     '  name that domain origin, and a live smoke call (create a node, call a method) should work',

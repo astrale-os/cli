@@ -15,6 +15,7 @@ import { describe, expect, test } from 'bun:test'
 import { introspectCommand, parseIntrospectTarget } from '../introspect'
 
 const source = defineSchema('host.astrale.ai', {
+  name: 'Test Domain',
   classes: {
     Manager: nodeClass({
       icon: classIcon.neutral,
@@ -56,7 +57,7 @@ const info = {
   origin: source.origin,
   revision: schema.revision(source),
   generation: 'sha256:generation',
-  publication: null,
+  release: null,
   readiness: 'sha256:readiness',
   capabilities: { requested: {}, materialized: {} },
   bindings: { callables: [], views: [] },

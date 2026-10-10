@@ -84,10 +84,22 @@ describe('identity transfer', () => {
   })
 
   /** @evidence TEST-CLI-IDENTITY-TRANSFER-ROUNDTRIP */
-  test('converges legacy, V1, and encrypted representations on one envelope', async () => {
+  test('roundtrips V1 plaintext and encrypted representations, and refuses unversioned exports', async () => {
     const current = await envelope('alice', 'roundtrip')
     const { version: _, ...legacy } = current
-    expect(await decodeIdentityExport(JSON.stringify(legacy))).toEqual(current)
+    await expect(decodeIdentityExport(JSON.stringify(legacy))).rejects.toThrow(
+      /invalid or unsupported shape/,
+    )
+
+    const { alg: _privateAlg, ...privateJwk } = current.privateJwk
+    const { alg: _publicAlg, ...publicJwk } = current.publicJwk
+    expect(
+      await decodeIdentityExport(JSON.stringify({ ...current, privateJwk, publicJwk })),
+    ).toEqual({
+      ...current,
+      privateJwk,
+      publicJwk,
+    })
 
     const plaintext = await encodeIdentityExport(current)
     expect(isEncryptedIdentityExport(plaintext)).toBe(false)
