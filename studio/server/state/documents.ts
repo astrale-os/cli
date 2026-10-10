@@ -44,23 +44,23 @@ function uniqueStoredPath(root: string, docs: DocMeta[], name: string): string {
 
 /**
  * Move documents written under the old uuid-named layout into `context/docs/`.
- * Idempotent and only ever renames inside the studio's own state directory.
+ * Publish each copied document in the atomic index before removing its old bytes.
+ * A failed copy or index write leaves the old indexed document readable for retry.
  */
 export function migrateDocuments(root: string): void {
   const docs = listDocuments(root)
   if (!docs.some((doc) => doc.stored.startsWith(`${LEGACY_DIR}/`))) return
-  let moved = false
   for (const doc of docs) {
     if (!doc.stored.startsWith(`${LEGACY_DIR}/`)) continue
     const from = statePath(root, doc.stored)
     if (!existsSync(from)) continue
     const next = uniqueStoredPath(root, docs, doc.name)
     writeStateBuffer(root, next, readFileSync(from))
-    removeState(root, doc.stored)
+    const previous = doc.stored
     doc.stored = next
-    moved = true
+    writeJson(root, INDEX, docs)
+    removeState(root, previous)
   }
-  if (moved) writeJson(root, INDEX, docs)
 }
 
 function decodeDocument(value: unknown): DocMeta | undefined {

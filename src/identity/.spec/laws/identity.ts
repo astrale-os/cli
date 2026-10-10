@@ -17,7 +17,7 @@ export const CLI_IDENTITY_TRANSFER_ADMITTED = defineLaw({
 export const CLI_IDENTITY_TRANSFER_ROUNDTRIP = defineLaw({
   id: 'CLI-IDENTITY-TRANSFER-ROUNDTRIP',
   statement:
-    'Legacy plaintext and V1 plaintext or compact-JWE content converge on one V1 envelope, and explicit exports are published atomically with mode 0600.',
+    'WHEN an identity is transferred, the CLI MUST admit only V1 plaintext or compact-JWE envelopes, reject unversioned exports, and publish explicit exports atomically with mode 0600.',
   tests: [
     { file: '__tests__/transfer.test.ts', id: 'TEST-CLI-IDENTITY-TRANSFER-ROUNDTRIP' },
     { file: '__tests__/transfer.test.ts', id: 'TEST-CLI-IDENTITY-EXPORT-PRIVATE' },

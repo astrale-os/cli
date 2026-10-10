@@ -171,7 +171,7 @@ export function updateIdentityStore<Value>(
 
 /** Atomically replace one private CLI state file through a same-directory temporary file. */
 export function atomicWrite(path: string, data: string): Promise<void>
-export function atomicWriteSync(path: string, data: string): void
+export function atomicWriteSync(path: string, data: string | Uint8Array): void
 
 /** CLI filesystem representation for Kernel Client's admitted confidential route artifact. */
 export class FileSessionRouteStore implements SessionRouteStore {

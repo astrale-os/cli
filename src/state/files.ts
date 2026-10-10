@@ -40,7 +40,7 @@ export async function atomicWrite(path: string, data: string): Promise<void> {
 }
 
 /** Atomically publish one complete private state file for synchronous consumer capabilities. */
-export function atomicWriteSync(path: string, data: string): void {
+export function atomicWriteSync(path: string, data: string | Uint8Array): void {
   const directory = dirname(path)
   const temporary = `${path}.${randomUUID()}.tmp`
   mkdirSync(directory, { recursive: true })
