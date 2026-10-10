@@ -1,13 +1,15 @@
 import { ResponseError } from '@astrale-os/sdk/client'
 import { invocation } from '@astrale-os/sdk/invocation'
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 
+import { formatKernelError } from '../../connection/errors'
 import { provisionInstance } from '../provision-instance'
 
 const originalError = console.error
 
 afterEach(() => {
   console.error = originalError
+  mock.restore()
 })
 
 describe('managed Instance root import during provisioning', () => {
@@ -292,6 +294,79 @@ describe('managed Instance root import during provisioning', () => {
     expect(createOwnedInstance.mock.calls[0]?.[2]).toBe(ready.operationId)
     expect(createOwnedInstance.mock.calls[1]?.[2]).toBe(ready.operationId)
     expect(sleep).toHaveBeenCalledTimes(1)
+  })
+
+  test('stops at a declared capacity refusal instead of replaying the failed operation', async () => {
+    const operationId = 'cli.instance.create.no-capacity'
+    // The wire shape Admin answers once its creation Operation failed at Host selection.
+    const refusal = new ResponseError(
+      4001,
+      'This Fleet has no ready consumer Host for a new Instance. A Fleet administrator can provision one with Fleet.provisionHost; then create the Instance with a new operation id.',
+      invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
+      { code: 'INSTANCE_CAPACITY_UNAVAILABLE', details: { fleet: '@astrale-fleet' } },
+    )
+    const createOwnedInstance = mock(async () => {
+      throw refusal
+    })
+    const sleep = mock(async () => {})
+
+    const failure = await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true, fleet: '@astrale-fleet' },
+      { createOwnedInstance, operationId: () => operationId, now: () => 0, sleep },
+    ).catch((error: unknown) => error)
+
+    expect(createOwnedInstance).toHaveBeenCalledTimes(1)
+    expect(sleep).not.toHaveBeenCalled()
+    expect(failure).toMatchObject({
+      code: 'INSTANCE_CAPACITY_UNAVAILABLE',
+      message: `No ready consumer Host in this Fleet can take Instance "demo". Creation operation ${operationId} failed; replaying it returns this refusal.`,
+    })
+    let stderr = ''
+    spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr += String(chunk)
+      return true
+    })
+    await formatKernelError(failure, true)
+    const rendered = JSON.parse(stderr)
+    expect(rendered.error).toBe('INSTANCE_CAPACITY_UNAVAILABLE')
+    expect(rendered.message).toContain(operationId)
+    expect(rendered.hint).toBe(
+      `A Fleet administrator provisions a Host first: astrale call "@astrale-fleet::admin.astrale.ai:class.Fleet.method.provisionHost" --admin -d '{"operationId":"<new-id>","id":"<host-id>","provider":{"kind":"scaleway"}}'. Then rerun \`astrale instance create demo --fleet '@astrale-fleet'\` without --operation.`,
+    )
+  })
+
+  test('stops at a failed operation replayed as a declared conflict and names its retained cause', async () => {
+    const operationId = 'lab.instance.create.failed'
+    const createOwnedInstance = mock(async () => {
+      throw new ResponseError(
+        4001,
+        'The Admin operation conflicts with its retained request or current state.',
+        invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
+        {
+          code: 'OPERATION_CONFLICT',
+          details: {
+            reason: 'Instance route publication was refused.',
+            rejection: 'ADMIN_OUTCOME_UNKNOWN',
+          },
+        },
+      )
+    })
+    const generated = mock(() => 'must-not-be-generated')
+
+    await expect(
+      provisionInstance(
+        'demo',
+        { creds: 'admin-credential', ci: true, operation: operationId },
+        { createOwnedInstance, operationId: generated, now: () => 0, sleep: async () => {} },
+      ),
+    ).rejects.toMatchObject({
+      code: 'OPERATION_CONFLICT',
+      message: `Creation operation ${operationId} cannot continue: Instance route publication was refused.`,
+      hint: 'Fix the cause, then rerun `astrale instance create demo` without --operation to start a new creation operation.',
+    })
+    expect(createOwnedInstance).toHaveBeenCalledTimes(1)
+    expect(generated).not.toHaveBeenCalled()
   })
 
   test('returns the nonterminal receipt without bookmarking when the recovery window ends', async () => {
