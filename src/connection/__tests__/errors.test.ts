@@ -97,7 +97,7 @@ describe('formatKernelError', () => {
           recovery: {
             operation: '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
             retry:
-              'astrale domain install https://crm.test --direct --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
+              'astrale domain install https://crm.test --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
           },
         },
       )
@@ -112,7 +112,7 @@ describe('formatKernelError', () => {
       transport: { kind: 'invocation', delivery: 'unknown' },
       operation: '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
       retry:
-        'astrale domain install https://crm.test --direct --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
+        'astrale domain install https://crm.test --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
     })
   })
 
