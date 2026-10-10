@@ -8,7 +8,9 @@ The installed Schema declares each callable's authentication mode and optional c
 Kernel Runtime defines and evaluates those semantics against the pinned installation state:
 
 - `anonymous` permits an absent credential. If a credential is supplied, Runtime authenticates it and
-  propagates authentication failure instead of falling back to anonymous;
+  propagates authentication failure instead of falling back to anonymous. Without a credential the
+  handler still runs with the Domain's own authority (see `runtime.md`), so the caller is granted
+  nothing but what the handler does for it;
 - `authenticated` requires an authenticated actor;
 - `authorized` requires an authenticated actor. The principal of the active installed Kernel registration
   bypasses the remaining callable gate; every other call requires the principal's effective authority

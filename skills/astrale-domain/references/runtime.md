@@ -29,7 +29,13 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   Identity, `self` makes the Domain its own caller. There is no `union` mode: run Domain-owned work as
   `self` and work on the user's behalf as `caller`.
 - Protected callables receive authenticated `caller` evidence and bound `kernel` sessions.
-  An unauthenticated anonymous invocation has null `kernel`, `graph`, and `dependencies`.
+- A public callable (`auth: 'anonymous'`) called without a credential has no caller
+  (`caller.kind === 'anonymous'`): its handler acts as the installed Domain alone. `query`,
+  `mutate`, `kernel`, `graph`, and `dependencies.alias.self` work as in any handler; the `caller`
+  selections and a Provider's `execution.invoke` are absent, so reach them through the selection
+  itself (`graph.caller?.query(...)`): a check on `caller.kind` does not narrow them. The input
+  contract and the handler are the only gate: admit only what the public may submit and return only
+  what it may read.
 - Use the handler's `kernel` session for admitted Kernel capabilities outside graph operations;
   keep reusable graph operations on Query/Mutation executors. `executeQuery(client, ...)` and
   `executeMutation(client, ...)` remain lower-level APIs for consumers that already own a Client.
