@@ -39,8 +39,8 @@ astrale domain install <url> -i acme-dev    # pin that release on the instance
   versions. Never chain one-Domain installs for a coherent set:
 
 ```sh
-URL_A=$(pnpm --dir agencies exec astrale-domain deploy staging --json | jq -r .url)
-URL_B=$(pnpm --dir employees exec astrale-domain deploy staging --json | jq -r .url)
+URL_A=$(pnpm --dir projects exec astrale-domain deploy staging --json | jq -r .url)
+URL_B=$(pnpm --dir teams exec astrale-domain deploy staging --json | jq -r .url)
 astrale domain install "$URL_A" "$URL_B" --allow-issuer-change -i acme-stg
 ```
 
@@ -162,7 +162,7 @@ its PR with a token that starts workflows, or the diff never runs on it.
 astrale domain versions issues.example                                          # every published version
 astrale domain install issues.example@1.5 -i acme-prod                          # highest stable 1.5.x
 astrale domain install issues.example@1.5.0 --allow-issuer-change -i acme-prod  # an upgrade, scripted
-astrale domain install agencies.example@1.5.0 employees.example@2.0.0 --allow-issuer-change -i acme-prod
+astrale domain install projects.example@1.5.0 teams.example@2.0.0 --allow-issuer-change -i acme-prod
 astrale domain install issues.example@1.4.2 --allow-issuer-change -i acme-prod  # rollback
 astrale-domain yank 1.5.0                                                       # --undo puts it back
 ```

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.138](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.137...cli/v1.0.0-beta.138) (2026-10-10)
+
+
+### Bug Fixes
+
+* **lib:** target the production Admin coordinates ([#641](https://github.com/astrale-os/cli/issues/641)) ([aea4708](https://github.com/astrale-os/cli/commit/aea47085b6626ecc787de30ad130edda22e628d4))
+* preserve Studio documents through interrupted migration ([#642](https://github.com/astrale-os/cli/issues/642)) ([d22f75b](https://github.com/astrale-os/cli/commit/d22f75b6a6576904a23fc49cfd070c58a4d60dde))
+
 ## [1.0.0-beta.137](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.136...cli/v1.0.0-beta.137) (2026-10-10)
 
 
