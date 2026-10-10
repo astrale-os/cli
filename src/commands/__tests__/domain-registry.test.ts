@@ -17,6 +17,7 @@ import {
   type FakeDomain,
 } from '../../admin/registry/__tests__/fake-admin'
 import { runBundle } from '../domain-registry/bundle'
+import { runClaim } from '../domain-registry/claim'
 import { runPublish } from '../domain-registry/publish'
 import { readRequest } from '../domain-registry/shared'
 import { runYank } from '../domain-registry/yank'
@@ -155,6 +156,37 @@ describe('astrale domain versions', () => {
 })
 
 describe('astrale __domain-registry', () => {
+  test('claim prints the claim result, and a refusal as one error document', async () => {
+    const claimed = 'tasks.acme.example'
+    const run = harness('publisher', [])
+    expect(await runClaim(claimed, {}, run.dependencies)).toBe(0)
+    expect(run.stdout()).toEqual({
+      format: 'astrale.registry-claim-result',
+      version: 1,
+      origin: claimed,
+    })
+
+    const held = {
+      id: 'domain-tasks',
+      origin: claimed,
+      admins: new Set(['publisher']),
+      installers: new Set<string>(),
+      publications: [],
+    }
+    const other = harness('someone-else', [held])
+    expect(await runClaim(claimed, {}, other.dependencies)).toBe(1)
+    expect(other.stdout()).toEqual({
+      error: { code: 'REGISTRY_ORIGIN_CLAIMED', message: expect.any(String), details: {} },
+    })
+  })
+
+  test('a claim of something that is no origin is refused before Admin is opened', async () => {
+    const run = harness('publisher', [])
+    expect(await runClaim('Tasks.Acme', {}, run.dependencies)).toBe(1)
+    expect((run.stdout().error as { code: string }).code).toBe('INVALID_ARGUMENT')
+    expect(run.opened()).toBe(0)
+  })
+
   test('publish reads one request on stdin and prints the publish result', async () => {
     const run = harness('publisher')
     const code = await runPublish(

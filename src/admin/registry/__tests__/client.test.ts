@@ -210,6 +210,115 @@ describe('registry index (Résolution [.78020] [.79495])', () => {
   })
 })
 
+describe('registry claim (first claim of an origin)', () => {
+  const CLAIMED = 'tasks.acme.example'
+
+  test('an origin no one has goes to its caller, who then reads and publishes it', async () => {
+    const admin = fakeAdmin({ caller: 'publisher', domains: [], releases: [r150] })
+    const registry = connectAdminRegistry(admin.context)
+    expect((await refusalOf(registry.index(CLAIMED))).code).toBe('REGISTRY_DOMAIN_NOT_FOUND')
+
+    expect(await registry.claim(CLAIMED)).toEqual({
+      format: 'astrale.registry-claim-result',
+      version: 1,
+      origin: CLAIMED,
+    })
+    // One static call on the Domain class, naming the origin and no administrator.
+    expect(admin.calls).toEqual([
+      { target: '/:admin.astrale.ai:class.Domain:create', input: { origin: CLAIMED } },
+    ])
+    expect((await registry.index(CLAIMED)).publications).toEqual([])
+    const published = await registry.publish({
+      format: 'astrale.registry-publish-request',
+      version: 1,
+      publication: {
+        origin: CLAIMED,
+        version: '0.1.0',
+        url: r150.url,
+        releaseDigest: r150.releaseDigest,
+        dirty: false,
+      },
+    })
+    expect(published.status).toBe('created')
+  })
+
+  test('a rerun by an administrator of the Domain answers the same and writes nothing', async () => {
+    const admin = fakeAdmin({ caller: 'publisher', domains: [] })
+    const registry = connectAdminRegistry(admin.context)
+    const first = await registry.claim(CLAIMED)
+    expect(await registry.claim(CLAIMED)).toEqual(first)
+  })
+
+  test('an origin another account holds is REGISTRY_ORIGIN_CLAIMED', async () => {
+    const admin = fakeAdmin({ caller: 'publisher', domains: [] })
+    const registry = connectAdminRegistry(admin.context)
+    await registry.claim(CLAIMED)
+    admin.as('someone-else')
+    const refused = await refusalOf(registry.claim(CLAIMED))
+    expect(refused.code).toBe('REGISTRY_ORIGIN_CLAIMED')
+    expect(refused.details?.retryable).toBeUndefined()
+  })
+
+  test('an origin under astrale.ai is REGISTRY_ORIGIN_RESERVED, except for an operator', async () => {
+    const admin = fakeAdmin({
+      caller: 'publisher',
+      domains: [],
+      operators: new Set(['operator']),
+    })
+    const registry = connectAdminRegistry(admin.context)
+    const refused = await refusalOf(registry.claim('new.astrale.ai'))
+    expect(refused.code).toBe('REGISTRY_ORIGIN_RESERVED')
+    expect(refused.details).toEqual({ origin: 'new.astrale.ai' })
+    admin.as('operator')
+    expect((await registry.claim('new.astrale.ai')).origin).toBe('new.astrale.ai')
+  })
+
+  test('a caller that is no Admin account is REGISTRY_FORBIDDEN, said as a claim', async () => {
+    const admin = fakeAdmin({ caller: 'stranger', domains: [], strangers: new Set(['stranger']) })
+    const refused = await refusalOf(connectAdminRegistry(admin.context).claim(CLAIMED))
+    expect(refused.code).toBe('REGISTRY_FORBIDDEN')
+    expect(refused.details).toEqual({ status: 2004 })
+    expect(refused.message).toContain('Admin account')
+  })
+
+  test('a claim that lost a concurrent one may be rerun; a lost reply may have applied', async () => {
+    const raced = fakeAdmin({
+      caller: 'publisher',
+      domains: [],
+      claimRefusal: () => declared(4001, 'DOMAIN_CONFLICT', { reason: 'changed-concurrently' }),
+    })
+    const conflict = await refusalOf(connectAdminRegistry(raced.context).claim(CLAIMED))
+    expect(conflict.code).toBe('REGISTRY_UNAVAILABLE')
+    expect(conflict.details).toMatchObject({ retryable: true, reason: 'changed-concurrently' })
+
+    const lost = fakeAdmin({
+      caller: 'publisher',
+      domains: [],
+      claimRefusal: () => new ResponseError(5000 as never, 'INTERNAL_ERROR', 'inv-test' as never),
+    })
+    const unknown = await refusalOf(connectAdminRegistry(lost.context).claim(CLAIMED))
+    expect(unknown.code).toBe('REGISTRY_UNAVAILABLE')
+    expect(unknown.details).toMatchObject({ delivery: 'unknown', retryable: true })
+  })
+
+  test('an answer naming another origin is never taken for the claim', async () => {
+    const admin = fakeAdmin({ caller: 'publisher', domains: [] })
+    const call = admin.context.session.call
+    const registry = connectAdminRegistry({
+      ...admin.context,
+      session: {
+        call: async (request: never) => ({
+          ...((await call(request)) as object),
+          origin: 'x.y',
+        }),
+      },
+    } as never)
+    const refused = await refusalOf(registry.claim(CLAIMED))
+    expect(refused.code).toBe('REGISTRY_UNAVAILABLE')
+    expect(refused.details).toEqual({ reason: 'response-invalid' })
+  })
+})
+
 describe('registry publish (Registry [.119344], CT27 publish)', () => {
   const request = (version: string, source = r150, extra: Record<string, unknown> = {}) => ({
     format: 'astrale.registry-publish-request' as const,

@@ -311,8 +311,9 @@ astrale domain list -i staging
 astrale domain list -i staging --json
 ```
 
-The hidden `astrale __domain-registry bundle|publish|yank` commands are JSON plumbing for
-`astrale-domain diff`, `publish` and `yank`; do not call them by hand.
+The hidden `astrale __domain-registry bundle|claim|publish|yank` commands are JSON plumbing for
+`astrale-domain diff`, `publish` and `yank`; do not call them by hand. `astrale-domain publish`
+claims an origin no one has before its first deployment: its first claimer administers it.
 
 On a Kernel that takes no issuer consent, a replacement cannot change an
 installed Domain issuer: uninstall the origin first and then install it again.

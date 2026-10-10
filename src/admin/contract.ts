@@ -70,6 +70,17 @@ export const AdminContract = Object.freeze({
   }),
 })
 
+/** Invoke one stable Admin static Method without schema discovery or reflection. */
+export function callAdminStaticMethod(
+  session: Pick<ClientSession, 'call'>,
+  owner: ClassRef,
+  method: string,
+  input: Input,
+  options?: SessionRequestOptions,
+): Promise<unknown> {
+  return session.call(call(Path.staticMethod(Path.project(owner), method), input), options)
+}
+
 /** Invoke one stable Admin instance Method without schema discovery or reflection. */
 export function callAdminMethod(
   session: Pick<ClientSession, 'call'>,

@@ -73,8 +73,16 @@ export interface YankResultV1 {
   readonly publication: PublicationSummaryV1
 }
 
+export interface ClaimResultV1 {
+  readonly format: 'astrale.registry-claim-result'
+  readonly version: 1
+  readonly origin: string
+}
+
 export declare const REGISTRY_ERROR_CODES: readonly [
   'REGISTRY_DOMAIN_NOT_FOUND',
+  'REGISTRY_ORIGIN_CLAIMED',
+  'REGISTRY_ORIGIN_RESERVED',
   'PUBLICATION_NOT_FOUND',
   'REGISTRY_FORBIDDEN',
   'REGISTRY_UNAVAILABLE',
@@ -111,6 +119,7 @@ export interface AdminRegistryContext {
 
 export interface AdminRegistryApi {
   index(origin: string): Promise<RegistryIndexV1>
+  claim(origin: string): Promise<ClaimResultV1>
   bundle(origin: string, version: string, output: string): Promise<RegistryBundleV1>
   publish(request: PublishRequestV1): Promise<PublishResultV1>
   yank(
@@ -128,5 +137,6 @@ export function exactPublicationReference(input: string): {
 }
 export function publicationVersion(input: unknown, reference?: string): string
 export function registryOrigin(input: string): string
-export function registryFailure(error: unknown, action: 'read' | 'change'): AstraleError
+export type RegistryAction = 'read' | 'change' | 'claim'
+export function registryFailure(error: unknown, action: RegistryAction): AstraleError
 export function compareVersions(left: string, right: string): number

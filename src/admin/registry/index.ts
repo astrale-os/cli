@@ -5,10 +5,11 @@ export {
   publishRequest,
   registryOrigin,
 } from './decode'
-export { registryFailure } from './failure'
+export { registryFailure, type RegistryAction } from './failure'
 export {
   REGISTRY_ERROR_CODES,
   RegistryError,
+  type ClaimResultV1,
   type PublicationBundleV1,
   type PublicationDependencyV1,
   type PublicationSummaryV1,

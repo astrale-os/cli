@@ -26,6 +26,9 @@ const NOTHING_RAN_REASONS = new Set([
 /** The Kernel's `BACKEND_UNAVAILABLE`: the backend refuses now and may answer later. */
 const BACKEND_UNAVAILABLE = 5001
 
+/** What a registry command does: a claim is a change with its own refusals. */
+export type RegistryAction = 'read' | 'change' | 'claim'
+
 const MAY_HAVE_APPLIED = 'the change may have applied. Rerun the same command: it is idempotent.'
 
 /**
@@ -35,13 +38,13 @@ const MAY_HAVE_APPLIED = 'the change may have applied. Rerun the same command: i
  * through unchanged. Rerunning a command after REGISTRY_UNAVAILABLE is always safe; it can help
  * only when `details.retryable` is true.
  */
-export function registryFailure(error: unknown, action: 'read' | 'change'): AstraleError {
+export function registryFailure(error: unknown, action: RegistryAction): AstraleError {
   if (error instanceof AstraleError) return error
   if (error instanceof TransportError) {
     const delivery = transportDelivery(error)
     return new RegistryError(
       'REGISTRY_UNAVAILABLE',
-      action === 'change' && delivery === 'unknown'
+      action !== 'read' && delivery === 'unknown'
         ? `Admin did not answer; ${MAY_HAVE_APPLIED}`
         : 'Admin did not answer.',
       {
@@ -64,7 +67,7 @@ export function registryFailure(error: unknown, action: 'read' | 'change'): Astr
   )
 }
 
-function responseFailure(error: ResponseError, action: 'read' | 'change'): RegistryError {
+function responseFailure(error: ResponseError, action: RegistryAction): RegistryError {
   const code = error.reason?.code
   const details = (error.reason?.details ?? {}) as Readonly<Record<string, unknown>>
   const options = { cause: error }
@@ -120,7 +123,21 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
         { retryable: true, ...pick(details, ['reason']) },
         options,
       )
+    case 'DOMAIN_ORIGIN_RESERVED':
+      return new RegistryError(
+        'REGISTRY_ORIGIN_RESERVED',
+        'Origins under astrale.ai are registered by Astrale operators.',
+        pick(details, ['origin']),
+        options,
+      )
     case 'DOMAIN_CONFLICT':
+      if (details.reason === 'registered-to-another-administrator')
+        return new RegistryError(
+          'REGISTRY_ORIGIN_CLAIMED',
+          'Another account administers the Domain of this origin; one of its administrators grants access.',
+          {},
+          options,
+        )
       // `changed-concurrently`, the only reason `publish`, `yank` and `unyank` throw: a
       // concurrent change failed the one guarded commit, nothing changed and a rerun decides again.
       return new RegistryError(
@@ -137,9 +154,11 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
       'REGISTRY_FORBIDDEN',
       error.code !== 2004
         ? 'Admin refused the credential.'
-        : action === 'change'
-          ? 'Admin refused this caller: the change needs domain_admin on the Domain.'
-          : 'Admin refused this caller the read.',
+        : action === 'claim'
+          ? 'Admin refused this caller the claim: an origin is claimed by an Admin account.'
+          : action === 'change'
+            ? 'Admin refused this caller: the change needs domain_admin on the Domain.'
+            : 'Admin refused this caller the read.',
       { status: error.code },
       options,
     )
@@ -162,7 +181,7 @@ function responseFailure(error: ResponseError, action: 'read' | 'change'): Regis
  * Kernel could not report the commit's outcome to Admin), which only a rerun settles. A read may
  * be retried on 5001.
  */
-function serverFailure(error: ResponseError, action: 'read' | 'change'): RegistryError {
+function serverFailure(error: ResponseError, action: RegistryAction): RegistryError {
   const reason = error.reason?.code
   const status = { status: error.code, ...(reason === undefined ? {} : { reason }) }
   if (action === 'read') {

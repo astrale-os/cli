@@ -4,6 +4,7 @@ import { AstraleError } from '../../errors'
  * Wire contracts of the Domain version registry plumbing (CT29). `astrale domain versions --json`
  * prints a `RegistryIndexV1`; the hidden `astrale __domain-registry` commands print the other
  * documents. Each document names its `format` and `version`, so a reader refuses anything else.
+ * `REGISTRY_FORBIDDEN` on a claim says the caller is no Admin account.
  */
 
 /** A `sha256:` digest as Admin stores it. */
@@ -101,9 +102,24 @@ export interface YankResultV1 {
   readonly publication: PublicationSummaryV1
 }
 
+/**
+ * What `__domain-registry claim` answers: the origin has a Domain and the caller administers it.
+ * First claim gives an origin no one has to its caller; a caller who already administers the
+ * Domain gets the same answer, so a rerun is safe.
+ */
+export interface ClaimResultV1 {
+  readonly format: 'astrale.registry-claim-result'
+  readonly version: 1
+  readonly origin: string
+}
+
 export const REGISTRY_ERROR_CODES = [
   /** No Domain of that origin is readable by the caller: absent or not permitted. */
   'REGISTRY_DOMAIN_NOT_FOUND',
+  /** A claim of an origin whose Domain another account administers. */
+  'REGISTRY_ORIGIN_CLAIMED',
+  /** A claim of an origin under `astrale.ai`, which only Astrale operators register. */
+  'REGISTRY_ORIGIN_RESERVED',
   /** The Domain is readable but the caller holds no version of that number. */
   'PUBLICATION_NOT_FOUND',
   /** Admin refused the caller (no `domain_admin` for a change, or a credential refusal). */

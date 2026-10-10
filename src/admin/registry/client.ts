@@ -12,6 +12,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import type { ObservedPublication } from './decode'
 import type { DeploymentReader } from './deployment'
 import type {
+  ClaimResultV1,
   PublicationBundleV1,
   PublishRequestV1,
   PublishResultV1,
@@ -21,7 +22,7 @@ import type {
 } from './model'
 
 import { AstraleError } from '../../errors'
-import { AdminContract, callAdminMethod } from '../contract'
+import { AdminContract, callAdminMethod, callAdminStaticMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import { observedPublication, publicationFromAdmin, publishedFromAdmin } from './decode'
 import { publishedRelease, readPublishedBundle } from './deployment'
@@ -47,6 +48,11 @@ export interface AdminRegistryApi {
   index(origin: string): Promise<RegistryIndexV1>
   /** Download one Publication's bundle from its deployment to `output`, digest and size verified. */
   bundle(origin: string, version: string, output: string): Promise<RegistryBundleV1>
+  /**
+   * Claim one origin (`Domain.create`): an origin no one has goes to its caller, who becomes the
+   * first administrator of its Domain. Idempotent for a caller who administers the Domain.
+   */
+  claim(origin: string): Promise<ClaimResultV1>
   /** Ask Admin to name the release with the version (`Domain.publish`). */
   publish(request: PublishRequestV1): Promise<PublishResultV1>
   /** Take one version out of resolution, or put it back with `undo`. */
@@ -61,7 +67,7 @@ export interface AdminRegistryApi {
  * The Domain version registry as the CLI reads and writes it. Reads are the caller's own Queries
  * on Admin's graph, so `ObserveDomain` and `ReadPublication` decide what the caller sees
  * (Résolution [.78020] [.79495]); changes are Admin Methods whose Policies decide who may make
- * them. No read lists who holds access (AM-53): a Domain the caller cannot read is reported
+ * them. An origin is claimed before its first version: the Domain then exists for its claimer. No read lists who holds access (AM-53): a Domain the caller cannot read is reported
  * exactly like an absent one. A bundle is read from the deployment its Publication names, never
  * from Admin, which keeps no copy.
  */
@@ -185,6 +191,17 @@ export function connectAdminRegistry(context: AdminRegistryContext): AdminRegist
         publication: Object.freeze({ origin, version }),
         bundle,
       })
+    },
+
+    async claim(origin: string): Promise<ClaimResultV1> {
+      try {
+        const claimed = await callAdminStaticMethod(context.session, Domain, 'create', { origin })
+        if ((claimed as { readonly origin?: unknown } | null)?.origin !== origin)
+          throw responseInvalid('Admin answered a Domain the claim does not name.')
+        return Object.freeze({ format: 'astrale.registry-claim-result', version: 1, origin })
+      } catch (error) {
+        throw registryFailure(error, 'claim')
+      }
     },
 
     async publish(request: PublishRequestV1): Promise<PublishResultV1> {
