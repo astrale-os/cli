@@ -76,6 +76,12 @@ For a non-Root principal, an authorized Function requires both:
 
 ## Declare the business rule at its owner
 
+- Name a Policy as the sentence that follows its subject: every hop from the subject to the object,
+  in order, the object last (`managesProject`, `managesWorkspaceOfProject`, `memberOfGroup`). An Edge
+  Policy names its endpoint (`ownsSourceService`); a composition joins its operands
+  (`managesProjectOrAuthoredReport`). A long name is fine; an ambiguous one is not. Never name the
+  permission granted (`can…`, `may…`: the slot or callable names it), add `caller` or `subject`, or
+  drop a hop. A check then reads as a sentence: `check(managesWorkspaceOfProject, self)`.
 - Project convention: give each match Policy a `description` stating the subject, protected object or
   endpoints, and condition, naming the business relation when one exists. Keep reusable graph predicates
   in the module's `policies/`, never `types/`; place a callable's check inline in its declaration.
@@ -100,7 +106,7 @@ import { z } from 'zod'
 
 import { manages } from './relationships.js'
 
-export const mayRenameProject = policy({
+export const managesProject = policy({
   description: 'The caller manages this Project.',
   match: ({ edge, subject, object }) =>
     edge({ source: subject, class: manages, target: object }),
@@ -110,7 +116,7 @@ export const rename = method({
   auth: 'authorized',
   input: z.object({ title: z.string() }),
   output: z.boolean(),
-  policy: ({ check, self }) => check(mayRenameProject, self),
+  policy: ({ check, self }) => check(managesProject, self),
 })
 ```
 
@@ -129,16 +135,16 @@ group. Kernel decides each Policy for every Identity of that composition, so `su
 - State a fact a group holds as one Edge from or to `subject`. Never walk `extends_with` (one hop or a
   `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, skips the constraints
   and exclusions of the groups it crosses, and spends a leaf and a variable of the branch budget.
-- Check membership in a fixed group against that group: `check(isSelf, ref(group))`, with `isSelf`
-  matching `sameNode(subject, object)`. Keep the group a fixed `ref`: a group is its own member, so an
-  input object admits any caller passing its own id.
+- Check membership in a fixed group against that group: `check(memberOfGroup, ref(group))`, with
+  `memberOfGroup` matching `sameNode(subject, object)`. Keep the group a fixed `ref`: a group is its own
+  member, so an input object admits any caller passing its own id.
 - One Identity satisfies a whole Policy branch. When two facts may come from different groups, such as
-  a Role from one Team and coverage from another, write one check per fact: each check tries the whole
-  composition on its own.
+  a Role from one Team and the management of a Project from another, write one check per fact: each check
+  tries the whole composition on its own.
 
 ```ts
 // Wrong: re-walks the composition by hand and skips its constraints and exclusions.
-export const coversAgencyByWalk = policy({
+export const managesProjectByWalk = policy({
   match: ({ allOf, edge, exists, object, subject }) =>
     exists(({ node }) => {
       const holder = node()
@@ -149,25 +155,24 @@ export const coversAgencyByWalk = policy({
           target: holder,
           repeat: { min: 0, max: 2 },
         },
-        edge({ source: holder, class: covers_agency, target: object }),
+        edge({ source: holder, class: manages, target: object }),
       )
     }),
 })
 
-// Right: the caller or any group it belongs to covers the Agency.
-export const coversAgency = policy({
-  match: ({ edge, object, subject }) =>
-    edge({ source: subject, class: covers_agency, target: object }),
+// Right: the caller or any group it belongs to manages the Project.
+export const managesProject = policy({
+  match: ({ edge, object, subject }) => edge({ source: subject, class: manages, target: object }),
 })
 
 // Two facts, possibly from two groups: one check each.
 // In an authorized Function or Method:
 policy: ({ allOf, check, input, ref }) =>
-  allOf(check(isSelf, ref(readers)), check(coversAgency, input.agency)),
+  allOf(check(memberOfGroup, ref(editors)), check(managesProject, input.project)),
 // In a Node Class:
 policies: {
   read: ({ allOf, check, ref, self }) =>
-    allOf(check(isSelf, ref(readers)), check(coversAgency, self)),
+    allOf(check(memberOfGroup, ref(editors)), check(managesProject, self)),
 },
 ```
 
