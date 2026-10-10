@@ -7,6 +7,7 @@ import type { AdminTargetCommandOpts } from './admin-target'
 import type { ImportedInstanceRootIdentity } from './instance-root-identity'
 
 import { formatKernelError } from '../connection/errors'
+import { reasonCode } from '../connection/reasons'
 import { AstraleError, AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
 import { activateInstance, type InstanceActivation } from './activate-instance'
@@ -119,6 +120,8 @@ export async function provisionInstance(
               createOpts = { ...createOpts, fleet }
             })
           } catch (error) {
+            const refused = refusedCreate(error, { slug, operationId, fleet: createOpts.fleet })
+            if (refused !== undefined) throw refused
             if (!retryableCreate(error) || deps.now() >= deadline) {
               if (pending !== undefined) return pending
               throw error
@@ -262,6 +265,49 @@ function acceptInstanceCreateOperationId(input: unknown): string {
 
 export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {
   return { ...opts, timeout: opts.timeout ?? SAGA_TIMEOUT_MS }
+}
+
+/**
+ * Admin refuses a creation with a declared error once its Operation has failed; every replay of
+ * that operation id returns the same refusal. Stop, name the failed operation and its cause, and
+ * point at a new operation: a plain rerun mints one, `--operation <id>` would replay the refusal.
+ */
+function refusedCreate(
+  error: unknown,
+  attempt: Readonly<{ slug: string; operationId: string; fleet: string | undefined }>,
+): AstraleError | undefined {
+  if (!(error instanceof ResponseError)) return undefined
+  const code = reasonCode(error.reason)
+  const fleetFlag = attempt.fleet === undefined ? '' : ` --fleet '${attempt.fleet}'`
+  const rerun = `rerun \`astrale instance create ${attempt.slug}${fleetFlag}\` without --operation`
+  if (code === 'INSTANCE_CAPACITY_UNAVAILABLE') {
+    const fleet = reasonDetail(error.reason, 'fleet') ?? attempt.fleet
+    const provisionHost =
+      fleet === undefined
+        ? 'Fleet.provisionHost'
+        : `astrale call "${fleet}::admin.astrale.ai:class.Fleet.method.provisionHost" --admin -d '{"operationId":"<new-id>","id":"<host-id>","provider":{"kind":"scaleway"}}'`
+    return new AstraleError(
+      code,
+      `No ready consumer Host in this Fleet can take Instance "${attempt.slug}". Creation operation ${attempt.operationId} failed; replaying it returns this refusal.`,
+      `A Fleet administrator provisions a Host first: ${provisionHost}. Then ${rerun}.`,
+    )
+  }
+  if (code === 'OPERATION_CONFLICT') {
+    return new AstraleError(
+      code,
+      `Creation operation ${attempt.operationId} cannot continue: ${reasonDetail(error.reason, 'reason') ?? error.message}`,
+      `Fix the cause, then ${rerun} to start a new creation operation.`,
+    )
+  }
+  return undefined
+}
+
+function reasonDetail(reason: unknown, name: string): string | undefined {
+  if (typeof reason !== 'object' || reason === null || !('details' in reason)) return undefined
+  const details = reason.details
+  if (typeof details !== 'object' || details === null) return undefined
+  const value = (details as Readonly<Record<string, unknown>>)[name]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
 function retryableCreate(error: unknown): boolean {

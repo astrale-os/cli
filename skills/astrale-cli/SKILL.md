@@ -199,6 +199,9 @@ automatic root import. Use `instance use <name>` to switch explicitly.
 Automatic root recovery starts only after verified access and completed bookmarking, and replaces
 an existing root alias only for the same exact issuer claim. Explicit root import keeps its recovery contract.
 Neither `instance create` nor `instance root import` accepts `--host`.
+A Fleet with no ready consumer Host refuses creation with `INSTANCE_CAPACITY_UNAVAILABLE`, and the
+creation operation fails: a Fleet administrator provisions a Host (`Fleet.provisionHost`), then the
+caller reruns `instance create` without `--operation`, since replaying the failed one returns the same refusal.
 
 `instance root import <slug-or-id>` retrieves the target owned Instance's root signing identity
 through Admin over an end-to-end encrypted, one-use transfer. It imports that identity locally as
