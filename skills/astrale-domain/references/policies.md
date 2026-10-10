@@ -50,7 +50,9 @@ For a non-Root principal, an authorized Function requires both:
 - Only a Root principal, the authenticated installed Kernel Root, takes the outer shortcut. A Root caller
   carried by a Domain session stays in the caller branch: it can satisfy the intrinsic Root alternative,
   never the principal ceiling.
-- A Policy `subject` is the caller, not necessarily the authenticated principal.
+- A Policy `subject` is the caller, not necessarily the authenticated principal. It spans the caller's
+  live composition: a Policy holds when the caller or a group it extends, at any depth, satisfies it,
+  each constraint holding and no exclusion denying it.
 - Protected Kernel syscalls explicitly attach `canUseSyscall` to their exact Function or Method. That
   Policy checks the caller's `can_use`; resource checks inside the syscall remain independent.
   Capability-only callable admission must likewise be declared explicitly, not inferred from `can_use`.
@@ -130,7 +132,12 @@ export const rename = method({
 - Every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
   Edge-Policy branch references `source`, `target`, or both. The `subject`, every referenced protected term,
   and every scoped existential variable must form one connected proof graph. A branch saying only “caller
-  belongs to a group” is not resource-scoped and rejects.
+  belongs to a group” is not resource-scoped and rejects; check membership instead:
+  `check(isSelf, ref(group))` with `isSelf` matching `sameNode(subject, object)`.
+- State a fact a group holds as one Edge from `subject`. Do not walk `extends_with` from `subject` for it:
+  the walk reads raw Edges and skips the constraints and exclusions of the groups it crosses. One Identity
+  satisfies a whole branch, so facts that different groups may supply are one check each; a Class read
+  Policy keeps its walk until the installed SDK accepts Class rule checks.
 - Query admission separately verifies the candidate's exact Edge Class, then evaluates its Policy against
   the admitted `source` and `target`. Constrain whichever endpoint owns access. A Policy Edge predicate is an
   existence test; do not use it as a surrogate identity check for the candidate Edge.
@@ -149,7 +156,7 @@ export const rename = method({
 - Refactoring into named helpers does not reset those budgets. Simplify the actual proof topology
   when `PL_BUDGET` rejects; do not move authorization into a handler or drop an alternative to compile.
 - These are Schema admission ceilings, not guaranteed runtime scan capacity. Verify the installed
-  DSL's limits before relying on a boundary value; a bounded repeat is not unbounded group ancestry.
+  DSL's limits before relying on a boundary value. Group ancestry needs no repeat: `subject` spans it.
 
 ## Scope existential Node witnesses deliberately
 
