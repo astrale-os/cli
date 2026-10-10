@@ -121,13 +121,14 @@ export const rename = method({
 
 The caller's composition is the caller and every Identity it reaches through `extends_with` (group
 membership; Shell `Group.assignMember` writes it, see `users.md`), at any depth. `constrained_by` caps
-an Identity: its constraint must satisfy the Policy too. `excluded_from` removes a group: deny wins.
-Kernel decides each Policy for every Identity of that composition, so `subject` already means "the
-caller or any of its groups".
+an Identity: its constraint must satisfy the Policy too. `excluded_from` vetoes: whatever the excluded
+Identity satisfies is refused to the caller, even when the caller holds it itself or through another
+group. Kernel decides each Policy for every Identity of that composition, so `subject` already means
+"the caller or any of its groups".
 
-- State a fact a group holds as one Edge from `subject`. Never walk `extends_with` from `subject` with a
-  `repeat`: the walk reads raw Edges, skips the constraints and exclusions of the groups it crosses, and
-  spends a leaf and a variable of the branch budget.
+- State a fact a group holds as one Edge from or to `subject`. Never walk `extends_with` (one hop or a
+  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, skips the constraints
+  and exclusions of the groups it crosses, and spends a leaf and a variable of the branch budget.
 - Check membership in a fixed group against that group: `check(isSelf, ref(group))`, with `isSelf`
   matching `sameNode(subject, object)`. Keep the group a fixed `ref`: a group is its own member, so an
   input object admits any caller passing its own id.
@@ -159,13 +160,15 @@ export const coversAgency = policy({
     edge({ source: subject, class: covers_agency, target: object }),
 })
 
-// Two facts, possibly from two groups: one check each, on a callable or a Node Class read rule.
+// Two facts, possibly from two groups: one check each.
+// In an authorized Function or Method:
 policy: ({ allOf, check, input, ref }) =>
-  allOf(check(isSelf, ref(readers)), check(coversAgency, input.agency))
+  allOf(check(isSelf, ref(readers)), check(coversAgency, input.agency)),
+// In a Node Class:
 policies: {
   read: ({ allOf, check, ref, self }) =>
     allOf(check(isSelf, ref(readers)), check(coversAgency, self)),
-}
+},
 ```
 
 ## Reuse without changing what is checked
