@@ -83,9 +83,6 @@ describe('InstanceStoreSchema', () => {
     expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai/')).toBe(
       'https://testmarc.eu.astrale.ai/api',
     )
-    expect(normalizeInstanceKernelUrl('https://testmarc.eu.beta.astrale.ai')).toBe(
-      'https://testmarc.eu.beta.astrale.ai/api',
-    )
     expect(normalizeInstanceKernelUrl('https://shell.beta.astrale.ai')).toBe(
       'https://shell.beta.astrale.ai',
     )
@@ -104,6 +101,10 @@ describe('InstanceStoreSchema', () => {
     expect(normalizeInstanceKernelUrl('https://testmarc.svc.eu.astrale.ai')).toBe(
       'https://testmarc.svc.eu.astrale.ai',
     )
+    // The Admin router serves no environment label above the region: such a root is not an instance.
+    expect(normalizeInstanceKernelUrl('https://testmarc.eu.beta.astrale.ai')).toBe(
+      'https://testmarc.eu.beta.astrale.ai',
+    )
     expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai?debug=1')).toBe(
       'https://testmarc.eu.astrale.ai?debug=1',
     )
@@ -113,11 +114,11 @@ describe('InstanceStoreSchema', () => {
     expect(managedShellOrigin('https://bryan.eu.beta.astrale.ai/api')).toBe('shell.astrale.ai')
     expect(managedShellOrigin('https://bryan.eu.astrale.ai/api')).toBe('shell.astrale.ai')
     expect(managedShellOrigin('https://kernel.example.com/api')).toBeUndefined()
-    expect(managedShellOrigin('http://bryan.eu.beta.astrale.ai/api')).toBeUndefined()
+    expect(managedShellOrigin('http://bryan.eu.astrale.ai/api')).toBeUndefined()
   })
 
   test('a bookmark exchanges at its explicit issuer, else a managed one through the Shell origin', () => {
-    const url = 'https://bryan.eu.beta.astrale.ai/api'
+    const url = 'https://bryan.eu.astrale.ai/api'
     expect(bookmarkExchangeDomain({ slug: 'bryan', name: 'bryan' }, url)).toEqual({
       domainOrigin: 'shell.astrale.ai',
     })
@@ -190,8 +191,8 @@ describe('sanitizeStore — read must not rewrite', () => {
       active: 'bryan',
       instances: {
         bryan: {
-          url: 'https://bryan.eu.beta.astrale.ai/api',
-          issuer: 'https://bryan.eu.beta.astrale.ai/api',
+          url: 'https://bryan.eu.astrale.ai/api',
+          issuer: 'https://bryan.eu.astrale.ai/api',
           slug: 'bryan',
           name: 'bryan',
           kind: 'bookmark' as const,
@@ -236,7 +237,7 @@ describe('sanitizeStore — read must not rewrite', () => {
 
   /** @evidence TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT */
   test('keeps an explicit Shell issuer read from a labelled registry', () => {
-    const url = 'https://bryan.eu.beta.astrale.ai/api'
+    const url = 'https://bryan.eu.astrale.ai/api'
     const store = InstanceStoreSchema.parse({
       version: 1,
       active: 'bryan',
@@ -273,7 +274,7 @@ describe('sanitizeStore — read must not rewrite', () => {
       active: 'bryan',
       instances: {
         bryan: {
-          url: 'https://bryan.eu.beta.astrale.ai/api',
+          url: 'https://bryan.eu.astrale.ai/api',
           domainIssuer: 'https://shell-dev.example',
           slug: 'bryan',
           name: 'bryan',
@@ -293,7 +294,7 @@ describe('sanitizeStore — read must not rewrite', () => {
       active: 'shell',
       instances: {
         shell: {
-          url: 'https://bryan.eu.beta.astrale.ai/api',
+          url: 'https://bryan.eu.astrale.ai/api',
           domainIssuer: 'https://shell.beta.astrale.ai',
           name: 'shell',
           kind: 'bookmark' as const,
@@ -331,7 +332,7 @@ describe('sanitizeStore — read must not rewrite', () => {
       active: 'control',
       instances: {
         control: {
-          url: 'https://admin.eu.beta.astrale.ai/api',
+          url: 'https://admin.eu.astrale.ai/api',
           kind: 'bookmark' as const,
         },
       },

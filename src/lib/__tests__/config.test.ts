@@ -77,6 +77,35 @@ describe('AstraleConfigSchema', () => {
     expect(result.admin).toEqual({ instance: 'staging-admin' })
   })
 
+  test('reads the retired built-in beta Admin as no saved target', () => {
+    const result = AstraleConfigSchema.parse({
+      issuer: 'https://test.astrale.ai',
+      admin: {
+        name: 'admin',
+        url: 'https://admin.eu.beta.astrale.ai/api',
+        kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
+        domainIssuer: 'https://admin.beta.astrale.ai',
+      },
+    })
+    expect(result.issuer).toBe('https://test.astrale.ai')
+    expect(result.admin).toEqual({
+      name: 'admin',
+      url: DEFAULT_ADMIN_TARGET_URL,
+      kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
+      domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
+    })
+  })
+
+  test('keeps any other saved admin target', () => {
+    const admin = {
+      name: 'admin',
+      url: 'https://admin.eu.beta.astrale.ai/api',
+      kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
+      domainIssuer: 'https://admin-dev.example',
+    }
+    expect(AstraleConfigSchema.parse({ admin }).admin).toEqual(admin)
+  })
+
   test('rejects admin config with url and instance together', () => {
     expect(() =>
       AstraleConfigSchema.parse({
