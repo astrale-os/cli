@@ -1,6 +1,6 @@
 import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
 
-import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
+import { credentials, type Credentials } from '@astrale-os/sdk/client/session'
 import {
   createIframeShellAdapter,
   createShell,
@@ -187,17 +187,17 @@ async function main(): Promise<void> {
     const next = await j<ViewToken>(path, { method: 'POST' })
     return { credential: next.token, expiresAt: next.expiresAt }
   }
-  let tokens: ReturnType<typeof createSessionCredentialProvider> | null = null
-  let kernelTokens: ReturnType<typeof createSessionCredentialProvider> | null = null
+  let tokens: Credentials | null = null
+  let kernelTokens: Credentials | null = null
   if (route.handshake === 'shell') {
-    tokens = createSessionCredentialProvider({
+    tokens = credentials({
       ttlSeconds: cfg.delegationTtlSeconds,
       mint: () => loadToken(),
       initial: await loadToken(),
     })
     // The page outlives many credentials; anticipate rather than pay on the next user action.
     tokens.start()
-    kernelTokens = createSessionCredentialProvider({
+    kernelTokens = credentials({
       ttlSeconds: cfg.delegationTtlSeconds,
       mint: () => loadToken('/kernel-token'),
     })
