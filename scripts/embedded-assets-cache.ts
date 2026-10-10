@@ -255,7 +255,7 @@ export async function writeEmbeddedAssetCache(root: string, inputDigest: string)
  * meantime looks like a broken domain rather than a busy one.
  *
  * Unreadable or unowned locks are left alone: `LOCK_STALE_MS` is still the
- * backstop, and a lock is briefly ownerless between its mkdir and its first write.
+ * backstop. New locks publish their owner together with the directory.
  */
 async function lockOwnerIsGone(lock: string): Promise<boolean> {
   const owner = Number(await readFile(join(lock, LOCK_OWNER_FILE), 'utf8').catch(() => ''))
@@ -274,25 +274,35 @@ export async function withEmbeddedAssetLock<T>(root: string, action: () => Promi
   const cacheDirectory = join(root, CACHE_DIRECTORY)
   const lock = lockPath(root)
   await mkdir(cacheDirectory, { recursive: true })
-  const deadline = Date.now() + LOCK_WAIT_MS
-  while (true) {
-    try {
-      await mkdir(lock)
-      await writeFile(join(lock, LOCK_OWNER_FILE), `${process.pid}\n`)
-      break
-    } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error
-      const lockMetadata = await stat(lock).catch(() => undefined)
-      if (
-        (lockMetadata && Date.now() - lockMetadata.mtimeMs > LOCK_STALE_MS) ||
-        (await lockOwnerIsGone(lock))
-      ) {
-        await rm(lock, { recursive: true, force: true })
-        continue
+  // Prepare a nonempty directory before making it the lock. A process killed
+  // during preparation leaves no published ownerless lock. Rename cannot replace
+  // another nonempty owner directory, so simultaneous contenders stay exclusive.
+  const prepared = `${lock}.${process.pid}.${randomUUID()}.tmp`
+  await mkdir(prepared)
+  try {
+    await writeFile(join(prepared, LOCK_OWNER_FILE), `${process.pid}\n`)
+    const deadline = Date.now() + LOCK_WAIT_MS
+    while (true) {
+      try {
+        await rename(prepared, lock)
+        break
+      } catch (error) {
+        if (!['EEXIST', 'ENOTEMPTY'].includes(errorCode(error) ?? '')) throw error
+        const lockMetadata = await stat(lock).catch(() => undefined)
+        if (
+          (lockMetadata && Date.now() - lockMetadata.mtimeMs > LOCK_STALE_MS) ||
+          (await lockOwnerIsGone(lock))
+        ) {
+          await rm(lock, { recursive: true, force: true })
+          continue
+        }
+        if (Date.now() >= deadline)
+          throw new Error('timed out waiting for embedded asset generation')
+        await Bun.sleep(100)
       }
-      if (Date.now() >= deadline) throw new Error('timed out waiting for embedded asset generation')
-      await Bun.sleep(100)
     }
+  } finally {
+    await rm(prepared, { recursive: true, force: true })
   }
   try {
     return await action()
