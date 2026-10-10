@@ -630,11 +630,6 @@ Studio preferences live under `<ASTRALE_HOME>/studio/`: `settings.json` stores o
 compatibility; saving through Studio writes the current format. Do not delete those files
 as caches: they contain user preferences and may contain a gateway credential.
 
-Domain documents live under `<project>/.domain-studio/context/docs/`; their index remains
-`context/documents/index.json`. Opening a domain migrates old UUID-named documents.
-The old file is removed only after the new copy is indexed. Do not delete
-`context/documents/`: it still owns the live index and may contain documents awaiting migration.
-
 ## Source Map
 
 - Entry: `cli/bin/astrale.ts`
