@@ -373,9 +373,8 @@ The option accepts a Kernel path, not a slug, and remains limited to `instance c
 `instance list`. Creation pins the resolved Fleet before
 its first call and across retries. Keep both the printed `--operation` and `--fleet` when
 resuming from another process. Policies on each callable remain authoritative if access changes.
-No Fleet discovery callable or wrapper command is introduced. These readers require the existing
-Fleet-slug backfill; missing names or slugs fail explicitly. An explicit historical `core.fleet`
-catalogue path remains supported while that Core node exists.
+No Fleet discovery callable or wrapper command is introduced. A Fleet without a name or slug
+fails explicitly.
 
 An explicit target avoids Fleet discovery entirely. Implicit resolution reads each directory page
 once and checks `UseFleet` with at most eight requests in flight; instance creation reuses the
@@ -385,17 +384,15 @@ Read Fleets directly from the graph and use the generic callable command to crea
 
 ```bash
 astrale query --class '/:admin.astrale.ai:class.Fleet' -i admin
-astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"@<default-fleet-id>"}'
+astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-customer-acme-prod","slug":"customer-acme-prod","name":"Acme Prod","administrator":"@<central-shell-group-id>"}'
 astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
 astrale instance list --fleet '@<fleet-id>'
-astrale domain list --fleet '@<fleet-id>'
 ```
 
-Creating a Fleet requires central Shell administrator authority and administration of the source
-Fleet. The new Fleet receives an independent catalogue copy; provision its own Host capacity
-before creating Instances. Host capacity is never borrowed from another Fleet.
-Use the observed ID of the Fleet whose reserved slug is `default` for `copyFrom`; protected Core
-namespace paths need not be visible to the caller's graph reads.
+Creating a Fleet requires central Shell administrator authority. Admin keeps one reserved Fleet,
+`admin`, for its own Host and Instance; every other Fleet, one per customer environment, is created
+this way. Provision a new Fleet's own Host capacity (`Fleet.provisionHost`) before creating
+Instances. Host capacity is never borrowed from another Fleet.
 
 An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation These commands have no `--fleet` option. Domain URL installs authenticate directly to the selected
 Instance; version installs resolve their deployment in the Admin registry first. Keep the same `--operation` value when retrying creation.

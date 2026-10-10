@@ -20,7 +20,6 @@ const Publication = classRef('Publication')
 
 export const AdminContract = Object.freeze({
   origin,
-  fleet: Path.parse('/:admin.astrale.ai:core.fleet'),
   classes: Object.freeze({
     Fleet,
     Domain,
@@ -29,9 +28,6 @@ export const AdminContract = Object.freeze({
     Publication,
   }),
   edges: Object.freeze({
-    fleetContains: classRef('fleet_contains'),
-    fleetListsDomain: classRef('fleet_lists_domain'),
-    fleetInstallsDomainByDefault: classRef('fleet_installs_domain_by_default'),
     publicationOfDomain: classRef('publication_of_domain'),
   }),
   properties: Object.freeze({

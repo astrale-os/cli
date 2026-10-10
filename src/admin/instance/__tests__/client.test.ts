@@ -85,7 +85,7 @@ function fixture(input: {
     listCalls,
     connect: () =>
       connectAdminInstances(
-        { session: remote.session, graph, fleet: input.fleet ?? AdminContract.fleet.raw },
+        { session: remote.session, graph, fleet: input.fleet ?? '@customer-fleet' },
         input.useDefaultOperationIds
           ? undefined
           : { operationId: input.operationId ?? ((kind) => `cli.instance.${kind}.test`) },
@@ -94,7 +94,7 @@ function fixture(input: {
 }
 
 describe('V2 Admin Instance adapter', () => {
-  test('resolves a known slug without requiring inventory access to the default Fleet', async () => {
+  test('resolves a known slug without requiring inventory access to a Fleet', async () => {
     const contract = fixture({ instances: [instanceNode({ slug: 'astrale-project' })] })
     const api = await contract.connect()
     expect((await api.require('astrale-project')).slug).toBe('astrale-project')
@@ -117,7 +117,7 @@ describe('V2 Admin Instance adapter', () => {
       '@instance-node::admin.astrale.ai:class.Instance.method.status',
     )
   })
-  test.each(['@astrale-fleet', '/:admin.astrale.ai:core.fleet'])(
+  test.each(['@astrale-fleet', '/:admin.astrale.ai:core.admin'])(
     'uses the exact Fleet path %s for list and create without directory discovery',
     async (fleet) => {
       const contract = fixture({
@@ -209,15 +209,15 @@ describe('V2 Admin Instance adapter', () => {
     ])
     expect(contract.listCalls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
+        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
         value: {},
       },
       {
-        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
+        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
         value: {},
       },
       {
-        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
+        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
         value: { includeRetired: true },
       },
     ])
@@ -246,7 +246,7 @@ describe('V2 Admin Instance adapter', () => {
     })
     expect(contract.calls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.createInstance',
+        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.createInstance',
         value: { operationId: 'cli.instance.create.test', slug: 'demo' },
       },
     ])
@@ -289,7 +289,7 @@ describe('V2 Admin Instance adapter', () => {
     ).resolves.toMatchObject(pending)
     expect(contract.calls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.createInstance',
+        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.createInstance',
         value: { operationId: pending.operationId, slug: 'demo' },
       },
     ])
@@ -682,7 +682,7 @@ describe('V2 Admin Instance adapter', () => {
     await expect(api.list()).resolves.toEqual([])
     expect(contract.listCalls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances',
+        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
         value: {},
       },
     ])

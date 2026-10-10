@@ -1,13 +1,15 @@
+import { Path } from '@astrale-os/sdk/graph/path'
 import { MethodKey } from '@astrale-os/sdk/schema'
 
-import { AdminContract, callAdminMethod } from '../../src/admin/contract.js'
+import { callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
+const fleet = Path.parse(required('ASTRALE_E2E_FLEET'))
 const result = await withAdminClientSession({}, async ({ session }) => {
   return callAdminMethod(
     session,
-    AdminContract.fleet,
+    fleet,
     MethodKey('admin.astrale.ai:class.Fleet.method.provisionHost'),
     {
       id: required('ASTRALE_E2E_HOST_ID'),
