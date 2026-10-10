@@ -83,9 +83,6 @@ describe('InstanceStoreSchema', () => {
     expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai/')).toBe(
       'https://testmarc.eu.astrale.ai/api',
     )
-    expect(normalizeInstanceKernelUrl('https://testmarc.eu.beta.astrale.ai')).toBe(
-      'https://testmarc.eu.beta.astrale.ai/api',
-    )
     expect(normalizeInstanceKernelUrl('https://shell.beta.astrale.ai')).toBe(
       'https://shell.beta.astrale.ai',
     )
@@ -103,6 +100,10 @@ describe('InstanceStoreSchema', () => {
     )
     expect(normalizeInstanceKernelUrl('https://testmarc.svc.eu.astrale.ai')).toBe(
       'https://testmarc.svc.eu.astrale.ai',
+    )
+    // The Admin router serves no environment label above the region: such a root is not an instance.
+    expect(normalizeInstanceKernelUrl('https://testmarc.eu.beta.astrale.ai')).toBe(
+      'https://testmarc.eu.beta.astrale.ai',
     )
     expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai?debug=1')).toBe(
       'https://testmarc.eu.astrale.ai?debug=1',
