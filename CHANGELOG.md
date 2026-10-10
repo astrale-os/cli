@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.136](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.135...cli/v1.0.0-beta.136) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** close canonical release and CLI contracts ([#632](https://github.com/astrale-os/cli/issues/632))
+
+* **commands:** close canonical release and CLI contracts ([#632](https://github.com/astrale-os/cli/issues/632)) ([fa4b672](https://github.com/astrale-os/cli/commit/fa4b67252e2be61af60be668377a3b9c80d53167))
+
+
+### Features
+
+* **commands:** complete prepared Admin access at WorkOS login ([#634](https://github.com/astrale-os/cli/issues/634)) ([db160db](https://github.com/astrale-os/cli/commit/db160db1d889cadd6eda746111b0b32c06d73236))
+
 ## [1.0.0-beta.135](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.134...cli/v1.0.0-beta.135) (2026-10-09)
 
 
