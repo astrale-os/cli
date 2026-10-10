@@ -50,9 +50,8 @@ For a non-Root principal, an authorized Function requires both:
 - Only a Root principal, the authenticated installed Kernel Root, takes the outer shortcut. A Root caller
   carried by a Domain session stays in the caller branch: it can satisfy the intrinsic Root alternative,
   never the principal ceiling.
-- A Policy `subject` is the caller, not necessarily the authenticated principal. It spans the caller's
-  live composition: a Policy holds when the caller or a group it extends, at any depth, satisfies it,
-  each constraint holding and no exclusion denying it.
+- A Policy `subject` is the caller, not necessarily the authenticated principal, and it already covers the
+  caller's groups (see Groups below).
 - Protected Kernel syscalls explicitly attach `canUseSyscall` to their exact Function or Method. That
   Policy checks the caller's `can_use`; resource checks inside the syscall remain independent.
   Capability-only callable admission must likewise be declared explicitly, not inferred from `can_use`.
@@ -118,6 +117,60 @@ export const rename = method({
 - Runtime dispatches `Project.rename` as an Action or Workflow. Its context facilities are not a second
   authorization decision; handler code must not replace Kernel admission with a role lookup.
 
+## Groups: `subject` is the caller's composition
+
+The caller's composition is the caller and every Identity it reaches through `extends_with` (group
+membership; Shell `Group.assignMember` writes it, see `users.md`), at any depth. `constrained_by` caps
+an Identity: its constraint must satisfy the Policy too. `excluded_from` vetoes: whatever the excluded
+Identity satisfies is refused to the caller, even when the caller holds it itself or through another
+group. Kernel decides each Policy for every Identity of that composition, so `subject` already means
+"the caller or any of its groups".
+
+- State a fact a group holds as one Edge from or to `subject`. Never walk `extends_with` (one hop or a
+  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, skips the constraints
+  and exclusions of the groups it crosses, and spends a leaf and a variable of the branch budget.
+- Check membership in a fixed group against that group: `check(isSelf, ref(group))`, with `isSelf`
+  matching `sameNode(subject, object)`. Keep the group a fixed `ref`: a group is its own member, so an
+  input object admits any caller passing its own id.
+- One Identity satisfies a whole Policy branch. When two facts may come from different groups, such as
+  a Role from one Team and coverage from another, write one check per fact: each check tries the whole
+  composition on its own.
+
+```ts
+// Wrong: re-walks the composition by hand and skips its constraints and exclusions.
+export const coversAgencyByWalk = policy({
+  match: ({ allOf, edge, exists, object, subject }) =>
+    exists(({ node }) => {
+      const holder = node()
+      return allOf(
+        {
+          source: subject,
+          class: K.classes.extends_with.ref,
+          target: holder,
+          repeat: { min: 0, max: 2 },
+        },
+        edge({ source: holder, class: covers_agency, target: object }),
+      )
+    }),
+})
+
+// Right: the caller or any group it belongs to covers the Agency.
+export const coversAgency = policy({
+  match: ({ edge, object, subject }) =>
+    edge({ source: subject, class: covers_agency, target: object }),
+})
+
+// Two facts, possibly from two groups: one check each.
+// In an authorized Function or Method:
+policy: ({ allOf, check, input, ref }) =>
+  allOf(check(isSelf, ref(readers)), check(coversAgency, input.agency)),
+// In a Node Class:
+policies: {
+  read: ({ allOf, check, ref, self }) =>
+    allOf(check(isSelf, ref(readers)), check(coversAgency, self)),
+},
+```
+
 ## Reuse without changing what is checked
 
 - Named `policy.allOf(...)` / `policy.anyOf(...)` composition and callable `check(...)` accept only exact local
@@ -132,13 +185,7 @@ export const rename = method({
 - Every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
   Edge-Policy branch references `source`, `target`, or both. The `subject`, every referenced protected term,
   and every scoped existential variable must form one connected proof graph. A branch saying only “caller
-  belongs to a group” is not resource-scoped and rejects. In an authorized callable, check membership
-  instead: `check(isSelf, ref(group))` with `isSelf` matching `sameNode(subject, object)`. Keep the group
-  a fixed `ref`: a group is its own member, so an input object admits any caller passing its own id.
-- State a fact a group holds as one Edge from `subject`. Do not walk `extends_with` from `subject` for it:
-  the walk reads raw Edges and skips the constraints and exclusions of the groups it crosses. One Identity
-  satisfies a whole branch, so facts that different groups may supply are one check each; a Class read
-  Policy keeps its walk until the installed SDK accepts Class rule checks.
+  belongs to a group” is not resource-scoped and rejects; check membership instead (see Groups).
 - Query admission separately verifies the candidate's exact Edge Class, then evaluates its Policy against
   the admitted `source` and `target`. Constrain whichever endpoint owns access. A Policy Edge predicate is an
   existence test; do not use it as a surrogate identity check for the candidate Edge.
@@ -157,8 +204,8 @@ export const rename = method({
 - Refactoring into named helpers does not reset those budgets. Simplify the actual proof topology
   when `PL_BUDGET` rejects; do not move authorization into a handler or drop an alternative to compile.
 - These are Schema admission ceilings, not guaranteed runtime scan capacity. Verify the installed
-  DSL's limits before relying on a boundary value. The caller's group ancestry needs no repeat:
-  `subject` spans it. A repeat from any other term still stops at its bound.
+  DSL's limits before relying on a boundary value. The caller's group ancestry needs no repeat (see
+  Groups); a repeat from any other term still stops at its bound.
 
 ## Scope existential Node witnesses deliberately
 
