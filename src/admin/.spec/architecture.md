@@ -7,10 +7,10 @@ schema. Strict local decoders admit every untrusted Admin result. The adapter do
 implementation code, call Host directly, or persist remote graph truth.
 
 `instance` owns create/list/status/delete projection and explicitly excludes the reserved Admin
-Host from consumer placement. `registry` owns the Domain version registry. `legacy/catalog` keeps the
-deprecated Fleet catalog (Domain inventory, publication, default-set configuration and the catalog
-install through `Instance.installDomain`) for its short-term consumers, outside the aggregate.
-`graph` is their bounded cursor helper and is not re-exported by the aggregate.
+Host from consumer placement. `registry` owns the Domain version registry. `graph` is their bounded
+cursor helper and is not re-exported by the aggregate. Installing a Domain on an Instance is no
+Admin call: `domain install -i <instance> --as <slug>-root` reaches the Instance's Kernel as its
+root identity, which `instance create` imports and `instance root import` recovers.
 
 Commander grammar, help text, output shapes, bookmark behavior, and current interactive host
 selection remain owned by the existing command surface; these adapters change only its remote
