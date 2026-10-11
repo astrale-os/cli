@@ -34,6 +34,7 @@ import { callableOrigin, resolveCallableTarget, withCallableIssuer } from './cal
 import {
   createCliCredential,
   type CredentialIntent,
+  type CredentialPrincipal,
   validateCredentialSelection,
 } from './credential'
 import { createInstalledIssuer, type InstalledIssuer } from './installed-issuer'
@@ -55,6 +56,8 @@ export interface ConnectionContext {
   /** Resolve the selected identity before any Domain credential exchange. */
   readonly self: () => Promise<{ readonly id: string }>
   readonly target: ConnectionTarget
+  /** Latest credential principal selected for this Session, never inferred from a cached target. */
+  readonly credentialPrincipal: () => CredentialPrincipal
   /** Local identity label selected for this session; absent for raw credentials or anonymous use. */
   readonly identity?: string
 }
@@ -71,6 +74,7 @@ export type ConnectionFactory = (
   config: AstraleConfig,
   credential?: CredentialIntent,
   installed?: InstalledIssuer,
+  selectedPrincipal?: (principal: CredentialPrincipal) => void,
 ) => OwnedConnection
 
 /** Resolve one ordinary target, run a command action, then close terminally. */
@@ -160,12 +164,14 @@ async function runResolvedClientSession<Value>(
   credential: CredentialIntent = {},
   installations?: InstallationCache,
 ): Promise<Value> {
+  let expectedPrincipal: CredentialPrincipal | undefined
   let remembered: string | undefined
   let installedOrigin: string | undefined
   /** The issuer the pin named when this command read it itself. */
   let pinned: IssuerId | null | undefined
   if (credential.principal === 'execution') {
     const { receipt } = credential
+    expectedPrincipal = receipt.principal
     if (options.creds !== undefined || options.anonymous === true) {
       throw new AstraleError(
         'EXECUTION_IDENTITY_REQUIRED',
@@ -176,7 +182,6 @@ async function runResolvedClientSession<Value>(
       throw new AstraleError(
         'EXECUTION_TARGET_MISMATCH',
         'The selected Kernel does not match the execution receipt.',
-        `Select the receipt Kernel with --url ${receipt.kernel}.`,
       )
     }
     const discovery = open(target, timeoutMs, options, config, { principal: 'caller' })
@@ -247,7 +252,22 @@ async function runResolvedClientSession<Value>(
           undefined,
           pinned,
         )
-  const connection = open(target, timeoutMs, options, config, credential, installed)
+  const connection = open(
+    target,
+    timeoutMs,
+    options,
+    config,
+    credential,
+    installed,
+    (principal) => {
+      if (expectedPrincipal !== undefined && principal !== expectedPrincipal) {
+        throw new AstraleError(
+          'EXECUTION_PRINCIPAL_CHANGED',
+          'The installed Domain no longer provides the receipt principal context.',
+        )
+      }
+    },
+  )
   try {
     return await action(
       installed === undefined
@@ -371,8 +391,10 @@ function openConnection(
   config: AstraleConfig,
   credential: CredentialIntent = {},
   installed?: InstalledIssuer,
+  selectedPrincipal?: (principal: CredentialPrincipal) => void,
 ): OwnedConnection {
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
+  let principal: CredentialPrincipal | undefined
   const auth = createCliCredential(
     target,
     options,
@@ -382,6 +404,10 @@ function openConnection(
     credential,
     undefined,
     installed,
+    (selected) => {
+      selectedPrincipal?.(selected)
+      principal = selected
+    },
   )
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
@@ -400,6 +426,11 @@ function openConnection(
           { principal: 'caller' },
         ),
       target,
+      credentialPrincipal: () => {
+        if (principal === undefined)
+          throw new Error('The Session has not selected an authenticated credential.')
+        return principal
+      },
       ...(options.as === undefined ? {} : { identity: options.as }),
     }),
     close() {

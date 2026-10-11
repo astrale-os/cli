@@ -1,6 +1,15 @@
 import { issuer } from '@astrale-os/sdk/auth'
+import { ClientSession } from '@astrale-os/sdk/client/session'
 import { Path } from '@astrale-os/sdk/graph/path'
-import { bundle, defineSchema, func, method, nodeClass, classIcon } from '@astrale-os/sdk/schema'
+import {
+  bundle,
+  defineSchema,
+  func,
+  method,
+  nodeClass,
+  classIcon,
+  schema,
+} from '@astrale-os/sdk/schema'
 import { expect, test } from 'bun:test'
 
 import type { ConnectionContext } from '../../connection'
@@ -48,6 +57,7 @@ function fixture() {
       domainIssuer: issuer.accept('https://domain.example'),
     },
     self: async () => ({ id: 'alice' }),
+    credentialPrincipal: () => 'domain',
     session: {
       schema: { bundle: async () => ({ bundle: installed }) },
       invoke: async (call: unknown) => {
@@ -113,6 +123,8 @@ test('receipt rejects unknown versions, extra credentials and path-shaped origin
   )
   for (const changes of [
     { version: 2 },
+    { id: '@execution-1' },
+    { caller: '@alice' },
     { credential: 'not-accepted' },
     { origin: 'jobs.example:function.durable' },
     { kernel: 'not-an-issuer' },
@@ -141,4 +153,112 @@ test('malformed receipt JSON never echoes file contents', () => {
   expect(() => parseExecutionReceipt('private-content-not-json')).toThrow(
     'The execution receipt file must contain valid JSON.',
   )
+})
+
+test('receipt records actual caller credential after a remote target has moved to Kernel hosting', async () => {
+  const { context } = fixture()
+  expect(context.target.domainIssuer).toBeDefined()
+  const receipt = await startExecution(
+    { ...context, credentialPrincipal: () => 'caller' },
+    Path.parse('/:jobs.example:function.durable'),
+    {},
+    false,
+  )
+  expect(receipt.principal).toBe('caller')
+})
+
+test('a malformed durable result reports unknown outcome without starting again', async () => {
+  const { context } = fixture()
+  let calls = 0
+  const session = {
+    ...context.session,
+    schema: context.session.schema,
+    invoke: async () => {
+      calls++
+      return 42
+    },
+  } as unknown as ConnectionContext['session']
+  await expect(
+    startExecution(
+      { ...context, session },
+      Path.parse('/:jobs.example:function.durable'),
+      {},
+      false,
+    ),
+  ).rejects.toMatchObject({ code: 'EXECUTION_RECEIPT_INVALID' })
+  expect(calls).toBe(1)
+})
+
+test('start uses the real SDK wire target with a server-enforced durable meaning fingerprint', async () => {
+  const { context } = fixture()
+  const observed: { target: unknown; input: unknown }[] = []
+  const session = new ClientSession({
+    kernel: context.target.kernelIssuer,
+    policy: { maximumRouteAgeMs: 60000 },
+    envelopeTransport: 'http',
+    routeStore: { read: () => undefined, write: () => undefined },
+    fetch: async (url, init) => {
+      const body = JSON.parse(await new Response(init?.body).text())
+      observed.push(body.call)
+      const response = new Response(
+        JSON.stringify({
+          requestId: body.requestId,
+          invocation: { source: context.target.kernelIssuer, id: 'start' },
+          result: { id: 'execution-1' },
+        }),
+        {
+          headers: {
+            'cache-control': 'no-store',
+            'content-type': new Headers(init?.headers).get('accept')!,
+          },
+        },
+      )
+      Object.defineProperty(response, 'url', { value: String(url) })
+      return response
+    },
+  })
+  const proxy = new Proxy(session, {
+    get(target, key) {
+      if (key === 'schema') return { ...target.schema, bundle: async () => ({ bundle: installed }) }
+      const member = Reflect.get(target, key, target)
+      return typeof member === 'function' ? member.bind(target) : member
+    },
+  })
+  try {
+    await startExecution(
+      { ...context, session: proxy },
+      Path.parse('/:jobs.example:function.durable'),
+      {},
+      false,
+    )
+    const durableMeaning = schema.resolve(installed.root).functions.durable!
+    const replacement = schema.resolve(
+      bundle.create(
+        defineSchema('jobs.example', {
+          name: 'Jobs',
+          functions: {
+            durable: func({
+              auth: 'authenticated',
+              input: { type: 'object' },
+              output: { type: 'object' },
+            }),
+          },
+        }),
+      ).root,
+    ).functions.durable!
+    expect(observed).toEqual([
+      {
+        target: {
+          callable: 'jobs.example:function.durable',
+          fingerprint: schema.callableFingerprint(durableMeaning),
+        },
+        input: {},
+      },
+    ])
+    expect(schema.callableFingerprint(replacement)).not.toBe(
+      schema.callableFingerprint(durableMeaning),
+    )
+  } finally {
+    session.close()
+  }
 })

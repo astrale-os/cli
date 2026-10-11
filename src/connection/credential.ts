@@ -23,6 +23,8 @@ import { registrationKeyForTarget } from './target'
 
 const DELEGATION_TTL_SECONDS = 60
 
+export type CredentialPrincipal = 'domain' | 'caller'
+
 export interface SourceCredentialResolver {
   /** Stable local identity metadata may select an already-bound persisted exchange credential. */
   cacheIdentity?(): Promise<Readonly<{ issuer: string; subject: string }> | undefined>
@@ -101,6 +103,7 @@ export function createCliCredential(
   intent: CredentialIntent = {},
   resolveSource: CredentialResolver = resolveCredential,
   installed?: ExchangeIssuer,
+  selectedPrincipal?: (principal: CredentialPrincipal) => void,
 ): SessionAuth | undefined {
   if (intent.principal === 'callable' || intent.principal === 'execution') {
     throw new TypeError('Callable credentials require installed Domain resolution.')
@@ -147,8 +150,23 @@ export function createCliCredential(
   }
   const effective =
     exchange !== undefined
-      ? createExchangeCredentialResolver(exchange, source, fetch, timeoutMs, undefined, installed)
-      : source
+      ? createExchangeCredentialResolver(
+          exchange,
+          source,
+          fetch,
+          timeoutMs,
+          undefined,
+          installed,
+          selectedPrincipal,
+        )
+      : {
+          ...source,
+          async resolve(audience: IssuerId, signal: AbortSignal) {
+            const token = await source.resolve(audience, signal)
+            selectedPrincipal?.('caller')
+            return token
+          },
+        }
   return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
 }
 
