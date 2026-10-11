@@ -220,24 +220,69 @@ export async function startViewSession(
   opts: ViewOpts,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
-  const connection = await withClientSession(opts, async ({ identity, target }) => ({
-    identity,
-    target,
-  }))
+  const { identity, target } = await withClientSession(opts, async (context) => context)
   const [instances, runtime] = await Promise.all([
     readInstances(),
-    opts.serveRuntime ? Promise.resolve(opts.serveRuntime) : resolveServeRuntime(),
+    opts.serveRuntime ?? resolveServeRuntime(),
   ])
-  return withViewPortAllocationLock(() =>
-    startSessionLocked(
+  // Keep the port-allocation lock until the detached child answers its readiness probe: only
+  // then is the selected port durably owned and safe for the next CLI process to scan.
+  return withViewPortAllocationLock(async () => {
+    const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
+    if (port === null) {
+      throw new Error(
+        `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1} — close sessions with \`astrale view --close --all\``,
+      )
+    }
+    const id = `v-${randomBytes(3).toString('hex')}`
+    const nonce = randomBytes(12).toString('hex')
+    const record: ViewSessionRecord = {
+      id,
+      pid: 0,
+      port,
+      nonce,
+      pageUrl: `http://127.0.0.1:${port}/s/${nonce}/`,
       view,
-      opts,
-      connection.target,
-      instances.active,
-      connection.identity,
-      runtime,
-    ),
-  )
+      instance: opts.instance ?? (opts.url ? opts.url : instances.active),
+      identity: opts.creds ? '(pre-signed creds)' : identity,
+      createdAt: new Date().toISOString(),
+    }
+    await saveServeConfig(createViewServeConfig(record, opts, target))
+    const logFd = await openSessionLog(id)
+    const invocation = viewServeInvocation(runtime, configPath(id))
+    const child = spawnHandle(invocation.file, invocation.args, {
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+    })
+    child.unref()
+    closeSync(logFd)
+    if (!child.pid) throw new Error('Failed to spawn the view session server')
+    const live = { ...record, pid: child.pid }
+    await saveRecord(live)
+
+    // The session server logs to a file rather than the terminal, so an animation
+    // here owns the line and cannot be trampled by the child's output.
+    const deadline = Date.now() + READY_TIMEOUT_MS
+    const up = await withSpinner('Starting the view session', !isMachine(opts), async () => {
+      while (Date.now() < deadline) {
+        try {
+          const res = await fetch(`${live.pageUrl}state`)
+          if (res.ok) return true
+        } catch {
+          // not up yet
+        }
+        if (child.exitCode !== null) break
+        await sleep(POLL_MS)
+      }
+      return false
+    })
+    if (up) return live
+    const tail = await readFile(logPath(id), 'utf8').catch(() => '')
+    await closeSession(live)
+    throw new Error(
+      `View session server did not come up.${tail ? `\n--- server log ---\n${tail.slice(-2000)}` : ''}`,
+    )
+  })
 }
 
 export function createViewServeConfig(
@@ -282,78 +327,6 @@ export function createViewServeConfig(
       : {}),
     idleMs: opts.idleMs ?? IDLE_MS,
   }
-}
-
-/**
- * Called under the cross-process port-allocation lock. Keep the lock until the
- * detached child answers its readiness probe: only then is the selected port
- * durably owned and safe for the next CLI process to scan.
- */
-async function startSessionLocked(
-  view: ResolvedView,
-  opts: ViewOpts,
-  kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
-  activeInstance: string | undefined,
-  selectedIdentity: string | undefined,
-  runtime: { file: string; args: string[] },
-): Promise<ViewSessionRecord> {
-  const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
-  if (port === null) {
-    throw new Error(
-      `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1} — close sessions with \`astrale view --close --all\``,
-    )
-  }
-
-  const id = `v-${randomBytes(3).toString('hex')}`
-  const nonce = randomBytes(12).toString('hex')
-  const record: ViewSessionRecord = {
-    id,
-    pid: 0,
-    port,
-    nonce,
-    pageUrl: `http://127.0.0.1:${port}/s/${nonce}/`,
-    view,
-    instance: opts.instance ?? (opts.url ? opts.url : activeInstance),
-    identity: opts.creds ? '(pre-signed creds)' : selectedIdentity,
-    createdAt: new Date().toISOString(),
-  }
-  const serveConfig = createViewServeConfig(record, opts, kernelTarget)
-
-  await saveServeConfig(serveConfig)
-  const logFd = await openSessionLog(id)
-  const invocation = viewServeInvocation(runtime, configPath(id))
-  const child = spawnHandle(invocation.file, invocation.args, {
-    detached: true,
-    stdio: ['ignore', logFd, logFd],
-  })
-  child.unref()
-  closeSync(logFd)
-  if (!child.pid) throw new Error('Failed to spawn the view session server')
-  const live = { ...record, pid: child.pid }
-  await saveRecord(live)
-
-  // The session server logs to a file rather than the terminal, so an animation
-  // here owns the line and cannot be trampled by the child's output.
-  const deadline = Date.now() + READY_TIMEOUT_MS
-  const up = await withSpinner('Starting the view session', !isMachine(opts), async () => {
-    while (Date.now() < deadline) {
-      try {
-        const res = await fetch(`${live.pageUrl}state`)
-        if (res.ok) return true
-      } catch {
-        // not up yet
-      }
-      if (child.exitCode !== null) break
-      await sleep(POLL_MS)
-    }
-    return false
-  })
-  if (up) return live
-  const tail = await readFile(logPath(id), 'utf8').catch(() => '')
-  await closeSession(live)
-  throw new Error(
-    `View session server did not come up.${tail ? `\n--- server log ---\n${tail.slice(-2000)}` : ''}`,
-  )
 }
 
 type PageState = { state: string; error?: string }
@@ -409,25 +382,18 @@ function driveHint(headed: boolean): string {
   return `agent-browser --profile ${VIEW_PROFILE}${headed ? ' --headed' : ''}`
 }
 
-function describeState(state: PageState): string {
-  switch (state.state) {
-    case 'connected':
-      return 'connected (shell handshake, kernel calls live)'
-    case 'plain':
-      return 'mounted (plain iframe, no shell handshake)'
-    case 'failed':
-      return `failed — ${state.error ?? 'unknown error'}`
-    case 'mounting':
-      return 'still mounting (check again with a snapshot)'
-    case 'refreshing':
-      return 'renewing the session (View remains mounted)'
-    case 'degraded':
-      return 'session renewal failed (reconnecting automatically)'
-    case 'expired':
-      return 'session expired (reconnecting automatically)'
-    default:
-      return 'page not loaded yet'
-  }
+const PAGE_STATES = new Map([
+  ['connected', 'connected (shell handshake, kernel calls live)'],
+  ['plain', 'mounted (plain iframe, no shell handshake)'],
+  ['mounting', 'still mounting (check again with a snapshot)'],
+  ['refreshing', 'renewing the session (View remains mounted)'],
+  ['degraded', 'session renewal failed (reconnecting automatically)'],
+  ['expired', 'session expired (reconnecting automatically)'],
+])
+
+function describeState({ state, error }: PageState): string {
+  if (state === 'failed') return `failed — ${error ?? 'unknown error'}`
+  return PAGE_STATES.get(state) ?? 'page not loaded yet'
 }
 
 async function reportOpened(
