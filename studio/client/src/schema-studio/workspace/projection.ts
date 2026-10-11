@@ -398,9 +398,7 @@ function inheritanceEdges(
           // Same guard the relationship edges use above — without it every local `extends`
           // lands on the canvas twice, perfectly superposed and routed twice over.
           if (target.domainId === ownerId) continue
-          // A parent OUTSIDE the canvas used to be dropped here without a trace, which is
-          // the one dependency the reader could not see was there. It gets the same grey
-          // box a relationship's far end gets.
+          // A parent outside the canvas gets the same grey box a relationship's far end gets.
           index.connect(target, ownerId)
           const id = `workspace-extends:${source.nodeId}:${target.nodeId}`
           if (seen.has(id)) continue

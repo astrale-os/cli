@@ -6,14 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 /**
- * A schema diagnostic is one unbounded sentence per offending declaration, so a compiler
- * that disagrees with four classes at once used to push the canvas several lines down
- * before anyone could read the first word. The banner therefore stays exactly ONE line
- * tall whatever it carries: the leading message truncates, the rest hide behind a count,
- * and the modal is the place where the text is read whole — instead of being selected out
- * of a wrapping strip. Copying out into an agent turn, an issue or a search is the usual
- * next move either way, so the copy sits one click deep in the strip itself and, in the
- * modal, at the top right where a reader's hand already is once the text is read.
+ * A schema diagnostic is one unbounded sentence per offending declaration, so the banner
+ * stays exactly ONE line tall whatever it carries — it must never push the canvas down:
+ * the leading message truncates, the rest hide behind a count, and the modal is where the
+ * text is read whole. Copying it out is the usual next move, so the copy sits one click
+ * deep in the strip and at the top right of the modal.
  */
 export function ErrorBanner({
   messages,

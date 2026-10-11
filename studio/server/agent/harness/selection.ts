@@ -1,7 +1,7 @@
 /**
  * selection.ts — which agent the studio opens on, and how one is invoked.
  *
- * Nothing selects the agent by itself anymore: the PREFERRED MODEL does, because
+ * Nothing selects the agent by itself: the PREFERRED MODEL does, because
  * picking a model is picking an agent. Star one in the composer and every new
  * conversation starts there; star nothing and Studio opens on the harness this
  * machine actually has, each on its own built-in default model.

@@ -5,8 +5,7 @@
  *
  * One scope: the machine. The agent works in the whole workspace, so a gateway is a
  * preference of the person running the studio, kept in its home beside the settings
- * (`<home>/studio/harness-gateway.json`). Earlier per-domain and legacy-global files
- * are deliberately ignored: the machine setting is the only source of truth.
+ * (`<home>/studio/harness-gateway.json`), the only source of truth.
  *
  * The config never escapes the studio's spawned child: `resolveHarnessEnv` turns
  * it into ANTHROPIC_* env that runner / ask / ACP diagnostics merge into the `claude`

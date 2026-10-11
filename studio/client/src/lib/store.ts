@@ -36,7 +36,6 @@ const NO_CHAT = ''
 
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
-/** Where the agent's chat tabs sit: a strip of marks on top, or a column of titles on the left. */
 /** Where the chat tabs sit: a column on the conversation's left, or a strip above it
  *  showing each agent's mark alone (`top`) or with every tab's title (`top-titled`). */
 export type ChatTabsSide = 'left' | 'top' | 'top-titled'

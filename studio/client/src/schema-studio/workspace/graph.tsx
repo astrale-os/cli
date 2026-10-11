@@ -191,10 +191,8 @@ export function WorkspaceSchemaGraph({
   // The domains a running reorganize still waits on — see the projection effect below.
   const reorganizing = useRef<string[] | null>(null)
 
-  // Selecting on the canvas says what you are looking at, and nothing else. It used to
-  // also make the clicked node's domain ACTIVE — which silently swapped the agent
-  // conversation, the comment threads and what Core/Process show, for a click that only
-  // meant "show me this class". The selection carries its own domain instead.
+  // Selecting on the canvas says what you are looking at, and nothing else: the selection
+  // carries its own domain rather than switching what the agent, threads or Core show.
   const select = useCallback((domainId: string, ref: string) => {
     // a class both selects AND pins graph focus (which dims what it is not wired to);
     // a module box only selects — there is nothing to trace from a container.

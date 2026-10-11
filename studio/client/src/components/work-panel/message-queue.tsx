@@ -1,7 +1,7 @@
 /**
  * message-queue.tsx — the messages waiting behind the turn in progress.
  *
- * Typing while the agent works used to be refused; now it lines up. The strip
+ * A message typed while the agent works lines up here. The strip
  * sits between the conversation and the composer because that is where the
  * question it answers is asked — "did my message go?" — and it shows the first
  * line of each, in the order they will be sent.

@@ -89,11 +89,8 @@ export function preparedWorkspaceStatus(
 /**
  * How many domain projections are kept beyond the ones on the canvas.
  *
- * Taking a domain off the canvas used to be two gestures — one that dropped it and one
- * that only stopped drawing it — and the second one existed because dropping it threw the
- * projection away, so putting it back paid for a fresh ELK layout. There is one gesture
- * now, and this is what pays for it: an unchecked domain's projection survives, so
- * checking it again repaints instead of re-laying out.
+ * An unchecked domain's projection survives here, so checking it again repaints
+ * instead of paying for a fresh ELK layout.
  */
 const PROJECTION_CACHE_SIZE = 12
 
