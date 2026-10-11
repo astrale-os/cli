@@ -1,13 +1,14 @@
-import type { AstraleConfig } from './config'
+import type { AstraleConfig } from '../config'
 
-import { AdminInstanceNotFoundError, type InstanceInfo } from '../admin/instance/model'
-import { AstraleError } from '../errors'
+import { AdminInstanceNotFoundError, type InstanceInfo } from '../../admin/instance/model'
+import { AstraleError } from '../../errors'
 import {
   DEFAULT_ADMIN_TARGET_NAME,
   resolveAdminTarget,
   type AdminTargetCommandOpts,
   type ResolvedAdminTarget,
-} from './admin-target'
+} from '../admin/target'
+import { validateSlug } from '../validation'
 import {
   activeName,
   bookmarkIn,
@@ -16,8 +17,7 @@ import {
   readInstances,
   resolveInstance,
   type InstanceStore,
-} from './instance'
-import { validateSlug } from './validation'
+} from './bookmarks'
 
 type InstanceTargetRequest =
   | { source: 'active' }

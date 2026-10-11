@@ -3,8 +3,8 @@ import chalk from 'chalk'
 import type { CommandDefinition } from '../../program/index'
 
 import { getDefault } from '../../identity/index'
-import { fatal } from '../../lib/log'
-import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { fatal } from '../../lib/terminal/log'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 
 type WhoamiResult = {
   name: string

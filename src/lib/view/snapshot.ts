@@ -1,4 +1,4 @@
-import type { AbResult } from '../browser'
+import type { AbResult } from '../browser/agent-browser'
 
 const SETTLE_TIMEOUT_MS = 8_000
 const QUIET_WINDOW_MS = 750

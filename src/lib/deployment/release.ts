@@ -3,7 +3,7 @@ import type { bundle } from '@astrale-os/sdk/schema'
 
 import { accept, decodeBundle, MEDIA_TYPE, PATH, type DomainRelease } from '@astrale-os/sdk/release'
 
-import { cancel, hasMediaType, readBounded } from './deployment-document'
+import { cancel, hasMediaType, readBounded } from './document'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 

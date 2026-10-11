@@ -29,7 +29,7 @@ mock.module('../../connection', () => ({
     }),
 }))
 
-mock.module('../../lib/browser', () => ({
+mock.module('../../lib/browser/agent-browser', () => ({
   ab: abMock,
   AGENT_BROWSER_REPO: 'vercel-labs/agent-browser',
   BROWSER_DIR: '/tmp/astrale-browser',

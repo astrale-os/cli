@@ -1,10 +1,14 @@
-import type { AdminInstanceApi, OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
-import type { AdminConnectionOptions, ConnectionContext } from '../connection'
+import type {
+  AdminInstanceApi,
+  OwnedInstanceInfo,
+  RootIdentityRecipient,
+} from '../../admin/instance'
+import type { AdminConnectionOptions, ConnectionContext } from '../../connection'
 
-import { connectAdminInstances, AdminInstanceNotFoundError } from '../admin/instance'
-import { resolveAdminFleet } from '../admin/selection'
-import { withAdminClientSession } from '../connection'
-import { AstraleError } from '../errors'
+import { connectAdminInstances, AdminInstanceNotFoundError } from '../../admin/instance'
+import { resolveAdminFleet } from '../../admin/selection'
+import { withAdminClientSession } from '../../connection'
+import { AstraleError } from '../../errors'
 
 /** Resolve the Admin target and read only the caller-visible Instance inventory. */
 export function listOwnedInstances(options: AdminConnectionOptions, includeRetired = false) {

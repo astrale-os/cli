@@ -5,7 +5,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import type { IdentityStore } from '../../identity/index'
 
 import { AuthError } from '../../errors'
-import { provisionInstance, selectInstanceCreateIdentity } from '../provision-instance'
+import { provisionInstance, selectInstanceCreateIdentity } from '../instance/provision'
 
 const originalError = console.error
 afterEach(() => {

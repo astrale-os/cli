@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 
-import { denoise, isMachine, output, present, presentList } from '../output'
+import { denoise, isMachine, output, present, presentList } from '../terminal/output'
 
 /** What `print` wrote to stdout. */
 function written(print: () => void): string {

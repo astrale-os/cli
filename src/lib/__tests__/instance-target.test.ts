@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { AstraleConfig } from '../config'
-import type { InstanceStore } from '../instance'
+import type { InstanceStore } from '../instance/bookmarks'
 
 import { AdminInstanceNotFoundError } from '../../admin/instance/model'
 import { AstraleError } from '../../errors'
 import { DEFAULT_CONFIG } from '../config'
-import { resolveInstanceTarget } from '../instance-target'
+import { resolveInstanceTarget } from '../instance/target'
 
 const store: InstanceStore = {
   active: 'active-bookmark',

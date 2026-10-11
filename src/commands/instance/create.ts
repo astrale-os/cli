@@ -2,10 +2,10 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { ADMIN_TARGET_OPTIONS, FLEET_OPTION } from '../../lib/admin-target'
-import { isMachine, output } from '../../lib/output'
-import { promptText } from '../../lib/prompt'
-import { provisionInstance, type ProvisionOpts } from '../../lib/provision-instance'
+import { ADMIN_TARGET_OPTIONS, FLEET_OPTION } from '../../lib/admin/target'
+import { provisionInstance, type ProvisionOpts } from '../../lib/instance/provision'
+import { isMachine, output } from '../../lib/terminal/output'
+import { promptText } from '../../lib/terminal/prompt'
 import { validateSlug } from '../../lib/validation'
 
 /** inquirer `validate` for a slug: true when valid, else the human message. */

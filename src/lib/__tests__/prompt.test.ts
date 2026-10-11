@@ -10,7 +10,7 @@ import {
   promptYesNo,
   readPassphrase,
   selectFrom,
-} from '../prompt'
+} from '../terminal/prompt'
 
 // The non-interactive branch IS the LLM / CI / piped case: every helper must resolve to its
 // caller's default without ever awaiting a read, so a command fails fast on its required-flag error

@@ -5,9 +5,9 @@ import type { CommandDefinition } from '../../program/index'
 import type { RegistryCommandDependencies, RegistryCommandOpts } from '../domain-registry/shared'
 
 import { registryOrigin } from '../../admin/registry'
-import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
-import { isMachine } from '../../lib/output'
-import { renderTable } from '../../lib/table'
+import { ADMIN_TARGET_OPTIONS } from '../../lib/admin/target'
+import { isMachine } from '../../lib/terminal/output'
+import { renderTable } from '../../lib/terminal/table'
 import { runRegistryCommand } from '../domain-registry/shared'
 
 /** The human listing of Résolution [.79737]: version, release digest, and what keeps it apart. */

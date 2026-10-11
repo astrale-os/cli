@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { paths } from '../state/index'
-import { findOnPath, run } from './proc'
+import { paths } from '../../state/index'
+import { findOnPath, run } from '../proc'
 
 /**
  * `astrale browser` is a thin orchestrator over `agent-browser`

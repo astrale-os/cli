@@ -1,12 +1,12 @@
 import chalk from 'chalk'
 
-import type { ListOpts, ListProjection } from '../../lib/output'
+import type { ListOpts, ListProjection } from '../../lib/terminal/output'
 import type { CommandDefinition } from '../../program/index'
 
 import { readIdentities } from '../../identity/index'
-import { isSessionExpired, listIdpSessions } from '../../lib/idp'
-import { log } from '../../lib/log'
-import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { isSessionExpired, listIdpSessions } from '../../lib/idp/provider'
+import { log } from '../../lib/terminal/log'
+import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 
 type AuthRow = {
   name: string

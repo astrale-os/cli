@@ -6,11 +6,7 @@ import type { CommandDefinition } from '../program/index'
 
 import pkg from '../../package.json' with { type: 'json' }
 import { AstraleError } from '../errors'
-import { canPrompt } from '../lib/interactive'
-import { fatal, log, withSpinner } from '../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 import { run, runInherit } from '../lib/proc'
-import { confirmDefaultYes } from '../lib/prompt'
 import {
   applySdkUpdate,
   findSdkOutdated,
@@ -19,6 +15,10 @@ import {
   type SdkOutdated,
 } from '../lib/sdk-deps'
 import { checkAstraleSkills, SKILL_CONFIGURE_COMMAND, type SkillCheckResult } from '../lib/skills'
+import { canPrompt } from '../lib/terminal/interactive'
+import { fatal, log, withSpinner } from '../lib/terminal/log'
+import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/terminal/output'
+import { confirmDefaultYes } from '../lib/terminal/prompt'
 import { DEFAULT_UPDATE_CHANNEL, packageManagedUpdateError, updateAstrale } from '../lib/update'
 import { ASTRALE_HOME } from '../state'
 import { configureAstraleSkills, renderSkillConfigureOutcome } from './skills/configure'

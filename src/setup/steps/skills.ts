@@ -1,8 +1,8 @@
 import type { SetupStep } from '../types'
 
 import { chooseAstraleSkillAgents } from '../../commands/skills/configure'
-import { log } from '../../lib/log'
 import { checkAstraleSkills, SKILL_INSTALL_HINT, syncAstraleSkills } from '../../lib/skills'
+import { log } from '../../lib/terminal/log'
 
 const FIX = SKILL_INSTALL_HINT
 

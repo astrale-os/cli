@@ -15,7 +15,7 @@ import chalk from 'chalk'
 
 import type { AdminRegistryApi } from '../../admin/registry'
 import type { ConnectionContext, KernelCommandOpts } from '../../connection'
-import type { AdminTargetCommandOpts } from '../../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../../lib/admin/target'
 import type { InstallFailure, UrlSource } from './install-call'
 import type {
   DependentProposal,
@@ -35,9 +35,9 @@ import {
   readServedDeployment,
   samePin,
   type ServedDeployment,
-} from '../../lib/domain-release'
-import { fatal, log } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+} from '../../lib/deployment/release'
+import { fatal, log } from '../../lib/terminal/log'
+import { isMachine, output } from '../../lib/terminal/output'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
 import { precheckInstall, proposeDependentVersions } from './install-precheck'
 import {

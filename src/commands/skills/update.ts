@@ -1,8 +1,13 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { fatal, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 import { syncAstraleSkills } from '../../lib/skills'
+import { fatal, log } from '../../lib/terminal/log'
+import {
+  isMachine,
+  output,
+  RAW_OUTPUT_OPTIONS,
+  type RawOutputOpts,
+} from '../../lib/terminal/output'
 
 export default {
   name: 'update',

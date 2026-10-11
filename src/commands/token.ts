@@ -6,8 +6,8 @@ import type { CommandDefinition } from '../program/index'
 import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
 import { decodeJwtExpiration } from '../lib/local-status'
-import { failInput, log } from '../lib/log'
-import { output } from '../lib/output'
+import { failInput, log } from '../lib/terminal/log'
+import { output } from '../lib/terminal/output'
 
 /**
  * `astrale token` — mint a fresh audience-bound token for the active instance

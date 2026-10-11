@@ -1,5 +1,7 @@
-import { upsertIdpIdentity } from '../identity/registry'
-import { readIdentityStore } from '../state/index'
+import { upsertIdpIdentity } from '../../identity/registry'
+import { readIdentityStore } from '../../state/index'
+import { log, withSpinner } from '../terminal/log'
+import { isMachine } from '../terminal/output'
 import {
   decodeTokenClaims,
   exchangeAuthorizationCode,
@@ -21,9 +23,7 @@ import {
   workosClientIdFromEnv,
   type IdpSession,
   type TokenResponse,
-} from './idp'
-import { log, withSpinner } from './log'
-import { isMachine } from './output'
+} from './provider'
 
 /**
  * The IdP login flow, lifted out of the `auth login` command so it can be

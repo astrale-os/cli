@@ -6,13 +6,13 @@ import chalk from 'chalk'
 
 import type { AdminRegistryApi, PublicationSummaryV1 } from '../../admin/registry'
 import type { AdminConnectionOptions, ConnectionContext, KernelCommandOpts } from '../../connection'
-import type { AdminTargetCommandOpts } from '../../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../../lib/admin/target'
 
 import { compareVersions, connectAdminRegistry, RegistryError } from '../../admin/registry'
 import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
 import { mapBounded } from '../../lib/concurrency'
-import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment-record'
-import { renderTable } from '../../lib/table'
+import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment/record'
+import { renderTable } from '../../lib/terminal/table'
 
 /**
  * What runs on one instance (Résolution [.79716] [.80228], overview [.112991]), as `astrale domain

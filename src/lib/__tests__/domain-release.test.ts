@@ -9,7 +9,7 @@ import {
   readReleaseBundle,
   readServedDeployment,
   samePin,
-} from '../domain-release'
+} from '../deployment/release'
 
 const URL_V4 = 'https://crm-production-0123456789abcdef.deployments.example.test'
 const schema = defineSchema('crm.example.test', { name: 'Test Domain' })

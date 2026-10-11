@@ -1,6 +1,6 @@
 import type { OperationRecovery } from '../command'
 
-import { printFailureDebug } from '../../lib/log'
+import { printFailureDebug } from '../../lib/terminal/log'
 import { classifyFailure } from './classify'
 import { renderFailure } from './render'
 

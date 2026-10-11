@@ -16,7 +16,7 @@ import { defineRuntime } from '@astrale-os/sdk/runtime'
 import { bundle, classIcon, defineSchema, nodeClass, schema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
-import type { ServedDeployment } from '../../../lib/domain-release'
+import type { ServedDeployment } from '../../../lib/deployment/release'
 import type { PrecheckKernel, PrecheckRoot } from '../install-precheck'
 import type { ReferenceInstallDependencies } from '../release-install'
 

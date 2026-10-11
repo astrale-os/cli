@@ -15,11 +15,11 @@ export {
   readInstances,
   resetInstancesMemo,
   resolveInstance,
-} from './lib/instance'
-export type { InstanceEntry, InstanceStore, ResolvedInstance } from './lib/instance'
+} from './lib/instance/bookmarks'
+export type { InstanceEntry, InstanceStore, ResolvedInstance } from './lib/instance/bookmarks'
 
-export { resolveInstanceTarget } from './lib/instance-target'
-export type { ResolvedInstanceTarget } from './lib/instance-target'
+export { resolveInstanceTarget } from './lib/instance/target'
+export type { ResolvedInstanceTarget } from './lib/instance/target'
 
 export { readConfig } from './lib/config'
 export type { AstraleConfig } from './lib/config'
@@ -34,11 +34,11 @@ export { withAdminClientSession } from './connection/session'
 export type { ConnectionContext } from './connection/session'
 export type { AdminConnectionOptions } from './connection/target'
 
-export { loginViaIdp, resolveIdpName } from './lib/login-flow'
-export type { DeviceVerification, LoginFlowOpts, LoginResult } from './lib/login-flow'
+export { loginViaIdp, resolveIdpName } from './lib/idp/login'
+export type { DeviceVerification, LoginFlowOpts, LoginResult } from './lib/idp/login'
 
-export { isSessionExpired, readIdpSession } from './lib/idp'
-export type { IdpSession } from './lib/idp'
+export { isSessionExpired, readIdpSession } from './lib/idp/provider'
+export type { IdpSession } from './lib/idp/provider'
 
 export { AuthError } from './errors'
 export { fetchWithCaFile } from './lib/ca-fetch'

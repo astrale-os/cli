@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import type { OperationRecovery } from '../command'
 import type { FailureDiagnostic } from './model'
 
-import { log } from '../../lib/log'
+import { log } from '../../lib/terminal/log'
 import {
   functionInputIssues,
   queryInputRepair,

@@ -6,10 +6,10 @@ import type { AdminTargetSelection, ConnectionContext, KernelCommandOpts } from 
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
-import { presentBinary, readBinaryBody } from '../lib/binary'
-import { failInput, log } from '../lib/log'
-import { output, present } from '../lib/output'
 import { containsSelfRef } from '../lib/self'
+import { presentBinary, readBinaryBody } from '../lib/terminal/binary'
+import { failInput, log } from '../lib/terminal/log'
+import { output, present } from '../lib/terminal/output'
 
 type CallOpts = KernelCommandOpts & {
   data?: string

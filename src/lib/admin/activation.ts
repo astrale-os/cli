@@ -3,16 +3,20 @@ import type { Fetch } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 import { z } from 'zod'
 
-import type { InstanceInfo } from '../admin/instance'
-import type { KernelCommandOpts } from '../connection'
+import type { InstanceInfo } from '../../admin/instance'
+import type { KernelCommandOpts } from '../../connection'
 
-import { AstraleError } from '../errors'
-import { readIdentities } from '../identity'
-import { resolveAdminTarget, type AdminTargetCommandOpts } from './admin-target'
-import { fetchWithCaFile } from './ca-fetch'
-import { readConfig } from './config'
-import { accessTokenForAudience, BUILTIN_WORKOS_IDP_NAME, classifyRefreshFailure } from './idp'
-import { ensureFreshSession } from './idp-session'
+import { AstraleError } from '../../errors'
+import { readIdentities } from '../../identity'
+import { fetchWithCaFile } from '../ca-fetch'
+import { readConfig } from '../config'
+import {
+  accessTokenForAudience,
+  BUILTIN_WORKOS_IDP_NAME,
+  classifyRefreshFailure,
+} from '../idp/provider'
+import { ensureFreshSession } from '../idp/session'
+import { resolveAdminTarget, type AdminTargetCommandOpts } from './target'
 
 /**
  * Admin completes what it prepared for a human: the access an administrator prepared for a WorkOS

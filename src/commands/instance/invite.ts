@@ -2,10 +2,10 @@ import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
-import { inviteOwnedInstance } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { log, withSpinner } from '../../lib/log'
-import { isMachine, outputForMachine } from '../../lib/output'
+import { inviteOwnedInstance } from '../../lib/admin/instances'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, outputForMachine } from '../../lib/terminal/output'
 
 type InviteOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {

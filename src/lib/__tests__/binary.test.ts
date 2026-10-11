@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { presentBinary, type BinaryLike } from '../binary'
+import { presentBinary, type BinaryLike } from '../terminal/binary'
 
 const png = (): BinaryLike => ({ mediaType: 'image/png', body: new Uint8Array([1, 2, 3, 4]) })
 

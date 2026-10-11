@@ -1,6 +1,6 @@
 import type { CommandDefinition, CommandOption } from './command'
 
-import { RAW_OUTPUT_OPTIONS } from '../lib/output'
+import { RAW_OUTPUT_OPTIONS } from '../lib/terminal/output'
 
 const KERNEL_PASSTHROUGH_OPTIONS: readonly CommandOption[] = Object.freeze([
   {

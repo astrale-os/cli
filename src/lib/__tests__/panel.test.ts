@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import chalk from 'chalk'
 import { stripVTControlCharacters as strip } from 'node:util'
 
-import { panel, renderInstanceHero } from '../panel'
+import { panel, renderInstanceHero } from '../terminal/panel'
 
 test('a panel frames lines of any width and color in one rounded box', () => {
   const lines = strip(

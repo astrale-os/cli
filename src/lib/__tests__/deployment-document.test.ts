@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { readBounded } from '../deployment-document'
+import { readBounded } from '../deployment/document'
 
 const ROOT = 'https://deployment.example/.well-known/astrale/release.json'
 const MAXIMUM_PUBLICATION_BYTES = 1024 * 1024

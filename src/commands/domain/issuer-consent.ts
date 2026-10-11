@@ -3,13 +3,13 @@ import type { InstalledRelease } from '@astrale-os/sdk/client/schema'
 import { parseDeploymentLabel } from '@astrale-os/sdk/deployment/address'
 import chalk from 'chalk'
 
-import type { ServedDeployment } from '../../lib/domain-release'
+import type { ServedDeployment } from '../../lib/deployment/release'
 
 import { AstraleError } from '../../errors'
-import { canPrompt, type PromptGate } from '../../lib/interactive'
-import { log } from '../../lib/log'
-import { dangerPanel } from '../../lib/panel'
-import { confirmWithInput } from '../../lib/prompt'
+import { canPrompt, type PromptGate } from '../../lib/terminal/interactive'
+import { log } from '../../lib/terminal/log'
+import { dangerPanel } from '../../lib/terminal/panel'
+import { confirmWithInput } from '../../lib/terminal/prompt'
 
 /**
  * An issuer change is never silent (D7): the operator consents to it, and the Kernel records the

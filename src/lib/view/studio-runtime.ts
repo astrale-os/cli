@@ -1,7 +1,7 @@
 import type { ViewOpts } from '../../commands/view'
 import type { ViewSessionRecord } from './session'
 
-import { getActive, resetInstancesMemo } from '../instance'
+import { getActive, resetInstancesMemo } from '../instance/bookmarks'
 import { closeSession, listSessions } from './session'
 
 const RELEASE_TIMEOUT_MS = 2_000

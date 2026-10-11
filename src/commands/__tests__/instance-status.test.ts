@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { InstanceInfo } from '../../admin/instance'
-import type { ResolvedInstance } from '../../lib/instance'
+import type { ResolvedInstance } from '../../lib/instance/bookmarks'
 
 import { resolveStatus, type StatusDependencies } from '../instance/status'
 

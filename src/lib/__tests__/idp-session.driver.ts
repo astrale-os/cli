@@ -8,8 +8,8 @@
  * Env: ASTRALE_HOME (required), DRIVER_AUDIENCE, DRIVER_ORG_ID
  * Stdout: one JSON line describing the outcome.
  */
-import { accessTokenForAudience, classifyRefreshFailure } from '../idp'
-import { ensureFreshSession } from '../idp-session'
+import { accessTokenForAudience, classifyRefreshFailure } from '../idp/provider'
+import { ensureFreshSession } from '../idp/session'
 
 const scenario = process.argv[2]
 const audience = process.env.DRIVER_AUDIENCE || undefined

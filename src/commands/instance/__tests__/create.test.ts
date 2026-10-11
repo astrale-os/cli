@@ -1,8 +1,8 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 
-import type { ProvisionResult } from '../../../lib/provision-instance'
+import type { ProvisionResult } from '../../../lib/instance/provision'
 
-import * as provisioning from '../../../lib/provision-instance'
+import * as provisioning from '../../../lib/instance/provision'
 import command from '../create'
 
 const originalExitCode = process.exitCode

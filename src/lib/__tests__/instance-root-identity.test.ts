@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import type { IdentityExport, RootIdentityRecipientContext } from '../../identity'
 
 import { IssuerUnreachableError } from '../../errors'
-import { importInstanceRootIdentity } from '../instance-root-identity'
+import { importInstanceRootIdentity } from '../instance/root-identity'
 
 const recipient = {
   recipient: {

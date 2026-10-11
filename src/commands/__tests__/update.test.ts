@@ -171,7 +171,7 @@ export default deploy({ application, adapter })
   test('keeps a durable status line when an operation outlives the spinner', async () => {
     const root = join(import.meta.dir, '../../..')
     const script = `
-      const { withSpinner } = await import('./src/lib/log.ts')
+      const { withSpinner } = await import('./src/lib/terminal/log.ts')
       await withSpinner(
         'Slow operation',
         true,

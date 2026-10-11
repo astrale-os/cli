@@ -1,8 +1,13 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 import { astraleSkillAgents, checkAstraleSkills } from '../../lib/skills'
+import { log } from '../../lib/terminal/log'
+import {
+  isMachine,
+  output,
+  RAW_OUTPUT_OPTIONS,
+  type RawOutputOpts,
+} from '../../lib/terminal/output'
 
 export default {
   name: 'status',

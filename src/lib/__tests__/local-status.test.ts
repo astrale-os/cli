@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { IdentityStore } from '../../identity/index'
-import type { IdpSession } from '../idp'
-import type { InstanceStore } from '../instance'
+import type { IdpSession } from '../idp/provider'
+import type { InstanceStore } from '../instance/bookmarks'
 
-import { DEFAULT_ADMIN_TARGET_URL } from '../admin-target'
+import { DEFAULT_ADMIN_TARGET_URL } from '../admin/target'
 import { buildLocalStatus } from '../local-status'
 
 describe('local status snapshot', () => {

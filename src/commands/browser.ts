@@ -12,11 +12,11 @@ import {
   pollAuth,
   profileDirFor,
   saveSession,
-} from '../lib/browser'
-import { sweepBrowserProfiles } from '../lib/browser-retention'
+} from '../lib/browser/agent-browser'
+import { sweepBrowserProfiles } from '../lib/browser/retention'
 import { readLocalStatus } from '../lib/local-status'
-import { fatal, log, withSpinner } from '../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
+import { fatal, log, withSpinner } from '../lib/terminal/log'
+import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/terminal/output'
 
 type BrowserOpts = RawOutputOpts & {
   url?: string

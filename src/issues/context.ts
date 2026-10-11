@@ -3,10 +3,10 @@ import { lstat, readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 
-import type { InstanceStore } from '../lib/instance'
+import type { InstanceStore } from '../lib/instance/bookmarks'
 
 import { AstraleError } from '../errors'
-import { resolveInstanceKey } from '../lib/instance'
+import { resolveInstanceKey } from '../lib/instance/bookmarks'
 
 const execute = promisify(execFile)
 const packageName = /^@(?:astrale-os|astrale-domains)\/[a-z0-9][a-z0-9._-]*$/

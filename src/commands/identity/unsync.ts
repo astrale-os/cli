@@ -1,8 +1,8 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { getIdentity, setIdentityMode } from '../../identity/index'
-import { fatal, log } from '../../lib/log'
-import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { fatal, log } from '../../lib/terminal/log'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 
 /** Metadata-only flip remote → local until cloud sync ships (§2.7). */
 export default {

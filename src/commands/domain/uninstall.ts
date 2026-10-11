@@ -7,11 +7,11 @@ import type { CommandDefinition } from '../../program/index'
 
 import { createPathCall, runKernelCommand } from '../../connection'
 import { AstraleError } from '../../errors'
-import { canPrompt } from '../../lib/interactive'
-import { fatal, log } from '../../lib/log'
-import { output } from '../../lib/output'
-import { dangerPanel } from '../../lib/panel'
-import { confirmWithInput } from '../../lib/prompt'
+import { canPrompt } from '../../lib/terminal/interactive'
+import { fatal, log } from '../../lib/terminal/log'
+import { output } from '../../lib/terminal/output'
+import { dangerPanel } from '../../lib/terminal/panel'
+import { confirmWithInput } from '../../lib/terminal/prompt'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
 type UninstallOpts = KernelCommandOpts & {

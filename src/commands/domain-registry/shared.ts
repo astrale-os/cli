@@ -3,14 +3,14 @@ import { stringify as yamlStringify } from 'yaml'
 
 import type { AdminRegistryApi } from '../../admin/registry'
 import type { KernelCommandOpts } from '../../connection'
-import type { AdminTargetCommandOpts } from '../../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../../lib/admin/target'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
 import { withAdminClientSession } from '../../connection'
 import { resolveTimeoutMs } from '../../connection/session'
 import { AstraleError } from '../../errors'
-import { printFailureDebug } from '../../lib/log'
-import { log } from '../../lib/log'
+import { printFailureDebug } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 
 export type RegistryCommandOpts = KernelCommandOpts & AdminTargetCommandOpts
 

@@ -10,12 +10,12 @@ import {
   IdpAudienceMismatchError,
   readIdpSession,
   type IdpSession,
-} from '../lib/idp'
+} from '../lib/idp/provider'
 import {
   ensureFreshSession,
   IdpSessionMissingError,
   IdpSessionNoRefreshTokenError,
-} from '../lib/idp-session'
+} from '../lib/idp/session'
 import { KEYS_DIR } from '../state/index'
 
 export type KeyIdentityAuthOptions = {

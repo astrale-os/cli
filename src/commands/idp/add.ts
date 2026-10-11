@@ -9,9 +9,9 @@ import {
   type IdpClientConfig,
   upsertIdpConfig,
   workosAuthKitMetadata,
-} from '../../lib/idp'
-import { log, withSpinner } from '../../lib/log'
-import { isMachine, outputForMachine, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+} from '../../lib/idp/provider'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, outputForMachine, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 import { validateName, validateUrl } from '../../lib/validation'
 
 type AddOpts = {

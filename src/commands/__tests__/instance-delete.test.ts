@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('../../../', import.meta.url))
-const registryModule = fileURLToPath(new URL('../../lib/instance.ts', import.meta.url))
-const adminModule = fileURLToPath(new URL('../../lib/admin-instance.ts', import.meta.url))
+const registryModule = fileURLToPath(new URL('../../lib/instance/bookmarks.ts', import.meta.url))
+const adminModule = fileURLToPath(new URL('../../lib/admin/instances.ts', import.meta.url))
 const commandModule = fileURLToPath(new URL('../instance/delete.ts', import.meta.url))
 const temporary: string[] = []
 const url = 'https://demo.eu.astrale.ai/api'

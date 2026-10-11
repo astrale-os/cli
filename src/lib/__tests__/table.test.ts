@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { stripVTControlCharacters as strip } from 'node:util'
 
-import { renderTable } from '../table'
+import { renderTable } from '../terminal/table'
 
 const COLS = [
   { key: 'name', header: 'NAME' },

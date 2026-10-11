@@ -16,8 +16,8 @@ import { AstraleError, IdentityKeypairIncompleteError } from '../../errors'
 import { getIdentity, setRegistration, submitIdentityRegistration } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
 import { derivedIdempotencyKey } from '../../lib/idempotency'
-import { fatal, log } from '../../lib/log'
-import { output } from '../../lib/output'
+import { fatal, log } from '../../lib/terminal/log'
+import { output } from '../../lib/terminal/output'
 
 type RegisterOpts = KernelCommandOpts & {
   node?: string

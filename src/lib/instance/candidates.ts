@@ -1,7 +1,7 @@
-import type { InstanceEntry, InstanceStore } from './instance'
+import type { InstanceEntry, InstanceStore } from './bookmarks'
 
-import { formatInstanceState, type OwnedInstanceInfo } from '../admin/instance'
-import { normalizeInstanceKernelUrl, resolveInstanceKey } from './instance'
+import { formatInstanceState, type OwnedInstanceInfo } from '../../admin/instance'
+import { normalizeInstanceKernelUrl, resolveInstanceKey } from './bookmarks'
 
 export type InstanceCandidate =
   | { source: 'bookmark'; key: string; url: string; entry: InstanceEntry }

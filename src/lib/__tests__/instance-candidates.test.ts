@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { OwnedInstanceInfo } from '../../admin/instance'
-import type { InstanceStore } from '../instance'
+import type { InstanceStore } from '../instance/bookmarks'
 
-import { collectInstanceCandidates, describeInstanceCandidate } from '../instance-candidates'
+import { collectInstanceCandidates, describeInstanceCandidate } from '../instance/candidates'
 
 const store: InstanceStore = {
   active: 'demo',

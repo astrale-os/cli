@@ -11,7 +11,7 @@ import {
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { BrowserRetentionBudget } from '../browser-retention'
+import type { BrowserRetentionBudget } from '../browser/retention'
 
 import {
   DEFAULT_MAX_CACHE_BYTES,
@@ -19,7 +19,7 @@ import {
   browserRetentionBudget,
   profileCacheBytes,
   sweepBrowserProfiles,
-} from '../browser-retention'
+} from '../browser/retention'
 
 const DAY = 24 * 60 * 60 * 1000
 const BUDGET: BrowserRetentionBudget = { maxCacheBytes: 10_000, maxProfileAgeMs: 30 * DAY }

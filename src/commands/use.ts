@@ -1,10 +1,10 @@
 import type { IdentityStore } from '../identity/index'
-import type { InstanceStore } from '../lib/instance'
+import type { InstanceStore } from '../lib/instance/bookmarks'
 import type { CommandDefinition } from '../program/index'
 
 import { readIdentities, setDefault } from '../identity/index'
-import { readInstances, resolveInstanceKey } from '../lib/instance'
-import { fatal, log } from '../lib/log'
+import { readInstances, resolveInstanceKey } from '../lib/instance/bookmarks'
+import { fatal, log } from '../lib/terminal/log'
 import instanceUseCommand from './instance/use'
 
 type UseOpts = {

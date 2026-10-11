@@ -7,9 +7,9 @@ import {
   importIdentity,
   isEncryptedIdentityExport,
 } from '../../identity/index'
-import { fatal, log } from '../../lib/log'
-import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
-import { readPassphrase } from '../../lib/prompt'
+import { fatal, log } from '../../lib/terminal/log'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
+import { readPassphrase } from '../../lib/terminal/prompt'
 
 export default {
   name: 'import',

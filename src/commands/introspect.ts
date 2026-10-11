@@ -9,8 +9,8 @@ import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
-import { failInput } from '../lib/log'
-import { output } from '../lib/output'
+import { failInput } from '../lib/terminal/log'
+import { output } from '../lib/terminal/output'
 import { describeCallableFromBundle } from './call-describe'
 
 type IntrospectOpts = KernelCommandOpts & { bundle?: boolean }

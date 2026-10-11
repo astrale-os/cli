@@ -7,10 +7,10 @@ import {
   readInstances,
   setActive,
   upsertInstance,
-} from '../../lib/instance'
-import { fatal, log, withSpinner } from '../../lib/log'
+} from '../../lib/instance/bookmarks'
 import { checkIssuerReachability } from '../../lib/meta'
-import { isMachine } from '../../lib/output'
+import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { isMachine } from '../../lib/terminal/output'
 
 export default {
   name: 'bookmark',

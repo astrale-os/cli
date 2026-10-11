@@ -2,7 +2,7 @@ import type { Command, CommanderError } from 'commander'
 
 import chalk from 'chalk'
 
-import { stripAnsi } from './format'
+import { stripAnsi } from './terminal/format'
 
 type CommandCatalogEntry = {
   path: string[]

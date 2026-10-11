@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { canPrompt, canReadRequiredInput } from '../interactive'
+import { canPrompt, canReadRequiredInput } from '../terminal/interactive'
 
 // Every input is injected: the rule must hold identically from a terminal, a pipe, or CI.
 const terminal = { argv: ['astrale', 'bin', 'get'], env: {}, tty: true }

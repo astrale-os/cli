@@ -14,8 +14,8 @@ import {
   type FakeDomain,
   type FakeRelease,
 } from '../../admin/registry/__tests__/fake-admin'
-import { readDeploymentRecord } from '../../lib/deployment-record'
-import { stripAnsi } from '../../lib/format'
+import { readDeploymentRecord } from '../../lib/deployment/record'
+import { stripAnsi } from '../../lib/terminal/format'
 import {
   describeInstalled,
   installedRows,

@@ -7,11 +7,11 @@ import type { CommandDefinition } from '../program/index'
 
 import { AstraleError } from '../errors'
 import { materializeEmbeddedAssets } from '../lib/embedded-assets'
-import { fatal, log } from '../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 import { findFreePort, portFree } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
 import { selfInvocation } from '../lib/self-invocation'
+import { fatal, log } from '../lib/terminal/log'
+import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/terminal/output'
 
 type StudioOpts = RawOutputOpts & {
   port?: string

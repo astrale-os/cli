@@ -2,10 +2,10 @@ import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { getDefault, getIdentity, readIdentities } from '../../identity/index'
-import { isSessionExpired, readIdpSession, type IdpSession } from '../../lib/idp'
-import { ensureFreshSession } from '../../lib/idp-session'
-import { fatal, log, withSpinner } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+import { isSessionExpired, readIdpSession, type IdpSession } from '../../lib/idp/provider'
+import { ensureFreshSession } from '../../lib/idp/session'
+import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, output } from '../../lib/terminal/output'
 
 type AuthTokenType = 'access' | 'id'
 

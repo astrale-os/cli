@@ -6,7 +6,7 @@ import {
   type DeploymentRecordV1,
 } from '@astrale-os/sdk/deployment/address'
 
-import { cancel, hasMediaType, readBounded } from './deployment-document'
+import { cancel, hasMediaType, readBounded } from './document'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 

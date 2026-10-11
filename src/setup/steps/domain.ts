@@ -3,10 +3,10 @@ import { join } from 'node:path'
 
 import type { SetupStep, StepOutcome } from '../types'
 
-import { log } from '../../lib/log'
 import { runInherit } from '../../lib/proc'
-import { confirmDefaultYes, promptText } from '../../lib/prompt'
 import { SCAFFOLDER } from '../../lib/scaffolder'
+import { log } from '../../lib/terminal/log'
+import { confirmDefaultYes, promptText } from '../../lib/terminal/prompt'
 
 /** A scaffolded domain project carries this config at its root. */
 function hasDomainProject(): boolean {

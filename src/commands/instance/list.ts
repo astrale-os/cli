@@ -2,7 +2,7 @@ import { ResponseError } from '@astrale-os/sdk/client'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
-import type { Column } from '../../lib/table'
+import type { Column } from '../../lib/terminal/table'
 import type { CommandDefinition } from '../../program/index'
 
 import {
@@ -11,16 +11,16 @@ import {
   type OwnedInstanceInfo,
 } from '../../admin/instance'
 import { AstraleError } from '../../errors'
-import { listOwnedInstances } from '../../lib/admin-instance'
+import { listOwnedInstances } from '../../lib/admin/instances'
 import {
   ADMIN_TARGET_OPTIONS,
   FLEET_OPTION,
   type AdminTargetCommandOpts,
-} from '../../lib/admin-target'
-import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance'
-import { fatal, log, withSpinner } from '../../lib/log'
-import { isMachine, output, type RawOutputOpts } from '../../lib/output'
-import { renderTable } from '../../lib/table'
+} from '../../lib/admin/target'
+import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance/bookmarks'
+import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, output, type RawOutputOpts } from '../../lib/terminal/output'
+import { renderTable } from '../../lib/terminal/table'
 
 type ListOpts = KernelCommandOpts &
   AdminTargetCommandOpts &

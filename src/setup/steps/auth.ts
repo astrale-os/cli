@@ -1,9 +1,9 @@
 import type { SetupContext, SetupStep } from '../types'
 
-import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activation'
+import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/admin/activation'
+import { loginViaIdp } from '../../lib/idp/login'
 import { readLocalStatus } from '../../lib/local-status'
-import { log } from '../../lib/log'
-import { loginViaIdp } from '../../lib/login-flow'
+import { log } from '../../lib/terminal/log'
 
 const FIX = 'astrale auth login'
 

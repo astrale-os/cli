@@ -7,7 +7,7 @@ import {
   postForm,
   withCachedToken,
   type IdpSession,
-} from '../idp'
+} from '../idp/provider'
 
 describe('accessTokenForAudience', () => {
   const session = (overrides: Partial<IdpSession>): IdpSession => ({

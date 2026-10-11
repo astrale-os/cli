@@ -4,9 +4,9 @@ import type { CredentialIntent } from './credential'
 import type { ConnectionContext } from './session'
 import type { AdminTargetSelection, ConnectionOptions } from './target'
 
-import { formatElapsed } from '../lib/format'
-import { spinner } from '../lib/log'
-import { isMachine, present } from '../lib/output'
+import { formatElapsed } from '../lib/terminal/format'
+import { spinner } from '../lib/terminal/log'
+import { isMachine, present } from '../lib/terminal/output'
 import { formatKernelError } from './errors'
 import { withAdminClientSession, withClientSession } from './session'
 

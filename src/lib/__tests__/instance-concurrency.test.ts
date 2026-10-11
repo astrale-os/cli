@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const temporary: string[] = []
-const modulePath = new URL('../instance.ts', import.meta.url).href
+const modulePath = new URL('../instance/bookmarks.ts', import.meta.url).href
 afterEach(async () => {
   await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })

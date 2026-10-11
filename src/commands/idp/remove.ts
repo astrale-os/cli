@@ -1,9 +1,9 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { readIdentities } from '../../identity/index'
-import { removeIdpConfig } from '../../lib/idp'
-import { log } from '../../lib/log'
-import { output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { removeIdpConfig } from '../../lib/idp/provider'
+import { log } from '../../lib/terminal/log'
+import { output, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 
 export default {
   name: 'remove',

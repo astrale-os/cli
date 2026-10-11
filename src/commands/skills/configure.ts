@@ -1,9 +1,5 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { canPrompt } from '../../lib/interactive'
-import { fatal, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
-import { promptMultiSelect } from '../../lib/prompt'
 import {
   astraleSkillAgents,
   checkAstraleSkills,
@@ -16,6 +12,15 @@ import {
   type SkillOnboardingSource,
   type SkillOnboardingState,
 } from '../../lib/skills'
+import { canPrompt } from '../../lib/terminal/interactive'
+import { fatal, log } from '../../lib/terminal/log'
+import {
+  isMachine,
+  output,
+  RAW_OUTPUT_OPTIONS,
+  type RawOutputOpts,
+} from '../../lib/terminal/output'
+import { promptMultiSelect } from '../../lib/terminal/prompt'
 
 export type ConfigureOpts = RawOutputOpts & {
   agent?: string[]

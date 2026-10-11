@@ -5,7 +5,7 @@ import {
   activateLoggedInAccount,
   activateOwner,
   requestAccountActivation,
-} from '../activation'
+} from '../admin/activation'
 
 const request = (endpoint: string, proof: string) => ({
   endpoint,

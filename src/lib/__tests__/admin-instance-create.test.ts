@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { planInstanceCreate } from '../admin-instance'
+import { planInstanceCreate } from '../admin/instances'
 
 const ready = {
   id: '@ready',

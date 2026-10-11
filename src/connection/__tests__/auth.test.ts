@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import type { Identity } from '../../identity/index'
 import type { AstraleConfig } from '../../lib/config'
 
-import { IdpAudienceMismatchError } from '../../lib/idp'
-import { IdpSessionNoRefreshTokenError } from '../../lib/idp-session'
+import { IdpAudienceMismatchError } from '../../lib/idp/provider'
+import { IdpSessionNoRefreshTokenError } from '../../lib/idp/session'
 import {
   classifyNoRefreshTokenError,
   persistedIdpSourceIdentity,

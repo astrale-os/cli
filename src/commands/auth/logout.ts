@@ -1,9 +1,9 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { getDefault, readIdentities } from '../../identity/index'
-import { deleteIdpSession, listIdpSessions } from '../../lib/idp'
-import { log } from '../../lib/log'
-import { output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { deleteIdpSession, listIdpSessions } from '../../lib/idp/provider'
+import { log } from '../../lib/terminal/log'
+import { output, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 import { ExchangeCredentialCache, SESSION_ROUTE_STORE } from '../../state/index'
 
 export default {

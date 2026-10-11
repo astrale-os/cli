@@ -2,8 +2,8 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program/index'
 
-import { log, withSpinner } from '../../lib/log'
-import { isMachine } from '../../lib/output'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine } from '../../lib/terminal/output'
 import { analyzeSession } from '../../telemetry/analyze'
 import { sweepStore } from '../../telemetry/retention'
 import { scanSessions } from '../../telemetry/store'

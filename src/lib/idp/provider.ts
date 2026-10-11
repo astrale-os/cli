@@ -3,10 +3,10 @@ import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 
-import { atomicWrite, IDPS_PATH, IDP_SESSIONS_DIR, paths } from '../state/index'
-import { credentialLifetimeCovers } from './credential-lifetime'
-import { log } from './log'
-import { validateName, validateUrl } from './validation'
+import { atomicWrite, IDPS_PATH, IDP_SESSIONS_DIR, paths } from '../../state/index'
+import { credentialLifetimeCovers } from '../credential-lifetime'
+import { log } from '../terminal/log'
+import { validateName, validateUrl } from '../validation'
 
 /**
  * Thrown when a refresh succeeds but the IdP mints an access token whose `aud`

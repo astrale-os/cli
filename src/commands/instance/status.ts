@@ -6,11 +6,11 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { statusOwnedInstance } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { resolveInstance } from '../../lib/instance'
-import { log, withSpinner } from '../../lib/log'
-import { isMachine, outputForMachine, type RawOutputOpts } from '../../lib/output'
+import { statusOwnedInstance } from '../../lib/admin/instances'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
+import { resolveInstance } from '../../lib/instance/bookmarks'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, outputForMachine, type RawOutputOpts } from '../../lib/terminal/output'
 import { probeBookmark } from './use'
 
 type StatusOpts = KernelCommandOpts &

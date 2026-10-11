@@ -1,8 +1,8 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { getIdentity, setIdentityMode } from '../../identity/index'
-import { fatal, fatalNotImplemented, log } from '../../lib/log'
-import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { fatal, fatalNotImplemented, log } from '../../lib/terminal/log'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 
 export default {
   name: 'sync',

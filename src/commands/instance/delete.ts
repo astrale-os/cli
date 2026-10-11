@@ -3,15 +3,15 @@ import type { CommandDefinition } from '../../program/index'
 
 import { AdminInstanceNotFoundError } from '../../admin/instance'
 import { formatKernelError } from '../../connection/errors'
-import { deleteOwnedInstance } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import { deleteOwnedInstance } from '../../lib/admin/instances'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
 import {
   readInstances,
   removeDeletedInstanceBookmark,
   resolveInstanceKey,
-} from '../../lib/instance'
-import { log, withSpinner } from '../../lib/log'
-import { isMachine, outputForMachine } from '../../lib/output'
+} from '../../lib/instance/bookmarks'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, outputForMachine } from '../../lib/terminal/output'
 
 type DeleteOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {

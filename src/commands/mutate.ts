@@ -9,9 +9,9 @@ import type { CommandDefinition } from '../program/index'
 import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
 import { prepareMutation } from '../graph/index'
-import { failInput } from '../lib/log'
-import { output } from '../lib/output'
-import { renderTable } from '../lib/table'
+import { failInput } from '../lib/terminal/log'
+import { output } from '../lib/terminal/output'
+import { renderTable } from '../lib/terminal/table'
 
 type MutateOpts = KernelCommandOpts & {
   data?: string

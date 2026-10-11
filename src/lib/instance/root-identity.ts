@@ -2,26 +2,26 @@ import type { JWK } from 'jose'
 
 import { calculateJwkThumbprint } from 'jose'
 
-import type { OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
-import type { AdminConnectionOptions } from '../connection'
+import type { OwnedInstanceInfo, RootIdentityRecipient } from '../../admin/instance'
+import type { AdminConnectionOptions } from '../../connection'
 import type {
   Identity,
   IdentityExport,
   IdentityImportOptions,
   RootIdentityRecipientContext,
-} from '../identity'
+} from '../../identity'
 
-import { AstraleError, IssuerUnreachableError } from '../errors'
+import { AstraleError, IssuerUnreachableError } from '../../errors'
 import {
   createRootIdentityRecipient,
   decodeRootIdentityTransfer,
   importIdentity,
   readIdentities,
-} from '../identity'
-import { ExchangeCredentialCache, SESSION_ROUTE_STORE } from '../state'
-import { retrieveOwnedInstanceRootIdentity } from './admin-instance'
-import { upsertManagedBookmark } from './instance'
-import { checkIssuerReachability } from './meta'
+} from '../../identity'
+import { ExchangeCredentialCache, SESSION_ROUTE_STORE } from '../../state'
+import { retrieveOwnedInstanceRootIdentity } from '../admin/instances'
+import { checkIssuerReachability } from '../meta'
+import { upsertManagedBookmark } from './bookmarks'
 
 type RootIdentityVerification = 'live-jwks' | 'host-sealed'
 

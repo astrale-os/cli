@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { InstanceStore } from '../instance'
+import type { InstanceStore } from '../instance/bookmarks'
 
 import {
   DEFAULT_ADMIN_TARGET_NAME,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
   DEFAULT_ADMIN_TARGET_URL,
   resolveAdminTargetFromStore,
-} from '../admin-target'
+} from '../admin/target'
 import { DEFAULT_CONFIG, type AstraleConfig } from '../config'
 
 const instances: InstanceStore = {

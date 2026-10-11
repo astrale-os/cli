@@ -1,7 +1,7 @@
 import { Command, Option } from 'commander'
 
 import pkg from '../../package.json' with { type: 'json' }
-import { canPrompt } from '../lib/interactive'
+import { canPrompt } from '../lib/terminal/interactive'
 import { withKernelOptions } from './options'
 import { registerCommand, registerGroup } from './registry'
 

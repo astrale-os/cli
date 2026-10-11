@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { resolveConnectionTarget } from '../../connection/target'
 import { ensureOwnedInstance } from '../../setup/steps/instance'
 import { DEFAULT_CONFIG } from '../config'
-import { readInstances, setActive, upsertInstance } from '../instance'
-import { provisionInstance } from '../provision-instance'
+import { readInstances, setActive, upsertInstance } from '../instance/bookmarks'
+import { provisionInstance } from '../instance/provision'
 
 const scenario = process.argv[2]
 const home = process.env.ASTRALE_HOME

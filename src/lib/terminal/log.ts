@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import ora, { type Ora } from 'ora'
 
-import { AstraleError, NotImplementedError } from '../errors'
+import { AstraleError, NotImplementedError } from '../../errors'
 import { formatElapsed } from './format'
 import { isMachine, type MachineOpts } from './output'
 

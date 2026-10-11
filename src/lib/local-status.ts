@@ -3,10 +3,10 @@ import { decodeJwt } from 'jose'
 import type { AstraleConfig } from './config'
 
 import { readIdentities, type IdentityStore } from '../identity/index'
-import { resolveAdminTargetFromStore } from './admin-target'
+import { resolveAdminTargetFromStore } from './admin/target'
 import { DEFAULT_CONFIG, readConfig } from './config'
-import { isSessionExpired, readIdpSession, type IdpSession } from './idp'
-import { readInstances, type InstanceStore } from './instance'
+import { isSessionExpired, readIdpSession, type IdpSession } from './idp/provider'
+import { readInstances, type InstanceStore } from './instance/bookmarks'
 
 type LocalInstanceStatus = {
   active: string

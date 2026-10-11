@@ -1,11 +1,11 @@
 import { z } from 'zod'
 
-import type { AstraleConfig } from './config'
-import type { InstanceStore } from './instance'
+import type { AstraleConfig } from '../config'
+import type { InstanceStore } from '../instance/bookmarks'
 
-import { AstraleError } from '../errors'
-import { readInstances, resolveInstanceKey } from './instance'
-import { isHttpUrl } from './validation'
+import { AstraleError } from '../../errors'
+import { readInstances, resolveInstanceKey } from '../instance/bookmarks'
+import { isHttpUrl } from '../validation'
 
 export const DEFAULT_ADMIN_TARGET_NAME = 'admin'
 

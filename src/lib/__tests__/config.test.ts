@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { DEFAULT_ADMIN_DOMAIN_ISSUER } from '../admin-target'
+import { DEFAULT_ADMIN_DOMAIN_ISSUER } from '../admin/target'
 import { AstraleConfigSchema } from '../config'
 
 describe('AstraleConfigSchema', () => {

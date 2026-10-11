@@ -24,8 +24,8 @@ import { readlinkSync } from 'node:fs'
 import { readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { BROWSER_DIR } from './browser'
-import { readConfig } from './config'
+import { readConfig } from '../config'
+import { BROWSER_DIR } from './agent-browser'
 
 /** Reconstructible directories, relative to a profile root. Everything here can
  *  be deleted with no user-visible consequence beyond a colder first load. */

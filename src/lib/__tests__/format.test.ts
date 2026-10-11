@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { formatElapsed } from '../format'
+import { formatElapsed } from '../terminal/format'
 
 test('formatElapsed rounds to milliseconds under one second, then to centiseconds', () => {
   for (const [ms, shown] of [

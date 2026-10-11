@@ -3,8 +3,8 @@ import { dirname } from 'node:path'
 import { z } from 'zod'
 
 import { CONFIG_PATH } from '../state/index'
-import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_CONFIG } from './admin-target'
-import { log } from './log'
+import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_CONFIG } from './admin/target'
+import { log } from './terminal/log'
 
 /** A retention bound, or undefined when absent or nonsensical. A bad value must
  *  fall back to the default rather than take the whole config down with it —

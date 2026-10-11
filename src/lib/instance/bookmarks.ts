@@ -1,17 +1,17 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 
-import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
-import { atomicWrite, withFileLock } from '../state/files'
-import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
-import { log } from './log'
+import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../../errors'
+import { atomicWrite, withFileLock } from '../../state/files'
+import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../../state/index'
+import { log } from '../terminal/log'
 import {
   RESERVED_SLUGS,
   RegistryModeSchema,
   validateName,
   validateUrl,
   type RegistryMode,
-} from './validation'
+} from '../validation'
 
 const InstanceKindSchema = z.enum(['bookmark'])
 type InstanceKind = z.infer<typeof InstanceKindSchema>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { AbResult } from '../browser'
+import type { AbResult } from '../browser/agent-browser'
 
 import { snapshotText, waitForSettledSnapshot } from '../view/snapshot'
 

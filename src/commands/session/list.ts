@@ -2,8 +2,8 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program/index'
 
-import { log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { log } from '../../lib/terminal/log'
+import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 import { listSessions } from '../../telemetry/store'
 
 export default {

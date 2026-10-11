@@ -1,4 +1,4 @@
-import type { AdminTargetCommandOpts } from '../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../lib/admin/target'
 
 /**
  * The setup reconciler models onboarding as a list of small, independent steps,

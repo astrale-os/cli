@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { InstanceStore } from '../instance'
+import type { InstanceStore } from '../instance/bookmarks'
 
 import { IdentifierCollisionError, ReservedSlugError } from '../../errors'
 import {
@@ -12,7 +12,7 @@ import {
   normalizeInstanceKernelUrl,
   resolveInstanceKey,
   sanitizeStore,
-} from '../instance'
+} from '../instance/bookmarks'
 import { validateName, validateSlug } from '../validation'
 
 const store: InstanceStore = {

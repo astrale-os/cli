@@ -5,7 +5,7 @@ import { defineSchema, schema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 import { Command } from 'commander'
 
-import type { ServedDeployment } from '../../../lib/domain-release'
+import type { ServedDeployment } from '../../../lib/deployment/release'
 import type { ReferenceInstallDependencies } from '../release-install'
 
 import { deploymentReleaseFor } from '../../../__tests__/fixtures/publication'
@@ -18,7 +18,7 @@ import {
   type FakeRelease,
 } from '../../../admin/registry/__tests__/fake-admin'
 import { transportFailure } from '../../../connection/__tests__/failure-fixtures'
-import { DeploymentReadError } from '../../../lib/domain-release'
+import { DeploymentReadError } from '../../../lib/deployment/release'
 import { registerCommand } from '../../../program/registry'
 import { captureProcess, ExitError, human } from '../../__tests__/fixtures/process'
 import { admitIssuerChanges, issuerChangeConsent, issuerChangeLine } from '../issuer-consent'

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 
 import { AstraleError } from '../../errors'
-import { failInput, fatal, log, spinner, withSpinner } from '../log'
+import { failInput, fatal, log, spinner, withSpinner } from '../terminal/log'
 
 describe('diagnostics', () => {
   test('warnings use stderr so machine-readable stdout remains one value', () => {

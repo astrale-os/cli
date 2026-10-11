@@ -8,8 +8,8 @@ import type { CommandDefinition } from '../program/index'
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
 import { AstraleError } from '../errors'
 import { prepareQuery, type QueryCommandInput } from '../graph/index'
-import { failInput } from '../lib/log'
-import { isMachine, output } from '../lib/output'
+import { failInput } from '../lib/terminal/log'
+import { isMachine, output } from '../lib/terminal/output'
 
 type QueryOpts = KernelCommandOpts & {
   ast?: string

@@ -1,4 +1,6 @@
-import { withFileLock } from '../state/index'
+import { withFileLock } from '../../state/index'
+import { orgIdForAudience } from '../instance/bookmarks'
+import { fetchOrgHint } from '../meta'
 import {
   accessTokenForAudience,
   decodeTokenClaims,
@@ -8,9 +10,7 @@ import {
   readIdpSession,
   refreshSession,
   type IdpSession,
-} from './idp'
-import { orgIdForAudience } from './instance'
-import { fetchOrgHint } from './meta'
+} from './provider'
 
 /** No cached session file exists for the identity — only a login creates one. */
 export class IdpSessionMissingError extends Error {

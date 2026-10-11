@@ -4,14 +4,14 @@ import chalk from 'chalk'
 import { z } from 'zod'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'
-import type { ListProjection } from '../lib/output'
-import type { Column } from '../lib/table'
+import type { ListProjection } from '../lib/terminal/output'
+import type { Column } from '../lib/terminal/table'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInPath, runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
-import { failInput, log } from '../lib/log'
-import { isMachine, output, presentList } from '../lib/output'
+import { failInput, log } from '../lib/terminal/log'
+import { isMachine, output, presentList } from '../lib/terminal/output'
 
 const JOURNAL_PATH = Path.project(K.functions.journal.ref).raw
 const DEFAULT_LIMIT = 200

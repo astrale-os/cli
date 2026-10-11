@@ -1,9 +1,9 @@
 import type { CommandDefinition } from '../../program'
 
-import { canPrompt } from '../../lib/interactive'
-import { withSpinner } from '../../lib/log'
-import { isMachine } from '../../lib/output'
-import { promptMultiSelect } from '../../lib/prompt'
+import { canPrompt } from '../../lib/terminal/interactive'
+import { withSpinner } from '../../lib/terminal/log'
+import { isMachine } from '../../lib/terminal/output'
+import { promptMultiSelect } from '../../lib/terminal/prompt'
 import { addUi, listLockedUi, UiError } from '../../ui'
 import { UI_JSON_OPTION, UI_PROJECT_OPTION, runUiCommand, type UiCommandOptions } from './shared'
 

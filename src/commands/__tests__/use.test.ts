@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import type { IdentityStore } from '../../identity/index'
-import type { InstanceStore } from '../../lib/instance'
+import type { InstanceStore } from '../../lib/instance/bookmarks'
 
 import { resolveUseTarget } from '../use'
 

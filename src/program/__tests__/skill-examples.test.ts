@@ -8,7 +8,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 
-import type { ServedDeployment } from '../../lib/domain-release'
+import type { ServedDeployment } from '../../lib/deployment/release'
 
 import { deploymentReleaseFor } from '../../__tests__/fixtures/publication'
 import { connectAdminRegistry } from '../../admin/registry'
