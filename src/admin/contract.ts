@@ -28,7 +28,12 @@ export const AdminContract = Object.freeze({
     Publication,
   }),
   edges: Object.freeze({
+    fleetContains: classRef('fleet_contains'),
     publicationOfDomain: classRef('publication_of_domain'),
+  }),
+  policies: Object.freeze({
+    administerFleet: Object.freeze({ origin, kind: 'policy', name: 'AdministerFleet' } as const),
+    useFleet: Object.freeze({ origin, kind: 'policy', name: 'UseFleet' } as const),
   }),
   properties: Object.freeze({
     domain: Object.freeze({

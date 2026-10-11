@@ -13,6 +13,7 @@ import { connectAdminInstances } from '../client'
 
 const INSTANCE = '@instance-node::admin.astrale.ai:class.Instance.method'
 const FLEET = '@customer-fleet::admin.astrale.ai:class.Fleet.method'
+const LIST = '/:admin.astrale.ai:class.Instance:list'
 const CREATED_AT = '2026-08-12T00:00:00.000Z'
 const INVITATION = {
   id: '@invitation-node',
@@ -30,19 +31,22 @@ const generated = (kind: string) =>
 /** An Admin whose graph holds `instances` and whose Methods answer `invoke`. */
 function admin(
   input: {
-    fleet?: string
+    fleet?: string | null
     instances?: readonly Node[]
     invoke?: (target: string, input: unknown) => unknown
+    administers?: boolean
   } = {},
 ) {
   const calls: Array<{ target: string; value: unknown }> = []
   const remote = adminSession((target, value) => {
     calls.push({ target, value })
-    if (target === `${FLEET}.listInstances` && input.invoke === undefined) {
+    if (target === LIST && input.invoke === undefined) {
       return (input.instances ?? []).map(summary)
     }
     return input.invoke?.(target, value)
   })
+  const can = mock(async (_check: unknown) => input.administers === true)
+  Object.defineProperty(remote.session, 'auth', { value: { can } })
   const query = mock(async (_ast: unknown, _options: unknown) => ({
     result: {
       kind: 'nodes' as const,
@@ -53,25 +57,28 @@ function admin(
   return {
     calls,
     query,
+    can,
     connect: () =>
       connectAdminInstances({
         session: remote.session,
         graph: { query } as unknown as AdminGraphQueryApi,
-        fleet: input.fleet ?? '@customer-fleet',
+        ...(input.fleet === null ? {} : { fleet: input.fleet ?? '@customer-fleet' }),
       }),
   }
 }
 
 describe('Admin Instance adapter', () => {
-  test('lists, creates and replays through the selected Fleet without reading its directory', async () => {
-    const created = summary(instance())
+  test('lists in the selected Fleet, creates and replays there without reading its directory', async () => {
+    const created = { ...summary(instance()), fleetId: '@customer-fleet' }
+    const elsewhere = { ...summary(instance()), id: '@elsewhere', fleetId: '@other-fleet' }
     const fixture = admin({
-      invoke: (target) => (target.endsWith('.listInstances') ? [created] : created),
+      invoke: (target) => (target === LIST ? [created, elsewhere] : created),
     })
     const api = await fixture.connect()
     await expect(api.list({ includeRetired: true })).resolves.toEqual([
       {
         id: '@instance-node',
+        fleetId: '@customer-fleet',
         slug: 'demo',
         url: 'https://demo.eu.astrale.ai',
         state: 'ready',
@@ -81,8 +88,9 @@ describe('Admin Instance adapter', () => {
     ])
     await api.create('demo')
     await api.create('demo', 'cli.instance.create.retained')
+    expect(fixture.can).not.toHaveBeenCalled()
     expect(fixture.calls).toEqual([
-      { target: `${FLEET}.listInstances`, value: { includeRetired: true } },
+      { target: LIST, value: { includeRetired: true } },
       {
         target: `${FLEET}.createInstance`,
         value: { operationId: generated('create'), slug: 'demo' },
@@ -93,6 +101,73 @@ describe('Admin Instance adapter', () => {
       },
     ])
     expect(fixture.query).not.toHaveBeenCalled()
+  })
+
+  test('lists every Fleet without a selection, asking no Fleet decision', async () => {
+    const shared = { ...summary(instance()), fleetId: '@neighbour-fleet' }
+    const fixture = admin({ fleet: null, invoke: () => [shared] })
+    const api = await fixture.connect()
+    await expect(api.list()).resolves.toMatchObject([
+      { id: '@instance-node', fleetId: '@neighbour-fleet' },
+    ])
+    expect(fixture.calls).toEqual([{ target: LIST, value: {} }])
+    expect(fixture.can).not.toHaveBeenCalled()
+    expect(fixture.query).not.toHaveBeenCalled()
+  })
+
+  test("adds the selected Fleet's whole inventory for its administrator, keeping its own entries", async () => {
+    const own = { ...summary(instance()), fleetId: '@customer-fleet', operationId: 'create-demo' }
+    const central = Object.freeze({
+      ...instance(),
+      id: NodeId('central'),
+      props: normalizeProperties({
+        ...instance().props,
+        [AdminContract.properties.instance.slug]: 'admin',
+      }),
+    })
+    const fixture = admin({
+      administers: true,
+      instances: [central, instance()],
+      invoke: () => [own],
+    })
+    const api = await fixture.connect()
+    const listed = await api.inventory()
+    expect(listed.map(({ id, slug, operationId }) => [id, slug, operationId])).toEqual([
+      ['@central', 'admin', undefined],
+      ['@instance-node', 'demo', 'create-demo'],
+    ])
+    expect(listed.every(({ fleetId }) => fleetId === '@customer-fleet')).toBe(true)
+    expect(fixture.can).toHaveBeenCalledWith({
+      policy: AdminContract.policies.administerFleet,
+      object: 'customer-fleet',
+    })
+    expect(fixture.query).toHaveBeenCalledTimes(1)
+  })
+
+  test("keeps creation and selection on the caller's own Instances, even for an administrator", async () => {
+    const own = { ...summary(instance()), fleetId: '@customer-fleet', operationId: 'create-demo' }
+    const others = Object.freeze({ ...instance(), id: NodeId('others') })
+    const fixture = admin({ administers: true, instances: [others], invoke: () => [own] })
+    const api = await fixture.connect()
+    await expect(api.list()).resolves.toMatchObject([
+      { id: '@instance-node', operationId: 'create-demo' },
+    ])
+    expect(fixture.can).not.toHaveBeenCalled()
+    expect(fixture.query).not.toHaveBeenCalled()
+  })
+
+  test('selects a Fleet given by another path through its id', async () => {
+    const mine = { ...summary(instance()), fleetId: '@customer-fleet' }
+    const elsewhere = { ...summary(instance()), id: '@elsewhere', fleetId: '@other-fleet' }
+    const fleet = Object.freeze({ ...instance(), id: NodeId('customer-fleet') })
+    const fixture = admin({
+      fleet: '/:admin.astrale.ai',
+      instances: [fleet],
+      invoke: () => [mine, elsewhere],
+    })
+    const api = await fixture.connect()
+    await expect(api.list()).resolves.toMatchObject([{ id: '@instance-node' }])
+    expect(fixture.query).toHaveBeenCalledTimes(1)
   })
 
   test('refuses a Fleet that is no Node path before any I/O', async () => {
@@ -133,7 +208,7 @@ describe('Admin Instance adapter', () => {
     const fixture = admin({
       instances: [instance({ state: 'deleted' })],
       invoke: (target) => {
-        if (target.endsWith('.listInstances')) return []
+        if (target === LIST) return []
         attempts += 1
         if (attempts === 1) throw new Error('response lost after terminal commit')
         return summary(instance({ state: 'deleted' }))

@@ -7,7 +7,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatInstanceState, type InstanceInfo } from '../../admin/instance'
 import { AstraleError } from '../../errors'
-import { listOwnedInstances } from '../../lib/admin/instances'
+import { listInstanceInventory } from '../../lib/admin/instances'
 import {
   ADMIN_TARGET_OPTIONS,
   FLEET_OPTION,
@@ -88,7 +88,7 @@ export default {
       if (!opts.bookmarked) {
         try {
           managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
-            readAdminInventory(() => listOwnedInstances(opts, opts.includeRetired ?? false)),
+            readAdminInventory(() => listInstanceInventory(opts, opts.includeRetired ?? false)),
           )
         } catch (error) {
           throw classifyAdminInventoryError(error)

@@ -68,7 +68,7 @@ test.each([
 ] as [Entries][])(
   'selects the one Fleet the native UseFleet decision allows (%j)',
   async (entries) => {
-    expect(String((await resolveAdminFleet(fixture(entries).context, true)).raw)).toBe('@shared')
+    expect(String((await resolveAdminFleet(fixture(entries).context)).raw)).toBe('@shared')
   },
 )
 
@@ -90,23 +90,20 @@ test.each([
 ] as [Entries][])(
   'refuses absence or ambiguity without choosing a default (%j)',
   async (entries) => {
-    await expect(resolveAdminFleet(fixture(entries).context, true)).rejects.toThrow(
-      /No Fleet|Choose one/,
-    )
+    await expect(resolveAdminFleet(fixture(entries).context)).rejects.toThrow(/No Fleet|Choose one/)
   },
 )
 
 test('an explicit receiver bypasses selection, not the callable policy', async () => {
   const { context, query, remote } = fixture([], '@chosen')
-  expect((await resolveAdminFleet(context, true)).raw).toEqual(expect.stringMatching(/^@chosen$/))
+  expect((await resolveAdminFleet(context)).raw).toEqual(expect.stringMatching(/^@chosen$/))
   expect(query).not.toHaveBeenCalled()
   expect(remote.call).not.toHaveBeenCalled()
 })
 
-test('retains read-only inventory without claiming creation rights', async () => {
+test('never selects a Fleet the caller may only observe', async () => {
   const { context } = fixture([['client', false]])
-  expect((await resolveAdminFleet(context)).raw).toEqual(expect.stringMatching(/^@client$/))
-  await expect(resolveAdminFleet(context, true)).rejects.toThrow('No Fleet')
+  await expect(resolveAdminFleet(context)).rejects.toThrow('No Fleet')
 })
 
 test('the instance client creates in its sole usable Fleet', async () => {
@@ -152,7 +149,7 @@ test('checks subsequent pages before automatically selecting a Fleet', async () 
     ...all,
     result: { ...all.result, nodes: all.result.nodes.slice(1) },
   })
-  await expect(resolveAdminFleet(context, true)).rejects.toMatchObject({
+  await expect(resolveAdminFleet(context)).rejects.toMatchObject({
     code: 'FLEET_SELECTION_REQUIRED',
   })
   expect(query).toHaveBeenCalledTimes(2)
@@ -170,7 +167,7 @@ test('bounds concurrent native policy probes without rereading the directory', a
     --inFlight
     return { allowed: false }
   })
-  await expect(resolveAdminFleet(context, true)).rejects.toMatchObject({
+  await expect(resolveAdminFleet(context)).rejects.toMatchObject({
     code: 'FLEET_UNAVAILABLE',
   })
   expect(peak).toBeGreaterThan(1)

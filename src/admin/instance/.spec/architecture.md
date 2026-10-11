@@ -1,10 +1,13 @@
 # CLI Admin Instance adapter
 
-The adapter calls the stable singleton Fleet receiver for caller-authorized Instance inventory and
-automatic creation. `list` remains the sole inventory operation: by default it excludes terminal
-tombstones, while `includeRetired` asks the same Method for caller-visible deleted Instances. Every
-returned Method summary is decoded locally before it reaches a command; connection itself performs
-no schema discovery, introspection, or graph read.
+`list` calls the static `Instance.list`: the Instances the caller owns or reaches through its
+directory memberships, in every Fleet, each naming its Fleet. A selected Fleet narrows it to that
+Fleet's entries. By default it excludes terminal tombstones, while `includeRetired` asks the same
+Method for caller-visible deleted Instances. Creation, selection and slug resolution work on this
+list only. `inventory` serves `instance list`: for the administrators of the selected Fleet it adds
+that Fleet's whole inventory, read directly in the graph under the Fleet's Policies, and keeps the
+caller's own entries. Every returned Method summary is decoded locally before it reaches a command;
+connection itself performs no schema discovery or introspection.
 
 Automatic creation invokes `Fleet.createInstance`. Status and deletion first resolve a
 caller-visible Instance through the ordinary inventory and then invoke that exact Instance receiver.

@@ -13,6 +13,18 @@ export function listOwnedInstances(options: AdminConnectionOptions, includeRetir
   )
 }
 
+/**
+ * The caller's Instances and, when it administers the selected Fleet, that Fleet's whole
+ * inventory. Only a listing reads it: creation and selection work on the caller's own Instances.
+ */
+export function listInstanceInventory(options: AdminConnectionOptions, includeRetired = false) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances({ ...context, fleet: options.fleet })).inventory({
+      includeRetired,
+    }),
+  )
+}
+
 /** Read caller-visible inventory together with the exact local identity used for the Admin call. */
 export function listOwnedInstancesWithIdentity(options: AdminConnectionOptions) {
   return withAdminClientSession(options, async (context) =>
@@ -31,7 +43,7 @@ export function createOwnedInstance(
   onFleetSelected?: (fleet: string) => void,
 ) {
   return withAdminClientSession(options, async (context) => {
-    const fleet = (await resolveAdminFleet({ ...context, fleet: options.fleet }, true)).raw
+    const fleet = (await resolveAdminFleet({ ...context, fleet: options.fleet })).raw
     onFleetSelected?.(fleet)
     const instances = await connectAdminInstances({ ...context, fleet })
     const plan = planInstanceCreate(await instances.list(), slug, operationId)
