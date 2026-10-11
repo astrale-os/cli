@@ -13,6 +13,7 @@ import { adminSessionOptions, withAdminClientSession, withClientSession } from '
 import { mapBounded } from '../../lib/concurrency'
 import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment/record'
 import { renderTable } from '../../lib/terminal/table'
+import { shortDigest } from './versions'
 
 /**
  * What runs on one instance (Résolution [.79716] [.80228], overview [.112991]), as `astrale domain
@@ -275,9 +276,4 @@ export function renderInstalled(list: InstalledListV1): string {
   return `${table}\n${chalk.dim(
     '  Only installations this caller can read are listed; built-in and local Domains never are.',
   )}`
-}
-
-/** `sha256:` and the first 12 hex digits, as `astrale domain versions` prints a release. */
-function shortDigest(digest: string): string {
-  return `${digest.slice(0, 'sha256:'.length + 12)}…`
 }

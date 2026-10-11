@@ -37,7 +37,7 @@ export function renderVersions(index: RegistryIndexV1): string {
 }
 
 /** `sha256:` and the first 12 hex digits: enough to tell releases apart on one screen. */
-function shortDigest(digest: string): string {
+export function shortDigest(digest: string): string {
   return `${digest.slice(0, 'sha256:'.length + 12)}…`
 }
 
