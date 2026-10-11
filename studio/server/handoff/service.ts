@@ -3,7 +3,7 @@
  * + what to read" material the live agent runner depends on. It keeps one
  * definition of the change text and the auto-context refresh.
  */
-import type { ChangeSet } from '../../shared/types'
+import type { ChangeSet } from '../../shared/contracts/workspace'
 import type { DomainHandle } from '../domain/registry'
 
 import { getBundle } from '../introspect/cache'

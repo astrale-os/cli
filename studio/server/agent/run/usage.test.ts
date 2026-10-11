@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AgentRun } from '../../../shared/types'
+import type { AgentRun } from '../../../shared/contracts/agent'
 
 import { writeJson } from '../../state/store'
 import { readUsage, recordRun } from './usage'

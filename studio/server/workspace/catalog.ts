@@ -4,7 +4,7 @@
  * real registry exists, it contains only the required Kernel and local workspace
  * domains; Studio must not advertise simulated external services as importable.
  */
-import type { DomainCatalogEntry } from '../../shared/types'
+import type { DomainCatalogEntry } from '../../shared/contracts/workspace'
 
 const icon = (inner: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`

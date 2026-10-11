@@ -5,7 +5,8 @@
  * block in the annotate shape so the author can reply by appending
  * {role:'author'} thread entries and merging back by id.
  */
-import type { Comment, ContextItem, DocMeta, SchemaRevision, ThreadEntry } from '../../shared/types'
+import type { SchemaRevision } from '../../shared/contracts/schema'
+import type { Comment, ContextItem, DocMeta, ThreadEntry } from '../../shared/contracts/workspace'
 
 interface CopyParts {
   origin: string

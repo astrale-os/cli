@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/types'
+import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/contracts/schema'
 
 import { resolveDomainEntry } from '../domain/registry'
 import { asJsonRecord, asString, parseJson } from '../json'

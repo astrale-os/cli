@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { SchemaIR } from '../../shared/types'
+import type { SchemaIR } from '../../shared/contracts/schema'
 
 import { buildHandlerLinks } from './source-overlay/handlers'
 import { buildSourceSpans } from './source-overlay/spans'

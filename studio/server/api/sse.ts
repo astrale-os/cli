@@ -2,7 +2,7 @@
  * A tiny server-sent-events hub. One-directional server→client; the
  * studio is read-only so the client never pushes here (it uses POST).
  */
-import type { StudioEvent } from '../../shared/types'
+import type { StudioEvent } from '../../shared/contracts/runtime'
 
 const encoder = new TextEncoder()
 const clients = new Map<number, ReadableStreamDefaultController<Uint8Array>>()

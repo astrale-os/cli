@@ -10,7 +10,13 @@
  * and `kind` is derived from the FIRST thread entry's role
  * (author-seeded ⇒ 'question', else 'comment').
  */
-import type { AnchorRef, Comment, CommentStore, MergeResult, ThreadEntry } from '../../shared/types'
+import type {
+  AnchorRef,
+  Comment,
+  CommentStore,
+  MergeResult,
+  ThreadEntry,
+} from '../../shared/contracts/workspace'
 
 import {
   asBoolean,

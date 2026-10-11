@@ -6,7 +6,7 @@ import type {
   WorkspaceSchemaUiState,
   WorkspaceSection,
   WorkspaceUiState,
-} from '../../shared/types'
+} from '../../shared/contracts/workspace'
 
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { readJson, writeJson } from './store'

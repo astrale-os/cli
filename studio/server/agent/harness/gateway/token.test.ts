@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import type { HarnessGatewayConfig } from '../../../../shared/types'
+import type { HarnessGatewayConfig } from '../../../../shared/contracts/agent'
 
 import { HarnessTokenBroker, HarnessTokenError } from './token'
 

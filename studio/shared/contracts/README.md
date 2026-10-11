@@ -1,6 +1,6 @@
 # Studio shared contract boundaries
 
-`../types.ts` re-exports every contract for server and client imports.
+`../types.ts` re-exports every contract for the client; the server imports each owner directly.
 Definitions live under one semantic owner:
 
 - `schema.ts` owns the render IR and all schema/anatomy introspection results.

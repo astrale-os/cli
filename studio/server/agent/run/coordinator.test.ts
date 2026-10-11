@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { AgentRun, StudioEvent } from '../../../shared/types'
+import type { AgentRun } from '../../../shared/contracts/agent'
+import type { StudioEvent } from '../../../shared/contracts/runtime'
 import type { DomainHandle } from '../../domain/registry'
 
 import { readComments, upsertComment } from '../../state/comments'

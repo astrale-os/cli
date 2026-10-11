@@ -10,9 +10,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { SchemaIR, SchemaRevision, StudioSchemaBundle } from '../../shared/types'
+import type { SchemaIR, SchemaRevision, StudioSchemaBundle } from '../../shared/contracts/schema'
 
-import { isSchemaRevision } from '../../shared/types'
+import { isSchemaRevision } from '../../shared/contracts/schema'
 import { studioCliCommand } from '../cli'
 
 const EXTRACTOR = new URL('./extractor.ts', import.meta.url).pathname

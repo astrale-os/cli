@@ -2,7 +2,7 @@ import type {
   DomainIntrospectionTiming,
   IntrospectionPhase,
   IntrospectionPriority,
-} from '../../shared/types'
+} from '../../shared/contracts/runtime'
 
 const latest = new Map<string, IntrospectionTimer>()
 

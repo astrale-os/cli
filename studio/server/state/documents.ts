@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { extname } from 'node:path'
 
-import type { DocMeta } from '../../shared/types'
+import type { DocMeta } from '../../shared/contracts/workspace'
 
 import { asFiniteNumber, asJsonRecord, asString, decodeEach } from '../json'
 import { readJson, removeState, statePath, writeJson, writeStateBuffer } from './store'

@@ -2,7 +2,7 @@
  * core.ts — derives a domain's genesis graph from the canonical Schema already
  * extracted for its Studio bundle. Schema code is imported exactly once.
  */
-import type { StudioCore, StudioSchemaBundle } from '../../shared/types'
+import type { StudioCore, StudioSchemaBundle } from '../../shared/contracts/schema'
 import type { DomainHandle } from '../domain/registry'
 
 import { isCanonicalDomainSchemaV1, projectCanonicalCore } from './canonical-schema'

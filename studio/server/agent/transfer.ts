@@ -10,7 +10,7 @@
  * The source chat is read-only here, by design: forking must leave the original
  * exactly as the user left it.
  */
-import type { AgentRun } from '../../shared/types'
+import type { AgentRun } from '../../shared/contracts/agent'
 
 /** Turns beyond this are older context than a briefing usefully carries. */
 const MAX_TURNS = 12

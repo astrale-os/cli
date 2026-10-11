@@ -1,4 +1,4 @@
-import type { InstanceInfo, InstancesState } from '../../shared/types'
+import type { InstanceInfo, InstancesState } from '../../shared/contracts/workspace'
 
 import { studioActiveInstanceName } from '../../../src/commands/studio-views'
 import { runStudioCliJson, runStudioCliText } from '../cli'

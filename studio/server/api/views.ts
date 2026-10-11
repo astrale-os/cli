@@ -1,5 +1,5 @@
 /** CLI-resolved Domain View preparation and Shell session routes. */
-import type { ViewInfo } from '../../shared/types'
+import type { ViewInfo } from '../../shared/contracts/schema'
 
 import { getAnatomy, getBundle } from '../introspect/cache'
 import { asString } from '../json'

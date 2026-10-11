@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StudioSchemaBundle } from '../../shared/types'
+import type { StudioSchemaBundle } from '../../shared/contracts/schema'
 
 import { registerDomain, unregisterDomain } from '../domain/registry'
 import { readState, writeJson } from '../state/store'

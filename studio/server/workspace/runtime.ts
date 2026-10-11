@@ -1,4 +1,4 @@
-import type { StudioRuntime } from '../../shared/types'
+import type { StudioRuntime } from '../../shared/contracts/runtime'
 
 import pkg from '../../../package.json'
 import { runStudioCliText, studioCliCommand } from '../cli'

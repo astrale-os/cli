@@ -1,4 +1,4 @@
-import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/types'
+import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/contracts/agent'
 import type { ChatResult } from './run/coordinator'
 
 import { badRequest, json, notFound, type AgentRouteContext } from '../api/http'

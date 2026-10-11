@@ -8,7 +8,7 @@
  * It deliberately bypasses the one-run-per-chat lock (the fork is isolated from the
  * parent conversation) so you can ask while a main agent turn is running.
  */
-import type { AnchorRef } from '../../shared/types'
+import type { AnchorRef } from '../../shared/contracts/workspace'
 import type { AskResult } from './harness/adapter'
 import type { AgentWorkspace } from './workspace'
 

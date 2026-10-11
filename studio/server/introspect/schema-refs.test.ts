@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import type { StudioSchemaBundle } from '../../shared/types'
+import type { StudioSchemaBundle } from '../../shared/contracts/schema'
 
 import { schemaRefs } from './schema-refs'
 

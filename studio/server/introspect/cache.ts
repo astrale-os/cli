@@ -8,17 +8,19 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import type {
-  DomainAnatomy,
   IntrospectionPriority,
   IntrospectionStatus,
+  StudioEvent,
+} from '../../shared/contracts/runtime'
+import type {
+  DomainAnatomy,
   SchemaOverlay,
   StudioCore,
   StudioDatasets,
-  StudioEvent,
   StudioSchemaBundle,
-} from '../../shared/types'
+} from '../../shared/contracts/schema'
 
-import { isSchemaRevision } from '../../shared/types'
+import { isSchemaRevision } from '../../shared/contracts/schema'
 import { getDomain } from '../domain/registry'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString } from '../json'
 import { hashAnatomyFiles } from '../state/baseline'

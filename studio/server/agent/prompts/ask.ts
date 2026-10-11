@@ -1,4 +1,4 @@
-import type { SchemaIR, SchemaOverlay } from '../../../shared/types'
+import type { SchemaIR, SchemaOverlay } from '../../../shared/contracts/schema'
 
 import { describeAnchor } from './anchors'
 

@@ -2,13 +2,12 @@
 
 import type {
   IrClass,
-  IrClassRef,
   IrFunction,
   IrMethod,
-  IrSchemaRef,
   JsonSchema,
   SchemaIR,
-} from '../../shared/types'
+} from '../../shared/contracts/schema'
+import type { IrClassRef, IrSchemaRef } from '../../shared/schema/identity'
 
 import { asJsonRecord, asStringArray } from '../json'
 

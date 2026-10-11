@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import type { AgentEvent, AgentRun } from '../../shared/types'
+import type { AgentEvent, AgentRun } from '../../shared/contracts/agent'
 
 import { summarizeChatTranscript } from './transfer'
 

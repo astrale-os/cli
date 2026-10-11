@@ -26,11 +26,11 @@ import type {
   ChatStatus,
   NewDomainContext,
   QueuedMessage,
-} from '../../shared/types'
+} from '../../shared/contracts/agent'
 
 import { isAgentEffort } from '../../shared/agent-effort'
 import { isChatTone, nextChatTone } from '../../shared/chat-tone'
-import { DEFAULT_CHAT_TITLE } from '../../shared/types'
+import { DEFAULT_CHAT_TITLE } from '../../shared/contracts/agent'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { listState, readJson, removeState, writeJson } from '../state/store'
 import { decodeAttachments } from './attachments'

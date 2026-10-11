@@ -5,7 +5,7 @@
  * whether another may start. Chat ids are uuids, so one map safely spans every
  * workspace this process could serve.
  */
-import type { AgentRun } from '../../../shared/types'
+import type { AgentRun } from '../../../shared/contracts/agent'
 import type { StoredChat } from '../chats'
 
 import { readLastRun } from './transcript'

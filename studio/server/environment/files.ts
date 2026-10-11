@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import type { EnvFileModel, EnvName, EnvVarRow } from '../../shared/types'
+import type { EnvFileModel, EnvName, EnvVarRow } from '../../shared/contracts/schema'
 
 import { buildEnvFields } from '../introspect/anatomy/env-fields'
 import { readConfigPreview } from '../introspect/config-preview'

@@ -9,7 +9,7 @@ import type {
   ChatStatus,
   ConversationInfo,
   QueuedMessage,
-} from '../../../shared/types'
+} from '../../../shared/contracts/agent'
 import type { Notify } from '../../api/http'
 import type { StoredChat } from '../chats'
 import type { AgentWorkspace } from '../workspace'

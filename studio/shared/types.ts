@@ -1,6 +1,6 @@
 /**
- * The contracts shared by Studio's Bun server and React client, in one import.
- * Each definition lives in its owner under `contracts/` or `schema/identity.ts`.
+ * The shared contracts in one import, for the React client. Each definition lives in
+ * its owner under `contracts/` or `schema/identity.ts`; the server imports owners directly.
  */
 
 export * from './schema/identity'

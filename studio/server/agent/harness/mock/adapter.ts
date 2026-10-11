@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
 
-import type { AgentToolCall, Comment } from '../../../../shared/types'
+import type { AgentToolCall } from '../../../../shared/contracts/agent'
+import type { Comment } from '../../../../shared/contracts/workspace'
 import type {
   AgentHarness,
   AgentTurnInput,

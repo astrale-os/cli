@@ -41,7 +41,7 @@ import { join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
-import type { HarnessCli } from '../../../../shared/types'
+import type { HarnessCli } from '../../../../shared/contracts/agent'
 import type { AcpProvider } from './command'
 
 import { PINNED_AGENT_BINARIES } from './pinned-binaries'

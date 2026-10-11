@@ -1,4 +1,4 @@
-import type { HarnessCapabilities, HarnessLoadout } from '../../../../shared/types'
+import type { HarnessCapabilities, HarnessLoadout } from '../../../../shared/contracts/agent'
 import type {
   AgentHarness,
   AgentTurnInput,

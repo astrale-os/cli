@@ -9,7 +9,7 @@
  *
  * Tokens only flow into the spawned harness child environment.
  */
-import type { HarnessGatewayConfig } from '../../../../shared/types'
+import type { HarnessGatewayConfig } from '../../../../shared/contracts/agent'
 
 import { captureCommand, type CapturedCommand, type CaptureOptions } from '../process'
 

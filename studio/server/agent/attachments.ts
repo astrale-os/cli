@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto'
 
-import type { ChatAttachment } from '../../shared/types'
+import type { ChatAttachment } from '../../shared/contracts/agent'
 
 import {
   type AttachmentImageType,

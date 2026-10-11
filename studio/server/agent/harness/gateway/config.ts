@@ -19,7 +19,7 @@ import type {
   HarnessGatewayAuth,
   HarnessGatewayConfig,
   HarnessGatewayState,
-} from '../../../../shared/types'
+} from '../../../../shared/contracts/agent'
 
 import { asJsonRecord, asString } from '../../../json'
 import { studioHome } from '../../../state/home'

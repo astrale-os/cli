@@ -9,7 +9,7 @@
  * bad output) collapses to "nothing stale" so the badge stays
  * hidden rather than nagging on a hiccup.
  */
-import type { StaleReport } from '../../shared/types'
+import type { StaleReport } from '../../shared/contracts/runtime'
 
 import { runStudioCliJson } from '../cli'
 import { asJsonRecord } from '../json'

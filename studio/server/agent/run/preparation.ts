@@ -5,9 +5,9 @@ import type {
   AgentRun,
   AgentEffort,
   ChatAttachment,
-  Comment,
-  StudioSettings,
-} from '../../../shared/types'
+} from '../../../shared/contracts/agent'
+import type { StudioSettings } from '../../../shared/contracts/runtime'
+import type { Comment } from '../../../shared/contracts/workspace'
 import type { Notify } from '../../api/http'
 import type { DomainHandle } from '../../domain/registry'
 import type { Bridge } from '../bridge/grant'

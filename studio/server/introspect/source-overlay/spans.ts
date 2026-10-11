@@ -12,7 +12,7 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
-import type { SchemaIR, SourceSpan } from '../../../shared/types'
+import type { SchemaIR, SourceSpan } from '../../../shared/contracts/schema'
 
 import {
   calleeName,

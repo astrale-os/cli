@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import type { SchemaIR } from '../../shared/types'
+import type { SchemaIR } from '../../shared/contracts/schema'
 
-import { STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/types'
+import { STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/contracts/schema'
 import {
   BASELINE_FORMAT_VERSION,
   captureBaseline,

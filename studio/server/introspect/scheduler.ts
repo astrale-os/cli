@@ -6,7 +6,7 @@
  * every Domain it queried. This scheduler is the shared boundary both paths use.
  */
 
-import type { IntrospectionPriority } from '../../shared/types'
+import type { IntrospectionPriority } from '../../shared/contracts/runtime'
 
 interface SchedulerSnapshot {
   readonly concurrency: number

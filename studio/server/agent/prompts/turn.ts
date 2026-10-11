@@ -1,12 +1,6 @@
-import type {
-  Comment,
-  ContextItem,
-  DocMeta,
-  NewDomainContext,
-  SchemaIR,
-  SchemaOverlay,
-  SchemaRevision,
-} from '../../../shared/types'
+import type { NewDomainContext } from '../../../shared/contracts/agent'
+import type { SchemaIR, SchemaOverlay, SchemaRevision } from '../../../shared/contracts/schema'
+import type { Comment, ContextItem, DocMeta } from '../../../shared/contracts/workspace'
 
 import { buildCopyMarkdown, buildMachineStateBlock } from '../../handoff/copy'
 import { resolveThreadAnchors } from './anchors'

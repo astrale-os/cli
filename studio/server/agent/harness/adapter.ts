@@ -17,7 +17,7 @@ import type {
   HarnessCapabilities,
   HarnessCli,
   HarnessLoadout,
-} from '../../../shared/types'
+} from '../../../shared/contracts/agent'
 
 /** A single normalized activity event emitted while the harness runs. */
 export interface AgentStreamEvent {

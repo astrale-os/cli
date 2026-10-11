@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 
-import type { ViewInfo } from '../../shared/types'
+import type { ViewInfo } from '../../shared/contracts/schema'
 
 import { STUDIO_CLI_DESCRIPTOR_ENV } from '../cli'
 import { getViewRuntime, launchViewSession, type ViewSessionDependencies } from './session'

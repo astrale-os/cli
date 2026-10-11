@@ -15,10 +15,10 @@ import type {
   StudioDatasetFailure,
   StudioDatasets,
   StudioSchemaBundle,
-} from '../../shared/types'
+} from '../../shared/contracts/schema'
 import type { DomainHandle } from '../domain/registry'
 
-import { parseClassRefKey, parseSchemaRefKey, schemaRefKey } from '../../shared/types'
+import { parseClassRefKey, parseSchemaRefKey, schemaRefKey } from '../../shared/schema/identity'
 import { analyzeProjectConfig, depsInstalled } from '../domain/registry'
 import { asJsonArray, asJsonRecord, asString, asStringArray, parseJson } from '../json'
 import { runExtractorIsland } from './runtime'

@@ -5,7 +5,7 @@
  * render fingerprint for reference. Persisted via the allow-listed store
  * (layout.json).
  */
-import type { LayoutState, NodePosition } from '../../shared/types'
+import type { LayoutState, NodePosition } from '../../shared/contracts/workspace'
 
 import { asFiniteNumber, asJsonRecord, asString } from '../json'
 import { readJson, removeState, writeJson } from './store'

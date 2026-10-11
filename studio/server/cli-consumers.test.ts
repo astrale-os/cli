@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StaleReport } from '../shared/types'
+import type { StaleReport } from '../shared/contracts/runtime'
 
 import { STUDIO_CLI_DESCRIPTOR_ENV } from './cli'
 import { listInstances, setActiveInstance } from './instances/active'

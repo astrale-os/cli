@@ -1,5 +1,5 @@
 /** Schema-anchored review comment routes and agent reply merge. */
-import type { ThreadEntry, ThreadRole } from '../../shared/types'
+import type { ThreadEntry, ThreadRole } from '../../shared/contracts/workspace'
 
 import { isConcreteAnchorRef } from '../../shared/comment-anchors'
 import { getBundle } from '../introspect/cache'

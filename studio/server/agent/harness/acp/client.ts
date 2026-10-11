@@ -2,7 +2,11 @@ import * as acp from '@agentclientprotocol/sdk'
 import { accessSync, constants, readFileSync } from 'node:fs'
 import { delimiter, isAbsolute, resolve } from 'node:path'
 
-import type { AgentContextUsage, AgentToolCall, AgentToolContent } from '../../../../shared/types'
+import type {
+  AgentContextUsage,
+  AgentToolCall,
+  AgentToolContent,
+} from '../../../../shared/contracts/agent'
 import type {
   AgentTurnImage,
   AgentTurnInput,

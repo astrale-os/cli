@@ -4,7 +4,7 @@
  */
 import { randomBytes } from 'node:crypto'
 
-import type { ViewInfo, ViewRuntime, ViewSessionResult } from '../../shared/types'
+import type { ViewInfo, ViewRuntime, ViewSessionResult } from '../../shared/contracts/schema'
 
 import {
   openStudioViewSession,

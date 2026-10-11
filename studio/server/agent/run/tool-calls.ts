@@ -7,9 +7,9 @@
  * opens it. A live run keeps them in memory; a settled one keeps them on disk,
  * one file per run, apart from the transcripts every history read goes through.
  */
-import type { AgentRun, AgentToolCall, AgentToolContent } from '../../../shared/types'
+import type { AgentRun, AgentToolCall, AgentToolContent } from '../../../shared/contracts/agent'
 
-import { AGENT_TOOL_STATUSES } from '../../../shared/types'
+import { AGENT_TOOL_STATUSES } from '../../../shared/contracts/agent'
 import { asBoolean, asJsonRecord, asString, asStringArray, decodeEach } from '../../json'
 import { readJson, removeState, writeJson } from '../../state/store'
 

@@ -1,7 +1,7 @@
 /**
  * Source-only metadata that the admitted DSL Schema cannot carry.
  */
-import type { SchemaIR, SchemaOverlay } from '../../shared/types'
+import type { SchemaIR, SchemaOverlay } from '../../shared/contracts/schema'
 
 import { buildHandlerLinks } from './source-overlay/handlers'
 import { newProject } from './source-overlay/project'

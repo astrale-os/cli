@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 
-import type { AgentRun, AgentSubmitResult, ChatInfo, StudioEvent } from '../../shared/types'
+import type { AgentRun, AgentSubmitResult, ChatInfo } from '../../shared/contracts/agent'
+import type { StudioEvent } from '../../shared/contracts/runtime'
 import type { JsonRecord } from '../json'
 import type { AskResult } from './harness/adapter'
 

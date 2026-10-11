@@ -1,3 +1,5 @@
+import { AGENT_ACCESS_LEVELS } from '../../shared/contracts/agent'
+import { type AgentModelPreference, type StudioSettings } from '../../shared/contracts/runtime'
 /**
  * settings.ts — power-user overrides for values the studio otherwise hard-codes.
  *
@@ -14,11 +16,6 @@ import {
   STUDIO_NUMERIC_LIMITS,
   type NumericStudioSetting,
 } from '../../shared/settings-values'
-import {
-  AGENT_ACCESS_LEVELS,
-  type AgentModelPreference,
-  type StudioSettings,
-} from '../../shared/types'
 import { asJsonRecord, asString } from '../json'
 import { studioHome } from './home'
 import { readJson, writeJson } from './store'

@@ -1,6 +1,6 @@
 import type { SourceFile } from 'ts-morph'
 
-import type { SchemaIR, ViewInfo } from '../../../shared/types'
+import type { SchemaIR, ViewInfo } from '../../../shared/contracts/schema'
 
 import { schemaProject } from './schema-definition'
 import { buildFrontendViews, buildSchemaViewSources } from './views/routes'

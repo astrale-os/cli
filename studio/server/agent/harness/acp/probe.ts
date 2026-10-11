@@ -1,6 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk'
 
-import type { HarnessLoadout } from '../../../../shared/types'
+import type { HarnessLoadout } from '../../../../shared/contracts/agent'
 import type { HarnessHealth, HarnessLoadoutOptions } from '../adapter'
 import type { ProcessExit } from './agent-process'
 import type { AcpProviderOptions } from './provider'

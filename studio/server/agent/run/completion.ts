@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
-import type { AgentEvent, MergeResult } from '../../../shared/types'
+import type { AgentEvent } from '../../../shared/contracts/agent'
+import type { MergeResult } from '../../../shared/contracts/workspace'
 import type { Notify } from '../../api/http'
 import type { AgentStreamEvent } from '../harness/adapter'
 import type { PreparedRun } from './preparation'

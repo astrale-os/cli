@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { IrClass, IrFunction, SchemaIR } from '../../shared/types'
+import type { IrClass, IrFunction, SchemaIR } from '../../shared/contracts/schema'
 
 import { diffSchemas, structuralStatusOf } from './diff'
 

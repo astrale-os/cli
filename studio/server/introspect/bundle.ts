@@ -4,7 +4,7 @@
  * runtime import becomes a render-state error (with the overlay still computed
  * statically, so anchors/handler-links survive a mid-edit compile break).
  */
-import type { SchemaIR, StudioSchemaBundle } from '../../shared/types'
+import type { SchemaIR, StudioSchemaBundle } from '../../shared/contracts/schema'
 import type { IntrospectionTimer } from './timing'
 
 import { type DomainHandle, depsInstalled } from '../domain/registry'

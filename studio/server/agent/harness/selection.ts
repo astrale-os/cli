@@ -16,7 +16,8 @@
  * That preference lives in the studio's settings, which are global — so the harness
  * is too, and so are the gateway credentials it runs with: nothing below takes a root.
  */
-import type { AgentEffort, HarnessStatus, StudioSettings } from '../../../shared/types'
+import type { AgentEffort, HarnessStatus } from '../../../shared/contracts/agent'
+import type { StudioSettings } from '../../../shared/contracts/runtime'
 import type { AgentHarness } from './adapter'
 
 import { studioSettings } from '../../state/settings'

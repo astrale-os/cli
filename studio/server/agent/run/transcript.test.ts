@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AgentRun } from '../../../shared/types'
+import type { AgentRun } from '../../../shared/contracts/agent'
 import type { StoredChat } from '../chats'
 
 import { asJsonRecord } from '../../json'

@@ -12,7 +12,11 @@
  */
 import type * as acp from '@agentclientprotocol/sdk'
 
-import type { AgentEffort, HarnessEffortOption, HarnessModelOption } from '../../../../shared/types'
+import type {
+  AgentEffort,
+  HarnessEffortOption,
+  HarnessModelOption,
+} from '../../../../shared/contracts/agent'
 import type { AcpProvider } from './command'
 
 import { isAgentEffort } from '../../../../shared/agent-effort'

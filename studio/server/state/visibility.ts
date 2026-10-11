@@ -5,7 +5,7 @@
  * stable refs, so they survive schema edits (a removed ref is harmless).
  * Persisted via the allow-listed store (visibility.json).
  */
-import type { VisibilityState } from '../../shared/types'
+import type { VisibilityState } from '../../shared/contracts/workspace'
 
 import { asBoolean, asJsonRecord } from '../json'
 import { readJson, writeJson } from './store'
