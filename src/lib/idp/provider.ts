@@ -161,8 +161,7 @@ const IdpSessionSchema = z
      * Access tokens by audience. WorkOS mints one `aud` per token, so a
      * session juggling several instances would otherwise burn a (single-use)
      * refresh-token rotation on every instance flip. The top-level
-     * `access_token`/`expires_at` stay the most recently minted token for
-     * back-compat with older CLI builds.
+     * `access_token`/`expires_at` stay the most recently minted token.
      */
     tokens: z
       .record(
@@ -218,16 +217,12 @@ const DEFAULT_WORKOS_API_HOST = 'https://api.workos.com'
 const DEFAULT_WORKOS_CLIENT_ID = 'client_01KC29HET5F3QAQ8GNTPZ7F320'
 const WORKOS_CLIENT_ID_ENV_NAMES = ['WORKOS_CLIENT_ID', 'VITE_WORKOS_CLIENT_ID'] as const
 
-function idpDir(name: string): string {
-  return paths.idpDir(name)
-}
-
 function idpMetadataPath(name: string): string {
-  return join(idpDir(name), 'metadata.json')
+  return join(paths.idpDir(name), 'metadata.json')
 }
 
 function idpClientPath(name: string): string {
-  return join(idpDir(name), 'client.json')
+  return join(paths.idpDir(name), 'client.json')
 }
 
 export function idpSessionPath(identityName: string): string {
@@ -325,7 +320,7 @@ export async function upsertIdpConfig(args: {
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
-  await mkdir(idpDir(args.name), { recursive: true })
+  await mkdir(paths.idpDir(args.name), { recursive: true })
   await Promise.all([
     atomicWrite(idpMetadataPath(args.name), JSON.stringify(args.metadata, null, 2) + '\n'),
     atomicWrite(idpClientPath(args.name), JSON.stringify(args.client ?? {}, null, 2) + '\n'),
@@ -384,15 +379,10 @@ export function workosAuthKitMetadata(
   })
 }
 
-function builtinIdpConfig(
-  name: string,
-  clientIdOverride?: string,
-  env: NodeJS.ProcessEnv = process.env,
-): IdpConfig | null {
+function builtinIdpConfig(name: string, clientIdOverride?: string): IdpConfig | null {
   if (name !== BUILTIN_WORKOS_IDP_NAME) return null
-  const clientId = clientIdOverride ?? workosClientIdFromEnv(env)
-  if (!clientId) return null
-  const apiHost = env.WORKOS_API_HOSTNAME ?? DEFAULT_WORKOS_API_HOST
+  const clientId = clientIdOverride ?? workosClientIdFromEnv()
+  const apiHost = process.env.WORKOS_API_HOSTNAME ?? DEFAULT_WORKOS_API_HOST
   const now = new Date().toISOString()
   return {
     name: BUILTIN_WORKOS_IDP_NAME,
@@ -412,9 +402,10 @@ function builtinIdpConfig(
   }
 }
 
-export function workosClientIdFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
+/** The WorkOS client id: WORKOS_CLIENT_ID, then VITE_WORKOS_CLIENT_ID, then the public CLI client. */
+function workosClientIdFromEnv(): string {
   return (
-    WORKOS_CLIENT_ID_ENV_NAMES.map((name) => env[name]?.trim()).find(
+    WORKOS_CLIENT_ID_ENV_NAMES.map((name) => process.env[name]?.trim()).find(
       (value): value is string => typeof value === 'string' && value.length > 0,
     ) ?? DEFAULT_WORKOS_CLIENT_ID
   )
@@ -433,22 +424,23 @@ async function fetchOAuthAuthorizationServerMetadata(
   return body
 }
 
-export async function postForm(url: string, params: URLSearchParams): Promise<TokenResponse> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params,
-  })
-  return tokenResponseFrom(response)
+/** A POST of `params` as a form, or as JSON for an IdP client that declares JSON token requests. */
+function post(params: URLSearchParams, idp?: IdpConfig): RequestInit {
+  return idp?.client.token_request_format === 'json'
+    ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.fromEntries(params)),
+      }
+    : {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      }
 }
 
-async function postJson(url: string, bodyInput: Record<string, string>): Promise<TokenResponse> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(bodyInput),
-  })
-  return tokenResponseFrom(response)
+export async function postForm(url: string, params: URLSearchParams): Promise<TokenResponse> {
+  return tokenResponseFrom(await fetch(url, post(params)))
 }
 
 async function tokenResponseFrom(response: Response): Promise<TokenResponse> {
@@ -674,21 +666,10 @@ export async function refreshSession(
   if (audience) params.set('audience', audience)
   const organizationId = opts.organizationId ?? session.organizationId
   if (organizationId) params.set('organization_id', organizationId)
-  if (process.env.ASTRALE_DEBUG_ORG)
-    console.error(
-      '[debug-org] refresh',
-      JSON.stringify({
-        audience,
-        organizationId,
-        sub: (session.claims as { sub?: string } | undefined)?.sub,
-      }),
-    )
   const secret = resolveClientSecret(idp)
   if (secret) params.set('client_secret', secret)
   const token = normalizeTokenResponse(
-    idp.client.token_request_format === 'json'
-      ? await postJson(idp.metadata.token_endpoint, Object.fromEntries(params))
-      : await postForm(idp.metadata.token_endpoint, params),
+    await tokenResponseFrom(await fetch(idp.metadata.token_endpoint, post(params, idp))),
   )
   if (!token.access_token) throw new Error('Refresh response did not include access_token')
   const claims = decodeTokenClaims(token.id_token ?? token.access_token)
@@ -758,18 +739,7 @@ export async function requestDeviceAuthorization(args: {
   })
   if (args.scope) params.set('scope', args.scope)
   if (args.audience) params.set('audience', args.audience)
-  const response =
-    args.idp.client.token_request_format === 'json'
-      ? await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(Object.fromEntries(params)),
-        })
-      : await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: params,
-        })
+  const response = await fetch(endpoint, post(params, args.idp))
   const body = (await response.json()) as DeviceAuthorizationResponse & {
     error?: string
     error_description?: string
@@ -804,18 +774,7 @@ export async function pollDeviceToken(args: {
       client_id: clientId,
     })
     if (secret) params.set('client_secret', secret)
-    const response =
-      args.idp.client.token_request_format === 'json'
-        ? await fetch(args.idp.metadata.token_endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(Object.fromEntries(params)),
-          })
-        : await fetch(args.idp.metadata.token_endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: params,
-          })
+    const response = await fetch(args.idp.metadata.token_endpoint, post(params, args.idp))
     const body = (await response.json()) as TokenResponse
     const token = normalizeTokenResponse(body)
     if (response.ok && token.access_token) return token
@@ -888,6 +847,6 @@ export async function fetchWorkosApplication(args: {
   return body.connect_application ?? body
 }
 
-function normalizeIssuer(value: string): string {
+export function normalizeIssuer(value: string): string {
   return value.replace(/\/+$/, '')
 }
