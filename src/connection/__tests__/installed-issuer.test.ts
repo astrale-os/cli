@@ -3,7 +3,8 @@ import type { DomainInfo } from '@astrale-os/sdk/client/schema'
 
 import { issuer } from '@astrale-os/sdk/auth'
 import { createGraph, ResponseError, TransportError } from '@astrale-os/sdk/client'
-import { ClientSession } from '@astrale-os/sdk/client/session'
+import { ClientSession, execution } from '@astrale-os/sdk/client/session'
+import { NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -11,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { AstraleConfig } from '../../lib/config'
-import type { CredentialIntent } from '../credential'
+import type { CredentialIntent, CredentialPrincipal } from '../credential'
 import type { ExchangeTarget } from '../exchange'
 import type { InstalledDomainReader } from '../installed-issuer'
 import type { ConnectionContext, ConnectionFactory } from '../session'
@@ -24,6 +25,7 @@ import { createPathCall } from '../command'
 import { createConnectionCredential } from '../credential'
 import { classifyFailure } from '../errors'
 import { createExchangeCredentialResolver } from '../exchange'
+import { acceptExecutionReceipt } from '../execution'
 import { createInstalledIssuer } from '../installed-issuer'
 import { createClientSessionOptions, withResolvedClientSession } from '../session'
 
@@ -84,6 +86,56 @@ afterEach(async () => {
 })
 
 describe('Shell exchange at the installed issuer', () => {
+  test('reports the credential actually selected when stale remote hosting heals to caller hosting', async () => {
+    await installations.set(KERNEL, SHELL, { issuer: DEPLOYMENT })
+    const command = shellCommand({ [DEPLOYMENT]: 'retired' }, () => null)
+    const principal = await command.run('user-1', async (context) => {
+      expect(context.target.domainIssuer).toBe(DEPLOYMENT)
+      await context.auth.whoami()
+      return context.credentialPrincipal()
+    })
+    expect(principal).toBe('caller')
+    expect(command.inspects()).toHaveLength(1)
+  })
+
+  test('an observation refuses remote-to-caller recovery before dispatching its SDK Execution reference', async () => {
+    let reads = 0
+    const receipt = acceptExecutionReceipt({
+      kind: 'astrale.execution',
+      version: 1,
+      id: 'execution-1',
+      kernel: KERNEL,
+      caller: 'user-1',
+      origin: SHELL,
+      principal: 'domain',
+    })
+    const command = shellCommand(
+      { [DEPLOYMENT]: 'retired' },
+      () => (++reads === 1 ? DEPLOYMENT : null),
+      {
+        target: KERNEL_TARGET,
+        intent: { principal: 'execution', receipt },
+      },
+    )
+    await expect(
+      command.run('user-1', (context) =>
+        context.session.invoke(execution.status(NodeId('execution-1')), {}),
+      ),
+    ).rejects.toMatchObject({ code: 'EXECUTION_PRINCIPAL_CHANGED' })
+    expect(reads).toBe(2)
+    expect(
+      command
+        .targets()
+        .some(
+          (target) =>
+            typeof target === 'object' &&
+            target !== null &&
+            'callable' in target &&
+            String(target.callable).includes('class.Execution'),
+        ),
+    ).toBe(false)
+  })
+
   test.each(['persisted credential', 'fresh exchange'])(
     'a Services deploy after drain heals a stale installation before executing (%s)',
     async (cached) => {
@@ -512,7 +564,7 @@ type ShellAction = (context: ConnectionContext) => Promise<unknown>
  */
 function shellCommand(
   issuers: Record<string, IssuerState>,
-  initial: () => string,
+  initial: () => string | null,
   selection: { target: ConnectionTarget; intent: CredentialIntent } = {
     target: KERNEL_TARGET,
     intent: SHELL_CALL,
@@ -535,10 +587,21 @@ function shellCommand(
     },
   })
   const command = (user: string): ConnectionFactory => {
-    return (target, _timeoutMs, _options, _config, _credential, issuer) => {
+    return (target, _timeoutMs, _options, _config, _credential, issuer, selectedPrincipal) => {
+      let principal: CredentialPrincipal | undefined
+      const select = (selected: CredentialPrincipal) => {
+        selectedPrincipal?.(selected)
+        principal = selected
+      }
+
       const resolver =
         _credential?.principal === 'caller'
-          ? { resolve: async () => sourceToken(user) }
+          ? {
+              resolve: async () => {
+                select('caller')
+                return sourceToken(user)
+              },
+            }
           : createExchangeCredentialResolver(
               target as ExchangeTarget,
               {
@@ -549,6 +612,7 @@ function shellCommand(
               5_000,
               credentials,
               issuer,
+              select,
             )
       const session = new ClientSession(
         createClientSessionOptions(
@@ -564,6 +628,10 @@ function shellCommand(
         graph: createGraph((call, request) => session.call(call, request)),
         auth: session.auth,
         self: async () => ({ id: user }),
+        credentialPrincipal: () => {
+          if (principal === undefined) throw new Error('unresolved')
+          return principal
+        },
         target,
       })
       return { context, close: () => session.close() }
@@ -591,7 +659,7 @@ function shellCommand(
       await call(context)
       throw failure
     },
-    reinstall(next: string, issuers: Record<string, IssuerState>) {
+    reinstall(next: string | null, issuers: Record<string, IssuerState>) {
       installed = () => next
       Object.assign(state, issuers)
     },
@@ -603,6 +671,7 @@ function shellCommand(
       net.requests.filter((request) => request.endsWith('/.well-known/astrale/token')),
     presented: () => presented,
     businessIssuers: () => net.businessIssuers,
+    targets: () => net.targets,
   }
 }
 
@@ -633,6 +702,7 @@ function network(
 ) {
   const requests: string[] = []
   const businessIssuers: string[] = []
+  const targets: unknown[] = []
   const kernel = options.kernel ?? { kind: 'up' }
   const fetch: Fetch = async (input, init) => {
     const url = String(input)
@@ -642,6 +712,7 @@ function network(
         throw new TypeError('fetch failed')
       }
       const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
+      targets.push(body.call.target)
       const user = String(credentialSubject(body.credential))
       const call = body.call.input as Record<string, unknown> | undefined
       if (call?.deploy === true) businessIssuers.push(String(credentialIssuer(body.credential)))
@@ -714,7 +785,7 @@ function network(
     }
     throw new Error(`unexpected URL ${url}`)
   }
-  return { fetch, requests, businessIssuers }
+  return { fetch, requests, businessIssuers, targets }
 }
 
 /** Report the answered URL on each response, as a network fetch does. */
