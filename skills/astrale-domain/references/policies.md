@@ -27,8 +27,9 @@ Every authenticated call carries two Identities:
   ownership, and Root;
 - the `caller`, the one Identity whose authority the call exercises. A direct call has
   `caller = principal`. When a Domain acts for a user (`graph.caller`, `dependencies.<alias>.caller`,
-  or the SDK Domain token exchange behind the managed CLI and Console), the principal is the Domain and
-  the caller is the user.
+  or the SDK Domain token exchange behind a Domain's Views, the Console and a callable command), the
+  principal is the Domain and the caller is the user. Graph commands on a managed Instance and the
+  Shell's own Views act for the user itself.
 
 Both are evaluated through their live `extends_with`, `constrained_by`, and `excluded_from` composition
 with deny-wins. A call carries no set of Identities: there is no union, intersection, or exclusion of
@@ -60,12 +61,18 @@ For a non-Root principal, an authorized Function requires both:
 
 - Invoking `Project.rename` does not grant direct Query/Mutation access to Project nodes. Conversely,
   a permitted graph read is not proof that the caller may invoke a Function operating on that record.
-- With a declared Class `read`/`traverse` Policy, observation admission needs no additional principal
-  Class capability: the caller passes through capability, ownership, or that Policy. Class
-  capability/ownership therefore remains an alternative to observation Policy, unlike Function `can_use`.
-- Without an observation Policy, the selected principal must own or hold the exact Class capability
-  (or be Kernel Root); the caller is neutral. This does not make data public. The outer Query
-  Function gate still applies in both cases. Choose the intended View boundary in `views.md`.
+- The Class rule decides observation (`read`/`traverse`) for the caller: the caller passes by
+  ownership or by the rule, never by a Class capability it holds. A Class without a rule, or with
+  `true`, admits every Identity of the instance; `false` admits its owning Domain only. Declare a rule
+  on every Class whose nodes are not for everyone.
+- A delegation is scoped by its principal. When a Domain acts for a caller, the Domain must also own
+  the Class's installation or hold its exact Class capability (declare it in the requirements),
+  whatever rule the Class declares. An Identity acting for itself delegates nothing and meets no such
+  ceiling; Kernel Root bypasses both. The outer Query Function gate still applies. Choose the intended
+  View boundary in `views.md`.
+- A Class capability is therefore a scope, not a right: a Group's `can_read` bounds what its holders
+  read for others and lets them read nothing the rule refuses. Put "this group reads every node" in
+  the rule itself, as a check on the group.
 - Current Class effects (`create`/`update`/`delete`) do not evaluate Class observation Policies. For a
   non-Root principal, effect closure requires principal capability/ownership and caller
   capability/ownership. A Domain's `self` session on Classes it owns closes by installed ownership
