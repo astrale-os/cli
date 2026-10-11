@@ -19,9 +19,6 @@ export function nestedCredentialCarrierTtlSeconds(
   timeoutMs: number,
   nestedTtlSeconds: number,
 ): number {
-  if (!Number.isSafeInteger(nestedTtlSeconds) || nestedTtlSeconds < 1) {
-    throw new TypeError('Nested credential TTL must be a positive safe integer.')
-  }
   const value = nestedTtlSeconds + invocationWindowSeconds(timeoutMs)
   if (!Number.isSafeInteger(value)) {
     throw new TypeError('Nested credential TTL cannot fit inside one safe carrier lifetime.')
