@@ -30,7 +30,7 @@ export type SkillConfigureOutcome =
   | { status: 'declined'; state: SkillOnboardingState }
   | { status: 'cancelled' | 'not-due' | 'not-interactive' | 'suppressed' }
 
-export function astraleSkillAgentChoices(agents: readonly AstraleSkillAgentStatus[]) {
+function agentChoices(agents: readonly AstraleSkillAgentStatus[]) {
   return [...agents]
     .sort(
       (left, right) =>
@@ -61,10 +61,7 @@ export async function chooseAstraleSkillAgents(
       ? configured
       : agents.filter((agent) => agent.detected).map((agent) => agent.name)
   }
-  return promptMultiSelect(
-    'Install Astrale skills for which global agents?',
-    astraleSkillAgentChoices(agents),
-  )
+  return promptMultiSelect('Install Astrale skills for which global agents?', agentChoices(agents))
 }
 
 export async function configureAstraleSkills(
@@ -99,16 +96,20 @@ export async function configureAstraleSkills(
   return { status: 'applied', result, agents }
 }
 
+export const SKILL_APPLY_MESSAGES: Record<SkillApplyResult['status'], string> = {
+  unchanged: 'Astrale skills already up to date',
+  installed: 'Astrale skills installed globally',
+  updated: 'Astrale skills updated globally',
+  repaired: 'Astrale skills repaired globally',
+}
+
 export function renderSkillConfigureOutcome(outcome: SkillConfigureOutcome): void {
   if (outcome.status === 'declined' || outcome.status === 'not-interactive') {
     log.dim(`  You can install them later with: ${SKILL_CONFIGURE_COMMAND}`)
     return
   }
   if (outcome.status !== 'applied') return
-  if (outcome.result.status === 'unchanged') log.success('Astrale skills already up to date')
-  else if (outcome.result.status === 'installed') log.success('Astrale skills installed globally')
-  else if (outcome.result.status === 'updated') log.success('Astrale skills updated globally')
-  else if (outcome.result.status === 'repaired') log.success('Astrale skills repaired globally')
+  log.success(SKILL_APPLY_MESSAGES[outcome.result.status])
   if (outcome.agents.length === 0) log.dim('  canonical only: ~/.agents/skills')
   else log.dim(`  agents: ${outcome.agents.join(', ')}`)
 }
