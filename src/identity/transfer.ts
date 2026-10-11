@@ -126,7 +126,7 @@ export async function exportIdentity(
   const identity = store.identities[name]
   if (!identity)
     throw new Error(`Identity "${name}" not found. Run: astrale identity create ${name}`)
-  if ((identity.source ?? 'key') !== 'key') {
+  if (identity.source === 'idp') {
     throw new Error(`Identity "${name}" is IdP-backed and has no transferable local keypair`)
   }
   const pair = await readKeypair(identity.subject, options.keysDir)
@@ -164,7 +164,7 @@ export async function importIdentity(
         'Choose explicitly which root identity to recover with `astrale instance root import <instance>`.',
       )
     }
-    if (existing && (existing.source ?? 'key') !== 'key') {
+    if (existing && existing.source === 'idp') {
       throw new Error(`Identity "${name}" already exists and is IdP-backed`)
     }
 
@@ -202,7 +202,7 @@ async function removeKeypairIfUnreferenced(
 ): Promise<void> {
   await updateIdentityStore(async (store) => {
     const referenced = Object.values(store.identities).some(
-      (identity) => (identity.source ?? 'key') === 'key' && identity.subject === subject,
+      (identity) => identity.source !== 'idp' && identity.subject === subject,
     )
     if (!referenced) await removeKeypair(subject, options.keysDir)
     return { next: store, value: undefined }

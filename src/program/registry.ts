@@ -12,57 +12,36 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
 
   if (def.summary) cmd.summary(def.summary)
 
-  if (def.aliases) {
-    for (const alias of def.aliases) cmd.alias(alias)
+  for (const alias of def.aliases ?? []) cmd.alias(alias)
+  for (const arg of def.arguments ?? []) {
+    const name = arg.variadic ? `${arg.name}...` : arg.name
+    cmd.argument(arg.required !== false ? `<${name}>` : `[${name}]`, arg.description)
   }
 
-  if (def.arguments) {
-    for (const arg of def.arguments) {
-      const name = arg.variadic ? `${arg.name}...` : arg.name
-      const bracket = arg.required !== false ? `<${name}>` : `[${name}]`
-      cmd.argument(bracket, arg.description)
+  const valuedByEquals: string[] = []
+  for (const opt of def.options ?? []) {
+    const option = new Option(opt.flags, opt.description)
+    if (opt.choices) option.choices(opt.choices)
+    if (opt.default !== undefined) option.default(opt.default)
+    if (opt.hidden) option.hideHelp()
+    if (opt.repeatable) {
+      // Commander stores `true` for an optional value written bare, replacing what was collected
+      // before; a preset value keeps every occurrence in the array.
+      if (option.optional) option.preset('')
+      option.argParser((value: string, previous: unknown) => [
+        ...(Array.isArray(previous) ? (previous as string[]) : []),
+        value,
+      ])
+      if (option.optional && option.long !== undefined) valuedByEquals.push(option.long)
     }
+    cmd.addOption(option)
   }
-
-  if (def.options) {
-    const valuedByEquals: string[] = []
-    for (const opt of def.options) {
-      if (opt.repeatable) {
-        const o = new Option(opt.flags, opt.description)
-        // Commander stores `true` for an optional value written bare, replacing what was
-        // collected before; a preset value keeps every occurrence in the array.
-        if (o.optional) o.preset('')
-        o.argParser((value: string, previous: unknown) => [
-          ...(Array.isArray(previous) ? (previous as string[]) : []),
-          value,
-        ])
-        if (opt.hidden) o.hideHelp()
-        cmd.addOption(o)
-        if (o.optional && o.long !== undefined) valuedByEquals.push(o.long)
-      } else if (opt.hidden) {
-        const o = new Option(opt.flags, opt.description)
-        if (opt.choices) o.choices(opt.choices)
-        if (opt.default !== undefined) o.default(opt.default)
-        o.hideHelp()
-        cmd.addOption(o)
-      } else if (opt.choices) {
-        const o = new Option(opt.flags, opt.description)
-        o.choices(opt.choices)
-        if (opt.default !== undefined) o.default(opt.default)
-        cmd.addOption(o)
-      } else if (opt.default !== undefined) {
-        cmd.option(opt.flags, opt.description, opt.default)
-      } else {
-        cmd.option(opt.flags, opt.description)
-      }
-    }
-    if (valuedByEquals.length > 0) {
-      // Commander gives an optional value the next argument when it is not an option; these
-      // options take theirs only after `=`, so a bare occurrence is written `--flag=` (value '').
-      const parseOptions = cmd.parseOptions.bind(cmd)
-      cmd.parseOptions = (argv: string[]) =>
-        parseOptions(bindOptionalValuesByEquals(argv, valuedByEquals))
-    }
+  if (valuedByEquals.length > 0) {
+    // Commander gives an optional value the next argument when it is not an option; these
+    // options take theirs only after `=`, so a bare occurrence is written `--flag=` (value '').
+    const parseOptions = cmd.parseOptions.bind(cmd)
+    cmd.parseOptions = (argv: string[]) =>
+      parseOptions(bindOptionalValuesByEquals(argv, valuedByEquals))
   }
 
   // CommandDefinition keeps each callback tuple opaque; Commander materializes
@@ -95,12 +74,6 @@ export function registerGroup(parent: Command, group: CommandGroup): void {
     .command(group.name, { hidden: group.hidden ?? false })
     .description(group.description)
   if (group.summary) sub.summary(group.summary)
-  for (const def of group.commands) {
-    registerCommand(sub, def)
-  }
-  if (group.subgroups) {
-    for (const nested of group.subgroups) {
-      registerGroup(sub, nested)
-    }
-  }
+  for (const def of group.commands) registerCommand(sub, def)
+  for (const nested of group.subgroups ?? []) registerGroup(sub, nested)
 }

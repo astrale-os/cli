@@ -36,16 +36,9 @@ describe('prepareMutation', () => {
     })
   })
 
-  /** @evidence TEST-CLI-GRAPH-REJECTS-PATCH-DATA */
-  test('rejects legacy PatchData instead of narrowing it', () => {
-    expect(() => prepareMutation({ nodes: { create: [] }, edges: { create: [] } })).toThrow(
-      /Legacy PatchData/,
-    )
-  })
-
-  test('rejects an empty operations list in CLI language', () => {
-    expect(() => prepareMutation({ preconditions: [], operations: [] })).toThrow(
-      'Mutation V3 requires at least one operation',
-    )
+  /** @evidence TEST-CLI-GRAPH-REJECTS-UNAUTHORED-MUTATION */
+  test('refuses input that names no operations before any Graph call', () => {
+    expect(() => prepareMutation({ nodes: { create: [] } })).toThrow(/operations/)
+    expect(() => prepareMutation({ preconditions: [], operations: [] })).toThrow(/operations/)
   })
 })

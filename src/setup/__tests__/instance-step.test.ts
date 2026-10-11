@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 
-import type { OwnedInstanceInfo } from '../../lib/admin-instance'
+import type { InstanceInfo } from '../../lib/admin-instance'
 import type { SetupContext } from '../types'
 
 import { AstraleError } from '../../errors'
@@ -17,7 +17,7 @@ const ctx: SetupContext = {
   slug: 'new-instance',
 }
 
-function instance(slug: string, state: OwnedInstanceInfo['state'] = 'ready'): OwnedInstanceInfo {
+function instance(slug: string, state: InstanceInfo['state'] = 'ready'): InstanceInfo {
   return {
     id: `${slug}-id`,
     slug,
@@ -27,7 +27,7 @@ function instance(slug: string, state: OwnedInstanceInfo['state'] = 'ready'): Ow
   }
 }
 
-function inventory(instances: OwnedInstanceInfo[], identity?: string) {
+function inventory(instances: InstanceInfo[], identity?: string) {
   return { instances, ...(identity ? { identity } : {}) }
 }
 

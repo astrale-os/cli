@@ -36,42 +36,27 @@ describe('session route file store', () => {
     expect(() => store.clear()).not.toThrow()
   })
 
-  test('leaves malformed representation recovery to Kernel Client as a cold miss', async () => {
+  test('recovers a malformed artifact as a cold miss, then reuses admitted routes in a new process', async () => {
     await mkdir(join(directory, 'private'))
     await writeFile(path, '{invalid')
-    const fixture = join(import.meta.dir, 'fixtures', 'session-route-process.ts')
-
-    expect(await runFixture(fixture, path)).toEqual({
+    expect(await runFixture(path)).toEqual({
       value: 'done',
       sourceAttempts: 1,
       destinationAttempts: 1,
     })
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1 })
-  })
-
-  test('reuses Kernel-admitted routing state in a separate operating-system process', async () => {
-    const routePath = join(directory, 'private', 'routes.json')
-    const fixture = join(import.meta.dir, 'fixtures', 'session-route-process.ts')
-
-    const first = await runFixture(fixture, routePath)
-    const second = await runFixture(fixture, routePath)
-
-    expect(first).toEqual({ value: 'done', sourceAttempts: 1, destinationAttempts: 1 })
-    expect(second).toEqual({ value: 'done', sourceAttempts: 0, destinationAttempts: 1 })
+    expect(await runFixture(path)).toEqual({
+      value: 'done',
+      sourceAttempts: 0,
+      destinationAttempts: 1,
+    })
   })
 
   test('publishes only complete owner-private artifacts under concurrent process writers', async () => {
-    const routePath = join(directory, 'private', 'routes.json')
-    const fixture = join(import.meta.dir, 'fixtures', 'session-route-process.ts')
-
-    const results = await Promise.all(
-      Array.from({ length: 8 }, () => runFixture(fixture, routePath)),
-    )
-    expect(results).toHaveLength(8)
+    const results = await Promise.all(Array.from({ length: 8 }, () => runFixture(path)))
     expect(results.every((result) => result.destinationAttempts === 1)).toBe(true)
-    expect(JSON.parse(await readFile(routePath, 'utf8'))).toMatchObject({ version: 1 })
-    expect((await stat(routePath)).mode & 0o777).toBe(0o600)
-    expect(await runFixture(fixture, routePath)).toEqual({
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1 })
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    expect(await runFixture(path)).toEqual({
       value: 'done',
       sourceAttempts: 0,
       destinationAttempts: 1,
@@ -123,7 +108,9 @@ interface FixtureResult {
   readonly destinationAttempts: number
 }
 
-async function runFixture(fixture: string, routePath: string): Promise<FixtureResult> {
+/** One process that routes through the route file at `routePath`. */
+async function runFixture(routePath: string): Promise<FixtureResult> {
+  const fixture = join(import.meta.dir, 'fixtures', 'session-route-process.ts')
   const child = Bun.spawn([process.execPath, fixture, routePath], {
     stdout: 'pipe',
     stderr: 'pipe',

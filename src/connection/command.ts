@@ -1,3 +1,5 @@
+import { call, type Call } from '@astrale-os/sdk/client'
+import { Path } from '@astrale-os/sdk/graph/path'
 import chalk from 'chalk'
 
 import type { CredentialIntent } from './credential'
@@ -79,4 +81,9 @@ export async function runKernelCommand<T>(input: {
     })
     process.exit(1)
   }
+}
+
+/** Convert the CLI's untrusted text/JSON boundary into the one public Call representation. */
+export function createPathCall(path: string, input: unknown): Call {
+  return call(Path.parse(path), input as Parameters<typeof call>[1])
 }

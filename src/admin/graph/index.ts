@@ -1,6 +1,62 @@
-export {
-  readAllNodes,
-  type AdminGraphApi,
-  type AdminGraphQueryApi,
-  type ReadAllNodesOptions,
-} from './nodes'
+import type { GraphApi } from '@astrale-os/sdk/client'
+import type { Node } from '@astrale-os/sdk/graph/node'
+import type { QueryAST } from '@astrale-os/sdk/query'
+
+export type AdminGraphQueryApi = Pick<GraphApi, 'query'>
+
+interface ReadAllNodesOptions {
+  readonly label: string
+  readonly maximum: number
+  readonly maximumPages: number
+  /** Stop before one suffix boundary guaranteed by the Query's explicit total order. */
+  readonly orderedBoundary?: (node: Node) => boolean
+}
+
+/** Collect one explicitly bounded Node-value projection without hiding cursors. */
+export async function readAllNodes(
+  graph: AdminGraphQueryApi,
+  ast: QueryAST,
+  options: ReadAllNodesOptions,
+): Promise<readonly Node[]> {
+  const nodes: Node[] = []
+  const ids = new Set<string>()
+  const cursors = new Set<string>()
+  let cursor: string | undefined
+  let pages = 0
+  let terminal = false
+  const pageSize = Math.min(options.maximum, 256)
+  do {
+    pages += 1
+    if (pages > options.maximumPages) {
+      throw new TypeError(`${options.label} exceeded its page bound.`)
+    }
+    const response = await graph.query(ast, {
+      page: { size: pageSize, ...(cursor === undefined ? {} : { after: cursor }) },
+    })
+    const result = response.result
+    if (result.kind !== 'nodes')
+      throw new TypeError(`${options.label} returned the wrong projection.`)
+    for (const projection of result.nodes) {
+      if (projection.kind !== 'value') {
+        throw new TypeError(`${options.label} omitted requested Node values.`)
+      }
+      const node = projection.value
+      if (options.orderedBoundary?.(node) === true) {
+        terminal = true
+        break
+      }
+      if (ids.has(String(node.id))) throw new TypeError(`${options.label} repeated a Node.`)
+      ids.add(String(node.id))
+      nodes.push(node)
+    }
+    if (nodes.length > options.maximum) {
+      throw new TypeError(`${options.label} exceeded its Node bound.`)
+    }
+    cursor = terminal ? undefined : response.page.next
+    if (cursor !== undefined && cursors.has(cursor)) {
+      throw new TypeError(`${options.label} repeated a cursor.`)
+    }
+    if (cursor !== undefined) cursors.add(cursor)
+  } while (cursor !== undefined)
+  return Object.freeze(nodes)
+}

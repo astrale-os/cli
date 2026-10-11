@@ -4,11 +4,11 @@ import { chmodSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 import { atomicWriteSync } from './files'
-import { SESSION_ROUTES_PATH } from './paths'
+import { paths } from './paths'
 
 /** CLI filesystem representation for Kernel Client's admitted confidential route artifact. */
 export class FileSessionRouteStore implements SessionRouteStore {
-  constructor(private readonly path = SESSION_ROUTES_PATH) {}
+  constructor(private readonly path = paths.sessionRoutes) {}
 
   read(): unknown {
     return JSON.parse(readFileSync(this.path, 'utf8')) as unknown

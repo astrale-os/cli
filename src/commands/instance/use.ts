@@ -1,4 +1,4 @@
-import type { OwnedInstanceInfo } from '../../lib/admin-instance'
+import type { InstanceInfo } from '../../lib/admin-instance'
 import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
@@ -190,7 +190,7 @@ async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedIn
 async function fetchManagedInstances(
   name: string,
   opts: UseOpts,
-): Promise<{ readonly instances: OwnedInstanceInfo[]; readonly identity?: string }> {
+): Promise<{ readonly instances: InstanceInfo[]; readonly identity?: string }> {
   try {
     validateSlug(name)
   } catch {
@@ -203,7 +203,7 @@ async function fetchManagedInstances(
   }
 }
 
-function assertManagedReady(info: OwnedInstanceInfo): void {
+function assertManagedReady(info: InstanceInfo): void {
   if (info.state === 'ready') return
   const detail = info.phase && info.phase !== info.state ? ` (${info.phase})` : ''
   throw new AstraleError(

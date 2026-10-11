@@ -633,8 +633,7 @@ drain, a 2002 refusal of that confirmation re-reads the installation and exchang
 within the same command, before any application call. Application calls themselves are never replayed
 by this recovery.
 
-Optional roots are `ASTRALE_HOME`, `ASTRALE_KEYS_DIR`, and
-`ASTRALE_DATA_DIR`.
+Optional roots are `ASTRALE_HOME` and `ASTRALE_KEYS_DIR`.
 
 Studio preferences live under `<ASTRALE_HOME>/studio/`: `settings.json` stores one
 `agentModel: { harness, model } | null`; `harness-gateway.json` stores gateway `auth` with

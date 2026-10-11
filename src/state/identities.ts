@@ -4,38 +4,11 @@ import { z } from 'zod'
 import type { FileLockOptions } from './files'
 
 import { atomicWrite, withFileLock } from './files'
-import { IDENTITIES_PATH } from './paths'
-
-export type IdentitySource = 'key' | 'idp'
-export type IdentityMode = 'local' | 'remote'
-
-export interface Registration {
-  readonly iss: string
-  readonly sub: string
-  readonly registeredAt: string
-}
-
-export interface Identity {
-  readonly subject: string
-  readonly createdAt: string
-  readonly source?: IdentitySource
-  readonly mode?: IdentityMode
-  readonly kid?: string
-  readonly idp?: string
-  readonly issuer?: string
-  readonly audience?: string
-  readonly claims?: Readonly<Record<string, unknown>>
-  readonly registrations?: Readonly<Record<string, Registration>>
-}
-
-export interface IdentityStore {
-  readonly default: string
-  readonly identities: Readonly<Record<string, Identity>>
-}
+import { paths } from './paths'
 
 export const IDENTITY_STORE_VERSION = 1 as const
 
-export type IdentityStateErrorCode =
+type IdentityStateErrorCode =
   | 'IDENTITY_STATE_INVALID'
   | 'IDENTITY_STATE_VERSION_UNSUPPORTED'
   | 'IDENTITY_STATE_UNREADABLE'
@@ -58,12 +31,12 @@ export interface IdentityStoreOptions {
   readonly lock?: FileLockOptions
 }
 
-export interface IdentityUpdate<Value> {
+interface IdentityUpdate<Value> {
   readonly next: IdentityStore
   readonly value: Value
 }
 
-const RegistrationSchema: z.ZodType<Registration> = z
+const RegistrationSchema = z
   .object({
     iss: z.string(),
     sub: z.string(),
@@ -71,7 +44,7 @@ const RegistrationSchema: z.ZodType<Registration> = z
   })
   .strict()
 
-const IdentitySchema: z.ZodType<Identity> = z
+const IdentitySchema = z
   .object({
     subject: z.string(),
     createdAt: z.string(),
@@ -86,51 +59,28 @@ const IdentitySchema: z.ZodType<Identity> = z
   })
   .strict()
 
-const IdentityStoreFields = {
-  default: z.string(),
-  identities: z.record(z.string(), IdentitySchema),
-}
-
 const IdentityFileV1Schema = z
-  .object({ version: z.literal(IDENTITY_STORE_VERSION), ...IdentityStoreFields })
+  .object({
+    version: z.literal(IDENTITY_STORE_VERSION),
+    default: z.string(),
+    identities: z.record(z.string(), IdentitySchema),
+  })
   .strict()
 
-interface DecodedIdentityStore {
-  readonly store: IdentityStore
-}
+export type Registration = z.infer<typeof RegistrationSchema>
+export type Identity = z.infer<typeof IdentitySchema>
+export type IdentityMode = NonNullable<Identity['mode']>
+export type IdentityStore = Omit<z.infer<typeof IdentityFileV1Schema>, 'version'>
 
 export async function readIdentityStore(
   options: IdentityStoreOptions = {},
 ): Promise<IdentityStore> {
-  return (await readDecoded(options)).store
-}
-
-export async function updateIdentityStore<Value>(
-  transition: (current: IdentityStore) => IdentityUpdate<Value> | Promise<IdentityUpdate<Value>>,
-  options: IdentityStoreOptions = {},
-): Promise<Value> {
-  const path = options.path ?? IDENTITIES_PATH
-  return withFileLock(
-    `${path}.lock`,
-    async () => {
-      const current = await readDecoded(options)
-      const update = await transition(current.store)
-      await atomicWrite(path, encodeV1(update.next))
-      return update.value
-    },
-    options.lock,
-  )
-}
-
-async function readDecoded(options: IdentityStoreOptions): Promise<DecodedIdentityStore> {
-  const path = options.path ?? IDENTITIES_PATH
+  const path = options.path ?? paths.identities
   let raw: string
   try {
     raw = await readFile(path, 'utf-8')
   } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') {
-      return { store: seed(options.now?.() ?? new Date()) }
-    }
+    if ((error as { code?: string }).code === 'ENOENT') return { default: '', identities: {} }
     throw new IdentityStateError(
       'IDENTITY_STATE_UNREADABLE',
       path,
@@ -145,46 +95,50 @@ async function readDecoded(options: IdentityStoreOptions): Promise<DecodedIdenti
   } catch (error) {
     throw invalidState(path, error)
   }
+  const version =
+    typeof input === 'object' && input !== null && Object.hasOwn(input, 'version')
+      ? (input as { readonly version: unknown }).version
+      : undefined
+  if (version === undefined) {
+    throw new IdentityStateError(
+      'IDENTITY_STATE_VERSION_UNSUPPORTED',
+      path,
+      `Identity state at ${path} has no supported version. Rename this file to preserve it, then run astrale auth login or astrale identity create. Keep the keys directory unchanged.`,
+    )
+  }
+  if (typeof version !== 'number' || !Number.isInteger(version)) throw invalidState(path)
+  if (version !== IDENTITY_STORE_VERSION) {
+    throw new IdentityStateError(
+      'IDENTITY_STATE_VERSION_UNSUPPORTED',
+      path,
+      `Identity state at ${path} uses unsupported version ${version}`,
+    )
+  }
+  try {
+    const { version: _, ...store } = IdentityFileV1Schema.parse(input)
+    return store
+  } catch (error) {
+    throw invalidState(path, error)
+  }
+}
 
-  if (hasVersion(input)) {
-    if (typeof input.version !== 'number' || !Number.isInteger(input.version)) {
-      throw invalidState(path)
-    }
-    if (input.version !== IDENTITY_STORE_VERSION) {
-      throw new IdentityStateError(
-        'IDENTITY_STATE_VERSION_UNSUPPORTED',
+export async function updateIdentityStore<Value>(
+  transition: (current: IdentityStore) => IdentityUpdate<Value> | Promise<IdentityUpdate<Value>>,
+  options: IdentityStoreOptions = {},
+): Promise<Value> {
+  const path = options.path ?? paths.identities
+  return withFileLock(
+    `${path}.lock`,
+    async () => {
+      const update = await transition(await readIdentityStore(options))
+      await atomicWrite(
         path,
-        `Identity state at ${path} uses unsupported version ${input.version}`,
+        `${JSON.stringify({ version: IDENTITY_STORE_VERSION, ...update.next }, null, 2)}\n`,
       )
-    }
-    try {
-      const { version: _, ...store } = IdentityFileV1Schema.parse(input)
-      return { store }
-    } catch (error) {
-      throw invalidState(path, error)
-    }
-  }
-
-  throw new IdentityStateError(
-    'IDENTITY_STATE_VERSION_UNSUPPORTED',
-    path,
-    `Identity state at ${path} has no supported version. Rename this file to preserve it, then run astrale auth login or astrale identity create. Keep the keys directory unchanged.`,
+      return update.value
+    },
+    options.lock,
   )
-}
-
-function hasVersion(input: unknown): input is { readonly version: unknown } {
-  return typeof input === 'object' && input !== null && Object.hasOwn(input, 'version')
-}
-
-function seed(_now: Date): IdentityStore {
-  return {
-    default: '',
-    identities: {},
-  }
-}
-
-function encodeV1(store: IdentityStore): string {
-  return `${JSON.stringify({ version: IDENTITY_STORE_VERSION, ...store }, null, 2)}\n`
 }
 
 function invalidState(path: string, cause?: unknown): IdentityStateError {

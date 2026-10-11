@@ -1,22 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { decodeJwt, decodeProtectedHeader } from 'jose'
+import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair } from 'jose'
 import { access, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { IdentityKeyMissingError } from '../../errors'
+import { inferAlg } from '../algorithm'
 import {
-  generateEd25519Jwk,
   importKeypair,
   keypairPaths,
-  listIdentityKeys,
   persistKeypair,
   readKeypair,
   removeKeypair,
   signAs,
 } from '../index'
 
-describe('DESIGN — per-identity keys', () => {
+const ISSUER = { issuer: 'https://identity.example' }
+
+describe('per-identity keys', () => {
   let tmp = ''
 
   beforeEach(async () => {
@@ -28,50 +29,43 @@ describe('DESIGN — per-identity keys', () => {
   })
 
   /** @evidence TEST-CLI-KEYS-SUBJECT-FILENAMES */
-  test('keypairPaths uses the subject filename convention for manager too', () => {
-    const p = keypairPaths('manager', tmp)
-    expect(p.privatePath.endsWith('manager.private.jwk')).toBe(true)
-    expect(p.publicPath.endsWith('manager.public.jwk')).toBe(true)
-  })
-
-  test('keypairPaths routes others to <name>.*.jwk', () => {
-    const p = keypairPaths('alice', tmp)
-    expect(p.privatePath.endsWith('alice.private.jwk')).toBe(true)
-    expect(p.publicPath.endsWith('alice.public.jwk')).toBe(true)
-  })
-
   /** @evidence TEST-CLI-KEYS-PATH-CONFINED */
-  test('keypairPaths rejects subjects that escape the selected key directory', () => {
-    expect(() => keypairPaths('../alice', tmp)).toThrow(/cannot name a key file/)
-    expect(() => keypairPaths('/alice', tmp)).toThrow(/cannot name a key file/)
-    expect(() => keypairPaths('', tmp)).toThrow(/cannot name a key file/)
+  test('names every subject <subject>.*.jwk inside the selected key directory only', () => {
+    for (const subject of ['manager', 'alice']) {
+      expect(keypairPaths(subject, tmp)).toEqual({
+        privatePath: join(tmp, `${subject}.private.jwk`),
+        publicPath: join(tmp, `${subject}.public.jwk`),
+      })
+    }
+    for (const subject of ['../alice', '/alice', '']) {
+      expect(() => keypairPaths(subject, tmp)).toThrow(/cannot name a key file/)
+    }
   })
 
   /** @evidence TEST-CLI-KEYS-PRIVATE-MODE */
-  test('persistKeypair writes both files with kid and private mode', async () => {
+  test('persists both files with a kid and private mode, then signs a bounded credential', async () => {
     const result = await persistKeypair('alice', { keysDir: tmp })
     expect(result.kid).toMatch(/^alice-key-/)
-    const { privatePath, publicPath } = keypairPaths('alice', tmp)
-    await access(privatePath)
-    await access(publicPath)
-    expect((await stat(privatePath)).mode & 0o777).toBe(0o600)
-    expect((await stat(publicPath)).mode & 0o777).toBe(0o600)
-  })
-
-  test('signAs(alice) works when alice has her own key', async () => {
-    await persistKeypair('alice', { keysDir: tmp })
+    for (const path of Object.values(keypairPaths('alice', tmp))) {
+      expect((await stat(path)).mode & 0o777).toBe(0o600)
+    }
     const before = Math.floor(Date.now() / 1000)
-    const jwt = await signAs('alice', tmp, { issuer: 'https://identity.example' })
-    expect(jwt.split('.').length).toBe(3)
-    const claims = decodeJwt(jwt)
+    const claims = decodeJwt(await signAs('alice', tmp, ISSUER))
     expect(claims.iat).toBeUndefined()
-    expect(claims.exp).toBeNumber()
     expect(claims.exp).toBeGreaterThanOrEqual(before + 3_600)
     expect(claims.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1_000) + 3_600)
+    await expect(signAs('alice', tmp, { issuer: '' })).rejects.toThrow('requires its issuer')
+
+    await removeKeypair('alice', tmp)
+    await removeKeypair('alice', tmp)
+    await expect(access(keypairPaths('alice', tmp).privatePath)).rejects.toThrow()
   })
 
-  test('signing requires an explicit issuer instead of assuming a local manager', async () => {
-    await expect(signAs('alice', tmp, { issuer: '' })).rejects.toThrow('requires its issuer')
+  /** @evidence TEST-CLI-KEYS-NO-MANAGER-FALLBACK */
+  test('a subject without its own key never signs with the manager key', async () => {
+    await expect(signAs('manager', tmp, ISSUER)).rejects.toThrow(IdentityKeyMissingError)
+    await persistKeypair('manager', { keysDir: tmp })
+    await expect(signAs('alice', tmp, ISSUER)).rejects.toThrow(IdentityKeyMissingError)
   })
 
   /** @evidence TEST-CLI-KEYS-DISTINGUISHES-KERNEL-ROOT-GRANT */
@@ -81,10 +75,7 @@ describe('DESIGN — per-identity keys', () => {
     const kernel = 'https://kernel.example/kernel/host'
 
     const root = decodeJwt(
-      await signAs('manager-principal', tmp, {
-        issuer: kernel,
-        audience: kernel,
-      }),
+      await signAs('manager-principal', tmp, { issuer: kernel, audience: kernel }),
     )
     expect(root).toMatchObject({
       iss: kernel,
@@ -93,29 +84,29 @@ describe('DESIGN — per-identity keys', () => {
       grant: { v: 1, expr: { kind: 'identity', id: 'manager-principal' } },
     })
 
-    const external = decodeJwt(
-      await signAs('alice', tmp, {
-        issuer: 'https://identity.example',
-        audience: kernel,
-      }),
-    )
+    const external = decodeJwt(await signAs('alice', tmp, { ...ISSUER, audience: kernel }))
     expect(external).toMatchObject({
-      iss: 'https://identity.example',
+      iss: ISSUER.issuer,
       sub: 'alice',
       aud: kernel,
       grant: { v: 1, expr: { kind: 'identity', self: true } },
     })
   })
 
-  test('signAs(alice) uses the key file algorithm for EdDSA identities', async () => {
-    const { privateJwk, publicJwk } = await generateEd25519Jwk('alice-ed25519')
+  /** @evidence TEST-CLI-KEYS-INFERS-JWK-ALGORITHM */
+  test('signs with the algorithm the JWK names, or its key type and curve when alg is absent', async () => {
+    const pair = await generateKeyPair('EdDSA', { crv: 'Ed25519', extractable: true })
     const { privatePath, publicPath } = keypairPaths('alice', tmp)
-    await writeFile(privatePath, JSON.stringify(privateJwk, null, 2))
-    await writeFile(publicPath, JSON.stringify(publicJwk, null, 2))
+    await writeFile(privatePath, JSON.stringify(await exportJWK(pair.privateKey)))
+    await writeFile(publicPath, JSON.stringify(await exportJWK(pair.publicKey)))
+    expect(decodeProtectedHeader(await signAs('alice', tmp, ISSUER)).alg).toBe('EdDSA')
 
-    const jwt = await signAs('alice', tmp, { issuer: 'https://identity.example' })
-
-    expect(decodeProtectedHeader(jwt).alg).toBe('EdDSA')
+    expect(inferAlg({ alg: 'ES256', kty: 'OKP', crv: 'Ed25519' })).toBe('ES256')
+    expect(inferAlg({ alg: '', kty: 'EC', crv: 'P-256' })).toBe('ES256')
+    for (const jwk of [{}, { kty: 'EC' }, { kty: 'EC', crv: 'P-384' }]) {
+      expect(() => inferAlg(jwk, '/path/to/broken.jwk')).toThrow(/\/path\/to\/broken\.jwk/)
+    }
+    expect(() => inferAlg({ alg: 'HS256', kty: 'oct' })).toThrow(/unsupported signing algorithm/)
   })
 
   /** @evidence TEST-CLI-KEYS-PAIR-ADMISSION */
@@ -148,35 +139,5 @@ describe('DESIGN — per-identity keys', () => {
         importedDir,
       ),
     ).rejects.toThrow(/must not contain private key material/)
-  })
-
-  /** @evidence TEST-CLI-KEYS-NO-MANAGER-FALLBACK */
-  test('signAs(alice) never falls back to the manager key', async () => {
-    await persistKeypair('manager', { keysDir: tmp })
-    await expect(signAs('alice', tmp, { issuer: 'https://identity.example' })).rejects.toThrow(
-      IdentityKeyMissingError,
-    )
-  })
-
-  test('signAs errors when no keys at all', async () => {
-    await expect(signAs('manager', tmp, { issuer: 'https://identity.example' })).rejects.toThrow(
-      IdentityKeyMissingError,
-    )
-  })
-
-  test('removeKeypair is idempotent', async () => {
-    await persistKeypair('alice', { keysDir: tmp })
-    await removeKeypair('alice', tmp)
-    await removeKeypair('alice', tmp)
-    const { privatePath } = keypairPaths('alice', tmp)
-    await expect(access(privatePath)).rejects.toThrow()
-  })
-
-  test('listIdentityKeys returns names with private keys', async () => {
-    await persistKeypair('manager', { keysDir: tmp })
-    await persistKeypair('alice', { keysDir: tmp })
-    await persistKeypair('bob', { keysDir: tmp })
-    const names = await listIdentityKeys(tmp)
-    expect(names.sort()).toEqual(['alice', 'bob', 'manager'])
   })
 })

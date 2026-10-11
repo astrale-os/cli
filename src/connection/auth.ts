@@ -9,7 +9,6 @@ import {
   classifyRefreshFailure,
   IdpAudienceMismatchError,
   readIdpSession,
-  type IdpSession,
 } from '../lib/idp'
 import {
   ensureFreshSession,
@@ -18,57 +17,40 @@ import {
 } from '../lib/idp-session'
 import { KEYS_DIR } from '../state/index'
 
-export type KeyIdentityAuthOptions = {
-  issuer: string
-  subject?: string
-  audience: string
-}
-
-export interface PersistedSourceIdentity {
+/** The stable (issuer, subject) of the selected source identity, as the exchange cache keys it. */
+export interface SourceIdentity {
   readonly issuer: string
   readonly subject: string
 }
 
+/** The named identity, else the default one. */
+async function selectIdentity(
+  name: string | undefined,
+): Promise<Identity & { readonly name: string }> {
+  return name ? { ...(await getIdentity(name)), name } : getDefault()
+}
+
 /**
- * Read only stable IdP identity metadata for an exact persisted exchange-cache lookup.
- * Credential freshness remains the exchange cache's responsibility; any ambiguity falls
- * through to the ordinary source-token resolver.
+ * Read only stable IdP identity metadata for an exact persisted exchange-cache lookup: the cached
+ * session's claims must name the selected identity. Credential freshness remains the exchange
+ * cache's responsibility; any ambiguity falls through to the ordinary source-token resolver.
  */
 export async function resolvePersistedIdpSourceIdentity(opts: {
   readonly as?: string
   readonly defaultIdentity?: string
-}): Promise<PersistedSourceIdentity | undefined> {
-  const explicit = opts.as ?? opts.defaultIdentity
-  let name: string
-  let selected: Identity
-  if (explicit === undefined) {
-    const active = await getDefault()
-    name = active.name
-    selected = active
-  } else {
-    name = explicit
-    selected = await getIdentity(explicit)
-  }
-  if ((selected.source ?? 'key') !== 'idp') return undefined
-  const session = await readIdpSession(name).catch(() => null)
-  if (session === null || session.identity !== name) return undefined
-  return persistedIdpSourceIdentity(selected, session)
-}
-
-/** Pure admission seam for persisted source identity metadata. */
-export function persistedIdpSourceIdentity(
-  identity: Identity,
-  session: Pick<IdpSession, 'claims'>,
-): PersistedSourceIdentity | undefined {
-  if ((identity.source ?? 'key') !== 'idp') return undefined
+}): Promise<SourceIdentity | undefined> {
+  const identity = await selectIdentity(opts.as ?? opts.defaultIdentity)
+  if (identity.source !== 'idp') return undefined
+  const session = await readIdpSession(identity.name).catch(() => null)
+  if (session === null || session.identity !== identity.name) return undefined
   const issuer = session.claims?.iss
   const subject = session.claims?.sub
   if (
     typeof issuer !== 'string' ||
-    issuer.length === 0 ||
+    issuer === '' ||
     issuer !== identity.issuer ||
     typeof subject !== 'string' ||
-    subject.length === 0 ||
+    subject === '' ||
     subject !== identity.subject
   ) {
     return undefined
@@ -115,60 +97,36 @@ export async function resolveCredential(
   // Track the resolved identity so the catch block can tailor its hint: an
   // IdP-backed identity whose session lapsed needs `astrale auth login`, not
   // the `astrale identity create` keypair hint that suits local key identities.
-  let resolvedIdentity: Identity | undefined
-  let resolvedName: string | undefined
+  let resolved: (Identity & { readonly name: string }) | undefined
   try {
-    const identityName = opts.as ?? opts.defaultIdentity
-    // Explicit `--as` wins: sign with that identity's key. When the identity
-    // has a registration record for the targeted instance (populated by
-    // `astrale identity register`), use the kernel-derived `(iss, sub)` so the
-    // JWT matches what the kernel published under its issuer store.
-    if (identityName) {
-      const identity = await getIdentity(identityName)
-      resolvedIdentity = identity
-      resolvedName = identityName
-      if ((identity.source ?? 'key') === 'idp')
-        return await resolveIdpAccessToken(
-          identityName,
-          identity,
-          audience,
-          opts.minimumRemainingSeconds,
-        )
-      return await signAs(
-        identity.subject,
-        KEYS_DIR,
-        resolveKeyIdentityAuthOptions(identity, config, audience, registrationKey),
-      )
-    }
-
-    const identity = await getDefault()
-    resolvedIdentity = identity
-    resolvedName = identity.name
-    if ((identity.source ?? 'key') === 'idp') {
+    // Explicit `--as` wins, then the bookmark's identity, then the default one. A key identity with
+    // a registration for the target signs the Kernel-derived `(iss, sub)` the Kernel published.
+    resolved = await selectIdentity(opts.as ?? opts.defaultIdentity)
+    if (resolved.source === 'idp') {
       return await resolveIdpAccessToken(
-        identity.name,
-        identity,
+        resolved.name,
+        resolved,
         audience,
         opts.minimumRemainingSeconds,
       )
     }
-
-    return await signAs(
-      identity.subject,
-      KEYS_DIR,
-      resolveKeyIdentityAuthOptions(identity, config, audience, registrationKey),
-    )
+    const registration = registrationKey ? resolved.registrations?.[registrationKey] : undefined
+    return await signAs(resolved.subject, KEYS_DIR, {
+      issuer:
+        registration?.iss ?? resolved.issuer ?? systemIdentityIssuer(resolved, audience, config),
+      subject: registration?.sub,
+      audience,
+    })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to resolve credentials'
-    const hint = resolveCredentialHint(opts, resolvedIdentity, resolvedName, e)
+    const hint = resolveCredentialHint(opts, resolved, e)
     throw new AuthError(message, hint)
   }
 }
 
 function resolveCredentialHint(
   opts: { as?: string; defaultIdentity?: string },
-  identity: Identity | undefined,
-  name: string | undefined,
+  identity: (Identity & { readonly name: string }) | undefined,
   error?: unknown,
 ): string {
   // Audience mismatch: the IdP minted a token for a different `aud` than the
@@ -193,9 +151,9 @@ function resolveCredentialHint(
   // IdP-backed identities fail when the cached session expires or the upstream
   // session is terminated (e.g. WorkOS "Session has already ended"). Re-login,
   // don't recreate keys.
-  if (identity && (identity.source ?? 'key') === 'idp' && name) {
+  if (identity?.source === 'idp') {
     const idpFlag = identity.idp ? ` --idp ${identity.idp}` : ''
-    return `IdP session for "${name}" has expired. Run: astrale auth login --name ${name}${idpFlag}`
+    return `IdP session for "${identity.name}" has expired. Run: astrale auth login --name ${identity.name}${idpFlag}`
   }
   if (opts.as) {
     return 'Check identity name. Available identities: astrale identity list'
@@ -204,21 +162,6 @@ function resolveCredentialHint(
     return `Check bookmark default identity "${opts.defaultIdentity}". Available identities: astrale identity list`
   }
   return 'Run `astrale identity create <name>` to set up keys'
-}
-
-export function resolveKeyIdentityAuthOptions(
-  identity: Identity,
-  config: AstraleConfig,
-  audience: string = config.issuer,
-  registrationKey?: string,
-): KeyIdentityAuthOptions {
-  const registration = registrationKey ? identity.registrations?.[registrationKey] : undefined
-  return {
-    issuer:
-      registration?.iss ?? identity.issuer ?? systemIdentityIssuer(identity, audience, config),
-    subject: registration?.sub,
-    audience,
-  }
 }
 
 function systemIdentityIssuer(identity: Identity, audience: string, config: AstraleConfig): string {
@@ -244,8 +187,11 @@ async function resolveIdpAccessToken(
         `No cached IdP session for "${identityName}". Run: astrale auth login --idp ${identity.idp ?? '<idp>'}`,
       )
     }
+    // Without a refresh token the session cannot mint another audience than its own.
     if (e instanceof IdpSessionNoRefreshTokenError) {
-      throw classifyNoRefreshTokenError(audience, identity.audience, e)
+      throw identity.audience !== undefined && identity.audience !== audience
+        ? new IdpAudienceMismatchError(audience, identity.audience)
+        : e
     }
     // An audience mismatch means the session is healthy but the IdP won't
     // mint this audience — re-login is futile, so propagate it verbatim for
@@ -265,18 +211,8 @@ async function resolveIdpAccessToken(
   return token
 }
 
-export function classifyNoRefreshTokenError(
-  requestedAudience: string,
-  sourceAudience: string | undefined,
-  error: IdpSessionNoRefreshTokenError,
-): IdpSessionNoRefreshTokenError | IdpAudienceMismatchError {
-  return sourceAudience !== undefined && sourceAudience !== requestedAudience
-    ? new IdpAudienceMismatchError(requestedAudience, sourceAudience)
-    : error
-}
-
 /** A refresh attempt failed for a reason that re-login will NOT fix. */
-export class IdpRefreshTransientError extends Error {
+class IdpRefreshTransientError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'IdpRefreshTransientError'
@@ -284,7 +220,7 @@ export class IdpRefreshTransientError extends Error {
 }
 
 /** The IdP refused to scope the session to the target's organization. */
-export class IdpOrgMembershipError extends Error {
+class IdpOrgMembershipError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'IdpOrgMembershipError'

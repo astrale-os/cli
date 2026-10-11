@@ -43,7 +43,7 @@ export interface ConnectionTarget {
   readonly caFile?: string
 }
 
-export interface TargetDependencies {
+interface TargetDependencies {
   readonly instances?: InstanceStore
   readonly managed?: (slug: string) => Promise<InstanceInfo>
 }
@@ -91,7 +91,7 @@ export async function resolveAdminConnectionTarget(
   return connectionTarget(resolved)
 }
 
-export function adminLookupOptions(options: AdminConnectionOptions): AdminTargetCommandOpts {
+function adminLookupOptions(options: AdminConnectionOptions): AdminTargetCommandOpts {
   return {
     ...(options.admin === undefined ? {} : { admin: options.admin }),
     ...(options.adminUrl === undefined ? {} : { adminUrl: options.adminUrl }),

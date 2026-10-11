@@ -1,3 +1,4 @@
+import type { ClassRef } from '@astrale-os/sdk/graph/class'
 import type {
   NodeQueryBuilder,
   QueryAST as QueryASTValue,
@@ -5,10 +6,9 @@ import type {
   QueryNodeInput,
 } from '@astrale-os/sdk/query'
 
+import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query, QueryAST } from '@astrale-os/sdk/query'
-
-import { classReference } from './class'
 
 export interface QueryCommandInput {
   readonly sources: readonly string[]
@@ -20,7 +20,7 @@ export interface QueryCommandInput {
   readonly cursor?: string
 }
 
-export interface PreparedQuery {
+interface PreparedQuery {
   readonly ast: QueryASTValue
   readonly page: Readonly<{ readonly size: number; readonly after?: string }>
 }
@@ -92,4 +92,25 @@ function withPage(ast: QueryASTValue, size: number, cursor: string | undefined):
     ast,
     page: Object.freeze({ size, ...(cursor === undefined ? {} : { after: cursor }) }),
   })
+}
+
+/** Admit one canonical Domain-rooted Class Path into its DSL coordinate. */
+function classReference(input: string, label: string): ClassRef {
+  const path = Path.parse(input)
+  const step = path.ast.steps[0]
+  if (
+    path.ast.anchor.kind !== 'domain' ||
+    path.ast.steps.length !== 1 ||
+    step?.kind !== 'projection' ||
+    step.projection.kind !== 'class'
+  ) {
+    throw new TypeError(`${label} must be one canonical Class Path`)
+  }
+  return ClassKey.ref(
+    ClassKey.of({
+      origin: path.ast.anchor.origin,
+      kind: 'class',
+      name: step.projection.name,
+    }),
+  )
 }

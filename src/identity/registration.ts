@@ -9,14 +9,10 @@ import { Path } from '@astrale-os/sdk/graph/path'
 export interface IdentityRegistrationResult {
   readonly iss: string
   readonly sub: string
-  readonly nodeId?: string
-}
-
-export interface RegisteredIdentity extends IdentityRegistrationResult {
   readonly nodeId: string
 }
 
-export interface IdentityRegistrationSubmission {
+interface IdentityRegistrationSubmission {
   readonly request: RegisterRequest
   readonly nodeId: NodeId
   readonly expectedAuthentication: Authentication
@@ -32,7 +28,7 @@ export interface IdentityRegistrationSubmission {
 /** Submit one prepared request either directly or through its explicit Domain authority owner. */
 export async function submitIdentityRegistration(
   input: IdentityRegistrationSubmission,
-): Promise<RegisteredIdentity> {
+): Promise<IdentityRegistrationResult> {
   const result =
     input.via === undefined
       ? await input.direct.register(input.request)
@@ -45,11 +41,11 @@ export async function submitIdentityRegistration(
 }
 
 /** Admit only the selected existing Node; remote callables remain untrusted input. */
-export function acceptRegisteredIdentity(
+function acceptRegisteredIdentity(
   value: unknown,
   nodeId: NodeId,
   expectedAuthentication: Authentication,
-): RegisteredIdentity {
+): IdentityRegistrationResult {
   const result = record(value, 'Register result')
   const identities = array(result.identities, 'Register result identities')
   const matches = identities.filter((candidate) => {

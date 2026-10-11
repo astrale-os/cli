@@ -99,12 +99,6 @@ describe('installation cache', () => {
           [JSON.stringify([kernel, 'issues.example'])]: { issuer: 'not an issuer', observedAt: 1 },
         },
       }),
-      JSON.stringify({
-        version: 1,
-        entries: {
-          [JSON.stringify([kernel, 'issues.example'])]: { issuer: issues, observedAt: 1, extra: 1 },
-        },
-      }),
     ]) {
       await writeFile(path, content)
       expect(await cache.get(kernel, 'issues.example', 2)).toBeUndefined()

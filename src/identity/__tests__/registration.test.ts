@@ -4,11 +4,10 @@ import { issuer } from '@astrale-os/sdk/auth'
 import { NodeId } from '@astrale-os/sdk/graph/node'
 import { expect, test } from 'bun:test'
 
-import { acceptRegisteredIdentity, submitIdentityRegistration } from '../registration'
+import { submitIdentityRegistration } from '../registration'
 
 const nodeId = NodeId('operator-node')
 const authentication = { iss: issuer.accept('https://identity.example'), sub: 'self' as const }
-const result = { identities: [{ id: nodeId, ...authentication }] }
 const request: RegisterRequest = {
   idempotencyKey: 'identity-register.fixture',
   identities: [
@@ -21,82 +20,53 @@ const request: RegisterRequest = {
   ],
 }
 
+/** Submit `request` directly or `via` a callable; the Kernel answers `answer`. */
+function submit(answer: () => unknown, via?: string) {
+  const calls: unknown[] = []
+  const registered = submitIdentityRegistration({
+    request,
+    nodeId,
+    expectedAuthentication: authentication,
+    ...(via === undefined ? {} : { via }),
+    direct: { register: async (value) => (calls.push(value), answer()) },
+    callable: { call: async (value) => (calls.push(value), answer()) },
+  })
+  return { calls, registered }
+}
+
 /** @evidence TEST-CLI-IDENTITY-REGISTER-DOMAIN-MEDIATED */
 test.each([undefined, '/:ops.example:function.registerOperator'])(
   'submits exactly the existing-Node request via %s',
   async (via) => {
-    const calls: unknown[] = []
-    const registered = await submitIdentityRegistration({
-      request,
-      nodeId,
-      expectedAuthentication: authentication,
-      ...(via === undefined ? {} : { via }),
-      direct: {
-        async register(value) {
-          expect(via).toBeUndefined()
-          calls.push(value)
-          return result
-        },
-      },
-      callable: {
-        async call(value) {
-          expect(via).toBeDefined()
-          calls.push(value)
-          return result
-        },
-      },
-    })
+    const { calls, registered } = submit(
+      () => ({ identities: [{ id: nodeId, ...authentication }] }),
+      via,
+    )
+    expect(await registered).toEqual({ ...authentication, nodeId })
     expect(JSON.parse(JSON.stringify(calls))).toEqual([
       via === undefined ? request : { target: via, input: request },
     ])
-    expect(registered).toEqual({ ...authentication, nodeId })
   },
 )
 
-test('rejects substitution, duplicates and the removed result shape', () => {
+test('refuses a result that substitutes the Node or its Authentication', async () => {
   for (const identities of [
-    [],
     [{ id: 'other', ...authentication }],
-    [...result.identities, ...result.identities],
+    [
+      { id: nodeId, ...authentication },
+      { id: nodeId, ...authentication },
+    ],
+    [{ id: nodeId, ...authentication, iss: 'https://attacker.example' }],
   ]) {
-    expect(() => acceptRegisteredIdentity({ identities }, nodeId, authentication)).toThrow(
-      'Register result must contain exactly one Identity for the selected Node.',
-    )
+    await expect(submit(() => ({ identities })).registered).rejects.toThrow(TypeError)
   }
-  for (const mismatch of [{ iss: 'https://attacker.example' }, { sub: 'other' }]) {
-    expect(() =>
-      acceptRegisteredIdentity(
-        { identities: [{ id: nodeId, ...authentication, ...mismatch }] },
-        nodeId,
-        authentication,
-      ),
-    ).toThrow('Register result substituted the prepared Authentication.')
-  }
-  expect(() =>
-    acceptRegisteredIdentity({ identities: { identity: authentication } }, nodeId, authentication),
-  ).toThrow('Register result identities must be an array.')
 })
 
 test('propagates an unknown outcome without retrying or falling back to another authority', async () => {
-  let attempts = 0
   const error = new Error('response lost')
-  await expect(
-    submitIdentityRegistration({
-      request,
-      nodeId,
-      expectedAuthentication: authentication,
-      direct: {
-        async register() {
-          attempts++
-          throw error
-        },
-      },
-      callable: {
-        async call() {
-          throw new Error('unexpected fallback')
-        },
-      },
-    }),
-  ).rejects.toBe(error)
-  expect(attempts).toBe(1)
+  const { calls, registered } = submit(() => {
+    throw error
+  })
+  await expect(registered).rejects.toBe(error)
+  expect(calls).toHaveLength(1)
 })

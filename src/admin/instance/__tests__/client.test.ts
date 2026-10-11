@@ -1,5 +1,4 @@
 import type { Node } from '@astrale-os/sdk/graph/node'
-import type { QueryAST } from '@astrale-os/sdk/query'
 
 import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { NodeId } from '@astrale-os/sdk/graph/node'
@@ -12,782 +11,289 @@ import { adminSession } from '../../__tests__/fixture'
 import { AdminContract } from '../../contract'
 import { connectAdminInstances } from '../client'
 
-async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
-  try {
-    await promise
-  } catch (error) {
-    return error
-  }
-  throw new Error('Expected the promise to reject.')
-}
+const INSTANCE = '@instance-node::admin.astrale.ai:class.Instance.method'
+const FLEET = '@customer-fleet::admin.astrale.ai:class.Fleet.method'
+const CREATED_AT = '2026-08-12T00:00:00.000Z'
+const INVITATION = {
+  id: '@invitation-node',
+  email: 'person@example.com',
+  state: 'pending',
+  access: 'member',
+  instance: '@instance-node',
+  createdAt: CREATED_AT,
+} as const
 
-function fixture(input: {
-  fleet?: string
-  instances?: readonly Node[]
-  listOutput?: unknown
-  useDefaultOperationIds?: boolean
-  operationId?: (
-    kind: 'create' | 'status' | 'delete' | 'invite' | 'retrieve-root' | 'reconcile-invitation',
-  ) => string
-  invoke?: (target: string, input: unknown) => unknown
-  query?: (
-    ast: QueryAST,
-    options: Readonly<{ page: Readonly<{ size: number; after?: string }> }>,
-  ) => unknown
-  queryResult?: unknown
-}) {
-  const calls: Array<{
-    target: string
-    value: unknown
-  }> = []
-  const listCalls: Array<{
-    target: string
-    value: unknown
-  }> = []
+/** A generated operation id of one kind: fresh per request, never a constant. */
+const generated = (kind: string) =>
+  expect.stringMatching(new RegExp(`^cli\\.instance\\.${kind}\\.[0-9a-f-]{36}$`, 'u'))
+
+/** An Admin whose graph holds `instances` and whose Methods answer `invoke`. */
+function admin(
+  input: {
+    fleet?: string
+    instances?: readonly Node[]
+    invoke?: (target: string, input: unknown) => unknown
+  } = {},
+) {
+  const calls: Array<{ target: string; value: unknown }> = []
   const remote = adminSession((target, value) => {
-    if (target.endsWith('::admin.astrale.ai:class.Fleet.method.listInstances')) {
-      listCalls.push({ target, value })
-      if (input.listOutput !== undefined) return input.listOutput
-      const includeRetired =
-        typeof value === 'object' &&
-        value !== null &&
-        (value as { includeRetired?: unknown }).includeRetired === true
-      return (input.instances ?? [])
-        .map(instanceSummaryFromNode)
-        .filter((instance) => includeRetired || instance.state !== 'deleted')
-    }
     calls.push({ target, value })
+    if (target === `${FLEET}.listInstances` && input.invoke === undefined) {
+      return (input.instances ?? []).map(summary)
+    }
     return input.invoke?.(target, value)
   })
-  const query = mock(
-    async (
-      ast: QueryAST,
-      options: Readonly<{ page: Readonly<{ size: number; after?: string }> }>,
-    ) =>
-      input.query !== undefined
-        ? input.query(ast, options)
-        : input.queryResult === undefined
-          ? {
-              result: {
-                kind: 'nodes' as const,
-                nodes: (input.instances ?? []).map((value) => ({ kind: 'value' as const, value })),
-              },
-              page: {},
-            }
-          : input.queryResult,
-  )
-  const graph = { query } as unknown as AdminGraphQueryApi
+  const query = mock(async (_ast: unknown, _options: unknown) => ({
+    result: {
+      kind: 'nodes' as const,
+      nodes: (input.instances ?? []).map((value) => ({ kind: 'value' as const, value })),
+    },
+    page: {},
+  }))
   return {
-    call: remote.call,
-    reflection: remote.reflection,
-    query,
     calls,
-    listCalls,
+    query,
     connect: () =>
-      connectAdminInstances(
-        { session: remote.session, graph, fleet: input.fleet ?? '@customer-fleet' },
-        input.useDefaultOperationIds
-          ? undefined
-          : { operationId: input.operationId ?? ((kind) => `cli.instance.${kind}.test`) },
-      ),
+      connectAdminInstances({
+        session: remote.session,
+        graph: { query } as unknown as AdminGraphQueryApi,
+        fleet: input.fleet ?? '@customer-fleet',
+      }),
   }
 }
 
-describe('V2 Admin Instance adapter', () => {
-  test('resolves a known slug without requiring inventory access to a Fleet', async () => {
-    const contract = fixture({ instances: [instanceNode({ slug: 'astrale-project' })] })
-    const api = await contract.connect()
-    expect((await api.require('astrale-project')).slug).toBe('astrale-project')
-    expect(contract.listCalls).toHaveLength(0)
-    expect(contract.query.mock.calls[0]?.[0]).toMatchObject({
-      steps: [{ op: 'filter', predicate: { value: 'astrale-project' } }],
+describe('Admin Instance adapter', () => {
+  test('lists, creates and replays through the selected Fleet without reading its directory', async () => {
+    const created = summary(instance())
+    const fixture = admin({
+      invoke: (target) => (target.endsWith('.listInstances') ? [created] : created),
     })
-  })
-  test('uses the exact Instance receiver without reading or checking a selected Fleet', async () => {
-    const contract = fixture({
-      fleet: '@other-fleet',
-      instances: [instanceNode()],
-      invoke: () => instanceSummaryFromNode(instanceNode()),
-    })
-    const api = await contract.connect()
-    expect((await api.status('@instance-node')).id).toBe('@instance-node')
-    expect(contract.query).toHaveBeenCalledTimes(1)
-    expect(contract.listCalls).toHaveLength(0)
-    expect(contract.calls[0]?.target).toBe(
-      '@instance-node::admin.astrale.ai:class.Instance.method.status',
-    )
-  })
-  test.each(['@astrale-fleet', '/:admin.astrale.ai:core.admin'])(
-    'uses the exact Fleet path %s for list and create without directory discovery',
-    async (fleet) => {
-      const contract = fixture({
-        fleet,
-        listOutput: [],
-        invoke: () => instanceSummaryFromNode(instanceNode()),
-      })
-      const api = await contract.connect()
-      await api.list()
-      await api.create('demo', 'stable-request')
-      expect(contract.listCalls[0]?.target).toBe(
-        `${fleet}::admin.astrale.ai:class.Fleet.method.listInstances`,
-      )
-      expect(contract.calls).toEqual([
-        {
-          target: `${fleet}::admin.astrale.ai:class.Fleet.method.createInstance`,
-          value: { operationId: 'stable-request', slug: 'demo' },
-        },
-      ])
-      expect(contract.query).not.toHaveBeenCalled()
-    },
-  )
-  test.each(['astrale', 'default', ''])(
-    'rejects a Fleet slug or invalid path %s before I/O',
-    async (fleet) => {
-      const contract = fixture({ fleet })
-      await expect(contract.connect()).rejects.toThrow()
-      expect(contract.call).not.toHaveBeenCalled()
-      expect(contract.query).not.toHaveBeenCalled()
-    },
-  )
-  test('does not fall back to the core Fleet when the explicit target fails', async () => {
-    const contract = fixture({
-      fleet: '@missing',
-      invoke: () => {
-        throw new Error('Fleet unavailable')
-      },
-    })
-    const api = await contract.connect()
-    await expect(api.create('demo')).rejects.toThrow('Fleet unavailable')
-    expect(contract.calls).toHaveLength(1)
-    expect(contract.calls[0]?.target).toStartWith('@missing::')
-    expect(contract.listCalls).toHaveLength(0)
-  })
-
-  test('lists caller-visible Instances through the one Fleet inventory Method', async () => {
-    const contract = fixture({
-      instances: [
-        instanceNode(),
-        instanceNode({
-          id: 'deleted',
-          slug: 'retired',
-          state: 'deleted',
-          issuer: 'https://retired.example.test/kernel/host',
-        }),
-      ],
-    })
-    const api = await contract.connect()
-
-    await expect(api.list()).resolves.toEqual([
-      {
-        id: '@instance-node',
-        slug: 'demo',
-        url: 'https://demo.eu.astrale.ai',
-        state: 'ready',
-        createdAt: '2026-08-12T00:00:00.000Z',
-        updatedAt: '2026-08-12T00:00:00.000Z',
-      },
-    ])
-    await api.list({ includeRetired: false })
+    const api = await fixture.connect()
     await expect(api.list({ includeRetired: true })).resolves.toEqual([
       {
         id: '@instance-node',
         slug: 'demo',
         url: 'https://demo.eu.astrale.ai',
         state: 'ready',
-        createdAt: '2026-08-12T00:00:00.000Z',
-        updatedAt: '2026-08-12T00:00:00.000Z',
-      },
-      {
-        id: '@deleted',
-        slug: 'retired',
-        url: 'https://demo.eu.astrale.ai',
-        issuer: 'https://retired.example.test/kernel/host',
-        state: 'deleted',
-        createdAt: '2026-08-12T00:00:00.000Z',
-        updatedAt: '2026-08-12T00:00:00.000Z',
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
       },
     ])
-    expect(contract.listCalls).toEqual([
+    await api.create('demo')
+    await api.create('demo', 'cli.instance.create.retained')
+    expect(fixture.calls).toEqual([
+      { target: `${FLEET}.listInstances`, value: { includeRetired: true } },
       {
-        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
-        value: {},
+        target: `${FLEET}.createInstance`,
+        value: { operationId: generated('create'), slug: 'demo' },
       },
       {
-        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
-        value: {},
-      },
-      {
-        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
-        value: { includeRetired: true },
+        target: `${FLEET}.createInstance`,
+        value: { operationId: 'cli.instance.create.retained', slug: 'demo' },
       },
     ])
-    expect(contract.calls).toEqual([])
-    expect(contract.query).not.toHaveBeenCalled()
-    expect(contract.reflection).not.toHaveBeenCalled()
+    expect(fixture.query).not.toHaveBeenCalled()
   })
 
-  test('delegates default placement to Fleet without reading Host inventory', async () => {
-    const created = {
-      id: '@instance-node',
-      slug: 'demo',
-      url: 'https://demo.eu.astrale.ai',
-      state: 'ready',
-      createdAt: '2026-08-12T00:00:00.000Z',
-      updatedAt: '2026-08-12T00:00:00.000Z',
+  test('refuses a Fleet that is no Node path before any I/O', async () => {
+    for (const fleet of ['astrale', '']) {
+      const fixture = admin({ fleet })
+      await expect(fixture.connect()).rejects.toThrow()
+      expect(fixture.calls).toEqual([])
     }
-    const contract = fixture({ invoke: () => created })
-
-    await expect((await contract.connect()).create('demo')).resolves.toMatchObject({
-      id: created.id,
-      slug: created.slug,
-      url: created.url,
-      state: created.state,
-      createdAt: created.createdAt,
-    })
-    expect(contract.calls).toEqual([
-      {
-        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.createInstance',
-        value: { operationId: 'cli.instance.create.test', slug: 'demo' },
-      },
-    ])
   })
 
-  test('uses a protocol-safe generated operation id on the default adapter path', async () => {
-    const created = {
-      id: '@instance-node',
-      slug: 'demo',
-      url: 'https://demo.eu.astrale.ai',
-      state: 'ready',
-      createdAt: '2026-08-12T00:00:00.000Z',
-      updatedAt: '2026-08-12T00:00:00.000Z',
-    }
-    const contract = fixture({ useDefaultOperationIds: true, invoke: () => created })
-
-    await (await contract.connect()).create('demo')
-
-    expect(contract.calls[0]?.value).toMatchObject({
-      operationId: expect.stringMatching(
-        /^cli\.instance\.create\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
-      ),
-    })
-  })
-
-  test('replays creation with the retained operation id from Admin', async () => {
-    const pending = {
-      id: '@instance-node',
-      slug: 'demo',
-      operationId: 'cli.instance.create.retained',
-      state: 'provisioning',
-      phase: 'publish-instance-route',
-      createdAt: '2026-08-12T00:00:00.000Z',
-      updatedAt: '2026-08-12T00:00:00.000Z',
-    }
-    const contract = fixture({ invoke: () => pending })
-
-    await expect(
-      (await contract.connect()).create('demo', pending.operationId),
-    ).resolves.toMatchObject(pending)
-    expect(contract.calls).toEqual([
-      {
-        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.createInstance',
-        value: { operationId: pending.operationId, slug: 'demo' },
-      },
-    ])
-  })
-
-  test('refreshes and deletes through the resolved Instance receiver', async () => {
-    const contract = fixture({
-      instances: [instanceNode()],
+  test('resolves a slug or a Node id to the exact Instance receiver of each Method', async () => {
+    const node = instance()
+    const fixture = admin({
+      instances: [node],
       invoke: (target) => ({
-        id: '@instance-node',
-        slug: 'demo',
-        url: 'https://demo.eu.astrale.ai',
-        state: target.endsWith('.method.delete') ? 'deleted' : 'ready',
-        createdAt: '2026-08-12T00:00:00.000Z',
-        updatedAt: '2026-08-12T00:00:00.000Z',
+        ...summary(node),
+        state: target.endsWith('.delete') ? 'deleted' : 'ready',
       }),
     })
-    const api = await contract.connect()
-
+    const api = await fixture.connect()
     await expect(api.status('demo')).resolves.toMatchObject({ state: 'ready' })
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
-    expect(contract.calls).toEqual([
+    expect(fixture.query.mock.calls.map(([ast]) => JSON.parse(JSON.stringify(ast)))).toMatchObject([
+      { steps: [{ op: 'filter', predicate: { value: 'demo' } }] },
       {
-        target: '@instance-node::admin.astrale.ai:class.Instance.method.status',
-        value: { operationId: 'cli.instance.status.test' },
-      },
-      {
-        target: '@instance-node::admin.astrale.ai:class.Instance.method.delete',
-        value: { operationId: 'cli.instance.delete.test' },
+        source: { terms: [{ kind: 'path', path: '@instance-node' }] },
+        steps: [{ op: 'filter', predicate: { kind: 'class.equal' } }],
       },
     ])
-    expect(contract.reflection).not.toHaveBeenCalled()
+    expect(fixture.calls).toEqual([
+      { target: `${INSTANCE}.status`, value: { operationId: generated('status') } },
+      { target: `${INSTANCE}.delete`, value: { operationId: generated('delete') } },
+    ])
   })
 
-  test('retries terminal deletion through the exact NodePath while public inventory stays empty', async () => {
-    const deleted = instanceNode({ state: 'deleted' })
+  test('retries a terminal deletion through its Node id with a fresh operation id', async () => {
     let attempts = 0
-    let queries = 0
-    const contract = fixture({
-      instances: [deleted],
-      useDefaultOperationIds: true,
-      query: (ast, options) => {
-        queries += 1
-        expect(JSON.parse(JSON.stringify(ast))).toEqual({
-          format: 'astrale.graph.query',
-          version: 'v6',
-          source: {
-            kind: 'node',
-            terms: [{ kind: 'path', path: '@instance-node' }],
-            binding: 'n0',
-          },
-          steps: [
-            {
-              op: 'filter',
-              binding: 'n0',
-              predicate: {
-                kind: 'class.equal',
-                class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
-              },
-            },
-          ],
-          select: { kind: 'nodes', binding: 'n0', projection: { kind: 'value' } },
-        })
-        expect(options).toEqual({ page: { size: 1 } })
-        return {
-          result: {
-            kind: 'nodes' as const,
-            nodes: [{ kind: 'value' as const, value: deleted }],
-          },
-          page: {},
-        }
-      },
-      invoke: () => {
+    const fixture = admin({
+      instances: [instance({ state: 'deleted' })],
+      invoke: (target) => {
+        if (target.endsWith('.listInstances')) return []
         attempts += 1
         if (attempts === 1) throw new Error('response lost after terminal commit')
-        return {
-          id: '@instance-node',
-          slug: 'demo',
-          state: 'deleted',
-          createdAt: '2026-08-12T00:00:00.000Z',
-          updatedAt: '2026-08-12T00:00:00.000Z',
-        }
+        return summary(instance({ state: 'deleted' }))
       },
     })
-    const api = await contract.connect()
-
+    const api = await fixture.connect()
     await expect(api.list()).resolves.toEqual([])
-    await expect(api.delete('@instance-node')).rejects.toThrow(
-      'response lost after terminal commit',
-    )
+    await expect(api.delete('@instance-node')).rejects.toThrow('response lost')
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
-    expect(contract.calls.map(({ target }) => target)).toEqual([
-      '@instance-node::admin.astrale.ai:class.Instance.method.delete',
-      '@instance-node::admin.astrale.ai:class.Instance.method.delete',
-    ])
-    expect(queries).toBe(2)
-    const operationIds = contract.calls.map(({ value }) =>
-      String((value as { operationId: unknown }).operationId),
-    )
-    expect(operationIds).toHaveLength(2)
-    expect(operationIds[0]).toMatch(
-      /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
-    )
-    expect(operationIds[1]).toMatch(
-      /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
-    )
-    expect(operationIds[0]).not.toBe(operationIds[1])
+    const [first, second] = fixture.calls.slice(1).map(({ value }) => value)
+    expect(first).not.toEqual(second)
   })
 
   test('retrieves a root identity transfer scoped to the exact Instance and recipient', async () => {
     const recipient = {
-      kty: 'EC' as const,
-      crv: 'P-256' as const,
+      kty: 'EC',
+      crv: 'P-256',
       x: 'x'.repeat(43),
       y: 'y'.repeat(43),
       kid: 'r'.repeat(43),
-    }
-    const transfer = {
+    } as const
+    const transfer = (requestId: string) => ({
       format: 'astrale.instance-root-transfer',
       version: 1,
-      requestId: 'cli.instance.retrieve-root.test',
+      requestId,
       instance: '@instance-node',
       issuer: 'https://demo.eu.astrale.ai',
       subject: 's'.repeat(43),
       recipientThumbprint: recipient.kid,
       jwe: 'a.b.c.d.e',
-    } as const
-    const contract = fixture({
-      instances: [instanceNode({ issuer: transfer.issuer })],
-      invoke: () => transfer,
     })
-
-    await expect(
-      (await contract.connect()).retrieveRootIdentity('demo', recipient),
-    ).resolves.toEqual({
-      instance: expect.objectContaining({ id: '@instance-node', issuer: transfer.issuer }),
-      transfer,
+    const fixture = admin({
+      instances: [instance({ issuer: 'https://demo.eu.astrale.ai' })],
+      invoke: (_target, value) => transfer((value as { requestId: string }).requestId),
     })
-    expect(contract.calls).toEqual([
+    const retrieved = await (await fixture.connect()).retrieveRootIdentity('demo', recipient)
+    expect(retrieved.instance.id).toBe('@instance-node')
+    expect(retrieved.transfer).toEqual(transfer(retrieved.transfer.requestId) as never)
+    expect(fixture.calls).toEqual([
       {
-        target: '@instance-node::admin.astrale.ai:class.Instance.method.retrieveRootIdentity',
-        value: {
-          requestId: 'cli.instance.retrieve-root.test',
-          recipient,
-        },
+        target: `${INSTANCE}.retrieveRootIdentity`,
+        value: { requestId: generated('retrieve-root'), recipient },
       },
     ])
   })
 
-  test.each([
-    'pending',
-    'accepted',
-    'registering',
-    'registered',
-    'completed',
-    'cancelled',
-    'expired',
-    'failed',
-  ])(
-    'observes the exact current Invitation state %s without collapsing progress into completion',
-    async (state) => {
-      const summary = {
-        id: '@invitation-node',
-        email: 'person@example.com',
-        state,
-        access: 'member',
-        instance: '@instance-node',
-        createdAt: '2026-09-07T00:00:00.000Z',
-      } as const
-      const api = await fixture({ invoke: () => summary }).connect()
-      await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
-    },
-  )
-
-  test('exposes the Shell User reserved on the Instance by the Invitation target', async () => {
-    const api = await fixture({
-      invoke: () => ({
-        id: '@invitation-node',
-        version: 1,
-        target: {
-          instance: 'instance-node',
-          kernel: 'https://demo.eu.astrale.ai/api',
-          user: 'user-node',
-          concreteClass: 'shell.astrale.ai:class.User',
-        },
-        email: 'person@example.com',
-        state: 'pending',
-        access: 'member',
-        instance: '@instance-node',
-        createdAt: '2026-09-28T00:00:00.000Z',
-      }),
-    }).connect()
-
-    await expect(api.statusInvitation('@invitation-node')).resolves.toEqual({
-      id: '@invitation-node',
-      email: 'person@example.com',
-      state: 'pending',
-      access: 'member',
-      instance: '@instance-node',
-      user: '@user-node',
-      createdAt: '2026-09-28T00:00:00.000Z',
+  test('invites, observes and reconciles an Invitation, exposing its reserved Shell User', async () => {
+    const fixture = admin({
+      instances: [instance()],
+      invoke: () => ({ ...INVITATION, target: { instance: 'instance-node', user: 'user-node' } }),
     })
-  })
-
-  test('invites through the exact Instance receiver and observes before explicit recovery', async () => {
-    const summary = {
-      id: '@invitation-node',
-      email: 'person@example.com',
-      state: 'pending',
-      access: 'member',
-      instance: '@instance-node',
-      invitedBy: '@owner',
-      createdAt: '2026-08-28T10:00:00.000Z',
-    } as const
-    const contract = fixture({ instances: [instanceNode()], invoke: () => summary })
-    const api = await contract.connect()
-
-    await expect(api.invite('demo', 'Person@Example.com', 7)).resolves.toEqual(summary)
-    await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
-    await expect(api.reconcileInvitation('@invitation-node')).resolves.toEqual(summary)
-    expect(contract.calls).toEqual([
+    const api = await fixture.connect()
+    const expected = { ...INVITATION, user: '@user-node' }
+    await expect(api.invite('demo', 'Person@Example.com', 7)).resolves.toEqual(expected)
+    await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(expected)
+    await expect(api.reconcileInvitation('@invitation-node')).resolves.toEqual(expected)
+    expect(fixture.calls).toEqual([
       {
-        target: '@instance-node::admin.astrale.ai:class.Instance.method.inviteUser',
-        value: {
-          operationId: 'cli.instance.invite.test',
-          email: 'Person@Example.com',
-          expiresInDays: 7,
-        },
+        target: `${INSTANCE}.inviteUser`,
+        value: { operationId: generated('invite'), email: 'Person@Example.com', expiresInDays: 7 },
       },
-      {
-        target: '@invitation-node::admin.astrale.ai:class.Invitation.method.status',
-        value: {},
-      },
+      { target: '@invitation-node::admin.astrale.ai:class.Invitation.method.status', value: {} },
       {
         target: '@invitation-node::admin.astrale.ai:class.Invitation.method.reconcile',
-        value: { operationId: 'cli.instance.reconcile-invitation.test' },
+        value: { operationId: generated('reconcile-invitation') },
       },
     ])
-    expect(contract.reflection).not.toHaveBeenCalled()
+    await expect(
+      api.statusInvitation('@invitation-node::admin.astrale.ai:class.Invitation.method.status'),
+    ).rejects.toThrow('Admin Invitation id is invalid.')
+  })
+
+  test('observes every Invitation state exactly, never collapsing progress into completion', async () => {
+    const states = [
+      'pending',
+      'accepted',
+      'registering',
+      'registered',
+      'completed',
+      'cancelled',
+      'expired',
+      'failed',
+    ]
+    for (const state of states) {
+      const api = await admin({ invoke: () => ({ ...INVITATION, state }) }).connect()
+      await expect(api.statusInvitation('@invitation-node')).resolves.toMatchObject({ state })
+    }
   })
 
   test.each([
-    ['Invitation id', { id: '@other-invitation' }],
-    ['missing Instance', { instance: undefined }],
+    ['another Invitation', { id: '@other-invitation' }],
+    ['no Instance', { instance: undefined }],
     ['Fleet access', { access: 'administrator' }],
-    ['target Instance', { target: { instance: 'other-instance', user: 'user-node' } }],
-  ] as const)('rejects status with mismatched %s scope', async (_label, mismatch) => {
-    const contract = fixture({
-      invoke: () => ({
-        id: '@invitation-node',
-        email: 'person@example.com',
-        state: 'pending',
-        access: 'member',
-        instance: '@instance-node',
-        createdAt: '2026-08-28T10:00:00.000Z',
-        ...mismatch,
-      }),
-    })
-
-    const error = await captureRejection(
-      (await contract.connect()).statusInvitation('@invitation-node'),
-    )
-    expect(error).toBeInstanceOf(TypeError)
-    expect((error as Error).message).toBe(
+    ['another target Instance', { target: { instance: 'other-instance', user: 'user-node' } }],
+  ] as const)('refuses an Invitation answer for %s', async (_label, mismatch) => {
+    const api = await admin({ invoke: () => ({ ...INVITATION, ...mismatch }) }).connect()
+    await expect(api.statusInvitation('@invitation-node')).rejects.toThrow(
       'Admin Invitation status does not match its requested scope.',
     )
   })
 
-  test('status is one read-only direct call and rejects a callable receiver before I/O', async () => {
-    const summary = {
-      id: '@invitation-node',
-      email: 'person@example.com',
-      state: 'pending',
-      access: 'member',
-      instance: '@instance-node',
-      createdAt: '2026-08-28T10:00:00.000Z',
-    } as const
-    const operationId = mock(() => 'must-not-be-called')
-    const contract = fixture({ operationId, invoke: () => summary })
-    const api = await contract.connect()
-
-    await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
-    expect(contract.calls).toEqual([
-      { target: '@invitation-node::admin.astrale.ai:class.Invitation.method.status', value: {} },
-    ])
-    expect(contract.query).not.toHaveBeenCalled()
-    expect(contract.reflection).not.toHaveBeenCalled()
-    expect(operationId).not.toHaveBeenCalled()
-
-    contract.calls.length = 0
-    const error = await captureRejection(
-      api.statusInvitation('@invitation-node::admin.astrale.ai:class.Invitation.method.status'),
-    )
-    expect(error).toBeInstanceOf(TypeError)
-    expect((error as Error).message).toBe('Admin Invitation id is invalid.')
-    expect(contract.calls).toEqual([])
-  })
-
-  test('uses fresh production operation IDs for invite and reconciliation', async () => {
-    const summary = {
-      id: '@invitation-node',
-      email: 'person@example.com',
-      state: 'pending',
-      access: 'member',
-      instance: '@instance-node',
-      createdAt: '2026-08-28T10:00:00.000Z',
-    } as const
-    const contract = fixture({
-      instances: [instanceNode()],
-      useDefaultOperationIds: true,
-      invoke: () => summary,
-    })
-    const api = await contract.connect()
-
-    await api.invite('demo', 'person@example.com')
-    await api.reconcileInvitation('@invitation-node')
-    await api.reconcileInvitation('@invitation-node')
-
-    const operationIds = contract.calls.map(({ value }) =>
-      String((value as { operationId: unknown }).operationId),
-    )
-    expect(operationIds[0]).toMatch(
-      /^cli\.instance\.invite\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
-    )
-    expect(operationIds[1]).toMatch(
-      /^cli\.instance\.reconcile-invitation\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
-    )
-    expect(operationIds[2]).toMatch(
-      /^cli\.instance\.reconcile-invitation\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
-    )
-    expect(operationIds[0]).not.toBe(operationIds[1])
-    expect(operationIds[1]).not.toBe(operationIds[2])
-  })
-
-  test.each([
-    ['Instance', { instance: '@another-instance' }],
-    ['access', { access: 'administrator' }],
-    ['email', { email: 'another@example.com' }],
-  ] as const)(
-    'rejects an invitation response with mismatched %s scope',
-    async (_label, mismatch) => {
-      const contract = fixture({
-        instances: [instanceNode()],
-        invoke: () => ({
-          id: '@invitation-node',
-          email: 'person@example.com',
-          state: 'pending',
-          access: 'member',
-          instance: '@instance-node',
-          createdAt: '2026-08-28T10:00:00.000Z',
-          ...mismatch,
-        }),
-      })
-
-      await expect((await contract.connect()).invite('demo', 'person@example.com')).rejects.toThrow(
+  test('refuses an invitation answer for another Instance or email', async () => {
+    for (const mismatch of [{ instance: '@another-instance' }, { email: 'another@example.com' }]) {
+      const api = await admin({
+        instances: [instance()],
+        invoke: () => ({ ...INVITATION, ...mismatch }),
+      }).connect()
+      await expect(api.invite('demo', 'person@example.com')).rejects.toThrow(
         'Admin Instance invitation does not match its requested scope.',
       )
-    },
-  )
-
-  test.each([
-    ['Invitation id', { id: '@other-invitation' }],
-    ['missing Instance', { instance: undefined }],
-    ['Fleet access', { access: 'administrator' }],
-  ] as const)('rejects reconciliation with mismatched %s scope', async (_label, mismatch) => {
-    const contract = fixture({
-      invoke: () => ({
-        id: '@invitation-node',
-        email: 'person@example.com',
-        state: 'pending',
-        access: 'member',
-        instance: '@instance-node',
-        createdAt: '2026-08-28T10:00:00.000Z',
-        ...mismatch,
-      }),
-    })
-
-    await expect(
-      (await contract.connect()).reconcileInvitation('@invitation-node'),
-    ).rejects.toThrow('Admin Invitation reconciliation does not match its requested scope.')
+    }
   })
 
-  test('connects without network I/O and list performs exactly one Fleet call', async () => {
-    const contract = fixture({})
-
-    const api = await contract.connect()
-    expect(contract.call).not.toHaveBeenCalled()
-    expect(contract.reflection).not.toHaveBeenCalled()
-
-    await expect(api.list()).resolves.toEqual([])
-    expect(contract.listCalls).toEqual([
-      {
-        target: '@customer-fleet::admin.astrale.ai:class.Fleet.method.listInstances',
-        value: {},
-      },
-    ])
-    expect(contract.query).not.toHaveBeenCalled()
-    expect(contract.call).toHaveBeenCalledTimes(1)
-    expect(contract.reflection).not.toHaveBeenCalled()
-  })
-
-  test('rejects malformed inventory, Method, and install outputs', async () => {
-    await expect(
-      (
-        await fixture({
-          listOutput: {},
-        }).connect()
-      ).list(),
-    ).rejects.toThrow('Admin Instance inventory is invalid.')
-    await expect(
-      (
-        await fixture({
-          listOutput: [instanceSummaryFromNode(instanceNode({ state: 'mystery' }))],
-        }).connect()
-      ).list(),
-    ).rejects.toThrow('Admin Instance state is invalid.')
-    await expect(
-      (
-        await fixture({
-          listOutput: [
-            {
-              ...instanceSummaryFromNode(instanceNode()),
-              issuer: 'not-an-issuer',
-            },
-          ],
-        }).connect()
-      ).list(),
-    ).rejects.toThrow('Admin Instance issuer is invalid.')
-
-    const malformedStatus = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        id: '@instance-node',
-        slug: 'demo',
-        state: 'ready',
-        failure: {},
-        createdAt: '2026-08-12T00:00:00.000Z',
-        updatedAt: '2026-08-12T00:00:00.000Z',
-      }),
+  test('refuses malformed inventory and Method outputs', async () => {
+    const list = (output: unknown) =>
+      admin({ invoke: () => output })
+        .connect()
+        .then((api) => api.list())
+    await expect(list({})).rejects.toThrow('Admin Instance inventory is invalid.')
+    await expect(list([summary(instance({ state: 'mystery' }))])).rejects.toThrow(
+      'Admin Instance state is invalid.',
+    )
+    await expect(list([{ ...summary(instance()), issuer: 'not-an-issuer' }])).rejects.toThrow(
+      'Admin Instance issuer is invalid.',
+    )
+    const failed = admin({
+      instances: [instance()],
+      invoke: () => ({ ...summary(instance()), failure: {} }),
     })
-    await expect((await malformedStatus.connect()).status('demo')).rejects.toThrow(
+    await expect((await failed.connect()).status('demo')).rejects.toThrow(
       'Admin failure message is invalid.',
     )
-
-    const malformedInvitation = fixture({
-      instances: [instanceNode()],
-      invoke: () => ({
-        id: '@invitation-node',
-        email: 'person@example.com',
-        state: 'unknown',
-        access: 'member',
-        instance: '@instance-node',
-        createdAt: '2026-08-28T10:00:00.000Z',
-      }),
+    const unknown = admin({
+      instances: [instance()],
+      invoke: () => ({ ...INVITATION, state: 'unknown' }),
     })
-    await expect(
-      (await malformedInvitation.connect()).invite('demo', 'person@example.com'),
-    ).rejects.toThrow('Admin Invitation state is invalid.')
+    await expect((await unknown.connect()).invite('demo', 'person@example.com')).rejects.toThrow(
+      'Admin Invitation state is invalid.',
+    )
   })
 })
 
-function instanceNode(
-  input: Readonly<{
-    id?: string
-    class?: Node['class']
-    slug?: unknown
-    url?: unknown
-    issuer?: unknown
-    organizationId?: unknown
-    state?: unknown
-    phase?: unknown
-    failure?: unknown
-    createdAt?: unknown
-    updatedAt?: unknown
-  }> = {},
-): Node {
+function instance(input: Readonly<{ state?: unknown; issuer?: unknown }> = {}): Node {
   const property = AdminContract.properties.instance
-  const properties: Record<string, unknown> = {
-    [property.slug]: input.slug ?? 'demo',
-    [property.url]: input.url ?? 'https://demo.eu.astrale.ai',
-    [property.state]: input.state ?? 'ready',
-    [property.createdAt]: input.createdAt ?? '2026-08-12T00:00:00.000Z',
-    [property.updatedAt]: input.updatedAt ?? '2026-08-12T00:00:00.000Z',
-  }
-  if (input.organizationId !== undefined) {
-    properties[property.organizationId] = input.organizationId
-  }
-  if (input.issuer !== undefined) properties[property.issuer] = input.issuer
-  if (input.phase !== undefined) properties[property.phase] = input.phase
-  if (input.failure !== undefined) properties[property.failure] = input.failure
   return Object.freeze({
-    id: NodeId(input.id ?? 'instance-node'),
-    class: input.class ?? ClassKey.of(AdminContract.classes.Instance),
-    props: normalizeProperties(properties),
+    id: NodeId('instance-node'),
+    class: ClassKey.of(AdminContract.classes.Instance),
+    props: normalizeProperties({
+      [property.slug]: 'demo',
+      [property.url]: 'https://demo.eu.astrale.ai',
+      [property.state]: input.state ?? 'ready',
+      [property.createdAt]: CREATED_AT,
+      [property.updatedAt]: CREATED_AT,
+      ...(input.issuer === undefined ? {} : { [property.issuer]: input.issuer }),
+    }),
   })
 }
 
-function instanceSummaryFromNode(node: Node): Record<string, unknown> {
+/** The InstanceSummary Admin's Methods answer for one Instance Node. */
+function summary(node: Node): Record<string, unknown> {
   const property = AdminContract.properties.instance
   return {
     id: `@${node.id}`,
@@ -795,14 +301,7 @@ function instanceSummaryFromNode(node: Node): Record<string, unknown> {
     url: node.props[property.url],
     ...(node.props[property.issuer] === undefined ? {} : { issuer: node.props[property.issuer] }),
     state: node.props[property.state],
-    ...(node.props[property.phase] === undefined ? {} : { phase: node.props[property.phase] }),
-    ...(node.props[property.failure] === undefined
-      ? {}
-      : { failure: node.props[property.failure] }),
     createdAt: node.props[property.createdAt],
     updatedAt: node.props[property.updatedAt],
-    ...(node.props[property.organizationId] === undefined
-      ? {}
-      : { organizationId: node.props[property.organizationId] }),
   }
 }

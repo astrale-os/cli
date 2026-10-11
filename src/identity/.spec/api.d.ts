@@ -3,6 +3,7 @@ import type { Call } from '@astrale-os/sdk/client'
 import type { NodeId } from '@astrale-os/sdk/graph/node'
 import type { JWK } from 'jose'
 
+import type { RootIdentityRecipient, RootIdentityTransfer } from '../../admin/instance/.spec/api.js'
 import type {
   Identity,
   IdentityMode,
@@ -11,10 +12,10 @@ import type {
   Registration,
 } from '../../state/.spec/api.js'
 
-export type { Identity, IdentityStore, Registration } from '../../state/.spec/api.js'
+export type { Identity, IdentityStore } from '../../state/.spec/api.js'
 
 /** Filesystem coordinates used only by explicit identity transfer operations. */
-export interface IdentityFileOptions {
+interface IdentityFileOptions {
   readonly state?: IdentityStoreOptions
   readonly keysDir?: string
 }
@@ -36,18 +37,14 @@ export interface IdentityImportOptions extends IdentityFileOptions {
   readonly replace?: boolean
 }
 
+/** An admitted registration response identifies the selected existing Node. */
 export interface IdentityRegistrationResult {
   readonly iss: string
   readonly sub: string
-  readonly nodeId?: string
-}
-
-/** An admitted registration response identifies the selected existing Node. */
-export interface RegisteredIdentity extends IdentityRegistrationResult {
   readonly nodeId: string
 }
 
-export interface IdentityRegistrationSubmission {
+interface IdentityRegistrationSubmission {
   readonly request: RegisterRequest
   readonly nodeId: NodeId
   readonly expectedAuthentication: Authentication
@@ -60,17 +57,13 @@ export interface IdentityRegistrationSubmission {
   }
 }
 
-/** Submit one prepared request either directly or through its explicit Domain authority owner. */
+/**
+ * Submit one prepared request either directly or through its explicit Domain authority owner, and
+ * admit only the selected existing Node; remote callables remain untrusted input.
+ */
 export function submitIdentityRegistration(
   input: IdentityRegistrationSubmission,
-): Promise<RegisteredIdentity>
-
-/** Admit only the selected existing Node; remote callables remain untrusted input. */
-export function acceptRegisteredIdentity(
-  value: unknown,
-  nodeId: NodeId,
-  expectedAuthentication: Authentication,
-): RegisteredIdentity
+): Promise<IdentityRegistrationResult>
 
 export function readIdentities(): Promise<IdentityStore>
 
@@ -129,3 +122,27 @@ export function importIdentity(
 
 /** Atomically publish one explicit private export file with mode 0600. */
 export function writeIdentityExport(path: string, content: string): Promise<void>
+
+/** One-use recipient of an Instance root transfer; its private half never leaves this process. */
+export interface RootIdentityRecipientContext {
+  readonly recipient: RootIdentityRecipient
+  readonly privateKey: CryptoKey
+}
+
+/** The exact Admin request and Instance a root transfer must be bound to. */
+export interface RootIdentityTransferScope {
+  readonly instance: string
+  readonly issuer: string
+  readonly requestId: string
+  readonly recipientThumbprint: string
+  readonly subject: string
+}
+
+export function createRootIdentityRecipient(): Promise<RootIdentityRecipientContext>
+
+/** Decrypt and bind a Host-sealed export to the exact Admin request and Instance. */
+export function decodeRootIdentityTransfer(
+  transfer: RootIdentityTransfer,
+  recipient: RootIdentityRecipientContext,
+  scope: RootIdentityTransferScope,
+): Promise<IdentityExport>

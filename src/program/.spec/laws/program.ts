@@ -1,13 +1,13 @@
 import { defineLaw } from '@astrale-os/spec/authoring'
 
-export const CLI_PROGRAM_LEDGERED_SURFACE = defineLaw({
-  id: 'CLI-PROGRAM-LEDGERED-SURFACE',
+export const CLI_PROGRAM_DOCUMENTED_SURFACE = defineLaw({
+  id: 'CLI-PROGRAM-DOCUMENTED-SURFACE',
   statement:
-    'Program composition exposes one exact root and nested command surface; metadata, options, aliases, visibility, Commander behavior, rendered help, and package-derived version change only through a deliberate compatibility-ledger entry.',
+    'Every `astrale` command a shipped skill documents parses against the command tree, and the program version is the package version.',
   tests: [
     {
-      file: '__tests__/program.test.ts',
-      id: 'TEST-CLI-PROGRAM-MATCHES-LEDGERED-SURFACE',
+      file: '__tests__/skill-examples.test.ts',
+      id: 'TEST-CLI-PROGRAM-SKILL-EXAMPLES-PARSE',
     },
     {
       file: '__tests__/program.test.ts',

@@ -18,12 +18,8 @@ export {
   writeIdentityExport,
 } from './transfer'
 export { createRootIdentityRecipient, decodeRootIdentityTransfer } from './root-transfer'
-export { acceptRegisteredIdentity, submitIdentityRegistration } from './registration'
-export type {
-  IdentityRegistrationSubmission,
-  IdentityRegistrationResult,
-  RegisteredIdentity,
-} from './registration'
-export type { Identity, IdentityStore, Registration } from './registry'
-export type { IdentityExport, IdentityFileOptions, IdentityImportOptions } from './transfer'
-export type { RootIdentityRecipientContext, RootIdentityTransferScope } from './root-transfer'
+export { submitIdentityRegistration } from './registration'
+export type { IdentityRegistrationResult } from './registration'
+export type { Identity, IdentityStore } from './registry'
+export type { IdentityExport, IdentityImportOptions } from './transfer'
+export type { RootIdentityRecipientContext } from './root-transfer'

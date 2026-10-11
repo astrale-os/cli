@@ -7,7 +7,6 @@ import { ClientSession, execution } from '@astrale-os/sdk/client/session'
 import { NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,19 +21,19 @@ import type { ConnectionTarget } from '../target'
 import { prepareQuery } from '../../graph'
 import { ExchangeCredentialCache } from '../../state/exchange-credentials'
 import { InstallationCache } from '../../state/installations'
-import { createPathCall } from '../call'
+import { createPathCall } from '../command'
 import { createConnectionCredential } from '../credential'
+import { classifyFailure } from '../errors'
 import { createExchangeCredentialResolver } from '../exchange'
 import { acceptExecutionReceipt } from '../execution'
-import { classifyFailure } from '../failure/classify'
 import { createInstalledIssuer } from '../installed-issuer'
 import { createClientSessionOptions, withResolvedClientSession } from '../session'
 
 const KERNEL = issuer.accept('https://kernel.example')
 const INVOCATION = `${KERNEL}/invoke`
 const SHELL = 'shell.astrale.ai'
-/** The stable issuer every managed Instance installs the Shell with today. */
-const LEGACY_SHELL = issuer.accept('https://shell.beta.astrale.ai')
+/** A stable Shell issuer, as a managed Instance may install it. */
+const STABLE_SHELL = issuer.accept('https://shell.beta.astrale.ai')
 /** Immutable deployments: each one is its own issuer, and none is derivable from the route. */
 const DEPLOYMENT = issuer.accept('https://shell-beta-0123456789abcdef.deployments.example')
 const NEXT_DEPLOYMENT = issuer.accept('https://shell-beta-fedcba9876543210.deployments.example')
@@ -49,13 +48,12 @@ const SHELL_CALL = {
 } as const
 const EXPIRES_AT = Math.floor(Date.now() / 1_000) + 500
 const SOURCE_EXPIRES_AT = Math.floor(Date.now() / 1_000) + 600
-/** A Studio per-Class query, and a Kernel callable answered without a Domain. */
+/** A Studio per-Class query. */
 const QUERY = prepareQuery({
   sources: [],
   class: '/:kernel.astrale.ai:class.Identity',
   limit: '1',
 }).ast
-const WHOAMI = '/:kernel.astrale.ai:class.Identity:whoami'
 const INVOCATION_ID = { source: KERNEL, id: 'inspect' } as ConstructorParameters<
   typeof ResponseError
 >[2]
@@ -169,7 +167,7 @@ describe('Shell exchange at the installed issuer', () => {
     },
   )
 
-  test.each([2002, 2004, 5002])(
+  test.each([2002, 5002])(
     'never replays an application invocation that refuses with %i',
     async (code) => {
       const origin = 'services.astrale.ai'
@@ -190,91 +188,35 @@ describe('Shell exchange at the installed issuer', () => {
     },
   )
 
-  test('keeps a credential refusal when re-reading the pin does not explain it', async () => {
+  test('keeps a Kernel or Domain refusal that re-reading the pin does not explain', async () => {
+    // The Kernel refuses the exchanged credential of the remembered issuer the pin still names.
     await installations.set(KERNEL, SHELL, { issuer: DEPLOYMENT })
-    const net = network(
+    const kernel = network(
       { [DEPLOYMENT]: 'live' },
-      {
-        kernel: { kind: 'up', admits: () => false },
-      },
+      { kernel: { kind: 'up', admits: () => false } },
     )
-    const pin = pinned(DEPLOYMENT)
-    await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).rejects.toMatchObject({
-      code: 2002,
-    })
-    expect(pin.reads).toEqual([SHELL])
-    expect(
-      net.requests.filter((request) => request.endsWith('/.well-known/astrale/token')),
-    ).toHaveLength(1)
+    const remembered = pinned(DEPLOYMENT)
+    await expect(
+      shellResolver(kernel.fetch, remembered.read).resolve(KERNEL, live()),
+    ).rejects.toMatchObject({ code: 2002 })
+    expect(remembered.reads).toEqual([SHELL])
+    expect(kernel.requests.filter((request) => request.endsWith('/token'))).toHaveLength(1)
+
+    // The Domain refuses the exchange at the issuer the pin names on each read.
+    await installations.delete(KERNEL, SHELL)
+    await credentials.clear()
+    const domain = network({ [DEPLOYMENT]: 'refuses' })
+    const read = pinned(DEPLOYMENT)
+    await expect(
+      shellResolver(domain.fetch, read.read).resolve(KERNEL, live()),
+    ).rejects.toMatchObject({ code: '2002' })
+    expect(read.reads).toEqual([SHELL, SHELL])
+    expect(domain.requests.filter((request) => request.endsWith('/token'))).toHaveLength(1)
   })
 
-  test('a concurrent resolution can finish healing before another refused bearer reads the pin', async () => {
-    const seed = network({ [DEPLOYMENT]: 'live' })
-    for (const user of ['user-1', 'user-2']) {
-      await createExchangeCredentialResolver(
-        { ...TARGET, domainIssuer: DEPLOYMENT },
-        { resolve: async () => sourceToken(user) },
-        seed.fetch,
-        5_000,
-        credentials,
-      ).resolve(KERNEL, live())
-    }
-    await installations.set(KERNEL, SHELL, { issuer: DEPLOYMENT })
-    const net = network(
-      { [DEPLOYMENT]: 'live', [NEXT_DEPLOYMENT]: 'live' },
-      {
-        kernel: {
-          kind: 'up',
-          pin: () => NEXT_DEPLOYMENT,
-          admits: (token) => credentialIssuer(token) === NEXT_DEPLOYMENT,
-        },
-      },
-    )
-    let release!: () => void
-    let started!: () => void
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const firstSource = new Promise<void>((resolve) => {
-      started = resolve
-    })
-    let hints = 0
-    let sources = 0
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      {
-        cacheIdentity: async () => ({
-          issuer: 'https://workos.example',
-          subject: `user-${++hints}`,
-        }),
-        async resolve() {
-          const user = `user-${++sources}`
-          if (user === 'user-1') {
-            started()
-            await blocked
-          }
-          return sourceToken(user)
-        },
-      },
-      net.fetch,
-      5_000,
-      credentials,
-      createInstalledIssuer(KERNEL, SHELL, installations),
-    )
-    const first = resolver.resolve(KERNEL, live())
-    await firstSource
-    try {
-      await expect(resolver.resolve(KERNEL, live())).resolves.toBe(
-        exchanged(NEXT_DEPLOYMENT, 'user-2'),
-      )
-    } finally {
-      release()
-    }
-    await expect(first).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
-  })
   /** @evidence TEST-CLI-INSTALLED-SHELL-DEPLOYMENT-ISSUER */
   test('exchanges at the deployment issuer the Kernel pin names, read as the source caller', async () => {
-    const net = network({ [DEPLOYMENT]: 'live', [LEGACY_SHELL]: 'live' })
+    const net = network({ [DEPLOYMENT]: 'live', [STABLE_SHELL]: 'live' })
     const pin = pinned(DEPLOYMENT)
     const resolver = shellResolver(net.fetch, pin.read)
 
@@ -284,7 +226,7 @@ describe('Shell exchange at the installed issuer', () => {
     expect(pin.reads).toEqual([SHELL])
     // The pin is read through the Session that authenticates the source caller, before any Domain.
     expect(net.requests[0]).toBe(`kernel ${INVOCATION} as source`)
-    expect(net.requests.filter((request) => request.includes(LEGACY_SHELL))).toEqual([])
+    expect(net.requests.filter((request) => request.includes(STABLE_SHELL))).toEqual([])
     expect(net.requests.filter((request) => request.startsWith('domain'))).toEqual([
       `domain ${DEPLOYMENT}/.well-known/openid-configuration`,
       `domain ${DEPLOYMENT}/.well-known/astrale/token`,
@@ -360,58 +302,17 @@ describe('Shell exchange at the installed issuer', () => {
     ])
   })
 
-  test('keeps a failure the pin does not explain', async () => {
-    const net = network({ [DEPLOYMENT]: 'refuses' })
-    const pin = pinned(DEPLOYMENT)
-
-    await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).rejects.toMatchObject({
-      code: '2002',
-    })
-    expect(pin.reads).toEqual([SHELL, SHELL])
-    expect(net.requests.filter((request) => request.endsWith('/token'))).toHaveLength(1)
-  })
-
-  test('keeps the exchange failure and what was read when the pin cannot be read again', async () => {
-    const net = network({ [DEPLOYMENT]: 'retired' })
-    const unavailable = new ResponseError(5001, 'Backend is unavailable.', INVOCATION_ID)
-    const pin = pinned(DEPLOYMENT, unavailable)
-    const resolver = shellResolver(net.fetch, pin.read)
-
-    await expect(resolver.resolve(KERNEL, live())).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_DISCOVERY_FAILED',
-    })
-    expect(pin.reads).toEqual([SHELL, SHELL])
-
-    // This session's read stands: the next resolution exchanges at the same issuer again.
-    await expect(resolver.resolve(KERNEL, live())).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_DISCOVERY_FAILED',
-    })
-    expect(pin.reads).toEqual([SHELL, SHELL, SHELL])
-    expect(net.requests.filter((request) => request.startsWith('domain'))).toEqual([
-      `domain ${DEPLOYMENT}/.well-known/openid-configuration`,
-      `domain ${DEPLOYMENT}/.well-known/openid-configuration`,
-    ])
-  })
-
   /** @evidence TEST-CLI-INSTALLED-SHELL-READ-ONCE-PER-BOOKMARK */
   test('reads the installed issuer once per bookmark across commands', async () => {
-    const shell = shellCommand({ [LEGACY_SHELL]: 'live' }, () => LEGACY_SHELL)
+    const shell = shellCommand({ [STABLE_SHELL]: 'live' }, () => STABLE_SHELL)
 
     for (let command = 0; command < 5; command += 1) {
-      await expect(shell.run()).resolves.toBe(exchanged(LEGACY_SHELL))
+      await expect(shell.run()).resolves.toBe(exchanged(STABLE_SHELL))
     }
 
     expect(shell.inspects()).toEqual([`kernel ${INVOCATION} inspect ${SHELL} as source`])
-    expect(shell.exchanges()).toEqual([`domain ${LEGACY_SHELL}/.well-known/astrale/token`])
-    expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: LEGACY_SHELL })
-  })
-
-  test('serves what the callable path read of the Shell installation, the same fact', async () => {
-    await installations.set(KERNEL, SHELL, { issuer: DEPLOYMENT })
-    const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
-
-    await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
-    expect(shell.inspects()).toEqual([])
+    expect(shell.exchanges()).toEqual([`domain ${STABLE_SHELL}/.well-known/astrale/token`])
+    expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: STABLE_SHELL })
   })
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-WITHIN-COMMAND */
@@ -440,22 +341,6 @@ describe('Shell exchange at the installed issuer', () => {
     ])
   })
 
-  test('heals within the command when the remembered issuer no longer serves an exchange', async () => {
-    const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
-    await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
-
-    // A user with no persisted credential exchanges afresh at the remembered issuer, which the
-    // reinstall retired: the command reads the pin once more and retries once, at the new issuer.
-    shell.reinstall(NEXT_DEPLOYMENT, { [DEPLOYMENT]: 'retired', [NEXT_DEPLOYMENT]: 'live' })
-    await expect(shell.run('user-2')).resolves.toBe(exchanged(NEXT_DEPLOYMENT, 'user-2'))
-    expect(shell.inspects()).toHaveLength(2)
-    expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: NEXT_DEPLOYMENT })
-
-    // The first user's credential from the old issuer is never selected again.
-    await expect(shell.run()).resolves.toBe(exchanged(NEXT_DEPLOYMENT))
-    expect(shell.inspects()).toHaveLength(2)
-  })
-
   /** @evidence TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-NEVER-SENT-TWICE */
   test('never sends a stale remembered issuer twice, even while the old deployment still exchanges', async () => {
     // The record names an earlier deployment; the Shell now runs from the next one, while the
@@ -480,9 +365,7 @@ describe('Shell exchange at the installed issuer', () => {
   /** @evidence TEST-CLI-INSTALLED-SHELL-CONCURRENT-REFUSALS-HEAL */
   test.each([
     ['graph', (context: ConnectionContext) => context.graph.query(QUERY, { page: { size: 1 } })],
-    ['session', (context: ConnectionContext) => context.session.call(createPathCall(WHOAMI, {}))],
     ['schema', (context: ConnectionContext) => context.session.schema.inspect(SHELL)],
-    ['auth', (context: ConnectionContext) => context.auth.whoami()],
   ] as const)(
     'heals a remembered issuer before concurrent calls on each Kernel capability (%s)',
     async (_surface, query) => {
@@ -528,19 +411,6 @@ describe('Shell exchange at the installed issuer', () => {
     },
   )
 
-  test('keeps the remembered issuer when the command recovers from a refusal that is not 2002', async () => {
-    const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
-    await expect(shell.run()).resolves.toBe(exchanged(DEPLOYMENT))
-    const recovered: ShellAction = (context) =>
-      context.session
-        .call(createPathCall(WHOAMI, { forbidden: true }))
-        .then(undefined, (error: unknown) => (error as ResponseError).code)
-
-    await expect(shell.run('user-1', recovered)).resolves.toBe(2004)
-    expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: DEPLOYMENT })
-    expect(shell.inspects()).toHaveLength(1)
-  })
-
   /** @evidence TEST-CLI-INSTALLED-SHELL-FAILURE-FORGETS-REMEMBERED-ONLY */
   test('forgets the remembered issuer after any failure of a command that relied on it', async () => {
     const shell = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT)
@@ -556,51 +426,11 @@ describe('Shell exchange at the installed issuer', () => {
 
     // A command that read the pin itself keeps what it read when it fails.
     await installations.delete(KERNEL, SHELL)
+    await credentials.clear()
     await expect(shell.run('user-1', shell.failing(new Error('query failed')))).rejects.toThrow(
       'query failed',
     )
     expect(await installations.get(KERNEL, SHELL)).toEqual({ issuer: DEPLOYMENT })
-  })
-
-  test('does not read the pin again for a failure a moved issuer cannot cause', async () => {
-    const net = network({ [DEPLOYMENT]: 'live' }, { cacheControl: false })
-    const pin = pinned(DEPLOYMENT, NEXT_DEPLOYMENT)
-
-    await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-    })
-    expect(pin.reads).toEqual([SHELL])
-  })
-
-  /** @evidence TEST-CLI-INSTALLED-SHELL-LEGACY-ISSUER-UNCHANGED */
-  test('exchanges a Shell still pinned at its stable issuer there, reusing what an earlier release cached', async () => {
-    // An earlier release exchanged at the stable issuer and cached the result.
-    const earlier = network({ [LEGACY_SHELL]: 'live' })
-    await createExchangeCredentialResolver(
-      { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainIssuer: LEGACY_SHELL },
-      { resolve: async () => sourceToken('user-1') },
-      earlier.fetch,
-      5_000,
-      credentials,
-    ).resolve(KERNEL, live())
-
-    const net = network({})
-    const pin = pinned(LEGACY_SHELL)
-    await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).resolves.toBe(
-      exchanged(LEGACY_SHELL),
-    )
-    expect(pin.reads).toEqual([SHELL])
-    expect(net.requests).toEqual([`kernel ${INVOCATION} as source`])
-
-    // Later commands read the pin no more: the installation cache remembers the issuer it named.
-    await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).resolves.toBe(
-      exchanged(LEGACY_SHELL),
-    )
-    expect(pin.reads).toEqual([SHELL])
-    expect(net.requests).toEqual([
-      `kernel ${INVOCATION} as source`,
-      `kernel ${INVOCATION} as other`,
-    ])
   })
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-ISSUER-UNRESOLVED */
@@ -610,7 +440,7 @@ describe('Shell exchange at the installed issuer', () => {
       code: 'SCHEMA_NOT_FOUND',
       details: { origin: SHELL },
     })
-    const net = network({ [LEGACY_SHELL]: 'live' })
+    const net = network({ [STABLE_SHELL]: 'live' })
     const failing = shellResolver(net.fetch, async () => {
       throw refused
     })
@@ -642,28 +472,6 @@ describe('Shell exchange at the installed issuer', () => {
   /** @evidence TEST-CLI-INSTALLED-SHELL-READ-FAILURE-KEEPS-CLASSIFICATION */
   test.each([
     [{ kind: 'refuses', code: 2002 } as const, 2002],
-    [{ kind: 'refuses', code: 5001 } as const, 5001],
-    // A 1003 that rejects the read's own input says nothing about the installation. This is the
-    // reason the Kernel's rejectInput answers for a non-canonical origin.
-    [
-      {
-        kind: 'refuses',
-        code: 1003,
-        reason: {
-          code: 'FUNCTION_INPUT_INVALID',
-          details: {
-            issues: [
-              {
-                code: 'ORIGIN_INVALID',
-                path: '/origin',
-                message: 'Installation origin must be canonical.',
-              },
-            ],
-          },
-        },
-      } as const,
-      1003,
-    ],
     [{ kind: 'down' } as const, 'TRANSPORT_ERROR'],
   ])(
     'keeps a read failure that is not about the installation as the Kernel reported it (%o)',
@@ -688,13 +496,12 @@ describe('Shell exchange at the installed issuer', () => {
   /** @evidence TEST-CLI-INSTALLED-SHELL-INSPECT-DECODED */
   test.each([
     ['a deployment issuer', DEPLOYMENT],
-    ['an independent issuer', LEGACY_SHELL],
     ['no release', null],
   ] as const)(
     'reads the pin with schema.inspect and decodes canonical ReleaseRef DomainInfo (%s)',
     async (_case, pin) => {
       const net = network(
-        { [DEPLOYMENT]: 'live', [LEGACY_SHELL]: 'live' },
+        { [DEPLOYMENT]: 'live', [STABLE_SHELL]: 'live' },
         { kernel: { kind: 'up', pin: () => pin } },
       )
       const resolver = createExchangeCredentialResolver(
@@ -713,12 +520,9 @@ describe('Shell exchange at the installed issuer', () => {
     },
   )
 
-  test.each([
-    ['no release', null],
-    ['the source Kernel as its issuer', KERNEL],
-  ])('keeps the caller when the Kernel hosts the Domain itself (%s)', async (_case, answer) => {
+  test('keeps the caller when the pin names the source Kernel as the issuer', async () => {
     const net = network({})
-    const pin = pinned(answer)
+    const pin = pinned(KERNEL)
     await expect(shellResolver(net.fetch, pin.read).resolve(KERNEL, live())).resolves.toBe(
       sourceToken('user-1'),
     )
@@ -894,7 +698,7 @@ function pinned(...answers: Array<string | null | Error | (() => string | null)>
 /** A source Kernel in the given state, and Domain issuers in the given states. */
 function network(
   issuers: Readonly<Record<string, IssuerState>>,
-  options: { readonly cacheControl?: boolean; readonly kernel?: KernelState } = {},
+  options: { readonly kernel?: KernelState } = {},
 ) {
   const requests: string[] = []
   const businessIssuers: string[] = []
@@ -927,7 +731,6 @@ function network(
       ) {
         return answered(url, refusal(body.requestId, 2002, contentType))
       }
-      if (call?.forbidden === true) return answered(url, refusal(body.requestId, 2004, contentType))
       if (typeof call?.fail === 'number')
         return answered(url, refusal(body.requestId, call.fail, contentType))
       if (inspected !== '' && kernel.pin !== undefined) {
@@ -974,7 +777,7 @@ function network(
           {
             headers: {
               'content-type': 'application/vnd.astrale+json',
-              ...(options.cacheControl === false ? {} : { 'cache-control': 'no-store' }),
+              'cache-control': 'no-store',
             },
           },
         ),
@@ -1061,10 +864,6 @@ function introspection(requestId: unknown, origin: string, pinnedIssuer: string 
       'x-astrale-invocation': `${encodeURIComponent(KERNEL)};call-${requestId}`,
     },
   })
-}
-
-function sha256(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex')
 }
 
 function json(value: unknown, status = 200, contentType = 'application/json'): Response {

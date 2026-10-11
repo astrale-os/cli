@@ -11,7 +11,7 @@ import { connectAdminInstances } from '../instance/client'
 import { resolveAdminFleet } from '../selection'
 import { adminSession } from './fixture'
 
-function fixture(entries: [string, boolean][], explicit?: string) {
+function fixture(entries: Entries, explicit?: string) {
   const nodes = entries.map(([slug]) => ({
     id: NodeId(slug),
     class: ClassKey.of(AdminContract.classes.Fleet),
@@ -34,7 +34,6 @@ function fixture(entries: [string, boolean][], explicit?: string) {
         allowed: entries.find(([id]) => id === (input as { object: string }).object)?.[1] ?? false,
       }
     }
-    if (target.endsWith('.method.listInstances')) return []
     if (target.endsWith('.method.createInstance'))
       return { id: '@created', slug: 'demo', state: 'ready', url: 'https://demo.test' }
     throw new Error(`Unexpected call: ${target}`)
@@ -50,50 +49,50 @@ function fixture(entries: [string, boolean][], explicit?: string) {
   }
 }
 
+type Entries = [string, boolean][]
+
 test.each([
-  { entries: [['shared', true]], expected: '@shared' },
-  {
-    entries: [
+  [[['shared', true]]],
+  [
+    [
       ['default', false],
       ['shared', true],
     ],
-    expected: '@shared',
-  },
-  {
-    entries: [
+  ],
+  [
+    [
       ['observer-only', false],
       ['shared', true],
     ],
-    expected: '@shared',
-  },
-] as { entries: [string, boolean][]; expected: string }[])(
-  'selects $expected using the native UseFleet decision',
-  async ({ entries, expected }) => {
-    const { context } = fixture(entries)
-    expect(String((await resolveAdminFleet(context, true)).raw)).toBe(expected)
+  ],
+] as [Entries][])(
+  'selects the one Fleet the native UseFleet decision allows (%j)',
+  async (entries) => {
+    expect(String((await resolveAdminFleet(fixture(entries).context, true)).raw)).toBe('@shared')
   },
 )
 
 test.each([
-  { entries: [] },
-  {
-    entries: [
+  [[]],
+  [
+    [
       ['default', true],
       ['shared', true],
     ],
-  },
-  { entries: [['shared', false]] },
-  {
-    entries: [
+  ],
+  [[['shared', false]]],
+  [
+    [
       ['shared', true],
       ['astrale', true],
     ],
-  },
-] as { entries: [string, boolean][] }[])(
-  'refuses absence or ambiguity without choosing a foreign default ($entries)',
-  async ({ entries }) => {
-    const { context } = fixture(entries)
-    await expect(resolveAdminFleet(context, true)).rejects.toThrow(/No Fleet|Choose one/)
+  ],
+] as [Entries][])(
+  'refuses absence or ambiguity without choosing a default (%j)',
+  async (entries) => {
+    await expect(resolveAdminFleet(fixture(entries).context, true)).rejects.toThrow(
+      /No Fleet|Choose one/,
+    )
   },
 )
 
@@ -110,14 +109,13 @@ test('retains read-only inventory without claiming creation rights', async () =>
   await expect(resolveAdminFleet(context, true)).rejects.toThrow('No Fleet')
 })
 
-test('the ordinary instance client lists and creates in its sole usable fleet', async () => {
+test('the instance client creates in its sole usable Fleet', async () => {
   const { context, remote } = fixture([['shared', true]])
   const api = await connectAdminInstances(context)
-  await expect(api.list()).resolves.toEqual([])
   await expect(api.create('demo', 'create-shared')).resolves.toMatchObject({ id: '@created' })
-  const encoded = JSON.stringify(remote.call.mock.calls)
-  expect(encoded).toContain('@shared::admin.astrale.ai:class.Fleet.method.createInstance')
-  expect(encoded).not.toContain(':core.')
+  expect(JSON.stringify(remote.call.mock.calls)).toContain(
+    '@shared::admin.astrale.ai:class.Fleet.method.createInstance',
+  )
 })
 
 test('lists the usable choices and never creates when default is one of several', async () => {

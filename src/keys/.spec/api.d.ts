@@ -20,12 +20,6 @@ export function keypairPaths(subject: string, keysDir?: string): KeypairPaths
 
 export function fileExists(path: string): Promise<boolean>
 
-export function listIdentityKeys(keysDir?: string): Promise<string[]>
-
-export function generateEd25519Jwk(
-  kid: string,
-): Promise<{ readonly privateJwk: JWK; readonly publicJwk: JWK }>
-
 export function persistKeypair(
   subject: string,
   opts?: { readonly keysDir?: string; readonly kid?: string },

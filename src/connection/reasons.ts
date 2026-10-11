@@ -1,3 +1,12 @@
+import { ResponseError } from '@astrale-os/sdk/client'
+
+/** The Kernel's AUTH_INVALID: it does not accept the presented credential (an unregistered account too). */
+export const CREDENTIAL_REFUSED = 2002
+
+export function credentialRefused(error: unknown): error is ResponseError {
+  return error instanceof ResponseError && error.code === CREDENTIAL_REFUSED
+}
+
 export type FunctionInputIssue = Readonly<{
   code: string
   path?: string

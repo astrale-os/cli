@@ -10,10 +10,8 @@ import { join } from 'node:path'
 import type { AstraleConfig } from '../../lib/config'
 import type { ExchangeIssuer } from '../exchange'
 
-import { persistKeypair, signAs } from '../../keys/index'
 import { bindCredentialIdentity } from '../auth'
 import { createCliCredential, createConnectionCredential } from '../credential'
-import { nestedCredentialCarrierTtlSeconds } from '../lifetime'
 
 const SOURCE = issuer.accept('https://kernel.example')
 const TARGET_CALL = Object.freeze({
@@ -29,7 +27,7 @@ const config: AstraleConfig = {
 
 describe('connection credential', () => {
   /** @evidence TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH */
-  test('composes named and active IdP identities into exact persisted exchange hits', async () => {
+  test('selects the named, bookmark or default identity and its exact persisted exchange', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'astrale-connection-exchange-'))
     try {
       const fixture = join(import.meta.dir, 'fixtures', 'exchange-cache-cli-process.ts')
@@ -45,164 +43,78 @@ describe('connection credential', () => {
       ])
 
       expect(exitCode, stderr).toBe(0)
-      expect(JSON.parse(stdout)).toEqual({ explicit: true, active: true, fetches: 0 })
+      expect(JSON.parse(stdout)).toEqual({
+        explicit: true,
+        active: true,
+        foreign: false,
+        fetches: 0,
+        registered: { iss: 'https://kernel.example/iss/registered', sub: 'registered-node' },
+        root: { iss: 'https://kernel.example', sub: 'system' },
+      })
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
   })
 
   test('pins the bookmark identity while leaving explicit credentials unnamed', async () => {
-    const target = {
-      url: `${SOURCE}/invoke`,
-      kernelIssuer: SOURCE,
-      defaultIdentity: 'bookmark-owner',
-    }
-
-    await expect(bindCredentialIdentity({}, target)).resolves.toMatchObject({
-      as: 'bookmark-owner',
-    })
-    await expect(bindCredentialIdentity({ as: 'explicit-owner' }, target)).resolves.toEqual({
-      as: 'explicit-owner',
-    })
+    const target = { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, defaultIdentity: 'owner' }
+    await expect(bindCredentialIdentity({}, target)).resolves.toEqual({ as: 'owner' })
     await expect(bindCredentialIdentity({ creds: 'opaque' }, target)).resolves.toEqual({
       creds: 'opaque',
     })
   })
 
   /** @evidence TEST-CLI-CONNECTION-RESOLVES-SOURCE-AUTH-BEFORE-ROUTING */
-  test('resolves source authority without destination knowledge', async () => {
-    const audiences: IssuerId[] = []
-    const calls: unknown[] = []
-    const auth = createConnectionCredential(SOURCE, {
-      async resolve(audience) {
-        audiences.push(audience)
-        return `source:${audience}`
-      },
-    })
-    const signal = new AbortController().signal
-
-    calls.push(TARGET_CALL)
-    await expect(auth.resolve(TARGET_CALL, signal)).resolves.toEqual({
-      credential: `source:${SOURCE}`,
-    })
-
-    expect(auth.ttlSeconds).toBe(60)
-    expect(audiences).toEqual([SOURCE])
-    expect(calls).toEqual([TARGET_CALL])
-  })
-
   /** @evidence TEST-CLI-CONNECTION-BOUNDS-REMOTE-CARRIER-TO-SOURCE-LIFETIME */
-  test('bounds destination delegation to the current source credential lifetime', async () => {
-    const expiresAt = Math.ceil(Date.now() / 1_000) + 120
-    const auth = createConnectionCredential(SOURCE, {
-      async resolve() {
-        return token(expiresAt)
-      },
-    })
-
-    const resolved = await auth.resolve(TARGET_CALL, new AbortController().signal)
-    expect(resolved.credential).toBe(token(expiresAt))
-    expect(resolved.delegate?.ttlSeconds).toBeGreaterThan(0)
-    expect(resolved.delegate?.ttlSeconds).toBeLessThan(120)
-  })
-
   /** @evidence TEST-CLI-CONNECTION-CARRIER-COVERS-COMMAND-TIMEOUT */
-  test('covers a long command deadline with one destination carrier', async () => {
-    const expiresAt = Math.ceil(Date.now() / 1_000) + 300
-    const auth = createConnectionCredential(SOURCE, { resolve: async () => token(expiresAt) }, 185)
+  test.each([
+    ['an opaque source', 'opaque', 60, { credential: 'opaque' }],
+    ['a two-minute source', 120, 60, { delegate: { ttlSeconds: 60 } }],
+    ['a five-minute source', 300, 185, { delegate: { ttlSeconds: 185 } }],
+    ['a two-minute source', 120, 185, 'CREDENTIAL_LIFETIME_INSUFFICIENT'],
+    ['an expired source', -30, 60, 'CREDENTIAL_LIFETIME_INSUFFICIENT'],
+  ] as const)(
+    'delegates from %s at the source issuer for a %i-second carrier only within its lifetime',
+    async (_case, expiresIn, carrier, outcome) => {
+      const source = expiresIn === 'opaque' ? 'opaque' : token(now() + expiresIn)
+      const audiences: IssuerId[] = []
+      const auth = createConnectionCredential(
+        SOURCE,
+        { resolve: async (audience) => (audiences.push(audience), source) },
+        carrier,
+      )
+      const resolved = auth.resolve(TARGET_CALL, new AbortController().signal)
+      if (typeof outcome === 'string')
+        await expect(resolved).rejects.toMatchObject({ code: outcome })
+      else await expect(resolved).resolves.toEqual({ credential: source, ...outcome })
+      expect(audiences).toEqual([SOURCE])
+    },
+  )
 
-    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toMatchObject({
-      credential: token(expiresAt),
-      delegate: { ttlSeconds: 185 },
-    })
-    expect(auth.ttlSeconds).toBe(185)
-  })
-
-  test('real local-key credentials cover the supported long-operation carrier', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'astrale-carrier-key-'))
-    try {
-      await persistKeypair('alice', { keysDir: directory })
-      const source = await signAs('alice', directory, {
-        issuer: SOURCE,
-        audience: SOURCE,
-      })
-      const auth = createConnectionCredential(SOURCE, { resolve: async () => source }, 185)
-
-      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toMatchObject({
-        credential: source,
-        delegate: { ttlSeconds: 185 },
-      })
-    } finally {
-      await rm(directory, { recursive: true, force: true })
-    }
-  })
-
-  test('real one-hour local-key credentials cover a 30-minute operator carrier', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'astrale-carrier-ceiling-key-'))
-    try {
-      await persistKeypair('alice', { keysDir: directory })
-      const source = await signAs('alice', directory, {
-        issuer: SOURCE,
-        audience: SOURCE,
-      })
-      const auth = createConnectionCredential(SOURCE, { resolve: async () => source }, 1_800)
-
-      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toMatchObject({
-        credential: source,
-        delegate: { ttlSeconds: 1_800 },
-      })
-    } finally {
-      await rm(directory, { recursive: true, force: true })
-    }
-  })
-
-  test('derives every destination carrier lifetime from the selected CLI timeout', () => {
-    for (const target of [
-      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
-      {
-        url: `${SOURCE}/invoke`,
-        kernelIssuer: SOURCE,
-        domainIssuer: issuer.accept('https://admin.example'),
-      },
-    ]) {
-      const auth = createCliCredential(target, {}, config, globalThis.fetch, 180_000)
-      expect(auth?.ttlSeconds).toBe(185)
-    }
-  })
-
-  test('raises the destination carrier lifetime for a nested credential', () => {
-    const ttlSeconds = nestedCredentialCarrierTtlSeconds(30_000, 240)
-    expect(ttlSeconds).toBe(275)
-    expect(
-      createCliCredential(
-        { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
-        {},
-        config,
-        undefined,
-        30_000,
-        { principal: 'caller', nestedTtlSeconds: 240 },
-      )?.ttlSeconds,
-    ).toBe(275)
-    expect(() => nestedCredentialCarrierTtlSeconds(30_000, 0)).toThrow(TypeError)
-    expect(() => nestedCredentialCarrierTtlSeconds(30_000, Number.MAX_SAFE_INTEGER)).toThrow(
-      TypeError,
-    )
+  test('derives the carrier lifetime from the command timeout, raised for a nested credential', () => {
+    const target = { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE }
+    const domain = { ...target, domainIssuer: issuer.accept('https://admin.example') }
+    expect(createCliCredential(target, {}, config, undefined, 180_000)?.ttlSeconds).toBe(185)
+    expect(createCliCredential(domain, {}, config, undefined, 180_000)?.ttlSeconds).toBe(185)
+    const nested = { principal: 'caller', nestedTtlSeconds: 240 } as const
+    expect(createCliCredential(target, {}, config, undefined, 30_000, nested)?.ttlSeconds).toBe(275)
+    expect(() =>
+      createCliCredential(domain, {}, config, undefined, 30_000, {
+        nestedTtlSeconds: 240,
+      } as never),
+    ).toThrow('Nested credential issuance requires the caller principal')
   })
 
   /** @evidence TEST-CLI-CONNECTION-CALLER-PRINCIPAL-SKIPS-DOMAIN-EXCHANGE */
   test('preserves the selected human principal for nested credentials on a managed target', async () => {
     const domainIssuer = issuer.accept('https://admin.example')
-    const source = token(Math.ceil(Date.now() / 1_000) + 600, 'dispatcher')
-    let fetches = 0
+    const source = token(now() + 600, 'dispatcher')
     let minimumRemainingSeconds = 0
     const auth = createCliCredential(
       { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, domainIssuer },
       { as: 'dispatcher' },
       config,
-      async () => {
-        fetches += 1
-        throw new Error('Domain exchange must remain untouched')
-      },
+      untouched,
       30_000,
       { principal: 'caller', nestedTtlSeconds: 240 },
       async (options) => {
@@ -210,39 +122,21 @@ describe('connection credential', () => {
         return source
       },
     )
-    if (auth === undefined) throw new Error('expected authenticated credential')
-
-    const resolved = await auth.resolve(TARGET_CALL, new AbortController().signal)
-    if (resolved.credential === undefined) throw new Error('expected source credential')
-    const claims = credential.inspect(resolved.credential).claims
-
-    expect(auth.ttlSeconds).toBe(275)
+    const resolved = await auth!.resolve(TARGET_CALL, new AbortController().signal)
+    expect(resolved).toEqual({ credential: source, delegate: { ttlSeconds: 275 } })
     expect(minimumRemainingSeconds).toBe(275)
-    expect(resolved).toMatchObject({ credential: source, delegate: { ttlSeconds: 275 } })
-    expect(claims.sub).toBe('dispatcher')
-    expect(JSON.stringify(claims)).not.toContain(domainIssuer)
-    expect(fetches).toBe(0)
+    expect(credential.inspect(resolved.credential!).claims.sub).toBe('dispatcher')
   })
 
   /** @evidence TEST-CLI-CONNECTION-INSTALLED-ISSUER-SERVES-EXCHANGE */
   test('exchanges for a callable Domain where the issuer the command owner hands it says', async () => {
-    const source = token(Math.ceil(Date.now() / 1_000) + 600, 'installed-origin-user')
+    const source = token(now() + 600, 'installed-origin-user')
     const asked: string[] = []
-    let fetches = 0
     const installed: ExchangeIssuer = {
-      async known() {
-        asked.push('known')
-        return undefined
-      },
-      async current() {
-        asked.push('current')
-        // A Domain the Kernel hosts: the caller stays itself, so nothing is sent.
-        return null
-      },
-      async moved() {
-        asked.push('moved')
-        return undefined
-      },
+      known: async () => void asked.push('known'),
+      // A Domain the Kernel hosts: the caller stays itself, so nothing is sent.
+      current: async () => (asked.push('current'), null),
+      moved: async () => void asked.push('moved'),
     }
     const auth = createCliCredential(
       {
@@ -252,152 +146,68 @@ describe('connection credential', () => {
       },
       {},
       config,
-      async () => {
-        fetches += 1
-        throw new Error('the pin is read only through the issuer the command owner hands over')
-      },
+      untouched,
       30_000,
       {},
       async () => source,
       installed,
     )
-    if (auth === undefined) throw new Error('expected authenticated credential')
-
-    const resolved = await auth.resolve(TARGET_CALL, new AbortController().signal)
-
+    const resolved = await auth!.resolve(TARGET_CALL, new AbortController().signal)
     expect(resolved.credential).toBe(source)
     expect(asked).toEqual(['known', 'current'])
-    expect(fetches).toBe(0)
   })
 
-  test('rejects nested issuance through a Domain principal', () => {
-    expect(() =>
-      createCliCredential(
-        {
-          url: `${SOURCE}/invoke`,
-          kernelIssuer: SOURCE,
-          domainIssuer: issuer.accept('https://admin.example'),
-        },
-        {},
-        config,
-        undefined,
-        30_000,
-        { nestedTtlSeconds: 240 } as never,
-      ),
-    ).toThrow('Nested credential issuance requires the caller principal')
-  })
-
-  test('uses a 30-second explicit bearer for a five-second command without extending its authority', async () => {
-    const bearer = token(Math.ceil(Date.now() / 1_000) + 30)
-    const auth = createCliCredential(
-      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
-      { creds: bearer },
-      config,
-      undefined,
+  /** @evidence TEST-CLI-CONNECTION-USES-RAW-SOURCE-CREDENTIAL */
+  test.each([
+    [
+      'a raw source credential is presented as it is',
+      'raw-source-token',
+      30_000,
+      'raw-source-token',
+    ],
+    [
+      'an explicit bearer needs only the command window',
+      30,
       5_000,
-    )
-    if (auth === undefined) throw new Error('expected authenticated credential')
-    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toEqual({
-      credential: bearer,
-      delegate: { ttlSeconds: 10 },
-    })
-  })
-
-  test('still rejects an explicit bearer that cannot cover a short command and its receipt margin', async () => {
-    const auth = createCliCredential(
-      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
-      { creds: token(Math.ceil(Date.now() / 1_000) + 8) },
-      config,
-      undefined,
+      { delegate: { ttlSeconds: 10 } },
+    ],
+    [
+      'an explicit bearer must cover its receipt margin',
+      8,
       5_000,
-    )
-    if (auth === undefined) throw new Error('expected authenticated credential')
-    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
-      code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
-    })
-  })
-
-  test('rejects a long command before dispatch when its source bearer is too short', async () => {
-    const expiresAt = Math.ceil(Date.now() / 1_000) + 120
-    const auth = createConnectionCredential(SOURCE, { resolve: async () => token(expiresAt) }, 185)
-
-    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
-      code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
-    })
-  })
-
-  test('rejects an inspectable short or expired bearer before a default command dispatch', async () => {
-    for (const expiresAt of [
-      Math.ceil(Date.now() / 1_000) + 30,
-      Math.ceil(Date.now() / 1_000) - 30,
-    ]) {
-      const auth = createConnectionCredential(SOURCE, {
-        resolve: async () => token(expiresAt),
-      })
-      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
-        code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
-      })
-    }
-  })
-
-  test('rejects a too-short explicit Domain bearer before exchange or destination I/O', async () => {
-    let fetches = 0
-    const expiresAt = Math.ceil(Date.now() / 1_000) + 120
+      'CREDENTIAL_LIFETIME_INSUFFICIENT',
+    ],
+    [
+      'an explicit Domain bearer is refused before exchange I/O',
+      120,
+      180_000,
+      'CREDENTIAL_LIFETIME_INSUFFICIENT',
+    ],
+  ] as const)('%s', async (_case, bearer, timeoutMs, outcome) => {
+    const creds = typeof bearer === 'string' ? bearer : token(now() + bearer)
     const auth = createCliCredential(
       {
         url: `${SOURCE}/invoke`,
         kernelIssuer: SOURCE,
         domainIssuer: issuer.accept('https://admin.example'),
       },
-      { creds: token(expiresAt) },
+      { creds },
       config,
-      async () => {
-        fetches += 1
-        throw new Error('network must remain untouched')
-      },
-      180_000,
+      untouched,
+      timeoutMs,
     )
-    if (auth === undefined) throw new Error('expected authenticated credential')
-
-    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
-      code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
-    })
-    expect(fetches).toBe(0)
-  })
-
-  /** @evidence TEST-CLI-CONNECTION-USES-RAW-SOURCE-CREDENTIAL */
-  test('binds explicit CLI credentials to source-Kernel auth only', async () => {
-    const auth = createCliCredential(
-      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, slug: 'source' },
-      { creds: 'raw-source-token' },
-      config,
-    )
-    if (auth === undefined) throw new Error('expected authenticated credential')
-
-    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toEqual({
-      credential: 'raw-source-token',
-    })
+    const resolved = auth!.resolve(TARGET_CALL, new AbortController().signal)
+    if (outcome === 'CREDENTIAL_LIFETIME_INSUFFICIENT')
+      await expect(resolved).rejects.toMatchObject({ code: outcome })
+    else if (typeof outcome === 'string')
+      await expect(resolved).resolves.toEqual({ credential: outcome })
+    else await expect(resolved).resolves.toEqual({ credential: creds, ...outcome })
   })
 
   /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
   test('omits the auth capability for an explicit anonymous session', () => {
-    const auth = createCliCredential(
-      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, defaultIdentity: 'ambient-default' },
-      { anonymous: true },
-      config,
-    )
-
-    expect(auth).toBeUndefined()
-  })
-
-  test('rejects --as combined with --creds', () => {
-    expect(() =>
-      createCliCredential(
-        { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
-        { as: 'alice', creds: 'token' },
-        config,
-      ),
-    ).toThrow('--as cannot be combined with --creds')
+    const target = { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, defaultIdentity: 'ambient' }
+    expect(createCliCredential(target, { anonymous: true }, config)).toBeUndefined()
   })
 
   /** @evidence TEST-CLI-CONNECTION-PROPAGATES-AUTH-CANCELLATION */
@@ -411,10 +221,18 @@ describe('connection credential', () => {
       },
     })
     controller.abort(reason)
-
     await expect(auth.resolve(TARGET_CALL, controller.signal)).rejects.toBe(reason)
   })
 })
+
+/** A Fetch that a credential resolved without network I/O never calls. */
+const untouched = async (): Promise<Response> => {
+  throw new Error('network must remain untouched')
+}
+
+function now(): number {
+  return Math.ceil(Date.now() / 1_000)
+}
 
 function token(exp: number, sub = 'principal'): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')

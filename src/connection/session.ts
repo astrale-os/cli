@@ -6,7 +6,7 @@ import type {
   SessionRouteStore,
 } from '@astrale-os/sdk/client/session'
 
-import { createGraph, ResponseError } from '@astrale-os/sdk/client'
+import { createGraph } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { AstraleConfig } from '../lib/config'
@@ -38,6 +38,7 @@ import {
   validateCredentialSelection,
 } from './credential'
 import { createInstalledIssuer, type InstalledIssuer } from './installed-issuer'
+import { credentialRefused } from './reasons'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -295,9 +296,6 @@ async function runResolvedClientSession<Value>(
   }
 }
 
-/** The Kernel code of a credential it does not accept (AUTH_INVALID). */
-const CREDENTIAL_REFUSED = 2002
-
 /** The Session members that are Kernel call capabilities rather than Session methods. */
 const SESSION_APIS: ReadonlySet<PropertyKey> = new Set(['schema', 'graph', 'auth', 'content'])
 
@@ -317,9 +315,7 @@ function reportingRefusedCredentials(
   const report = (pending: unknown): unknown =>
     pending instanceof Promise
       ? pending.catch(async (cause: unknown) => {
-          if (cause instanceof ResponseError && cause.code === CREDENTIAL_REFUSED) {
-            await installed.failed()
-          }
+          if (credentialRefused(cause)) await installed.failed()
           throw cause
         })
       : pending

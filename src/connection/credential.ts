@@ -11,8 +11,8 @@ import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
-import { resolveCredential, resolvePersistedIdpSourceIdentity } from './auth'
-import { createExchangeCredentialResolver } from './exchange'
+import { resolveCredential, resolvePersistedIdpSourceIdentity, type SourceIdentity } from './auth'
+import { createExchangeCredentialResolver, requireLive } from './exchange'
 import {
   exchangeCredentialTtlSeconds,
   explicitCredentialTtlSeconds,
@@ -27,7 +27,7 @@ export type CredentialPrincipal = 'domain' | 'caller'
 
 export interface SourceCredentialResolver {
   /** Stable local identity metadata may select an already-bound persisted exchange credential. */
-  cacheIdentity?(): Promise<Readonly<{ issuer: string; subject: string }> | undefined>
+  cacheIdentity?(): Promise<SourceIdentity | undefined>
   resolve(audience: IssuerId, signal: AbortSignal): Promise<string>
 }
 
@@ -192,11 +192,4 @@ export function validateCredentialSelection(options: ConnectionOptions): void {
     'INVALID_FLAG',
     `--anonymous cannot be combined with ${conflicting.join(' or ')}.`,
   )
-}
-
-function requireLive(signal: AbortSignal): void {
-  if (!signal.aborted) return
-  throw signal.reason instanceof Error
-    ? signal.reason
-    : new DOMException('The operation was aborted.', 'AbortError')
 }

@@ -4,11 +4,10 @@ export default defineLayout({
   entries: [
     '__tests__/',
     'auth.ts',
-    'call.ts',
+    'callable-target.ts',
     'command.ts',
     'credential.ts',
     'errors.ts',
-    'failure/',
     'exchange.ts',
     'index.ts',
     'installed-issuer.ts',

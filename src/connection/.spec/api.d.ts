@@ -13,10 +13,12 @@ export interface ConnectionOptions {
   readonly creds?: string
   /** Omit caller credentials even when local or bookmark defaults exist. */
   readonly anonymous?: boolean
+  readonly ci?: boolean
 }
 
 /** Existing Admin-target overrides accepted by Admin Domain operations and Admin-targeted calls. */
 export interface AdminConnectionOptions extends ConnectionOptions {
+  readonly fleet?: string
   readonly admin?: string
   readonly adminUrl?: string
   readonly domainIssuer?: string
@@ -31,7 +33,7 @@ export type AdminTargetSelection = Pick<
 /** Exact source Kernel selected from flags and local CLI state. */
 export interface ConnectionTarget {
   readonly url: string
-  readonly issuer: IssuerId
+  readonly kernelIssuer: IssuerId
   /** Exact Domain issuer; presence activates standard token exchange, absence acts for the identity. */
   readonly domainIssuer?: IssuerId
   readonly slug?: string
@@ -63,7 +65,11 @@ export interface ConnectionContext {
   readonly session: ClientSession
   readonly graph: GraphApi
   readonly auth: AuthApi
+  /** Resolve the selected identity before any Domain credential exchange. */
+  readonly self: () => Promise<{ readonly id: string }>
   readonly target: ConnectionTarget
+  /** Local identity label selected for this session; absent for raw credentials or anonymous use. */
+  readonly identity?: string
 }
 
 /** Existing output and diagnostic flags shared by commands that open a Kernel connection. */
@@ -89,6 +95,7 @@ export function createPathCall(path: string, input: unknown): Call
 export function withClientSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
+  credential?: CredentialIntent,
 ): Promise<Value>
 
 /**
@@ -124,12 +131,19 @@ export function withSelfHint<Value>(
   meta: SelfExpansionMeta | undefined,
 ): Promise<Value>
 
+/** The idempotent operation a failed command may have applied, and the command that replays it. */
+export interface OperationRecovery {
+  readonly operation: string
+  readonly retry: string
+}
+
 /** Run one command through the canonical progress, connection, presentation, and error boundary. */
 export function runKernelCommand<Value>(input: {
   readonly opts: KernelCommandOpts
   readonly label: string
   /** Run on the Admin kernel, selected like `domain` Admin commands select it, not -i/--url/active. */
   readonly admin?: AdminTargetSelection
+  readonly recovery?: OperationRecovery
   readonly credential?: CredentialIntent
   readonly fn: (context: ConnectionContext) => Promise<Value>
   readonly format?: (

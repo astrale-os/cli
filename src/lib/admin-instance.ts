@@ -1,4 +1,4 @@
-import type { OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
+import type { InstanceInfo, RootIdentityRecipient } from '../admin/instance'
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminInstances, AdminInstanceNotFoundError } from '../admin/instance'
@@ -14,7 +14,6 @@ export {
   type InstanceState,
   type InvitationInfo,
   type InvitationState,
-  type OwnedInstanceInfo,
   type RetrievedRootIdentity,
   type RootIdentityRecipient,
   type RootIdentityTransfer,
@@ -64,7 +63,7 @@ type InstanceCreatePlan = Readonly<{ operationId?: string }>
 
 /** @internal Resolve creation from durable caller-visible Admin state. */
 export function planInstanceCreate(
-  inventory: readonly OwnedInstanceInfo[],
+  inventory: readonly InstanceInfo[],
   slug: string,
   operationId?: string,
 ): InstanceCreatePlan {
