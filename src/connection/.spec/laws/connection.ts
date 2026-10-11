@@ -192,18 +192,6 @@ export const CLI_CONNECTION_CA_SCOPE = defineLaw({
   ],
 })
 
-export const CLI_CONNECTION_CALL_SHAPE = defineLaw({
-  id: 'CLI-CONNECTION-CALL-SHAPE',
-  statement:
-    'Caller-authored path text and input enter Client as exactly one public Call; the CLI retains no optional callable hint, caller ETag, or second dispatch representation.',
-  tests: [
-    {
-      file: '__tests__/call.test.ts',
-      id: 'TEST-CLI-CONNECTION-CREATES-ONE-CANONICAL-CALL',
-    },
-  ],
-})
-
 export const CLI_CONNECTION_PUBLIC_SEMANTIC_REASON = defineLaw({
   id: 'CLI-CONNECTION-PUBLIC-SEMANTIC-REASON',
   statement:

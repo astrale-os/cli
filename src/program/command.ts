@@ -1,4 +1,4 @@
-export interface CommandArgument {
+interface CommandArgument {
   readonly name: string
   readonly description: string
   readonly required?: boolean
