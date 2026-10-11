@@ -2,7 +2,7 @@ import type { HandlerLink, IrCallableAuth, IrFunction, IrMethod } from '@shared/
 
 import { Globe, Puzzle, ShieldCheck, UserRound, Zap, type LucideIcon } from 'lucide-react'
 
-export interface AuthVerdict {
+interface AuthVerdict {
   level: 'secured' | 'authenticated' | 'public'
   icon: LucideIcon
   tone: 'emerald' | 'amber' | 'sky'

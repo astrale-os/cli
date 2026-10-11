@@ -1,9 +1,9 @@
-export interface EdgeLabelPoint {
+interface EdgeLabelPoint {
   x: number
   y: number
 }
 
-export interface EdgeLabelSize {
+interface EdgeLabelSize {
   width: number
   height: number
 }
@@ -29,7 +29,7 @@ export interface EdgePathSample extends EdgeLabelPoint {
   distance: number
 }
 
-export interface EdgeLabelPlacementOptions {
+interface EdgeLabelPlacementOptions {
   /** Preferred distance from the source along the rendered path. */
   preferredDistance: number
   /** Restrict path candidates to one end of the edge (used by cardinality chips). */

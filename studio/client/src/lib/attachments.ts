@@ -120,7 +120,7 @@ export function fitWithin(width: number, height: number) {
  * HEIC photo, a BMP, an SVG). Screenshots stay PNG so their text stays sharp;
  * only what is still too big after that becomes a JPEG.
  */
-export async function prepareImage(file: File): Promise<Blob> {
+async function prepareImage(file: File): Promise<Blob> {
   if (isAttachmentImageType(file.type) && file.size <= MAX_ATTACHMENT_BYTES) return file
   let bitmap: ImageBitmap
   try {

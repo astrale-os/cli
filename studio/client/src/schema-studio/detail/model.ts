@@ -4,7 +4,7 @@ import { classRefKey } from '@shared/types'
 
 import { type ClassTier, inheritedGroupsOfClass } from '../inheritance'
 
-export type Card = { min: number; max: number | null }
+type Card = { min: number; max: number | null }
 
 export function cardLabel(card?: Card): string {
   if (!card) return '*'

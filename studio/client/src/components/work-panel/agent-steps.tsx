@@ -56,7 +56,7 @@ export function actionCount(run: AgentRun): number {
   return run.events.filter((event) => event.kind === 'tool').length
 }
 
-export function actionsLabel(count: number): string {
+function actionsLabel(count: number): string {
   return `${count} ${count === 1 ? 'action' : 'actions'}`
 }
 
@@ -81,7 +81,7 @@ export function visibleDraft(run: AgentRun): string | undefined {
 }
 
 /** One line of the work behind a turn, in the order it happened. */
-export type AgentStep =
+type AgentStep =
   | { kind: 'note'; id: string; text: string }
   | {
       kind: 'tool'
@@ -96,7 +96,7 @@ export type AgentStep =
     }
   | { kind: 'thinking'; id: string }
 
-export interface TurnParts {
+interface TurnParts {
   /** the narration, tools and thinking that led to the answer */
   steps: AgentStep[]
   /** what the turn says to the reader once it is over */

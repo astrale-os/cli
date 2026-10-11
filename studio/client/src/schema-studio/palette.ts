@@ -8,7 +8,7 @@
  * full of holes.
  */
 
-export interface ModuleTint {
+interface ModuleTint {
   /** module box fill */
   surface: string
   /** module box border */

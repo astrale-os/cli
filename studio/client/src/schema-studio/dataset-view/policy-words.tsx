@@ -104,7 +104,7 @@ function Lines({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-export function PatternWords({
+function PatternWords({
   pattern,
   origin,
   variables: outer,

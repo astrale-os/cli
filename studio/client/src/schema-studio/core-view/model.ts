@@ -28,7 +28,7 @@ export interface CoreSpotlight {
 
 const propertyKeyPattern = /^.+:class\.[A-Za-z][A-Za-z0-9_]*\.property\.([A-Za-z][A-Za-z0-9_]*)$/
 
-export interface CoreDataEntry {
+interface CoreDataEntry {
   /** Exact key retained by the canonical Core declaration. */
   key: string
   /** Short property name when unambiguous, otherwise the exact key. */

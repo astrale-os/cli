@@ -16,18 +16,18 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { cn } from '@/lib/utils'
 
 /** Past this share of the window the ring turns amber. */
-export const WARN = 0.6
+const WARN = 0.6
 /** Past this one it turns red: the agent is about to compact or run out. */
-export const FULL = 0.85
+const FULL = 0.85
 
-export type ContextLevel = 'unknown' | 'roomy' | 'filling' | 'full'
+type ContextLevel = 'unknown' | 'roomy' | 'filling' | 'full'
 
 /** The share of the window in use, between 0 and 1. */
-export function contextRatio(context: AgentContextUsage): number {
+function contextRatio(context: AgentContextUsage): number {
   return Math.min(1, Math.max(0, context.used / context.size))
 }
 
-export function contextLevel(context: AgentContextUsage | undefined): ContextLevel {
+function contextLevel(context: AgentContextUsage | undefined): ContextLevel {
   if (!context) return 'unknown'
   const ratio = contextRatio(context)
   if (ratio >= FULL) return 'full'
@@ -36,7 +36,7 @@ export function contextLevel(context: AgentContextUsage | undefined): ContextLev
 }
 
 /** A percentage as the ring says it: whole numbers, and never "0%" for a window with something in it. */
-export function contextPercent(context: AgentContextUsage): string {
+function contextPercent(context: AgentContextUsage): string {
   const percent = contextRatio(context) * 100
   if (percent > 0 && percent < 1) return '<1%'
   return `${Math.round(percent)}%`

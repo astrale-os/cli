@@ -6,7 +6,7 @@
  */
 import type { DomainAnatomy, StudioSchemaBundle, ViewInfo } from '@shared/types'
 
-export type ViewDrift = 'ok' | 'missing-impl' // SPA view declares a mount that the client `ROUTES` doesn't implement
+type ViewDrift = 'ok' | 'missing-impl' // SPA view declares a mount that the client `ROUTES` doesn't implement
 
 export interface ViewModel extends ViewInfo {
   drift: ViewDrift

@@ -17,7 +17,7 @@ import { isIrSchemaRef, schemaRefKey } from '@shared/types'
 
 // ── language ────────────────────────────────────────────────────────────────
 
-export type PolicyReservedTerm = 'subject' | 'object' | 'source' | 'target'
+type PolicyReservedTerm = 'subject' | 'object' | 'source' | 'target'
 
 export type PolicyTerm =
   | { kind: PolicyReservedTerm }
@@ -37,7 +37,7 @@ export type PolicyVariable = { variable: { kind: 'variable'; id: number } } & (
   | { selector: { kind: 'any' } | { kind: 'satisfies'; class: IrSchemaRef } }
 )
 
-export interface PolicySameNode<Term> {
+interface PolicySameNode<Term> {
   sameNode: { left: Term; right: Term }
 }
 
@@ -56,7 +56,7 @@ export type PolicyPattern =
   | { allOf: PolicyPattern[] }
   | { anyOf: PolicyPattern[] }
 
-export type PolicyExpression =
+type PolicyExpression =
   | { match: PolicyPattern }
   | { allOf: IrSchemaRef[] }
   | { anyOf: IrSchemaRef[] }
@@ -124,7 +124,7 @@ function decodeList<T>(value: unknown, decode: (item: unknown) => T | undefined)
   return out
 }
 
-export function decodePolicyPattern(value: unknown): PolicyPattern | undefined {
+function decodePolicyPattern(value: unknown): PolicyPattern | undefined {
   const record = asRecord(value)
   if (!record) return undefined
   if ('sameNode' in record) {
@@ -174,7 +174,7 @@ export function decodePolicyPattern(value: unknown): PolicyPattern | undefined {
 const decodeRef = (value: unknown): IrSchemaRef | undefined =>
   isIrSchemaRef(value) ? value : undefined
 
-export function decodePolicyExpression(value: unknown): PolicyExpression | undefined {
+function decodePolicyExpression(value: unknown): PolicyExpression | undefined {
   const record = asRecord(value)
   if (!record) return undefined
   if ('match' in record) {

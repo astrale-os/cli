@@ -45,7 +45,7 @@ export type ChatTabsSide = 'left' | 'top' | 'top-titled'
 export type EdgeStyle = WorkspaceUiState['edgeStyle']
 
 /** Which half of the work panel is showing. */
-export type PanelTab = WorkspacePanelUiState['tab']
+type PanelTab = WorkspacePanelUiState['tab']
 /** Where the work panel lives. `left` and `right` dock a column beside the view;
  *  `bottom` spends a single composer-shaped bar on it and floats the conversation
  *  over the middle of the screen when you click in. */

@@ -71,7 +71,7 @@ function Avatar({ role, name }: { role: ThreadEntry['role']; name: string }) {
  * The agent can attach `options` to a question. Choosing posts a normal user
  * reply with the chosen text, so the agent sees the decision next turn.
  */
-export function ChoiceOptions({
+function ChoiceOptions({
   commentId,
   options,
   domainId,

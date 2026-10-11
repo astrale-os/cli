@@ -183,13 +183,13 @@ export class PaletteSearchIndexCache {
 
 type BundleQueryState = { data?: StudioSchemaBundle; isError: boolean }
 
-export const paletteBundleQuery = (domainId: string, open: boolean) => ({
+const paletteBundleQuery = (domainId: string, open: boolean) => ({
   queryKey: qk.bundle(domainId),
   queryFn: () => api.bundle(domainId, 'background'),
   enabled: open,
 })
 
-export function paletteLoadState(domains: DomainSummary[], results: BundleQueryState[]) {
+function paletteLoadState(domains: DomainSummary[], results: BundleQueryState[]) {
   const loaded: DomainSummary[] = []
   const pending: DomainSummary[] = []
   const failed: DomainSummary[] = []

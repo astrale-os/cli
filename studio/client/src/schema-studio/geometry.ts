@@ -69,7 +69,7 @@ interface ContainerInsets {
   bottom: number
 }
 
-export interface ContainerSpec {
+interface ContainerSpec {
   insets: ContainerInsets
   min: { w: number; h: number }
 }

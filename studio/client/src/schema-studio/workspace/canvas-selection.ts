@@ -25,7 +25,7 @@ export function useCanvasSelectionSync(enabled = true): void {
   }, [domains, enabled, replaceDomains])
 }
 
-export interface CanvasDomainControls {
+interface CanvasDomainControls {
   /** The domains the canvas draws. */
   visible: Set<string>
   /** Put a domain on the canvas, or take it off. */

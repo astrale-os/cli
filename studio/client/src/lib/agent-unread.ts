@@ -7,7 +7,7 @@ import { createJSONStorage, persist, type StateStorage } from 'zustand/middlewar
 import { useChatList } from './chats'
 import { useUI } from './store'
 
-export interface AgentReceipt {
+interface AgentReceipt {
   key: string
   createdAt: string
   failed: boolean

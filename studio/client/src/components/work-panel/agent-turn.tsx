@@ -14,7 +14,7 @@ import { MessageImages } from './images'
 
 export { activityLabel, compactTarget } from './agent-steps'
 
-export interface AgentAuthFailure {
+interface AgentAuthFailure {
   title: string
   command: string
 }
@@ -41,7 +41,7 @@ export function agentAuthFailure(run: AgentRun): AgentAuthFailure | undefined {
 }
 
 /** How many comment threads this turn answered in place. */
-export function answeredThreads(run: AgentRun): number {
+function answeredThreads(run: AgentRun): number {
   const replied = new Set(
     run.events
       .filter((event) => event.kind === 'reply')

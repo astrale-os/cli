@@ -11,7 +11,7 @@ import type { Node } from '@xyflow/react'
 
 import type { CoreNodeData } from './model'
 
-export interface ClusterOptions {
+interface ClusterOptions {
   /** space between two cards of one block */
   gapX: number
   gapY: number
@@ -21,7 +21,7 @@ export interface ClusterOptions {
   maxRowWidth: number
 }
 
-export const CLUSTER_DEFAULTS: ClusterOptions = {
+const CLUSTER_DEFAULTS: ClusterOptions = {
   gapX: 28,
   gapY: 18,
   blockGap: 96,

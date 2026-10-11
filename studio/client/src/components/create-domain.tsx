@@ -70,7 +70,7 @@ export function NewDomainDialog() {
  * whole order — create, attach, brief — reporting where it has got to as it
  * goes, because none of the three steps is instant.
  */
-export function NewDomainCard({
+function NewDomainCard({
   onClose,
   onBusy,
 }: {

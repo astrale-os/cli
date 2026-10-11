@@ -108,7 +108,7 @@ function eventLine(event: AgentEvent): string {
 }
 
 /** Every fact the details view shows, in reading order; empty values are left out. */
-export function errorContext(run: AgentRun): [label: string, value: string][] {
+function errorContext(run: AgentRun): [label: string, value: string][] {
   const rows: [string, string | undefined][] = [
     ['Agent', run.harness],
     ['Model', run.prompt?.model ?? 'harness default'],
@@ -146,7 +146,7 @@ export function errorDiagnostic(run: AgentRun): string {
 }
 
 /** A turn that ended before it finished, and could be picked back up. */
-export type StoppedStatus = 'interrupted' | 'failed' | 'canceled'
+type StoppedStatus = 'interrupted' | 'failed' | 'canceled'
 
 export function isStopped(run: AgentRun): run is AgentRun & { status: StoppedStatus } {
   return run.status === 'interrupted' || run.status === 'failed' || run.status === 'canceled'

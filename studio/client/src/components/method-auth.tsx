@@ -161,7 +161,7 @@ function PolicyChecks({ method, domainId }: MethodAuthProps) {
 }
 
 /** Full verdict from the canonical callable authentication contract. */
-export function MethodAuthCard({ method, domainId }: MethodAuthProps) {
+function MethodAuthCard({ method, domainId }: MethodAuthProps) {
   const v = methodAuth(method)
   if (!v) return null
   const Icon = v.icon

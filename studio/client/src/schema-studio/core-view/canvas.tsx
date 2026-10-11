@@ -126,7 +126,7 @@ const LIT_STROKE: Record<SpotlightTone, string | undefined> = {
 }
 
 /** Two readings of the same cards: laid along their edges, or gathered by class. */
-export type CoreLayout = 'flow' | 'class'
+type CoreLayout = 'flow' | 'class'
 
 // ── canvas ──────────────────────────────────────────────────────────────────
 

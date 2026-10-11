@@ -20,7 +20,7 @@ export interface WorkspaceNodeGeometryData {
   offset: NodePosition
 }
 
-export interface WorkspaceFrameSource {
+interface WorkspaceFrameSource {
   domainId: string
   nodes: Node[]
   /**
@@ -36,7 +36,7 @@ export interface WorkspaceDomainFrame {
   size: WorkspaceSize
 }
 
-export interface WorkspaceLayoutUpdate {
+interface WorkspaceLayoutUpdate {
   domainId: string
   updates: Geometry
 }

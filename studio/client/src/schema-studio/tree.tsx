@@ -23,7 +23,7 @@ import { moduleTint } from './palette'
 import { SchemaIcon } from './schema-icon'
 import { isHidden } from './visibility'
 
-export interface ModuleTreeControls {
+interface ModuleTreeControls {
   domainId: string
   collapsedModules: string[]
   hidden: Record<string, true>

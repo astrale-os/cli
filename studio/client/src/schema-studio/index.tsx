@@ -17,7 +17,7 @@ import { WorkspaceSchemaSection } from './workspace/section'
 import { uniqueDomainIds, useSchemaWorkspace } from './workspace/store'
 
 /** Which canvas this section shows: the schema graph, the core (genesis) data, or the test data. */
-export type SchemaMode = 'schema' | 'core' | 'tests'
+type SchemaMode = 'schema' | 'core' | 'tests'
 
 /**
  * The schema studio. ONE canvas draws the schema, whether it holds one domain or

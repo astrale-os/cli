@@ -40,7 +40,7 @@ interface FnGroup {
 }
 
 /** Count the portable genesis elements in a canonical DomainSchema V1 Core. */
-export function canonicalCoreCount(value: unknown): number {
+function canonicalCoreCount(value: unknown): number {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
   const core = value as { nodes?: unknown; edges?: unknown }
   const nodes =

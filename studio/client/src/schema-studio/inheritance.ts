@@ -14,7 +14,7 @@ const KERNEL_IMPLEMENTATION_CLASSES = new Set([
 
 export type ClassTier = 'local' | 'kernel' | 'external'
 
-export interface InheritedGroup {
+interface InheritedGroup {
   owner: string
   ref: IrClassRef
   tier: ClassTier
@@ -65,7 +65,7 @@ const KERNEL_ROLES: Record<string, KernelRole> = {
 const KERNEL_ROLE_ORDER: KernelRole[] = ['identity', 'function', 'view']
 
 /** The role a single `extends` reference confers, if it is one of the kernel bases. */
-export function kernelRoleOf(reference: IrClassRef): KernelRole | undefined {
+function kernelRoleOf(reference: IrClassRef): KernelRole | undefined {
   return isKernelClass(reference) ? KERNEL_ROLES[reference.name] : undefined
 }
 

@@ -43,7 +43,7 @@ export interface PendingMessage {
 }
 
 /** The first line is what a queue row is: enough to recognise, never a paragraph. */
-export function firstLine(text: string): string {
+function firstLine(text: string): string {
   return text.trim().split('\n')[0]?.trim() ?? ''
 }
 

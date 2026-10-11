@@ -17,7 +17,7 @@ import { useSchemaWorkspace } from './store'
 const MODULE_INDENT = 18
 
 /** The dot that keeps a selection discoverable when its domain's hierarchy is closed. */
-export function shouldShowDomainSelectionIndicator({
+function shouldShowDomainSelectionIndicator({
   holdsSelection,
   closed,
   selected,

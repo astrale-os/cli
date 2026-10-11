@@ -38,7 +38,7 @@ const BAR_GAP = 1
 const BAR_MIN_H = 4
 const BAR_STEP_H = 2
 
-export interface MeterGeometry {
+interface MeterGeometry {
   /** The SVG's CSS size. */
   width: number
   height: number

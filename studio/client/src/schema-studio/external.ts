@@ -4,7 +4,7 @@ import { classRefKey, isIrClassRef } from '@shared/schema/identity'
 
 import { KERNEL_ORIGIN } from './inheritance'
 
-export interface ExternalMember {
+interface ExternalMember {
   name: string
   ref: IrClassRef
   /** A relationship reaches it — as opposed to being imported and used somewhere else. */
@@ -17,7 +17,7 @@ export interface ExternalDomain {
   members: ExternalMember[]
 }
 
-export interface CrossDomainEdge {
+interface CrossDomainEdge {
   edge: string
   from: string
   origin: string
@@ -44,7 +44,7 @@ function isLocalNodeClass(ir: SchemaIR, name: string, ref: IrClassRef | undefine
   return (ref === undefined || ref.origin === ir.domain) && ir.classes[name]?.type === 'node'
 }
 
-export interface LocalEndpointTarget {
+interface LocalEndpointTarget {
   className: string
 }
 

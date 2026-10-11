@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 /** How far one arrow key press moves an edge, in px. */
-export const RESIZE_STEP = 20
+const RESIZE_STEP = 20
 
 export type ResizeState = 'idle' | 'hover' | 'active'
 
@@ -67,7 +67,7 @@ function useResizeState(onChange?: (state: ResizeState) => void) {
   return { state, enter, leave, setActive }
 }
 
-export interface ResizeHandleProps {
+interface ResizeHandleProps {
   /** `vertical` sits between two things side by side and moves along x. */
   orientation: 'vertical' | 'horizontal'
   /** Names the grip for assistive tech and in its tooltip. */
