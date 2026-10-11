@@ -3,18 +3,21 @@ import { classIcon, defineSchema, edgeClass, nodeClass, valueSchema } from '@ast
 const string = valueSchema<string>()({ type: 'string' })
 
 const Company = nodeClass({
+  policies: { read: true },
   icon: classIcon.neutral,
   description: 'The operating company used to verify homonymous multi-domain targeting.',
   properties: { legalName: string },
 })
 
 const Region = nodeClass({
+  policies: { read: true },
   icon: classIcon.neutral,
   description: 'An operating region managed by the Ops domain.',
   properties: { name: string },
 })
 
 const OperatesIn = edgeClass.directed({
+  policies: { read: true },
   source: { as: 'company', accepts: [Company], outgoing: '0..*' },
   target: { as: 'region', accepts: [Region], incoming: '0..*' },
 })

@@ -22,6 +22,7 @@ export const mayManageInvoice = policy({
 })
 
 export const Invoice = nodeClass({
+  policies: { read: true },
   description: 'A demand for payment issued to a customer.',
   icon: icons.invoice,
   extends: [Document],
@@ -42,6 +43,7 @@ export const Invoice = nodeClass({
     remind: method({
       description: 'Send the customer a reminder.',
       auth: 'authorized',
+      policy: true,
       input: valueSchema<{ channel: 'email' | 'sms' }>()({
         type: 'object',
         properties: { channel: { type: 'string', enum: ['email', 'sms'] } },
@@ -74,38 +76,45 @@ export const Invoice = nodeClass({
 })
 
 export const Payment = nodeClass({
+  policies: { read: true },
   description: 'Money received against an invoice.',
   icon: icons.payment,
   properties: { amount: number, method: string },
 })
 
 export const Subscription = nodeClass({
+  policies: { read: true },
   description: 'A recurring customer commitment.',
   icon: icons.subscription,
   properties: { plan: string, monthly: number },
 })
 
 export const BilledTo = edgeClass.directed({
+  policies: { read: true },
   source: { as: 'invoice', accepts: [Invoice], outgoing: '1' },
   target: { as: 'customer', accepts: [Company], incoming: '0..*' },
 })
 
 export const IssuedFrom = edgeClass.directed({
+  policies: { read: true },
   source: { as: 'invoice', accepts: [Invoice], outgoing: '0..1' },
   target: { as: 'quote', accepts: [Quote], incoming: '0..1' },
 })
 
 export const SettledBy = edgeClass.directed({
+  policies: { read: true },
   source: { as: 'invoice', accepts: [Invoice], outgoing: '0..*' },
   target: { as: 'payment', accepts: [Payment], incoming: '1' },
 })
 
 export const SubscribedTo = edgeClass.directed({
+  policies: { read: true },
   source: { as: 'customer', accepts: [Company], outgoing: '0..*' },
   target: { as: 'subscription', accepts: [Subscription], incoming: '0..*' },
 })
 
 export const ProcessedBy = edgeClass.directed({
+  policies: { read: true },
   source: { as: 'payment', accepts: [Payment], outgoing: '0..1' },
   target: { as: 'processor', accepts: [PaymentProcessor], incoming: '0..*' },
 })

@@ -91,3 +91,20 @@ test('the authored SDK admits the Schema; the bundle carries its revision, Core 
     error: null,
   })
 })
+
+for (const [fixture, origin] of [
+  ['fixture', 'crm.studio-demo.astrale.ai'],
+  ['fixture/peer', 'ops.studio-demo.astrale.ai'],
+] as const) {
+  test(`the browser ${fixture} is admitted by its actual installed SDK before serving Studio`, async () => {
+    const root = join(import.meta.dir, '../../e2e', fixture)
+    const extracted = await runtimeExtract(join(root, 'schema/index.ts'), root)
+    expect(extracted).toMatchObject({
+      ok: true,
+      schemaMode: 'canonical-admitted',
+      root: { format: 'astrale.dsl', version: 'v1', origin },
+      ir: { domain: origin },
+    })
+    expect(extracted.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
+  })
+}

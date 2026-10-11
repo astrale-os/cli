@@ -5,6 +5,7 @@ import { Party } from '../shared/index.js'
 import { boolean, string } from '../values.js'
 
 export const Person = nodeClass({
+  policies: { read: true },
   description: 'A human being known to the company.',
   icon: icons.party,
   extends: [Party],
@@ -15,6 +16,7 @@ export const Person = nodeClass({
 })
 
 export const Company = nodeClass({
+  policies: { read: true },
   description: 'An organisation we do business with.',
   icon: icons.company,
   extends: [Party],
@@ -26,12 +28,14 @@ export const Company = nodeClass({
 })
 
 export const Team = nodeClass({
+  policies: { read: true },
   description: 'An internal team owning a set of accounts.',
   icon: icons.team,
   properties: { name: string, region: string },
 })
 
 export const WorksAt = edgeClass.directed({
+  policies: { read: true },
   description: 'Employment relationship.',
   properties: { title: property(string, { required: false }) },
   source: { as: 'employee', accepts: [Person], outgoing: '0..*' },
@@ -39,6 +43,7 @@ export const WorksAt = edgeClass.directed({
 })
 
 export const BelongsToTeam = edgeClass.directed({
+  policies: { read: true },
   description: 'Internal team membership.',
   source: { as: 'member', accepts: [Person], outgoing: '0..1' },
   target: { as: 'team', accepts: [Team], incoming: '0..*' },
