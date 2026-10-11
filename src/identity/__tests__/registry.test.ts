@@ -55,6 +55,8 @@ describe('identity registry journey', () => {
     })
     expect(Object.keys(result.store.identities).sort()).toEqual(['alice', 'workos'])
     expect(result.selectedDeletion).toContain('Cannot delete the default identity')
+    expect(result.idpOverKey).toContain('already exists and is key-backed')
+    expect(result.carolSession).toBe(false)
     expect(result.exchangeCache).toEqual({ version: 2, entries: {} })
 
     const persisted = JSON.parse(await readFile(join(root, 'identities.json'), 'utf-8'))

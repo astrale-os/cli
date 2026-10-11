@@ -85,6 +85,14 @@ describe('Astrale UI search', () => {
     expect(seen.some((url) => url.includes('/@astrale-os/ui/beta'))).toBe(false)
     expect(seen.some((url) => url.endsWith('/registry.json'))).toBe(false)
     expect(seen.filter((url) => url.endsWith('.preview.tsx'))).toHaveLength(1)
+
+    // An exact address, in any case, is the one result.
+    const exact = await searchUi(
+      '@ASTRALE-OS/UI/BUTTON',
+      { project },
+      { fetcher: fixtureFetch([]), cacheRoot },
+    )
+    expect(exact).toMatchObject({ total: 1, results: [{ address: '@astrale-os/ui/button' }] })
   })
 
   test('repairs a corrupt cached index from the immutable release', async () => {
