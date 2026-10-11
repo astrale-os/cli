@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { SCAFFOLDER } from '../../../src/lib/scaffolder'
 import { getBundle } from '../cache'
 import { registerDomain } from '../domain'
-import { findSchemaDefinition } from '../introspect/anatomy-extras'
+import { findSchemaDefinition } from '../introspect/anatomy/schema-definition'
 import { bootDomain } from '../lifecycle'
 import { stoppers, workspaceRoot } from '../workspace-state'
 

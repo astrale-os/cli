@@ -250,31 +250,6 @@ describe('workspace update CLI orchestration', () => {
     expect(fake.calls()).toEqual([{ args: checkArgs, cwd: domainRoot }])
   })
 
-  test('accepts an older CLI report without a skills axis during binary replacement', async () => {
-    const checkArgs = ['update', '--check', '--json']
-    const fake = installFakeCli([
-      {
-        args: checkArgs,
-        responses: [
-          {
-            stdout: {
-              stale: false,
-              cli: { stale: false, managed: true },
-              sdk: { stale: false, inProject: false, outdated: [] },
-            },
-          },
-        ],
-      },
-    ])
-
-    expect(await getUpdates(fake.root)).toEqual({
-      stale: false,
-      cli: { stale: false, managed: true },
-      skills: { status: 'current' },
-      sdk: { stale: false, inProject: false, outdated: [] },
-    })
-  })
-
   test('hides the badge when check output is malformed or fails', async () => {
     const checkArgs = ['update', '--check', '--json']
     const fake = installFakeCli([

@@ -5,7 +5,8 @@ import { join } from 'node:path'
 
 import type { SchemaIR } from '../../shared/types'
 
-import { buildHandlerLinks, buildSourceSpans } from './overlay-tsmorph'
+import { buildHandlerLinks } from './source-overlay/handlers'
+import { buildSourceSpans } from './source-overlay/spans'
 
 const roots: string[] = []
 afterEach(() => {

@@ -12,10 +12,6 @@ import { readJson, removeState, writeJson } from './store'
 
 const FILE = 'layout.json'
 
-interface StoredLayout extends LayoutState {
-  schemaHash?: string
-}
-
 function decodePosition(value: unknown): NodePosition | undefined {
   const record = asJsonRecord(value)
   const x = asFiniteNumber(record?.x)
@@ -35,27 +31,18 @@ export function decodeNodePositions(value: unknown): Record<string, NodePosition
   return positions
 }
 
-function decodeStoredLayout(value: unknown): StoredLayout | undefined {
+function decodeLayout(value: unknown): LayoutState | undefined {
   const record = asJsonRecord(value)
   if (!record) return undefined
-  const positions = decodeNodePositions(record.positions)
   const renderFingerprint = asString(record.renderFingerprint)
-  const schemaHash = asString(record.schemaHash)
   return {
-    positions,
+    positions: decodeNodePositions(record.positions),
     ...(renderFingerprint === undefined ? {} : { renderFingerprint }),
-    ...(schemaHash === undefined ? {} : { schemaHash }),
   }
 }
 
 export function readLayout(root: string): LayoutState {
-  const stored = readJson(root, FILE, decodeStoredLayout, { positions: {} })
-  return {
-    ...((stored.renderFingerprint ?? stored.schemaHash)
-      ? { renderFingerprint: stored.renderFingerprint ?? stored.schemaHash }
-      : {}),
-    positions: stored.positions ?? {},
-  }
+  return readJson(root, FILE, decodeLayout, { positions: {} })
 }
 
 export function saveLayout(

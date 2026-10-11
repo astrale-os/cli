@@ -54,7 +54,6 @@ function normalizeSettings(input: unknown): Partial<StudioSettings> {
   if (integrationsDir !== undefined) out.integrationsDir = integrationsDir
 
   if ('agentModel' in record) out.agentModel = decodeModelPreference(record.agentModel)
-  else if ('agentModels' in record) out.agentModel = adoptLegacyModels(record.agentModels)
   return out
 }
 
@@ -63,24 +62,6 @@ function decodeModelPreference(value: unknown): AgentModelPreference | null {
   const harness = asString(record?.harness)?.trim().toLowerCase()
   const model = asString(record?.model)?.trim()
   return harness && model ? { harness, model } : null
-}
-
-/**
- * Fold a pre-star settings file — one model per harness — onto the single one.
- *
- * Claude wins when both were set: it is the agent Studio opens on, so its entry
- * is the one that described what a new chat actually ran.
- */
-function adoptLegacyModels(value: unknown): AgentModelPreference | null {
-  const record = asJsonRecord(value)
-  if (!record) return null
-  const entries = Object.entries(record)
-    .map(([harness, model]) => ({
-      harness: harness.trim().toLowerCase(),
-      model: asString(model)?.trim() ?? '',
-    }))
-    .filter((entry): entry is AgentModelPreference => !!entry.harness && !!entry.model)
-  return entries.find((entry) => entry.harness === 'claude') ?? entries[0] ?? null
 }
 
 function decodeSettings(value: unknown): Partial<StudioSettings> | undefined {

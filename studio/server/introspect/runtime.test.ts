@@ -8,7 +8,6 @@ import type { DomainHandle } from '../domain'
 import { buildBundle } from './bundle'
 import { buildCore } from './core'
 import { renderFingerprintOf } from './hash'
-import { admittedBundleRevision } from './revision'
 import { runtimeExtract } from './runtime'
 
 const roots: string[] = []
@@ -36,7 +35,7 @@ function currentFixture(): DomainHandle {
   writeFileSync(
     schemaIndex,
     `
-      import { bundle, classIcon, core, defineSchema, nodeClass, view } from '@astrale-os/sdk/schema'
+      import { classIcon, core, defineSchema, nodeClass, view } from '@astrale-os/sdk/schema'
       const Named = nodeClass({ icon: classIcon.neutral, properties: {} })
       export const DirectorySchema = defineSchema('directory.runtime.test', { name: 'Test Domain',
         classes: { Named },
@@ -49,7 +48,6 @@ function currentFixture(): DomainHandle {
         views: { editor: view({ description: 'Edit documents.' }) },
         core: { nodes: { welcome } },
       })
-      export const installedBundle = bundle.create(schema)
     `,
   )
   writeFileSync(domainFile, `throw new Error('Domain definition entry was imported')\n`)
@@ -98,15 +96,6 @@ describe('SDK V1 schema extractor', () => {
     expect(built.schemaRevision).toBe(extracted.revision)
     expect(built.renderFingerprint).toBe(renderFingerprintOf(extracted.root))
     expect(built.renderFingerprint).not.toBe(renderFingerprintOf(extracted.ir))
-  })
-
-  test('re-admits installed Bundle JSON before comparing its revision', async () => {
-    const handle = currentFixture()
-    const extracted = await runtimeExtract(handle.schemaIndex, handle.root)
-    if (extracted.revision === null) throw new Error('expected an admitted Schema revision')
-    const fixture = (await import(handle.schemaIndex)) as { installedBundle: unknown }
-    const installedWire = JSON.parse(JSON.stringify(fixture.installedBundle))
-    expect(await admittedBundleRevision(handle.root, installedWire)).toBe(extracted.revision)
   })
 
   test('renders a V1-shaped root as preview when SDK admission fails', async () => {

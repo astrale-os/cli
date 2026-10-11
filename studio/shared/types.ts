@@ -1,10 +1,6 @@
 /**
- * Compatibility facade for the contracts shared by Studio's Bun server and
- * React client.
- *
- * Semantic ownership lives in `contracts/` and `schema/identity.ts`. Existing
- * `@shared/types` consumers intentionally keep the same public surface while
- * new code may import its owning contract directly.
+ * The contracts shared by Studio's Bun server and React client, in one import.
+ * Each definition lives in its owner under `contracts/` or `schema/identity.ts`.
  */
 
 export * from './schema/identity'

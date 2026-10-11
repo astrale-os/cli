@@ -1,5 +1,3 @@
-import { basename } from 'node:path'
-
 /** Machine-side UI state for one scanned workspace. */
 import type {
   NodePosition,
@@ -10,7 +8,6 @@ import type {
   WorkspaceUiState,
 } from '../../shared/types'
 
-import { allDomains, type DomainHandle } from '../domain'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { readJson, writeJson } from './store'
 
@@ -24,12 +21,6 @@ const DOCK_HEIGHT = { min: 200, max: 1400, fallback: 560 }
 const PANEL_SIZE = { min: 260, max: 900 }
 const RAIL_WIDTH = { min: 180, max: 560 }
 const DETAIL_WIDTH = { min: 320, max: 900, fallback: 420 }
-/**
- * The dock's first default size. Every state saved since the dock became resizable
- * stores its size, so a workspace that never touched it holds exactly this pair: read
- * as the current default, it grows with it instead of staying on the old one forever.
- */
-const FIRST_DOCK_DEFAULT = { width: 768, height: 480 }
 
 function clamped(
   value: unknown,
@@ -120,20 +111,13 @@ function schemaState(value: unknown, fallback: WorkspaceSchemaUiState): Workspac
 function panelState(value: unknown, fallback: WorkspacePanelUiState): WorkspacePanelUiState {
   const record = asJsonRecord(value)
   if (!record) return fallback
-  const untouchedDock =
-    record.dockWidth === FIRST_DOCK_DEFAULT.width && record.dockHeight === FIRST_DOCK_DEFAULT.height
   return {
     open: asBoolean(record.open) ?? fallback.open,
     tab: oneOf(record.tab, PANEL_TABS) ?? fallback.tab,
     side: oneOf(record.side, PANEL_SIDES) ?? fallback.side,
     size: clamped(record.size, PANEL_SIZE, fallback.size),
-    // absent in states saved before the bottom dock could be resized
-    dockWidth: untouchedDock
-      ? DOCK_WIDTH.fallback
-      : clamped(record.dockWidth, DOCK_WIDTH, fallback.dockWidth),
-    dockHeight: untouchedDock
-      ? DOCK_HEIGHT.fallback
-      : clamped(record.dockHeight, DOCK_HEIGHT, fallback.dockHeight),
+    dockWidth: clamped(record.dockWidth, DOCK_WIDTH, fallback.dockWidth),
+    dockHeight: clamped(record.dockHeight, DOCK_HEIGHT, fallback.dockHeight),
   }
 }
 
@@ -168,38 +152,7 @@ function detailWidth(value: unknown, fallback = DETAIL_WIDTH.fallback): number {
 }
 
 export function readWorkspaceUiState(root: string): WorkspaceUiState {
-  return remapWorkspaceDomainIds(
-    readJson(root, FILE, decodeWorkspaceUiState, emptyWorkspaceUiState()),
-    allDomains(),
-  )
-}
-
-/** Keep existing canvas preferences when basename-only IDs become path-qualified IDs. */
-export function remapWorkspaceDomainIds(
-  state: WorkspaceUiState,
-  domains: readonly Pick<DomainHandle, 'id' | 'root'>[],
-): WorkspaceUiState {
-  // The previous registry retained the last project for a duplicated basename.
-  const aliases = new Map(
-    domains.map(({ id, root }) => [basename(root).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain', id]),
-  )
-  const id = (value: string) => aliases.get(value) ?? value
-  const list = (values: string[]) => [...new Set(values.map(id))]
-  const keys = <T>(values: Record<string, T>): Record<string, T> =>
-    Object.fromEntries(
-      Object.entries(values).map(([key, value]) => [id(key), values[id(key)] ?? value]),
-    )
-  return {
-    ...state,
-    ...(state.readerDomainId ? { readerDomainId: id(state.readerDomainId) } : {}),
-    schema: {
-      ...state.schema,
-      visibleDomainIds: list(state.schema.visibleDomainIds),
-      expandedDomainIds: list(state.schema.expandedDomainIds),
-      domainPositions: keys(state.schema.domainPositions),
-      collapsedModules: keys(state.schema.collapsedModules),
-    },
-  }
+  return readJson(root, FILE, decodeWorkspaceUiState, emptyWorkspaceUiState())
 }
 
 /** Merge a trusted-boundary patch after decoding each field against the current state. */

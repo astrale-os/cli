@@ -59,15 +59,8 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     'unavailable',
     'skipped',
   ])
-  // Additive compatibility: Studio can briefly run a newer server against an
-  // older CLI report while a binary update is being applied.
-  const skillStatus =
-    skills === null || skills === undefined
-      ? 'current'
-      : typeof skills.status === 'string' && skillStatuses.has(skills.status)
-        ? (skills.status as StaleReport['skills']['status'])
-        : null
-  if (skillStatus === null) return null
+  if (typeof skills?.status !== 'string' || !skillStatuses.has(skills.status)) return null
+  const skillStatus = skills.status as StaleReport['skills']['status']
   return {
     stale: report.stale,
     cli: {
@@ -79,7 +72,7 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     },
     skills: {
       status: skillStatus,
-      ...(typeof skills?.error === 'string' ? { error: skills.error } : {}),
+      ...(typeof skills.error === 'string' ? { error: skills.error } : {}),
     },
     sdk: { stale: sdk.stale, inProject: sdk.inProject, outdated },
   }

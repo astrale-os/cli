@@ -72,8 +72,7 @@ export interface StoredChat {
   id: string
   title: string
   harness: string
-  /** colour slot picked at creation and kept for life (see shared/chat-tone.ts);
-   *  absent only on chats written before tones were stored */
+  /** colour slot picked at creation and kept for life (see shared/chat-tone.ts) */
   tone?: number
   model?: string
   effort?: AgentEffort
@@ -296,27 +295,11 @@ export function ensureChats(
     writeChat(root, chat)
     store.chats.push(chat)
   }
-  backfillTones(root, store.chats)
   if (!store.chats.some((chat) => chat.id === store.activeId)) {
     store.activeId = store.chats[store.chats.length - 1]!.id
     writeActiveId(activeRoot, store.activeId)
   }
   return store
-}
-
-/**
- * Give chats saved before tones were stored the one they will keep from now on,
- * in creation order and next to the tones already handed out.
- */
-function backfillTones(root: string, chats: StoredChat[]): void {
-  if (chats.every((chat) => chat.tone !== undefined)) return
-  const toned = chats.filter((chat) => chat.tone !== undefined)
-  for (const chat of chats) {
-    if (chat.tone !== undefined) continue
-    chat.tone = nextChatTone(toned, chat.harness)
-    toned.push(chat)
-    writeChat(root, chat)
-  }
 }
 
 function seedFields(seed?: ChatSeed): Partial<StoredChat> {

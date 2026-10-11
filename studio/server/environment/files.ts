@@ -15,7 +15,7 @@ import { join, resolve } from 'node:path'
 
 import type { EnvFileModel, EnvName, EnvVarRow } from '../../shared/types'
 
-import { buildEnvFields } from '../introspect/anatomy-extras'
+import { buildEnvFields } from '../introspect/anatomy/env-fields'
 import { readConfigPreview } from '../introspect/config-preview'
 import { parseDotenvPreview } from './dotenv-preview'
 

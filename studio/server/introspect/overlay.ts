@@ -3,8 +3,9 @@
  */
 import type { SchemaIR, SchemaOverlay } from '../../shared/types'
 
-import { buildHandlerLinks, buildSourceSpans } from './overlay-tsmorph'
+import { buildHandlerLinks } from './source-overlay/handlers'
 import { newProject } from './source-overlay/project'
+import { buildSourceSpans } from './source-overlay/spans'
 
 export interface OverlayArgs {
   ir: SchemaIR | null

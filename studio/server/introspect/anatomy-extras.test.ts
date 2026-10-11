@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildClientTree, buildViews, findSchemaDefinition } from './anatomy-extras'
+import { buildClientTree } from './anatomy/client-tree'
+import { findSchemaDefinition } from './anatomy/schema-definition'
+import { buildViews } from './anatomy/views'
 
 const roots: string[] = []
 

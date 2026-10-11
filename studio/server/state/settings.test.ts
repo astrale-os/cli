@@ -42,22 +42,6 @@ test('rejects malformed preferences without discarding unrelated settings', () =
   expect(readSettings(root).agentModel).toBeNull()
 })
 
-test('folds a pre-star settings file onto the single preferred model', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-settings-legacy-'))
-  roots.push(root)
-  writeJson(root, 'settings.json', {
-    agentModels: { ' Codex ': ' gpt-5.6-sol ', claude: ' opus ' },
-    agentEffort: 'max',
-  })
-  // Claude wins because it is the agent Studio opened on, so its entry is the one
-  // that described what a new chat actually ran. The dropped effort is not an
-  // error: reasoning belongs to a chat now, and the agent's own level stands in.
-  expect(readSettings(root)).toMatchObject({ agentModel: { harness: 'claude', model: 'opus' } })
-
-  writeJson(root, 'settings.json', { agentModels: { codex: 'gpt-5.5' } })
-  expect(readSettings(root).agentModel).toEqual({ harness: 'codex', model: 'gpt-5.5' })
-})
-
 test('drops destructive timing values from disk and API patches', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-settings-timings-'))
   roots.push(root)

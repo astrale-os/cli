@@ -84,7 +84,6 @@ const TOOL_INPUTS = [
   'introspect/canonical-schema.ts',
   'introspect/dependency-footprint.ts',
   'introspect/overlay.ts',
-  'introspect/overlay-tsmorph.ts',
   'introspect/source-overlay/handlers.ts',
   'introspect/source-overlay/kernel-calls.ts',
   'introspect/source-overlay/project.ts',

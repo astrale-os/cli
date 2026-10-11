@@ -9,8 +9,7 @@ import type { DomainHandle } from './domain'
  */
 import { getBundle } from './cache'
 import { captureBaseline, hashAnatomyFiles, loadBaseline } from './state/baseline'
-import { migrateDocuments } from './state/documents'
-import { initDotDir, removeState } from './state/store'
+import { initDotDir } from './state/store'
 import { watchDomain } from './watch'
 
 export interface BootedDomain {
@@ -29,15 +28,6 @@ export async function bootDomain(
   options: { background?: boolean } = {},
 ): Promise<BootedDomain> {
   initDotDir(handle.root)
-  // one-shot: uuid-named documents become readable file names under context/docs
-  migrateDocuments(handle.root)
-  // Chats, transcripts and bridge grants moved to the studio's home on this machine:
-  // whatever an earlier studio left here is cache, and stale cache at that.
-  try {
-    removeState(handle.root, '.cache/agent')
-  } catch {
-    /* best-effort */
-  }
   const bundle = await getBundle(
     handle.id,
     false,

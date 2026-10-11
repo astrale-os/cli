@@ -4,7 +4,7 @@
  * (dir names only — a hint, never a parse).
  *
  * Overview is implemented here; views/client/env come from the extractors
- * under anatomy/ (re-exported by anatomy-extras.ts). The composition entry is
+ * under anatomy/. The composition entry is
  * statically parsed, never executed (its dependency graph may have import side
  * effects).
  */
@@ -16,9 +16,11 @@ import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/types
 import { resolveDomainEntry } from '../domain'
 import { asJsonRecord, asString, parseJson } from '../json'
 import { studioSettings } from '../studio-settings'
-import { buildClientTree, buildEnvFields, buildViews, findSchemaDefinition } from './anatomy-extras'
-import { schemaProject } from './anatomy/schema-definition'
+import { buildClientTree } from './anatomy/client-tree'
+import { buildEnvFields } from './anatomy/env-fields'
+import { findSchemaDefinition, schemaProject } from './anatomy/schema-definition'
 import { listEntries, readTextSafe, relativePosix } from './anatomy/source'
+import { buildViews } from './anatomy/views'
 import { readConfigPreview } from './config-preview'
 
 export interface AnatomyArgs {
