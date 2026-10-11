@@ -90,10 +90,17 @@ export function createExchangeCredentialResolver(
       requireLive(signal)
       // A remembered issuer can still exchange after its drain has ended. Validate its bearer on
       // a read-only Kernel call before handing it to any business call; replaying a command or a
-      // failed business invocation would risk repeating side effects.
-      const checked = async (token: string) => {
+      // failed business invocation would risk repeating side effects. A bearer the Kernel refuses
+      // is forgotten, so no later command selects it again.
+      const checked = async (key: ReturnType<typeof exchangeKey>, token: string) => {
         if (installationOwned && known !== undefined) {
-          await confirmCredential(kernelIssuer, token, fetch, timeoutMs, signal)
+          try {
+            await confirmCredential(kernelIssuer, token, fetch, timeoutMs, signal)
+          } catch (cause) {
+            // A bearer that cannot be forgotten only costs the next command the same refusal.
+            if (credentialRefused(cause)) await cache.delete(key, token).catch(() => undefined)
+            throw cause
+          }
         }
         requireLive(signal)
         return token
@@ -101,11 +108,12 @@ export function createExchangeCredentialResolver(
       let refused: ResponseError | undefined
       const persisted = async (identity: SourceIdentity) => {
         if (known === undefined || refused !== undefined) return undefined
-        const cached = await cache.get(exchangeKey(kernelIssuer, known, identity), cacheTtlSeconds)
+        const key = exchangeKey(kernelIssuer, known, identity)
+        const cached = await cache.get(key, cacheTtlSeconds)
         requireLive(signal)
         if (cached === undefined) return undefined
         try {
-          return await checked(cached)
+          return await checked(key, cached)
         } catch (cause) {
           if (!credentialRefused(cause)) throw cause
           refused = cause
@@ -132,32 +140,30 @@ export function createExchangeCredentialResolver(
         timeoutMs,
         exchangeTtlSeconds,
       )
-      const exchangeAt = (domainIssuer: IssuerId) => {
+      const exchangeAt = async (domainIssuer: IssuerId) => {
         requireExchangeTransport(kernelIssuer, domainIssuer)
-        return cache.getOrRefresh(
-          exchangeKey(kernelIssuer, domainIssuer, sourceIdentity),
-          cacheTtlSeconds,
-          async () => {
-            const { session, ttlSeconds } = exchange.open()
-            const exchanged = await exchangeThrough(session, domainIssuer, ttlSeconds, signal)
-            const expiresAt = Math.floor(exchanged.expiresAt / 1_000)
-            const caller = carriedCaller(exchanged.credential, expiresAt)
-            if (caller.remainingSeconds < cacheTtlSeconds) {
-              throw new AstraleError(
-                'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
-                'The Domain exchange credential cannot cover the requested command timeout.',
-                `The Domain issuer returned ${Math.max(0, caller.remainingSeconds)} seconds but ${cacheTtlSeconds} are required. Use a shorter --timeout or update the Domain execution service.`,
-              )
-            }
-            return {
-              credential: exchanged.credential,
-              expiresAt,
-              user: caller.user,
-              sourceIssuer: sourceIdentity.issuer,
-              sourceSubject: sourceIdentity.subject,
-            }
-          },
-        )
+        const key = exchangeKey(kernelIssuer, domainIssuer, sourceIdentity)
+        const token = await cache.getOrRefresh(key, cacheTtlSeconds, async () => {
+          const { session, ttlSeconds } = exchange.open()
+          const exchanged = await exchangeThrough(session, domainIssuer, ttlSeconds, signal)
+          const expiresAt = Math.floor(exchanged.expiresAt / 1_000)
+          const caller = carriedCaller(exchanged.credential, expiresAt)
+          if (caller.remainingSeconds < cacheTtlSeconds) {
+            throw new AstraleError(
+              'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
+              'The Domain exchange credential cannot cover the requested command timeout.',
+              `The Domain issuer returned ${Math.max(0, caller.remainingSeconds)} seconds but ${cacheTtlSeconds} are required. Use a shorter --timeout or update the Domain execution service.`,
+            )
+          }
+          return {
+            credential: exchanged.credential,
+            expiresAt,
+            user: caller.user,
+            sourceIssuer: sourceIdentity.issuer,
+            sourceSubject: sourceIdentity.subject,
+          }
+        })
+        return checked(key, token)
       }
       const session = () => exchange.open().session
       try {
@@ -167,7 +173,7 @@ export function createExchangeCredentialResolver(
         if (current === null) return sourceToken
         try {
           if (refused !== undefined) throw refused
-          return await checked(await exchangeAt(current))
+          return await exchangeAt(current)
         } catch (failure) {
           if (!issuerMayHaveMoved(failure)) throw failure
           // Another concurrent resolution may already have updated `current`. The refused cached
@@ -176,7 +182,7 @@ export function createExchangeCredentialResolver(
           const moved = await domain.moved(failedIssuer, session, signal)
           requireLive(signal)
           if (moved === undefined) throw failure
-          return moved === null ? sourceToken : await checked(await exchangeAt(moved))
+          return moved === null ? sourceToken : await exchangeAt(moved)
         }
       } finally {
         exchange.close()

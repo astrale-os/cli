@@ -152,7 +152,6 @@ describe('Shell exchange at the installed issuer', () => {
 
     // The Domain refuses the exchange at the issuer the pin names on each read.
     await installations.delete(KERNEL, SHELL)
-    await credentials.clear()
     const domain = network({ [DEPLOYMENT]: 'refuses' })
     const read = pinned(DEPLOYMENT)
     await expect(
@@ -160,6 +159,31 @@ describe('Shell exchange at the installed issuer', () => {
     ).rejects.toMatchObject({ code: '2002' })
     expect(read.reads).toEqual([SHELL, SHELL])
     expect(domain.requests.filter((request) => request.endsWith('/token'))).toHaveLength(1)
+  })
+
+  /** @evidence TEST-CLI-INSTALLED-SHELL-REFUSED-CREDENTIAL-FORGOTTEN */
+  test('forgets a persisted credential the Kernel refuses, so the next command exchanges afresh', async () => {
+    // The Kernel admits only what the Domain issued after its first `revoked` exchanges. The fake
+    // Domain issues the same string on each exchange, so the Kernel tells them apart by count.
+    let revoked = 0
+    const net = network(
+      { [DEPLOYMENT]: 'live' },
+      { kernel: { kind: 'up', admits: () => exchanges().length > revoked } },
+    )
+    const exchanges = () =>
+      net.requests.filter((request) => request.endsWith('/.well-known/astrale/token'))
+    const pin = pinned(DEPLOYMENT)
+    const command = () => shellResolver(net.fetch, pin.read).resolve(KERNEL, live())
+    await expect(command()).resolves.toBe(exchanged(DEPLOYMENT))
+
+    // The Kernel stops admitting the persisted credential while the pin still names its issuer:
+    // the command that confirms it fails, as the pin does not explain the refusal.
+    revoked = exchanges().length
+    await expect(command()).rejects.toMatchObject({ code: 2002 })
+
+    // The next command is not served the refused credential again: it exchanges afresh.
+    await expect(command()).resolves.toBe(exchanged(DEPLOYMENT))
+    expect(exchanges()).toHaveLength(2)
   })
 
   /** @evidence TEST-CLI-INSTALLED-SHELL-DEPLOYMENT-ISSUER */
