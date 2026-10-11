@@ -41,12 +41,6 @@ export interface AdminInstanceApi {
   reconcileInvitation(invitation: string): Promise<InvitationInfo>
 }
 
-export interface AdminInstanceDependencies {
-  readonly operationId?: (
-    kind: 'create' | 'status' | 'delete' | 'invite' | 'retrieve-root' | 'reconcile-invitation',
-  ) => string
-}
-
 const MAXIMUM_INSTANCES = 10_000
 
 /**
@@ -55,10 +49,8 @@ const MAXIMUM_INSTANCES = 10_000
  */
 export async function connectAdminInstances(
   context: AdminInstanceContext,
-  dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
   if (context.fleet !== undefined) Path.parse(context.fleet)
-  const operationId = dependencies.operationId ?? defaultOperationId
   const fleet = (creation = false) => resolveAdminFleet(context, creation)
 
   const list = async (
@@ -517,7 +509,8 @@ function record(input: unknown, label: string): Readonly<Record<string, unknown>
   return input as Readonly<Record<string, unknown>>
 }
 
-function defaultOperationId(
+/** A fresh operation id per request; Admin retains it to replay a lost reply. */
+function operationId(
   kind: 'create' | 'status' | 'delete' | 'invite' | 'retrieve-root' | 'reconcile-invitation',
 ): string {
   return randomOperationId('cli', 'instance', kind)

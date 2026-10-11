@@ -1,3 +1,5 @@
+import { AstraleError } from '../../errors'
+
 /** CLI-stable projection of one caller-visible Admin Instance. */
 export type InstanceState = 'provisioning' | 'ready' | 'deleting' | 'failed' | 'deleted'
 
@@ -94,4 +96,3 @@ export function findOwnedInstance(
 export function formatInstanceState(info: InstanceInfo): string {
   return info.state === 'ready' ? '' : `${info.state}${info.phase ? ` (${info.phase})` : ''}`
 }
-import { AstraleError } from '../../errors'
