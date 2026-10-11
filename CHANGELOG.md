@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-beta.141](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.140...cli/v1.0.0-beta.141) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** list Instances through Admin's Instance.list ([#671](https://github.com/astrale-os/cli/issues/671))
+
+### Bug Fixes
+
+* **admin:** list Instances through Admin's Instance.list ([#671](https://github.com/astrale-os/cli/issues/671)) ([9912d3b](https://github.com/astrale-os/cli/commit/9912d3b90cc45ca9607a98a6561462f2a60a577a))
+
 ## [1.0.0-beta.140](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.139...cli/v1.0.0-beta.140) (2026-10-11)
 
 
