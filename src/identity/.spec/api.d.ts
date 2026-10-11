@@ -3,6 +3,7 @@ import type { Call } from '@astrale-os/sdk/client'
 import type { NodeId } from '@astrale-os/sdk/graph/node'
 import type { JWK } from 'jose'
 
+import type { RootIdentityRecipient, RootIdentityTransfer } from '../../admin/instance/.spec/api.js'
 import type {
   Identity,
   IdentityMode,
@@ -121,3 +122,27 @@ export function importIdentity(
 
 /** Atomically publish one explicit private export file with mode 0600. */
 export function writeIdentityExport(path: string, content: string): Promise<void>
+
+/** One-use recipient of an Instance root transfer; its private half never leaves this process. */
+export interface RootIdentityRecipientContext {
+  readonly recipient: RootIdentityRecipient
+  readonly privateKey: CryptoKey
+}
+
+/** The exact Admin request and Instance a root transfer must be bound to. */
+export interface RootIdentityTransferScope {
+  readonly instance: string
+  readonly issuer: string
+  readonly requestId: string
+  readonly recipientThumbprint: string
+  readonly subject: string
+}
+
+export function createRootIdentityRecipient(): Promise<RootIdentityRecipientContext>
+
+/** Decrypt and bind a Host-sealed export to the exact Admin request and Instance. */
+export function decodeRootIdentityTransfer(
+  transfer: RootIdentityTransfer,
+  recipient: RootIdentityRecipientContext,
+  scope: RootIdentityTransferScope,
+): Promise<IdentityExport>

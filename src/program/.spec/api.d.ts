@@ -1,7 +1,7 @@
 import type { Command } from 'commander'
 
 /** One positional argument in a CLI command definition. */
-export interface CommandArgument {
+interface CommandArgument {
   readonly name: string
   readonly description: string
   readonly required?: boolean
@@ -14,6 +14,9 @@ export interface CommandOption {
   readonly description: string
   readonly default?: string
   readonly choices?: string[]
+  readonly hidden?: boolean
+  /** Collect every occurrence, in order, into a string array. */
+  readonly repeatable?: boolean
 }
 
 /** Internal authoring shape implemented by each command module. */
@@ -36,8 +39,12 @@ export interface CommandGroup {
   readonly description: string
   readonly summary?: string
   readonly commands: CommandDefinition[]
+  readonly hidden?: boolean
   readonly subgroups?: CommandGroup[]
 }
 
 /** Build a fresh, complete Commander tree without parsing process arguments. */
 export function buildProgram(): Promise<Command>
+
+/** Route a root `--version` to the CLI version while subcommands keep their own `--version`. */
+export function normalizeRootVersionArgv(argv: readonly string[]): string[]
