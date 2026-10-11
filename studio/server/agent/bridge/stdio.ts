@@ -14,26 +14,19 @@ import { asJsonRecord, asString, parseJson } from '../../json'
 import { forwardBridgeTool } from './client'
 import { BRIDGE_TOOLS } from './tools'
 
-function configFromArgv(): { base?: string; token?: string } {
+/** The bridge's base URL and token, from the `--config` file Studio wrote for this turn. */
+function configFromArgv(): { base: string; token: string } {
   const i = process.argv.indexOf('--config')
   const path = i >= 0 ? process.argv[i + 1] : undefined
-  if (!path) return {}
   try {
-    const record = asJsonRecord(parseJson(readFileSync(path, 'utf8')))
-    const base = asString(record?.base)
-    const token = asString(record?.token)
-    return {
-      ...(base === undefined ? {} : { base }),
-      ...(token === undefined ? {} : { token }),
-    }
+    const record = path ? asJsonRecord(parseJson(readFileSync(path, 'utf8'))) : undefined
+    return { base: asString(record?.base) ?? '', token: asString(record?.token) ?? '' }
   } catch {
-    return {}
+    return { base: '', token: '' }
   }
 }
 
-const config = configFromArgv()
-const BASE = config.base || process.env.DOMAIN_STUDIO_BRIDGE_URL || ''
-const TOKEN = config.token || process.env.DOMAIN_STUDIO_BRIDGE_TOKEN || ''
+const { base: BASE, token: TOKEN } = configFromArgv()
 
 function send(msg: unknown): void {
   process.stdout.write(`${JSON.stringify(msg)}\n`)

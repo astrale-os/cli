@@ -26,11 +26,6 @@ import { stoppers, workspaceRoot } from './root'
  *  must start/end alphanumeric. Also guards the filesystem target (no `/`, no `..`, no leading dot). */
 const SLUG = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
-/** The npx argv that scaffolds `name` non-interactively: the shared scaffolder range, no instance. */
-export function scaffoldArgs(name: string): string[] {
-  return ['--yes', SCAFFOLDER, name, '--yes']
-}
-
 interface CreateDomainResult {
   ok: boolean
   id?: string
@@ -83,7 +78,7 @@ export async function createDomain(rawName: string): Promise<CreateDomainResult>
   }
 
   // 1. Scaffold (non-interactive). `--yes` accepts defaults (astrale adapter, template).
-  const scaffold = await run('npx', scaffoldArgs(name), root)
+  const scaffold = await run('npx', ['--yes', SCAFFOLDER, name, '--yes'], root)
   const scaffolded = registerDomain(dir)
   if (!scaffolded) {
     return {

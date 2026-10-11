@@ -1,6 +1,5 @@
 import * as acp from '@agentclientprotocol/sdk'
-import { accessSync, constants, readFileSync } from 'node:fs'
-import { delimiter, isAbsolute, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 
 import type {
   AgentContextUsage,
@@ -68,46 +67,11 @@ function promptBlocks(
   return [...pictures, { type: 'text', text: prompt }]
 }
 
-function executableOnPath(command: string, pathValue: string | undefined): string | undefined {
-  const extensions =
-    process.platform === 'win32' ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';') : ['']
-  for (const directory of (pathValue ?? '').split(delimiter).filter(Boolean)) {
-    for (const extension of extensions) {
-      const candidate = resolve(directory, command + extension)
-      try {
-        accessSync(candidate, constants.X_OK)
-        return candidate
-      } catch {
-        /* keep looking */
-      }
-    }
-  }
-  return undefined
-}
-
-function absoluteMcpCommand(
-  server: HarnessMcpServer,
-  cwd: string,
-  env: Record<string, string> | undefined,
-): string {
-  if (isAbsolute(server.command)) return server.command
-  if (server.command.includes('/') || server.command.includes('\\'))
-    return resolve(cwd, server.command)
-  const command = executableOnPath(server.command, env?.PATH ?? process.env.PATH)
-  if (command) return command
-  throw new Error(
-    `ACP MCP server \`${server.name}\` command \`${server.command}\` was not found on PATH`,
-  )
-}
-
-function acpMcpServers(
-  servers: HarnessMcpServer[] | undefined,
-  cwd: string,
-  env?: Record<string, string>,
-): acp.McpServer[] {
+/** Studio's MCP servers (its bridge) run an absolute executable: the CLI or this Bun. */
+function acpMcpServers(servers: HarnessMcpServer[] | undefined): acp.McpServer[] {
   return (servers ?? []).map((server) => ({
     name: server.name,
-    command: absoluteMcpCommand(server, cwd, env),
+    command: server.command,
     args: server.args ?? [],
     env: Object.entries(server.env ?? {}).map(([name, value]) => ({ name, value })),
     _meta: {
@@ -480,13 +444,12 @@ async function executeAcp(
   if (input.signal.aborted) return failedBeforeStart('canceled')
 
   let env: Record<string, string>
-  let mcpServers: acp.McpServer[]
   try {
     env = providerEnvironment(options, input)
-    mcpServers = acpMcpServers('mcpServers' in input ? input.mcpServers : [], input.root, env)
   } catch (error) {
     return failedBeforeStart(errorText(error))
   }
+  const mcpServers = acpMcpServers('mcpServers' in input ? input.mcpServers : [])
 
   let agent: AcpAgentProcess
   try {
