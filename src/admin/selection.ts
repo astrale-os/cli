@@ -35,7 +35,7 @@ export async function resolveAdminFleet(
       slug,
       name,
       usable: await auth.can({
-        policy: { origin: 'admin.astrale.ai', kind: 'policy', name: 'UseFleet' },
+        policy: AdminContract.policies.useFleet,
         object: node.id,
       }),
     }

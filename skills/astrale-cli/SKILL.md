@@ -139,7 +139,7 @@ stdin JSON, URLs, or arbitrary substrings.
 astrale get @self --json
 astrale introspect /:notes.example:class.Note::notes.example:class.Note.method.archive
 astrale call /:blog.example:class.Author:list limit=10
-astrale call '@<fleet-id>::admin.astrale.ai:class.Fleet.method.listInstances' --admin
+astrale call /:admin.astrale.ai:class.Instance:list --admin
 ```
 
 ## Instances And Domains
@@ -164,6 +164,8 @@ acts on; they never select the Admin kernel, and Admin operations (`instance lis
 `domain list` without them uses the active instance. Choose the Admin kernel with
 `--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
 removes only the local bookmark.
+`instance list` shows the Instances you own or were invited into, in every Fleet; `--fleet <id>`
+keeps one Fleet, and adds its whole inventory when you administer it.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 `instance invite` requires authority to manage the exact Instance and grants
@@ -490,8 +492,7 @@ astrale call /:blog.example:class.Author:create \
   --data '{"name":"Ada"}' --json
 astrale call /:assets.example:class.Asset:render id=123 --output asset.png
 astrale call /:blog.example:class.Author:create -d @author.json
-astrale call '@<fleet-id>::admin.astrale.ai:class.Fleet.method.listInstances' \
-  --admin --json
+astrale call /:admin.astrale.ai:class.Instance:list --admin --json
 ```
 
 Top-level `key=value` values coerce booleans, null, numbers, arrays, and

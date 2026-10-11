@@ -4,10 +4,10 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query, Property } from '@astrale-os/sdk/query'
-import { MethodKey } from '@astrale-os/sdk/schema'
+import { MethodKey, PropertyKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
-import { AdminContract, callAdminMethod } from '../contract'
+import { AdminContract, callAdminMethod, callAdminStaticMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import { resolveAdminFleet } from '../selection'
 import {
@@ -53,20 +53,40 @@ export async function connectAdminInstances(
   if (context.fleet !== undefined) Path.parse(context.fleet)
   const fleet = (creation = false) => resolveAdminFleet(context, creation)
 
+  /**
+   * The Instances the caller may use, owned or reached through its directory memberships, in
+   * every Fleet or in the selected one. A Fleet's administrators also read its whole inventory;
+   * their own entries keep what only the personal list carries.
+   */
   const list = async (
     options: Readonly<{ includeRetired?: boolean }> = {},
   ): Promise<InstanceInfo[]> => {
-    const output = await callAdminMethod(
+    const includeRetired = options.includeRetired === true
+    const output = await callAdminStaticMethod(
       context.session,
-      await fleet(),
-      MethodKey.of(AdminContract.classes.Fleet, 'listInstances'),
-      options.includeRetired === true ? { includeRetired: true } : {},
+      AdminContract.classes.Instance,
+      'list',
+      includeRetired ? { includeRetired: true } : {},
     )
     if (!Array.isArray(output)) throw new TypeError('Admin Instance inventory is invalid.')
     if (output.length > MAXIMUM_INSTANCES) {
       throw new TypeError('Admin Instance inventory exceeds its bound.')
     }
-    return output.map(instanceFromSummary)
+    const mine = output.map(instanceFromSummary)
+    if (context.fleet === undefined) return mine
+    const fleet = Path.parse(context.fleet)
+    const own = mine.filter((instance) => instance.fleetId === fleet.raw)
+    if (fleet.ast.anchor.kind !== 'id') return own
+    const administers = await context.session.auth.can({
+      policy: AdminContract.policies.administerFleet,
+      object: fleet.ast.anchor.id,
+    })
+    if (!administers) return own
+    const known = new Set(own.map(({ id }) => id))
+    const inventory = await readFleetInstances(context.graph, fleet, includeRetired)
+    return [...inventory.filter(({ id }) => !known.has(id)), ...own].sort(
+      (left, right) => left.slug.localeCompare(right.slug) || left.state.localeCompare(right.state),
+    )
   }
 
   const requireInstance = async (identifier: string): Promise<InstanceInfo> => {
@@ -225,6 +245,29 @@ function instanceInvitationFromSummary(
     throw new TypeError(`Admin Invitation ${operation} does not match its requested scope.`)
   }
   return invitation
+}
+
+/** A Fleet's whole Instance inventory, which its administrators read directly in the graph. */
+async function readFleetInstances(
+  graph: AdminGraphQueryApi,
+  fleet: ReturnType<typeof Path.parse>,
+  includeRetired: boolean,
+): Promise<InstanceInfo[]> {
+  const Instance = AdminContract.classes.Instance
+  const contained = Query.from({ nodes: [fleet] })
+    .expand({ via: [AdminContract.edges.fleetContains], direction: 'outgoing' })
+    .filter({ class: { equals: Instance } })
+  const selected = includeRetired
+    ? contained
+    : contained.filter({
+        predicate: Property(PropertyKey.of(Instance, 'operational')).equals(true),
+      })
+  const nodes = await readAllNodes(
+    graph,
+    selected.select({ kind: 'nodes', binding: selected.node, projection: { kind: 'value' } }),
+    { label: 'Fleet Instance inventory', maximum: MAXIMUM_INSTANCES, maximumPages: 40 },
+  )
+  return nodes.map((node) => ({ ...instanceFromNode(node), fleetId: fleet.raw }))
 }
 
 async function readExactInstance(

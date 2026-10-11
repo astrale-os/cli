@@ -343,7 +343,7 @@ Admin kernel:
 Examples:
   $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale call /:blog.acme.com:class.Author:list limit=10
-  $ astrale call '@<fleet-id>::admin.astrale.ai:class.Fleet.method.listInstances' --admin
+  $ astrale call /:admin.astrale.ai:class.Instance:list --admin
   $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
   $ astrale call /:blog.acme.com:class.Author:create -d @author.json
 `,
