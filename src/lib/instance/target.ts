@@ -145,7 +145,8 @@ function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInstanceTar
   }
 }
 
-const ADMIN_DISCOVERY_CODES = new Set([
+/** Why the caller could not reach the Admin Domain at all: no credential for it, or no Admin. */
+export const ADMIN_UNREACHABLE_CODES: ReadonlySet<string> = new Set([
   'TOKEN_EXCHANGE_SOURCE_INVALID',
   'TOKEN_EXCHANGE_SOURCE_EXPIRED',
   'TOKEN_EXCHANGE_UNSUPPORTED',
@@ -153,12 +154,14 @@ const ADMIN_DISCOVERY_CODES = new Set([
   'TOKEN_EXCHANGE_PROTOCOL_ERROR',
   'TOKEN_EXCHANGE_INSECURE',
   'ADMIN_DOMAIN_ISSUER_MISSING',
-  'ADMIN_INVENTORY_UNAVAILABLE',
 ])
 
 /** Admin lookup failed before it could say whether the slug exists. */
 function isAdminDiscoveryFailure(error: unknown): boolean {
-  return error instanceof AstraleError && ADMIN_DISCOVERY_CODES.has(error.code)
+  return (
+    error instanceof AstraleError &&
+    (ADMIN_UNREACHABLE_CODES.has(error.code) || error.code === 'ADMIN_INVENTORY_UNAVAILABLE')
+  )
 }
 
 function isManagedInstanceNotFound(error: unknown): boolean {

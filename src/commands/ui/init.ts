@@ -1,15 +1,9 @@
 import type { CommandDefinition } from '../../program'
 
-import { initUi, type UiPreset } from '../../ui'
+import { initUi } from '../../ui'
 import { UI_JSON_OPTION, runUiCommand, type UiCommandOptions } from './shared'
 
-type Options = UiCommandOptions & {
-  preset?: UiPreset
-  version?: string
-  dryRun?: boolean
-  force?: boolean
-  install?: boolean
-}
+type Options = UiCommandOptions & Omit<Parameters<typeof initUi>[0], 'path'>
 
 export default {
   name: 'init',
