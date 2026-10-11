@@ -16,10 +16,9 @@ const kernel = issuer.accept('https://kernel.example')
 const target = { kernelIssuer: kernel, url: kernel }
 const receipt = acceptExecutionReceipt({
   kind: 'astrale.execution',
-  version: 1,
+  version: 2,
   id: 'execution-1',
   kernel,
-  caller: 'alice',
   origin: 'jobs.example',
   principal: 'domain',
 })
@@ -32,21 +31,17 @@ function harness() {
     target: string
     input: unknown
   }[] = []
-  let caller = 'alice'
   let installed = 'https://old-domain.example'
   let inspections = 0
   let closes = 0
   let terminal = false
   const open: ConnectionFactory = (selected, _timeout, _options, _config, credential) => {
-    const auth = { whoami: async () => ({ id: caller }) }
     const principal = credential?.principal
     opened.push({ principal, issuer: selected.domainIssuer })
     const context = {
       target: selected,
-      auth,
       graph: {},
       session: {
-        auth,
         schema: {
           inspect: async (origin: string) => {
             expect(origin).toBe('jobs.example')
@@ -76,10 +71,10 @@ function harness() {
       },
     }
   }
-  const observe = (operation: 'status' | 'result', selected = target) =>
+  const observe = (operation: 'status' | 'result', selected = target, recorded = receipt) =>
     withResolvedClientSession(
       selected,
-      { as: caller },
+      { as: 'alice' },
       {} as AstraleConfig,
       async ({ session }) =>
         operation === 'status'
@@ -88,7 +83,7 @@ function harness() {
       open,
       {
         principal: 'execution',
-        receipt: acceptExecutionReceipt(JSON.parse(JSON.stringify(receipt))),
+        receipt: acceptExecutionReceipt(JSON.parse(JSON.stringify(recorded))),
       },
       // Poisoned cache must never select an observation issuer.
       Object.assign(new InstallationCache(), {
@@ -101,9 +96,6 @@ function harness() {
     opened,
     calls,
     observe,
-    setCaller: (value: string) => {
-      caller = value
-    },
     rotate: (value: string) => {
       installed = value
     },
@@ -128,7 +120,7 @@ test('portable receipt reconstructs Domain-for-caller status and pending-to-term
   expect(h.counts()).toEqual({ inspections: 3, closes: 6 })
 })
 
-test('another Kernel is refused without connections, another caller before any Domain exchange or schema read', async () => {
+test('another Kernel is refused without connections; a caller receipt opens only its observation session', async () => {
   const h = harness()
   await expect(
     h.observe('status', {
@@ -137,10 +129,8 @@ test('another Kernel is refused without connections, another caller before any D
     }),
   ).rejects.toMatchObject({ code: 'EXECUTION_TARGET_MISMATCH' })
   expect(h.opened).toEqual([])
-  h.setCaller('bob')
-  await expect(h.observe('result')).rejects.toMatchObject({ code: 'EXECUTION_CALLER_MISMATCH' })
+  await h.observe('status', target, { ...receipt, principal: 'caller' })
   expect(h.opened).toEqual([{ principal: 'caller', issuer: undefined }])
-  expect(h.calls).toEqual([])
   expect(h.counts()).toEqual({ inspections: 0, closes: 1 })
 })
 

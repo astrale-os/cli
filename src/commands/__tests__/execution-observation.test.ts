@@ -12,10 +12,9 @@ import { observeExecution } from '../execution'
 const kernel = issuer.accept('https://kernel.example')
 const receipt = {
   kind: 'astrale.execution',
-  version: 1,
+  version: 2,
   id: 'execution-1',
   kernel,
-  caller: 'alice',
   origin: 'jobs.example',
   principal: 'domain',
 }
@@ -157,7 +156,7 @@ test.each(['caller', 'domain'])(
       return stdout
     }
     const flags = ['--url', kernel, '--as', 'alice', '--json']
-    const stdout = await invoke(['execution', 'start', '/:jobs.example:function.durable', ...flags])
+    const stdout = await invoke(['call', '/:jobs.example:function.durable', ...flags])
     expect(JSON.parse(stdout)).toMatchObject({
       kind: 'astrale.execution',
       id: 'execution-1',
@@ -187,9 +186,8 @@ test.each(['caller', 'domain'])(
     )
     expect(observations.map((event) => event.principal)).toEqual([mode, mode])
     if (mode === 'caller') {
-      expect(
-        events.some((event) => event.kind === 'exchange' || event.input?.kind === 'inspect'),
-      ).toBe(false)
+      // A caller receipt reconstructs its context locally: only the two observations reach a server.
+      expect(events).toEqual(observations)
     } else {
       expect(events.filter((event) => event.input?.kind === 'inspect')).toHaveLength(2)
     }

@@ -58,9 +58,8 @@ export async function buildProgram(): Promise<Command> {
   const executions = await import('../commands/execution')
   registerGroup(program, {
     name: 'execution',
-    description: 'Start and observe durable executions with portable receipts',
+    description: 'Observe durable executions from the receipts astrale call prints',
     commands: [
-      withKernelOptions(executions.start),
       withKernelOptions(executions.observationCommand('status')),
       withKernelOptions(executions.observationCommand('result')),
     ],

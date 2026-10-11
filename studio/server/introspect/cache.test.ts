@@ -131,11 +131,11 @@ test('an upgraded Studio rebuilds a persisted successful preview from the old ad
   writeFileSync(
     domain.schemaIndex,
     `import { classIcon, defineSchema, nodeClass, valueSchema } from '@astrale-os/sdk/schema'
-const Shared = nodeClass({ icon: classIcon.neutral, properties: { title: valueSchema<string>()({ type: 'string' }) } })
+const Shared = nodeClass({ icon: classIcon.neutral, policies: { read: true }, properties: { title: valueSchema<string>()({ type: 'string' }) } })
 const dependency = defineSchema('cache-dependency.studio.test', { name: 'Test Domain', classes: { Shared } })
 export const schema = defineSchema('cache-upgrade.studio.test', { name: 'Test Domain',
   dependencies: { dependency },
-  classes: { Document: nodeClass({ icon: classIcon.neutral, extends: [Shared] }) },
+  classes: { Document: nodeClass({ icon: classIcon.neutral, policies: { read: true }, extends: [Shared] }) },
 })
 `,
   )

@@ -34,6 +34,7 @@ astrale query [sources...]
 astrale introspect <origin-or-path>
 astrale mutate
 astrale call <path> [key=value...]
+astrale execution status|result <receipt>
 astrale token
 astrale logs
 astrale view [domain-or-view]
@@ -484,7 +485,11 @@ the call input. Value, binary, and stream results are handled explicitly, and
 while the command-scoped Client session is live, then presented through the same
 raw/file/JSON paths as buffered binary. JSON preserves application status and
 encodes the body as text or base64. Callable input/output is
-`astrale introspect <path>`.
+`astrale introspect <path>`. A durable callable answers with the Execution it
+started: `call` prints that Execution's receipt instead of a value. Save it
+with `--json > receipt.json` and follow the run with
+`astrale execution status|result receipt.json` as the same identity; never
+repeat the call to learn its outcome.
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10

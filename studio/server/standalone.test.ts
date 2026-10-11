@@ -44,7 +44,7 @@ import { schema } from '#schema'
 export default defineDomain({ schema, runtime: {} as never })
 `,
     'schema/document.ts': `import { classIcon, nodeClass } from '@astrale-os/sdk/schema'
-export const Document = nodeClass({ icon: classIcon.neutral, properties: {} })
+export const Document = nodeClass({ icon: classIcon.neutral, policies: { read: true }, properties: {} })
 `,
   })
   writeFileSync(

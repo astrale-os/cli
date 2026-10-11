@@ -3,13 +3,15 @@ import { CommanderError } from 'commander'
 import { readFile } from 'node:fs/promises'
 
 import type { AdminTargetSelection, ConnectionContext, KernelCommandOpts } from '../connection'
+import type { ExecutionReceipt } from '../connection/execution'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
 import { containsSelfRef } from '../lib/self'
 import { presentBinary, readBinaryBody } from '../lib/terminal/binary'
 import { failInput, log } from '../lib/terminal/log'
-import { output, present } from '../lib/terminal/output'
+import { isMachine, output, present } from '../lib/terminal/output'
+import { executionReceipt } from './execution'
 
 type CallOpts = KernelCommandOpts & {
   data?: string
@@ -36,14 +38,20 @@ type BinaryCallInput = Omit<BinaryCallResult, 'value'> & {
     readonly status?: number
   }
 }
-type CallResultInput = Exclude<CallResult, { readonly kind: 'binary' }> | BinaryCallInput
+type CallResultInput =
+  | Exclude<CallResult, { readonly kind: 'binary' | 'execution' }>
+  | BinaryCallInput
 type MaterializedBinaryCallResult = Omit<BinaryCallResult, 'value'> & {
   readonly value: Omit<BinaryCallInput['value'], 'body'> & { readonly body: Uint8Array }
 }
 type MaterializedCallResult =
-  | Exclude<CallResult, { readonly kind: 'binary' | 'stream' }>
+  | Exclude<CallResult, { readonly kind: 'binary' | 'stream' | 'execution' }>
   | MaterializedBinaryCallResult
   | { readonly kind: 'stream'; readonly values: readonly unknown[] }
+type CallOutcome =
+  | MaterializedCallResult
+  | { readonly kind: 'execution'; readonly receipt: ExecutionReceipt }
+  | { readonly kind: 'dry'; readonly call: unknown }
 
 export async function callCommand(
   path: string,
@@ -68,9 +76,7 @@ export async function callCommand(
     return
   }
 
-  await adapters.runKernelCommand<
-    MaterializedCallResult | { readonly kind: 'dry'; readonly call: unknown }
-  >({
+  await adapters.runKernelCommand<CallOutcome>({
     opts,
     label: path,
     ...(admin === undefined ? {} : { admin }),
@@ -84,10 +90,12 @@ export async function callCommand(
         expandParameterSelf ? expanded.parameters : params,
       )
       if (opts.dryRun) return { kind: 'dry', call: request }
-      return withSelfHint(
-        async () => materializeCallResult(await ctx.session.dispatch(request)),
-        expanded.meta,
-      )
+      return withSelfHint(async () => {
+        const result = await ctx.session.dispatch(request)
+        if (result.kind !== 'execution') return materializeCallResult(result)
+        const id = result.execution
+        return { kind: 'execution', receipt: executionReceipt(ctx, Path.parse(expanded.path), id) }
+      }, expanded.meta)
     },
     format: async (result, fmtOpts) => {
       switch (result.kind) {
@@ -102,6 +110,14 @@ export async function callCommand(
           return
         case 'stream':
           output(result.values, fmtOpts)
+          return
+        case 'execution':
+          present(result.receipt, fmtOpts)
+          if (!isMachine(fmtOpts)) {
+            log.dim(
+              'Save it with --json > receipt.json, then astrale execution result receipt.json',
+            )
+          }
           return
         case 'redirect':
           throw new Error('Client Session returned an unresolved redirect.')
@@ -328,6 +344,13 @@ Self-reference:
   the selected Kernel and never trusts a local registration or JWT sub.
 
   Callable input/output lives on astrale introspect <path>.
+
+Durable callables:
+  A callable declared durable answers with the Execution it started, so
+  call prints that Execution's observation receipt instead of a value. The
+  receipt holds no credential. Save it with --json > receipt.json and follow
+  the run with astrale execution status|result receipt.json. A lost answer
+  leaves the outcome unknown: do not repeat the call automatically.
 
 Admin kernel:
   --admin [<bookmark>] or --admin-url <url> runs the call on the Admin

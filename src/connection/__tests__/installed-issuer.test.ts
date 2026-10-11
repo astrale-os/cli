@@ -102,10 +102,9 @@ describe('Shell exchange at the installed issuer', () => {
     let reads = 0
     const receipt = acceptExecutionReceipt({
       kind: 'astrale.execution',
-      version: 1,
+      version: 2,
       id: 'execution-1',
       kernel: KERNEL,
-      caller: 'user-1',
       origin: SHELL,
       principal: 'domain',
     })

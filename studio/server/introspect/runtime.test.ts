@@ -31,11 +31,11 @@ function currentFixture(): DomainHandle {
     schemaIndex,
     `
       import { classIcon, core, defineSchema, nodeClass, view } from '@astrale-os/sdk/schema'
-      const Named = nodeClass({ icon: classIcon.neutral, properties: {} })
+      const Named = nodeClass({ icon: classIcon.neutral, policies: { read: true }, properties: {} })
       export const DirectorySchema = defineSchema('directory.runtime.test', { name: 'Test Domain',
         classes: { Named },
       })
-      const Document = nodeClass({ extends: [Named], icon: classIcon.neutral, properties: {} })
+      const Document = nodeClass({ extends: [Named], icon: classIcon.neutral, policies: { read: true }, properties: {} })
       const welcome = core.node(Document, {})
       export const schema = defineSchema('documents.runtime.test', { name: 'Test Domain',
         dependencies: { directory: DirectorySchema },

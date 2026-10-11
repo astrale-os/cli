@@ -185,33 +185,25 @@ async function runResolvedClientSession<Value>(
         'The selected Kernel does not match the execution receipt.',
       )
     }
-    const discovery = open(target, timeoutMs, options, config, { principal: 'caller' })
-    try {
-      if ((await discovery.context.auth.whoami()).id !== receipt.caller) {
-        throw new AstraleError(
-          'EXECUTION_CALLER_MISMATCH',
-          'The selected identity does not match the execution receipt caller.',
-        )
-      }
-      // A caller receipt records caller authority independently of current hosting.
-      // Only a Domain receipt needs an installed issuer to reconstruct its exchange.
-      if (receipt.principal === 'domain') {
+    // A caller receipt records caller authority independently of current hosting.
+    // Only a Domain receipt needs an installed issuer to reconstruct its exchange.
+    if (receipt.principal === 'domain') {
+      const discovery = open(target, timeoutMs, options, config, { principal: 'caller' })
+      try {
         target = await resolveCallableTarget(
           target,
           receipt.origin,
           discovery.context.session.schema,
         )
+      } finally {
+        discovery.close()
       }
-    } finally {
-      discovery.close()
-    }
-    if (receipt.principal === 'domain' && target.domainIssuer === undefined) {
-      throw new AstraleError(
-        'EXECUTION_PRINCIPAL_CHANGED',
-        'The installed Domain no longer provides the receipt principal context.',
-      )
-    }
-    if (receipt.principal === 'domain') {
+      if (target.domainIssuer === undefined) {
+        throw new AstraleError(
+          'EXECUTION_PRINCIPAL_CHANGED',
+          'The installed Domain no longer provides the receipt principal context.',
+        )
+      }
       installedOrigin = receipt.origin
       pinned = target.domainIssuer
     }
