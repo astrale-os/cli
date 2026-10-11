@@ -1,4 +1,4 @@
-import type { ViewInfo, ViewSessionResult } from '@shared/contracts/schema'
+import type { ViewInfo, ViewRuntime, ViewSessionResult } from '@shared/contracts/schema'
 
 import { AlertCircle, ExternalLink, Loader2, MonitorPlay, RefreshCw, Unplug, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -9,8 +9,6 @@ import { cn } from '@/lib/utils'
 
 import { DescriptionText } from './studio-kit'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog'
-
-type ViewRuntime = NonNullable<ReturnType<typeof useViewRuntime>['data']>
 
 type SessionState =
   | { phase: 'idle' | 'launching' }
