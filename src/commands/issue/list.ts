@@ -1,14 +1,14 @@
 import chalk from 'chalk'
 
+import type { ReportedIssue } from '../../issues/reported'
 import type { Column } from '../../lib/terminal/table'
 import type { CommandDefinition } from '../../program'
 
-import { listReportedIssues, type ReportedIssue } from '../../issues/reported'
 import { fatal, log, withSpinner } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { renderTable } from '../../lib/terminal/table'
 import { withIssueAdminOptions } from './options'
-import { reporterSession, withReporterCalls, type ReportedIssueOptions } from './session'
+import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
 type ListOptions = ReportedIssueOptions & { all?: boolean }
 
@@ -23,7 +23,7 @@ export async function listReportedIssuesCommand(
   { all, ...options }: ListOptions,
   dependencies = reporterSession,
 ): Promise<ReportedIssue[]> {
-  const issues = await withReporterCalls(options, listReportedIssues, dependencies)
+  const issues = await withReporter(options, (reporter) => reporter.issues(), dependencies)
   return all ? issues : issues.filter((issue) => !issue.archived)
 }
 

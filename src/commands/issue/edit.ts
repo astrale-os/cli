@@ -3,14 +3,13 @@ import type { CommandDefinition } from '../../program'
 import { AstraleError } from '../../errors'
 import {
   findReportedIssue,
-  listReportedIssues,
   reportedIssueChangesSchema,
   reportedIssueMethodPath,
 } from '../../issues/reported'
 import { fatal, log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { withIssueAdminOptions } from './options'
-import { reporterSession, withReporterCalls, type ReportedIssueOptions } from './session'
+import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
 type EditOptions = ReportedIssueOptions & { title?: string; body?: string }
 
@@ -25,11 +24,11 @@ export async function editReportedIssueCommand(
       'ISSUE_INPUT_INVALID',
       'Provide --title (1–200 characters), --body (up to 50,000 characters), or both.',
     )
-  return withReporterCalls(
+  return withReporter(
     options,
-    async (call) => {
-      const issue = findReportedIssue(await listReportedIssues(call), reference)
-      return call(reportedIssueMethodPath(issue.id, 'edit'), changes.data)
+    async (reporter) => {
+      const issue = findReportedIssue(await reporter.issues(), reference)
+      return reporter.call(reportedIssueMethodPath(issue.id, 'edit'), changes.data)
     },
     dependencies,
   )

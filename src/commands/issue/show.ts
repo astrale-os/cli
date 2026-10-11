@@ -2,20 +2,20 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program'
 
-import { findReportedIssue, listReportedIssues, type ReportedIssue } from '../../issues/reported'
+import { findReportedIssue, type ReportedIssue } from '../../issues/reported'
 import { fatal } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { withIssueAdminOptions } from './options'
-import { reporterSession, withReporterCalls, type ReportedIssueOptions } from './session'
+import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
 export async function showReportedIssueCommand(
   reference: string,
   options: ReportedIssueOptions,
   dependencies = reporterSession,
 ): Promise<ReportedIssue> {
-  return withReporterCalls(
+  return withReporter(
     options,
-    async (call) => findReportedIssue(await listReportedIssues(call), reference),
+    async (reporter) => findReportedIssue(await reporter.issues(), reference),
     dependencies,
   )
 }

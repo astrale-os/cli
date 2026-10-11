@@ -1,25 +1,21 @@
 import type { CommandDefinition } from '../../program'
 
-import {
-  findReportedIssue,
-  listReportedIssues,
-  reportedIssueMethodPath,
-} from '../../issues/reported'
+import { findReportedIssue, reportedIssueMethodPath } from '../../issues/reported'
 import { fatal, log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { withIssueAdminOptions } from './options'
-import { reporterSession, withReporterCalls, type ReportedIssueOptions } from './session'
+import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
 export async function archiveReportedIssueCommand(
   reference: string,
   options: ReportedIssueOptions,
   dependencies = reporterSession,
 ): Promise<{ reference: string; archived: true }> {
-  return withReporterCalls(
+  return withReporter(
     options,
-    async (call) => {
-      const issue = findReportedIssue(await listReportedIssues(call), reference)
-      await call(reportedIssueMethodPath(issue.id, 'archive'), {})
+    async (reporter) => {
+      const issue = findReportedIssue(await reporter.issues(), reference)
+      await reporter.call(reportedIssueMethodPath(issue.id, 'archive'), {})
       return { reference: issue.reference, archived: true as const }
     },
     dependencies,
