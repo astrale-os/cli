@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-beta.139](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.138...cli/v1.0.0-beta.139) (2026-10-11)
+
+
+### Bug Fixes
+
+* **lib:** hold View credentials through credentials() ([#646](https://github.com/astrale-os/cli/issues/646)) ([13ee3a6](https://github.com/astrale-os/cli/commit/13ee3a6ecb2eed3291b6ceb6942b7ddc886b8921))
+* **lib:** let managed Instance users act for themselves ([#656](https://github.com/astrale-os/cli/issues/656)) ([8e9cb72](https://github.com/astrale-os/cli/commit/8e9cb723dbd8b07d20b4699547d21d8768d8be2c))
+* **lib:** stop instance create at a refused, failed operation ([#648](https://github.com/astrale-os/cli/issues/648)) ([e167d31](https://github.com/astrale-os/cli/commit/e167d31abac9679212eeeceb2954c41de8b25d76))
+
 ## [1.0.0-beta.138](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.137...cli/v1.0.0-beta.138) (2026-10-10)
 
 
