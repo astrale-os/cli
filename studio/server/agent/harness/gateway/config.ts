@@ -28,13 +28,12 @@ import { acquireGatewayToken } from './token'
 
 const FILE = 'harness-gateway.json'
 
-/** Coerce a wire/disk auth block into a well-formed discriminated union. Default
- *  is `mint` (no secret on disk). A legacy `{ apiKey }` shape maps to `token` mode. */
+/** Coerce a wire/disk auth block into a well-formed discriminated union: a static
+ *  token, else `mint` (no secret on disk). */
 function normalizeAuth(input: unknown): HarnessGatewayAuth {
   const record = asJsonRecord(input)
-  if (record?.mode === 'token' || (record?.token != null && record?.mode == null))
+  if (record?.mode === 'token')
     return { mode: 'token', token: asString(record.token)?.trim() ?? '' }
-  if (record?.mode === 'host') return { mode: 'host' }
   const instance = asString(record?.instance)?.trim() ?? ''
   return { mode: 'mint', ...(instance ? { instance } : {}) }
 }
@@ -43,15 +42,11 @@ function normalizeAuth(input: unknown): HarnessGatewayAuth {
 function normalize(input: unknown): HarnessGatewayConfig {
   const record = asJsonRecord(input) ?? {}
   const model = asString(record.model)?.trim() ?? ''
-  // back-compat: a pre-union config stored only `apiKey` → treat as a static token
-  const authInput =
-    record.auth ??
-    (typeof record.apiKey === 'string' ? { mode: 'token', token: record.apiKey } : undefined)
   return {
     enabled: record.enabled === true,
     baseUrl: asString(record.baseUrl)?.trim() ?? '',
     ...(model ? { model } : {}),
-    auth: normalizeAuth(authInput),
+    auth: normalizeAuth(record.auth),
   }
 }
 
@@ -122,7 +117,7 @@ type HarnessEnvResult = { ok: true; env: Record<string, string> } | { ok: false;
 
 /**
  * Resolve the ANTHROPIC_* env for the harness child. Derives the gateway audience
- * from the URL, acquires the bearer token per auth mode (mint / static / host-supplied),
+ * from the URL, acquires the bearer token per auth mode (mint / static),
  * and sets `ANTHROPIC_AUTH_TOKEN` (Authorization: Bearer — the custom-gateway path,
  * which sidesteps the x-api-key approval prompt) plus the model labels. The Astrale
  * gateway pins the real model by URL, so `model` is only for display.

@@ -14,13 +14,9 @@ import { SettingsHint } from './controls'
 
 type GatewayAuthMode = HarnessGatewayAuth['mode']
 
-const embeddedStudio = typeof window !== 'undefined' && window.self !== window.top
-const DEFAULT_MODE: GatewayAuthMode = embeddedStudio ? 'host' : 'mint'
-
 const AUTH_MODES: { mode: GatewayAuthMode; label: string }[] = [
   { mode: 'mint', label: 'Auto-mint' },
   { mode: 'token', label: 'Static token' },
-  { mode: 'host', label: 'Host-managed' },
 ]
 
 const FIELD =
@@ -116,10 +112,10 @@ function GatewayAuthFields({
     <div className="space-y-1.5">
       <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         Authentication
-        <SettingsHint text="How the harness gets its bearer token. Auto-mint: the studio mints a short-lived delegation token per run via `astrale token` (no secret stored) — best for Astrale gateways. Static token: a bearer you paste. Host-managed: the embedding Astrale app supplies it via the shell (used when the studio runs inside the Astrale GUI)." />
+        <SettingsHint text="How the harness gets its bearer token. Auto-mint: the studio mints a short-lived delegation token per run via `astrale token` (no secret stored) — best for Astrale gateways. Static token: a bearer you paste." />
       </span>
       <div
-        className="grid grid-cols-3 gap-1 rounded-md bg-muted/45 p-1"
+        className="grid grid-cols-2 gap-1 rounded-md bg-muted/45 p-1"
         role="radiogroup"
         aria-label="Auth mode"
       >
@@ -185,14 +181,6 @@ function GatewayAuthFields({
           </p>
         </div>
       )}
-
-      {mode === 'host' && (
-        <p className="pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-          {embeddedStudio
-            ? 'The embedding Astrale app supplies (and refreshes) the token via the shell.'
-            : 'For when the studio runs embedded in the Astrale GUI — the host then supplies the token via the shell. No effect standalone.'}
-        </p>
-      )}
     </div>
   )
 }
@@ -206,7 +194,7 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
   const [enabled, setEnabled] = useState(false)
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
-  const [mode, setMode] = useState<GatewayAuthMode>(DEFAULT_MODE)
+  const [mode, setMode] = useState<GatewayAuthMode>('mint')
   const [instance, setInstance] = useState('')
   const [token, setToken] = useState('')
   const [reveal, setReveal] = useState(false)
@@ -216,7 +204,7 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
     setEnabled(config?.enabled ?? false)
     setBaseUrl(config?.baseUrl ?? '')
     setModel(config?.model ?? '')
-    setMode(config?.auth.mode ?? DEFAULT_MODE)
+    setMode(config?.auth.mode ?? 'mint')
     setInstance(config?.auth.mode === 'mint' ? (config.auth.instance ?? '') : '')
     setToken(config?.auth.mode === 'token' ? config.auth.token : '')
     setReveal(false)
@@ -224,7 +212,6 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
 
   const buildAuth = (): HarnessGatewayAuth => {
     if (mode === 'token') return { mode: 'token', token: token.trim() }
-    if (mode === 'host') return { mode: 'host' }
     return { mode: 'mint', ...(instance.trim() ? { instance: instance.trim() } : {}) }
   }
   const validationError = validateGatewayDraft(enabled, baseUrl, mode, token)

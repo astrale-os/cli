@@ -7,12 +7,12 @@ import type { StudioEvent } from '../../../shared/contracts/runtime'
 import type { DomainHandle } from '../../domain/registry'
 
 import { readComments, upsertComment } from '../../state/comments'
+import { studioHome } from '../../state/home'
 import { updateStudioSettings } from '../../state/settings'
-import { listState, stateExists } from '../../state/store'
+import { listState, stateExists, writeJson } from '../../state/store'
 import { disposeTestDomains, testDomain } from '../../test-domain'
 import { handleBridge } from '../bridge/routes'
 import { chatQueue, MAX_QUEUED_MESSAGES, recordChatTurn, resolveChat } from '../chats'
-import { setHarnessGateway } from '../harness/gateway/config'
 import { getHarness } from '../harness/selection'
 import { agentWorkspace } from '../workspace'
 import {
@@ -300,10 +300,11 @@ describe.serial('agent runner invariants', () => {
     useMock('resumefail')
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-recovery-model'
     updateStudioSettings({ agentModel: { harness: 'mock', model: 'mock-recovery-model' } })
-    setHarnessGateway({
+    // a gateway that cannot authenticate never blocks a harness that does not use it
+    writeJson(studioHome(), 'harness-gateway.json', {
       enabled: true,
       baseUrl: 'https://gateway.invalid/v1/models/test',
-      auth: { mode: 'host' },
+      auth: { mode: 'token', token: '' },
     })
     seedConversation('stale-session', 7)
 

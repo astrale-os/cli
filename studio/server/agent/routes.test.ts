@@ -5,9 +5,10 @@ import type { StudioEvent } from '../../shared/contracts/runtime'
 import type { JsonRecord } from '../json'
 import type { AskResult } from './harness/adapter'
 
+import { studioHome } from '../state/home'
 import { updateStudioSettings } from '../state/settings'
+import { writeJson } from '../state/store'
 import { disposeTestDomains, testDomain } from '../test-domain'
-import { setHarnessGateway } from './harness/gateway/config'
 import { getHarnessById } from './harness/registry'
 import { handleAgentRoute } from './routes'
 import { cancelRun, listChats } from './run/coordinator'
@@ -165,15 +166,16 @@ test('the loadout fails closed instead of probing ambient Claude when gateway au
     probes++
     throw new Error('ambient Claude must not be probed')
   })
-  setHarnessGateway({
+  // a gateway saved without the token it needs
+  writeJson(studioHome(), 'harness-gateway.json', {
     enabled: true,
     baseUrl: 'https://gateway.example/v1/models/test',
-    auth: { mode: 'host' },
+    auth: { mode: 'token', token: '' },
   })
 
   const body = await answer<{ ok: boolean; detail: string }>('/agent/loadout')
   expect(body.ok).toBe(false)
-  expect(body.detail).toContain('no valid host-supplied token')
+  expect(body.detail).toContain('no token set for this gateway')
   expect(probes).toBe(0)
 })
 
