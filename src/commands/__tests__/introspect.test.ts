@@ -13,8 +13,7 @@ import {
 } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
-import { describeCallableFromBundle } from '../call-describe'
-import { introspectCommand, parseIntrospectTarget } from '../introspect'
+import { describeCallableFromBundle, introspectCommand, parseIntrospectTarget } from '../introspect'
 
 const object = { type: 'object', additionalProperties: true } as const
 const edit = (field: string) => {

@@ -1,8 +1,8 @@
-import type { ViewOpts } from '../../commands/view'
-import type { ViewSessionRecord } from './session'
+import type { ViewSessionRecord } from '../lib/view/session'
+import type { ViewOpts } from './view'
 
-import { getActive, resetInstancesMemo } from '../instance/bookmarks'
-import { closeSession, listSessions } from './session'
+import { getActive, resetInstancesMemo } from '../lib/instance/bookmarks'
+import { closeSession, listSessions } from '../lib/view/session'
 
 const RELEASE_TIMEOUT_MS = 2_000
 
@@ -49,7 +49,7 @@ export async function openStudioViewSession(
   // The Studio E2E server can boot directly, before the CLI has generated its embedded Viewer
   // archive. Load the command owner only when a View is actually opened; the module then remains
   // cached in this long-lived process for every subsequent launch.
-  const { resolveSession, startViewSession } = await import('../../commands/view')
+  const { resolveSession, startViewSession } = await import('./view')
   resetInstancesMemo()
   const options: ViewOpts = {
     instance: input.instance,

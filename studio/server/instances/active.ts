@@ -1,6 +1,6 @@
 import type { InstanceInfo, InstancesState } from '../../shared/types'
 
-import { studioActiveInstanceName } from '../../../src/lib/view/studio-runtime'
+import { studioActiveInstanceName } from '../../../src/commands/studio-views'
 import { decodeJsonObject, runStudioCliJson, runStudioCliText } from '../cli'
 
 async function astraleJson(args: string[]): Promise<Record<string, unknown> | null> {
