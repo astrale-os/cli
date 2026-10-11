@@ -409,9 +409,9 @@ Behavior:
 
 Examples:
   $ astrale logs -i staging --limit 50
-  $ astrale logs --topic op:function.failed
-  $ astrale logs --topic-prefix op:function. --follow
-  $ astrale logs --caller @self --topic-prefix op:function.
+  $ astrale logs --topic function.invoke
+  $ astrale logs --topic-prefix function. --follow
+  $ astrale logs --caller @self --topic-prefix function.
 `,
   options: [
     { flags: '--since <timestamp>', description: 'Inclusive journal timestamp lower bound' },

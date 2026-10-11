@@ -7,7 +7,7 @@ describe('buildJournalInput', () => {
   test('maps flags to the current public journal syscall contract', () => {
     expect(
       buildJournalInput({
-        topic: 'op:function.failed',
+        topic: 'function.invoke',
         topicPrefix: 'security.',
         principal: 'caller',
         since: '2026-08-10T00:00:00Z',
@@ -16,7 +16,7 @@ describe('buildJournalInput', () => {
         limit: '50',
       }),
     ).toEqual({
-      topics: { exact: ['op:function.failed'], prefixes: ['security.'] },
+      topics: { exact: ['function.invoke'], prefixes: ['security.'] },
       principal: 'caller',
       since: '2026-08-10T00:00:00.000Z',
       until: '2026-08-11T00:00:00.000Z',
@@ -69,7 +69,7 @@ describe('acceptJournalPage', () => {
     const record = {
       sequence: 7,
       occurredAt: '2026-08-11T12:00:00.000Z',
-      topic: 'op:function.completed',
+      topic: 'function.invoke',
       payload: { durationMs: 4 },
       principal: 'domain-1',
     }
