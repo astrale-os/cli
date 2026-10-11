@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.140](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.139...cli/v1.0.0-beta.140) (2026-10-11)
+
+
+### Bug Fixes
+
+* **commands:** retain durable execution observation context ([#661](https://github.com/astrale-os/cli/issues/661)) ([3f9ab00](https://github.com/astrale-os/cli/commit/3f9ab00b72ed88e0e408890bfc4647e097149cc4))
+* **lib:** evict a cached exchange credential the Kernel refuses ([#660](https://github.com/astrale-os/cli/issues/660)) ([675e2df](https://github.com/astrale-os/cli/commit/675e2dfb1ce42ef77f52eba79ec3546cadabccbd))
+
 ## [1.0.0-beta.139](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.138...cli/v1.0.0-beta.139) (2026-10-11)
 
 
