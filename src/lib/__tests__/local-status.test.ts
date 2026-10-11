@@ -86,5 +86,10 @@ describe('local status snapshot', () => {
       requiresLogin: true,
       hasRefreshToken: false,
     })
+    // Without a recorded expiry, the session's own exp claim decides.
+    const { expires_at: _recorded, ...unrecorded } = session
+    expect(
+      (await status({ ...unrecorded, claims: { exp: 946_684_800 } })).identity?.session,
+    ).toMatchObject({ requiresLogin: true })
   })
 })
