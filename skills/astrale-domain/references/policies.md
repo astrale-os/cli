@@ -13,13 +13,13 @@ Kernel Runtime defines and evaluates those semantics against the pinned installa
   nothing but what the handler does for it;
 - `authenticated` requires an authenticated actor;
 - `authorized` requires an authenticated actor. The principal of the active installed Kernel registration
-  bypasses the remaining callable gate; every other call requires the principal's effective authority
-  and the caller's admission described below;
+  bypasses the remaining callable gate; every other call requires the caller's admission and, for a
+  delegation, the principal's effective authority, as described below;
 - only `authorized` may declare a callable Policy. `authenticated` does not add a `can_use` or Policy gate.
 - Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
   a protected operation merely because its handler can access Domain-owned data.
 
-## Function admission: principal ceiling AND caller
+## Function admission: the caller's rule, scoped by a delegation
 
 Every authenticated call carries two Identities:
 
@@ -36,14 +36,18 @@ with deny-wins. A call carries no set of Identities: there is no union, intersec
 callers. The caller never raises the principal's ceiling, and principal authority never flows into the
 caller's evaluation.
 
-For a non-Root principal, an authorized Function requires both:
+For a non-Root principal, an authorized Function requires:
 
-1. The principal's own Identity profile supplies `can_use` or exact Function ownership (the principal
-   ceiling). A User may inherit `can_use` from a Group without an individual capability Edge. The caller
-   carried by a Domain session cannot supply this ceiling.
-2. The caller passes the intrinsic Root/Function-owner branch OR the declared callable Policy. Missing
-   Policy supplies no alternative. `can_use` is not an intrinsic bypass; giving the caller that
-   capability does not defeat a business Policy.
+1. The caller passes the intrinsic Root/Function-owner branch OR the declared callable Policy. Missing
+   Policy supplies no alternative, and `true` admits every Identity. `can_use` is not an intrinsic
+   bypass; giving the caller that capability does not defeat a business Policy.
+2. When the principal acts for another caller, its own Identity profile also supplies `can_use` or
+   exact Function ownership (the principal ceiling). A User may inherit `can_use` from a Group without
+   an individual capability Edge. The caller carried by a Domain session cannot supply this ceiling.
+   An Identity acting for itself delegates nothing and meets no ceiling: its rule alone decides.
+
+This is the same rule as Class observation (Graph access below): the caller decides by its rule, and
+the ceiling scopes only a delegation.
 
 - The callee Domain that runs the handler never replaces the calling principal. Exact Method ownership
   follows its executable declaring installation, not a business `ownedBy` Edge; instance receivers must
@@ -54,8 +58,9 @@ For a non-Root principal, an authorized Function requires both:
 - A Policy `subject` is the caller, not necessarily the authenticated principal, and it already covers the
   caller's groups (see Groups below).
 - Protected Kernel syscalls explicitly attach `canUseSyscall` to their exact Function or Method. That
-  Policy checks the caller's `can_use`; resource checks inside the syscall remain independent.
-  Capability-only callable admission must likewise be declared explicitly, not inferred from `can_use`.
+  Policy checks the caller's `can_use`, so even a direct call needs it; resource checks inside the
+  syscall remain independent. Capability-only callable admission must likewise be declared explicitly
+  in the Policy, never inferred from `can_use`.
 
 ## Graph access is a separate decision
 
@@ -232,8 +237,9 @@ policies: {
 
 - Root success proves executability, not an application user's Policy. Test distinct registered principals
   with real business facts; a local CLI identity need not be registered or authorized on the target Kernel.
-- Test credential failure, principal-profile denial, inherited Group capability success, and business
-  Policy denial despite valid principal `can_use`. Keep Root/owner alternatives out of a test claiming Policy enforcement.
+- Test credential failure, principal-profile denial of a delegation, inherited Group capability
+  success, a direct caller admitted by the Policy alone, and business Policy denial despite valid
+  principal `can_use`. Keep Root/owner alternatives out of a test claiming Policy enforcement.
   For denials, prove reachable handlers, steps, Providers, and graph effects did not run; earlier Runtime
   initialization is outside that assertion.
 - Inspect requested/materialized capabilities for Domain principals and live group composition for human

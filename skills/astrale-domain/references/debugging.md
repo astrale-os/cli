@@ -73,9 +73,10 @@ installed-Domain binding → source Kernel → local result
 - Graph authority failure: distinguish a delegated observation (principal ceiling, then the caller's
   rule), a direct one (the rule alone), and effects. Their principal/caller rules differ; see
   `policies.md` before adding Class capabilities.
-- Callable authority failure: inspect the authenticated principal's effective profile and the caller
-  separately. Missing direct `can_use` may be satisfied through groups; a passing callable Policy cannot
-  compensate for a failed principal ceiling. The installed executor never substitutes for that principal.
+- Callable authority failure: for a direct call, inspect the caller's rule alone. For a delegation,
+  inspect the principal's effective profile and the caller separately: missing direct `can_use` may be
+  satisfied through groups, and a passing callable Policy cannot compensate for a failed principal
+  ceiling. The installed executor never substitutes for that principal.
 - Policy refusal: distinguish Function Root/owner alternatives from Class owner/rule alternatives;
   neither `can_use` nor a Class capability bypasses a business Policy. Check the deployed Kernel's
   semantics first.
