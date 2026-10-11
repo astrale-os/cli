@@ -187,9 +187,11 @@ export const issueNotClosable = error({
 
 ## Installation requirements
 
-- A Schema dependency pins definitions, not capability. Declare exact protected Kernel/foreign Functions
-  called as the Domain, including Policy-admitted calls: `can_use` supplies principal usability, while
-  the caller must independently pass admission. See `policies.md` and `users.md`.
+- A Schema dependency pins definitions, not capability. Declare the exact protected Kernel/foreign
+  Functions the Domain calls for its callers: `can_use` supplies the principal ceiling of that
+  delegation, while the caller must independently pass admission. A call the Domain makes as itself
+  is decided by the callable's Policy alone; a Kernel syscall's `canUseSyscall` Policy still asks it
+  for `can_use`, so declare those too. See `policies.md` and `users.md`.
 
 ```ts
 import { defineDomain, requirements } from '@astrale-os/sdk/domain'

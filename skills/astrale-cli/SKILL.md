@@ -383,20 +383,19 @@ TOKEN=$(astrale token --raw -i staging)
 astrale query /:notes.example:class.Note --creds "$TOKEN" -i staging
 ```
 
-A minted token carries the identity itself as principal. Function admission requires the principal
-to be able to use the Function, so a minted token fails a Domain callable that the identity reaches
-only through a Policy. Without `--creds`, the CLI exchanges the selected identity's credential
-through a Domain instead: the Domain becomes the principal, the identity stays the caller, and the
-Policy is evaluated against the identity.
+A minted token carries the identity itself as principal and caller: it acts for itself, so a
+callable's Policy alone decides, with no `can_use` needed. Without `--creds`, `call` exchanges the
+selected identity's credential through the callable's Domain instead: the Domain becomes the
+principal, the identity stays the caller, and the Policy is evaluated against the identity.
 
 | Selection | Principal presented | Effect |
 | --- | --- | --- |
-| `call` with `--as <identity>` or the default identity | the callable's declaring Domain | the principal gate passes; the Policy is evaluated against the identity |
+| `call` with `--as <identity>` or the default identity | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity |
 | `get`, `query`, `mutate` on an Astrale-managed instance | the identity | bounded by each Class's rules and the identity's Policies, with no Domain scope |
-| `--creds "$(astrale token --raw)"` | the identity | a Domain callable reached only through a Policy fails with `2004`, unless the identity holds `can_use` on it through a Group |
+| `--creds "$(astrale token --raw)"` | the identity | the callable's Policy alone decides; a Kernel syscall's `canUseSyscall` still asks for the identity's own `can_use` |
 
-Reuse a minted token for Kernel reads and writes the identity may perform itself; call Domain
-callables with `--as`.
+Reuse a minted token for anything the identity may do itself; `call --as` presents the Domain's
+credential instead, for a Domain that must act for the identity.
 
 `astrale auth token` is different: it prints the cached upstream IdP token.
 
