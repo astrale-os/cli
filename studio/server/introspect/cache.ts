@@ -88,7 +88,8 @@ const TOOL_INPUTS = [
   'introspect/source-overlay/spans.ts',
   'introspect/hash.ts',
   'state/baseline.ts',
-  '../shared/types.ts',
+  '../shared/contracts/schema.ts',
+  '../shared/schema/identity.ts',
 ]
 
 interface BundleCacheEntry {

@@ -4,7 +4,7 @@
  * attention. The agent is stood in for at the snapshot the client polls; the
  * page clock runs its five-second fallback poll without waiting it out.
  */
-import type { AgentEvent, AgentRun, AgentToolCall } from '../shared/types'
+import type { AgentEvent, AgentRun, AgentToolCall } from '../shared/contracts/agent'
 
 import { dockWorkspacePanel, expect, stubAgent, test, type Page } from './test'
 

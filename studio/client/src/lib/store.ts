@@ -3,7 +3,7 @@ import type {
   WorkspacePanelUiState,
   WorkspaceSection,
   WorkspaceUiState,
-} from '@shared/types'
+} from '@shared/contracts/workspace'
 
 import { create } from 'zustand'
 

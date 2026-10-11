@@ -1,4 +1,4 @@
-import type { DocMeta } from '@shared/types'
+import type { DocMeta } from '@shared/contracts/workspace'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {

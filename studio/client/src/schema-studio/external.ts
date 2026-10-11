@@ -1,4 +1,5 @@
-import type { IrClassRef, IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrClassRef } from '@shared/schema/identity'
 
 import { classRefKey, isIrClassRef } from '@shared/schema/identity'
 

@@ -1,4 +1,4 @@
-import type { Comment } from '@shared/types'
+import type { Comment } from '@shared/contracts/workspace'
 
 import { Loader2, MessageSquare } from 'lucide-react'
 import { useState } from 'react'

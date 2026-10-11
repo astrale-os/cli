@@ -1,4 +1,4 @@
-import type { WorkspaceUiState } from '@shared/types'
+import type { WorkspaceUiState } from '@shared/contracts/workspace'
 
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'

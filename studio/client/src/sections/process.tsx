@@ -1,4 +1,4 @@
-import type { IrFunction, IrMethod, StudioSchemaBundle } from '@shared/types'
+import type { IrFunction, IrMethod, StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { ArrowUpRight, Box, Braces, LayoutTemplate, Sprout, Workflow, Zap } from 'lucide-react'
 import { type ReactNode, useMemo } from 'react'

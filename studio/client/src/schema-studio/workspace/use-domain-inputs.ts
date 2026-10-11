@@ -1,10 +1,5 @@
-import type {
-  DomainAnatomy,
-  DomainSummary,
-  LayoutState,
-  StudioSchemaBundle,
-  VisibilityState,
-} from '@shared/types'
+import type { DomainAnatomy, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { DomainSummary, LayoutState, VisibilityState } from '@shared/contracts/workspace'
 
 import { useQueries } from '@tanstack/react-query'
 import { useMemo } from 'react'

@@ -6,7 +6,8 @@
  * Picking happens here (two selects) or on the canvas (a click on a card), and either way the
  * canvas paints the proof green or the pair red.
  */
-import type { IrSchemaRef, StudioCore, StudioSchemaBundle } from '@shared/types'
+import type { StudioCore, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrSchemaRef } from '@shared/schema/identity'
 
 import { Check, ShieldCheck, X } from 'lucide-react'
 import { useMemo } from 'react'

@@ -1,4 +1,4 @@
-import type { StudioDataset, StudioSchemaBundle } from '../shared/types'
+import type { StudioDataset, StudioSchemaBundle } from '../shared/contracts/schema'
 
 import { dockWorkspacePanel, expect, type Page, test } from './test'
 

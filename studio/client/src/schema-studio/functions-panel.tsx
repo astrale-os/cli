@@ -1,4 +1,4 @@
-import type { StudioSchemaBundle } from '@shared/types'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { ArrowRight, Box, Braces } from 'lucide-react'
 

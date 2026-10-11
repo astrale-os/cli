@@ -4,13 +4,8 @@ import { workspaceKey } from '../server/state/home'
 export const FIXTURE_ID = workspaceKey(resolve(import.meta.dirname, 'fixture'))
 export const PEER_ID = workspaceKey(resolve(import.meta.dirname, 'fixture/peer'))
 
-import type {
-  AgentRun,
-  ChatInfo,
-  ChatList,
-  WorkspacePanelUiState,
-  WorkspaceUiState,
-} from '@shared/types'
+import type { AgentRun, ChatInfo, ChatList } from '@shared/contracts/agent'
+import type { WorkspacePanelUiState, WorkspaceUiState } from '@shared/contracts/workspace'
 
 import {
   expect,

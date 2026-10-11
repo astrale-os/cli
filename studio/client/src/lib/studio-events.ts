@@ -1,4 +1,5 @@
-import type { AgentContextUsage, AgentEvent, AgentRun, StudioEvent } from '@shared/types'
+import type { AgentContextUsage, AgentEvent, AgentRun } from '@shared/contracts/agent'
+import type { StudioEvent } from '@shared/contracts/runtime'
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'

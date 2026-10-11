@@ -1,4 +1,5 @@
-import type { DomainSummary, StudioSchemaBundle } from '@shared/types'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
+import type { DomainSummary } from '@shared/contracts/workspace'
 
 import { expect, test } from 'bun:test'
 

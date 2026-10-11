@@ -1,4 +1,4 @@
-import type { ViewInfo, ViewSessionResult } from '@shared/types'
+import type { ViewInfo, ViewSessionResult } from '@shared/contracts/schema'
 
 import { AlertCircle, ExternalLink, Loader2, MonitorPlay, RefreshCw, Unplug, X } from 'lucide-react'
 import { useEffect, useState } from 'react'

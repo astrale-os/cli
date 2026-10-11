@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRun } from '@shared/types'
+import type { AgentEvent, AgentRun } from '@shared/contracts/agent'
 import type { ReactNode } from 'react'
 
 import { ChevronRight, CircleAlert, CirclePause, CircleStop, Copy, Play } from 'lucide-react'

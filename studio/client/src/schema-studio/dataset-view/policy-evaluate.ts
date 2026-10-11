@@ -12,7 +12,7 @@
  * as policies. This is the explanation the Studio can draw — every proof that exists in the
  * demo data, or the one proof (or its absence) between a picked subject and object.
  */
-import { schemaRefKey } from '@shared/types'
+import { schemaRefKey } from '@shared/schema/identity'
 
 import {
   type Policy,

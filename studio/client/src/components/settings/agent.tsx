@@ -1,3 +1,4 @@
+import type { StudioSettings } from '@shared/contracts/runtime'
 import type { Dispatch, SetStateAction } from 'react'
 
 import {
@@ -5,8 +6,7 @@ import {
   type AgentAccess,
   type HarnessPresence,
   type HarnessStatus,
-  type StudioSettings,
-} from '@shared/types'
+} from '@shared/contracts/agent'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Lock } from 'lucide-react'
 import { useEffect, useState } from 'react'

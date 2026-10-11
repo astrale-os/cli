@@ -10,7 +10,12 @@
  *
  * The pick belongs to the chat, like its model: tabs think at their own depth.
  */
-import type { AgentEffort, ChatInfo, HarnessEffortOption, HarnessStatus } from '@shared/types'
+import type {
+  AgentEffort,
+  ChatInfo,
+  HarnessEffortOption,
+  HarnessStatus,
+} from '@shared/contracts/agent'
 
 import { effectiveAgentEffort } from '@shared/agent-effort'
 import { Check } from 'lucide-react'

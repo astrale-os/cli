@@ -1,4 +1,4 @@
-import type { StudioSettings } from '@shared/types'
+import type { StudioSettings } from '@shared/contracts/runtime'
 
 import {
   parseStudioNumericSetting,

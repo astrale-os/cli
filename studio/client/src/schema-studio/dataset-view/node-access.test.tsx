@@ -1,4 +1,4 @@
-import type { IrMethod } from '@shared/types'
+import type { IrMethod } from '@shared/contracts/schema'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, test } from 'bun:test'

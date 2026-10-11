@@ -1,4 +1,4 @@
-import type { DomainCatalogEntry } from '@shared/types'
+import type { DomainCatalogEntry } from '@shared/contracts/workspace'
 import type { Node } from '@xyflow/react'
 
 import {

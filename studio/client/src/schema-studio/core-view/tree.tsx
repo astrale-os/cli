@@ -1,4 +1,4 @@
-import type { StudioCore, StudioCoreNode, StudioSchemaBundle } from '@shared/types'
+import type { StudioCore, StudioCoreNode, StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { Box, Boxes, ChevronDown, ChevronRight, FolderClosed } from 'lucide-react'
 import { useMemo, useState } from 'react'

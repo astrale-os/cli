@@ -7,7 +7,7 @@
  * tab as the server now holds it, and that copy is landed straight into the
  * chats query instead of refetching a list the queue was the only change to.
  */
-import type { ChatInfo, ChatList } from '@shared/types'
+import type { ChatInfo, ChatList } from '@shared/contracts/agent'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'

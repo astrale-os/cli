@@ -6,7 +6,7 @@
  * until the upload lands. In the conversation they sit with the message they
  * were sent with, at a size you can recognise — and either one opens full size.
  */
-import type { ChatAttachment } from '@shared/types'
+import type { ChatAttachment } from '@shared/contracts/agent'
 
 import { Loader2, X } from 'lucide-react'
 import { useState } from 'react'

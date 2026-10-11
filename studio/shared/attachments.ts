@@ -6,7 +6,7 @@
  * and is handed to the agent as an image rather than as a path to go and read.
  */
 
-import type { ChatAttachment } from './types'
+import type { ChatAttachment } from './contracts/agent'
 
 /** The formats every harness Studio drives can look at. */
 export type AttachmentImageType = ChatAttachment['mimeType']

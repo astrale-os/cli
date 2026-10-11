@@ -1,4 +1,4 @@
-import type { AgentUsage, HarnessLoadout } from '@shared/types'
+import type { AgentUsage, HarnessLoadout } from '@shared/contracts/agent'
 
 import { RefreshCw } from 'lucide-react'
 import { type ReactNode, useState } from 'react'

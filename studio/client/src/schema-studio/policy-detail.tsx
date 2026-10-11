@@ -1,6 +1,7 @@
-import type { IrSchemaRef, StudioSchemaBundle } from '@shared/types'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrSchemaRef } from '@shared/schema/identity'
 
-import { parseSchemaRefKey, schemaRefKey } from '@shared/types'
+import { parseSchemaRefKey, schemaRefKey } from '@shared/schema/identity'
 import { FlaskConical, ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 

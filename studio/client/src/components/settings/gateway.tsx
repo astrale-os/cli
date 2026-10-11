@@ -1,4 +1,4 @@
-import type { HarnessGatewayAuth, HarnessStatus } from '@shared/types'
+import type { HarnessGatewayAuth, HarnessStatus } from '@shared/contracts/agent'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff } from 'lucide-react'

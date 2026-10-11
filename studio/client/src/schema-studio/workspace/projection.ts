@@ -1,4 +1,6 @@
-import type { DomainCatalogEntry, IrClassRef, IrEndpoint } from '@shared/types'
+import type { IrEndpoint } from '@shared/contracts/schema'
+import type { DomainCatalogEntry } from '@shared/contracts/workspace'
+import type { IrClassRef } from '@shared/schema/identity'
 import type { Edge, Node } from '@xyflow/react'
 
 import { isIrClassRef } from '@shared/schema/identity'

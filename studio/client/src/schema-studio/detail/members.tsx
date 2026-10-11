@@ -1,4 +1,4 @@
-import type { IrCallable, JsonSchema, StudioSchemaBundle } from '@shared/types'
+import type { IrCallable, JsonSchema, StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { Binary, ChevronRight, Info, type LucideIcon, Waves } from 'lucide-react'
 import { type HTMLAttributes, type ReactNode, type Ref, useEffect, useState } from 'react'

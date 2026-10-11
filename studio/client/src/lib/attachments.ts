@@ -8,7 +8,7 @@
  * Like the draft text, the images belong to the chat they were added to:
  * switching tabs shows that tab's own, and a send that fails puts them back.
  */
-import type { ChatAttachment } from '@shared/types'
+import type { ChatAttachment } from '@shared/contracts/agent'
 
 import {
   isAttachmentImageType,

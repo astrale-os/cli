@@ -1,4 +1,4 @@
-import type { AnchorRef, Comment } from '@shared/types'
+import type { AnchorRef, Comment } from '@shared/contracts/workspace'
 
 import { X } from 'lucide-react'
 import { useState } from 'react'

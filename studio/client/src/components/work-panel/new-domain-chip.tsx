@@ -1,5 +1,5 @@
 /** The durable first page of a chat opened while scaffolding a domain. */
-import type { NewDomainContext } from '@shared/types'
+import type { NewDomainContext } from '@shared/contracts/agent'
 
 import { Box } from 'lucide-react'
 

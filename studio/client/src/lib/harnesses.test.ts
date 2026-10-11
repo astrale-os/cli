@@ -1,4 +1,4 @@
-import type { HarnessPresence, HarnessStatus } from '@shared/types'
+import type { HarnessPresence, HarnessStatus } from '@shared/contracts/agent'
 
 import { expect, test } from 'bun:test'
 

@@ -6,9 +6,10 @@
  * inheritance, across imported domains — or a principal at all. This index answers those
  * questions once per Dataset, so the evaluator stays a plain search.
  */
-import type { IrClassRef, IrSchemaRef, StudioCore, StudioSchemaBundle } from '@shared/types'
+import type { StudioCore, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrClassRef, IrSchemaRef } from '@shared/schema/identity'
 
-import { classRefKey, parseClassRefKey } from '@shared/types'
+import { classRefKey, parseClassRefKey } from '@shared/schema/identity'
 
 import { kernelRolesOfClass, resolveClass } from '../inheritance'
 

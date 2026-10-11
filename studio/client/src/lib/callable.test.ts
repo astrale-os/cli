@@ -1,4 +1,4 @@
-import type { HandlerLink } from '@shared/types'
+import type { HandlerLink } from '@shared/contracts/schema'
 
 import { expect, test } from 'bun:test'
 

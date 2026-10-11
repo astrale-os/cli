@@ -11,7 +11,7 @@
  * in progress to run this message instead — so it says so, in the title and in
  * the confirmation of what it interrupts.
  */
-import type { QueuedMessage } from '@shared/types'
+import type { QueuedMessage } from '@shared/contracts/agent'
 
 import { imagesLabel } from '@shared/attachments'
 import {

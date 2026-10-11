@@ -1,4 +1,4 @@
-import type { DomainCatalogEntry, VisibilityState } from '@shared/types'
+import type { DomainCatalogEntry, VisibilityState } from '@shared/contracts/workspace'
 
 import { Eye, EyeOff, Globe, Plus } from 'lucide-react'
 import { useMemo } from 'react'

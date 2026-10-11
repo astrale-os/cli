@@ -7,7 +7,7 @@
  * harness is fixed, so "switch to the other agent" is a fork that opens a NEW
  * tab and leaves the current conversation alone.
  */
-import type { ChatInfo, ChatList } from '@shared/types'
+import type { ChatInfo, ChatList } from '@shared/contracts/agent'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'

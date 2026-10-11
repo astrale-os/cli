@@ -1,4 +1,4 @@
-import type { AnchorRef } from '@shared/types'
+import type { AnchorRef } from '@shared/contracts/workspace'
 
 import { MessageSquarePlus } from 'lucide-react'
 import { type ReactNode } from 'react'

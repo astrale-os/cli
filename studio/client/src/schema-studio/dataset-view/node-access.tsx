@@ -6,9 +6,9 @@
  * checks. Any rule is one click from being proven on this very node — the canvas then shows
  * who reaches it, in green.
  */
-import type { StudioCoreNode, StudioSchemaBundle } from '@shared/types'
+import type { StudioCoreNode, StudioSchemaBundle } from '@shared/contracts/schema'
 
-import { schemaRefKey } from '@shared/types'
+import { schemaRefKey } from '@shared/schema/identity'
 import { Eye, ShieldCheck, Zap } from 'lucide-react'
 import { useMemo } from 'react'
 

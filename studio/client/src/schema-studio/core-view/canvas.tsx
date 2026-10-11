@@ -1,4 +1,4 @@
-import type { StudioCore, StudioSchemaBundle } from '@shared/types'
+import type { StudioCore, StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
 import {

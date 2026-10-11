@@ -1,4 +1,4 @@
-import type { IrEndpoint, StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, StudioSchemaBundle } from '@shared/contracts/schema'
 import type { Edge, Node } from '@xyflow/react'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from './edge-markers'

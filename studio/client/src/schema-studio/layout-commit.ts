@@ -1,4 +1,4 @@
-import type { LayoutState } from '@shared/types'
+import type { LayoutState } from '@shared/contracts/workspace'
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef } from 'react'

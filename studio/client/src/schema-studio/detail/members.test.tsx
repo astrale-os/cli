@@ -1,4 +1,4 @@
-import type { IrMethod } from '@shared/types'
+import type { IrMethod } from '@shared/contracts/schema'
 
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
