@@ -15,9 +15,10 @@ import {
   type IssueContent,
 } from '../../issues/submit'
 import { readInstances } from '../../lib/instance/bookmarks'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { ASTRALE_HOME } from '../../state'
+import { failIssueCommand } from './failure'
 import { withIssueAdminOptions } from './options'
 
 export type IssueOptions = AdminConnectionOptions &
@@ -151,7 +152,7 @@ export default withIssueAdminOptions(
         if (isMachine(options) || options.format !== undefined) output(receipt, options)
         else log.success(`Reported: ${receipt.reference}`)
       } catch (cause) {
-        fatal(cause, options)
+        await failIssueCommand(cause, options)
       }
     },
   } satisfies CommandDefinition,

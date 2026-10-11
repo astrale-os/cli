@@ -3,8 +3,8 @@ import chalk from 'chalk'
 import type { CommandDefinition } from '../../program'
 
 import { findReportedIssue, type ReportedIssue } from '../../issues/reported'
-import { fatal } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
+import { failIssueCommand } from './failure'
 import { withIssueAdminOptions } from './options'
 import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
@@ -41,7 +41,7 @@ export default withIssueAdminOptions({
       for (const comment of issue.comments) lines.push('', chalk.dim('── comment'), comment.body)
       process.stdout.write(lines.join('\n') + '\n')
     } catch (cause) {
-      fatal(cause, options)
+      await failIssueCommand(cause, options)
     }
   },
 } satisfies CommandDefinition)

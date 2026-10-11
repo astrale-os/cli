@@ -4,9 +4,10 @@ import type { ReportedIssue } from '../../issues/reported'
 import type { Column } from '../../lib/terminal/table'
 import type { CommandDefinition } from '../../program'
 
-import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { log, withSpinner } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { renderTable } from '../../lib/terminal/table'
+import { failIssueCommand } from './failure'
 import { withIssueAdminOptions } from './options'
 import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
@@ -52,7 +53,7 @@ export default withIssueAdminOptions({
       }))
       process.stdout.write(renderTable(rows, { columns: COLUMNS, showHeader: true }) + '\n')
     } catch (cause) {
-      fatal(cause, options)
+      await failIssueCommand(cause, options)
     }
   },
 } satisfies CommandDefinition)

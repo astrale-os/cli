@@ -1,8 +1,9 @@
 import type { CommandDefinition } from '../../program'
 
 import { findReportedIssue, reportedIssueMethodPath } from '../../issues/reported'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
+import { failIssueCommand } from './failure'
 import { withIssueAdminOptions } from './options'
 import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
@@ -32,7 +33,7 @@ export default withIssueAdminOptions({
       if (isMachine(options) || options.format !== undefined) output(result, options)
       else log.success(`Archived: ${result.reference}`)
     } catch (cause) {
-      fatal(cause, options)
+      await failIssueCommand(cause, options)
     }
   },
 } satisfies CommandDefinition)

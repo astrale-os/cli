@@ -6,8 +6,9 @@ import {
   reportedIssueChangesSchema,
   reportedIssueMethodPath,
 } from '../../issues/reported'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
+import { failIssueCommand } from './failure'
 import { withIssueAdminOptions } from './options'
 import { reporterSession, withReporter, type ReportedIssueOptions } from './session'
 
@@ -48,7 +49,7 @@ export default withIssueAdminOptions({
       if (isMachine(options) || options.format !== undefined) output(issue, options)
       else log.success(`Edited: ${reference.trim().toUpperCase()}`)
     } catch (cause) {
-      fatal(cause, options)
+      await failIssueCommand(cause, options)
     }
   },
 } satisfies CommandDefinition)
