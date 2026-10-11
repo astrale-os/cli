@@ -97,10 +97,8 @@ function shellLines(path: string): { readonly line: number; readonly text: strin
 
 /** The fake each shell variable and command substitution of the examples expands to. */
 const VARIABLES: Readonly<Record<string, string>> = {
-  ID: 'deployment-1',
   DEPLOYMENT_ID: 'deployment-1',
   SERVICE_NODE_ID: 'service-1',
-  SERVICE_TARGET: '@service-1::services.astrale.ai:class.CloudflareService',
   SERVICE_PATH: '@service-1',
   TARGET: 'staging',
   CONSUMER_INSTANCE: 'consumer',
@@ -724,55 +722,60 @@ describe('release-flow install examples run against a fake registry and Kernel',
 // ── Secret rotation example against a fake Kernel lifecycle ─────────────────
 
 describe('the rotation example runs against a fake Admin call', () => {
-  test('setSecret goes to the Admin kernel with the value read from the file, never from argv', async () => {
-    const rotation = examples().filter(
-      (example) =>
-        example.file === 'astrale-domain/references/release.md' &&
-        example.argv.some((word) => word.endsWith('.method.setSecret')) &&
-        example.argv.includes('@rotate.json'),
-    )
-    expect(rotation).toHaveLength(1)
-    const [example] = rotation
-    const parsed = (await parse(example!)).parsed!
-    expect(parsed.command).toBe('call')
-    const [path, params, opts] = parsed.args as [string, string[], Record<string, unknown>]
-    expect(path).toBe('@service-1::services.astrale.ai:class.CloudflareService.method.setSecret')
-
-    const directory = mkdtempSync(join(tmpdir(), 'astrale-skill-rotation-'))
-    try {
-      const secret = { name: 'API_TOKEN', value: 'rotated-value-never-in-argv' }
-      writeFileSync(join(directory, 'rotate.json'), JSON.stringify(secret), { mode: 0o600 })
-      const seen: unknown[] = []
-      await callCommand(
-        path,
-        params,
-        { ...opts, data: `@${join(directory, 'rotate.json')}` } as never,
-        {
-          async runKernelCommand(input) {
-            seen.push({ admin: input.admin, credential: input.credential })
-            await input.fn({
-              session: {
-                dispatch: async (request: unknown) => {
-                  seen.push(request)
-                  return { kind: 'value', value: { name: secret.name } }
-                },
-              },
-            } as never)
-          },
-          output() {},
-        },
+  test.each(['astrale-domain/references/release.md', 'astrale-cli/SKILL.md'])(
+    '%s dispatches the documented Service target with a file-sourced secret',
+    async (file) => {
+      const rotation = examples().filter(
+        (example) =>
+          example.file === file &&
+          example.argv.some((word) => word.endsWith('.method.setSecret')) &&
+          example.argv.includes('@rotate.json'),
       )
-      expect(seen[0]).toEqual({
-        admin: {},
-        credential: { principal: 'callable', path: expect.anything() },
-      })
-      expect(JSON.parse(JSON.stringify(seen[1]))).toEqual({
-        target: '@service-1::services.astrale.ai:class.CloudflareService.method.setSecret',
-        input: secret,
-      })
-      expect(example!.argv.join(' ')).not.toContain(secret.value)
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
-    }
-  })
+      expect(rotation).toHaveLength(1)
+      const [example] = rotation
+      const parsed = (await parse(example!)).parsed!
+      expect(parsed.command).toBe('call')
+      const [path, params, opts] = parsed.args as [string, string[], Record<string, unknown>]
+      expect(path.split('::')[1]).toBe(
+        'services.astrale.ai:class.CloudflareService.method.setSecret',
+      )
+
+      const directory = mkdtempSync(join(tmpdir(), 'astrale-skill-rotation-'))
+      try {
+        const secret = { name: 'API_TOKEN', value: 'rotated-value-never-in-argv' }
+        writeFileSync(join(directory, 'rotate.json'), JSON.stringify(secret), { mode: 0o600 })
+        const seen: unknown[] = []
+        await callCommand(
+          path,
+          params,
+          { ...opts, data: `@${join(directory, 'rotate.json')}` } as never,
+          {
+            async runKernelCommand(input) {
+              seen.push({ admin: input.admin, credential: input.credential })
+              await input.fn({
+                session: {
+                  dispatch: async (request: unknown) => {
+                    seen.push(request)
+                    return { kind: 'value', value: { name: secret.name } }
+                  },
+                },
+              } as never)
+            },
+            output() {},
+          },
+        )
+        expect(seen[0]).toEqual({
+          admin: {},
+          credential: { principal: 'callable', path: expect.anything() },
+        })
+        expect(JSON.parse(JSON.stringify(seen[1]))).toEqual({
+          target: '@service-1::services.astrale.ai:class.CloudflareService.method.setSecret',
+          input: secret,
+        })
+        expect(example!.argv.join(' ')).not.toContain(secret.value)
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
 })

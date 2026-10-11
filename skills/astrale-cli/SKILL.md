@@ -510,18 +510,21 @@ is unchanged: it exchanges at its callable's declaring Domain as the Admin
 kernel's installation names it; the Admin Domain issuer only completes the Admin
 target. Put `key=value` params before `--admin`, or write `--admin=<bookmark>`.
 
-Rotating one secret of a Service's current deployment is such a call. In
-`astrale-domain list --json`, inspect `current` and copy `callTarget.service` (the
+Rotating one secret of a Service's current deployment is such a call.
+With `@astrale-os/adapter-astrale` 0.5.0-beta.168 or newer,
+`astrale-domain list --json` exposes `current` and `callTarget.service` (the
 `CloudflareService` target), not the Deployment's `callTarget.path`. Put the input
 in a protected file outside the repository or pipe it, never in argv. The current
 deployment keeps its URL, issuer and key; provider propagation takes a few seconds.
 
 ```bash
-astrale call "${SERVICE_TARGET}.method.setSecret" \
+astrale call "@${SERVICE_NODE_ID}::services.astrale.ai:class.CloudflareService.method.setSecret" \
   --admin -d @rotate.json --json
 ```
 
-`SERVICE_TARGET` is the returned `@<serviceId>::services.astrale.ai:class.CloudflareService`.
+`SERVICE_NODE_ID` is the bare ID between `@` and `::` in the returned `callTarget.service`.
+Recheck `current` after success and verify intended behavior after propagation: the reply names
+only the secret and cannot identify the rotated deployment if a promotion raced with the call.
 This call always follows current; a historical deployment has no `setSecret` Method.
 For its identical-release redeploy path and promotion effects, see
 [deployment secrets](../astrale-domain/references/release.md#secrets-of-a-deployment).

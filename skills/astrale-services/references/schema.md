@@ -56,13 +56,15 @@ A deploy result is either:
 
 - `kind: deployed`, `state: created | reused`, `secrets.state: bound | unchanged | updated`, and
   `deployment` with `id`, `serviceId`, opaque `service` name, `label`, `project`, `environment`,
-  `url`, owner, state, digests, `current`, timestamps, and an optional opaque record/key ID; or
+  `url`, owner, state, digests, `current`, timestamps, optional `record` (bytes and media type), and `signingKeyId`; or
 - `kind: rejected`, `reason`, `message`, and optional `retryAfter`.
 
 A JSON response or exit zero alone does not establish deployment success. The adapter throws
 `ServicesRefusal` for a deploy rejection. Ownership or validation refusals need corrected intent;
 `service-unavailable` may follow effects, so retain the same release and respect its retry advice
 within a bounded recovery attempt. Never allocate a different project to route around ownership.
+
+`owner` in deploy or transfer input is a bare Identity node ID (no `@` prefix).
 
 Static `CloudflareService.hosting` describes hosting; `list({project?, environment?})` returns
 visible deployment summaries, not Service-only rows. Use `summary.serviceId` for Service Methods
@@ -76,8 +78,10 @@ and `summary.id` for deployment retirement.
 `setSecret` affects the Service's current deployment only. There is no `deleteSecret` Method:
 adding/removing a secret name changes configuration and needs a new deployment. Removing a name
 from a new deployment does not remove it from older ones. Services retains no secret values;
-metadata listing cannot recover them. For a non-current deployment, redeploy the same immutable
-release with updated secret values and `promote: false`.
+metadata listing cannot recover them. A generic Worker with its exact original deploy input can
+rotate a non-current release with updated values and `promote: false`. For Domain releases use
+the [identical redeploy and restore-current procedure](../../astrale-domain/references/release.md#secrets-of-a-deployment);
+the Domain adapter always promotes.
 
 Services neither creates consumer Domain/Function nodes nor returns their installed IDs. A Domain
 release's origin, revision, issuer, and Publication belong to its deployer. Its record is opaque to

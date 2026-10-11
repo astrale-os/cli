@@ -49,13 +49,10 @@ exported SDK primitives (`register.selfIssuer`, `issuer`, `jwk`, `connect`) rath
 signing API. The default generated account session presents the account as principal. For an
 `authorized` callable it therefore needs `can_use` as well as its business Policy.
 
-When choosing SDK Domain exchange instead, use the installed SDK's supported session option:
-`exchange: { mode: 'auto', ttlSeconds: 120 }`. Hold the three-minute self proof with
-`auth: credentials(() => selfCredential(...))` from `@astrale-os/sdk/client/session` so calls reuse
-it until renewal; a resolver that creates a new proof on every call also causes repeated exchange.
-The declaring Domain becomes principal, while business Policy still evaluates the account.
-Kernel callables, Queries, and Mutations continue to use the account's own authority. Verify the
-selected SDK's contract before adapting the generated account module.
+The scaffold exports `openAccount`, not `selfCredential`. Its default session uses the account's
+own authority; do not copy an invented helper to enable Domain exchange. If that distinct mode is
+needed, adapt `openAccount` using the selected SDK's documented credential/session contract and
+verify the actual callable and business authorization before scheduling.
 
 ## Deploy and verify before scheduling
 
@@ -65,10 +62,13 @@ This uses `@astrale-os/adapter-astrale/services`; the old `--instance` and owner
 workflow does not apply. `--no-promote` deploys a candidate without changing current routing/crons.
 
 Verify the job's real callable under its actual account before enabling cron. `/health` proves
-readiness of the Worker version, not authorization or a successful business effect. Keep a
+readiness of the Worker version, not authorization or a successful business effect. After that
+verification, enable the schedule in `service.json.crons` and redeploy: promoting scaffold deploys
+replace the complete cron set from that file, overriding a manually configured schedule. Keep a
 privileged manual test endpoint private and explicitly authorized if the implementation needs one;
 the public scheduling endpoint is intentionally unavailable.
 
+The published 0.8.2 scaffold defaults to `compatibilityFlags: ["nodejs_compat"]`.
 Compatibility flags are part of the frozen configuration. Preserve the generated/pinned runtime
 settings or deliberately change them before the adapter computes the label; do not graft historical
 plain-payload defaults onto an already-built deployment.

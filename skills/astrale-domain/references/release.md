@@ -197,14 +197,15 @@ Secrets belong to the publisher: each Environment declares its secrets file (`as
 - Never pass a secret value in argv, where `ps` and shell history keep it: write it to a private file
   (`umask 077`) outside the repository, or pipe it from your secret manager.
 
-For adapter-astrale, `astrale-domain list --environment production --json` includes each
-Deployment's `current` flag and two call targets. `callTarget.service` names the owning
+With `@astrale-os/adapter-astrale` 0.5.0-beta.168 or newer,
+`astrale-domain list --environment production --json` includes each Deployment's `current` flag and two call targets. `callTarget.service` names the owning
 `@<serviceId>::services.astrale.ai:class.CloudflareService`; its `setSecret` changes **only the
 Service's current deployment**. `callTarget.path` names a `CloudflareDeployment` for retirement;
 that class has no `setSecret` Method. Selecting a historical row's Service still targets current,
 not that historical deployment.
 
-To rotate current, inspect the list and copy its `callTarget.service` into `SERVICE_TARGET`.
+To rotate current, inspect the list and take the bare Service node ID from `callTarget.service`
+(the part between `@` and `::`) as `SERVICE_NODE_ID`.
 Call on the Admin instance (`--admin`, or `--admin=<bookmark>` when `callTarget.admin` names one)
 as the Service owner or an identity authorized to act as that owner. Put
 `{"name":"API_TOKEN","value":"..."}` in a protected file outside the repository (referenced as
@@ -212,29 +213,53 @@ as the Service owner or an identity authorized to act as that owner. Put
 
 ```sh
 astrale-domain list --environment production --json
-SERVICE_TARGET='@<serviceId>::services.astrale.ai:class.CloudflareService'
-astrale call "${SERVICE_TARGET}.method.setSecret" \
+astrale call "@${SERVICE_NODE_ID}::services.astrale.ai:class.CloudflareService.method.setSecret" \
   --admin -d @rotate.json --json
 read-new-secret | jq -Rs '{ name: "API_TOKEN", value: rtrimstr("\n") }' \
-  | astrale call "${SERVICE_TARGET}.method.setSecret" \
+  | astrale call "@${SERVICE_NODE_ID}::services.astrale.ai:class.CloudflareService.method.setSecret" \
       --admin -d - --json
 ```
 
 The reply is `{ "name": "API_TOKEN" }`; provider propagation takes a few seconds.
 `secret-undeclared` means the current release declares no such name; `service-unavailable` may
 include `retryAfter`. Recheck which deployment is current before retrying: this Method follows
-current, not a pinned deployment.
+current, not a pinned deployment. Recheck `current` after success as well: the reply names only
+the secret, so it cannot prove which deployment was rotated if promotion raced with the call.
+Verify the intended deployment’s real behavior after propagation without reading back secrets.
 
-To rotate another active deployment, redeploy its **identical sealed release and configuration**
-with the complete declared secret set and updated values. Preserve the original Worker
-modules/assets, record and declared secret names; inspect the same deployment label/URL and
-`reused` / secrets `updated` receipt.
-Rebuilding changed code or configuration creates a different deployment and leaves the old
-secrets untouched. The Domain adapter's normal `astrale-domain deploy` also promotes the release,
-including an older release: it changes the stable Service endpoint and cron target. If rotation
-must preserve current, use the Services adapter `deployWorker` with the original deployment input
-and `promote: false` (see the [Services workflow](../../astrale-services/references/workflows.md)).
-Do not promote an old release merely to reach its secrets through `setSecret`.
+To rotate a historical **Domain** deployment, use the supported identical-release redeploy:
+
+1. List deployments and retain both the historical label/URL and the Service's current label.
+   Keep the current label as `PREVIOUS_LABEL` and the Service node ID as `SERVICE_NODE_ID`.
+2. Recover the original source and build inputs, including the same pinned dependencies,
+   toolchain and frozen configuration. The listed record's commit helps locate them; a commit
+   alone cannot recover uncommitted changes. Supply the complete declared secret
+   set with updated values. A changed build or configuration creates another deployment and
+   leaves the historical secrets untouched.
+3. Run `astrale-domain deploy production --json` from that Domain project (substitute its actual
+   environment). Require the original `url` and `deployment.script` (label),
+   `deployment.state: "reused"`, and `secrets.state: "updated"`; `unchanged` is appropriate only
+   when those exact values were already applied.
+4. Immediately restore the previously current label, then list again and confirm `current`:
+
+```sh
+astrale call "@${SERVICE_NODE_ID}::services.astrale.ai:class.CloudflareService.method.promote" \
+  label="$PREVIOUS_LABEL" --admin --json
+astrale-domain list --environment production --json
+```
+
+The Domain adapter promotes on every deploy, including an identical historical release. The
+stable Service URL and cron target therefore move to the old release during this window;
+consumers pinned to immutable deployment URLs keep their releases. Restore the prior label even
+if the redeploy reports an unexpected identity or a partial failure, and verify stable routing,
+cron target, and the intended deployment's behavior after secret propagation. This is not a
+no-interruption rotation procedure. A historical deployment that no consumer or in-flight work
+needs can instead be explicitly retired; do not retire a published or pinned release blindly.
+
+Generic Workers with a retained exact deploy input can use `deployWorker` with `promote: false`
+(see the [Services workflow](../../astrale-services/references/workflows.md)). The Domain adapter
+does not expose this option; reconstructing a Domain upload through `readWorkerDirectory` is not
+an equivalent supported path.
 
 A deployment in the platform dispatch namespace (adapter-cloudflare `namespace` mode: Shell, the
 Services runtime and the other platform Domains) has no Services node. Services operators rotate it

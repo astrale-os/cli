@@ -17,8 +17,8 @@ The generator creates local source only and refuses an existing directory. It wr
 For an HTTP API, adapt the entry and job and remove account secrets/vars you do not need.
 
 Edit `service.json`: project, compatibility date/flags, plain vars, secret **names**, readiness
-paths, and crons. Provide declared values through its ignored environment file or process
-environment. Start with `crons: []` until the real job is verified. Run in the project directory:
+paths, and crons. Provide declared values through its ignored environment file; only when that file is absent
+does the scaffold use process environment values (it does not merge missing file entries). Start with `crons: []` until the real job is verified. Run in the project directory:
 
 ```sh
 npm run deploy -- production
@@ -51,7 +51,7 @@ const { state, deployment } = await deployWorker({
   },
   secrets: {},
   readiness: ['/health'],
-  promote: false,
+  promote: true,
 })
 console.log({ state, serviceId: deployment.serviceId, deploymentId: deployment.id,
   label: deployment.label, url: deployment.url, current: deployment.current })
@@ -61,6 +61,8 @@ The example assumes the Worker implements `/health` and returns
 `x-astrale-worker-version: env.ASTRALE_VERSION_METADATA.id`; adapt readiness to its real contract.
 It requests no Domain record, signer, router, or installation. Pass adapter options
 `{ admin: '<bookmark>', identity: '<local CLI identity>' }` as the second argument when needed.
+For a candidate use `promote: false`; on a first deploy this leaves no current deployment, so
+promote its returned label before current-only logs, secrets, or schedules can be used.
 Use the scaffold's secret loading for declared values rather than embedding them in source.
 
 ## Inspect and operate
@@ -108,22 +110,28 @@ astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.metho
 The current deployment must declare the secret. Rotation keeps its code/URL/key, propagates
 asynchronously, and affects no other deployment. Update the source of secret values used by future
 deploys too, or a redeploy can restore the old value. New/removed names require a new configuration.
-For another active deployment, redeploy its exact original Worker/configuration/record with updated
+Recheck current after success and verify behavior after propagation; the secret-only reply does
+not identify a deployment when promotion races with rotation. For another active generic Worker
+deployment, redeploy its exact original Worker/configuration/record with updated
 values and `promote: false` (`--no-promote` in the scaffold); check the same label/URL, `reused`, and
 secrets `updated`. Preserve all declared secret values. Changed artifacts create a different
 deployment, and a normal promoting redeploy moves the stable endpoint and cron target.
 
 Schedules replace the complete set (up to 24 five-field UTC expressions), not append to it.
-`{"crons":[]}` disables it. See [service-account-cron.md](service-account-cron.md) for the private
+`{"crons":[]}` disables it. Keep `service.json.crons` aligned: every promoting scaffold deploy
+replaces schedules with that declared set. Enable cron by editing that file and redeploying after
+verification; a manual `setSchedule` is overwritten by the next deploy if the file still says `[]`.
+See [service-account-cron.md](service-account-cron.md) for the private
 entry and real-tick verification. Retain bounded evidence without logging secret or business payloads.
 
 ### Ownership, view, retirement, deletion
 
-Transfer requires authority over the existing Service and the intended new owner:
+Transfer requires authority over the existing Service and the intended new owner. Its `owner`
+input is a bare Identity node ID, without `@` (the result formats it as a Path):
 
 ```sh
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.transfer" \
-  owner='@<new-owner-id>' --admin --json
+  owner='<new-owner-id>' --admin --json
 astrale view /:services.astrale.ai:view.application -i <admin-bookmark>
 ```
 
@@ -139,6 +147,8 @@ astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.metho
 
 Run only the lifecycle operation requested. Retirement permanently withdraws one deployment;
 current cannot retire alone, so first promote another active deployment or delete the Service.
+Deleting a Domain Service retires all its deployments, including published versions; registry
+installs and pinned consumers can then fail. Inventory those consumers before deleting.
 Retirement/deletion converge in phases: retain the same exact target, respect `retryAfterMs`, and
 repeat within a bounded window until `retired` / `deleted`. Do not interpret a `retiring` / `deleting`
 receipt as completion. Deletion stops Service routing/crons, retires all deployments, then removes
