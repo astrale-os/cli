@@ -1,4 +1,5 @@
 import { execution } from '@astrale-os/sdk/client/session'
+import { isNodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { schema } from '@astrale-os/sdk/schema'
 import { readFile } from 'node:fs/promises'
@@ -47,8 +48,15 @@ export async function startExecution(
       'The installed callable is not declared durable. Use astrale call for ordinary values.',
     )
   }
-  const caller = (await ctx.self()).id
-  const expanded = await expandSelfInCall(path.raw, expandParameters ? params : {}, ctx)
+  // Bundle resolution has authenticated this Session. Detect a missing selection
+  // before starting any durable work; read it again afterward to capture recovery.
+  ctx.credentialPrincipal()
+  const self = await ctx.self()
+  const caller = self.id
+  const expanded = await expandSelfInCall(path.raw, expandParameters ? params : {}, {
+    ...ctx,
+    self: async () => self,
+  })
   // ClientSession serializes the fingerprint in the invocation target. The Kernel
   // checks it against its pinned declaration before dispatch, including durability.
   const value = await ctx.session.invoke(
@@ -66,7 +74,7 @@ export async function startExecution(
     value === null ||
     Array.isArray(value) ||
     !('id' in value) ||
-    typeof value.id !== 'string'
+    !isNodeId(value.id)
   ) {
     throw new AstraleError(
       'EXECUTION_RECEIPT_INVALID',
@@ -74,15 +82,24 @@ export async function startExecution(
     )
   }
 
-  return acceptExecutionReceipt({
-    kind: 'astrale.execution',
-    version: 1,
-    id: value.id,
-    kernel: ctx.target.kernelIssuer,
-    caller,
-    origin,
-    principal: ctx.credentialPrincipal(),
-  })
+  try {
+    return acceptExecutionReceipt({
+      kind: 'astrale.execution',
+      version: 1,
+      id: value.id,
+      kernel: ctx.target.kernelIssuer,
+      caller,
+      origin,
+      principal: ctx.credentialPrincipal(),
+    })
+  } catch {
+    // Preserve only the validated public reference, never arbitrary result/error data.
+    throw new AstraleError(
+      'EXECUTION_RECEIPT_INVALID',
+      `The durable call returned Execution ${value.id}, but its observation receipt could not be constructed.`,
+      `Retain Execution ID ${value.id} and reconstruct its receipt from the initiating context. Do not start it again.`,
+    )
+  }
 }
 
 export const start = {
@@ -173,8 +190,8 @@ export function observationCommand(operation: 'status' | 'result'): CommandDefin
     afterHelpText: `
 Select the receipt's exact Kernel with -i or --url and the initiating identity
 with --as (or its configured default). A mismatch is refused before Domain
-exchange. The current installed Domain issuer is read on every observation;
-the receipt origin selects that installed Domain. Treat a third-party receipt
+exchange. Domain receipts resolve the current installed issuer for their origin;
+caller receipts preserve caller authority without Domain exchange. Treat a third-party receipt
 like a third-party command. Files supply no exchange URL or credential. The Kernel remains
 the authority for access, including modified or manually reconstructed receipts.
 Pending results preserve the Kernel EXECUTION_PENDING error. --timeout bounds

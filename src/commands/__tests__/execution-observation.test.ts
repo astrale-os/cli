@@ -129,3 +129,147 @@ test('invalid waits, absent/malformed files and explicit credential overrides fa
   }
   expect(connections).toBe(0)
 })
+
+test.each(['caller', 'domain'])(
+  'real CLI stdout receipt roundtrip uses production credential selection (%s)',
+  async (mode) => {
+    const observed = join(directory, 'observed.jsonl')
+    const invoke = async (args: string[]) => {
+      const child = Bun.spawn(
+        [process.execPath, join(import.meta.dir, 'fixtures/execution-cli.ts'), ...args],
+        {
+          env: {
+            ...process.env,
+            ASTRALE_HOME: directory,
+            EXECUTION_FIXTURE_MODE: mode,
+            EXECUTION_FIXTURE_OBSERVED: observed,
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      )
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ])
+      expect(code, stderr + stdout).toBe(0)
+      return stdout
+    }
+    const flags = ['--url', kernel, '--as', 'alice', '--json']
+    const stdout = await invoke(['execution', 'start', '/:jobs.example:function.durable', ...flags])
+    expect(JSON.parse(stdout)).toMatchObject({
+      kind: 'astrale.execution',
+      id: 'execution-1',
+      principal: mode,
+    })
+    // Use the exact command stdout bytes, not JSON.stringify of the in-memory value.
+    await writeFile(file, stdout)
+    const startEvents = (await Bun.file(observed).text())
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(startEvents.some((event) => event.kind === 'exchange')).toBe(mode === 'domain')
+    await writeFile(observed, '')
+    expect(JSON.parse(await invoke(['execution', 'status', file, ...flags]))).toEqual({
+      state: 'completed',
+    })
+    expect(
+      JSON.parse(await invoke(['execution', 'result', file, '--wait-ms', '0', ...flags])),
+    ).toEqual({ kind: 'completed', value: 42 })
+    const events = (await Bun.file(observed).text())
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    const observations = events.filter(
+      (event) =>
+        typeof event.target === 'object' && event.target.callable?.includes('class.Execution'),
+    )
+    expect(observations.map((event) => event.principal)).toEqual([mode, mode])
+    if (mode === 'caller') {
+      expect(
+        events.some((event) => event.kind === 'exchange' || event.input?.kind === 'inspect'),
+      ).toBe(false)
+    } else {
+      expect(events.filter((event) => event.input?.kind === 'inspect')).toHaveLength(2)
+    }
+  },
+)
+
+test('production openConnection accessor follows stale remote issuer recovery to caller', async () => {
+  const observed = join(directory, 'observed.jsonl')
+  const child = Bun.spawn(
+    [process.execPath, join(import.meta.dir, 'fixtures/execution-cli.ts'), 'probe-stale'],
+    {
+      env: {
+        ...process.env,
+        ASTRALE_HOME: directory,
+        EXECUTION_FIXTURE_MODE: 'stale',
+        EXECUTION_FIXTURE_OBSERVED: observed,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  const [code, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ])
+  expect(code, stderr + stdout).toBe(0)
+  expect(JSON.parse(stdout)).toEqual({ unavailable: true, principal: 'caller' })
+  const events = (await Bun.file(observed).text())
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  expect(events.some((event) => event.kind === 'discovery')).toBe(true)
+  expect(events.some((event) => event.input?.kind === 'inspect')).toBe(true)
+  expect(events.at(-1)).toMatchObject({ principal: 'caller' })
+})
+
+test('production SessionAuth propagates observation principal refusal before Execution dispatch', async () => {
+  const observed = join(directory, 'observed.jsonl')
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      join(import.meta.dir, 'fixtures/execution-cli.ts'),
+      'execution',
+      'status',
+      file,
+      '--url',
+      kernel,
+      '--as',
+      'alice',
+      '--json',
+    ],
+    {
+      env: {
+        ...process.env,
+        ASTRALE_HOME: directory,
+        EXECUTION_FIXTURE_MODE: 'changed',
+        EXECUTION_FIXTURE_OBSERVED: observed,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  const [code, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ])
+  expect(code, stderr + stdout).toBe(1)
+  expect(stdout).toBe('')
+  expect(JSON.parse(stderr)).toMatchObject({ error: 'EXECUTION_PRINCIPAL_CHANGED' })
+  const events = (await Bun.file(observed).text())
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  expect(events.filter((event) => event.input?.kind === 'inspect')).toHaveLength(2)
+  expect(
+    events.some(
+      (event) =>
+        typeof event.target === 'object' && event.target.callable?.includes('class.Execution'),
+    ),
+  ).toBe(false)
+})

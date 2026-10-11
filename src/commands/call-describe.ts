@@ -33,7 +33,7 @@ export function describeCallableFromBundle(
     origin: domain.origin,
     ...('owner' in callable
       ? {
-          class: callable.owner.ref.name,
+          class: resolved.owner?.ref.name ?? callable.owner.ref.name,
           method: callable.name,
           dispatch: callable.static ? ('static' as const) : ('instance' as const),
         }
@@ -66,7 +66,7 @@ export function resolveCallableFromBundle(path: Path, input: unknown) {
     const isStatic = last.dispatch === 'static'
     const methods = isStatic ? owner.static.methods : owner.methods
     const method = [...methods].find((method) => method.name === last.name)
-    if (method !== undefined) return { domain, callable: method }
+    if (method !== undefined) return { domain, callable: method, owner }
     const opposite = isStatic ? owner.methods : owner.static.methods
     if ([...opposite].some((method) => method.name === last.name)) {
       const classPath = `/:${origin}:class.${owner.ref.name}`

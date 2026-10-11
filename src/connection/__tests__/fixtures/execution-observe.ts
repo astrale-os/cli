@@ -33,7 +33,7 @@ const open: ConnectionFactory = (target, _timeout, _options, _config, intent) =>
 const result = await withResolvedClientSession(
   {
     url: receipt.kernel,
-    kernelIssuer: receipt.kernel as ConnectionContext['target']['kernelIssuer'],
+    kernelIssuer: receipt.kernel,
   },
   { as: 'alice' },
   {} as AstraleConfig,

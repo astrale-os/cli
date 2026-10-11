@@ -192,20 +192,28 @@ async function runResolvedClientSession<Value>(
           'The selected identity does not match the execution receipt caller.',
         )
       }
-      // Observation always reads the current installed pin: no stale cache or receipt URL
-      // may choose where the caller's proof is exchanged after a deployment rotation.
-      target = await resolveCallableTarget(target, receipt.origin, discovery.context.session.schema)
+      // A caller receipt records caller authority independently of current hosting.
+      // Only a Domain receipt needs an installed issuer to reconstruct its exchange.
+      if (receipt.principal === 'domain') {
+        target = await resolveCallableTarget(
+          target,
+          receipt.origin,
+          discovery.context.session.schema,
+        )
+      }
     } finally {
       discovery.close()
     }
-    if ((target.domainIssuer === undefined ? 'caller' : 'domain') !== receipt.principal) {
+    if (receipt.principal === 'domain' && target.domainIssuer === undefined) {
       throw new AstraleError(
         'EXECUTION_PRINCIPAL_CHANGED',
         'The installed Domain no longer provides the receipt principal context.',
       )
     }
-    installedOrigin = receipt.origin
-    pinned = target.domainIssuer ?? null
+    if (receipt.principal === 'domain') {
+      installedOrigin = receipt.origin
+      pinned = target.domainIssuer
+    }
     credential = { principal: receipt.principal }
   }
   if (credential.principal === 'callable') {

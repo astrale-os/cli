@@ -1,5 +1,5 @@
 import { issuer } from '@astrale-os/sdk/auth'
-import { NodeId } from '@astrale-os/sdk/graph/node'
+import { isNodeId, NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { z } from 'zod'
 
@@ -7,9 +7,9 @@ import { z } from 'zod'
 export const executionReceiptSchema = z.strictObject({
   kind: z.literal('astrale.execution'),
   version: z.literal(1),
-  id: z.string().min(1).transform(NodeId),
-  kernel: z.string().min(1),
-  caller: z.string().min(1).transform(NodeId),
+  id: z.string().refine(isNodeId).transform(NodeId),
+  kernel: z.string().refine(issuer.is).transform(issuer.accept),
+  caller: z.string().refine(isNodeId).transform(NodeId),
   origin: z.string().min(1),
   principal: z.enum(['domain', 'caller']),
 })
@@ -20,7 +20,6 @@ export function acceptExecutionReceipt(input: unknown): ExecutionReceipt {
   const parsed = executionReceiptSchema.safeParse(input)
   if (!parsed.success) throw new TypeError('Expected an astrale.execution version 1 receipt.')
   const receipt = parsed.data
-  issuer.accept(receipt.kernel)
   Path.id(receipt.id)
   Path.id(receipt.caller)
   const origin = Path.parse(`/:${receipt.origin}`)

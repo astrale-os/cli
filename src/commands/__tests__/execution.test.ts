@@ -128,6 +128,10 @@ test('receipt rejects unknown versions, extra credentials and path-shaped origin
     { credential: 'not-accepted' },
     { origin: 'jobs.example:function.durable' },
     { kernel: 'not-an-issuer' },
+    { kernel: 'https://kernel.example/' },
+    { kernel: 'https://KERNEL.example' },
+    { kernel: ' https://kernel.example' },
+    { kernel: 'https://kernel.example:443' },
   ]) {
     expect(() => acceptExecutionReceipt({ ...receipt, ...changes })).toThrow()
   }
@@ -155,7 +159,7 @@ test('malformed receipt JSON never echoes file contents', () => {
   )
 })
 
-test('receipt records actual caller credential after a remote target has moved to Kernel hosting', async () => {
+test('receipt records the selected caller credential rather than the stale target issuer', async () => {
   const { context } = fixture()
   expect(context.target.domainIssuer).toBeDefined()
   const receipt = await startExecution(
@@ -261,4 +265,77 @@ test('start uses the real SDK wire target with a server-enforced durable meaning
   } finally {
     session.close()
   }
+})
+
+test('missing principal selection fails before starting; post-start failure retains only the validated Execution ID', async () => {
+  const { context, calls } = fixture()
+  const failure = () => {
+    throw new Error('private failure details')
+  }
+  await expect(
+    startExecution(
+      { ...context, credentialPrincipal: failure },
+      Path.parse('/:jobs.example:function.durable'),
+      {},
+      false,
+    ),
+  ).rejects.toThrow('private failure details')
+  expect(calls).toHaveLength(0)
+  let reads = 0
+  await expect(
+    startExecution(
+      {
+        ...context,
+        credentialPrincipal: () => {
+          if (++reads === 1) return 'domain'
+          return failure()
+        },
+      },
+      Path.parse('/:jobs.example:function.durable'),
+      {},
+      false,
+    ),
+  ).rejects.toMatchObject({
+    code: 'EXECUTION_RECEIPT_INVALID',
+    message:
+      'The durable call returned Execution execution-1, but its observation receipt could not be constructed.',
+    hint: 'Retain Execution ID execution-1 and reconstruct its receipt from the initiating context. Do not start it again.',
+  })
+  expect(calls).toHaveLength(1)
+})
+
+test('invalid Node IDs are rejected without echoing their contents, including post-start output', async () => {
+  const { context } = fixture()
+  const receipt = await startExecution(
+    context,
+    Path.parse('/:jobs.example:function.durable'),
+    {},
+    false,
+  )
+  for (const field of ['id', 'caller']) {
+    try {
+      acceptExecutionReceipt({ ...receipt, [field]: 'private input: not a NodeId' })
+      throw new Error('expected invalid receipt')
+    } catch (error) {
+      expect(String(error)).toBe('TypeError: Expected an astrale.execution version 1 receipt.')
+      expect(error).not.toHaveProperty('input')
+    }
+  }
+  const session = {
+    ...context.session,
+    schema: context.session.schema,
+    invoke: async () => ({ id: 'private input: not a NodeId' }),
+  } as unknown as ConnectionContext['session']
+  await expect(
+    startExecution(
+      { ...context, session },
+      Path.parse('/:jobs.example:function.durable'),
+      {},
+      false,
+    ),
+  ).rejects.toMatchObject({
+    code: 'EXECUTION_RECEIPT_INVALID',
+    message:
+      'The durable call did not return an Execution reference. Its outcome is unknown; do not automatically start it again.',
+  })
 })

@@ -39,7 +39,8 @@ The public JSON contract has exactly these fields:
 
 `id` and `caller` are bare Node IDs, without `@`. `kernel` is the exact canonical Kernel
 issuer, not a gateway alias. `origin` is the declaring Domain origin. `principal` is `domain`
-for a remote Domain acting for the caller, or `caller` for a Kernel-hosted declaration.
+when the selected credential acts as a Domain for the caller, or `caller` when the selected
+credential acts as the caller itself. This records the actual start context, not a hosting assumption.
 Unknown fields and versions are refused. No private key, token, exchange URL, or local identity
 alias is stored. The canonical runtime validator is `src/connection/execution.ts`.
 
@@ -51,10 +52,11 @@ from an arbitrary `{id}` application value. Observing an existing receipt has no
 
 An explicitly selected or active Kernel must match `kernel`; a different target is refused
 before opening the target Session (resolving a managed Instance name can query Admin first).
-The selected identity's authenticated caller must match `caller` before Domain exchange. Observation reads the selected Kernel's current installed issuer for `origin`
-on every command, so a deployment issuer rotation requires no receipt rewrite. A change
-between remote Domain and caller principal contexts is refused, including during credential
-refresh. The receipt origin selects which installed Domain exchanges the caller proof. Its
+The selected identity's authenticated caller must match `caller` before Domain exchange. A `caller` receipt preserves caller authority without inspecting the Domain installation or
+exchanging credentials, even if its hosting has changed. A `domain` receipt reads the selected
+Kernel's current installed issuer for `origin` on every command, so a deployment issuer rotation
+requires no receipt rewrite. A Domain receipt refuses a fallback to caller authority, including
+during credential refresh. Its origin selects which installed Domain exchanges the caller proof. Its
 endpoint comes from the Kernel installation, never a receipt-supplied URL. Treat a third-party
 receipt like a third-party command that selects a Domain. Uninstallation, deleted executions,
 revoked access, or a changed owner can still make observation unavailable.
