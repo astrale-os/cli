@@ -6,6 +6,7 @@ import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
 import type { ExchangeIssuer, ExchangeTarget } from './exchange'
+import type { ExecutionReceipt } from './execution'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
@@ -33,6 +34,7 @@ export type CredentialIntent =
   | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
   | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
   | Readonly<{ principal: 'callable'; path: Path; nestedTtlSeconds?: never }>
+  | Readonly<{ principal: 'execution'; receipt: ExecutionReceipt; nestedTtlSeconds?: never }>
 
 type CredentialResolver = typeof resolveCredential
 
@@ -100,7 +102,7 @@ export function createCliCredential(
   resolveSource: CredentialResolver = resolveCredential,
   installed?: ExchangeIssuer,
 ): SessionAuth | undefined {
-  if (intent.principal === 'callable') {
+  if (intent.principal === 'callable' || intent.principal === 'execution') {
     throw new TypeError('Callable credentials require installed Domain resolution.')
   }
   if (intent.nestedTtlSeconds !== undefined && intent.principal !== 'caller') {

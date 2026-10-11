@@ -164,6 +164,45 @@ async function runResolvedClientSession<Value>(
   let installedOrigin: string | undefined
   /** The issuer the pin named when this command read it itself. */
   let pinned: IssuerId | null | undefined
+  if (credential.principal === 'execution') {
+    const { receipt } = credential
+    if (options.creds !== undefined || options.anonymous === true) {
+      throw new AstraleError(
+        'EXECUTION_IDENTITY_REQUIRED',
+        'Execution receipts require a named or default identity, without --creds or --anonymous.',
+      )
+    }
+    if (target.kernelIssuer !== receipt.kernel) {
+      throw new AstraleError(
+        'EXECUTION_TARGET_MISMATCH',
+        'The selected Kernel does not match the execution receipt.',
+        `Select the receipt Kernel with --url ${receipt.kernel}.`,
+      )
+    }
+    const discovery = open(target, timeoutMs, options, config, { principal: 'caller' })
+    try {
+      if ((await discovery.context.auth.whoami()).id !== receipt.caller) {
+        throw new AstraleError(
+          'EXECUTION_CALLER_MISMATCH',
+          'The selected identity does not match the execution receipt caller.',
+        )
+      }
+      // Observation always reads the current installed pin: no stale cache or receipt URL
+      // may choose where the caller's proof is exchanged after a deployment rotation.
+      target = await resolveCallableTarget(target, receipt.origin, discovery.context.session.schema)
+    } finally {
+      discovery.close()
+    }
+    if ((target.domainIssuer === undefined ? 'caller' : 'domain') !== receipt.principal) {
+      throw new AstraleError(
+        'EXECUTION_PRINCIPAL_CHANGED',
+        'The installed Domain no longer provides the receipt principal context.',
+      )
+    }
+    installedOrigin = receipt.origin
+    pinned = target.domainIssuer ?? null
+    credential = { principal: receipt.principal }
+  }
   if (credential.principal === 'callable') {
     const origin = callableOrigin(credential.path)
     if (

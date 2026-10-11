@@ -14,6 +14,7 @@ export interface CallableDescription {
   readonly class?: string
   readonly dispatch?: 'static' | 'instance'
   readonly description?: string
+  readonly execution?: { readonly durable: boolean }
   readonly auth?: unknown
   readonly input?: unknown
   readonly output?: unknown
@@ -24,6 +25,25 @@ export function describeCallableFromBundle(
   path: Path,
   input: unknown,
 ): CallableDescription | undefined {
+  const resolved = resolveCallableFromBundle(path, input)
+  if (resolved === undefined) return undefined
+  const { domain, callable } = resolved
+  return Object.freeze({
+    path: path.raw,
+    origin: domain.origin,
+    ...('owner' in callable
+      ? {
+          class: callable.owner.ref.name,
+          method: callable.name,
+          dispatch: callable.static ? ('static' as const) : ('instance' as const),
+        }
+      : { function: callable.ref.name }),
+    ...callableFields(callable),
+  })
+}
+
+/** Shared declaration admission for introspection and explicit durable starts. */
+export function resolveCallableFromBundle(path: Path, input: unknown) {
   const last = path.ast.steps.at(-1)
   if (last === undefined) return undefined
   const methodClass =
@@ -46,15 +66,7 @@ export function describeCallableFromBundle(
     const isStatic = last.dispatch === 'static'
     const methods = isStatic ? owner.static.methods : owner.methods
     const method = [...methods].find((method) => method.name === last.name)
-    if (method !== undefined)
-      return Object.freeze({
-        path: path.raw,
-        origin,
-        class: owner.ref.name,
-        method: method.name,
-        dispatch: last.dispatch,
-        ...callableFields(method),
-      })
+    if (method !== undefined) return { domain, callable: method }
     const opposite = isStatic ? owner.methods : owner.static.methods
     if ([...opposite].some((method) => method.name === last.name)) {
       const classPath = `/:${origin}:class.${owner.ref.name}`
@@ -73,12 +85,7 @@ export function describeCallableFromBundle(
   if (last.kind === 'projection' && last.projection.kind === 'function') {
     const callable = domain.functions[last.projection.name]
     if (callable === undefined) return undefined
-    return Object.freeze({
-      path: path.raw,
-      origin,
-      function: callable.ref.name,
-      ...callableFields(callable),
-    })
+    return { domain, callable }
   }
   return undefined
 }
@@ -86,6 +93,7 @@ export function describeCallableFromBundle(
 function callableFields(callable: ResolvedFunction | ResolvedMethod): Partial<CallableDescription> {
   return {
     ...(callable.description === undefined ? {} : { description: callable.description }),
+    ...(callable.execution === undefined ? {} : { execution: callable.execution }),
     auth: callable.auth,
     input: callable.input,
     output: callable.output,

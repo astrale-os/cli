@@ -1,0 +1,183 @@
+import { execution } from '@astrale-os/sdk/client/session'
+import { Path } from '@astrale-os/sdk/graph/path'
+import { schema } from '@astrale-os/sdk/schema'
+import { readFile } from 'node:fs/promises'
+
+import type { ConnectionContext, KernelCommandOpts } from '../connection'
+import type { CommandDefinition } from '../program'
+
+import { expandSelfInCall, runKernelCommand } from '../connection'
+import { callableOrigin } from '../connection/callable-target'
+import {
+  acceptExecutionReceipt,
+  parseExecutionReceipt,
+  type ExecutionReceipt,
+} from '../connection/execution'
+import { AstraleError } from '../errors'
+import { failInput } from '../lib/log'
+import { parseParams } from './call'
+import { resolveCallableFromBundle } from './call-describe'
+
+type ExecutionOptions = KernelCommandOpts & { data?: string; waitMs?: string }
+
+function requireIdentity(opts: ExecutionOptions): void {
+  if (opts.creds !== undefined || opts.anonymous === true) {
+    throw new AstraleError(
+      'EXECUTION_IDENTITY_REQUIRED',
+      'Execution commands require a named or default identity, without --creds or --anonymous.',
+    )
+  }
+}
+
+/** Explicit start, not a heuristic applied to arbitrary call output. */
+export async function startExecution(
+  ctx: ConnectionContext,
+  path: Path,
+  params: Record<string, unknown>,
+  expandParameters: boolean,
+): Promise<ExecutionReceipt> {
+  const origin = callableOrigin(path)
+  if (origin === undefined)
+    throw new TypeError('A durable callable must name its declaring Domain.')
+  const installed = await ctx.session.schema.bundle(origin)
+  const declaration = resolveCallableFromBundle(path, installed.bundle)
+  if (declaration?.callable.execution?.durable !== true) {
+    throw new AstraleError(
+      'EXECUTION_NOT_DURABLE',
+      'The installed callable is not declared durable. Use astrale call for ordinary values.',
+    )
+  }
+  const caller = (await ctx.self()).id
+  const expanded = await expandSelfInCall(path.raw, expandParameters ? params : {}, ctx)
+  // The SDK checks this meaning fingerprint against the installed declaration before
+  // invocation. A concurrent replacement with an ordinary id-valued callable cannot
+  // turn its value into an execution receipt.
+  const value = await ctx.session.invoke(
+    {
+      origin,
+      callable: declaration.callable.key,
+      fingerprint: schema.callableFingerprint(declaration.callable),
+      target: Path.parse(expanded.path),
+      outputMode: 'value',
+    },
+    expandParameters ? expanded.parameters : params,
+  )
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    !('id' in value) ||
+    typeof value.id !== 'string'
+  ) {
+    throw new AstraleError(
+      'EXECUTION_RECEIPT_INVALID',
+      'The durable call did not return an Execution reference. Its outcome is unknown; do not automatically start it again.',
+    )
+  }
+
+  return acceptExecutionReceipt({
+    kind: 'astrale.execution',
+    version: 1,
+    id: value.id,
+    kernel: ctx.target.kernelIssuer,
+    caller,
+    origin,
+    principal:
+      origin === 'kernel.astrale.ai' || ctx.target.domainIssuer === undefined ? 'caller' : 'domain',
+  })
+}
+
+export const start = {
+  name: 'start',
+  description: 'Start a declared durable callable and print its portable observation receipt',
+  arguments: [
+    { name: 'path', description: 'Durable Function or Method Path' },
+    { name: 'params...', description: 'Params as key=value pairs', required: false },
+  ],
+  options: [
+    { flags: '-d, --data <json>', description: 'Params as JSON: inline, - (stdin), or @<file>' },
+  ],
+  afterHelpText: `
+Save the receipt with --json > receipt.json. It contains no credential. Keep
+it even if the process ends before the workflow does. Starting is not retried
+automatically. Generic astrale call output remains unchanged.
+
+  astrale execution start '@record::notes.example:class.Note.method.complete' --as alice --url https://example/api --json > receipt.json
+  astrale execution result receipt.json --as alice --url https://example/api --wait-ms 10000 --json
+`,
+  action: async (rawPath, rawParams, opts: ExecutionOptions) => {
+    let path: Path
+    let params: Record<string, unknown>
+    try {
+      requireIdentity(opts)
+      path = Path.parse(rawPath as string)
+      params = await parseParams(rawParams as string[], opts.data)
+    } catch (error) {
+      failInput(error, opts)
+    }
+    await runKernelCommand({
+      opts,
+      label: `Start ${path.raw}`,
+      credential: { principal: 'callable', path },
+      fn: (ctx) =>
+        startExecution(
+          ctx,
+          path,
+          params,
+          opts.data === undefined && (rawParams as string[]).length > 0,
+        ),
+    })
+  },
+} satisfies CommandDefinition
+
+export function observationCommand(operation: 'status' | 'result'): CommandDefinition {
+  return {
+    name: operation,
+    description: `Read an execution ${operation} using its retained caller and Domain context`,
+    arguments: [
+      { name: 'receipt', description: 'File containing the execution start JSON receipt' },
+    ],
+    options:
+      operation === 'result'
+        ? [
+            {
+              flags: '--wait-ms <milliseconds>',
+              description: 'Wait for a terminal outcome (default: no wait)',
+            },
+          ]
+        : [],
+    afterHelpText: `
+Select the receipt's exact Kernel with -i or --url and the initiating identity
+with --as (or its configured default). A mismatch is refused before Domain
+exchange. The current installed Domain issuer is read on every observation;
+receipt files never supply exchange URLs or credentials. The Kernel remains
+the authority for access, including modified or manually reconstructed receipts.
+Pending results preserve the Kernel EXECUTION_PENDING error. --timeout bounds
+the request independently of --wait-ms. No workflow is restarted or cancelled.
+`,
+    action: async (file, opts: ExecutionOptions) => {
+      let receipt: ExecutionReceipt
+      let waitMs: number | undefined
+      try {
+        requireIdentity(opts)
+        receipt = parseExecutionReceipt(await readFile(file as string, 'utf8'))
+        if (opts.waitMs !== undefined) {
+          if (!/^\d+$/.test(opts.waitMs) || !Number.isSafeInteger(Number(opts.waitMs)))
+            throw new TypeError('--wait-ms must be a nonnegative safe integer.')
+          waitMs = Number(opts.waitMs)
+        }
+      } catch (error) {
+        failInput(error, opts)
+      }
+      await runKernelCommand({
+        opts,
+        label: `Execution ${operation}`,
+        credential: { principal: 'execution', receipt },
+        fn: async ({ session }) =>
+          operation === 'status'
+            ? session.invoke(execution.status(receipt.id), {})
+            : session.invoke(execution.result(receipt.id), waitMs === undefined ? {} : { waitMs }),
+      })
+    },
+  }
+}
