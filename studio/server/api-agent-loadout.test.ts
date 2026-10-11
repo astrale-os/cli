@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { setHarnessGateway } from './agent/harness/gateway/config'
 import { getHarness } from './agent/harness/selection'
 import { handleApi } from './api'
-import { registerDomain, unregisterDomain } from './domain'
-import { initWorkspaceState } from './workspace-state'
+import { registerDomain, unregisterDomain } from './domain/registry'
+import { initWorkspaceRoot } from './workspace/root'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -49,7 +49,7 @@ export default defineDomain({ schema: Test, runtime: {} as never })
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
   process.env.ASTRALE_HOME = join(root, '.astrale')
-  initWorkspaceState(root)
+  initWorkspaceRoot(root)
 
   process.env.DOMAIN_STUDIO_HARNESS = 'claude'
   const harness = getHarness()

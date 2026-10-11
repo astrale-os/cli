@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import pkg from '../../../package.json'
 import { STUDIO_CLI_DESCRIPTOR_ENV } from '../cli'
-import { initWorkspaceState, workspaceRoot } from '../workspace-state'
+import { initWorkspaceRoot, workspaceRoot } from './root'
 import { getStudioRuntime, initStudioRuntime } from './runtime'
 
 const before = {
@@ -27,7 +27,7 @@ afterEach(() => {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
-  initWorkspaceState(before.workspace)
+  initWorkspaceRoot(before.workspace)
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
@@ -35,7 +35,7 @@ function launchPath(): string {
   const root = mkdtempSync(join(tmpdir(), 'studio-running-version-'))
   roots.push(root)
   const entry = join(root, 'cli.ts')
-  initWorkspaceState(root)
+  initWorkspaceRoot(root)
   initStudioRuntime(join(root, 'astrale.config.ts'), 4399)
   process.env[STUDIO_CLI_DESCRIPTOR_ENV] = JSON.stringify({
     version: 1,

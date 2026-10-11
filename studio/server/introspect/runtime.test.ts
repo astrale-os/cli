@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
 import { buildBundle } from './bundle'
 import { buildCore } from './core'

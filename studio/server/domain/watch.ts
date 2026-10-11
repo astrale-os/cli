@@ -1,5 +1,5 @@
 /**
- * watch.ts — two debounced watch channels per domain:
+ * Debounced watch channels per domain:
  *   Domain definition + selected Schema sources → re-introspect → schema-diff (+ compile-error)
  *   anatomy fileset   → anatomy-diff
  * The studio is read-only, so this only ever pushes; the client refetches.
@@ -8,11 +8,11 @@ import chokidar, { type FSWatcher as ChokidarWatcher } from 'chokidar'
 import { existsSync, watch as watchFs } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 
-import type { DomainHandle } from './domain'
+import type { DomainHandle } from './registry'
 
-import { invalidate, invalidateDatasets, rebuildAndAnnounce } from './cache'
-import { broadcast } from './sse'
-import { ANATOMY_GLOBS } from './state/baseline'
+import { broadcast } from '../api/sse'
+import { invalidate, invalidateDatasets, rebuildAndAnnounce } from '../introspect/cache'
+import { ANATOMY_GLOBS } from '../state/baseline'
 
 export const ANATOMY_PATHS = [...ANATOMY_GLOBS.files, ...ANATOMY_GLOBS.dirs]
 

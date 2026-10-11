@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { SCAFFOLDER, SCAFFOLDER_RANGE } from '../../../src/lib/scaffolder'
-import { initWorkspaceState, workspaceRoot } from '../workspace-state'
 import { annotateOrigin, createDomain, scaffoldArgs } from './create'
+import { initWorkspaceRoot, workspaceRoot } from './root'
 
 const roots: string[] = []
 
@@ -52,7 +52,7 @@ test('workspace creation runs exactly that argv, and names no instance', async (
   const root = mkdtempSync(join(tmpdir(), 'studio-create-argv-'))
   roots.push(root)
   const previous = workspaceRoot()
-  initWorkspaceState(root)
+  initWorkspaceRoot(root)
   const calls: { cmd: string; args: string[]; cwd: string }[] = []
   try {
     const result = await createDomain('crm', {
@@ -67,6 +67,6 @@ test('workspace creation runs exactly that argv, and names no instance', async (
     expect(result.ok).toBe(false)
     expect(result.output).toBe('scaffold refused')
   } finally {
-    initWorkspaceState(previous)
+    initWorkspaceRoot(previous)
   }
 })

@@ -1,9 +1,9 @@
 /** CLI-resolved Domain View preparation and Shell session routes. */
 import type { StudioSchemaBundle, ViewInfo } from '../../shared/types'
 
-import { getAnatomy, getBundle } from '../cache'
+import { getAnatomy, getBundle } from '../introspect/cache'
 import { asString } from '../json'
-import { studioSettings } from '../studio-settings'
+import { studioSettings } from '../state/settings'
 import { getViewRuntime } from '../views/runtime'
 import { launchViewSession, releaseViewSession } from '../views/session'
 import { badRequest, json, notFound, type DomainRouteContext } from './http'

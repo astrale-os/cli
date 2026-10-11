@@ -13,9 +13,9 @@ import { join } from 'node:path'
 
 import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/types'
 
-import { resolveDomainEntry } from '../domain'
+import { resolveDomainEntry } from '../domain/registry'
 import { asJsonRecord, asString, parseJson } from '../json'
-import { studioSettings } from '../studio-settings'
+import { studioSettings } from '../state/settings'
 import { buildClientTree } from './anatomy/client-tree'
 import { buildEnvFields } from './anatomy/env-fields'
 import { findSchemaDefinition, schemaProject } from './anatomy/schema-definition'

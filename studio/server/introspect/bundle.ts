@@ -7,8 +7,8 @@
 import type { SchemaIR, StudioSchemaBundle } from '../../shared/types'
 import type { IntrospectionTimer } from './timing'
 
-import { type DomainHandle, depsInstalled } from '../domain'
-import { studioSettings } from '../studio-settings'
+import { type DomainHandle, depsInstalled } from '../domain/registry'
+import { studioSettings } from '../state/settings'
 import { renderFingerprintOf } from './hash'
 import { buildOverlay } from './overlay'
 import { runtimeExtract } from './runtime'

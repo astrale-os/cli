@@ -1,12 +1,11 @@
-import { agentWorkspace } from '../agent/workspace'
 /** Workspace-wide routes that do not require a DomainHandle. */
-import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../cache'
-import { allDomains, depsInstalled } from '../domain'
+import { agentWorkspace } from '../agent/workspace'
+import { allDomains, depsInstalled } from '../domain/registry'
 import { listInstances, setActiveInstance } from '../instances/active'
-import { asJsonRecord, asString } from '../json'
-import { updateSettings } from '../state/settings'
+import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../introspect/cache'
+import { asString } from '../json'
+import { studioSettings, updateStudioSettings } from '../state/settings'
 import { readWorkspaceUiState, updateWorkspaceUiState } from '../state/workspace-ui'
-import { settingsRoot, studioSettings } from '../studio-settings'
 import { buildCatalog } from '../workspace/catalog'
 import { createDomain } from '../workspace/create'
 import { detectGit } from '../workspace/git'
@@ -99,7 +98,7 @@ export async function handleWorkspaceRoute(
     if (req.method === 'POST') {
       const body = await readJsonRecord(req)
       if (body.action !== 'update') return badRequest('unknown settings action')
-      const next = updateSettings(settingsRoot(), asJsonRecord(body.settings) ?? {})
+      const next = updateStudioSettings(body.settings)
       // `integrationsDir` is read while composing every domain's anatomy, so a settings
       // write is news to all of them — not to the one that happened to be on screen.
       for (const handle of allDomains()) {

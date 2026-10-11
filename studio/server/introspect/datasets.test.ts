@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
-import { analyzeProjectConfig } from '../domain'
+import { analyzeProjectConfig } from '../domain/registry'
 import { buildBundle } from './bundle'
 import { buildDatasets, decodeDatasetJson, projectDataset, runtimeExtractDataset } from './datasets'
 

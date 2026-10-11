@@ -16,11 +16,11 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { SCAFFOLDER } from '../../../src/lib/scaffolder'
-import { getBundle } from '../cache'
-import { registerDomain } from '../domain'
+import { bootDomain } from '../domain/boot'
+import { registerDomain } from '../domain/registry'
 import { findSchemaDefinition } from '../introspect/anatomy/schema-definition'
-import { bootDomain } from '../lifecycle'
-import { stoppers, workspaceRoot } from '../workspace-state'
+import { getBundle } from '../introspect/cache'
+import { stoppers, workspaceRoot } from './root'
 
 /** Mirrors create-astrale-domain's `isValidSlug`: lowercase letters, digits, dots, dashes;
  *  must start/end alphanumeric. Also guards the filesystem target (no `/`, no `..`, no leading dot). */

@@ -1,15 +1,15 @@
-import type { DomainHandle } from './domain'
+import type { DomainHandle } from './registry'
 
 /**
- * lifecycle.ts — bring a single domain online: prepare its `.domain-studio` dir,
+ * Bring a single domain online: prepare its `.domain-studio` dir,
  * warm its bundle, seed the baseline, and start watching its files. Used by BOTH
- * the startup scan (index.ts) and the live workspace watcher (workspace-watch.ts),
+ * the startup scan (index.ts) and the live workspace watcher (workspace/watch.ts),
  * so a domain added while the studio is running boots in exactly the same way as
  * one present at launch.
  */
-import { getBundle } from './cache'
-import { captureBaseline, hashAnatomyFiles, loadBaseline } from './state/baseline'
-import { initDotDir } from './state/store'
+import { getBundle } from '../introspect/cache'
+import { captureBaseline, hashAnatomyFiles, loadBaseline } from '../state/baseline'
+import { initDotDir } from '../state/store'
 import { watchDomain } from './watch'
 
 export interface BootedDomain {

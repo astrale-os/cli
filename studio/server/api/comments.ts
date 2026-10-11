@@ -2,7 +2,7 @@
 import type { ThreadEntry, ThreadRole } from '../../shared/types'
 
 import { isConcreteAnchorRef } from '../../shared/comment-anchors'
-import { getBundle } from '../cache'
+import { getBundle } from '../introspect/cache'
 import { schemaRefs } from '../introspect/schema-refs'
 import { asJsonRecord, asString, asStringArray } from '../json'
 import {

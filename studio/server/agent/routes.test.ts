@@ -7,10 +7,9 @@ import type { AgentRun, AgentSubmitResult, ChatInfo, StudioEvent } from '../../s
 import type { JsonRecord } from '../json'
 import type { AskResult } from './harness/adapter'
 
-import { registerDomain, unregisterDomain } from '../domain'
-import { updateSettings } from '../state/settings'
-import { settingsRoot } from '../studio-settings'
-import { initWorkspaceState } from '../workspace-state'
+import { registerDomain, unregisterDomain } from '../domain/registry'
+import { updateStudioSettings } from '../state/settings'
+import { initWorkspaceRoot } from '../workspace/root'
 import { markHandoffDelivered } from './chats'
 import { getHarnessById } from './harness/registry'
 import { handleAgentRoute } from './routes'
@@ -60,7 +59,7 @@ export default defineDomain({ schema: Test, runtime: {} as never })
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
   process.env.ASTRALE_HOME = join(root, '.astrale')
-  initWorkspaceState(root)
+  initWorkspaceRoot(root)
   return handle
 }
 
@@ -513,7 +512,7 @@ test('the catalog ticks Studio default model, and falls back when the harness dr
     // Studio's default, not to whatever that machine is configured with
     fixture()
     // Studio settings are global on this test machine.
-    updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus' } })
+    updateStudioSettings({ agentModel: { harness: 'claude', model: 'opus' } })
     const staleUrl = new URL('http://127.0.0.1/api/agent/models')
     const stale = (await (
       await handleAgentRoute({

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { DomainHandle } from '../../domain'
+import type { DomainHandle } from '../../domain/registry'
 import type { AgentWorkspace } from '../workspace'
 
 import { readComments, upsertComment } from '../../state/comments'

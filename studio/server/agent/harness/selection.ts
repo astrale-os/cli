@@ -19,7 +19,7 @@
 import type { AgentEffort, StudioSettings } from '../../../shared/types'
 import type { AgentHarness } from './adapter'
 
-import { studioSettings } from '../../studio-settings'
+import { studioSettings } from '../../state/settings'
 import { lastKnownPresence } from './adapter'
 import { resolveHarnessEnv } from './gateway/config'
 import { getHarnessById, hasHarness, listHarnesses } from './registry'

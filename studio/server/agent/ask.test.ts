@@ -5,10 +5,9 @@ import { join } from 'node:path'
 
 import type { AgentWorkspace } from './workspace'
 
-import { registerDomain, unregisterDomain } from '../domain'
-import { updateSettings } from '../state/settings'
-import { settingsRoot } from '../studio-settings'
-import { initWorkspaceState } from '../workspace-state'
+import { registerDomain, unregisterDomain } from '../domain/registry'
+import { updateStudioSettings } from '../state/settings'
+import { initWorkspaceRoot } from '../workspace/root'
 import { runAsk } from './ask'
 import { activeChat, createChat, recordChatTurn, setActiveChat } from './chats'
 
@@ -59,7 +58,7 @@ export default defineDomain({ schema: Test, runtime: {} as never })
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
   // Studio settings are global; point that global at this test's root.
-  initWorkspaceState(root)
+  initWorkspaceRoot(root)
   process.env.ASTRALE_HOME = join(root, '.astrale')
   const workspace: AgentWorkspace = {
     root,
@@ -72,7 +71,7 @@ export default defineDomain({ schema: Test, runtime: {} as never })
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-selected-model'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION = 'mock-parent-session'
-  updateSettings(settingsRoot(), { agentModel: { harness: 'mock', model: 'mock-selected-model' } })
+  updateStudioSettings({ agentModel: { harness: 'mock', model: 'mock-selected-model' } })
   const chat = activeChat(workspace.stateRoot, 'mock', undefined, workspace.uiRoot)
   recordChatTurn(workspace.stateRoot, chat.id, { sessionId: 'mock-parent-session', turns: 2 })
   // A second tab on another agent must not lend Ask its session id.

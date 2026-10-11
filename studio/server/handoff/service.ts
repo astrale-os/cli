@@ -4,9 +4,9 @@
  * definition of the change text and the auto-context refresh.
  */
 import type { ChangeSet } from '../../shared/types'
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
-import { getBundle } from '../cache'
+import { getBundle } from '../introspect/cache'
 import { computeChanges, hashAnatomyFiles } from '../state/baseline'
 import { readComments } from '../state/comments'
 import { materializeAuto } from '../state/context'

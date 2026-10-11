@@ -14,12 +14,11 @@ import { join } from 'node:path'
 
 import type { AgentRun, StudioEvent } from '../../../shared/types'
 
-import { registerDomain, unregisterDomain, type DomainHandle } from '../../domain'
+import { registerDomain, unregisterDomain, type DomainHandle } from '../../domain/registry'
 import { readComments, upsertComment } from '../../state/comments'
-import { updateSettings } from '../../state/settings'
+import { updateStudioSettings } from '../../state/settings'
 import { listState, stateExists } from '../../state/store'
-import { settingsRoot } from '../../studio-settings'
-import { initWorkspaceState } from '../../workspace-state'
+import { initWorkspaceRoot } from '../../workspace/root'
 import { handleBridge } from '../bridge/routes'
 import { activeChat, chatQueue, MAX_QUEUED_MESSAGES, recordChatTurn, resolveChat } from '../chats'
 import { setHarnessGateway } from '../harness/gateway/config'
@@ -96,7 +95,7 @@ export default defineDomain({ schema: Test, runtime: {} as never })
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
   process.env.ASTRALE_HOME = join(root, '.astrale')
-  initWorkspaceState(root)
+  initWorkspaceRoot(root)
   return handle
 }
 
@@ -343,8 +342,8 @@ describe.serial('agent runner invariants', () => {
     const handle = fixture()
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-domain-model'
     // Studio settings are global; point that global at this test's root.
-    initWorkspaceState(handle.root)
-    updateSettings(settingsRoot(), { agentModel: { harness: 'mock', model: 'mock-domain-model' } })
+    initWorkspaceRoot(handle.root)
+    updateStudioSettings({ agentModel: { harness: 'mock', model: 'mock-domain-model' } })
 
     await submitRun(() => {}, { message: 'use the selected model' })
     const run = await waitForTerminal(handle.id)
@@ -459,8 +458,8 @@ describe.serial('agent runner invariants', () => {
     const handle = fixture()
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-recovery-model'
     // Studio settings are global; point that global at this test's root.
-    initWorkspaceState(handle.root)
-    updateSettings(settingsRoot(), {
+    initWorkspaceRoot(handle.root)
+    updateStudioSettings({
       agentModel: { harness: 'mock', model: 'mock-recovery-model' },
     })
     setHarnessGateway({
@@ -684,8 +683,8 @@ describe.serial('agent runner invariants', () => {
 
     // a star does not pull a new tab away from the work in front of you
     // Studio settings are global; point that global at this test's root.
-    initWorkspaceState(handle.root)
-    updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus[1m]' } })
+    initWorkspaceRoot(handle.root)
+    updateStudioSettings({ agentModel: { harness: 'claude', model: 'opus[1m]' } })
     expect(getHarness().id).toBe('claude')
     expect(unwrap(openChat({}))).toMatchObject({ harness: 'mock', model: 'mock-large' })
 

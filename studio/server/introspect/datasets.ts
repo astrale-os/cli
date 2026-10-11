@@ -16,10 +16,10 @@ import type {
   StudioDatasets,
   StudioSchemaBundle,
 } from '../../shared/types'
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
 import { parseClassRefKey, parseSchemaRefKey, schemaRefKey } from '../../shared/types'
-import { analyzeProjectConfig, depsInstalled } from '../domain'
+import { analyzeProjectConfig, depsInstalled } from '../domain/registry'
 import { asJsonArray, asJsonRecord, asString, asStringArray, parseJson } from '../json'
 import { runExtractorIsland } from './runtime'
 

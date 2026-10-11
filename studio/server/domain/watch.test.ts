@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 
-import type { DomainHandle } from './domain'
+import type { DomainHandle } from './registry'
 
+import { WORKSPACE_RESCAN_MS } from '../workspace/watch'
 import { affectsBundle, ANATOMY_PATHS, domainWatchChannels } from './watch'
-import { WORKSPACE_RESCAN_MS } from './workspace-watch'
 
 const handle: DomainHandle = {
   id: 'current',

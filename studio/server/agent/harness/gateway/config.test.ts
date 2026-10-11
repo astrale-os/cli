@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { studioHome } from '../../../home'
+import { studioHome } from '../../../state/home'
 import { statePath, writeJson } from '../../../state/store'
 import {
   clearHarnessGateway,

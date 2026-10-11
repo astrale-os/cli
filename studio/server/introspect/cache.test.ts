@@ -3,11 +3,11 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StudioSchemaBundle } from '../shared/types'
+import type { StudioSchemaBundle } from '../../shared/types'
 
+import { registerDomain, unregisterDomain } from '../domain/registry'
+import { readState, writeJson } from '../state/store'
 import { decodeBundleCacheEntry, getAnatomy, getBundle, invalidate, stillStands } from './cache'
-import { registerDomain, unregisterDomain } from './domain'
-import { readState, writeJson } from './state/store'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -190,7 +190,7 @@ export const domain = defineDomain({ schema, runtime: {} as never })
 export const schema = {}
 `,
   )
-  const sdk = realpathSync(join(import.meta.dir, '../../node_modules/@astrale-os/sdk'))
+  const sdk = realpathSync(join(import.meta.dir, '../../../node_modules/@astrale-os/sdk'))
   const scope = join(root, 'node_modules', '@astrale-os')
   mkdirSync(scope, { recursive: true })
   symlinkSync(sdk, join(scope, 'sdk'), 'dir')

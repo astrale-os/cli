@@ -3,9 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { updateSettings } from '../../state/settings'
-import { settingsRoot } from '../../studio-settings'
-import { initWorkspaceState } from '../../workspace-state'
+import { updateStudioSettings } from '../../state/settings'
+import { initWorkspaceRoot } from '../../workspace/root'
 import { lastKnownPresence, rememberHarnessPresence } from './adapter'
 import { getHarnessById } from './registry'
 import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './selection'
@@ -31,7 +30,7 @@ function workspace(name: string): string {
   roots.push(root)
   machineHome ??= join(root, '.astrale')
   process.env.ASTRALE_HOME = machineHome
-  initWorkspaceState(root)
+  initWorkspaceRoot(root)
   return root
 }
 
@@ -51,7 +50,7 @@ test('the starred model names the agent the studio opens on', () => {
   workspace('a')
   expect(getHarnessSelection()).toMatchObject({ id: 'claude', source: 'default' })
 
-  updateSettings(settingsRoot(), { agentModel: { harness: 'codex', model: 'gpt-5.6-sol' } })
+  updateStudioSettings({ agentModel: { harness: 'codex', model: 'gpt-5.6-sol' } })
   expect(getHarnessSelection()).toEqual({ id: 'codex', locked: false, source: 'starred' })
   expect(getHarness().id).toBe('codex')
 
@@ -65,14 +64,14 @@ test('an unknown starred agent falls back instead of breaking the domain', () =>
   delete process.env.DOMAIN_STUDIO_HARNESS
   installed('claude', 'codex')
   workspace('unknown')
-  updateSettings(settingsRoot(), { agentModel: { harness: 'gemini', model: 'flash' } })
+  updateStudioSettings({ agentModel: { harness: 'gemini', model: 'flash' } })
   expect(getHarnessSelection()).toMatchObject({ id: 'claude', source: 'default' })
 })
 
 test('the environment outranks the starred model, and says so', () => {
   installed('claude', 'codex')
   workspace('env')
-  updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus[1m]' } })
+  updateStudioSettings({ agentModel: { harness: 'claude', model: 'opus[1m]' } })
   process.env.DOMAIN_STUDIO_HARNESS = 'codex'
   expect(getHarnessSelection()).toEqual({ id: 'codex', locked: true, source: 'environment' })
 })
@@ -91,7 +90,7 @@ test('with nothing starred, the studio opens on the agent this machine has', () 
 test('a star on an agent this machine lacks opens on the one it has — and keeps the star', async () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
   workspace('stranded')
-  updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'sonnet' } })
+  updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
 
   installed('codex')
   expect(getHarnessSelection()).toEqual({
@@ -121,14 +120,14 @@ test('a star on an agent this machine lacks opens on the one it has — and keep
 test('with no agent at all, the selection stays on the star rather than inventing one', () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
   workspace('none')
-  updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'sonnet' } })
+  updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
 
   installed()
   // no substitute exists, so there is nothing to fall back TO — the status route
   // reports every harness as absent, and that is what the GUI says out loud
   expect(getHarnessSelection()).toEqual({ id: 'claude', locked: false, source: 'starred' })
 
-  updateSettings(settingsRoot(), { agentModel: null })
+  updateStudioSettings({ agentModel: null })
   expect(getHarnessSelection()).toEqual({ id: 'claude', locked: false, source: 'default' })
 })
 
@@ -145,7 +144,7 @@ test('an unpinned chat runs the harness default model, not whatever the agent sh
   expect(untouched.configuration.effort).toBeUndefined()
 
   // the starred model outranks it, and the chat's own pick outranks both
-  updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'sonnet' } })
+  updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
   const starred = await resolveHarnessConfiguration()
   expect(starred.ok).toBe(true)
   if (!starred.ok) return
@@ -165,7 +164,7 @@ test('a star on the other agent does not lend this one its model', async () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
   installed('claude', 'codex')
   workspace('cross')
-  updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'sonnet' } })
+  updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
 
   const codex = await resolveHarnessConfiguration(getHarnessById('codex'))
   expect(codex.ok).toBe(true)

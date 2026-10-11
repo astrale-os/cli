@@ -3,7 +3,7 @@
  * extracted for its Studio bundle. Schema code is imported exactly once.
  */
 import type { StudioCore, StudioSchemaBundle } from '../../shared/types'
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
 import { isCanonicalDomainSchemaV1, projectCanonicalCore } from './canonical-schema'
 

@@ -3,7 +3,7 @@ import { Node, type SourceFile, SyntaxKind } from 'ts-morph'
 
 import type { ViewInfo } from '../../../../shared/types'
 
-import { resolveDomainEntry } from '../../../domain'
+import { resolveDomainEntry } from '../../../domain/registry'
 import { defineSchemaCalls } from '../schema-definition'
 import {
   addSource,

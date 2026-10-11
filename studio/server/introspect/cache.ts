@@ -1,5 +1,5 @@
 /**
- * cache.ts — in-memory per-domain caches for the (relatively expensive) bundle
+ * The in-memory per-domain caches for the (relatively expensive) bundle
  * and anatomy, so API reads and the file-watcher share one computed value.
  * Watchers invalidate on change; the next read rebuilds and re-broadcasts.
  */
@@ -16,27 +16,23 @@ import type {
   StudioDatasets,
   StudioEvent,
   StudioSchemaBundle,
-} from '../shared/types'
+} from '../../shared/types'
 
-import { isSchemaRevision } from '../shared/types'
+import { isSchemaRevision } from '../../shared/types'
+import { getDomain } from '../domain/registry'
+import { asBoolean, asFiniteNumber, asJsonRecord, asString } from '../json'
+import { hashAnatomyFiles } from '../state/baseline'
+import { studioSettings } from '../state/settings'
+import { readJson, writeJson } from '../state/store'
+import { buildAnatomy } from './anatomy'
+import { buildBundle } from './bundle'
+import { isCanonicalDomainSchemaV1 } from './canonical-schema'
 import { invalidateClientPackage, resolveClientPackage } from './client-package'
-import { getDomain } from './domain'
-import { buildAnatomy } from './introspect/anatomy'
-import { buildBundle } from './introspect/bundle'
-import { isCanonicalDomainSchemaV1 } from './introspect/canonical-schema'
-import { buildCore } from './introspect/core'
-import { buildDatasets } from './introspect/datasets'
-import { introspectionScheduler, type ScheduledWork } from './introspect/scheduler'
-import { decodeSchemaIR } from './introspect/schema-ir-json'
-import {
-  IntrospectionTimer,
-  introspectionTimings,
-  recordIntrospectionPhase,
-} from './introspect/timing'
-import { asBoolean, asFiniteNumber, asJsonRecord, asString } from './json'
-import { hashAnatomyFiles } from './state/baseline'
-import { readJson, writeJson } from './state/store'
-import { studioSettings } from './studio-settings'
+import { buildCore } from './core'
+import { buildDatasets } from './datasets'
+import { introspectionScheduler, type ScheduledWork } from './scheduler'
+import { decodeSchemaIR } from './schema-ir-json'
+import { IntrospectionTimer, introspectionTimings, recordIntrospectionPhase } from './timing'
 
 const bundles = new Map<string, StudioSchemaBundle>()
 /**
@@ -75,8 +71,8 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
 const BUNDLE_CACHE_VERSION = 10
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
-  'cache.ts',
-  'domain.ts',
+  'introspect/cache.ts',
+  'domain/registry.ts',
   'introspect/bundle.ts',
   'introspect/runtime.ts',
   'introspect/extractor.ts',
@@ -229,7 +225,7 @@ function bundleCacheKey(root: string, schemaDirName: string, domainFile: string)
   }
   for (const file of LOCKFILES) hashFileIfPresent(hash, file, join(root, file))
 
-  const serverRoot = import.meta.dir
+  const serverRoot = join(import.meta.dir, '..')
   for (const file of TOOL_INPUTS) {
     const abs = join(serverRoot, file)
     hashFileIfPresent(hash, `tool:${relative(serverRoot, abs)}`, abs)

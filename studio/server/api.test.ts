@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { handleApi } from './api'
-import { registerDomain, unregisterDomain } from './domain'
+import { registerDomain, unregisterDomain } from './domain/registry'
 
 const roots: string[] = []
 const domainIds: string[] = []

@@ -7,7 +7,7 @@ import { handleAgentRoute } from './agent/routes'
 import { handleDomainRoute } from './api/domain'
 import { crossSiteBlocked, json, notFound, readJsonRecord, type Notify } from './api/http'
 import { handleWorkspaceRoute } from './api/workspace'
-import { getDomain } from './domain'
+import { getDomain } from './domain/registry'
 
 export type { Notify } from './api/http'
 

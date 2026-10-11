@@ -1,8 +1,8 @@
 /**
- * workspace-state.ts — process-global workspace context shared by the entrypoint
- * (index.ts), the live watcher (workspace-watch.ts), and the create-domain
- * endpoint (workspace/create.ts): the scanned ROOT (where new domains are
- * scaffolded) and the `domainId → file-watcher stop` map.
+ * The process-global workspace context shared by the entrypoint (index.ts), the
+ * live watcher (workspace/watch.ts), and the create-domain endpoint
+ * (workspace/create.ts): the scanned ROOT (where new domains are scaffolded) and
+ * the `domainId → file-watcher stop` map.
  *
  * It exists so the create endpoint can scaffold into the same root the studio
  * watches — and re-boot the freshly-created domain — without index.ts having to
@@ -16,7 +16,7 @@ const state = { root: '' }
 export const stoppers = new Map<string, () => void>()
 
 /** Called once at boot with the resolved workspace root. */
-export function initWorkspaceState(root: string): void {
+export function initWorkspaceRoot(root: string): void {
   state.root = root
 }
 

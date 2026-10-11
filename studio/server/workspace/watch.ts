@@ -1,5 +1,8 @@
+import { broadcast } from '../api/sse'
+import { bootDomain } from '../domain/boot'
+import { allDomains, isDomainDir, unregisterDomain } from '../domain/registry'
 /**
- * workspace-watch.ts — keeps the domain registry in sync with the workspace while
+ * Keeps the domain registry in sync with the workspace while
  * the studio is running. A domain dropped in (or one whose config + Domain definition
  * schema binding just became complete) is registered, booted, and announced over
  * SSE; one whose composition vanished is unregistered. It reuses
@@ -15,11 +18,8 @@
  * other than Studio — is rare and in no hurry. `create new` never waits on this: it
  * registers and boots the domain it just scaffolded itself (see workspace/create).
  */
-import { invalidate } from './cache'
-import { scanWorkspace } from './detect'
-import { allDomains, isDomainDir, unregisterDomain } from './domain'
-import { bootDomain } from './lifecycle'
-import { broadcast } from './sse'
+import { invalidate } from '../introspect/cache'
+import { scanWorkspace } from './scan'
 
 /** How often the workspace is re-read for domains that appeared or vanished. */
 export const WORKSPACE_RESCAN_MS = 15_000

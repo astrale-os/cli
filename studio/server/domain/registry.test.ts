@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
-import { scanWorkspace } from './detect'
+import { scanWorkspace } from '../workspace/scan'
 import {
   analyzeProjectConfig,
   depsInstalled,
@@ -20,8 +20,8 @@ import {
   resolveDomainEntry,
   resolveSchemaEntry,
   unregisterDomain,
-} from './domain'
-import { getDomain } from './domain'
+} from './registry'
+import { getDomain } from './registry'
 
 const roots: string[] = []
 const domainIds: string[] = []

@@ -61,7 +61,7 @@ function compileProbe(): string {
   const entry = join(build, 'probe.ts')
   writeFileSync(
     entry,
-    `import { isDomainDir, resolveDomainEntry, resolveSchemaEntry } from ${JSON.stringify(join(import.meta.dir, 'domain.ts'))}
+    `import { isDomainDir, resolveDomainEntry, resolveSchemaEntry } from ${JSON.stringify(join(import.meta.dir, 'registry.ts'))}
 const root = process.argv[2]!
 const domain = resolveDomainEntry(root)
 process.stdout.write(

@@ -12,7 +12,7 @@ import type { AnchorRef } from '../../shared/types'
 import type { AskResult } from './harness/adapter'
 import type { AgentWorkspace } from './workspace'
 
-import { getBundle } from '../cache'
+import { getBundle } from '../introspect/cache'
 import { resolveChat } from './chats'
 import { getHarnessById } from './harness/registry'
 import { getHarness, resolveHarnessConfiguration } from './harness/selection'

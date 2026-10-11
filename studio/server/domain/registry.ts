@@ -10,7 +10,7 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
-import { workspaceKey } from './home'
+import { workspaceKey } from '../state/home'
 import { isPackageImportSpecifier, resolvePackageImport } from './package-imports'
 
 export interface DomainHandle {

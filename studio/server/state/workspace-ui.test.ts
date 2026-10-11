@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { workspaceStateRoot } from '../home'
+import { workspaceStateRoot } from './home'
 import { writeJson } from './store'
 import { emptyWorkspaceUiState, readWorkspaceUiState, updateWorkspaceUiState } from './workspace-ui'
 

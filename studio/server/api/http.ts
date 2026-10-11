@@ -1,6 +1,6 @@
 /** Internal HTTP contract shared by Studio API route modules. */
 import type { StudioEvent } from '../../shared/types'
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 import type { JsonRecord } from '../json'
 
 import { asJsonRecord } from '../json'

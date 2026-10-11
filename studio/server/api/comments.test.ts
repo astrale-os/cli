@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
 import { readComments, upsertComment } from '../state/comments'
 import { handleCommentRoute } from './comments'

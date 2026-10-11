@@ -3,15 +3,11 @@
  *
  * These are preferences of the TOOL — how hard the agent thinks, which model it runs,
  * how long extraction may take — not properties of any one domain, and the studio holds
- * several domains at once. So there is ONE machine-global file under
- * `~/.astrale/studio` (or `ASTRALE_HOME`), whatever workspace is open.
+ * several domains at once. So there is ONE machine-global file in the studio's home
+ * (`~/.astrale/studio`, or under `ASTRALE_HOME`), whatever workspace is open.
  *
  * Missing keys fall back to DEFAULT_SETTINGS. Surfaced subtly in the UI (command palette
  * + a faint gear) for power users.
- *
- * This module is the REPOSITORY — read and write a settings.json under a given root. Which
- * root that is is process context, and lives in `server/studio-settings.ts`; production
- * callers go through its `studioSettings()`, tests hold a root of their own.
  */
 import {
   parseStudioNumericSetting,
@@ -24,11 +20,12 @@ import {
   type StudioSettings,
 } from '../../shared/types'
 import { asJsonRecord, asString } from '../json'
+import { studioHome } from './home'
 import { readJson, writeJson } from './store'
 
 const PATH = 'settings.json'
 
-export const DEFAULT_SETTINGS: StudioSettings = {
+const DEFAULT_SETTINGS: StudioSettings = {
   agentAccess: 'full',
   agentModel: null,
   integrationsDir: 'integrations',
@@ -68,15 +65,13 @@ function decodeSettings(value: unknown): Partial<StudioSettings> | undefined {
   return asJsonRecord(value) ? normalizeSettings(value) : undefined
 }
 
-export function readSettings(root: string): StudioSettings {
-  return {
-    ...DEFAULT_SETTINGS,
-    ...readJson(root, PATH, decodeSettings, {}),
-  }
+/** The studio's settings. Global: there is no domain to ask for. */
+export function studioSettings(): StudioSettings {
+  return { ...DEFAULT_SETTINGS, ...readJson(studioHome(), PATH, decodeSettings, {}) }
 }
 
-export function updateSettings(root: string, patch: Partial<StudioSettings>): StudioSettings {
-  const next: StudioSettings = { ...readSettings(root), ...normalizeSettings(patch) }
-  writeJson(root, PATH, next)
+export function updateStudioSettings(patch: unknown): StudioSettings {
+  const next: StudioSettings = { ...studioSettings(), ...normalizeSettings(patch) }
+  writeJson(studioHome(), PATH, next)
   return next
 }

@@ -3,7 +3,6 @@ import type { StudioSchemaBundle, ViewInfo, ViewSessionResult } from '../../shar
 import { openStudioViewSession, releaseStudioViewSession } from '../../../src/commands/studio-views'
 import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
-import { assertOrigin } from './model'
 import { readViewPreparation } from './preparation'
 
 export { conciseCliFailure } from '../cli'
@@ -128,6 +127,12 @@ export async function releaseViewSession(
   const named = page !== undefined && /^[A-Za-z0-9-]{1,64}$/.test(page) ? page : undefined
   await (dependencies.release ?? releaseStudioViewSession)(sessionId, named)
   return { ok: true }
+}
+
+/** Refuse anything but a plain domain origin before it is spliced into a graph path. */
+function assertOrigin(value: string): string {
+  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(value)) throw new Error(`Invalid domain origin: ${value}`)
+  return value
 }
 
 function assertViewSlug(value: string): string {

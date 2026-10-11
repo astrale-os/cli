@@ -15,7 +15,7 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
-import { isPackageImportSpecifier, resolvePackageImport } from '../../package-imports'
+import { isPackageImportSpecifier, resolvePackageImport } from '../../domain/package-imports'
 
 /** A fresh, in-memory-ish ts-morph project: no tsconfig, tolerant of errors. */
 export function newProject(): Project {

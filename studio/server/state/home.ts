@@ -1,5 +1,5 @@
 /**
- * home.ts — the Studio's corner of the CLI's home on this machine.
+ * The Studio's corner of the CLI's home on this machine.
  *
  * Everything the agent layer persists — chat tabs, transcripts, session ids, the bridge
  * grants a turn mints — lives here, NOT in the workspace and NOT in a domain: a

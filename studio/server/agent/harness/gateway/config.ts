@@ -21,8 +21,8 @@ import type {
   HarnessGatewayState,
 } from '../../../../shared/types'
 
-import { studioHome } from '../../../home'
 import { asJsonRecord, asString } from '../../../json'
+import { studioHome } from '../../../state/home'
 import { readJson, removeState, statePath, writeJson } from '../../../state/store'
 import { acquireGatewayToken } from './token'
 

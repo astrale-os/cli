@@ -1,4 +1,4 @@
-import type { DomainHandle } from '../../domain'
+import type { DomainHandle } from '../../domain/registry'
 import type { JsonRecord } from '../../json'
 import type { Notify } from '../notify'
 import type { AgentWorkspace } from '../workspace'

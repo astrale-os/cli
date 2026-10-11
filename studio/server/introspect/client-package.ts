@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 
-import { asJsonRecord, asStringArray, parseJson } from './json'
+import { asJsonRecord, asStringArray, parseJson } from '../json'
 
 export type ClientPackageResolution =
   | {

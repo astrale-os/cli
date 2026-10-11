@@ -14,14 +14,14 @@ import { dirname, join, resolve } from 'node:path'
 import { setBridgePort } from './agent/bridge/grant'
 import { probeInstalledHarnesses } from './agent/harness/registry'
 import { handleApi } from './api'
-import { resolveTarget } from './detect'
-import { allDomains } from './domain'
-import { bootDomain } from './lifecycle'
-import { broadcast, sseResponse } from './sse'
-import { staticFiles } from './static'
-import { initWorkspaceState, stoppers } from './workspace-state'
-import { watchWorkspace } from './workspace-watch'
+import { broadcast, sseResponse } from './api/sse'
+import { staticFiles } from './api/static'
+import { bootDomain } from './domain/boot'
+import { allDomains } from './domain/registry'
+import { initWorkspaceRoot, stoppers } from './workspace/root'
 import { initStudioRuntime } from './workspace/runtime'
+import { resolveTarget } from './workspace/scan'
+import { watchWorkspace } from './workspace/watch'
 
 const argv = process.argv.slice(2)
 let target = ''
@@ -56,7 +56,7 @@ if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
 }
 
 const watchRoot = target.endsWith('astrale.config.ts') ? dirname(resolve(target)) : resolve(target)
-initWorkspaceState(watchRoot) // where `create new` scaffolds + the create endpoint reads
+initWorkspaceRoot(watchRoot) // where `create new` scaffolds + the create endpoint reads
 let workspaceReady = false
 
 /**

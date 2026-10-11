@@ -8,7 +8,7 @@ import type {
   Comment,
   StudioSettings,
 } from '../../../shared/types'
-import type { DomainHandle } from '../../domain'
+import type { DomainHandle } from '../../domain/registry'
 import type { Bridge } from '../bridge/grant'
 import type { StoredChat } from '../chats'
 import type { AgentHarness, AgentTurnImage } from '../harness/adapter'
@@ -17,8 +17,8 @@ import type { DomainTurnParts } from '../prompts/turn'
 import type { AgentWorkspace } from '../workspace'
 
 import { imagesLabel } from '../../../shared/attachments'
-import { getBundle } from '../../cache'
 import { refreshAuto } from '../../handoff/service'
+import { getBundle } from '../../introspect/cache'
 import { readComments } from '../../state/comments'
 import { readContext } from '../../state/context'
 import { listDocuments } from '../../state/documents'
