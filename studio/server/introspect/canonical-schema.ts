@@ -65,16 +65,6 @@ export interface SchemaSdk {
   }
 }
 
-/** Smaller facade used when re-admitting an installed Bundle for drift checks. */
-export interface SchemaAdmissionSdk {
-  readonly bundle: {
-    accept(input: any): { readonly root: CanonicalDomainSchemaV1 }
-  }
-  readonly schema: {
-    resolve(input: any): { readonly source: unknown; readonly revision: unknown }
-  }
-}
-
 interface CanonicalSchemaExtraction {
   readonly status: 'admitted' | 'preview'
   readonly root: CanonicalDomainSchemaV1

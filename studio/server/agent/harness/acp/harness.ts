@@ -17,17 +17,13 @@ import {
   pruneAgentBinaries,
   type AgentBinary,
 } from './binary'
-import { runAcpAsk, runAcpTurn } from './client'
+import { errorText, runAcpAsk, runAcpTurn } from './client'
 import { acpAgentCommand, type AcpProvider } from './command'
 import { probeAcpHealth, probeAcpLoadout } from './probe'
 
 const HEALTH_OK_TTL_MS = 5 * 60_000
 const HEALTH_FAILED_TTL_MS = 15_000
 const LOADOUT_TTL_MS = 60_000
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error)
-}
 
 /**
  * A harness backed exclusively by its bundled ACP agent server. Every provider

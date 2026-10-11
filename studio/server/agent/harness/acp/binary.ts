@@ -81,8 +81,6 @@ const OVERRIDES: Record<AcpProvider, string> = {
 const MARKER = '.complete'
 /** One empty file per process running the build, named by its pid. */
 const LEASES = '.leases'
-/** A build installed before leases only says when a Studio last started on it. */
-const LEGACY_UNUSED_MS = 14 * 24 * 60 * 60_000
 /** A staging directory this old belongs to an install that died. */
 const ABANDONED_STAGING_MS = 24 * 60 * 60_000
 const VERSION_TIMEOUT_MS = 10_000
@@ -100,7 +98,7 @@ function isMusl(): boolean {
 }
 
 /** The platform keys this machine can run, best first (`linux-x64-musl`, `linux-x64`). */
-export function platformKeys(
+function platformKeys(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
   musl = platform === 'linux' && isMusl(),
@@ -424,12 +422,7 @@ async function disposable(path: string, name: string): Promise<boolean> {
   if (staging) return !processAlive(Number(staging[1])) || (await olderThan(path))
   if (name.includes('.staging-')) return olderThan(path)
 
-  const holders = await readdir(join(path, LEASES)).catch(() => undefined)
-  if (holders === undefined) {
-    // Installed before leases: only its marker says when a Studio last started on it.
-    const marker = await stat(join(path, MARKER)).catch(() => undefined)
-    return marker ? Date.now() - marker.mtimeMs > LEGACY_UNUSED_MS : olderThan(path)
-  }
+  const holders = await readdir(join(path, LEASES)).catch((): string[] => [])
   let held = false
   for (const holder of holders) {
     if (processAlive(Number(holder))) held = true

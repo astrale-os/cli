@@ -8,6 +8,7 @@ import type { AcpProviderOptions } from './provider'
 import { isAgentEffort } from '../../../../shared/agent-effort'
 import { terminateProcessTree } from '../process'
 import { initializeAgent, spawnAcpAgent } from './agent-process'
+import { errorText } from './client'
 import {
   effortConfig,
   effortOptions,
@@ -35,10 +36,6 @@ interface AcpProbeInput {
   model?: string
   signal?: AbortSignal
   createSession: boolean
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error)
 }
 
 function stderrSuffix(stderr: string): string {

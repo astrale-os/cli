@@ -175,7 +175,7 @@ function toolCallChanged(before: AcpToolCallState, after: AcpToolCallState): boo
 }
 
 /** Fold one report into what was known; a field it leaves out, or sends as null, is unchanged. */
-export function foldToolCall(
+function foldToolCall(
   known: AcpToolCallState | undefined,
   update: acp.ToolCall | acp.ToolCallUpdate,
 ): AcpToolCallState {
@@ -239,7 +239,7 @@ function toolContent(content: acp.ToolCallContent): AgentToolContent[] {
 }
 
 /** A call as Studio keeps it: harness-neutral, and bounded by the store that keeps it. */
-export function toolCallDetail(state: AcpToolCallState): AgentToolCall {
+function toolCallDetail(state: AcpToolCallState): AgentToolCall {
   const content = (state.content ?? []).flatMap(toolContent)
   return {
     title: state.title ?? state.name ?? state.kind ?? 'Tool',

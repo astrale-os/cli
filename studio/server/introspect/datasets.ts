@@ -50,7 +50,7 @@ type DatasetExtractResult =
   | { ok: false; error: { message: string } }
 
 /** The Dataset module coordinates `astrale.config.ts` declares through `defineProject`, in order. */
-export function datasetReferences(handle: DomainHandle): readonly string[] {
+function datasetReferences(handle: DomainHandle): readonly string[] {
   return analyzeProjectConfig(handle.root).datasets
 }
 
@@ -119,7 +119,7 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
 }
 
 /** Spawn the Dataset extractor island for one module, from a neutral directory. */
-export async function runtimeExtractDataset(
+async function runtimeExtractDataset(
   modulePath: string,
   domainDir: string,
   timeoutMs = 60_000,

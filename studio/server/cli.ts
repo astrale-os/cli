@@ -74,7 +74,7 @@ export function studioCliCommand(
   return [descriptor.executable, ...descriptor.args, ...args]
 }
 
-export function conciseCliFailure(raw: string): string | undefined {
+function conciseCliFailure(raw: string): string | undefined {
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())
