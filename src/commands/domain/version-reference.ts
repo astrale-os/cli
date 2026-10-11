@@ -79,11 +79,9 @@ export function admitVersionReference(reference: string): VersionReference {
 /**
  * Translate every version reference with one index read per origin (Résolution [.78020]): an exact
  * reference names any published version, a pre-release or a yanked one included; a line names its
- * highest stable version that is not yanked ([.78086]). The references name distinct origins
- * ({@link refuseRepeatedOrigins} runs at admission, before the registry is opened). The first
- * reference that resolves to nothing is refused with VERSION_UNRESOLVED; a registry refusal (an
- * unreadable Domain reads as an absent one, [.79495]) passes through. Nothing is installed before
- * every reference resolved.
+ * highest stable version that is not yanked ([.78086]). The first reference that resolves to
+ * nothing is refused with VERSION_UNRESOLVED; a registry refusal (an unreadable Domain reads as an
+ * absent one, [.79495]) passes through. Nothing is installed before every reference resolved.
  */
 export async function resolveVersionReferences(
   references: readonly VersionReference[],
@@ -206,27 +204,6 @@ function rebuilt(input: string | undefined): Reference | undefined {
     return parseReference(input)
   } catch {
     return undefined
-  }
-}
-
-/**
- * One install pins one release per origin: two version references to one origin are refused at
- * admission, before Admin is opened, since the syntax alone names their origin. A URL names its
- * origin only once it is read, so a URL and a version of one origin are refused after that read.
- */
-export function refuseRepeatedOrigins(references: readonly VersionReference[]): void {
-  const seen = new Map<string, string>()
-  for (const reference of references) {
-    const { origin } = reference.selector
-    const earlier = seen.get(origin)
-    if (earlier !== undefined) {
-      throw new AstraleError(
-        'DUPLICATE_ORIGIN',
-        `Origin ${origin} is named by several references: ${earlier}, ${reference.reference}.`,
-        'One install pins one release per origin; keep the reference you mean.',
-      )
-    }
-    seen.set(origin, reference.reference)
   }
 }
 

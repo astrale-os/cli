@@ -1,18 +1,7 @@
-import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
-import type { ReferenceInstallOpts } from './release-install'
 
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
-import { installByReference } from './release-install'
-
-type InstallOpts = KernelCommandOpts &
-  AdminTargetCommandOpts &
-  ReferenceInstallOpts & {
-    // Programmatic opt-out for callers that drive this command as a function.
-    // The matching CLI flags are read from argv by `canPrompt` — Commander
-    // keeps root options out of a subcommand's action arguments.
-    ci?: boolean
-  }
+import { ADMIN_TARGET_OPTIONS } from '../../lib/admin/target'
+import { installByReference, type ReferenceInstallOpts } from './release-install'
 
 export default {
   name: 'install',
@@ -111,7 +100,7 @@ Examples:
         'With an issuer change, cut the replaced issuer at the activation instead of draining it',
     },
   ],
-  action: async (references: [string, ...string[]], opts: InstallOpts) => {
+  action: async (references: [string, ...string[]], opts: ReferenceInstallOpts) => {
     await installByReference(references, opts)
   },
 } satisfies CommandDefinition

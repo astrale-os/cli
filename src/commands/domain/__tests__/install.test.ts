@@ -286,6 +286,7 @@ describe('install by URL', () => {
       { reference: A, reason: 'bundle-unread' },
     ])
     expect(report).not.toHaveProperty('recovered')
+    expect(report.precheck).not.toHaveProperty('command')
   })
 
   test('prints one line per root, its status read from the Kernel receipt', async () => {
@@ -336,13 +337,18 @@ describe('install by URL', () => {
     expect(run.registries).toBe(0)
   })
 
-  test('installs an unreadable deployment without a digest and reports the Kernel pin', async () => {
+  test('installs an unreadable deployment with its token, without a digest, and reports the Kernel pin', async () => {
     const a = served(AGENCIES, A, '1')
     const run = harness({ listing: async (call) => (call === 0 ? [] : [installedFrom(a)]) })
 
-    await installByReference([A], JSON_OUTPUT, run.deps)
+    // An unreadable deployment names no origin, so an origin-scoped consent is not refused.
+    await installByReference(
+      [A],
+      { ...JSON_OUTPUT, token: 'secret', allowIssuerChange: ['crm.test'] },
+      run.deps,
+    )
 
-    expect(run.requests[0]!.domains).toEqual([{ release: { url: A } }])
+    expect(run.requests[0]!.domains).toEqual([{ release: { url: A, token: 'secret' } }])
     expect(JSON.parse(io.stdout).references[0]).toMatchObject({
       origin: AGENCIES,
       pin: null,
@@ -727,43 +733,43 @@ describe('issuer changes need consent, planned from readable installations', () 
   })
 
   test('a consent refused because its install already committed reads back as already current', async () => {
-    const consentRefusal = () =>
-      new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
-        code: 'SCHEMA_INPUT_INVALID',
-        details: { phase: 'input', path: '/domains/0/consent', issue: 'invalid' },
-      })
     const a2 = served(AGENCIES, A2, '2')
-    const committedMeanwhile = harness({
-      served: { [A2]: a2 },
-      // The listing read before the install is stale: another run committed the move since.
-      listing: async (call) =>
-        call === 0 ? [installedFrom(served(AGENCIES, A1, '1'))] : [installedFrom(a2)],
-      install: async () => {
-        throw consentRefusal()
-      },
-    })
-    await installByReference(
-      [A2],
-      { ...JSON_OUTPUT, allowIssuerChange: [''] },
-      committedMeanwhile.deps,
-    )
-    expect(JSON.parse(io.stdout)).toMatchObject({
-      changed: false,
-      domains: [{ origin: AGENCIES }],
-      references: [{ origin: AGENCIES, installed: { issuer: A2, pin: a2.pin } }],
-      recovered: { refusal: 'SCHEMA_INPUT_INVALID' },
-    })
-
-    const notCommitted = harness({
-      served: { [A2]: a2 },
-      listing: async () => [installedFrom(served(AGENCIES, A1, '1'))],
-      install: async () => {
-        throw consentRefusal()
-      },
-    })
-    expect(
-      await refused([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, notCommitted),
-    ).toMatchObject({ error: 'RESPONSE_ERROR', reason: { code: 'SCHEMA_INPUT_INVALID' } })
+    const refusing = (code: string, path: string, committed = true) =>
+      harness({
+        served: { [A2]: a2 },
+        // The listing read before the install is stale: another run committed the move since.
+        listing: async (call) =>
+          call === 0 || !committed
+            ? [installedFrom(served(AGENCIES, A1, '1'))]
+            : [installedFrom(a2)],
+        install: async () => {
+          throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
+            code,
+            details: { phase: 'input', path, issue: 'invalid' },
+          })
+        },
+      })
+    const consent = { ...JSON_OUTPUT, allowIssuerChange: [''] }
+    for (const code of ['SCHEMA_INPUT_INVALID', 'SCHEMA_OPERATION_CONFLICT']) {
+      io.stdout = ''
+      await installByReference([A2], consent, refusing(code, '/domains/0/consent').deps)
+      expect(JSON.parse(io.stdout)).toMatchObject({
+        changed: false,
+        domains: [{ origin: AGENCIES }],
+        references: [{ origin: AGENCIES, installed: { issuer: A2, pin: a2.pin } }],
+        recovered: { refusal: code },
+      })
+    }
+    // Not committed, or refused at another member than the consent: the refusal stands.
+    for (const run of [
+      refusing('SCHEMA_INPUT_INVALID', '/domains/0/consent', false),
+      refusing('SCHEMA_INPUT_INVALID', '/domains/0/release'),
+    ]) {
+      expect(await refused([A2], consent, run)).toMatchObject({
+        error: 'RESPONSE_ERROR',
+        reason: { code: 'SCHEMA_INPUT_INVALID' },
+      })
+    }
   })
 })
 
