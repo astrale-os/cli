@@ -6,6 +6,7 @@ import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
 import type { ExchangeIssuer, ExchangeTarget } from './exchange'
+import type { ExecutionReceipt } from './execution'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
@@ -22,6 +23,8 @@ import { registrationKeyForTarget } from './target'
 
 const DELEGATION_TTL_SECONDS = 60
 
+export type CredentialPrincipal = 'domain' | 'caller'
+
 export interface SourceCredentialResolver {
   /** Stable local identity metadata may select an already-bound persisted exchange credential. */
   cacheIdentity?(): Promise<Readonly<{ issuer: string; subject: string }> | undefined>
@@ -33,6 +36,7 @@ export type CredentialIntent =
   | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
   | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
   | Readonly<{ principal: 'callable'; path: Path; nestedTtlSeconds?: never }>
+  | Readonly<{ principal: 'execution'; receipt: ExecutionReceipt; nestedTtlSeconds?: never }>
 
 type CredentialResolver = typeof resolveCredential
 
@@ -99,8 +103,9 @@ export function createCliCredential(
   intent: CredentialIntent = {},
   resolveSource: CredentialResolver = resolveCredential,
   installed?: ExchangeIssuer,
+  selectedPrincipal?: (principal: CredentialPrincipal) => void,
 ): SessionAuth | undefined {
-  if (intent.principal === 'callable') {
+  if (intent.principal === 'callable' || intent.principal === 'execution') {
     throw new TypeError('Callable credentials require installed Domain resolution.')
   }
   if (intent.nestedTtlSeconds !== undefined && intent.principal !== 'caller') {
@@ -145,8 +150,23 @@ export function createCliCredential(
   }
   const effective =
     exchange !== undefined
-      ? createExchangeCredentialResolver(exchange, source, fetch, timeoutMs, undefined, installed)
-      : source
+      ? createExchangeCredentialResolver(
+          exchange,
+          source,
+          fetch,
+          timeoutMs,
+          undefined,
+          installed,
+          selectedPrincipal,
+        )
+      : {
+          ...source,
+          async resolve(audience: IssuerId, signal: AbortSignal) {
+            const token = await source.resolve(audience, signal)
+            selectedPrincipal?.('caller')
+            return token
+          },
+        }
   return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
 }
 

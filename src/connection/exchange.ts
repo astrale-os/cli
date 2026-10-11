@@ -5,7 +5,7 @@ import { credential, grant } from '@astrale-os/sdk/auth'
 import { ExchangeError, ResponseError } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
-import type { SourceCredentialResolver } from './credential'
+import type { CredentialPrincipal, SourceCredentialResolver } from './credential'
 import type { ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
@@ -73,7 +73,12 @@ export function createExchangeCredentialResolver(
   timeoutMs: number,
   cache = new ExchangeCredentialCache(),
   installed?: ExchangeIssuer,
+  selectedPrincipal?: (principal: CredentialPrincipal) => void,
 ): SourceCredentialResolver {
+  const select = (token: string, principal: CredentialPrincipal) => {
+    selectedPrincipal?.(principal)
+    return token
+  }
   const domain = installed ?? exactIssuer(target.domainIssuer)
   const installationOwned = installed !== undefined
   requireExchangeTransport(target.kernelIssuer, target.domainIssuer)
@@ -112,7 +117,7 @@ export function createExchangeCredentialResolver(
       }
       if (hintedIdentity !== undefined) {
         const cached = await persisted(hintedIdentity)
-        if (cached !== undefined) return cached
+        if (cached !== undefined) return select(cached, 'domain')
       }
 
       const sourceToken = await source.resolve(kernelIssuer, signal)
@@ -120,7 +125,7 @@ export function createExchangeCredentialResolver(
       requireLive(signal)
       if (!sameIdentity(hintedIdentity, sourceIdentity)) {
         const cached = await persisted(sourceIdentity)
-        if (cached !== undefined) return cached
+        if (cached !== undefined) return select(cached, 'domain')
       }
 
       const exchange = sourceSession(
@@ -162,10 +167,10 @@ export function createExchangeCredentialResolver(
         const current = await domain.current(session, signal)
         requireLive(signal)
         // A Domain the Kernel hosts has no issuer to exchange at: the caller stays itself.
-        if (current === null) return sourceToken
+        if (current === null) return select(sourceToken, 'caller')
         try {
           if (refused !== undefined) throw refused
-          return await checked(await exchangeAt(current))
+          return select(await checked(await exchangeAt(current)), 'domain')
         } catch (failure) {
           if (!issuerMayHaveMoved(failure)) throw failure
           // Another concurrent resolution may already have updated `current`. The refused cached
@@ -174,7 +179,9 @@ export function createExchangeCredentialResolver(
           const moved = await domain.moved(failedIssuer, session, signal)
           requireLive(signal)
           if (moved === undefined) throw failure
-          return moved === null ? sourceToken : await checked(await exchangeAt(moved))
+          return moved === null
+            ? select(sourceToken, 'caller')
+            : select(await checked(await exchangeAt(moved)), 'domain')
         }
       } finally {
         exchange.close()
