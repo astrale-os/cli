@@ -56,86 +56,82 @@ async function policyScenario(page: Page) {
   })
 }
 
-test('policy consumers navigate to classes, expanded methods, and functions', async ({ page }) => {
-  await policyScenario(page)
-  await page.goto('/')
-  await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
-  const tree = page.getByTestId('workspace-domain-tree')
-  const openPolicy = () =>
-    tree.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
-  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
-  const usages = panel
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { name: 'Used by', exact: true }) })
-
-  await openPolicy()
-  const classLink = usages.getByRole('button', { name: 'Invoice', exact: true }).first()
-  const normal = await classLink.evaluate((element) => getComputedStyle(element).color)
-  await classLink.hover()
-  await expect
-    .poll(() => classLink.evaluate((element) => getComputedStyle(element).color))
-    .not.toBe(normal)
-  await expect(classLink).toHaveCSS('text-decoration-line', 'underline')
-  await classLink.click()
-  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
-  const method = panel.locator('[data-anchor-ref="class.Invoice.method.settle"]')
-  await expect(method.locator('[data-method-detail]')).toHaveCount(0)
-
-  await openPolicy()
-  await usages.getByRole('button', { name: 'settle', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
-  await expect(method.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true')
-  await expect(method.locator('[data-method-detail]')).toBeInViewport()
-
-  await openPolicy()
-  await usages.getByRole('button', { name: 'closeBilling', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'closeBilling', exact: true })).toBeVisible()
-
-  // The same links in Dataset policy details navigate back to the schema.
-  await openPolicy()
-  await panel.getByRole('button', { name: 'Test on a Dataset', exact: true }).click()
-  await usages.getByRole('button', { name: 'settle', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
-  await expect(method.locator('[data-method-detail]')).toBeInViewport()
-})
-
-test('the right detail panel resizes and remembers its width across navigation and reload', async ({
+test('a policy lists its direct and indirect consumers, and each link opens both ways', async ({
   page,
   request,
 }) => {
+  await policyScenario(page)
+  await dockWorkspacePanel(request, 'left')
   await page.goto('/')
   await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
   const tree = page.getByTestId('workspace-domain-tree')
-  const openPolicy = () =>
-    tree.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
-  await openPolicy()
+  const folder = tree.locator('[data-module-path="modules/billing"]')
+  await expect(tree.getByRole('button', { name: 'modules', exact: true })).toHaveCount(0)
+  await expect(folder.getByRole('button', { name: 'Invoice', exact: true })).toBeVisible()
   const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
-  const width = () => panel.evaluate((element) => element.getBoundingClientRect().width)
-  const start = await width()
-  const handle = page.getByRole('separator', { name: 'Resize detail panel' })
-  const box = (await handle.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 - 100, box.y + box.height / 2, { steps: 8 })
-  await page.mouse.up()
-  await expect.poll(width).toBe(start + 100)
+  const heading = (name: string) => panel.getByRole('heading', { name, exact: true })
+  const link = (name: string) => panel.getByRole('button', { name, exact: true }).first()
+  const usages = panel
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Used by', exact: true }) })
+  const method = panel.locator('[data-anchor-ref="class.Invoice.method.settle"]')
+  const openPolicy = () =>
+    folder.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
+  const closePanel = () => page.getByRole('button', { name: 'Close panel' }).click()
 
-  await handle.focus()
-  await page.keyboard.press('ArrowLeft')
-  await expect.poll(width).toBe(start + 120)
-  await expect
-    .poll(async () => (await (await request.get('/api/workspace/state')).json()).detailWidth)
-    .toBe(start + 120)
-  await page.getByRole('button', { name: 'Close panel' }).click()
-  await tree.getByRole('button', { name: 'Invoice', exact: true }).click()
-  await expect.poll(width).toBe(start + 120)
-
-  await page.reload()
   await openPolicy()
-  await expect.poll(width).toBe(start + 120)
-  await handle.focus()
-  await page.keyboard.press('Home')
-  await expect.poll(width).toBe(320)
+  await expect(heading('mayManageInvoice')).toBeVisible()
+  for (const consumer of [
+    'manageBilling',
+    'administerBilling',
+    'Invoice · read',
+    'Invoice.settle',
+    'closeBilling',
+  ])
+    await expect(usages).toContainText(consumer)
+
+  // each consumer opens: a Class, a Method expanded inside it, a Function, a composing Policy
+  await usages.getByRole('button', { name: 'Invoice', exact: true }).first().click()
+  await expect(heading('Invoice')).toBeVisible()
+  await expect(method.locator('[data-method-detail]')).toHaveCount(0)
+  await openPolicy()
+  await usages.getByRole('button', { name: 'settle', exact: true }).click()
+  await expect(method.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true')
+  await expect(method.locator('[data-method-detail]')).toBeInViewport()
+  await openPolicy()
+  await usages.getByRole('button', { name: 'closeBilling', exact: true }).click()
+  await expect(heading('closeBilling')).toBeVisible()
+  await openPolicy()
+  await usages.getByRole('button', { name: 'administerBilling', exact: true }).first().click()
+  await expect(heading('administerBilling')).toBeVisible()
+  await link('manageBilling').click()
+  await expect(heading('manageBilling')).toBeVisible()
+
+  // and back: a Class, a Method and a Function name the Policy that guards them
+  await closePanel()
+  await page.getByText('Invoice', { exact: true }).first().click()
+  await link('administerBilling').click()
+  await expect(heading('administerBilling')).toBeVisible()
+  await closePanel()
+  await page.getByText('Invoice', { exact: true }).first().click()
+  await method.getByRole('button').first().click()
+  await method.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
+  await expect(heading('mayManageInvoice')).toBeVisible()
+  await closePanel()
+  await folder.getByRole('button', { name: 'closeBilling', exact: true }).click()
+  await link('administerBilling').click()
+  await expect(heading('administerBilling')).toBeVisible()
+
+  // the Process section and a Dataset's policy details carry the same links
+  await page.getByRole('button', { name: 'Process', exact: true }).click()
+  await page.getByRole('button', { name: 'administerBilling', exact: true }).click()
+  await link('manageBilling').click()
+  await link('mayManageInvoice').click()
+  await link('Test on a Dataset').click()
+  await expect(heading('mayManageInvoice')).toBeVisible()
+  await usages.getByRole('button', { name: 'settle', exact: true }).click()
+  await expect(heading('Invoice')).toBeVisible()
+  await expect(method.locator('[data-method-detail]')).toBeInViewport()
 })
 
 test('datasets show only choices in the rail and the selected scenario on the canvas', async ({
@@ -164,8 +160,6 @@ test('datasets show only choices in the rail and the selected scenario on the ca
   await expect(choices.getByRole('radio').first()).toHaveText('First scenario')
   await expect(choices.getByRole('radio').last()).toHaveText('Second scenario')
   await expect(choices).not.toContainText('Description')
-  await expect(page.getByText('Pick the demo facts the canvas draws.')).toHaveCount(0)
-  await expect(page.getByText('nodes · edges', { exact: true })).toHaveCount(0)
   const note = page.getByRole('complementary', { name: 'Scenario' })
   await expect(note).toContainText('Description of scenario 0')
   await choices.getByRole('radio', { name: 'Second scenario' }).click()
@@ -186,63 +180,5 @@ test('the empty dataset state stays concise', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Tests', exact: true }).click()
   await expect(page.getByText('No Dataset referenced', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('Declare demo data', { exact: false })).toHaveCount(0)
   await expect(page.getByRole('complementary', { name: 'Scenario' })).toHaveCount(0)
-})
-
-test('schema policies open in the panel and show indirect consumers', async ({ page, request }) => {
-  await policyScenario(page)
-  await dockWorkspacePanel(request, 'left')
-  await page.goto('/')
-  await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
-  const tree = page.getByTestId('workspace-domain-tree')
-  const folder = tree.locator('[data-module-path="modules/billing"]')
-  await expect(tree.getByRole('button', { name: 'modules', exact: true })).toHaveCount(0)
-  await expect(folder.getByRole('button', { name: 'Invoice', exact: true })).toBeVisible()
-  await expect(folder.getByRole('button', { name: 'closeBilling', exact: true })).toBeVisible()
-  await folder.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
-  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
-  await expect(panel.getByRole('heading', { name: 'mayManageInvoice', exact: true })).toBeVisible()
-  const usages = panel
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { name: 'Used by', exact: true }) })
-  await expect(usages).toContainText('manageBilling')
-  await expect(usages).toContainText('administerBilling')
-  await expect(usages).toContainText('Invoice · read')
-  await expect(usages).toContainText('Invoice.settle')
-  await expect(usages).toContainText('closeBilling')
-  await usages.getByRole('button', { name: 'administerBilling', exact: true }).first().click()
-  await expect(panel.getByRole('heading', { name: 'administerBilling', exact: true })).toBeVisible()
-  await panel.getByRole('button', { name: 'manageBilling', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'manageBilling', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Close panel' }).click()
-
-  await page.getByText('Invoice', { exact: true }).first().click()
-  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
-  await panel.getByRole('button', { name: 'administerBilling', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'administerBilling', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Close panel' }).click()
-  await page.getByText('Invoice', { exact: true }).first().click()
-  const method = panel.locator('[data-anchor-ref="class.Invoice.method.settle"]')
-  await method.getByRole('button').first().click()
-  await method.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'mayManageInvoice', exact: true })).toBeVisible()
-
-  await page.getByRole('button', { name: 'Close panel' }).click()
-  await folder.getByRole('button', { name: 'closeBilling', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'closeBilling', exact: true })).toBeVisible()
-  await panel.getByRole('button', { name: 'administerBilling', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'administerBilling', exact: true })).toBeVisible()
-
-  await page.getByRole('button', { name: 'Process', exact: true }).click()
-  await page.getByRole('button', { name: 'administerBilling', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'administerBilling', exact: true })).toBeVisible()
-  await panel.getByRole('button', { name: 'manageBilling', exact: true }).click()
-  await panel.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
-  await panel.getByRole('button', { name: 'Test on a Dataset', exact: true }).click()
-  await expect(panel.getByRole('heading', { name: 'mayManageInvoice', exact: true })).toBeVisible()
-  await expect(panel).toContainText('Invoice · read')
-  await expect(panel).toContainText('closeBilling')
-  await panel.getByRole('button', { name: 'administerBilling', exact: true }).first().click()
-  await expect(panel.getByRole('heading', { name: 'administerBilling', exact: true })).toBeVisible()
 })

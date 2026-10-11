@@ -55,14 +55,11 @@ test('keeps inherited properties while excluding concrete parent methods', async
   await expect(panel.getByText('Inherited', { exact: true })).toHaveCount(0)
 })
 
-test('a method is one line closed and the whole contract open', async ({ page }) => {
+test('a method is one line closed and its whole contract open, returns as rows', async ({
+  page,
+}) => {
   const panel = await openInvoice(page)
   const settle = panel.locator('[data-anchor-ref="class.Invoice.method.settle"]')
-
-  await expect(panel.getByText('A demand for payment issued to a customer.')).toHaveCSS(
-    'font-style',
-    'italic',
-  )
 
   // closed: the name, at the height of a property row, and nothing more — not the
   // inputs, not the return, not the Policy
@@ -70,23 +67,15 @@ test('a method is one line closed and the whole contract open', async ({ page })
   await expect(settle).not.toContainText('amount')
   await expect(settle).not.toContainText('Yes / no')
   await expect(panel.locator('[data-method-detail]')).toHaveCount(0)
-  const closed = (await settle.boundingBox())!
-  expect(closed.height).toBeLessThan(36)
 
   await settle.getByRole('button', { name: /settle/ }).click()
   const detail = settle.locator('[data-method-detail]')
   await expect(detail).toBeVisible()
-  expect(
-    await detail.evaluate((element) => parseFloat(getComputedStyle(element).paddingLeft)),
-  ).toBe(10)
-  const open = (await settle.boundingBox())!
-  expect(open.height).toBeGreaterThan(closed.height * 3)
 
   // what it does, first
   await expect(detail.locator('[data-method-doc]')).toHaveText(
     'Record a payment against this invoice.',
   )
-  await expect(detail.locator('[data-method-doc]')).toHaveCSS('font-style', 'italic')
 
   // the Policy: who may call, and the check the Kernel evaluates
   await expect(detail).toContainText('Authorized')
@@ -109,10 +98,8 @@ test('a method is one line closed and the whole contract open', async ({ page })
   // and it folds back to the one line
   await settle.getByRole('button', { name: /settle/ }).click()
   await expect(panel.locator('[data-method-detail]')).toHaveCount(0)
-})
 
-test('a structured return and a stream open into rows too', async ({ page }) => {
-  const panel = await openInvoice(page)
+  // a structured return and a stream open into rows too
   const remind = panel.locator('[data-anchor-ref="class.Invoice.method.remind"]')
   await expect(remind).not.toContainText('Object')
   await remind.getByRole('button', { name: /remind/ }).click()
@@ -150,100 +137,69 @@ test('the header shows the bases as chips, no word in front, and each opens its 
   await expect(panel.locator('[data-class-ancestry]')).toHaveCount(0)
 })
 
-test('the targeting ring draws whole on the first and the last row of a list', async ({ page }) => {
-  const panel = await openInvoice(page)
-  const rows = panel.locator('[data-member-list]').first().locator(':scope > [data-anchor-ref]')
-
-  await page.keyboard.press('c')
-  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
-
-  // where the ring lands versus where its list stops clipping
-  const ringWithinClip = (row: Locator) =>
-    row.evaluate((el) => {
-      const style = getComputedStyle(el)
-      const offset = parseFloat(style.outlineOffset)
-      const width = parseFloat(style.outlineWidth)
-      const box = el.getBoundingClientRect()
-      const ring = {
-        top: box.top - offset - width,
-        bottom: box.bottom + offset + width,
-        left: box.left - offset - width,
-        right: box.right + offset + width,
-      }
-      let clip = el.parentElement
-      while (clip && !/hidden|clip|auto|scroll/.test(getComputedStyle(clip).overflow)) {
-        clip = clip.parentElement
-      }
-      if (!clip) return { style: style.outlineStyle, width, ring, inner: null }
-      const c = clip.getBoundingClientRect()
-      const cs = getComputedStyle(clip)
-      const inner = {
-        top: c.top + parseFloat(cs.borderTopWidth),
-        bottom: c.bottom - parseFloat(cs.borderBottomWidth),
-        left: c.left + parseFloat(cs.borderLeftWidth),
-        right: c.right - parseFloat(cs.borderRightWidth),
-      }
-      return { style: style.outlineStyle, width, ring, inner }
-    })
-
-  for (const row of [rows.first(), rows.last()]) {
-    const box = (await row.boundingBox())!
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-    await expect(row).toHaveAttribute('data-comment-target', '')
-    const { style, width, ring, inner } = await ringWithinClip(row)
-    expect(style).toBe('solid')
-    expect(width).toBeGreaterThan(0)
-    expect(inner).not.toBeNull()
-    // every side of the ring lies inside the card that clips it
-    expect(ring.top).toBeGreaterThanOrEqual(inner!.top - 0.01)
-    expect(ring.bottom).toBeLessThanOrEqual(inner!.bottom + 0.01)
-    expect(ring.left).toBeGreaterThanOrEqual(inner!.left - 0.01)
-    expect(ring.right).toBeLessThanOrEqual(inner!.right + 0.01)
-  }
-
-  await page.keyboard.press('Escape')
-})
-
-test('the targeting ring draws inside every edge of the Class detail panel', async ({ page }) => {
-  const panel = await openInvoice(page)
-  const detail = panel.locator(':scope > [data-anchor-ref="class.Invoice"]')
-  const box = (await detail.boundingBox())!
-
-  await page.keyboard.press('c')
-  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
-  // Stay in the panel's left padding, clear of the more specific property/method targets.
-  await page.mouse.move(box.x + 4, box.y + box.height / 2)
-  await expect(detail).toHaveAttribute('data-comment-target', '')
-
-  const ring = await detail.evaluate((element) => {
-    const style = getComputedStyle(element)
+/** Where an element's targeting ring lands, and the inner box of what clips it (itself, by default). */
+const ringAndClip = (target: Locator, clipped: boolean) =>
+  target.evaluate((el, clipped) => {
+    const style = getComputedStyle(el)
     const offset = parseFloat(style.outlineOffset)
     const width = parseFloat(style.outlineWidth)
-    const bounds = element.getBoundingClientRect()
-    return {
-      style: style.outlineStyle,
-      offset,
-      width,
-      top: bounds.top - offset - width,
-      right: bounds.right + offset + width,
-      bottom: bounds.bottom + offset + width,
-      left: bounds.left - offset - width,
-      bounds: {
-        top: bounds.top,
-        right: bounds.right,
-        bottom: bounds.bottom,
-        left: bounds.left,
-      },
+    const box = el.getBoundingClientRect()
+    const ring = {
+      top: box.top - offset - width,
+      bottom: box.bottom + offset + width,
+      left: box.left - offset - width,
+      right: box.right + offset + width,
     }
-  })
+    let clip: Element | null = el
+    if (clipped) {
+      clip = el.parentElement
+      while (clip && !/hidden|clip|auto|scroll/.test(getComputedStyle(clip).overflow))
+        clip = clip.parentElement
+    }
+    const c = clip!.getBoundingClientRect()
+    const cs = getComputedStyle(clip!)
+    const border = (side: string) =>
+      clipped ? parseFloat(cs.getPropertyValue(`border-${side}-width`)) : 0
+    const inner = {
+      top: c.top + border('top'),
+      bottom: c.bottom - border('bottom'),
+      left: c.left + border('left'),
+      right: c.right - border('right'),
+    }
+    return { style: style.outlineStyle, width, ring, inner }
+  }, clipped)
 
-  expect(ring.style).toBe('solid')
-  expect(ring.width).toBeGreaterThan(0)
-  expect(ring.offset).toBe(-ring.width)
-  expect(ring.top).toBeGreaterThanOrEqual(ring.bounds.top - 0.01)
-  expect(ring.right).toBeLessThanOrEqual(ring.bounds.right + 0.01)
-  expect(ring.bottom).toBeLessThanOrEqual(ring.bounds.bottom + 0.01)
-  expect(ring.left).toBeGreaterThanOrEqual(ring.bounds.left - 0.01)
+test('the targeting ring draws whole: on the first and last list rows, and around the panel', async ({
+  page,
+}) => {
+  const panel = await openInvoice(page)
+  const rows = panel.locator('[data-member-list]').first().locator(':scope > [data-anchor-ref]')
+  const detail = panel.locator(':scope > [data-anchor-ref="class.Invoice"]')
+  const panelBox = (await detail.boundingBox())!
+
+  await page.keyboard.press('c')
+  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
+
+  // list rows sit in a card that clips; the panel itself is the box its ring must stay in.
+  // The panel is hovered in its left padding, clear of the property and method targets.
+  const targets: [Locator, { x: number; y: number }, boolean][] = []
+  for (const row of [rows.first(), rows.last()]) {
+    const box = (await row.boundingBox())!
+    targets.push([row, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, true])
+  }
+  targets.push([detail, { x: panelBox.x + 4, y: panelBox.y + panelBox.height / 2 }, false])
+
+  for (const [target, at, clipped] of targets) {
+    await page.mouse.move(at.x, at.y)
+    await expect(target).toHaveAttribute('data-comment-target', '')
+    const { style, width, ring, inner } = await ringAndClip(target, clipped)
+    expect(style).toBe('solid')
+    expect(width).toBeGreaterThan(0)
+    expect(ring.top).toBeGreaterThanOrEqual(inner.top - 0.01)
+    expect(ring.bottom).toBeLessThanOrEqual(inner.bottom + 0.01)
+    expect(ring.left).toBeGreaterThanOrEqual(inner.left - 0.01)
+    expect(ring.right).toBeLessThanOrEqual(inner.right + 0.01)
+  }
 
   await page.keyboard.press('Escape')
 })

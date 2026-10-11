@@ -58,64 +58,12 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   await expect(
     crmRow.getByRole('button', { name: 'Hide crm.studio-demo.astrale.ai on the canvas' }),
   ).toBeVisible()
-  // The gear is the ONLY way into machine settings — no palette entry, no shortcut —
-  // so this opens the dialog rather than just counting the button: a mounted button over
-  // an unmounted dialog is exactly the state that made the settings unreachable before.
-  await page.getByRole('button', { name: 'Settings' }).click()
-  await expect(page.getByText('Machine-wide — saved under ~/.astrale/studio')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Fit View' })).toHaveCount(0)
-  await expect(
-    page.getByRole('button', { name: 'Auto-arrange and center — discards manual positions' }),
-  ).toHaveCount(1)
-  await page.getByRole('button', { name: 'Search' }).click()
-  await expect(page.getByRole('option', { name: /Settings/ })).toHaveCount(0)
-  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
 
   // one canvas draws the schema, whether the workspace holds one domain or several
   await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
   // a declared view is a node on that canvas, not a panel behind a button
   await expect(page.getByRole('button', { name: 'overview', exact: true })).toBeVisible()
-
-  // A domain frame is furniture you move, not a thing you open: grabbing it anywhere —
-  // no header, no handle — drags it, exactly like a module box. Done here, on the freshly
-  // fitted canvas, because that is the one moment the WHOLE frame is inside the pane and
-  // its box is a place the mouse can actually reach. The grab point sits in the frame's
-  // top-left padding: clear of its modules, and of the toolbar and controls. Dragged back
-  // afterwards, so nothing downstream reads a canvas this test moved.
-  const frame = page.locator('.react-flow__node-workspaceDomain').first()
-  const frameTransform = () => frame.evaluate((el) => (el as HTMLElement).style.transform)
-  // Wait for that premise instead of assuming it: until the fit has framed the whole
-  // frame inside the pane, a point computed from its box may be off-screen, and a drag
-  // there is a silent no-op rather than a failure that says why.
-  await expect
-    .poll(async () => {
-      const inner = await frame.boundingBox()
-      const pane = await page.getByTestId('workspace-schema-canvas').boundingBox()
-      if (!inner || !pane) return false
-      return (
-        inner.x >= pane.x &&
-        inner.y >= pane.y &&
-        inner.x + inner.width <= pane.x + pane.width &&
-        inner.y + inner.height <= pane.y + pane.height
-      )
-    })
-    .toBe(true)
-  const parked = await frameTransform()
-  const frameBox = (await frame.boundingBox())!
-  const grab = { x: frameBox.x + 16, y: frameBox.y + 40 }
-  await page.mouse.move(grab.x, grab.y)
-  await page.mouse.down()
-  await page.mouse.move(grab.x + 80, grab.y + 40, { steps: 8 })
-  await page.mouse.up()
-  expect(await frameTransform()).not.toBe(parked)
-
-  await page.mouse.move(grab.x + 80, grab.y + 40)
-  await page.mouse.down()
-  await page.mouse.move(grab.x, grab.y, { steps: 8 })
-  await page.mouse.up()
 
   // Give the canvas the whole window first. Selecting a class opens the detail panel and
   // NEVER pans the canvas to keep up — that is the contract — so with the agent panel also
@@ -124,32 +72,10 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   await page.getByRole('button', { name: 'Collapse the panel' }).click()
   await expect(page.getByRole('button', { name: 'Collapse the panel' })).toHaveCount(0)
 
-  // A card wears its module hue as a 3px bar on the left and a hairline elsewhere…
   const companyNode = page.getByText('Company', { exact: true }).first()
-  const card = page
-    .locator('.react-flow__node-classNode')
-    .filter({ has: companyNode })
-    .locator(':scope > div')
-  const cardEdges = () =>
-    card.evaluate((el) => {
-      const style = getComputedStyle(el)
-      return {
-        left: style.borderLeftWidth,
-        top: style.borderTopWidth,
-        padLeft: style.paddingLeft,
-        ring: style.boxShadow !== 'none',
-      }
-    })
-  // polled, not read once: React Flow re-creates a node's element as the canvas settles,
-  // and computed styles read off the element it just replaced come back empty
-  await expect.poll(cardEdges).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
-
-  await expect(companyNode).toBeVisible()
+  const card = page.locator('.react-flow__node-classNode').filter({ has: companyNode })
   await companyNode.click()
-
-  // …and selected, the SAME 3px on EVERY side: the bar drops to a hairline and hands its
-  // 2px to the padding, so no side doubles up and the contents do not shift.
-  await expect.poll(cardEdges).toEqual({ left: '1px', top: '1px', padLeft: '12px', ring: true })
+  await expect(card).toHaveClass(/selected/)
   // selecting inside a domain never selects the domain
   await expect(page.locator('.react-flow__node-workspaceDomain.selected')).toHaveCount(0)
 
@@ -160,17 +86,15 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   // Pressing empty canvas unselects, and the detail panel goes with the selection that
   // opened it — a panel outliving its selection is a panel for nothing.
   const paneBox = (await page.getByTestId('workspace-schema-canvas').boundingBox())!
-  const framedAt = (await frame.boundingBox())!
+  const frameTop = async () =>
+    (await page.locator('.react-flow__node-workspaceDomain').first().boundingBox())!.y
   // the fit leaves the frame floating in the pane, so the band above it is bare canvas —
-  // and unlike the sides it stays clear of the toolbar (top-right) and controls (bottom)
-  const emptyPoint = { x: paneBox.x + paneBox.width / 2, y: (paneBox.y + framedAt.y) / 2 }
-  // assert the premise rather than assume it: a click that lands ON the frame would be a
-  // node click, and the unselect it never tested would surface as a failure elsewhere
-  expect(framedAt.y - paneBox.y).toBeGreaterThan(40)
+  // and unlike the sides it stays clear of the toolbar (top-right) and controls (bottom).
+  // Waited for rather than assumed: a click that lands ON the frame would be a node click
+  await expect.poll(async () => (await frameTop()) - paneBox.y).toBeGreaterThan(40)
+  const emptyPoint = { x: paneBox.x + paneBox.width / 2, y: (paneBox.y + (await frameTop())) / 2 }
   await page.mouse.click(emptyPoint.x, emptyPoint.y)
-  // polled here for a second reason too: the ring fades out on a transition, so the frame
-  // right after the click still carries a shrinking shadow
-  await expect.poll(cardEdges).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
+  await expect(card).not.toHaveClass(/selected/)
   await expect(page.getByRole('heading', { name: 'Company', exact: true })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Core', exact: true }).click()

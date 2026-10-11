@@ -1,5 +1,4 @@
-import { PEER_ID } from './test'
-import { expect, test } from './test'
+import { expect, test, PEER_ID } from './test'
 
 test('Ask and comments keep the owning domain for a homonymous workspace node', async ({
   page,

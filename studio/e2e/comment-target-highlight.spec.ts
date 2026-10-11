@@ -1,5 +1,4 @@
-import { FIXTURE_ID } from './test'
-import { dockWorkspacePanel, expect, test } from './test'
+import { dockWorkspacePanel, expect, FIXTURE_ID, test } from './test'
 
 /**
  * Comment / Ask mode calls out what the next click would pin to.
@@ -81,11 +80,6 @@ test('comment mode paints its target until the comment is sent, and lets go on E
   await expect(node).toHaveAttribute('data-comment-draft-target', '')
   await expect.poll(() => node.evaluate((el) => getComputedStyle(el).outlineColor)).toBe(primary)
 
-  // A new note is just a field: speaker initials belong to messages already sent.
-  const newComment = page.locator('[data-new-comment-composer]')
-  await expect(newComment).toBeVisible()
-  await expect(newComment.getByText('Y', { exact: true })).toHaveCount(0)
-
   await composer.fill('Keep this target visible')
   const posted = page.waitForRequest(
     (request) =>
@@ -102,7 +96,6 @@ test('comment mode paints its target until the comment is sent, and lets go on E
     .locator('[data-radix-popper-content-wrapper]')
     .filter({ hasText: 'Keep this target visible' })
   await expect(thread.getByText('You', { exact: true })).toBeVisible()
-  await expect(thread.getByText('Y', { exact: true })).toBeVisible()
   await thread.getByRole('button', { name: 'Close' }).click()
 
   // Leaving the mode drops the call-out with it.

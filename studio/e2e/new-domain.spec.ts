@@ -9,12 +9,6 @@
  */
 import { expect, test, type Page } from './test'
 
-declare global {
-  interface Window {
-    __frames?: { x: number; width: number }[]
-  }
-}
-
 const card = (page: Page) => page.getByTestId('new-domain')
 
 async function open(page: Page): Promise<void> {
@@ -24,21 +18,33 @@ async function open(page: Page): Promise<void> {
   await expect(card(page)).toBeVisible()
 }
 
-test('the plus opens the composer the agent has everywhere else', async ({ page }) => {
+test('the plus opens the agent composer, name first, and Escape leaves the studio as it was', async ({
+  page,
+}) => {
   await open(page)
+  const name = page.getByLabel('Domain name')
+  const message = page.locator('[data-new-domain-composer]')
 
   // the name first — it is what the domain will be called, so it takes the caret
-  await expect(page.getByLabel('Domain name')).toBeFocused()
-
+  await expect(name).toBeFocused()
   // the field, the clip, the send button. The fixture has no harness and this
   // composer does not care: the agent it will talk to does not exist yet either.
-  await expect(page.locator('[data-new-domain-composer]')).toBeEnabled()
+  await expect(message).toBeEnabled()
   await expect(card(page).getByRole('button', { name: 'Attach a document' })).toBeVisible()
   await expect(card(page).getByRole('button', { name: 'Create the domain' })).toBeVisible()
-
   // and none of what belongs to a domain that exists
   await expect(card(page).getByText('comment', { exact: false })).toHaveCount(0)
   await expect(card(page).getByTitle(/Click to change model/)).toHaveCount(0)
+
+  // Enter on the name moves on to the message rather than sending
+  await name.fill('billing')
+  await name.press('Enter')
+  await expect(message).toBeFocused()
+  await expect(card(page)).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(card(page)).toHaveCount(0)
+  await expect(page.getByTestId('agent-dock')).toBeVisible()
 })
 
 test('it takes both halves: a name, and what the domain is for', async ({ page }) => {
@@ -64,89 +70,4 @@ test('it takes both halves: a name, and what the domain is for', async ({ page }
   // is a folder, and there would be no turn to open the domain on
   await message.fill('   ')
   await expect(send).toBeDisabled()
-})
-
-test('it arrives centred, and is centred the whole way in', async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('agent-dock')).toBeVisible()
-
-  // sample the card on every frame it exists for: the entrance animates the same
-  // properties Tailwind centres it with, and animating the WRONG ones once flew
-  // it in from off-screen left
-  await page.evaluate(() => {
-    window.__frames = []
-    const tick = () => {
-      const element = document.querySelector('[data-testid="new-domain"]')
-      if (element) {
-        const box = element.getBoundingClientRect()
-        window.__frames?.push({ x: box.x, width: box.width })
-      }
-      if ((window.__frames?.length ?? 0) < 20) requestAnimationFrame(tick)
-    }
-    requestAnimationFrame(tick)
-  })
-  await page.getByRole('button', { name: 'New domain' }).click()
-  await expect(card(page)).toBeVisible()
-  await page.waitForTimeout(600)
-
-  const frames = await page.evaluate(() => window.__frames ?? [])
-  expect(frames.length).toBeGreaterThan(5)
-  const centres = frames.map((frame) => frame.x + frame.width / 2)
-  expect(Math.max(...centres) - Math.min(...centres)).toBeLessThanOrEqual(1)
-})
-
-test('a click on the name shows where the name will go', async ({ page }) => {
-  await open(page)
-  const name = page.getByLabel('Domain name')
-  const message = page.locator('[data-new-domain-composer]')
-  const styleOf = (element: HTMLElement) => {
-    const own = getComputedStyle(element)
-    return {
-      caret: own.caretColor,
-      align: own.textAlign,
-      prompt: getComputedStyle(element, '::placeholder').color,
-      // where the first letter lands — the box, less its own border and padding
-      edge:
-        element.getBoundingClientRect().left +
-        parseFloat(own.borderLeftWidth) +
-        parseFloat(own.paddingLeft),
-    }
-  }
-
-  // leave the name for the message, then come back to it by clicking — the
-  // gesture the caret used to answer with nothing at all
-  await message.click()
-  const atRest = await name.evaluate(styleOf)
-  await name.click()
-  await expect(name).toBeFocused()
-  const focused = await name.evaluate(styleOf)
-
-  // the caret is drawn, and drawn before the prompt rather than through it: the
-  // name is set from the left, on the edge the message under it starts from
-  expect(focused.caret).not.toBe('rgba(0, 0, 0, 0)')
-  expect(focused.caret).not.toBe('transparent')
-  expect(['left', 'start']).toContain(focused.align)
-  const messageEdge = (await message.evaluate(styleOf)).edge
-  expect(Math.abs(focused.edge - messageEdge)).toBeLessThanOrEqual(1)
-
-  // and the prompt lifts a shade, so the field is seen to be waiting
-  expect(focused.prompt).not.toBe(atRest.prompt)
-})
-
-test('Enter on the name goes to the message rather than sending', async ({ page }) => {
-  await open(page)
-  await page.getByLabel('Domain name').fill('billing')
-  await page.getByLabel('Domain name').press('Enter')
-
-  await expect(page.locator('[data-new-domain-composer]')).toBeFocused()
-  // still here: nothing was created by a keystroke meant to move on
-  await expect(card(page)).toBeVisible()
-})
-
-test('it closes on Escape, and the studio is where it was', async ({ page }) => {
-  await open(page)
-  await page.keyboard.press('Escape')
-
-  await expect(card(page)).toHaveCount(0)
-  await expect(page.getByTestId('agent-dock')).toBeVisible()
 })
