@@ -15,9 +15,9 @@ import {
   type ExecutionReceipt,
 } from '../connection/execution'
 import { AstraleError } from '../errors'
-import { failInput } from '../lib/log'
+import { failInput } from '../lib/terminal/log'
 import { parseParams } from './call'
-import { resolveCallableFromBundle } from './call-describe'
+import { resolveCallableFromBundle } from './introspect'
 
 type ExecutionOptions = KernelCommandOpts & { data?: string; waitMs?: string }
 

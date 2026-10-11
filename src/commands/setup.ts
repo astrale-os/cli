@@ -1,9 +1,10 @@
 import type { CommandDefinition } from '../program/index'
+import type { SetupOpts } from '../setup/types'
 
-import { ADMIN_TARGET_OPTIONS } from '../lib/admin-target'
-import { fatal } from '../lib/log'
-import { RAW_OUTPUT_OPTIONS } from '../lib/output'
-import { runSetup, type SetupOpts } from '../setup/engine'
+import { ADMIN_TARGET_OPTIONS } from '../lib/admin/target'
+import { fatal } from '../lib/terminal/log'
+import { RAW_OUTPUT_OPTIONS } from '../lib/terminal/output'
+import { runSetup } from '../setup/engine'
 
 export default {
   name: 'setup',

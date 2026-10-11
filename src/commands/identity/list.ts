@@ -1,11 +1,11 @@
 import chalk from 'chalk'
 
-import type { ListOpts, ListProjection } from '../../lib/output'
+import type { ListOpts, ListProjection } from '../../lib/terminal/output'
 import type { CommandDefinition } from '../../program/index'
 
 import { readIdentities } from '../../identity/index'
-import { log } from '../../lib/log'
-import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { log } from '../../lib/terminal/log'
+import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 
 type IdentityRow = {
   name: string

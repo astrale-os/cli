@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import type { StaleReport, ViewInfo } from '../shared/types'
 
-import { studioActiveInstanceName } from '../../src/lib/view/studio-runtime'
+import { studioActiveInstanceName } from '../../src/commands/studio-views'
 import { STUDIO_CLI_DESCRIPTOR_ENV } from './cli'
 import { listInstances, setActiveInstance } from './instances/active'
 import { clearViewPreparations, rememberViewPreparation } from './views/preparation'

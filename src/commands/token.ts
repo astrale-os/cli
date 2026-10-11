@@ -6,14 +6,14 @@ import type { CommandDefinition } from '../program/index'
 import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
 import { decodeJwtExpiration } from '../lib/local-status'
-import { failInput, log } from '../lib/log'
-import { output } from '../lib/output'
+import { failInput, log } from '../lib/terminal/log'
+import { output } from '../lib/terminal/output'
 
 /**
  * `astrale token` — mint a fresh audience-bound token for the active instance
  * and selected identity through the bound AuthApi.
  */
-export type TokenOpts = KernelCommandOpts & {
+type TokenOpts = KernelCommandOpts & {
   audience?: string
   ttl?: string
   // `--for <identity>` is an alias of `--as` (reads better at mint-time).
@@ -23,7 +23,7 @@ export type TokenOpts = KernelCommandOpts & {
 
 const DEFAULT_TOKEN_TTL_SECONDS = 4 * 60
 
-export interface TokenCommandDependencies {
+interface TokenCommandDependencies {
   readonly runKernelCommand: typeof runKernelCommand
 }
 
@@ -65,7 +65,7 @@ export async function tokenCommand(
 }
 
 /** Preserve the selected caller and enough parent lifetime for the requested token. */
-export function tokenCredentialIntent(ttlSeconds: number): CredentialIntent {
+function tokenCredentialIntent(ttlSeconds: number): CredentialIntent {
   return Object.freeze({ principal: 'caller', nestedTtlSeconds: ttlSeconds })
 }
 

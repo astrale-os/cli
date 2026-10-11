@@ -14,7 +14,7 @@ afterEach(async () => {
 })
 
 describe('view development runtime build', () => {
-  test('reuses a current official build and detects every runtime build input', async () => {
+  test('requires a build when dist is missing or older than any runtime build input', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-view-build-'))
     temporaryDirectories.push(root)
     const entry = join(root, 'bin', 'astrale.ts')
@@ -24,6 +24,8 @@ describe('view development runtime build', () => {
     const packageJson = join(root, 'package.json')
     const lockfile = join(root, 'pnpm-lock.yaml')
     const dist = join(root, 'dist', 'astrale.js')
+
+    expect(await devDistIsStale(entry, dist)).toBe(true)
 
     await Promise.all(
       ['bin', 'src', 'vendor', 'scripts', 'dist'].map((directory) =>
@@ -45,14 +47,5 @@ describe('view development runtime build', () => {
       expect(await devDistIsStale(entry, dist)).toBe(true)
       await utimes(input, past, past)
     }
-  })
-
-  test('requires a build when dist/astrale.js is missing', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-view-build-missing-'))
-    temporaryDirectories.push(root)
-
-    expect(
-      await devDistIsStale(join(root, 'bin', 'astrale.ts'), join(root, 'dist', 'astrale.js')),
-    ).toBe(true)
   })
 })

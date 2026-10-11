@@ -1,10 +1,10 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activate-account'
-import { type IdpSession } from '../../lib/idp'
-import { log } from '../../lib/log'
-import { loginViaIdp, type LoginFlowOpts } from '../../lib/login-flow'
-import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/admin/activation'
+import { loginViaIdp, type LoginFlowOpts } from '../../lib/idp/login'
+import { type IdpSession } from '../../lib/idp/provider'
+import { log } from '../../lib/terminal/log'
+import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 
 type LoginOpts = LoginFlowOpts & {
   device?: boolean

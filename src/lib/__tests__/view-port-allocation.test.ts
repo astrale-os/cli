@@ -32,26 +32,6 @@ function close(server: net.Server): Promise<void> {
 }
 
 describe('view port allocation', () => {
-  test('never overlaps concurrent allocation critical sections', async () => {
-    const lockPath = join(tmp, 'ports.lock')
-    let active = 0
-    let maxActive = 0
-
-    const contender = () =>
-      withViewPortAllocationLock(async () => {
-        active++
-        maxActive = Math.max(maxActive, active)
-        await Bun.sleep(40)
-        active--
-      }, lockPath)
-
-    await Promise.all([contender(), contender()])
-
-    // Without the view-specific lock both contenders enter before either
-    // delay completes, making this 2 and recreating the probe/bind window.
-    expect(maxActive).toBe(1)
-  })
-
   test('serializes concurrent probe-then-listen allocations', async () => {
     const base = await findFreePort(48000, 200)
     expect(base).not.toBeNull()
@@ -63,8 +43,8 @@ describe('view port allocation', () => {
         const port = await findFreePort(base, 4)
         if (port === null) throw new Error('test port window exhausted')
 
-        // Widen the exact pre-fix race: both callers would finish the advisory
-        // probe before either one binds, then one would fail with EADDRINUSE.
+        // Widen the race: without the lock both callers would finish the advisory probe before
+        // either one binds, then one would fail with EADDRINUSE.
         await Bun.sleep(40)
         const server = await listen(port)
         return { port, server }

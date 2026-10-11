@@ -1,43 +1,22 @@
 import { expect, test } from 'bun:test'
 import { once } from 'node:events'
-import { createServer, get, type RequestListener, type Server } from 'node:http'
-
-import type { ViewServeConfig } from '../view/session'
+import { createServer, get, type RequestListener } from 'node:http'
 
 import { startViewServer } from '../view/server'
+import { address, viewConfig } from './view.fixture'
 
 async function proxy(origin: RequestListener) {
   const upstream = createServer(origin)
   upstream.listen(0, '127.0.0.1')
   await once(upstream, 'listening')
   const url = address(upstream)
-  const server = startViewServer({
-    session: {
-      id: 'v-proxy',
-      pid: 0,
-      port: 0,
-      nonce: 'proxy',
-      pageUrl: '',
-      createdAt: '',
-      view: {
-        target: '/:example.test' as ViewServeConfig['session']['view']['target'],
-        route: {
-          key: 'example.test:view.public',
-          href: 'https://example.test/view',
-          handshake: 'none',
-          issuer: 'https://example.test' as ViewServeConfig['session']['view']['route']['issuer'],
-          release: `sha256:${'a'.repeat(64)}`,
-          revision:
-            `sha256:${'b'.repeat(64)}` as ViewServeConfig['session']['view']['route']['revision'],
-          declaration: { target: { kind: 'domain' } },
-        },
-      },
-    },
-    kernel: {},
-    proxy: { kernelUrl: url, issuer: url, direct: false },
-    externalOrigins: [],
-    idleMs: 120_000,
-  })
+  const server = startViewServer(
+    viewConfig('proxy', {
+      handshake: 'none',
+      kernel: {},
+      proxy: { kernelUrl: url, issuer: url, direct: false },
+    }),
+  )
   await once(server, 'listening')
   return {
     url: `${address(server)}/s/proxy/k`,
@@ -48,12 +27,6 @@ async function proxy(origin: RequestListener) {
       }
     },
   }
-}
-
-function address(server: Server): string {
-  const value = server.address()
-  if (value === null || typeof value === 'string') throw new Error('Missing HTTP address')
-  return `http://127.0.0.1:${value.port}`
 }
 
 async function within(promise: Promise<unknown>): Promise<void> {

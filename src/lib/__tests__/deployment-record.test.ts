@@ -5,7 +5,7 @@ import {
   DEPLOYMENT_RECORD_MEDIA_TYPE,
   deploymentLabelOf,
   readDeploymentRecord,
-} from '../deployment-record'
+} from '../deployment/record'
 
 const RELEASE = `sha256:${'1'.repeat(64)}` as const
 const BUILD = `sha256:${'2'.repeat(64)}` as const

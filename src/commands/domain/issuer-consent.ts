@@ -3,13 +3,13 @@ import type { InstalledRelease } from '@astrale-os/sdk/client/schema'
 import { parseDeploymentLabel } from '@astrale-os/sdk/deployment/address'
 import chalk from 'chalk'
 
-import type { ServedDeployment } from '../../lib/domain-release'
+import type { ServedDeployment } from '../../lib/deployment/release'
 
 import { AstraleError } from '../../errors'
-import { canPrompt, type PromptGate } from '../../lib/interactive'
-import { log } from '../../lib/log'
-import { dangerPanel } from '../../lib/panel'
-import { confirmWithInput } from '../../lib/prompt'
+import { canPrompt, type PromptGate } from '../../lib/terminal/interactive'
+import { log } from '../../lib/terminal/log'
+import { dangerPanel } from '../../lib/terminal/panel'
+import { confirmWithInput } from '../../lib/terminal/prompt'
 
 /**
  * An issuer change is never silent (D7): the operator consents to it, and the Kernel records the
@@ -17,7 +17,7 @@ import { confirmWithInput } from '../../lib/prompt'
  * installed issuer belongs to, under the same routing domain; any other change, the move from a
  * legacy issuer to a first v4 deployment included, is `cross`-line (AM-19).
  */
-export type IssuerChangeLine = 'same' | 'cross'
+type IssuerChangeLine = 'same' | 'cross'
 
 /** The issuer-change consent an install command was given. */
 export interface IssuerChangeConsent {
@@ -28,12 +28,6 @@ export interface IssuerChangeConsent {
   /** `--revoke-previous`: cut the replaced issuer at the activation instead of draining it. */
   readonly revokePrevious: boolean
 }
-
-export const NO_ISSUER_CHANGE_CONSENT: IssuerChangeConsent = Object.freeze({
-  sameLine: false,
-  origins: Object.freeze([]),
-  revokePrevious: false,
-})
 
 /**
  * The consent of the `--allow-issuer-change` occurrences (`''` for one written without an origin)
@@ -68,7 +62,7 @@ export function issuerChangeConsent(
 }
 
 /** The deployment line an address belongs to: its scheme, its routing domain and its line. */
-export interface DeploymentLineAddress {
+interface DeploymentLineAddress {
   readonly scheme: string
   readonly routingDomain: string
   readonly line: string
@@ -80,7 +74,7 @@ export interface DeploymentLineAddress {
  * as a stable Worker host included. The port is not part of the line: a routing domain is a DNS
  * name, and Services gives one author each line prefix under it.
  */
-export function deploymentLineOf(address: string): DeploymentLineAddress | undefined {
+function deploymentLineOf(address: string): DeploymentLineAddress | undefined {
   let url: URL
   try {
     url = new URL(address)
@@ -165,13 +159,13 @@ export function issuerConsentRequest(
 }
 
 /** Whether the flags consent: a same-line change by either form, any other only by its origin. */
-export function consentedByFlags(change: IssuerChange, consent: IssuerChangeConsent): boolean {
+function consentedByFlags(change: IssuerChange, consent: IssuerChangeConsent): boolean {
   if (consent.origins.includes(change.origin)) return true
   return change.line === 'same' && consent.sameLine
 }
 
 /** One change ISSUER_CHANGE_NOT_CONSENTED names (CT24): the installed and the replacement issuer. */
-export interface UnconsentedIssuerChange {
+interface UnconsentedIssuerChange {
   readonly origin: string
   readonly installed: string
   readonly replacement: string
@@ -182,7 +176,7 @@ export interface UnconsentedIssuerChange {
  * The issuer changes of one install that neither a flag nor the operator's confirmation consented
  * to, all of them at once (CT24 `details.origins`), refused before any install is sent.
  */
-export class IssuerChangeNotConsentedError extends AstraleError {
+class IssuerChangeNotConsentedError extends AstraleError {
   constructor(changes: readonly [IssuerChange, ...IssuerChange[]]) {
     const [first] = changes
     const kind = (change: IssuerChange) =>

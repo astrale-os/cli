@@ -1,16 +1,20 @@
 import chalk from 'chalk'
 
-import type { InstanceInfo } from '../../lib/admin-instance'
+import type { InstanceInfo } from '../../admin/instance'
 import type { SetupContext, SetupStep } from '../types'
 
 import { AstraleError } from '../../errors'
-import { listOwnedInstancesWithIdentity } from '../../lib/admin-instance'
-import { normalizeInstanceKernelUrl, setActive, upsertManagedBookmark } from '../../lib/instance'
+import { listOwnedInstancesWithIdentity } from '../../lib/admin/instances'
+import {
+  normalizeInstanceKernelUrl,
+  setActive,
+  upsertManagedBookmark,
+} from '../../lib/instance/bookmarks'
+import { provisionInstance, type ProvisionResult } from '../../lib/instance/provision'
 import { readLocalStatus } from '../../lib/local-status'
-import { log, withSpinner } from '../../lib/log'
-import { renderInstanceHero } from '../../lib/panel'
-import { confirmDefaultYes, promptText, selectFrom } from '../../lib/prompt'
-import { provisionInstance, type ProvisionResult } from '../../lib/provision-instance'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { renderInstanceHero } from '../../lib/terminal/panel'
+import { confirmDefaultYes, promptText, selectFrom } from '../../lib/terminal/prompt'
 import { guiOrigin, slugError } from '../util'
 
 export type InstanceSetupDependencies = {
@@ -25,7 +29,7 @@ export type InstanceSetupDependencies = {
   provision: (slug: string) => Promise<ProvisionResult>
 }
 
-export type OwnedInstanceAdoptionDependencies = {
+type OwnedInstanceAdoptionDependencies = {
   upsert: typeof upsertManagedBookmark
   activate: (slug: string) => Promise<unknown>
 }

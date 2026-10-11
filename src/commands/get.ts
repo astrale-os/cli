@@ -5,8 +5,8 @@ import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
 import { AstraleError } from '../errors'
-import { failInput, fatal } from '../lib/log'
-import { denoise, output } from '../lib/output'
+import { failInput, fatal } from '../lib/terminal/log'
+import { denoise, output } from '../lib/terminal/output'
 
 type GetOpts = KernelCommandOpts & { schema?: boolean }
 

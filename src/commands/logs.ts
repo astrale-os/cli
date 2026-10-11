@@ -4,13 +4,14 @@ import chalk from 'chalk'
 import { z } from 'zod'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'
-import type { Column, ListProjection } from '../lib/output'
+import type { ListProjection } from '../lib/terminal/output'
+import type { Column } from '../lib/terminal/table'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInPath, runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
-import { failInput, log } from '../lib/log'
-import { isMachine, output, presentList } from '../lib/output'
+import { failInput, log } from '../lib/terminal/log'
+import { isMachine, output, presentList } from '../lib/terminal/output'
 
 const JOURNAL_PATH = Path.project(K.functions.journal.ref).raw
 const DEFAULT_LIMIT = 200
@@ -28,7 +29,7 @@ type LogsOpts = KernelCommandOpts & {
   follow?: boolean
 }
 
-export interface JournalRecord {
+interface JournalRecord {
   readonly sequence: number
   readonly topic: string
   readonly payload: unknown
@@ -44,7 +45,7 @@ export interface JournalRecord {
   readonly correlation?: JournalCorrelation
 }
 
-export interface JournalCorrelation {
+interface JournalCorrelation {
   readonly operationId?: string
   readonly parentOperationId?: string
   readonly invocationId?: string
@@ -55,7 +56,7 @@ export interface JournalCorrelation {
 }
 
 /** Journal generation and positions at the time of the read. `id` changes when the journal is recreated. */
-export interface JournalFrontier {
+interface JournalFrontier {
   readonly id: string
   readonly first?: number
   readonly committed: number
@@ -63,7 +64,7 @@ export interface JournalFrontier {
 }
 
 /** Records the reader can no longer receive, or a cursor the Kernel refused. Never an ordinary empty page. */
-export type JournalGap =
+type JournalGap =
   | { readonly kind: 'retention'; readonly frontier: JournalFrontier }
   | {
       readonly kind: 'recovery'
@@ -75,14 +76,14 @@ export type JournalGap =
   | { readonly kind: 'cursor'; readonly reason: 'stale' | 'selection' | 'visibility' }
 
 /** A page without a cursor reached the end of the selection. */
-export interface JournalPage {
+interface JournalPage {
   readonly records: readonly JournalRecord[]
   readonly cursor?: string
   readonly frontier?: JournalFrontier
   readonly gap?: JournalGap
 }
 
-export interface JournalInput {
+interface JournalInput {
   readonly topics?: { readonly exact?: readonly string[]; readonly prefixes?: readonly string[] }
   readonly principal?: string
   readonly since?: string
@@ -161,7 +162,7 @@ export function acceptJournalPage(input: unknown): JournalPage {
 }
 
 /** One sentence naming what the reader lost or why its cursor was refused. */
-export function describeJournalGap(gap: JournalGap): string {
+function describeJournalGap(gap: JournalGap): string {
   switch (gap.kind) {
     case 'retention':
       return gap.frontier.first === undefined
@@ -328,11 +329,11 @@ function printRecord(record: JournalRecord, opts: LogsOpts): void {
 }
 
 /** Machine follow is an NDJSON stream: one complete admitted record per line. */
-export function formatFollowRecord(record: JournalRecord): string {
+function formatFollowRecord(record: JournalRecord): string {
   return `${JSON.stringify(record)}\n`
 }
 
-export function validateLogsOpts(opts: LogsOpts): void {
+function validateLogsOpts(opts: LogsOpts): void {
   buildJournalInput(opts)
   if (opts.follow && opts.format === 'yaml' && !opts.json && !opts.raw) {
     throw new TypeError('--follow does not support YAML; use --json for an NDJSON stream')

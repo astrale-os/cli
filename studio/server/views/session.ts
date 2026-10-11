@@ -1,9 +1,6 @@
 import type { StudioSchemaBundle, ViewInfo, ViewSessionResult } from '../../shared/types'
 
-import {
-  openStudioViewSession,
-  releaseStudioViewSession,
-} from '../../../src/lib/view/studio-runtime'
+import { openStudioViewSession, releaseStudioViewSession } from '../../../src/commands/studio-views'
 import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
 import { assertOrigin } from './model'

@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../../program/index'
 import type { RegistryCommandDependencies, RegistryCommandOpts } from './shared'
 
 import { registryOrigin } from '../../admin/registry'
-import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS } from '../../lib/admin/target'
 import { runRegistryCommand } from './shared'
 
 export async function runClaim(

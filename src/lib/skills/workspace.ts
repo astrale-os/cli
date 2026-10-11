@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readlinkSync, symlinkSync } from 'nod
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { findAgentBrowser } from '../browser'
+import { findAgentBrowser } from '../browser/agent-browser'
 
 export const AGENT_BROWSER_SKILL = 'agent-browser'
 

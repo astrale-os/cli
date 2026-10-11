@@ -15,7 +15,7 @@ import chalk from 'chalk'
 
 import type { AdminRegistryApi } from '../../admin/registry'
 import type { ConnectionContext, KernelCommandOpts } from '../../connection'
-import type { AdminTargetCommandOpts } from '../../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../../lib/admin/target'
 import type { InstallFailure, UrlSource } from './install-call'
 import type {
   DependentProposal,
@@ -26,7 +26,7 @@ import type {
 import type { ResolvedVersion, VersionReference } from './version-reference'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
-import { withAdminClientSession, withClientSession } from '../../connection'
+import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
 import { reasonCode } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
 import {
@@ -35,9 +35,9 @@ import {
   readServedDeployment,
   samePin,
   type ServedDeployment,
-} from '../../lib/domain-release'
-import { fatal, log } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+} from '../../lib/deployment/release'
+import { fatal, log } from '../../lib/terminal/log'
+import { isMachine, output } from '../../lib/terminal/output'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
 import { precheckInstall, proposeDependentVersions } from './install-precheck'
 import {
@@ -65,7 +65,7 @@ import {
  * details, the code it also gives backend failures, so a refused install is never sent again
  * (AM-97).
  */
-export const NOT_YET_ACTIVE_WINDOW_MS = 60_000
+const NOT_YET_ACTIVE_WINDOW_MS = 60_000
 
 export type ReferenceInstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -81,7 +81,7 @@ export type ReferenceInstallOpts = KernelCommandOpts &
   }
 
 /** The pin, revision and issuer of one installation, as the installed listing reports them. */
-export interface InstalledState {
+interface InstalledState {
   readonly revision: string
   readonly pin: InstalledPin
   readonly issuer: string
@@ -92,7 +92,7 @@ export interface InstalledState {
  * issuer that replaced it, and what happens to the replaced one (the Kernel default, `drain`, or
  * `revoke` with --revoke-previous).
  */
-export interface ReferenceConsent {
+interface ReferenceConsent {
   readonly from: string
   readonly to: string
   readonly previous: 'drain' | 'revoke'
@@ -108,7 +108,7 @@ export interface ReferenceConsent {
  * the version it resolved to, and carries `yanked: true` when that version is yanked, which only an
  * exact reference installs ([.79339]); a URL reference carries neither.
  */
-export interface InstallReference {
+interface InstallReference {
   readonly reference: string
   readonly origin: string | null
   readonly url: string
@@ -121,7 +121,7 @@ export interface InstallReference {
 }
 
 /** A Kernel refusal of a request whose install had already committed (AM-81). */
-export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
+type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
 
 /**
  * `--json` of an install: the Kernel result, unchanged, plus one entry per reference. When the
@@ -129,7 +129,7 @@ export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION
  * result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
  * refusal, so a consumer can tell it from a Kernel replay.
  */
-export type InstallReport = InstallResult & {
+type InstallReport = InstallResult & {
   readonly references: readonly InstallReference[]
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
   /** The advisory pre-check this install ran before it was sent ([.78239] [.69634]). */
@@ -173,7 +173,7 @@ const defaultDependencies: ReferenceInstallDependencies = Object.freeze({
  * the host serving it. A version reference also carries the Publication it resolved to, whose
  * release the Kernel must find at that URL.
  */
-export interface ReleaseSource extends UrlSource {
+interface ReleaseSource extends UrlSource {
   readonly reference: string
   readonly publication?: ResolvedVersion
 }
@@ -255,7 +255,7 @@ export async function installByReference(
     failure = await deps.withClientSession(
       opts,
       async (context) => {
-        const before = await installedReleases(context.session)
+        const before = await context.session.schema.installed()
         return installReleases(context, sources, before, operation, consent, opts, deps)
       },
       { principal: 'caller' },
@@ -308,37 +308,22 @@ function releaseSources(
 /**
  * The Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
  * configuration), read with the caller's own identity ([.79495]): never the install target that
- * `-i`/`--url` select, and never `--creds`, the raw credential of that target. `open` is the
- * Admin session seam the tests stub.
+ * `-i`/`--url` select, and never `--creds`, the raw credential of that target.
  */
-export function openInstallRegistry<Value>(
+function openInstallRegistry<Value>(
   opts: ReferenceInstallOpts,
   work: (registry: Pick<AdminRegistryApi, 'index'>) => Promise<Value>,
-  open: typeof withAdminClientSession = withAdminClientSession,
 ): Promise<Value> {
-  return open(
-    {
-      ...(opts.admin === undefined ? {} : { admin: opts.admin }),
-      ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
-      ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
-      ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
-      ...(opts.as === undefined ? {} : { as: opts.as }),
-      ...(opts.ci === undefined ? {} : { ci: opts.ci }),
-    },
-    async (context) => work(connectAdminRegistry(context)),
+  return withAdminClientSession(adminSessionOptions(opts), async (context) =>
+    work(connectAdminRegistry(context)),
   )
-}
-
-/** The installed releases the caller can read from the selected Kernel. */
-export function installedReleases(session: ClientSession): Promise<readonly InstalledRelease[]> {
-  return session.schema.installed()
 }
 
 /**
  * One `release` source per reference, guarded by the release digest the reference must serve when
  * one is expected, and carrying the issuer consent of a root whose issuer the install changes.
  */
-export function releaseInstallInput(
+function releaseInstallInput(
   urls: readonly [string, ...string[]],
   expected: readonly (InstalledPin | null)[],
   operation: string,
@@ -390,7 +375,7 @@ function plannedRoots(
 }
 
 /** Join what each root expected with the installed listings read before and after. */
-export function installReferences(
+function installReferences(
   roots: readonly PlannedRoot[],
   before: readonly InstalledRelease[],
   after: readonly InstalledRelease[] | undefined,
@@ -439,7 +424,7 @@ export function installReferences(
  * References whose installation does not pin what the install expected: another document, or the
  * same origin installed from another deployment.
  */
-export function pinMismatches(
+function pinMismatches(
   references: readonly InstallReference[],
   after: readonly InstalledRelease[] | undefined,
 ): readonly InstallReference[] {
@@ -1160,14 +1145,14 @@ function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError
 }
 
 /** What the install did to one root, as the Kernel's result says. */
-export type RootStatus = 'installed' | 'replaced' | 'unchanged' | 'unknown'
+type RootStatus = 'installed' | 'replaced' | 'unchanged' | 'unknown'
 
 /**
  * The status of the root installed from `origin`, read from the Kernel's result alone: a committed
  * transition without a previous generation installed it, one with a previous generation replaced
  * it, and a root without a transition did not move. `unknown` when the origin was not readable.
  */
-export function rootStatus(result: InstallResult, origin: string | null): RootStatus {
+function rootStatus(result: InstallResult, origin: string | null): RootStatus {
   if (!result.changed) return 'unchanged'
   if (origin === null) return 'unknown'
   const intent = result.receipt.transitions.find(
@@ -1232,7 +1217,7 @@ function isAbsentDomain(error: unknown): boolean {
 }
 
 /** The host name a URL reference is served from; any http(s) URL, as before installs were grouped. */
-export function validateInstallUrl(value: string): string {
+function validateInstallUrl(value: string): string {
   let url: URL
   try {
     url = new URL(value)

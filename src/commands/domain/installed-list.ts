@@ -6,14 +6,13 @@ import chalk from 'chalk'
 
 import type { AdminRegistryApi, PublicationSummaryV1 } from '../../admin/registry'
 import type { AdminConnectionOptions, ConnectionContext, KernelCommandOpts } from '../../connection'
-import type { AdminTargetCommandOpts } from '../../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../../lib/admin/target'
 
 import { compareVersions, connectAdminRegistry, RegistryError } from '../../admin/registry'
 import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
 import { mapBounded } from '../../lib/concurrency'
-import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment-record'
-import { renderTable } from '../../lib/table'
-import { installedReleases } from './release-install'
+import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment/record'
+import { renderTable } from '../../lib/terminal/table'
 
 /**
  * What runs on one instance (Résolution [.79716] [.80228], overview [.112991]), as `astrale domain
@@ -35,7 +34,7 @@ export interface InstalledListV1 {
   readonly domains: readonly InstalledDomainV1[]
 }
 
-export interface InstalledDomainV1 {
+interface InstalledDomainV1 {
   readonly origin: string
   readonly revision: string
   readonly issuer: string
@@ -58,7 +57,7 @@ export interface InstalledDomainV1 {
 }
 
 /** The name of a release pin that neither a Publication nor a record names. */
-export const UNKNOWN_NAME = 'unknown'
+const UNKNOWN_NAME = 'unknown'
 
 /** Deployment records read at once; each is one GET to the deployment's dispatcher. */
 const RECORD_READS = 6
@@ -189,7 +188,7 @@ const defaultDependencies: InstalledListDependencies = Object.freeze({
   installed: (opts: KernelCommandOpts) =>
     withClientSession(opts, async (context: ConnectionContext) => ({
       kernel: context.target.url,
-      releases: await installedReleases(context.session),
+      releases: await context.session.schema.installed(),
     })),
   registry: <Value>(
     opts: AdminConnectionOptions,

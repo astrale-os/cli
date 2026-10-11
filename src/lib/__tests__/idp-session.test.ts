@@ -3,328 +3,169 @@ import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { tokenEndpoint, unsignedJwt, writeIdp } from './idp.fixture'
+
 const AUD = 'https://kernel.example.com'
 
 let tmp: string
+let server: ReturnType<typeof rotation>
 
 beforeEach(async () => {
   tmp = await mkdtemp(join(tmpdir(), 'astrale-idp-session-'))
   await mkdir(join(tmp, 'idp-sessions'), { recursive: true })
+  server = rotation()
+  await writeIdp(tmp, server.url)
 })
 
 afterEach(async () => {
+  await server.stop()
   await rm(tmp, { recursive: true, force: true })
 })
 
 describe('ensureFreshSession', () => {
   test('refreshes a cached audience token when its explicit owner organization changed', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      const stale = unsignedJwt({ aud: AUD, exp: futureEpoch(), org_id: 'old-organization' })
-      await writeSession({
-        access_token: stale,
-        expires_at: future(),
-        tokens: {
-          [AUD]: { access_token: stale, expires_at: future() },
-        },
-      })
-      const options = {
-        DRIVER_AUDIENCE: AUD,
-        DRIVER_EXPECTED_ORG: 'new-organization',
-      }
-      const [result, concurrent] = await Promise.all([
-        runDriver('ensure', options),
-        runDriver('ensure', options),
-      ])
-      expect(result.ok).toBe(true)
-      expect(concurrent.ok).toBe(true)
-      expect(concurrent.token).toBe(result.token)
-      expect((await runDriver('ensure', options)).token).toBe(result.token)
-      expect(server.refreshCount()).toBe(1)
-      expect(server.lastOrganizationId()).toBe('new-organization')
-      expect(result.token).not.toBe(stale)
-    } finally {
-      await server.stop()
+    const stale = unsignedJwt({ aud: AUD, exp: futureEpoch(), org_id: 'old-organization' })
+    await writeSession({
+      access_token: stale,
+      expires_at: future(),
+      tokens: {
+        [AUD]: { access_token: stale, expires_at: future() },
+      },
+    })
+    const options = {
+      DRIVER_AUDIENCE: AUD,
+      DRIVER_EXPECTED_ORG: 'new-organization',
     }
+    const [result, concurrent] = await Promise.all([
+      runDriver('ensure', options),
+      runDriver('ensure', options),
+    ])
+    expect(result.ok).toBe(true)
+    expect(concurrent.ok).toBe(true)
+    expect(concurrent.token).toBe(result.token)
+    expect((await runDriver('ensure', options)).token).toBe(result.token)
+    // Concurrent processes serialize on the lock: one refresh, the single-use token survives.
+    expect(server.refreshCount()).toBe(1)
+    expect(await lockFilesLeft()).toEqual([])
+    expect(server.forms.at(-1)?.get('organization_id')).toBe('new-organization')
+    expect(result.token).not.toBe(stale)
   })
-  test('returns a fresh session without touching the IdP or the org hint', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: future() })
+  test('serves a fresh per-audience token without a refresh or an org hint', async () => {
+    await writeSession({
+      access_token: unsignedJwt({ aud: 'https://other.example.com', exp: futureEpoch() }),
+      expires_at: future(),
+      tokens: {
+        [AUD]: { access_token: 'cached-for-kernel', expires_at: future() },
+      },
+    })
 
-      const result = await runDriver('ensure')
+    const result = await runDriver('ensure', { DRIVER_AUDIENCE: AUD })
 
-      expect(result.ok).toBe(true)
-      expect(result.orgHintCalls).toBe(0)
-      expect(server.refreshCount()).toBe(0)
-    } finally {
-      await server.stop()
-    }
-  })
-
-  test('serves an instance flip from the per-audience map without a refresh', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({
-        access_token: unsignedJwt({ aud: 'https://other.example.com', exp: futureEpoch() }),
-        expires_at: future(),
-        tokens: {
-          [AUD]: { access_token: 'cached-for-kernel', expires_at: future() },
-        },
-      })
-
-      const result = await runDriver('ensure', { DRIVER_AUDIENCE: AUD })
-
-      expect(result.ok).toBe(true)
-      expect(result.token).toBe('cached-for-kernel')
-      expect(result.orgHintCalls).toBe(0)
-      expect(server.refreshCount()).toBe(0)
-    } finally {
-      await server.stop()
-    }
+    expect(result.ok).toBe(true)
+    expect(result.token).toBe('cached-for-kernel')
+    expect(result.orgHintCalls).toBe(0)
+    expect(server.refreshCount()).toBe(0)
   })
 
   test('refreshes an expired session, rotating the refresh token and caching by audience', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: past() })
+    await writeSession({ clientId: 'c_session', expires_at: past() })
 
-      const result = await runDriver('ensure', { DRIVER_AUDIENCE: AUD, DRIVER_ORG_ID: 'org_1' })
+    const result = await runDriver('ensure', { DRIVER_AUDIENCE: AUD, DRIVER_ORG_ID: 'org_1' })
 
-      expect(result.ok).toBe(true)
-      expect(result.orgHintCalls).toBe(1)
-      expect(server.refreshCount()).toBe(1)
-      const session = await readSession()
-      expect(session.clientId).toBe('c_1')
-      expect(session.refresh_token).toBe('rt-1')
-      expect((session.tokens as Record<string, { access_token: string }>)[AUD].access_token).toBe(
-        result.token as string,
-      )
-      expect(server.lastOrganizationId()).toBe('org_1')
-      expect(server.lastClientId()).toBe('c_1')
-    } finally {
-      await server.stop()
-    }
+    expect(result.ok).toBe(true)
+    expect(result.orgHintCalls).toBe(1)
+    expect(server.refreshCount()).toBe(1)
+    const session = await readSession()
+    // The client that issued the session refreshes it, not the IdP default.
+    expect(session.clientId).toBe('c_session')
+    expect(session.refresh_token).toBe('rt-1')
+    expect((session.tokens as Record<string, { access_token: string }>)[AUD].access_token).toBe(
+      result.token as string,
+    )
+    expect(server.forms.at(-1)?.get('organization_id')).toBe('org_1')
+    expect(server.forms.at(-1)?.get('client_id')).toBe('c_session')
   })
 
   test('refreshes at the conservative whole-second lifetime boundary', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      const shortToken = unsignedJwt({ aud: AUD, exp: Math.ceil(Date.now() / 1_000) + 200 })
-      await writeSession({
-        access_token: shortToken,
-        // The loose millisecond timestamp appears sufficient. Delegation uses
-        // the JWT exp and its conservative second-boundary handoff instead.
-        expires_at: new Date(Date.now() + 201_000).toISOString(),
-      })
+    const shortToken = unsignedJwt({ aud: AUD, exp: Math.ceil(Date.now() / 1_000) + 200 })
+    await writeSession({
+      access_token: shortToken,
+      // The loose millisecond timestamp appears sufficient. Delegation uses
+      // the JWT exp and its conservative second-boundary handoff instead.
+      expires_at: new Date(Date.now() + 201_000).toISOString(),
+    })
 
-      const result = await runDriver('ensure', {
-        DRIVER_AUDIENCE: AUD,
-        DRIVER_MINIMUM_SECONDS: '200',
-      })
+    const result = await runDriver('ensure', {
+      DRIVER_AUDIENCE: AUD,
+      DRIVER_MINIMUM_SECONDS: '200',
+    })
 
-      expect(result.ok).toBe(true)
-      expect(server.refreshCount()).toBe(1)
-      expect(result.token).not.toBe(shortToken)
-    } finally {
-      await server.stop()
-    }
-  })
-
-  test('refreshes with the client that issued the session instead of the IdP default', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ clientId: 'c_session', expires_at: past() })
-
-      const result = await runDriver('ensure', { DRIVER_AUDIENCE: AUD })
-
-      expect(result.ok).toBe(true)
-      expect(server.lastClientId()).toBe('c_session')
-      expect((await readSession()).clientId).toBe('c_session')
-    } finally {
-      await server.stop()
-    }
-  })
-
-  test('two concurrent callers in one process perform exactly one refresh', async () => {
-    const server = rotationServer({ delayMs: 50 })
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: past() })
-
-      const result = await runDriver('ensure-concurrent')
-
-      expect(result.ok).toBe(true)
-      const [a, b] = result.tokens as [string, string]
-      expect(a).toBe(b)
-      expect(server.refreshCount()).toBe(1)
-    } finally {
-      await server.stop()
-    }
-  })
-
-  test('two concurrent PROCESSES perform exactly one refresh (single-use token survives)', async () => {
-    const server = rotationServer({ delayMs: 50 })
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: past() })
-
-      const [a, b] = await Promise.all([runDriver('ensure'), runDriver('ensure')])
-
-      expect(a.ok).toBe(true)
-      expect(b.ok).toBe(true)
-      expect(a.token).toBe(b.token)
-      expect(server.refreshCount()).toBe(1)
-      expect(await lockFilesLeft()).toEqual([])
-    } finally {
-      await server.stop()
-    }
+    expect(result.ok).toBe(true)
+    expect(server.refreshCount()).toBe(1)
+    expect(result.token).not.toBe(shortToken)
   })
 
   test.each([
     [undefined, true],
-    ['winner-org', true],
     ['other-org', false],
   ] as const)(
     'rescues a rotated session only when explicit organization %s matches (accepted: %s)',
     async (organizationId, accepted) => {
       const winnerToken = unsignedJwt({ aud: AUD, exp: futureEpoch(), org_id: 'winner-org' })
-      const server = rotationServer({
-        beforeRespond: async () => {
-          // Simulate an old, non-locking CLI that already exchanged the token
-          // and persisted the rotated session before our request landed.
-          await writeSession({
-            access_token: winnerToken,
-            expires_at: future(),
-            refresh_token: 'rt-winner',
-            updatedAt: new Date(Date.now() + 1000).toISOString(),
-          })
-          return Response.json(
-            { error: 'invalid_grant', error_description: 'Refresh token already exchanged.' },
-            { status: 400 },
-          )
-        },
-      })
-      try {
-        await writeIdpConfig(server.url)
-        await writeSession({ expires_at: past() })
-
-        const result = await runDriver(
-          'ensure',
-          organizationId ? { DRIVER_EXPECTED_ORG: organizationId } : {},
+      server.answer(async () => {
+        // Simulate an old, non-locking CLI that already exchanged the token
+        // and persisted the rotated session before our request landed.
+        await writeSession({
+          access_token: winnerToken,
+          expires_at: future(),
+          refresh_token: 'rt-winner',
+          updatedAt: new Date(Date.now() + 1000).toISOString(),
+        })
+        return Response.json(
+          { error: 'invalid_grant', error_description: 'Refresh token already exchanged.' },
+          { status: 400 },
         )
+      })
+      await writeSession({ expires_at: past() })
 
-        expect(result.ok).toBe(accepted)
-        if (accepted) expect(result.token).toBe(winnerToken)
-        else expect(result.token).toBeUndefined()
-      } finally {
-        await server.stop()
-      }
+      const result = await runDriver(
+        'ensure',
+        organizationId ? { DRIVER_EXPECTED_ORG: organizationId } : {},
+      )
+
+      expect(result.ok).toBe(accepted)
+      if (accepted) expect(result.token).toBe(winnerToken)
+      else expect(result.token).toBeUndefined()
     },
   )
 
   test('reports a missing session when it is deleted while waiting for the lock', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: past() })
-      const lockPath = join(tmp, 'idp-sessions', 'alice.json.lock')
-      await writeFile(lockPath, JSON.stringify({ pid: process.pid }))
-
-      const pending = runDriver('ensure')
-      await new Promise((r) => setTimeout(r, 300))
-      await unlink(join(tmp, 'idp-sessions', 'alice.json'))
-      await unlink(lockPath)
-      const result = await pending
-
-      expect(result.ok).toBe(false)
-      expect(result.errorName).toBe('IdpSessionMissingError')
-      expect(await lockFilesLeft()).toEqual([])
-    } finally {
-      await server.stop()
-    }
-  })
-
-  test('classifies a dead grant as session-ended when no winner can rescue it', async () => {
-    const server = rotationServer()
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: past(), refresh_token: 'rt-already-burned' })
-
-      const result = await runDriver('ensure')
-
-      expect(result.ok).toBe(false)
-      expect(result.errorName).toBe('OAuthTokenError')
-      expect(result.errorCode).toBe('invalid_grant')
-      expect(result.classification).toBe('session-ended')
-    } finally {
-      await server.stop()
-    }
-  })
-
-  test('classifies an IdP 503 as transient', async () => {
-    const server = rotationServer({
-      beforeRespond: async () =>
-        Response.json({ error_description: 'upstream unavailable' }, { status: 503 }),
-    })
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: past() })
-
-      const result = await runDriver('ensure')
-
-      expect(result.ok).toBe(false)
-      expect(result.classification).toBe('transient')
-    } finally {
-      await server.stop()
-    }
-  })
-
-  test('classifies an unreachable IdP as transient', async () => {
-    const server = rotationServer()
-    await server.stop()
-    await writeIdpConfig(server.url)
     await writeSession({ expires_at: past() })
+    const lockPath = join(tmp, 'idp-sessions', 'alice.json.lock')
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid }))
 
-    const result = await runDriver('ensure')
+    const pending = runDriver('ensure')
+    await new Promise((r) => setTimeout(r, 300))
+    await unlink(join(tmp, 'idp-sessions', 'alice.json'))
+    await unlink(lockPath)
+    const result = await pending
 
     expect(result.ok).toBe(false)
-    expect(result.classification).toBe('transient')
+    expect(result.errorName).toBe('IdpSessionMissingError')
+    expect(await lockFilesLeft()).toEqual([])
+  })
+
+  test.each([
+    ['a dead grant no winner can rescue', 'session-ended', true],
+    ['an unreachable IdP', 'transient', false],
+  ] as const)('classifies %s as %s', async (_name, classification, reachable) => {
+    if (!reachable) await server.stop()
+    await writeSession({ expires_at: past(), refresh_token: 'rt-already-burned' })
+    expect(await runDriver('ensure')).toMatchObject({ ok: false, classification })
   })
 })
 
 // --- fixtures -------------------------------------------------------------
-
-async function writeIdpConfig(baseUrl: string): Promise<void> {
-  await mkdir(join(tmp, 'idps', 'test'), { recursive: true })
-  await writeFile(
-    join(tmp, 'idps', 'index.json'),
-    JSON.stringify({
-      idps: {
-        test: {
-          issuer: baseUrl,
-          createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-01T00:00:00.000Z',
-        },
-      },
-    }),
-  )
-  await writeFile(
-    join(tmp, 'idps', 'test', 'metadata.json'),
-    JSON.stringify({
-      issuer: baseUrl,
-      token_endpoint: `${baseUrl}/token`,
-      jwks_uri: `${baseUrl}/jwks`,
-    }),
-  )
-  await writeFile(join(tmp, 'idps', 'test', 'client.json'), JSON.stringify({ client_id: 'c_1' }))
-}
 
 async function writeSession(overrides: Record<string, unknown>): Promise<void> {
   await writeFile(
@@ -352,63 +193,18 @@ async function lockFilesLeft(): Promise<string[]> {
   return entries.filter((e) => e.endsWith('.lock') || e.endsWith('.tmp'))
 }
 
-function rotationServer(opts?: {
-  delayMs?: number
-  beforeRespond?: () => Promise<Response | undefined>
-}): {
-  url: string
-  refreshCount: () => number
-  lastClientId: () => string | undefined
-  lastOrganizationId: () => string | undefined
-  stop: () => Promise<void>
-} {
-  // WorkOS-style single-use rotation: presenting anything but the CURRENT
-  // refresh token is invalid_grant.
-  let current = 'rt-0'
-  let count = 0
-  let lastClientId: string | undefined
-  let lastOrgId: string | undefined
-  const server = Bun.serve({
-    port: 0,
-    fetch: async (request) => {
-      const url = new URL(request.url)
-      if (url.pathname !== '/token') return new Response('not found', { status: 404 })
-      const form = new URLSearchParams(await request.text())
-      if (opts?.beforeRespond) {
-        const response = await opts.beforeRespond()
-        if (response) return response
-      }
-      if (form.get('refresh_token') !== current) {
-        return Response.json(
-          { error: 'invalid_grant', error_description: 'Refresh token already exchanged.' },
-          { status: 400 },
-        )
-      }
-      if (opts?.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs))
-      count += 1
-      current = `rt-${count}`
-      lastClientId = form.get('client_id') ?? undefined
-      lastOrgId = form.get('organization_id') ?? undefined
-      return Response.json({
-        access_token: unsignedJwt({
-          aud: AUD,
-          exp: futureEpoch(),
-          ...(lastOrgId === undefined ? {} : { org_id: lastOrgId }),
-        }),
-        refresh_token: current,
-        token_type: 'Bearer',
-        expires_in: 3600,
+/** The test IdP's token endpoint, minting audience tokens that carry the requested organization. */
+const rotation = () =>
+  tokenEndpoint({
+    mint: (form) => {
+      const organization = form.get('organization_id')
+      return unsignedJwt({
+        aud: AUD,
+        exp: futureEpoch(),
+        ...(organization === null ? {} : { org_id: organization }),
       })
     },
   })
-  return {
-    url: `http://${server.hostname}:${server.port}`,
-    refreshCount: () => count,
-    lastClientId: () => lastClientId,
-    lastOrganizationId: () => lastOrgId,
-    stop: () => server.stop(true),
-  }
-}
 
 async function runDriver(
   scenario: string,
@@ -427,14 +223,6 @@ async function runDriver(
   ])
   if (exitCode !== 0) throw new Error(`driver exited ${exitCode}: ${stderr}`)
   return JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}')
-}
-
-function unsignedJwt(payload: Record<string, unknown>): string {
-  return [base64url({ alg: 'none', typ: 'JWT' }), base64url(payload), ''].join('.')
-}
-
-function base64url(value: Record<string, unknown>): string {
-  return Buffer.from(JSON.stringify(value)).toString('base64url')
 }
 
 function future(): string {

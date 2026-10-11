@@ -8,7 +8,7 @@ import { Path } from '@astrale-os/sdk/graph/path'
 import type { AstraleConfig } from '../../../lib/config'
 
 import { createIdentity, setRegistration, upsertIdpIdentity } from '../../../identity/registry'
-import { saveIdpSession } from '../../../lib/idp'
+import { saveIdpSession } from '../../../lib/idp/provider'
 import { ExchangeCredentialCache } from '../../../state/exchange-credentials'
 import { resolveCredential } from '../../auth'
 import { createCliCredential } from '../../credential'

@@ -1,8 +1,8 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { createIdentity } from '../../identity/index'
-import { fatal, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { fatal, log } from '../../lib/terminal/log'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 
 export default {
   name: 'create',
@@ -21,10 +21,7 @@ export default {
     try {
       const mode = opts.remote ? 'remote' : 'local'
       const identity = await createIdentity(name, { subject: opts.subject, mode })
-      if (isMachine(opts)) {
-        output({ name, ...identity }, opts)
-        return
-      }
+      if (outputForMachine({ name, ...identity }, opts)) return
       log.success(
         `Created identity "${name}" (subject: ${identity.subject}, mode: ${identity.mode})`,
       )

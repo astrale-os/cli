@@ -3,19 +3,19 @@ import { decodeJwt } from 'jose'
 import type { AstraleConfig } from './config'
 
 import { readIdentities, type IdentityStore } from '../identity/index'
-import { resolveAdminTargetFromStore } from './admin-target'
+import { resolveAdminTargetFromStore } from './admin/target'
 import { DEFAULT_CONFIG, readConfig } from './config'
-import { isSessionExpired, readIdpSession, type IdpSession } from './idp'
-import { readInstances, type InstanceStore } from './instance'
+import { isSessionExpired, readIdpSession, type IdpSession } from './idp/provider'
+import { readInstances, type InstanceStore } from './instance/bookmarks'
 
-export type LocalInstanceStatus = {
+type LocalInstanceStatus = {
   active: string
   url: string
   issuer: string | null
   defaultIdentity: string | null
 } | null
 
-export type LocalAdminStatus =
+type LocalAdminStatus =
   | {
       name: string
       url: string
@@ -27,7 +27,7 @@ export type LocalAdminStatus =
       error: string
     }
 
-export type LocalIdentityStatus = {
+type LocalIdentityStatus = {
   name: string
   subject: string
   source: 'key' | 'idp'
@@ -39,21 +39,20 @@ export type LocalIdentityStatus = {
   } | null
 } | null
 
-export type LocalStatus = {
+type LocalStatus = {
   admin: LocalAdminStatus
   instance: LocalInstanceStatus
   identity: LocalIdentityStatus
 }
 
-export type JwtExpiration = {
+type JwtExpiration = {
   expiresAt: string
   expired: boolean
 }
 
 export async function readLocalStatus(): Promise<LocalStatus> {
   const [instances, identities, config] = await Promise.all([
-    // Read-only: status / `setup --plan` must never trigger a sanitize-writeback.
-    readInstances(undefined, { persist: false }),
+    readInstances(),
     readIdentities(),
     readConfig(),
   ])

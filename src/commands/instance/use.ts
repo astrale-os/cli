@@ -1,10 +1,10 @@
-import type { InstanceInfo } from '../../lib/admin-instance'
+import type { InstanceInfo } from '../../admin/instance'
 import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { getDefault, setDefault } from '../../identity/index'
-import { listOwnedInstancesWithIdentity } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
+import { listOwnedInstancesWithIdentity } from '../../lib/admin/instances'
+import { ADMIN_TARGET_OPTIONS } from '../../lib/admin/target'
 import { fetchWithCaFile } from '../../lib/ca-fetch'
 import {
   findBookmarkTrustConflicts,
@@ -15,17 +15,17 @@ import {
   setActive,
   upsertManagedBookmark,
   type ResolvedInstance,
-} from '../../lib/instance'
+} from '../../lib/instance/bookmarks'
 import {
   collectInstanceCandidates,
   describeInstanceCandidate,
   type InstanceCandidate,
-} from '../../lib/instance-candidates'
-import { canPrompt, type PromptGate } from '../../lib/interactive'
-import { fatal, log, withSpinner } from '../../lib/log'
+} from '../../lib/instance/candidates'
 import { checkIssuerReachability } from '../../lib/meta'
-import { isMachine } from '../../lib/output'
-import { confirmDefaultYes, selectFrom } from '../../lib/prompt'
+import { canPrompt, type PromptGate } from '../../lib/terminal/interactive'
+import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { isMachine } from '../../lib/terminal/output'
+import { confirmDefaultYes, selectFrom } from '../../lib/terminal/prompt'
 import { validateSlug } from '../../lib/validation'
 
 type UseOpts = {

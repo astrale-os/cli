@@ -3,8 +3,8 @@ import chalk from 'chalk'
 import type { CommandDefinition } from '../program/index'
 
 import { readLocalStatus } from '../lib/local-status'
-import { log } from '../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../lib/output'
+import { log } from '../lib/terminal/log'
+import { outputForMachine, RAW_OUTPUT_OPTIONS } from '../lib/terminal/output'
 
 export default {
   name: 'status',
@@ -13,10 +13,7 @@ export default {
   action: async (opts: { raw?: boolean; json?: boolean }) => {
     const status = await readLocalStatus()
 
-    if (isMachine(opts)) {
-      output(status, opts)
-      return
-    }
+    if (outputForMachine(status, opts)) return
 
     console.log(chalk.bold('Admin'))
     if ('error' in status.admin) {

@@ -21,8 +21,8 @@ import {
 import { AstraleError } from '../errors'
 import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
-import { log } from '../lib/log'
-import { isMachine } from '../lib/output'
+import { log } from '../lib/terminal/log'
+import { isMachine } from '../lib/terminal/output'
 import {
   INSTALLATION_CACHE,
   type Installation,

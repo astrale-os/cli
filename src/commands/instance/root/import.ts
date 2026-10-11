@@ -1,19 +1,19 @@
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../../connection'
-import type { AdminTargetCommandOpts } from '../../../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../../../lib/admin/target'
 import type { CommandDefinition } from '../../../program'
 
 import { formatKernelError } from '../../../connection/errors'
 import { AstraleError } from '../../../errors'
-import { resolveOwnedInstance } from '../../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS } from '../../../lib/admin-target'
-import { importInstanceRootIdentity } from '../../../lib/instance-root-identity'
-import { canPrompt } from '../../../lib/interactive'
-import { log, withSpinner } from '../../../lib/log'
-import { isMachine, output } from '../../../lib/output'
-import { dangerPanel } from '../../../lib/panel'
-import { confirmWithInput } from '../../../lib/prompt'
+import { resolveOwnedInstance } from '../../../lib/admin/instances'
+import { ADMIN_TARGET_OPTIONS } from '../../../lib/admin/target'
+import { importInstanceRootIdentity } from '../../../lib/instance/root-identity'
+import { canPrompt } from '../../../lib/terminal/interactive'
+import { log, withSpinner } from '../../../lib/terminal/log'
+import { isMachine, outputForMachine } from '../../../lib/terminal/output'
+import { dangerPanel } from '../../../lib/terminal/panel'
+import { confirmWithInput } from '../../../lib/terminal/prompt'
 
 type ImportRootOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -76,10 +76,7 @@ Examples:
             : String(imported.bookmarkError)
         log.warn(`Root identity imported, but the Instance bookmark was not updated: ${message}`)
       }
-      if (isMachine(opts)) {
-        output(result, opts)
-        return
-      }
+      if (outputForMachine(result, opts)) return
       log.success(`Imported Instance root identity: ${imported.name}`)
       log.dim(`  subject: ${imported.identity.subject}`)
       log.dim(`  issuer: ${imported.identity.issuer}`)

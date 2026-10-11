@@ -1,10 +1,10 @@
 import type { SetupStep } from '../types'
 
-import { AGENT_BROWSER_REPO } from '../../lib/browser'
-import { log } from '../../lib/log'
+import { AGENT_BROWSER_REPO } from '../../lib/browser/agent-browser'
 import { runInherit } from '../../lib/proc'
-import { confirmDefaultYes } from '../../lib/prompt'
 import { AGENT_BROWSER_SKILL, detectAgentBrowser, detectSkill } from '../../lib/skills'
+import { log } from '../../lib/terminal/log'
+import { confirmDefaultYes } from '../../lib/terminal/prompt'
 
 const FIX = 'npm install -g agent-browser && agent-browser install'
 const SKILL_FIX = `npx skills add ${AGENT_BROWSER_REPO} -g`

@@ -9,9 +9,9 @@ import {
   type IdpClientConfig,
   upsertIdpConfig,
   workosAuthKitMetadata,
-} from '../../lib/idp'
-import { log, withSpinner } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+} from '../../lib/idp/provider'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, outputForMachine, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 import { validateName, validateUrl } from '../../lib/validation'
 
 type AddOpts = {
@@ -129,10 +129,7 @@ Security:
     }
 
     const idp = await upsertIdpConfig({ name, metadata, client })
-    if (isMachine(opts)) {
-      output(redact(idp), opts)
-      return
-    }
+    if (outputForMachine(redact(idp), opts)) return
 
     log.success(`IdP "${name}" saved`)
     log.dim(`  issuer: ${idp.metadata.issuer}`)

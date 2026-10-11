@@ -8,7 +8,6 @@ import {
   type DomainSetupDependencies,
   domainStep,
   ensureDomainProject,
-  nextSteps,
   scaffoldArgs,
 } from '../steps/domain'
 
@@ -45,65 +44,42 @@ function captureLog() {
 }
 
 describe('setup domain step', () => {
-  test('scaffolds with the shared range and never passes --instance', () => {
-    expect(scaffoldArgs('crm')).toEqual([`create-astrale-domain@${SCAFFOLDER_RANGE}`, 'crm'])
-    expect(scaffoldArgs('crm')).toEqual([SCAFFOLDER, 'crm'])
-  })
-
   // The floor: the last create-astrale-domain release that still requires --instance in
-  // non-interactive managed mode, and the first that does not (the first release carrying sdk#598,
-  // S8). Both are published; SCAFFOLDER_RANGE starts at the second.
+  // non-interactive managed mode, and the first that does not (sdk#598). Both are published.
   const LAST_REQUIRING_INSTANCE = '0.3.0-beta.162'
   const FIRST_WITHOUT_INSTANCE = '0.3.0-beta.163'
 
-  test('the range starts at the first scaffolder whose managed scaffold names no instance', () => {
+  test('the scaffolder range starts at the first scaffolder whose managed scaffold names no instance', () => {
+    expect(scaffoldArgs('crm')).toEqual([`create-astrale-domain@${SCAFFOLDER_RANGE}`, 'crm'])
     expect(SCAFFOLDER_RANGE).toBe(`>=${FIRST_WITHOUT_INSTANCE}`)
     // Older scaffolders require --instance, and the unpinned `latest` (0.2.13) is the 0.4 SDK
-    // line: none may be resolved.
-    for (const version of ['0.2.13', '0.3.0-beta.0', LAST_REQUIRING_INSTANCE]) {
+    // line; a prerelease of another line never matches (npm semver).
+    for (const version of ['0.2.13', '0.3.0-beta.0', LAST_REQUIRING_INSTANCE, '0.4.0-beta.0']) {
       expect(Bun.semver.satisfies(version, SCAFFOLDER_RANGE)).toBe(false)
     }
     for (const version of [FIRST_WITHOUT_INSTANCE, '0.3.0']) {
       expect(Bun.semver.satisfies(version, SCAFFOLDER_RANGE)).toBe(true)
     }
-    // A prerelease of another line never matches (npm semver): moving the scaffolder off the
-    // 0.3.0 prerelease line means bumping the range in the same CLI release.
-    expect(Bun.semver.satisfies('0.4.0-beta.0', SCAFFOLDER_RANGE)).toBe(false)
   })
 
-  test('the argv names no instance', async () => {
-    captureLog()
+  test('scaffolds without --instance, then deploys development and installs the printed URL', async () => {
+    const log = captureLog()
     const { deps, calls } = dependencies()
 
     await expect(ensureDomainProject(deps)).resolves.toBe('fixed')
 
     expect(calls).toEqual([[SCAFFOLDER, 'crm']])
-    expect(calls[0]!.some((arg) => arg === '--instance' || arg.startsWith('--instance='))).toBe(
-      false,
-    )
-  })
-
-  test('Next deploys development, then installs the printed URL on an <instance>', async () => {
-    const log = captureLog()
-    await ensureDomainProject(dependencies().deps)
     const lines = printed(log)
-
     expect(lines).toContain('  Next: cd crm && pnpm install && pnpm run deploy development')
     expect(lines).toContain(
       '  Then: astrale domain install <url> -i <instance>   # the URL the deploy prints',
     )
-    expect(lines.join('\n')).not.toContain('pnpm prod')
     expect(lines.join('\n')).not.toContain('--instance')
-    expect(nextSteps('crm')).toEqual([
-      'cd crm && pnpm install && pnpm run deploy development',
-      'astrale domain install <url> -i <instance>',
-    ])
   })
 
   test('a failed scaffold prints no Next steps', async () => {
     const log = captureLog()
-    const warn = spyOn(console, 'error').mockImplementation(() => {})
-    spies.push(warn)
+    spies.push(spyOn(console, 'error').mockImplementation(() => {}))
 
     await expect(
       ensureDomainProject(dependencies({ scaffold: mock(async () => 1) }).deps),

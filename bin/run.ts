@@ -1,8 +1,8 @@
 import { type Command, CommanderError } from 'commander'
 
 import { renderCommanderError } from '../src/lib/command-dx'
-import { configureInvocation } from '../src/lib/invocation'
 import { maybeRunStartupMaintenance } from '../src/lib/startup-maintenance'
+import { configureInvocation } from '../src/lib/terminal/output'
 import { buildProgram, normalizeRootVersionArgv } from '../src/program/index'
 import { beginInvocation } from '../src/telemetry/recorder'
 import { scanSessions } from '../src/telemetry/store'

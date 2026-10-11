@@ -16,14 +16,14 @@ import { IssuerUnreachableError } from '../errors'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
-export type DiscoveryDocument = {
+type DiscoveryDocument = {
   /** OIDC issuer URL. */
   issuer: string
   /** JWKS URI (defaults to `<issuer>/.well-known/jwks.json`). */
   jwksUri: string
 }
 
-export async function fetchDiscovery(
+async function fetchDiscovery(
   url: string,
   timeoutMs = 5_000,
   fetchImpl: FetchLike = globalThis.fetch,
@@ -42,7 +42,7 @@ export async function fetchDiscovery(
   }
 }
 
-export async function fetchJwks(
+async function fetchJwks(
   jwksUri: string,
   timeoutMs = 5_000,
   fetchImpl: FetchLike = globalThis.fetch,

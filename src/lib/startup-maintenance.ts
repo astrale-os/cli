@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import pkg from '../../package.json' with { type: 'json' }
 import { paths } from '../state'
 import { atomicWrite } from '../state/files'
-import { canPrompt } from './interactive'
-import { log } from './log'
 import { runInherit } from './proc'
-import { confirmDefaultYes, promptSelect } from './prompt'
 import { checkAstraleSkills, syncAstraleSkills } from './skills'
+import { canPrompt } from './terminal/interactive'
+import { log } from './terminal/log'
+import { confirmDefaultYes, promptSelect } from './terminal/prompt'
 import {
   DEFAULT_UPDATE_CHANNEL,
   detectUpdateExecution,

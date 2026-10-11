@@ -1,6 +1,6 @@
 import { AstraleError } from '../errors'
 import { persistKeypair, removeKeypair } from '../keys/index'
-import { deleteIdpSession } from '../lib/idp'
+import { deleteIdpSession } from '../lib/idp/provider'
 import { validateName } from '../lib/validation'
 import {
   readIdentityStore,

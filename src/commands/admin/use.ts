@@ -4,10 +4,10 @@ import {
   AdminTargetConfigSchema,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
   DEFAULT_ADMIN_TARGET_NAME,
-} from '../../lib/admin-target'
+} from '../../lib/admin/target'
 import { readConfig, writeConfig } from '../../lib/config'
-import { resolveInstance } from '../../lib/instance'
-import { fatal, log } from '../../lib/log'
+import { resolveInstance } from '../../lib/instance/bookmarks'
+import { fatal, log } from '../../lib/terminal/log'
 
 type AdminUseOpts = {
   url?: string

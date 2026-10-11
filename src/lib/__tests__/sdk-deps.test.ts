@@ -28,41 +28,26 @@ describe('parseSdkOutdated', () => {
   })
 })
 
-describe('inDomainProject', () => {
+describe('project detection', () => {
   let tmp: string
   afterEach(async () => {
     if (tmp) await rm(tmp, { recursive: true, force: true })
   })
 
-  test('true only where astrale.config.ts exists', async () => {
+  test('a Domain project has astrale.config.ts; a foreign lockfile names its package manager', async () => {
     tmp = await mkdtemp(join(tmpdir(), 'sdk-deps-'))
     expect(inDomainProject(tmp)).toBe(false)
+    // A fresh project is pnpm's, ours.
+    expect(foreignPackageManager(tmp)).toBeNull()
     await writeFile(join(tmp, 'astrale.config.ts'), 'export default {}\n')
     expect(inDomainProject(tmp)).toBe(true)
-  })
-})
-
-describe('foreignPackageManager', () => {
-  let tmp: string
-  afterEach(async () => {
-    if (tmp) await rm(tmp, { recursive: true, force: true })
-  })
-
-  test('pnpm-lock / no lockfile → null (we own it); other lockfiles → that PM', async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'sdk-deps-pm-'))
-    expect(foreignPackageManager(tmp)).toBeNull() // fresh → pnpm-first default
-
-    await writeFile(join(tmp, 'package-lock.json'), '{}')
-    expect(foreignPackageManager(tmp)).toBe('npm')
-
-    // pnpm-lock wins even alongside another lockfile (it's a pnpm project).
-    await writeFile(join(tmp, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
-    expect(foreignPackageManager(tmp)).toBeNull()
-  })
-
-  test('yarn.lock → yarn', async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'sdk-deps-yarn-'))
     await writeFile(join(tmp, 'yarn.lock'), '')
     expect(foreignPackageManager(tmp)).toBe('yarn')
+    await rm(join(tmp, 'yarn.lock'))
+    await writeFile(join(tmp, 'package-lock.json'), '{}')
+    expect(foreignPackageManager(tmp)).toBe('npm')
+    // pnpm-lock wins even alongside another lockfile.
+    await writeFile(join(tmp, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
+    expect(foreignPackageManager(tmp)).toBeNull()
   })
 })

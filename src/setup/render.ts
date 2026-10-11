@@ -3,8 +3,8 @@ import chalk from 'chalk'
 import type { SetupContext, SetupStep, StepDetection, StepState } from './types'
 
 import { readLocalStatus } from '../lib/local-status'
-import { output } from '../lib/output'
-import { panel } from '../lib/panel'
+import { output } from '../lib/terminal/output'
+import { panel } from '../lib/terminal/panel'
 import { guiOrigin } from './util'
 
 export type Detected = { step: SetupStep; detection: StepDetection }

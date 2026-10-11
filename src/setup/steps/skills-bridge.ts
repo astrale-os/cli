@@ -3,8 +3,8 @@ import { join } from 'node:path'
 
 import type { SetupStep } from '../types'
 
-import { log } from '../../lib/log'
 import { ensureSkillsBridge, skillsBridgeStatus } from '../../lib/skills'
+import { log } from '../../lib/terminal/log'
 
 /**
  * Equip — make a workspace's own staged skills loadable. Agent tooling stages

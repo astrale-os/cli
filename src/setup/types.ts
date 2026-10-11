@@ -1,4 +1,4 @@
-import type { AdminTargetCommandOpts } from '../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../lib/admin/target'
 
 /**
  * The setup reconciler models onboarding as a list of small, independent steps,
@@ -50,7 +50,7 @@ export type SetupContext = {
   slug?: string
 }
 
-export type StepGroup = 'connect' | 'equip'
+type StepGroup = 'connect' | 'equip'
 
 export type SetupStep = {
   id: string

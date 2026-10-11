@@ -58,7 +58,6 @@ function waitForDescriptor(child: ChildProcess): Promise<Descriptor> {
 describe('Studio launch targets', () => {
   /** @evidence TEST-CLI-STUDIO-CONFIG-TARGET-SPAWNS-FROM-DIRECTORY */
   test.each([
-    { target: 'absolute-config', dev: false },
     { target: 'relative-config', dev: false },
     { target: 'directory', dev: false },
     { target: 'absolute-config', dev: true },

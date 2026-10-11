@@ -3,47 +3,22 @@ import type { AuthApi, Identity, IssuerId, MintedCredential } from '@astrale-os/
 import { describe, expect, mock, test } from 'bun:test'
 
 import { AstraleError } from '../../errors'
-import { issueToken, parseTtl, tokenCommand, tokenCredentialIntent } from '../token'
+import { issueToken, parseTtl, tokenCommand } from '../token'
 
-describe('parseTtl', () => {
-  test('keeps ordinary tokens short beneath the one-hour local operator proof', () => {
+describe('token lifetime', () => {
+  test('defaults short, admits only a positive integer, and carries it into the credential intent', async () => {
+    // Beneath the one-hour local operator proof.
     expect(parseTtl(undefined)).toBe(240)
-  })
-
-  test('rejects non-positive and non-integer values', () => {
-    expect(() => parseTtl('abc')).toThrow(AstraleError)
-    expect(() => parseTtl('0')).toThrow(AstraleError)
-    expect(() => parseTtl('-5')).toThrow(AstraleError)
-    expect(() => parseTtl('1.5')).toThrow(AstraleError)
-  })
-
-  test('admits a positive integer', () => {
     expect(parseTtl('90')).toBe(90)
-  })
+    for (const ttl of ['abc', '0', '-5', '1.5']) expect(() => parseTtl(ttl)).toThrow(AstraleError)
 
-  test('requests a caller-principal carrier for the complete nested token lifetime', () => {
-    expect(tokenCredentialIntent(240)).toEqual({
-      principal: 'caller',
-      nestedTtlSeconds: 240,
-    })
-  })
-
-  test('passes the admitted token lifetime into the command credential intent', async () => {
     const runs: unknown[] = []
-
     await tokenCommand(
       { ttl: '90', raw: true },
-      {
-        runKernelCommand: (async (input: unknown) => {
-          runs.push(input)
-        }) as never,
-      },
+      { runKernelCommand: (async (input: unknown) => void runs.push(input)) as never },
     )
-
-    expect(runs).toHaveLength(1)
-    expect(runs[0]).toMatchObject({
-      credential: { principal: 'caller', nestedTtlSeconds: 90 },
-    })
+    // A caller-principal carrier for the complete nested token lifetime.
+    expect(runs).toMatchObject([{ credential: { principal: 'caller', nestedTtlSeconds: 90 } }])
   })
 })
 
@@ -57,34 +32,19 @@ describe('issueToken', () => {
     requiredClaims: [],
   } satisfies Identity
 
-  test('mints a reusable top-level credential for the Kernel audience', async () => {
+  test('mints a top-level credential for the Kernel, delegates the identity for another audience', async () => {
     const mint = mock(async () => 'kernel-token' as MintedCredential)
     const delegate = mock(async () => 'delegated-token' as MintedCredential)
     const whoami = mock(async () => identity)
     const auth = { mint, delegate, whoami } satisfies Pick<AuthApi, 'delegate' | 'mint' | 'whoami'>
 
-    await expect(issueToken(auth, kernel, kernel, 90)).resolves.toBe(
-      'kernel-token' as MintedCredential,
-    )
+    expect(await issueToken(auth, kernel, kernel, 90)).toBe('kernel-token' as MintedCredential)
     expect(mint).toHaveBeenCalledWith({ ttlSeconds: 90 })
-    expect(whoami).not.toHaveBeenCalled()
     expect(delegate).not.toHaveBeenCalled()
-  })
 
-  test('delegates the selected identity only for an external audience', async () => {
-    const mint = mock(async () => 'kernel-token' as MintedCredential)
-    const delegate = mock(async () => 'delegated-token' as MintedCredential)
-    const whoami = mock(async () => identity)
-    const auth = { mint, delegate, whoami } satisfies Pick<AuthApi, 'delegate' | 'mint' | 'whoami'>
-
-    await expect(issueToken(auth, kernel, 'https://service.test' as IssuerId, 120)).resolves.toBe(
-      'delegated-token' as MintedCredential,
-    )
-    expect(mint).not.toHaveBeenCalled()
-    expect(whoami).toHaveBeenCalledTimes(1)
-    expect(delegate).toHaveBeenCalledWith(identity.id, {
-      audience: 'https://service.test',
-      ttlSeconds: 120,
-    })
+    const service = 'https://service.test' as IssuerId
+    expect(await issueToken(auth, kernel, service, 120)).toBe('delegated-token' as MintedCredential)
+    expect(mint).toHaveBeenCalledTimes(1)
+    expect(delegate).toHaveBeenCalledWith(identity.id, { audience: service, ttlSeconds: 120 })
   })
 })

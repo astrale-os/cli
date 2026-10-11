@@ -24,7 +24,7 @@ import { AstraleError } from '../../errors'
 const VIEW_PATH_RE = /^\/:[^\s/:@]+:view\.[a-z][a-z0-9-]*$/
 const DOMAIN_RE = /^(?:\/:)?([a-z0-9][a-z0-9.-]*)$/i
 
-export type ViewSpec = { kind: 'view'; path: string } | { kind: 'domain'; origin: string }
+type ViewSpec = { kind: 'view'; path: string } | { kind: 'domain'; origin: string }
 
 export function parseViewSpec(spec: string): ViewSpec {
   if (VIEW_PATH_RE.test(spec)) return { kind: 'view', path: spec }

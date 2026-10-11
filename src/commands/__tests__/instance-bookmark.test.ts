@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const cliRoot = join(import.meta.dir, '../../..')
+import { runCli } from './fixtures/process'
 
 let tmp: string
 
@@ -15,166 +15,68 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true })
 })
 
-describe('instance bookmark command', () => {
-  test('normalizes managed instance public roots to /api when creating a bookmark', async () => {
-    const result = await runBookmark(
-      'testmarc',
-      '--url',
-      'https://testmarc.eu.astrale.ai',
-      '--skip-probe',
-    )
+const store = (active: string, instances: Record<string, Record<string, string>>) =>
+  writeFile(join(tmp, 'instances.json'), JSON.stringify({ version: 1, active, instances }))
 
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('Bookmarked "testmarc"')
+describe('instance bookmark and active commands', () => {
+  test('a bookmark of a managed instance root is stored at /api, keeping its optional fields', async () => {
+    const recorded = {
+      issuer: 'https://issuer.example.com',
+      defaultIdentity: 'marc',
+      caFile: '/tmp/ca.pem',
+      createdAt: '2026-06-10T00:00:00.000Z',
+    }
+    await store('testmarc', { testmarc: { url: 'https://testmarc.eu.astrale.ai', ...recorded } })
 
-    const store = await readInstances()
-    expect(store.instances.testmarc.url).toBe('https://testmarc.eu.astrale.ai/api')
-  })
-
-  test('repairs an existing managed-root bookmark without clearing optional fields', async () => {
-    await mkdir(tmp, { recursive: true })
-    await writeFile(
-      join(tmp, 'instances.json'),
-      JSON.stringify(
-        {
-          version: 1,
-          active: 'testmarc',
-          instances: {
-            testmarc: {
-              url: 'https://testmarc.eu.astrale.ai',
-              issuer: 'https://issuer.example.com',
-              defaultIdentity: 'marc',
-              caFile: '/tmp/ca.pem',
-              createdAt: '2026-06-10T00:00:00.000Z',
-              kind: 'bookmark',
-              mode: 'remote',
-            },
-          },
-        },
-        null,
-        2,
-      ) + '\n',
-    )
-
-    const result = await runBookmark(
-      'testmarc',
-      '--url',
-      'https://testmarc.eu.astrale.ai',
-      '--skip-probe',
-    )
+    const args = ['--url', 'https://testmarc.eu.astrale.ai', '--skip-probe']
+    const result = await runCli(tmp, ['instance', 'bookmark', 'testmarc', ...args])
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Updated bookmark "testmarc"')
-
-    const store = await readInstances()
-    expect(store.instances.testmarc.url).toBe('https://testmarc.eu.astrale.ai/api')
-    expect(store.instances.testmarc.issuer).toBe('https://issuer.example.com')
-    expect(store.instances.testmarc.defaultIdentity).toBe('marc')
-    expect(store.instances.testmarc.caFile).toBe('/tmp/ca.pem')
-    expect(store.instances.testmarc.createdAt).toBe('2026-06-10T00:00:00.000Z')
+    const { instances } = JSON.parse(await readFile(join(tmp, 'instances.json'), 'utf8'))
+    expect(instances.testmarc).toMatchObject({
+      url: 'https://testmarc.eu.astrale.ai/api',
+      ...recorded,
+    })
   })
 
   test('warns when another bookmark uses different TLS trust for the same URL', async () => {
-    await writeFile(
-      join(tmp, 'instances.json'),
-      JSON.stringify({
-        version: 1,
-        active: 'stable',
-        instances: {
-          stable: {
-            url: 'https://local.example/kernel',
-            caFile: '/certs/stable.pem',
-          },
-        },
-      }),
-    )
+    await store('stable', {
+      stable: { url: 'https://local.example/kernel', caFile: '/certs/stable.pem' },
+    })
 
-    const result = await runBookmark(
-      'stale',
+    const args = [
       '--url',
       'https://local.example/kernel/',
       '--ca',
       '/certs/old.pem',
       '--skip-probe',
-    )
+    ]
+    const result = await runCli(tmp, ['instance', 'bookmark', 'stale', ...args])
 
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toContain('TLS trust differs for the same Kernel URL')
     expect(result.stderr).toContain('"stable" uses CA /certs/stable.pem')
   })
 
-  test('active --json exposes the TLS and identity configuration', async () => {
-    await writeFile(
-      join(tmp, 'instances.json'),
-      JSON.stringify({
-        version: 1,
-        active: 'stable',
-        instances: {
-          stable: {
-            url: 'https://local.example/kernel',
-            issuer: 'https://issuer.example',
-            defaultIdentity: 'marc',
-            caFile: '/certs/stable.pem',
-            createdAt: '2026-08-20T00:00:00.000Z',
-          },
-        },
-      }),
-    )
+  test('active --json exposes the TLS and identity configuration, or a machine failure', async () => {
+    const missing = await runCli(tmp, ['instance', 'active', '--json'])
+    expect(missing.exitCode).toBe(1)
+    expect(JSON.parse(missing.stderr)).toEqual({
+      error: 'INSTANCE_NOT_FOUND',
+      message: 'No active instance. Run: astrale instance bookmark <name> --url <url> --use',
+    })
 
-    const result = await runCli('instance', 'active', '--json')
-    expect(result.exitCode).toBe(0)
-    expect(JSON.parse(result.stdout)).toEqual({
-      name: 'stable',
+    const stable = {
       url: 'https://local.example/kernel',
       issuer: 'https://issuer.example',
       defaultIdentity: 'marc',
       caFile: '/certs/stable.pem',
       createdAt: '2026-08-20T00:00:00.000Z',
-    })
-  })
-
-  test('active --json reports missing selection through the machine failure contract', async () => {
-    const result = await runCli('instance', 'active', '--json')
-
-    expect(result.exitCode).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(JSON.parse(result.stderr)).toEqual({
-      error: 'INSTANCE_NOT_FOUND',
-      message: 'No active instance. Run: astrale instance bookmark <name> --url <url> --use',
-    })
+    }
+    await store('stable', { stable })
+    const active = await runCli(tmp, ['instance', 'active', '--json'])
+    expect(active.exitCode).toBe(0)
+    expect(JSON.parse(active.stdout)).toEqual({ name: 'stable', ...stable })
   })
 })
-
-async function readInstances(): Promise<{
-  active: string
-  instances: Record<string, Record<string, unknown>>
-}> {
-  return JSON.parse(await readFile(join(tmp, 'instances.json'), 'utf-8'))
-}
-
-async function runBookmark(...args: string[]): Promise<{
-  exitCode: number
-  stdout: string
-  stderr: string
-}> {
-  return runCli('instance', 'bookmark', ...args)
-}
-
-async function runCli(...args: string[]): Promise<{
-  exitCode: number
-  stdout: string
-  stderr: string
-}> {
-  const proc = Bun.spawn({
-    cmd: ['bun', join(cliRoot, 'bin/astrale.ts'), ...args],
-    env: { ...process.env, ASTRALE_HOME: tmp },
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  return { exitCode, stdout, stderr }
-}

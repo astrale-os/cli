@@ -11,16 +11,15 @@ import {
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { BrowserRetentionBudget } from '../browser-retention'
+import type { BrowserRetentionBudget } from '../browser/retention'
 
 import {
   DEFAULT_MAX_CACHE_BYTES,
   DEFAULT_MAX_PROFILE_AGE_DAYS,
   browserRetentionBudget,
-  heldByLiveBrowser,
   profileCacheBytes,
   sweepBrowserProfiles,
-} from '../browser-retention'
+} from '../browser/retention'
 
 const DAY = 24 * 60 * 60 * 1000
 const BUDGET: BrowserRetentionBudget = { maxCacheBytes: 10_000, maxProfileAgeMs: 30 * DAY }
@@ -77,46 +76,43 @@ const cacheGone = (name: string): boolean =>
   !existsSync(join(dir, name, 'Default', 'Cache')) &&
   !existsSync(join(dir, name, 'Default', 'Code Cache'))
 
-describe('age rule', () => {
-  test('a dormant profile is removed outright', async () => {
-    seedProfile('dormant', { idleMs: 40 * DAY, cacheBytes: 100 })
-    const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
-    expect(r.removed).toEqual(['dormant'])
-    expect(existsSync(join(dir, 'dormant'))).toBe(false)
-    expect(r.bytesFreed).toBeGreaterThan(0)
-  })
+describe('browser profile sweep', () => {
+  test('removes dormant profiles, purges only the cache of bloated ones, never touches a live one', async () => {
+    writeFileSync(join(dir, 'browser.json'), '{}')
+    seedProfile('a-dormant', { idleMs: 40 * DAY, cacheBytes: 100 })
+    // Chromium leaves stale locks behind after a crash; they must not pin disk forever.
+    seedProfile('b-crashed', { idleMs: 40 * DAY, lockPid: 999_999 })
+    seedProfile('c-bloated', { idleMs: DAY, cacheBytes: 20_000 })
+    seedProfile('d-fine', { idleMs: 2 * DAY, cacheBytes: 1_000 })
+    // Our own pid is unambiguously alive.
+    seedProfile('e-locked', { idleMs: 40 * DAY, cacheBytes: 20_000, lockPid: process.pid })
 
-  test('a recently used profile is kept', async () => {
-    seedProfile('fresh', { idleMs: 2 * DAY, cacheBytes: 100 })
     const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
-    expect(r.removed).toEqual([])
-    expect(sessionIntact('fresh')).toBe(true)
-  })
 
-  test('the age bound is configurable', async () => {
-    seedProfile('two-days', { idleMs: 2 * DAY })
-    const strict = { ...BUDGET, maxProfileAgeMs: DAY }
-    expect((await sweepBrowserProfiles({ dir, budget: strict })).removed).toEqual(['two-days'])
-  })
-})
-
-describe('size rule', () => {
-  test('a profile under budget is left completely alone', async () => {
-    seedProfile('small', { idleMs: DAY, cacheBytes: 1_000 })
-    const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
-    expect(r.purged).toEqual([])
-    expect(cacheGone('small')).toBe(false)
-  })
-
-  test('a profile over budget loses its cache but keeps its session', async () => {
-    seedProfile('bloated', { idleMs: DAY, cacheBytes: 20_000 })
-    const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
-    expect(r.purged).toEqual(['bloated'])
-    expect(cacheGone('bloated')).toBe(true)
-    // The entire point: the cookie survives, so the user stays signed in.
-    expect(sessionIntact('bloated')).toBe(true)
-    expect(existsSync(join(dir, 'bloated'))).toBe(true)
+    // readdir order is the filesystem's, not alphabetical.
+    expect({ ...r, removed: [...r.removed].sort() }).toMatchObject({
+      removed: ['a-dormant', 'b-crashed'],
+      purged: ['c-bloated'],
+      skipped: ['e-locked'],
+    })
     expect(r.bytesFreed).toBeGreaterThanOrEqual(40_000)
+    expect(existsSync(join(dir, 'a-dormant'))).toBe(false)
+    // The entire point: the cookie survives, so the user stays signed in.
+    expect(cacheGone('c-bloated') && sessionIntact('c-bloated')).toBe(true)
+    expect(cacheGone('d-fine') || cacheGone('e-locked')).toBe(false)
+    expect(sessionIntact('d-fine') && sessionIntact('e-locked')).toBe(true)
+
+    const strict = { ...BUDGET, maxProfileAgeMs: DAY }
+    expect([...(await sweepBrowserProfiles({ dir, budget: strict })).removed].sort()).toEqual([
+      'c-bloated',
+      'd-fine',
+    ])
+    expect(await sweepBrowserProfiles({ dir: join(dir, 'gone'), budget: BUDGET })).toEqual({
+      removed: [],
+      purged: [],
+      skipped: [],
+      bytesFreed: 0,
+    })
   })
 
   test('the size bound counts only cache directories, not the whole profile', async () => {
@@ -128,85 +124,16 @@ describe('size rule', () => {
   })
 })
 
-describe('live-browser guard', () => {
-  test('a profile locked by a live process is never touched', async () => {
-    // Our own pid is unambiguously alive.
-    seedProfile('in-use', { idleMs: 40 * DAY, cacheBytes: 20_000, lockPid: process.pid })
-    const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
-    expect(r.skipped).toEqual(['in-use'])
-    expect(r.removed).toEqual([])
-    expect(r.purged).toEqual([])
-    expect(existsSync(join(dir, 'in-use'))).toBe(true)
-    expect(cacheGone('in-use')).toBe(false)
+test('the retention budget defaults, follows the environment, and never drops a cap', async () => {
+  expect(await browserRetentionBudget()).toEqual({
+    maxCacheBytes: DEFAULT_MAX_CACHE_BYTES,
+    maxProfileAgeMs: DEFAULT_MAX_PROFILE_AGE_DAYS * DAY,
   })
-
-  test('a stale lock from a dead process does not protect anything', async () => {
-    // Chromium leaves these behind after a crash; they must not pin disk forever.
-    seedProfile('crashed', { idleMs: 40 * DAY, lockPid: 999_999 })
-    const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
-    expect(r.removed).toEqual(['crashed'])
-  })
-
-  test('heldByLiveBrowser reads the symlink without resolving it', () => {
-    // The target names a file that does not exist — statting it would throw.
-    const live = seedProfile('live', { lockPid: process.pid })
-    const dead = seedProfile('dead', { lockPid: 999_999 })
-    const none = seedProfile('none', {})
-    expect(heldByLiveBrowser(live)).toBe(true)
-    expect(heldByLiveBrowser(dead)).toBe(false)
-    expect(heldByLiveBrowser(none)).toBe(false)
-  })
-})
-
-describe('sweep resilience', () => {
-  test('a missing browser directory is a no-op, not an error', async () => {
-    const gone = join(dir, 'does-not-exist')
-    const r = await sweepBrowserProfiles({ dir: gone, budget: BUDGET })
-    expect(r).toEqual({ removed: [], purged: [], skipped: [], bytesFreed: 0 })
-  })
-
-  test('stray files beside the profiles are ignored', async () => {
-    writeFileSync(join(dir, 'browser.json'), '{}')
-    seedProfile('real', { idleMs: 40 * DAY })
-    expect((await sweepBrowserProfiles({ dir, budget: BUDGET })).removed).toEqual(['real'])
-  })
-
-  test('several profiles are handled independently in one pass', async () => {
-    seedProfile('a-dormant', { idleMs: 40 * DAY })
-    seedProfile('b-bloated', { idleMs: DAY, cacheBytes: 20_000 })
-    seedProfile('c-fine', { idleMs: DAY, cacheBytes: 100 })
-    seedProfile('d-locked', { idleMs: 40 * DAY, lockPid: process.pid })
-    const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
-    expect(r.removed).toEqual(['a-dormant'])
-    expect(r.purged).toEqual(['b-bloated'])
-    expect(r.skipped).toEqual(['d-locked'])
-    expect(sessionIntact('c-fine')).toBe(true)
-  })
-})
-
-describe('browserRetentionBudget', () => {
-  test('defaults when nothing is configured', async () => {
-    expect(await browserRetentionBudget()).toEqual({
-      maxCacheBytes: DEFAULT_MAX_CACHE_BYTES,
-      maxProfileAgeMs: DEFAULT_MAX_PROFILE_AGE_DAYS * DAY,
-    })
-  })
-
-  test('env overrides both bounds', async () => {
-    process.env.ASTRALE_BROWSER_MAX_CACHE_BYTES = '4096'
-    process.env.ASTRALE_BROWSER_MAX_PROFILE_AGE_DAYS = '3'
-    expect(await browserRetentionBudget()).toEqual({
-      maxCacheBytes: 4096,
-      maxProfileAgeMs: 3 * DAY,
-    })
-  })
-
-  test.each([
-    ['zero', '0'],
-    ['negative', '-1'],
-    ['not a number', 'lots'],
-  ])('a %s env value falls back to the default rather than removing the cap', async (_l, value) => {
+  process.env.ASTRALE_BROWSER_MAX_CACHE_BYTES = '4096'
+  process.env.ASTRALE_BROWSER_MAX_PROFILE_AGE_DAYS = '3'
+  expect(await browserRetentionBudget()).toEqual({ maxCacheBytes: 4096, maxProfileAgeMs: 3 * DAY })
+  for (const value of ['0', '-1', 'lots']) {
     process.env.ASTRALE_BROWSER_MAX_CACHE_BYTES = value
     expect((await browserRetentionBudget()).maxCacheBytes).toBe(DEFAULT_MAX_CACHE_BYTES)
-  })
+  }
 })

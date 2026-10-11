@@ -1,8 +1,8 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { getIdentity, setIdentityMode } from '../../identity/index'
-import { fatal, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { fatal, log } from '../../lib/terminal/log'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 
 /** Metadata-only flip remote → local until cloud sync ships (§2.7). */
 export default {
@@ -14,18 +14,13 @@ export default {
     try {
       const identity = await getIdentity(name)
       if (identity.mode !== 'remote') {
-        if (isMachine(opts)) {
-          output({ name, mode: identity.mode ?? 'local', unchanged: true }, opts)
+        if (outputForMachine({ name, mode: identity.mode ?? 'local', unchanged: true }, opts))
           return
-        }
         log.warn(`Identity "${name}" is already ${identity.mode ?? 'local'}`)
         return
       }
       await setIdentityMode(name, 'local')
-      if (isMachine(opts)) {
-        output({ name, mode: 'local' }, opts)
-        return
-      }
+      if (outputForMachine({ name, mode: 'local' }, opts)) return
       log.success(`Identity "${name}" → local`)
     } catch (e) {
       fatal(e, opts)

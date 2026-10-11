@@ -3,12 +3,11 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { InstanceInfo } from '../../lib/admin-instance'
-import type { ResolvedInstance } from '../../lib/instance'
+import type { InstanceInfo } from '../../admin/instance'
+import type { ResolvedInstance } from '../../lib/instance/bookmarks'
 
 import { resolveStatus, type StatusDependencies } from '../instance/status'
-
-const cliRoot = join(import.meta.dir, '../../..')
+import { runCli } from './fixtures/process'
 
 let home: string
 let server: ReturnType<typeof Bun.serve>
@@ -37,6 +36,20 @@ afterEach(async () => {
 })
 
 describe('instance status', () => {
+  /** Status dependencies that fail when used, unless a test provides them. */
+  const dependencies = (provided: Partial<StatusDependencies>): StatusDependencies => {
+    const refuse = (name: string) =>
+      mock(async () => {
+        throw new Error(`${name} must not run`)
+      })
+    return {
+      statusOwnedInstance: refuse('managed status'),
+      resolveInstance: refuse('bookmark resolution'),
+      probeBookmark: refuse('bookmark probe'),
+      ...provided,
+    }
+  }
+
   test('keeps managed lifecycle authoritative when the slug is also bookmarked', async () => {
     const managed: InstanceInfo = {
       id: '@managed',
@@ -45,20 +58,9 @@ describe('instance status', () => {
       state: 'provisioning',
       phase: 'bootstrap',
     }
-    const statusOwnedInstance: StatusDependencies['statusOwnedInstance'] = mock(async () => managed)
-    const resolveInstance: StatusDependencies['resolveInstance'] = mock(async () => {
-      throw new Error('bookmark resolution must not run')
-    })
-    const probeBookmark: StatusDependencies['probeBookmark'] = mock(async () => {
-      throw new Error('bookmark probe must not run')
-    })
-
-    await expect(
-      resolveStatus('shared', {}, { statusOwnedInstance, resolveInstance, probeBookmark }),
-    ).resolves.toEqual(managed)
-    expect(statusOwnedInstance).toHaveBeenCalledWith({}, 'shared')
-    expect(resolveInstance).not.toHaveBeenCalled()
-    expect(probeBookmark).not.toHaveBeenCalled()
+    const deps = dependencies({ statusOwnedInstance: mock(async () => managed) })
+    expect(await resolveStatus('shared', {}, deps)).toEqual(managed)
+    expect(deps.statusOwnedInstance).toHaveBeenCalledWith({}, 'shared')
   })
 
   test('probes only an explicitly selected bookmark and rejects mixed source flags', async () => {
@@ -68,67 +70,35 @@ describe('instance status', () => {
       url: 'https://local.example.com',
       issuer: 'https://issuer.example.com',
     }
-    const statusOwnedInstance: StatusDependencies['statusOwnedInstance'] = mock(async () => {
-      throw new Error('managed status must not run')
+    const deps = dependencies({
+      resolveInstance: mock(async () => bookmark),
+      probeBookmark: mock(async () => undefined),
     })
-    const resolveInstance: StatusDependencies['resolveInstance'] = mock(async () => bookmark)
-    const probeBookmark: StatusDependencies['probeBookmark'] = mock(async () => undefined)
-    const dependencies = { statusOwnedInstance, resolveInstance, probeBookmark }
 
-    await expect(resolveStatus('local', { bookmarked: true }, dependencies)).resolves.toEqual({
+    expect(await resolveStatus('local', { bookmarked: true }, deps)).toEqual({
       slug: 'local',
       url: bookmark.url,
       issuer: 'https://issuer.example.com',
       kind: 'bookmark',
       state: 'ready',
     })
-    expect(resolveInstance).toHaveBeenCalledWith('local', undefined, { persist: false })
-    expect(probeBookmark).toHaveBeenCalledWith(bookmark)
-    expect(statusOwnedInstance).not.toHaveBeenCalled()
-
+    expect(deps.probeBookmark).toHaveBeenCalledWith(bookmark)
     await expect(
-      resolveStatus('local', { bookmarked: true, admin: 'admin' }, dependencies),
+      resolveStatus('local', { bookmarked: true, admin: 'admin' }, deps),
     ).rejects.toMatchObject({ code: 'INVALID_FLAG' })
   })
 
   test('probes an explicit local bookmark without rewriting its registry', async () => {
     const issuer = `http://127.0.0.1:${server.port}`
-    const registry = `${JSON.stringify({
-      version: 1,
-      active: 'local',
-      instances: {
-        local: {
-          url: issuer,
-          issuer,
-          mode: 'remote',
-        },
-      },
-    })}\n`
+    const local = { url: issuer, issuer, mode: 'remote' }
+    const registry = `${JSON.stringify({ version: 1, active: 'local', instances: { local } })}\n`
     const path = join(home, 'instances.json')
     await writeFile(path, registry)
 
-    const process = Bun.spawn({
-      cmd: [
-        'bun',
-        join(cliRoot, 'bin/astrale.ts'),
-        'instance',
-        'status',
-        'local',
-        '--bookmarked',
-        '--json',
-      ],
-      env: { ...Bun.env, ASTRALE_HOME: home },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
-      process.exited,
-    ])
+    const result = await runCli(home, ['instance', 'status', 'local', '--bookmarked', '--json'])
 
-    expect(exitCode, stderr).toBe(0)
-    expect(JSON.parse(stdout)).toEqual({
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual({
       slug: 'local',
       url: issuer,
       issuer,

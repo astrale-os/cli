@@ -2,14 +2,12 @@ import chalk from 'chalk'
 
 import type { SetupContext, SetupOpts } from './types'
 
-import { canPrompt } from '../lib/interactive'
 import { readLocalStatus } from '../lib/local-status'
-import { isMachine } from '../lib/output'
-import { promptMultiSelect } from '../lib/prompt'
+import { canPrompt } from '../lib/terminal/interactive'
+import { isMachine } from '../lib/terminal/output'
+import { promptMultiSelect } from '../lib/terminal/prompt'
 import { type Detected, phaseHeader, renderFinale, renderIntro, renderPlan } from './render'
 import { ALL_STEPS, CONNECT_STEPS, EQUIP_STEPS } from './steps'
-
-export type { SetupOpts } from './types'
 
 /**
  * Run the setup reconciler. Two modes, one set of steps:

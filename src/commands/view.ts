@@ -12,13 +12,15 @@ import type { CommandDefinition } from '../program/index'
 
 import { withClientSession } from '../connection'
 import { AstraleError } from '../errors'
-import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
-import { readInstances } from '../lib/instance'
-import { fatal, log, withSpinner } from '../lib/log'
-import { isMachine, output, type RawOutputOpts } from '../lib/output'
+import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser/agent-browser'
+import { readInstances } from '../lib/instance/bookmarks'
 import { findFreePort } from '../lib/port'
-import { run, spawnHandle } from '../lib/proc'
-import { promptSelect } from '../lib/prompt'
+import { findOnPath, run, spawnHandle } from '../lib/proc'
+import { selfInvocation } from '../lib/self-invocation'
+import { fatal, log, withSpinner } from '../lib/terminal/log'
+import { isMachine, output, outputForMachine, type RawOutputOpts } from '../lib/terminal/output'
+import { promptSelect } from '../lib/terminal/prompt'
+import { ensureViewerAssets } from '../lib/view/assets'
 import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
@@ -31,7 +33,6 @@ import {
   selectedView,
   type ViewCandidate,
 } from '../lib/view/resolve'
-import { ensureViewerAssets } from '../lib/view/server'
 import {
   closeSession,
   configPath,
@@ -154,7 +155,7 @@ export async function resolveServeRuntime(
   const executable = environment.executable ?? process.execPath
   const exists = environment.exists ?? existsSync
   const find = environment.find ?? findOnPath
-  if (entry?.startsWith('/$bunfs/')) return directServeRuntime(executable, entry, false)
+  if (entry?.startsWith('/$bunfs/')) return { file: executable, args: [] }
   const node = await find('node')
   if (node && entry?.endsWith('.js') && exists(entry)) return { file: node, args: [entry] }
   if (node && entry?.endsWith('.ts')) {
@@ -162,19 +163,7 @@ export async function resolveServeRuntime(
     await ensureDevDist(entry, dist)
     if (exists(dist)) return { file: node, args: [dist] }
   }
-  return directServeRuntime(executable, entry, entry !== undefined && exists(entry))
-}
-
-/** Reinvoke a compiled executable without its virtual Bun filesystem entry. */
-export function directServeRuntime(
-  executable: string,
-  entry: string | undefined,
-  entryExists = entry !== undefined && existsSync(entry),
-): { file: string; args: string[] } {
-  return {
-    file: executable,
-    args: entry && !entry.startsWith('/$bunfs/') && entryExists ? [entry] : [],
-  }
+  return selfInvocation([], executable, entry)
 }
 
 export function viewServeInvocation(
@@ -182,14 +171,6 @@ export function viewServeInvocation(
   config: string,
 ): { file: string; args: string[] } {
   return { file: runtime.file, args: [...runtime.args, '__view-serve', '--config', config] }
-}
-
-async function findOnPath(name: string): Promise<string | null> {
-  const lookup =
-    process.platform === 'win32' ? run('where', [name]) : run('sh', ['-c', `command -v ${name}`])
-  const res = await lookup.catch(() => null)
-  if (!res || res.code !== 0) return null
-  return res.stdout.split(/\r?\n/)[0]?.trim() || null
 }
 
 /** Dev checkout: (re)build the node-runnable CLI bundle when missing or stale. */
@@ -537,10 +518,7 @@ async function closeCommand(opts: ViewOpts): Promise<void> {
 
 async function sessionsCommand(opts: ViewOpts): Promise<void> {
   const sessions = await listSessions()
-  if (isMachine(opts)) {
-    output(sessions, opts)
-    return
-  }
+  if (outputForMachine(sessions, opts)) return
   if (sessions.length === 0) {
     log.dim('No view sessions.')
     return

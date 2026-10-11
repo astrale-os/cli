@@ -4,12 +4,12 @@
  * one process across files, so session-touching scenarios run here — in a
  * fresh process whose ASTRALE_HOME the test controls.
  *
- * Usage: bun idp-session.driver.ts <ensure|ensure-concurrent>
+ * Usage: bun idp-session.driver.ts ensure
  * Env: ASTRALE_HOME (required), DRIVER_AUDIENCE, DRIVER_ORG_ID
  * Stdout: one JSON line describing the outcome.
  */
-import { accessTokenForAudience, classifyRefreshFailure } from '../idp'
-import { ensureFreshSession } from '../idp-session'
+import { accessTokenForAudience, classifyRefreshFailure } from '../idp/provider'
+import { ensureFreshSession } from '../idp/session'
 
 const scenario = process.argv[2]
 const audience = process.env.DRIVER_AUDIENCE || undefined
@@ -35,16 +35,6 @@ try {
       resolveOrganizationId,
     })
     print({ ok: true, token: accessTokenForAudience(session, audience), orgHintCalls })
-  } else if (scenario === 'ensure-concurrent') {
-    const [a, b] = await Promise.all([
-      ensureFreshSession('alice', { audience, minimumRemainingSeconds, resolveOrganizationId }),
-      ensureFreshSession('alice', { audience, minimumRemainingSeconds, resolveOrganizationId }),
-    ])
-    print({
-      ok: true,
-      tokens: [accessTokenForAudience(a, audience), accessTokenForAudience(b, audience)],
-      orgHintCalls,
-    })
   } else {
     throw new Error(`Unknown scenario: ${scenario}`)
   }

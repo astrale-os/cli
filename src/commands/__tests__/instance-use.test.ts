@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { IssuerUnreachableError } from '../../errors'
-import { InstanceStoreSchema, type ResolvedInstance } from '../../lib/instance'
+import { InstanceStoreSchema, type ResolvedInstance } from '../../lib/instance/bookmarks'
 import { probeBookmark } from '../instance/use'
 
 const resolved: ResolvedInstance = {

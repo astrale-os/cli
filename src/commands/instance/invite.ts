@@ -2,10 +2,10 @@ import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
-import { inviteOwnedInstance } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { log, withSpinner } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+import { inviteOwnedInstance } from '../../lib/admin/instances'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, outputForMachine } from '../../lib/terminal/output'
 
 type InviteOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -49,10 +49,7 @@ Examples:
         { success: () => `Invitation sent to ${email}` },
       )
 
-      if (isMachine(opts)) {
-        output(invitation, opts)
-        return
-      }
+      if (outputForMachine(invitation, opts)) return
       log.dim(`  invitation: ${invitation.id}`)
       log.dim(`  state: ${invitation.state}`)
       if (invitation.instance) log.dim(`  instance: ${invitation.instance}`)
@@ -75,12 +72,7 @@ function optionalInteger(
   return input === undefined ? undefined : requiredInteger(input, minimum, maximum, flag)
 }
 
-export function requiredInteger(
-  input: string,
-  minimum: number,
-  maximum: number,
-  flag: string,
-): number {
+function requiredInteger(input: string, minimum: number, maximum: number, flag: string): number {
   if (!/^(?:0|[1-9][0-9]*)$/u.test(input)) {
     throw new TypeError(`${flag} must be an integer from ${minimum} to ${maximum}.`)
   }

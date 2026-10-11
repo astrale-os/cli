@@ -2,11 +2,16 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program/index'
 
-import { listOwnedInstances } from '../../lib/admin-instance'
-import { findOwnedInstance } from '../../lib/admin-instance'
-import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance'
-import { fatal, log, withSpinner } from '../../lib/log'
-import { RAW_OUTPUT_OPTIONS, isMachine, output, type RawOutputOpts } from '../../lib/output'
+import { findOwnedInstance } from '../../admin/instance'
+import { listOwnedInstances } from '../../lib/admin/instances'
+import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance/bookmarks'
+import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import {
+  RAW_OUTPUT_OPTIONS,
+  isMachine,
+  output,
+  type RawOutputOpts,
+} from '../../lib/terminal/output'
 
 export default {
   name: 'active',

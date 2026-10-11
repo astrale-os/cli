@@ -90,3 +90,15 @@ export function spawnHandle(
     stdio: opts.stdio ?? ['ignore', 'inherit', 'inherit'],
   })
 }
+
+/**
+ * The first executable `name` resolves to on PATH, or null. `command -v` is a POSIX shell builtin
+ * (no `command` executable exists on Windows), so Windows resolves through `where`.
+ */
+export async function findOnPath(name: string): Promise<string | null> {
+  const lookup =
+    process.platform === 'win32' ? run('where', [name]) : run('sh', ['-c', `command -v ${name}`])
+  const res = await lookup.catch(() => null)
+  if (!res || res.code !== 0) return null
+  return res.stdout.split(/\r?\n/)[0]?.trim() || null
+}

@@ -1,20 +1,19 @@
 import { issuer, jwk, register } from '@astrale-os/sdk/auth'
 import { NodeId } from '@astrale-os/sdk/graph/node'
-import { afterEach, expect, mock, test } from 'bun:test'
+import { afterEach, expect, spyOn, test } from 'bun:test'
 import { exportJWK, generateKeyPair, jwtVerify } from 'jose'
 import { mkdtemp, readFile, rm, unlink } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { keypairPaths } from '../../../keys'
+import { observeConnections, runCli } from '../../__tests__/fixtures/process'
 import {
   formatIdentityRegistration,
   prepareIdentityRegistration,
   registrationNodeId,
 } from '../register'
 
-const cliRoot = join(import.meta.dir, '../../../..')
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
@@ -22,39 +21,6 @@ afterEach(async () => {
     temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   )
 })
-
-async function runCli(root: string, args: readonly string[]) {
-  const child = Bun.spawn(['bun', join(cliRoot, 'bin/astrale.ts'), ...args], {
-    env: { ...process.env, ASTRALE_HOME: root, NO_UPDATE_NOTIFIER: '1' },
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ])
-  return { exitCode, stdout, stderr }
-}
-
-async function observeConnections() {
-  let connections = 0
-  const server = createServer((socket) => {
-    connections += 1
-    socket.destroy()
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Expected an observing TCP port')
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    count: () => connections,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  }
-}
 
 test('selects callable authority only for registration via a callable', async () => {
   const root = await mkdtemp(join(tmpdir(), 'astrale-register-principal-'))
@@ -78,141 +44,101 @@ test('selects callable authority only for registration via a callable', async ()
   ])
 })
 
-test('reports a missing local identity before connecting to Kernel', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'astrale-register-missing-'))
-  temporaryRoots.push(root)
-  const observer = await observeConnections()
-
-  try {
-    const result = await runCli(root, [
-      'identity',
-      'register',
-      'missing',
-      '--node',
-      '@existing-user-id',
-      '--url',
-      observer.url,
-      '--json',
-    ])
-
-    expect(result.exitCode).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(JSON.parse(result.stderr)).toEqual({
+test.each([
+  {
+    name: 'a missing local identity',
+    identity: 'missing',
+    prepare: async (_root: string) => {},
+    error: {
       error: 'NO_IDENTITY',
       message: 'Identity "missing" not found.',
       hint: 'Run: astrale identity create missing',
-    })
-    expect(observer.count()).toBe(0)
-  } finally {
-    await observer.close()
-  }
-})
-
-test('rejects an IdP identity before using a colliding local keypair or Kernel', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'astrale-register-idp-'))
-  temporaryRoots.push(root)
-  const observer = await observeConnections()
-  const setup = Bun.spawn(['bun', join(import.meta.dir, 'fixtures', 'register-idp-collision.ts')], {
-    env: { ...process.env, ASTRALE_HOME: root },
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [setupExit, setupStderr] = await Promise.all([
-    setup.exited,
-    new Response(setup.stderr).text(),
-  ])
-  expect(setupExit, setupStderr).toBe(0)
-
-  try {
-    const before = await readFile(join(root, 'identities.json'), 'utf8')
-    const result = await runCli(root, [
-      'identity',
-      'register',
-      'workos-user',
-      '--node',
-      '@existing-user-id',
-      '--url',
-      observer.url,
-      '--json',
-    ])
-
-    expect(result.exitCode).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(JSON.parse(result.stderr)).toEqual({
+    },
+  },
+  {
+    name: 'an IdP identity sharing a local keypair subject',
+    identity: 'workos-user',
+    prepare: async (root: string) => {
+      const setup = Bun.spawn(
+        ['bun', join(import.meta.dir, 'fixtures/register-idp-collision.ts')],
+        {
+          env: { ...process.env, ASTRALE_HOME: root },
+          stderr: 'pipe',
+        },
+      )
+      expect(await setup.exited, await new Response(setup.stderr).text()).toBe(0)
+    },
+    error: {
       error: 'INVALID_IDENTITY_SOURCE',
       message:
         'Identity "workos-user" is IdP-backed and cannot be registered as a local key identity.',
       hint: 'Run: astrale identity create <local-name>',
-    })
-    expect(observer.count()).toBe(0)
-    expect(await readFile(join(root, 'identities.json'), 'utf8')).toBe(before)
-  } finally {
-    await observer.close()
-  }
-})
-
-test('reports an incomplete keypair exactly before connecting to Kernel', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'astrale-register-keypair-'))
-  temporaryRoots.push(root)
-  const created = await runCli(root, ['identity', 'create', 'alice', '--json'])
-  expect(created.exitCode, created.stderr).toBe(0)
-  await unlink(keypairPaths('alice', join(root, 'keys')).publicPath)
-  const observer = await observeConnections()
-
-  try {
-    const result = await runCli(root, [
-      'identity',
-      'register',
-      'alice',
-      '--node',
-      '@existing-user-id',
-      '--url',
-      observer.url,
-      '--json',
-    ])
-
-    expect(result.exitCode).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(JSON.parse(result.stderr)).toEqual({
+    },
+  },
+  {
+    name: 'an incomplete keypair',
+    identity: 'alice',
+    prepare: async (root: string) => {
+      const created = await runCli(root, ['identity', 'create', 'alice', '--json'])
+      expect(created.exitCode, created.stderr).toBe(0)
+      await unlink(keypairPaths('alice', join(root, 'keys')).publicPath)
+    },
+    error: {
       error: 'IDENTITY_KEYPAIR_INCOMPLETE',
       message: 'Identity "alice" has an incomplete keypair (missing public key).',
       hint: 'Restore or import its complete keypair, or create a different local identity.',
-    })
-    expect(observer.count()).toBe(0)
-  } finally {
-    await observer.close()
-  }
-})
+    },
+  },
+])(
+  'refuses $name before connecting to Kernel, changing nothing',
+  async ({ identity, prepare, error }) => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-register-refused-'))
+    temporaryRoots.push(root)
+    await prepare(root)
+    const before = await readFile(join(root, 'identities.json'), 'utf8').catch(() => null)
+    const observer = await observeConnections()
+    try {
+      const result = await runCli(root, [
+        'identity',
+        'register',
+        identity,
+        '--node',
+        '@existing-user-id',
+        '--url',
+        observer.url,
+        '--json',
+      ])
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(JSON.parse(result.stderr)).toEqual(error)
+      expect(observer.count()).toBe(0)
+      expect(await readFile(join(root, 'identities.json'), 'utf8').catch(() => null)).toBe(before)
+    } finally {
+      await observer.close()
+    }
+  },
+)
 
 /** @evidence TEST-CLI-IDENTITY-REGISTER-JSON-EXACT */
 test('emits exactly one structured value for machine registration output', () => {
-  const writes: string[] = []
-  const logs: string[] = []
-  const originalWrite = process.stdout.write
-  const originalLog = console.log
-  process.stdout.write = mock((chunk: string | Uint8Array) => {
-    writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-    return true
-  }) as typeof process.stdout.write
-  console.log = mock((...values: unknown[]) => logs.push(values.map(String).join(' ')))
-
+  const written = spyOn(process.stdout, 'write').mockImplementation(() => true)
+  const logged = spyOn(console, 'log').mockImplementation(() => undefined)
   try {
     formatIdentityRegistration(
       { iss: 'https://identity.example', sub: 'self', nodeId: 'operator-node' },
       { json: true },
       true,
     )
+    expect(JSON.parse(written.mock.calls.map(([chunk]) => String(chunk)).join(''))).toEqual({
+      iss: 'https://identity.example',
+      sub: 'self',
+      nodeId: 'operator-node',
+    })
+    expect(logged).not.toHaveBeenCalled()
   } finally {
-    process.stdout.write = originalWrite
-    console.log = originalLog
+    written.mockRestore()
+    logged.mockRestore()
   }
-
-  expect(JSON.parse(writes.join(''))).toEqual({
-    iss: 'https://identity.example',
-    sub: 'self',
-    nodeId: 'operator-node',
-  })
-  expect(logs).toEqual([])
 })
 
 test('registers only the selected existing Node with a verifiable primary self proof', async () => {

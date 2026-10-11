@@ -1,12 +1,12 @@
 import type { KernelCommandOpts } from '../../connection'
-import type { RawOutputOpts } from '../../lib/output'
+import type { RawOutputOpts } from '../../lib/terminal/output'
 import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { fatal, withSpinner } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
+import { fatal, withSpinner } from '../../lib/terminal/log'
+import { isMachine, output } from '../../lib/terminal/output'
 import {
   listInstalled,
   renderInstalled,
@@ -14,7 +14,7 @@ import {
   type InstalledListV1,
 } from './installed-list'
 
-export type ListOpts = KernelCommandOpts &
+type ListOpts = KernelCommandOpts &
   AdminTargetCommandOpts &
   RawOutputOpts & {
     format?: 'yaml' | 'json'
@@ -25,7 +25,7 @@ export type ListOpts = KernelCommandOpts &
  * InstalledListV1). A person gets the [.79737] table on a TTY; --json, --ci or a pipe print the
  * document. A refusal exits 1, with its details in machine mode.
  */
-export async function runInstalledList(
+async function runInstalledList(
   opts: ListOpts,
   dependencies: Partial<InstalledListDependencies> = {},
 ): Promise<void> {

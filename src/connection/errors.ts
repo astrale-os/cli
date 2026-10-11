@@ -15,8 +15,7 @@ import chalk from 'chalk'
 import type { OperationRecovery } from './command'
 
 import { AstraleError } from '../errors'
-import { printFailureDebug } from '../lib/failure-debug'
-import { log } from '../lib/log'
+import { log, printFailureDebug } from '../lib/terminal/log'
 import {
   CREDENTIAL_REFUSED,
   functionInputIssues,

@@ -4,11 +4,11 @@ import {
   AdminTargetConfigSchema,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
   DEFAULT_ADMIN_TARGET_NAME,
-} from '../../lib/admin-target'
+} from '../../lib/admin/target'
 import { readConfig, writeConfig } from '../../lib/config'
 import { readLocalStatus } from '../../lib/local-status'
-import { log } from '../../lib/log'
-import { promptText } from '../../lib/prompt'
+import { log } from '../../lib/terminal/log'
+import { promptText } from '../../lib/terminal/prompt'
 import { urlError } from '../util'
 
 const FIX = 'astrale admin use --url <admin-url>'

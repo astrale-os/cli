@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 
 import type { AdminConnectionOptions } from '../connection'
-import type { OutputOpts } from '../lib/output'
+import type { OutputOpts } from '../lib/terminal/output'
 import type { CommandDefinition } from '../program'
 
 import pkg from '../../package.json' with { type: 'json' }
@@ -14,10 +14,10 @@ import {
   submitIssue,
   type IssueContent,
 } from '../issues/submit'
-import { ADMIN_TARGET_OPTIONS } from '../lib/admin-target'
-import { readInstances } from '../lib/instance'
-import { fatal, log } from '../lib/log'
-import { isMachine, output } from '../lib/output'
+import { ADMIN_TARGET_OPTIONS } from '../lib/admin/target'
+import { readInstances } from '../lib/instance/bookmarks'
+import { fatal, log } from '../lib/terminal/log'
+import { isMachine, output } from '../lib/terminal/output'
 import { withKernelOptions } from '../program/options'
 import { ASTRALE_HOME } from '../state'
 

@@ -3,7 +3,7 @@ import type { RegistryCommandDependencies, RegistryCommandOpts } from './shared'
 
 import { exactPublicationReference, registryOrigin } from '../../admin/registry'
 import { AstraleError } from '../../errors'
-import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS } from '../../lib/admin/target'
 import { runRegistryCommand } from './shared'
 
 type BundleOpts = RegistryCommandOpts & { readonly output?: string }

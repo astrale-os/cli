@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { AbResult } from '../browser'
+import type { AbResult } from '../browser/agent-browser'
 
 import { snapshotText, waitForSettledSnapshot } from '../view/snapshot'
 
@@ -23,55 +23,34 @@ function clock() {
 }
 
 describe('view snapshot settling', () => {
-  test('waits through a late loading-to-content transition and a quiet window', async () => {
+  /** Settle the page `at(elapsed)` shows over a fake clock. */
+  async function settle(
+    at: (elapsed: number) => AbResult,
+    timeoutMs: number,
+    quietWindowMs: number,
+  ) {
     const fakeClock = clock()
-    let calls = 0
-    const takeSnapshot = async () => {
-      calls += 1
-      return fakeClock.elapsed() < 1_250 ? pending : settled
-    }
-
-    const snapshot = await waitForSettledSnapshot(takeSnapshot, fakeClock, {
-      timeoutMs: 4_000,
-      quietWindowMs: 750,
+    const snapshot = await waitForSettledSnapshot(async () => at(fakeClock.elapsed()), fakeClock, {
+      timeoutMs,
+      quietWindowMs,
       pollMs: 250,
     })
+    return { snapshot, elapsed: fakeClock.elapsed() }
+  }
 
-    expect(snapshotText(snapshot)).toContain('Connect Google')
-    expect(fakeClock.elapsed()).toBe(2_000)
-    expect(calls).toBe(10)
-  })
+  test('waits through a late loading-to-content transition and a quiet window, within its bound', async () => {
+    const late = await settle((elapsed) => (elapsed < 1_250 ? pending : settled), 4_000, 750)
+    expect(snapshotText(late.snapshot)).toContain('Connect Google')
+    expect(late.elapsed).toBe(2_000)
 
-  test('returns the latest permanently pending snapshot at the bound', async () => {
-    const fakeClock = clock()
-    let calls = 0
-    const takeSnapshot = async () => {
-      calls += 1
-      return pending
-    }
-
-    const snapshot = await waitForSettledSnapshot(takeSnapshot, fakeClock, {
-      timeoutMs: 1_000,
-      quietWindowMs: 500,
-      pollMs: 250,
-    })
-
-    expect(snapshot).toBe(pending)
-    expect(fakeClock.elapsed()).toBe(1_000)
-    expect(calls).toBe(6)
+    // A permanently pending page returns its latest snapshot at the bound.
+    expect(await settle(() => pending, 1_000, 500)).toEqual({ snapshot: pending, elapsed: 1_000 })
   })
 
   test('ignores changing agent-browser refs when measuring stability', async () => {
-    const fakeClock = clock()
     let ref = 0
-
-    const snapshot = await waitForSettledSnapshot(
-      async () => result(`- button "Deploy" [ref=e${++ref}]`),
-      fakeClock,
-      { timeoutMs: 2_000, quietWindowMs: 500, pollMs: 250 },
-    )
-
-    expect(snapshotText(snapshot)).toContain('Deploy')
-    expect(fakeClock.elapsed()).toBe(500)
+    const stable = await settle(() => result(`- button "Deploy" [ref=e${++ref}]`), 2_000, 500)
+    expect(snapshotText(stable.snapshot)).toContain('Deploy')
+    expect(stable.elapsed).toBe(500)
   })
 })

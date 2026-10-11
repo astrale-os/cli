@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { InstanceInfo } from '../admin-instance'
-import type { InstanceStore } from '../instance'
+import type { InstanceInfo } from '../../admin/instance'
+import type { InstanceStore } from '../instance/bookmarks'
 
-import { collectInstanceCandidates, describeInstanceCandidate } from '../instance-candidates'
+import { collectInstanceCandidates, describeInstanceCandidate } from '../instance/candidates'
 
 const store: InstanceStore = {
   active: 'demo',
@@ -21,9 +21,8 @@ const managedDemo: InstanceInfo = {
 }
 
 describe('collectInstanceCandidates', () => {
-  test('bookmark and managed at the same URL collapse into one candidate', () => {
-    const candidates = collectInstanceCandidates('demo', store, [managedDemo])
-    expect(candidates).toEqual([
+  test('a bookmark and a managed Instance collapse at the same URL, else both are candidates', () => {
+    expect(collectInstanceCandidates('demo', store, [managedDemo])).toEqual([
       {
         source: 'bookmark',
         key: 'demo',
@@ -31,116 +30,32 @@ describe('collectInstanceCandidates', () => {
         entry: store.instances.demo,
       },
     ])
-  })
-
-  test('bookmark and managed at different URLs are both candidates', () => {
-    const conflicting: InstanceInfo = {
-      ...managedDemo,
-      url: 'https://demo.us.astrale.ai',
-    }
-    const candidates = collectInstanceCandidates('demo', store, [conflicting])
+    const elsewhere = { ...managedDemo, url: 'https://demo.us.astrale.ai' }
     expect(
-      candidates.map((candidate) => ({
-        source: candidate.source,
-        key: candidate.key,
-        url: candidate.url,
-        id: candidate.source === 'managed' ? candidate.info.id : undefined,
-      })),
+      collectInstanceCandidates('demo', store, [elsewhere]).map(describeInstanceCandidate),
     ).toEqual([
-      {
-        source: 'bookmark',
-        key: 'demo',
-        url: 'https://demo.eu.astrale.ai/api',
-        id: undefined,
-      },
-      {
-        source: 'managed',
-        key: 'demo',
-        url: 'https://demo.us.astrale.ai/api',
-        id: 'demo',
-      },
+      'demo (bookmark) https://demo.eu.astrale.ai/api',
+      'demo (managed) https://demo.us.astrale.ai/api',
     ])
   })
 
-  test('multiple managed instances with the same slug are all candidates', () => {
-    const a: InstanceInfo = {
-      id: 'x1',
+  test('a name matches bookmarks by alias and managed Instances by slug, nothing else', () => {
+    const twin = (id: string, region: string): InstanceInfo => ({
+      id,
       slug: 'twin',
-      url: 'https://twin.eu.astrale.ai',
+      url: `https://twin.${region}.astrale.ai`,
       state: 'ready',
-    }
-    const b: InstanceInfo = {
-      id: 'x2',
-      slug: 'twin',
-      url: 'https://twin.us.astrale.ai',
-      state: 'ready',
-    }
-    const candidates = collectInstanceCandidates('twin', store, [a, b])
+    })
+    const managed = [twin('x1', 'eu'), twin('x2', 'us')]
     expect(
-      candidates.map((candidate) => ({
-        source: candidate.source,
-        key: candidate.key,
-        id: candidate.source === 'managed' ? candidate.info.id : undefined,
-      })),
+      collectInstanceCandidates('twin', store, managed).map(describeInstanceCandidate),
     ).toEqual([
-      { source: 'managed', key: 'twin', id: 'x1' },
-      { source: 'managed', key: 'twin', id: 'x2' },
-    ])
-  })
-
-  test('managed instances with a different slug are ignored', () => {
-    const unrelated: InstanceInfo = {
-      id: 'z',
-      slug: 'zeta',
-      url: 'https://zeta.eu.astrale.ai',
-      state: 'ready',
-    }
-    expect(
-      collectInstanceCandidates('demo', store, [unrelated]).map((candidate) => ({
-        source: candidate.source,
-        key: candidate.key,
-      })),
-    ).toEqual([{ source: 'bookmark', key: 'demo' }])
-  })
-
-  test('bookmark resolution honours slug aliases', () => {
-    const candidates = collectInstanceCandidates('oth', store, [])
-    expect(
-      candidates.map((candidate) => ({
-        source: candidate.source,
-        key: candidate.key,
-        url: candidate.url,
-      })),
-    ).toEqual([
-      {
-        source: 'bookmark',
-        key: 'other',
-        url: 'https://other.example.com/api',
-      },
-    ])
-  })
-
-  test('unknown name yields no candidates', () => {
-    expect(collectInstanceCandidates('missing', store, [])).toEqual([])
-  })
-})
-
-describe('describeInstanceCandidate', () => {
-  test('labels carry source and URL', () => {
-    const [bookmark] = collectInstanceCandidates('demo', store, [])
-    expect(describeInstanceCandidate(bookmark!)).toContain('(bookmark)')
-    expect(describeInstanceCandidate(bookmark!)).toContain('https://demo.eu.astrale.ai/api')
-
-    const [managed] = collectInstanceCandidates('twin', store, [
-      {
-        id: 'x',
-        slug: 'twin',
-        url: 'https://twin.eu.astrale.ai',
-        state: 'ready',
-      },
-    ])
-    expect(describeInstanceCandidate(managed!)).toBe(
       'twin (managed) https://twin.eu.astrale.ai/api',
+      'twin (managed) https://twin.us.astrale.ai/api',
+    ])
+    expect(collectInstanceCandidates('oth', store, managed).map(describeInstanceCandidate)).toEqual(
+      ['other (bookmark) https://other.example.com/api'],
     )
+    expect(collectInstanceCandidates('missing', store, managed)).toEqual([])
   })
 })

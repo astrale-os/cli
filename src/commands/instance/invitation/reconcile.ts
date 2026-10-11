@@ -2,10 +2,10 @@ import type { KernelCommandOpts } from '../../../connection'
 import type { CommandDefinition } from '../../../program/index'
 
 import { formatKernelError } from '../../../connection/errors'
-import { reconcileOwnedInvitation } from '../../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../../lib/admin-target'
-import { log, withSpinner } from '../../../lib/log'
-import { isMachine, output } from '../../../lib/output'
+import { reconcileOwnedInvitation } from '../../../lib/admin/instances'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../../lib/admin/target'
+import { log, withSpinner } from '../../../lib/terminal/log'
+import { isMachine, outputForMachine } from '../../../lib/terminal/output'
 
 type ReconcileOpts = KernelCommandOpts & AdminTargetCommandOpts
 
@@ -34,10 +34,7 @@ Recovery:
               : `Invitation is ${result.state}`,
         },
       )
-      if (isMachine(opts)) {
-        output(invitation, opts)
-        return
-      }
+      if (outputForMachine(invitation, opts)) return
       log.success(`Invitation ${invitation.state}: ${invitation.email}`)
       if (invitation.user) log.dim(`  user: ${invitation.user}`)
       if (invitation.claimedBy) log.dim(`  claimed by: ${invitation.claimedBy}`)

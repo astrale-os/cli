@@ -3,19 +3,19 @@ import { stringify as yamlStringify } from 'yaml'
 
 import type { AdminRegistryApi } from '../../admin/registry'
 import type { KernelCommandOpts } from '../../connection'
-import type { AdminTargetCommandOpts } from '../../lib/admin-target'
+import type { AdminTargetCommandOpts } from '../../lib/admin/target'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
 import { withAdminClientSession } from '../../connection'
 import { resolveTimeoutMs } from '../../connection/session'
 import { AstraleError } from '../../errors'
-import { printFailureDebug } from '../../lib/failure-debug'
-import { log } from '../../lib/log'
+import { printFailureDebug } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 
 export type RegistryCommandOpts = KernelCommandOpts & AdminTargetCommandOpts
 
 /** The CT29 error document every registry command prints on stdout in machine mode. */
-export interface RegistryErrorDocument {
+interface RegistryErrorDocument {
   readonly error: {
     readonly code: string
     readonly message: string
@@ -74,7 +74,7 @@ function registryDocument(value: unknown, notation: 'json' | 'yaml' = 'json'): s
   return `${JSON.stringify(value, null, 2)}\n`
 }
 
-export function registryErrorDocument(error: AstraleError): RegistryErrorDocument {
+function registryErrorDocument(error: AstraleError): RegistryErrorDocument {
   const details =
     error instanceof RegistryError
       ? error.details

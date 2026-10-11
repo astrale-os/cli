@@ -3,8 +3,8 @@ import { join } from 'node:path'
 
 import { paths } from '../../state'
 import { atomicWrite, withFileLock } from '../../state/files'
-import { canPrompt } from '../interactive'
-import { promptYesNo } from '../prompt'
+import { canPrompt } from '../terminal/interactive'
+import { promptYesNo } from '../terminal/prompt'
 
 const STATE_VERSION = 1
 const DAY_MS = 24 * 60 * 60 * 1_000

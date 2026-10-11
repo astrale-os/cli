@@ -1,9 +1,10 @@
+import type { IdentityStore } from '../identity/index'
+import type { InstanceStore } from '../lib/instance/bookmarks'
 import type { CommandDefinition } from '../program/index'
 
 import { readIdentities, setDefault } from '../identity/index'
-import { readInstances } from '../lib/instance'
-import { fatal, log } from '../lib/log'
-import { resolveUseTarget } from '../lib/use-target'
+import { readInstances, resolveInstanceKey } from '../lib/instance/bookmarks'
+import { fatal, log } from '../lib/terminal/log'
 import instanceUseCommand from './instance/use'
 
 type UseOpts = {
@@ -11,6 +12,27 @@ type UseOpts = {
   instance?: boolean
   adoptDefault?: boolean
   skipJwksCheck?: boolean
+}
+
+type UseTarget =
+  | { kind: 'identity'; name: string }
+  | { kind: 'instance'; name: string }
+  | { kind: 'ambiguous'; name: string }
+  | { kind: 'missing'; name: string }
+
+/** What `astrale use <name>` names: an identity, an instance, both, or neither. */
+export function resolveUseTarget(
+  name: string,
+  instances: InstanceStore,
+  identities: IdentityStore,
+): UseTarget {
+  const identityExists = !!identities.identities[name]
+  const instanceKey = resolveInstanceKey(instances, name)
+
+  if (identityExists && instanceKey) return { kind: 'ambiguous', name }
+  if (identityExists) return { kind: 'identity', name }
+  if (instanceKey) return { kind: 'instance', name: instanceKey }
+  return { kind: 'missing', name }
 }
 
 async function useIdentity(name: string): Promise<void> {

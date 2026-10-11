@@ -5,9 +5,9 @@ import {
   readIdpConfigOrBuiltin,
   upsertIdpConfig,
   workosAuthKitMetadata,
-} from '../../lib/idp'
-import { log, withSpinner } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+} from '../../lib/idp/provider'
+import { log, withSpinner } from '../../lib/terminal/log'
+import { isMachine, outputForMachine, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 
 export default {
   name: 'refresh',
@@ -29,10 +29,7 @@ export default {
       builtIn: existing.entry.builtIn,
     })
 
-    if (isMachine(opts)) {
-      output(idp, opts)
-      return
-    }
+    if (outputForMachine(idp, opts)) return
 
     log.success(`IdP "${name}" discovery metadata refreshed`)
     log.dim(`  issuer: ${idp.metadata.issuer}`)

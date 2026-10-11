@@ -2,7 +2,7 @@ import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 import type { ReferenceInstallOpts } from './release-install'
 
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
 import { installByReference } from './release-install'
 
 type InstallOpts = KernelCommandOpts &

@@ -4,9 +4,9 @@ import type { KernelCommandOpts, OperationRecovery } from '../../connection'
 import type { InstallPrecheck } from './install-precheck'
 
 import { formatKernelError } from '../../connection/errors'
-import { formatElapsed } from '../../lib/format'
-import { fatal, log, spinner } from '../../lib/log'
-import { isMachine } from '../../lib/output'
+import { formatElapsed } from '../../lib/terminal/format'
+import { fatal, log, spinner } from '../../lib/terminal/log'
+import { isMachine } from '../../lib/terminal/output'
 
 /** One deployment URL to install, as written, beside the host name that serves it. */
 export interface UrlSource {

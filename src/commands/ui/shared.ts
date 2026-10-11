@@ -1,5 +1,5 @@
-import { fatal, withSpinner } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+import { fatal, withSpinner } from '../../lib/terminal/log'
+import { isMachine, output } from '../../lib/terminal/output'
 
 export type UiCommandOptions = { json?: boolean; project?: string }
 
