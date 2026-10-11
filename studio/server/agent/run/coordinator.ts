@@ -10,8 +10,8 @@ import type {
   ConversationInfo,
   QueuedMessage,
 } from '../../../shared/types'
+import type { Notify } from '../../api/http'
 import type { StoredChat } from '../chats'
-import type { Notify } from '../notify'
 import type { AgentWorkspace } from '../workspace'
 
 import {

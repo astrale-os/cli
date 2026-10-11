@@ -111,7 +111,7 @@ export function clearHarnessGateway(): HarnessGatewayState {
 }
 
 /** The config that takes effect (or undefined ⇒ default harness auth). */
-export function resolveHarnessGateway(): HarnessGatewayConfig | undefined {
+function resolveHarnessGateway(): HarnessGatewayConfig | undefined {
   return getHarnessGatewayState().effective ?? undefined
 }
 
@@ -130,9 +130,7 @@ export function gatewayAudience(): string | null {
 /** Either the ANTHROPIC_* env to inject (empty ⇒ no gateway configured), or a
  *  human error when a gateway IS configured but its token can't be obtained — so
  *  callers fail loudly instead of silently falling back to the default Claude auth. */
-export type HarnessEnvResult =
-  | { ok: true; env: Record<string, string> }
-  | { ok: false; error: string }
+type HarnessEnvResult = { ok: true; env: Record<string, string> } | { ok: false; error: string }
 
 /**
  * Resolve the ANTHROPIC_* env for the harness child. Derives the gateway audience

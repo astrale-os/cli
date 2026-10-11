@@ -12,7 +12,7 @@ import { captureBaseline, hashAnatomyFiles, loadBaseline } from '../state/baseli
 import { initDotDir } from '../state/store'
 import { watchDomain } from './watch'
 
-export interface BootedDomain {
+interface BootedDomain {
   origin: string
   depsInstalled: boolean
   /** identifies the render this boot produced, so clients can be told it landed */

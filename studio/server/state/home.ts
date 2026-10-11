@@ -12,7 +12,7 @@ import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 
 /** The CLI's home: `ASTRALE_HOME`, else `~/.astrale`. */
-export function astraleHome(): string {
+function astraleHome(): string {
   const configured = process.env.ASTRALE_HOME?.trim()
   return configured ? resolve(configured) : join(homedir(), '.astrale')
 }

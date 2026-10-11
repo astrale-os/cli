@@ -16,7 +16,7 @@
  * That preference lives in the studio's settings, which are global — so the harness
  * is too, and so are the gateway credentials it runs with: nothing below takes a root.
  */
-import type { AgentEffort, StudioSettings } from '../../../shared/types'
+import type { AgentEffort, HarnessStatus, StudioSettings } from '../../../shared/types'
 import type { AgentHarness } from './adapter'
 
 import { studioSettings } from '../../state/settings'
@@ -24,15 +24,10 @@ import { lastKnownPresence } from './adapter'
 import { resolveHarnessEnv } from './gateway/config'
 import { getHarnessById, hasHarness, listHarnesses } from './registry'
 
-export interface HarnessSelection {
-  id: string
-  locked: boolean
-  source: 'environment' | 'starred' | 'default' | 'fallback'
-  /** the starred harness, when it is NOT `id` because it is missing on this machine */
-  preferred?: string
-}
+/** Which agent the next chat opens on, and why — the selection half of `HarnessStatus`. */
+type HarnessSelection = Pick<HarnessStatus, 'id' | 'locked' | 'source' | 'preferred'>
 
-export interface HarnessConfiguration {
+interface HarnessConfiguration {
   harness: AgentHarness
   settings: StudioSettings
   model?: string
@@ -40,12 +35,12 @@ export interface HarnessConfiguration {
   env: Record<string, string>
 }
 
-export type HarnessConfigurationResult =
+type HarnessConfigurationResult =
   | { ok: true; configuration: HarnessConfiguration }
   | { ok: false; error: string }
 
 /** Per-turn overrides a chat carries — each one outranks the machine preference. */
-export interface HarnessOverrides {
+interface HarnessOverrides {
   model?: string
   effort?: AgentEffort
 }

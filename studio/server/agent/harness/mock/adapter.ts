@@ -1,7 +1,14 @@
 import { statSync } from 'node:fs'
 
 import type { AgentToolCall, Comment } from '../../../../shared/types'
-import type { AgentHarness, AgentTurnInput, AgentTurnResult, AskInput, AskResult } from '../adapter'
+import type {
+  AgentHarness,
+  AgentTurnInput,
+  AgentTurnResult,
+  AskInput,
+  AskResult,
+  HarnessHealth,
+} from '../adapter'
 
 import { readComments } from '../../../state/comments'
 import { applyMockDomainEdit } from './domain-edit'
@@ -44,8 +51,8 @@ export class MockHarness implements AgentHarness {
     gateway: 'none',
   } as const
 
-  async isAvailable(): Promise<boolean> {
-    return true
+  async health(): Promise<HarnessHealth> {
+    return { ok: true, bin: this.id }
   }
 
   async run(input: AgentTurnInput): Promise<AgentTurnResult> {

@@ -9,8 +9,6 @@ import { crossSiteBlocked, json, notFound, readJsonRecord, type Notify } from '.
 import { handleWorkspaceRoute } from './api/workspace'
 import { getDomain } from './domain/registry'
 
-export type { Notify } from './api/http'
-
 export async function handleApi(req: Request, url: URL, notify: Notify): Promise<Response | null> {
   const path = url.pathname
   if (!path.startsWith('/api/')) return null

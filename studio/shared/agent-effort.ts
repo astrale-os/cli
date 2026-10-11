@@ -7,7 +7,7 @@ export function isAgentEffort(value: unknown): value is AgentEffort {
 }
 
 /** Where a level sits on the shared ladder — the basis of every mapping below. */
-export function agentEffortRank(effort: AgentEffort): number {
+function agentEffortRank(effort: AgentEffort): number {
   return AGENT_EFFORT_LEVELS.indexOf(effort)
 }
 

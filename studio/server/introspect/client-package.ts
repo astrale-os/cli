@@ -4,7 +4,7 @@ import { parse as parseYaml } from 'yaml'
 
 import { asJsonRecord, asStringArray, parseJson } from '../json'
 
-export type ClientPackageResolution =
+type ClientPackageResolution =
   | {
       status: 'available'
       packageDir: string

@@ -173,11 +173,8 @@ export interface AgentHarness {
    *  Studio wants to inherit silently. Ignored when the harness does not list it. */
   defaultModel?: string
   capabilities: HarnessCapabilities
-  /** is the underlying CLI/binary actually invokable here? */
-  isAvailable(signal?: AbortSignal): Promise<boolean>
-  /** optional: a richer install probe for the UI (version + reason). Harnesses that
-   *  omit it fall back to isAvailable(). */
-  health?(signal?: AbortSignal): Promise<HarnessHealth>
+  /** is the underlying CLI/binary invokable here — and which version, or why not */
+  health(signal?: AbortSignal): Promise<HarnessHealth>
   run(input: AgentTurnInput): Promise<AgentTurnResult>
   /** optional: answer a quick forked side question (Ask). Harnesses without a
    *  fork concept simply omit this; the studio falls back gracefully. */
@@ -213,14 +210,12 @@ export function rememberHarnessPresence(id: string, ok: boolean | undefined): vo
   else presence.set(id, ok)
 }
 
-/** Normalize optional rich health probes into one route-facing result. */
+/** Probe a harness and remember whether it answered. */
 export async function inspectHarnessHealth(
   harness: AgentHarness,
   signal?: AbortSignal,
 ): Promise<HarnessHealth> {
-  const health = harness.health
-    ? await harness.health(signal)
-    : { ok: await harness.isAvailable(signal), bin: harness.id }
+  const health = await harness.health(signal)
   if (!signal?.aborted) rememberHarnessPresence(harness.id, health.ok)
   return health
 }

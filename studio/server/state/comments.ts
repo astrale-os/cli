@@ -235,42 +235,25 @@ export function markOrphans(root: string, validRefs: string[]): CommentStore {
   return store
 }
 
-interface PastedThreadEntry {
-  id?: string
-  role?: 'user' | 'author'
-  type?: 'text' | 'choice'
-  text?: string
-  options?: string[]
-  answer?: string | null
-}
-
-interface PastedComment {
-  id?: string
-  anchors?: string[]
-  status?: 'open' | 'closed'
-  closeNote?: string
-  thread?: PastedThreadEntry[]
-}
+/** A comment as an agent pastes it back: only its id is needed to merge it. */
+type PastedComment = Partial<Pick<Comment, 'id' | 'anchors' | 'status' | 'closeNote' | 'thread'>>
 
 interface PastedStore {
   schemaVersion?: string
   comments?: PastedComment[]
 }
 
-function decodePastedEntry(value: unknown): PastedThreadEntry | undefined {
+/** A pasted thread entry, completed: a missing id is minted, role and type default. */
+function decodePastedEntry(value: unknown): ThreadEntry | undefined {
   const record = asJsonRecord(value)
   if (!record) return undefined
-  const role = record.role === 'user' || record.role === 'author' ? record.role : undefined
-  const type = record.type === 'text' || record.type === 'choice' ? record.type : undefined
-  const id = asString(record.id)
-  const text = asString(record.text)
   const options = asStringArray(record.options)
   const answer = record.answer === null ? null : asString(record.answer)
   return {
-    ...(id === undefined ? {} : { id }),
-    ...(role === undefined ? {} : { role }),
-    ...(type === undefined ? {} : { type }),
-    ...(text === undefined ? {} : { text }),
+    id: asString(record.id) || crypto.randomUUID(),
+    role: record.role === 'author' ? 'author' : 'user',
+    type: record.type === 'choice' ? 'choice' : 'text',
+    text: asString(record.text) ?? '',
     ...(options === undefined ? {} : { options }),
     ...(answer === undefined ? {} : { answer }),
   }
@@ -315,19 +298,7 @@ function extractLastJsonBlock(text: string): string | null {
   return last == null ? null : last.trim()
 }
 
-function normalizePastedEntry(e: PastedThreadEntry): ThreadEntry {
-  const entry: ThreadEntry = {
-    id: e.id && e.id.length > 0 ? e.id : crypto.randomUUID(),
-    role: e.role === 'author' ? 'author' : 'user',
-    type: e.type === 'choice' ? 'choice' : 'text',
-    text: e.text ?? '',
-  }
-  if (e.options !== undefined) entry.options = e.options
-  if (e.answer !== undefined) entry.answer = e.answer
-  return entry
-}
-
-export interface MergeOptions {
+interface MergeOptions {
   /** live loop: skip ONLY the texts already applied live this run, per comment id */
   skipByComment?: Map<string, Set<string>>
   /** manual paste: dedupe author replies against the whole thread (a re-paste with
@@ -404,8 +375,7 @@ export function mergeParsedReply(
       ? new Set(local.thread.filter((t) => t.role === 'author').map((t) => t.text.trim()))
       : null
     let appended = 0
-    for (const pe of pc.thread ?? []) {
-      const entry = normalizePastedEntry(pe)
+    for (const entry of pc.thread ?? []) {
       if (seen.has(entry.id)) continue
       if (entry.role === 'author') {
         const text = entry.text.trim()

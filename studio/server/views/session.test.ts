@@ -1,99 +1,87 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 
 import type { ViewInfo } from '../../shared/types'
 
-import { conciseCliFailure, launchViewSession, readyViewSession } from './session'
+import { STUDIO_CLI_DESCRIPTOR_ENV } from '../cli'
+import { getViewRuntime, launchViewSession, type ViewSessionDependencies } from './session'
 
-describe('view session runtime', () => {
-  test('opens the canonical ViewPath from the exact prepared instance', async () => {
-    const view = { slug: 'dashboard', kind: 'unknown' } satisfies ViewInfo
-    const opened: unknown[] = []
-    const result = await launchViewSession(
-      '/workspace',
-      'issues.astrale.ai',
-      view,
-      null,
-      { preparationId: 'prepared' },
-      2000,
-      {
-        activeInstance: async () => 'local',
-        serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
-        readPreparation: () => ({
-          id: 'prepared',
-          root: '/workspace',
-          origin: 'issues.astrale.ai',
-          slug: 'dashboard',
-          instance: 'local',
-          expiresAt: Date.now() + 60_000,
-        }),
-        open: async (input) => {
-          opened.push(input)
-          return {
-            id: 'v-a1b2',
-            pid: 123,
-            port: 4419,
-            nonce: 'nonce',
-            pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-            view: {
-              target: '/:issues.astrale.ai',
-              handshake: 'none',
-              route: {
-                href: 'https://issues.example/ui/dashboard',
-                key: 'issues.astrale.ai:view.dashboard',
-              },
-            },
-            createdAt: '2026-09-03T00:00:00.000Z',
-          } as never
-        },
-      },
-    )
+const priorDescriptor = process.env[STUDIO_CLI_DESCRIPTOR_ENV]
+const view = { slug: 'issues', kind: 'unknown' } satisfies ViewInfo
+const origin = 'issues.example.dev'
 
-    expect(opened).toEqual([
-      {
-        viewPath: '/:issues.astrale.ai:view.dashboard',
-        instance: 'local',
-        timeoutMs: 20_000,
-        idleMs: 8 * 60 * 60_000,
-        serveRuntime: { file: '/cli/astrale', args: [] },
-      },
-    ])
-    expect(result).toMatchObject({
-      status: 'ready',
-      sessionId: 'v-a1b2',
-    })
-  })
-
-  test('reads the verified placement URL from the current CLI session route', () => {
-    expect(
-      readyViewSession({
-        session: {
-          id: 'v-a1b2',
-          pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-          view: { route: { href: 'https://issues.example/ui/issue' } },
-        },
-      }),
-    ).toEqual({
-      status: 'ready',
-      sessionId: 'v-a1b2',
-      pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-      viewUrl: 'https://issues.example/ui/issue',
-    })
-    expect(
-      readyViewSession({
-        session: {
-          id: 'v-old',
-          pageUrl: 'http://127.0.0.1:4419/s/old/',
-          view: { url: 'https://legacy.invalid/view' },
-        },
-      } as never),
-    ).toBeNull()
+beforeEach(() => {
+  process.env[STUDIO_CLI_DESCRIPTOR_ENV] = JSON.stringify({
+    version: 1,
+    executable: '/cli/astrale',
+    args: [],
   })
 })
 
-test('reduces CLI stack output to the actionable kernel failure', () => {
+afterEach(() => {
+  if (priorDescriptor === undefined) delete process.env[STUDIO_CLI_DESCRIPTOR_ENV]
+  else process.env[STUDIO_CLI_DESCRIPTOR_ENV] = priorDescriptor
+})
+
+function cli(active: string, opened: unknown[] = []): Partial<ViewSessionDependencies> {
+  return {
+    activeInstance: async () => active,
+    open: async (input) => {
+      opened.push(input)
+      return {
+        id: 'v-a1b2',
+        pageUrl: 'http://127.0.0.1:4419/s/nonce/',
+        view: { route: { href: 'https://issues.example/ui/issues' } },
+      } as never
+    },
+  }
+}
+
+test('launches the canonical ViewPath on the instance the preparation pinned', async () => {
+  const runtime = await getViewRuntime('/workspace', origin, view, cli('staging'))
+  expect(runtime).toEqual({
+    slug: 'issues',
+    preparationId: expect.stringMatching(/^[0-9a-f]{24}$/),
+    instance: 'staging',
+  })
+
+  const opened: unknown[] = []
+  const request = { preparationId: runtime.preparationId }
   expect(
-    conciseCliFailure(
-      `275 | invalid\nPermissionDeniedError: Permission denied: READ on /:issues.astrale.ai:view.issue\n details: {}\n at mapServerError (errors.ts:280:61)`,
-    ),
-  ).toBe('PermissionDeniedError: Permission denied: READ on /:issues.astrale.ai:view.issue')
+    await launchViewSession('/workspace', origin, view, request, 2000, cli('staging', opened)),
+  ).toEqual({
+    status: 'ready',
+    sessionId: 'v-a1b2',
+    pageUrl: 'http://127.0.0.1:4419/s/nonce/',
+    viewUrl: 'https://issues.example/ui/issues',
+  })
+  expect(opened).toEqual([
+    {
+      viewPath: '/:issues.example.dev:view.issues',
+      instance: 'staging',
+      timeoutMs: 20_000,
+      idleMs: 8 * 60 * 60_000,
+      serveRuntime: { file: '/cli/astrale', args: [] },
+    },
+  ])
+})
+
+test('refuses a launch the preparation does not cover', async () => {
+  const { preparationId } = await getViewRuntime('/workspace', origin, view, cli('staging'))
+  const launch = (root: string, active: string) =>
+    launchViewSession(root, origin, view, { preparationId }, 2000, cli(active))
+
+  // another workspace, or an instance switched since the View was shown
+  expect(await launch('/other', 'staging')).toMatchObject({ status: 'unavailable' })
+  expect(await launch('/workspace', 'production')).toEqual({
+    status: 'unavailable',
+    reason: 'The active instance changed. Refresh the view and try again.',
+  })
+  expect(
+    await launchViewSession('/workspace', origin, view, { preparationId }, 2000, {
+      ...cli('staging'),
+      open: async () => {
+        throw new Error('Permission denied.')
+      },
+    }),
+  ).toEqual({ status: 'unavailable', reason: 'Permission denied.' })
 })

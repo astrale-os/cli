@@ -26,7 +26,7 @@ import { runExtractorIsland } from './runtime'
 const EXTRACTOR = new URL('./dataset-extractor.ts', import.meta.url).pathname
 
 /** The portable Dataset bytes the SDK emits (`astrale.sdk.dataset` v1), structurally checked. */
-export interface DatasetJson {
+interface DatasetJson {
   id: string
   title?: string
   description?: string
@@ -45,7 +45,7 @@ export interface DatasetJson {
   references: Record<string, string>
 }
 
-export type DatasetExtractResult =
+type DatasetExtractResult =
   | { ok: true; dataset: DatasetJson }
   | { ok: false; error: { message: string } }
 

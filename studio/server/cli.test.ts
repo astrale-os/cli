@@ -12,12 +12,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
-  decodeJsonObject,
   runStudioCliJson,
   runStudioCliText,
   STUDIO_CLI_DESCRIPTOR_ENV,
   studioCliCommand,
 } from './cli'
+import { asJsonRecord } from './json'
 
 const priorDescriptor = process.env[STUDIO_CLI_DESCRIPTOR_ENV]
 const roots: string[] = []
@@ -55,11 +55,10 @@ test('machine runner uses the exact descriptor, appends json mode, and versions 
 
   const result = await runStudioCliJson(
     ['query', '--class', '/:example.dev:class.Issue'],
-    decodeJsonObject,
+    asJsonRecord,
   )
 
   expect(result).toMatchObject({
-    version: 1,
     ok: true,
     exitCode: 0,
     timedOut: false,
@@ -85,10 +84,9 @@ process.exit(7)
     args: [realpathSync(entry)],
   })
 
-  const result = await runStudioCliJson(['instance', 'active'], decodeJsonObject)
+  const result = await runStudioCliJson(['instance', 'active'], asJsonRecord)
 
   expect(result).toMatchObject({
-    version: 1,
     ok: false,
     exitCode: 7,
     detail: 'Missing instance.',
@@ -272,7 +270,7 @@ test('the delegated CLI cannot access the capture leader private status descript
 test('delegated arguments retain shell metacharacters and newlines verbatim', async () => {
   const root = installCli(() => `console.log(JSON.stringify({ args: process.argv.slice(2) }))`)
   const args = ['quoted \' "', '`touch marker`', '$(touch marker)', '$HOME', 'line\nnext', root]
-  const result = await runStudioCliJson(args, decodeJsonObject, { cwd: root, timeoutMs: 1_000 })
+  const result = await runStudioCliJson(args, asJsonRecord, { cwd: root, timeoutMs: 1_000 })
   expect(result).toMatchObject({ ok: true, data: { args: [...args, '--json'] } })
   expect(existsSync(join(root, 'marker'))).toBe(false)
 })

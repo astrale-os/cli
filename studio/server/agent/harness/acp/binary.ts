@@ -68,7 +68,7 @@ export interface AgentBinary {
   reason: string
 }
 
-export interface EnsureOptions {
+interface EnsureOptions {
   signal?: AbortSignal
   onProgress?: (text: string) => void
 }
@@ -455,7 +455,7 @@ async function olderThan(path: string, ageMs = ABANDONED_STAGING_MS): Promise<bo
 }
 
 /** `claude --version` → `2.1.288`, or undefined when it cannot be read. */
-export function readBinaryVersion(path: string): Promise<string | undefined> {
+function readBinaryVersion(path: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(path, ['--version'], { timeout: VERSION_TIMEOUT_MS }, (error, stdout) => {
       resolve(error ? undefined : /\d+\.\d+\.\d+/.exec(stdout)?.[0])

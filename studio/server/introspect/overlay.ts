@@ -7,7 +7,7 @@ import { buildHandlerLinks } from './source-overlay/handlers'
 import { newProject } from './source-overlay/project'
 import { buildSourceSpans } from './source-overlay/spans'
 
-export interface OverlayArgs {
+interface OverlayArgs {
   ir: SchemaIR | null
   domainRoot: string
   schemaDir: string

@@ -23,7 +23,7 @@ import { listEntries, readTextSafe, relativePosix } from './anatomy/source'
 import { buildViews } from './anatomy/views'
 import { readConfigPreview } from './config-preview'
 
-export interface AnatomyArgs {
+interface AnatomyArgs {
   root: string
   schemaDirName: string
   clientDir?: string

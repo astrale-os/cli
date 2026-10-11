@@ -15,7 +15,7 @@ export function buildAskSystemPrompt(): string {
   ].join('\n')
 }
 
-export interface AskParts {
+interface AskParts {
   anchorRef: string
   excerpt: string
   question: string

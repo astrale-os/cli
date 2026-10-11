@@ -3,8 +3,7 @@ import { join } from 'node:path'
 
 import type { DomainHandle } from './registry'
 
-import { WORKSPACE_RESCAN_MS } from '../workspace/watch'
-import { affectsBundle, ANATOMY_PATHS, domainWatchChannels } from './watch'
+import { affectsBundle, domainWatchChannels } from './watch'
 
 const handle: DomainHandle = {
   id: 'current',
@@ -15,20 +14,6 @@ const handle: DomainHandle = {
   schemaDir: '/workspace/current/schema',
   schemaIndex: '/workspace/current/schema/index.ts',
 }
-
-test('watches the current Domain definition, Runtime, and vertical authoring roots', () => {
-  expect(ANATOMY_PATHS).toContain('domain.ts')
-  expect(ANATOMY_PATHS).toContain('runtime.ts')
-  expect(ANATOMY_PATHS).toContain('ui')
-  expect(ANATOMY_PATHS).toContain('providers')
-  expect(ANATOMY_PATHS).toContain('queries')
-  expect(ANATOMY_PATHS).toContain('functions')
-})
-
-test('the workspace is re-scanned often enough to notice a domain, rarely enough to be free', () => {
-  expect(WORKSPACE_RESCAN_MS).toBeGreaterThanOrEqual(5_000)
-  expect(WORKSPACE_RESCAN_MS).toBeLessThanOrEqual(60_000)
-})
 
 test('Domain definition, Runtime, and Function changes invalidate the schema bundle', () => {
   expect(affectsBundle(handle, join(handle.root, 'domain.ts'))).toBe(true)

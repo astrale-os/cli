@@ -59,7 +59,7 @@ export const MAX_QUEUED_MESSAGES = 20
  * showing it as its opening chip — it is the only trace of where the work
  * came from.
  */
-export interface ChatHandoff {
+interface ChatHandoff {
   fromChatId: string
   fromHarness: string
   createdAt: string
@@ -68,42 +68,22 @@ export interface ChatHandoff {
   delivered?: boolean
 }
 
-export interface StoredChat {
-  id: string
-  title: string
-  harness: string
-  /** colour slot picked at creation and kept for life (see shared/chat-tone.ts) */
-  tone?: number
-  model?: string
-  effort?: AgentEffort
-  fastMode?: boolean
-  sessionId?: string
-  turns: number
-  createdAt: string
-  updatedAt: string
-  /** the workspace root this conversation was opened in — where its session can resume */
-  workspace?: string
-  /** the domains the workspace held when the chat opened, by origin */
-  origins?: string[]
+/** A chat as it is stored: the wire shape without its live status, holding its briefing and queue. */
+export type StoredChat = Omit<ChatInfo, 'status' | 'queued' | 'origin'> & {
   /** carried over from the chat this one was forked from */
   handoff?: ChatHandoff
-  /** domain this chat was opened to build immediately after scaffolding */
-  newDomain?: NewDomainContext
   /** messages typed while a turn was running, oldest first */
   queue?: QueuedMessage[]
 }
 
-export interface ChatStore {
+interface ChatStore {
   activeId: string
   /** every tab, in the order the user arranged them, new ones last */
   chats: StoredChat[]
 }
 
 /** What a new chat records about where it was opened. */
-export interface ChatSeed {
-  workspace?: string
-  origins?: string[]
-}
+export type ChatSeed = Pick<StoredChat, 'workspace' | 'origins'>
 
 function decodeStoredChat(value: unknown): StoredChat | undefined {
   const record = asJsonRecord(value)

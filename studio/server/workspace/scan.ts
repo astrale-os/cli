@@ -40,7 +40,9 @@ export function resolveTarget(target: string): DomainHandle[] {
   return scanWorkspace(abs)
 }
 
-export function scanWorkspace(workspace: string, maxDepth = 4): DomainHandle[] {
+const MAX_DEPTH = 4
+
+export function scanWorkspace(workspace: string): DomainHandle[] {
   const found: DomainHandle[] = []
   const root = resolve(workspace)
   if (!existsSync(root)) return found
@@ -48,7 +50,7 @@ export function scanWorkspace(workspace: string, maxDepth = 4): DomainHandle[] {
   const walk = (dir: string, depth: number) => {
     const h = registerDomain(dir)
     if (h) found.push(h)
-    if (depth >= maxDepth) return
+    if (depth >= MAX_DEPTH) return
     let entries: string[]
     try {
       entries = readdirSync(dir)

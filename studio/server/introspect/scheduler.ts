@@ -8,7 +8,7 @@
 
 import type { IntrospectionPriority } from '../../shared/types'
 
-export interface SchedulerSnapshot {
+interface SchedulerSnapshot {
   readonly concurrency: number
   readonly active: readonly string[]
   readonly queued: {

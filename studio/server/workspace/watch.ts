@@ -22,18 +22,14 @@ import { invalidate } from '../introspect/cache'
 import { scanWorkspace } from './scan'
 
 /** How often the workspace is re-read for domains that appeared or vanished. */
-export const WORKSPACE_RESCAN_MS = 15_000
+const WORKSPACE_RESCAN_MS = 15_000
 
 /**
  * Watch `root` for domains appearing/disappearing.
  * @param stoppers shared `domainId → file-watcher stop` map. The startup scan seeds
  *   it (via bootDomain); this watcher keeps it in sync as domains come and go.
  */
-export function watchWorkspace(
-  root: string,
-  stoppers: Map<string, () => void>,
-  intervalMs = WORKSPACE_RESCAN_MS,
-): () => void {
+export function watchWorkspace(root: string, stoppers: Map<string, () => void>): () => void {
   let running = false
 
   const reconcile = async () => {
@@ -86,7 +82,7 @@ export function watchWorkspace(
     }
   }
 
-  const timer = setInterval(() => void run(), intervalMs)
+  const timer = setInterval(() => void run(), WORKSPACE_RESCAN_MS)
   timer.unref?.() // a periodic scan must never be the reason the process stays alive
   return () => clearInterval(timer)
 }

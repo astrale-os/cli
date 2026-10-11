@@ -8,11 +8,11 @@ import type {
   Comment,
   StudioSettings,
 } from '../../../shared/types'
+import type { Notify } from '../../api/http'
 import type { DomainHandle } from '../../domain/registry'
 import type { Bridge } from '../bridge/grant'
 import type { StoredChat } from '../chats'
 import type { AgentHarness, AgentTurnImage } from '../harness/adapter'
-import type { Notify } from '../notify'
 import type { DomainTurnParts } from '../prompts/turn'
 import type { AgentWorkspace } from '../workspace'
 
@@ -25,6 +25,7 @@ import { listDocuments } from '../../state/documents'
 import { attachmentFiles, resolveAttachments } from '../attachments'
 import { startBridge } from '../bridge/grant'
 import { pendingHandoff } from '../chats'
+import { inspectHarnessHealth } from '../harness/adapter'
 import { getHarnessById } from '../harness/registry'
 import { resolveHarnessConfiguration } from '../harness/selection'
 import { buildSystemPrompt } from '../prompts/system'
@@ -45,7 +46,7 @@ import { currentRun, hydrateRun } from './live-state'
  * user's to bring into a turn, not something every message drags along. `'all'`
  * is the explicit "answer the threads" of the header button.
  */
-export type CommentSelection = 'all' | string[]
+type CommentSelection = 'all' | string[]
 
 export interface SubmitOpts {
   message?: string
@@ -75,7 +76,7 @@ export interface PreparedRun {
   promptSnapshot(sessionId: string | undefined, firstTurn: boolean): AgentPromptSnapshot
 }
 
-export type PreparationResult = { prepared: PreparedRun } | { error: string }
+type PreparationResult = { prepared: PreparedRun } | { error: string }
 
 const CANCELED_DURING_SETUP = 'agent run canceled during setup'
 
@@ -200,7 +201,7 @@ export async function prepareRun(
   // The chat owns its harness for life, so the current selection is irrelevant
   // here: a Claude tab keeps running Claude after the user picks Codex.
   const harness = getHarnessById(chat.harness)
-  const available = await harness.isAvailable(controller.signal)
+  const available = (await inspectHarnessHealth(harness, controller.signal)).ok
   if (controller.signal.aborted) return { error: CANCELED_DURING_SETUP }
   if (!available) return { error: `${harness.label} is not available on this machine` }
 

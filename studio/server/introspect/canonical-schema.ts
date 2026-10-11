@@ -75,7 +75,7 @@ export interface SchemaAdmissionSdk {
   }
 }
 
-export interface CanonicalSchemaExtraction {
+interface CanonicalSchemaExtraction {
   readonly status: 'admitted' | 'preview'
   readonly root: CanonicalDomainSchemaV1
   readonly revision: SchemaRevision | null

@@ -107,7 +107,7 @@ function unwrap(node: Node): Node {
   return current
 }
 
-export function localValue(
+function localValue(
   node: Node | undefined,
   source: SourceFile,
   seen = new Set<string>(),

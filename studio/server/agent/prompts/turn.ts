@@ -33,7 +33,7 @@ export interface DomainTurnParts {
   overlay?: SchemaOverlay
 }
 
-export interface TurnParts {
+interface TurnParts {
   workspaceRoot: string
   /** every domain in the workspace, briefed or not: the digest lists them all */
   domains: DomainTurnParts[]

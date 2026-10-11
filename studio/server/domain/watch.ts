@@ -14,7 +14,7 @@ import { broadcast } from '../api/sse'
 import { invalidate, invalidateDatasets, rebuildAndAnnounce } from '../introspect/cache'
 import { ANATOMY_GLOBS } from '../state/baseline'
 
-export const ANATOMY_PATHS = [...ANATOMY_GLOBS.files, ...ANATOMY_GLOBS.dirs]
+const ANATOMY_PATHS = [...ANATOMY_GLOBS.files, ...ANATOMY_GLOBS.dirs]
 
 // These paths can feed the ts-morph handler/source overlay. Their content is
 // part of the schema bundle cache even though they are outside schema/ itself.
@@ -49,7 +49,7 @@ export function affectsBundle(handle: DomainHandle, path: string): boolean {
   )
 }
 
-export interface DomainWatchChannels {
+interface DomainWatchChannels {
   schema: boolean
   anatomy: boolean
   datasets: boolean

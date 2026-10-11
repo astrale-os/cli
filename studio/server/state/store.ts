@@ -21,10 +21,10 @@ import { atomicWriteSync } from '../../../src/state/files'
 import { parseJson, type JsonDecoder } from '../json'
 import { isMachineStateRoot } from './home'
 
-export const DOT = '.domain-studio'
+const DOT = '.domain-studio'
 
 /** The state folder of a root: the dotted folder of a domain, the folder itself on the machine. */
-export function dotDir(root: string): string {
+function dotDir(root: string): string {
   return isMachineStateRoot(root) ? resolve(root) : join(root, DOT)
 }
 

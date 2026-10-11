@@ -37,7 +37,7 @@ export async function installedSdkExport(root: string, subpath: string): Promise
   throw new Error(`Cannot find @astrale-os/sdk from ${root}`)
 }
 
-export function buildFailure(cause: unknown): Error {
+function buildFailure(cause: unknown): Error {
   if (cause && typeof cause === 'object') {
     const errors = (cause as { errors?: unknown[] }).errors
     if (Array.isArray(errors) && errors.length > 0) {

@@ -17,8 +17,8 @@ import type { AcpProvider } from './command'
 
 import { isAgentEffort } from '../../../../shared/agent-effort'
 
-export type SelectConfigOption = Extract<acp.SessionConfigOption, { type: 'select' }>
-export type FastConfigOption = Extract<acp.SessionConfigOption, { type: 'select' | 'boolean' }>
+type SelectConfigOption = Extract<acp.SessionConfigOption, { type: 'select' }>
+type FastConfigOption = Extract<acp.SessionConfigOption, { type: 'select' | 'boolean' }>
 
 function selectByCategory(
   options: acp.SessionConfigOption[],

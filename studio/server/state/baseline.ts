@@ -149,7 +149,7 @@ export function hashAnatomyFiles(
   return hashes
 }
 
-export interface Baseline {
+interface Baseline {
   formatVersion: typeof BASELINE_FORMAT_VERSION
   projectionVersion: number
   ir: SchemaIR | null
@@ -160,7 +160,7 @@ export interface Baseline {
   capturedAt?: string
 }
 
-export interface BaselineSchemaSnapshot {
+interface BaselineSchemaSnapshot {
   ir: SchemaIR | null
   /** Admitted canonical root only; preview roots must be passed as null. */
   root: unknown | null

@@ -31,7 +31,7 @@ const PROJECT_MODULES = new Set(['@astrale-os/sdk/project', '@astrale-os/sdk'])
 const TESTING_MODULES = new Set(['@astrale-os/sdk/testing'])
 
 /** What `astrale.config.ts` declares through `defineProject`, read statically. */
-export interface ProjectConfigAnalysis {
+interface ProjectConfigAnalysis {
   /** Domain definition module of `defineProject({ domain })`, resolved to a source file. */
   readonly domainFile: string | null
   /** Dataset module coordinates of `tests: tests({ datasets: [dataset('…')] })`, in order. */

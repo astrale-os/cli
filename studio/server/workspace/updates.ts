@@ -11,7 +11,8 @@
  */
 import type { StaleReport } from '../../shared/types'
 
-import { decodeJsonObject, runStudioCliJson } from '../cli'
+import { runStudioCliJson } from '../cli'
+import { asJsonRecord } from '../json'
 
 const NOT_STALE: StaleReport = {
   stale: false,
@@ -28,11 +29,11 @@ export async function getUpdates(root: string): Promise<StaleReport> {
   return result.ok && result.data ? result.data : NOT_STALE
 }
 
-function decodeStaleReport(value: unknown): StaleReport | null {
-  const report = decodeJsonObject(value)
-  const cli = decodeJsonObject(report?.cli)
-  const skills = decodeJsonObject(report?.skills)
-  const sdk = decodeJsonObject(report?.sdk)
+function decodeStaleReport(value: unknown): StaleReport | undefined {
+  const report = asJsonRecord(value)
+  const cli = asJsonRecord(report?.cli)
+  const skills = asJsonRecord(report?.skills)
+  const sdk = asJsonRecord(report?.sdk)
   if (
     typeof report?.stale !== 'boolean' ||
     typeof cli?.stale !== 'boolean' ||
@@ -41,17 +42,17 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     typeof sdk.inProject !== 'boolean' ||
     !Array.isArray(sdk.outdated)
   ) {
-    return null
+    return undefined
   }
   const outdated = sdk.outdated.flatMap((value) => {
-    const item = decodeJsonObject(value)
+    const item = asJsonRecord(value)
     return typeof item?.pkg === 'string' &&
       typeof item.current === 'string' &&
       typeof item.latest === 'string'
       ? [{ pkg: item.pkg, current: item.current, latest: item.latest }]
       : []
   })
-  if (outdated.length !== sdk.outdated.length) return null
+  if (outdated.length !== sdk.outdated.length) return undefined
   const skillStatuses = new Set([
     'current',
     'update-available',
@@ -59,7 +60,7 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     'unavailable',
     'skipped',
   ])
-  if (typeof skills?.status !== 'string' || !skillStatuses.has(skills.status)) return null
+  if (typeof skills?.status !== 'string' || !skillStatuses.has(skills.status)) return undefined
   const skillStatus = skills.status as StaleReport['skills']['status']
   return {
     stale: report.stale,

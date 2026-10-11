@@ -3,13 +3,10 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StaleReport, ViewInfo } from '../shared/types'
+import type { StaleReport } from '../shared/types'
 
-import { studioActiveInstanceName } from '../../src/commands/studio-views'
 import { STUDIO_CLI_DESCRIPTOR_ENV } from './cli'
 import { listInstances, setActiveInstance } from './instances/active'
-import { clearViewPreparations, rememberViewPreparation } from './views/preparation'
-import { launchViewSession } from './views/session'
 import { getUpdates } from './workspace/updates'
 
 interface FakeResponse {
@@ -27,7 +24,6 @@ const priorDescriptor = process.env[STUDIO_CLI_DESCRIPTOR_ENV]
 const roots: string[] = []
 
 afterEach(() => {
-  clearViewPreparations()
   if (priorDescriptor === undefined) delete process.env[STUDIO_CLI_DESCRIPTOR_ENV]
   else process.env[STUDIO_CLI_DESCRIPTOR_ENV] = priorDescriptor
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
@@ -166,37 +162,11 @@ describe('instance CLI orchestration', () => {
       { args: useArgs, responses: [{ stdout: 'Now using staging.\n' }] },
     ])
 
-    expect(
-      await setActiveInstance('staging', { activeInstanceName: async () => 'staging' }),
-    ).toEqual({
+    expect(await setActiveInstance('staging')).toMatchObject({
       ok: true,
-      active: 'staging',
       output: 'Now using staging.',
     })
     expect(fake.calls().map((call) => call.args)).toEqual([useArgs])
-  })
-
-  test('reads active state in-process and invalidates the long-lived memo first', async () => {
-    let resets = 0
-    expect(
-      await studioActiveInstanceName({
-        resetInstancesMemo: () => {
-          resets++
-        },
-        getActive: async () => ({ name: 'local' }) as never,
-      }),
-    ).toBe('local')
-    expect(
-      await studioActiveInstanceName({
-        resetInstancesMemo: () => {
-          resets++
-        },
-        getActive: async () => {
-          throw new Error('unavailable')
-        },
-      }),
-    ).toBeNull()
-    expect(resets).toBe(2)
   })
 })
 
@@ -288,105 +258,5 @@ describe('workspace update CLI orchestration', () => {
       { args: checkArgs, cwd: domainRoot },
       { args: checkArgs, cwd: domainRoot },
     ])
-  })
-})
-
-const view = { slug: 'issues', kind: 'unknown' } satisfies ViewInfo
-
-describe('View CLI orchestration', () => {
-  test('launches the Domain View by its ViewPath and trusts route.href', async () => {
-    const fake = installFakeCli([])
-    const preparation = rememberViewPreparation({
-      root: fake.root,
-      origin: 'issues.example.dev',
-      slug: view.slug,
-      instance: 'staging',
-    })
-    const opened: unknown[] = []
-
-    expect(
-      await launchViewSession(
-        fake.root,
-        'issues.example.dev',
-        view,
-        null,
-        { preparationId: preparation.id },
-        2000,
-        {
-          activeInstance: async () => 'staging',
-          serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
-          open: async (input) => {
-            opened.push(input)
-            return {
-              id: 'v-a1b2',
-              pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-              view: { route: { href: 'https://shell.example.dev/views/issues' } },
-            } as never
-          },
-        },
-      ),
-    ).toEqual({
-      status: 'ready',
-      sessionId: 'v-a1b2',
-      pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-      viewUrl: 'https://shell.example.dev/views/issues',
-    })
-    expect(opened).toEqual([
-      {
-        viewPath: '/:issues.example.dev:view.issues',
-        instance: 'staging',
-        timeoutMs: 20_000,
-        idleMs: 8 * 60 * 60_000,
-        serveRuntime: { file: '/cli/astrale', args: [] },
-      },
-    ])
-    expect(fake.calls()).toEqual([])
-  })
-
-  test('does not expose a malformed session or a failed direct runtime launch', async () => {
-    const standalone = { slug: 'dashboard', kind: 'unknown' } satisfies ViewInfo
-    const fake = installFakeCli([])
-    const preparation = rememberViewPreparation({
-      root: fake.root,
-      origin: 'issues.example.dev',
-      slug: standalone.slug,
-      instance: 'staging',
-    })
-
-    const malformed = await launchViewSession(
-      fake.root,
-      'issues.example.dev',
-      standalone,
-      null,
-      { preparationId: preparation.id },
-      2000,
-      {
-        activeInstance: async () => 'staging',
-        serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
-        open: async () => ({ id: 'v-no-route', pageUrl: 'http://127.0.0.1/', view: {} }) as never,
-      },
-    )
-    expect(malformed.status).toBe('unavailable')
-    if (malformed.status !== 'unavailable')
-      throw new Error('expected the malformed session to fail')
-    expect(malformed.reason).toContain('invalid session')
-    expect(
-      await launchViewSession(
-        fake.root,
-        'issues.example.dev',
-        standalone,
-        null,
-        { preparationId: preparation.id },
-        2000,
-        {
-          activeInstance: async () => 'staging',
-          serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
-          open: async () => {
-            throw new Error('Permission denied.')
-          },
-        },
-      ),
-    ).toEqual({ status: 'unavailable', reason: 'Permission denied.' })
-    expect(fake.calls()).toEqual([])
   })
 })

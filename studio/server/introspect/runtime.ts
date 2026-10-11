@@ -17,7 +17,7 @@ import { studioCliCommand } from '../cli'
 
 const EXTRACTOR = new URL('./extractor.ts', import.meta.url).pathname
 
-export interface RuntimeExtractResult {
+interface RuntimeExtractResult {
   ok: boolean
   ir: SchemaIR | null
   /** Portable canonical V1 document. Null only for failures. */
@@ -29,7 +29,7 @@ export interface RuntimeExtractResult {
 }
 
 /** One extractor island run: its stdout, plus its stderr when stdout was blank. */
-export interface IslandOutput {
+interface IslandOutput {
   stdout: string
   stderr: string
 }

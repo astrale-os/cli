@@ -28,7 +28,7 @@ type CaptureHarnessCommand = (
   options?: CaptureOptions,
 ) => Promise<CapturedCommand>
 
-export interface HarnessTokenBrokerOptions {
+interface HarnessTokenBrokerOptions {
   capture?: CaptureHarnessCommand
   now?: () => number
 }

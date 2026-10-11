@@ -49,7 +49,7 @@ interface ExecutionResult {
  * talks about them. An agent that does not take images gets the text alone — the
  * prompt already lists each image's path, so the message still reaches it whole.
  */
-export function promptBlocks(
+function promptBlocks(
   prompt: string,
   images: readonly AgentTurnImage[] | undefined,
   acceptsImages: boolean,
@@ -96,7 +96,7 @@ function absoluteMcpCommand(
   )
 }
 
-export function acpMcpServers(
+function acpMcpServers(
   servers: HarnessMcpServer[] | undefined,
   cwd: string,
   env?: Record<string, string>,
@@ -147,7 +147,7 @@ function stderrSuffix(stderr: string): string {
  * once (`tool_call`) and then sends only what changed (`tool_call_update`): the
  * command once its input has streamed in, the output and status once it ran.
  */
-export interface AcpToolCallState {
+interface AcpToolCallState {
   title?: string
   name?: string
   kind?: acp.ToolKind
@@ -455,10 +455,7 @@ function transcript(
 }
 
 /** A usage report's context occupancy, when it names a window to measure against. */
-export function contextUsage(update: {
-  used: number
-  size: number
-}): AgentContextUsage | undefined {
+function contextUsage(update: { used: number; size: number }): AgentContextUsage | undefined {
   const { used, size } = update
   if (!Number.isFinite(used) || !Number.isFinite(size) || used < 0 || size <= 0) return undefined
   return { used: Math.round(used), size: Math.round(size) }

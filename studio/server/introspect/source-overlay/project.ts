@@ -161,7 +161,7 @@ function firstValueDeclaration(node: Node): Node | undefined {
 }
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
-export function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
+function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
   const baseDir = dirname(from.getFilePath())
   if (!spec.startsWith('.')) {
     // Current SDK projects use package `imports` aliases such as `#functions/risk`.

@@ -10,7 +10,7 @@ import type { ChatAttachment } from './types'
 
 /** The formats every harness Studio drives can look at. */
 export type AttachmentImageType = ChatAttachment['mimeType']
-export const ATTACHMENT_IMAGE_TYPES: readonly AttachmentImageType[] = [
+const ATTACHMENT_IMAGE_TYPES: readonly AttachmentImageType[] = [
   'image/png',
   'image/jpeg',
   'image/gif',

@@ -128,10 +128,6 @@ export abstract class AcpHarness implements AgentHarness {
     }
   }
 
-  async isAvailable(signal?: AbortSignal): Promise<boolean> {
-    return (await this.health(signal)).ok
-  }
-
   async run(input: AgentTurnInput): Promise<AgentTurnResult> {
     const binary = this.binary()
     try {

@@ -1,4 +1,4 @@
-export interface BridgeToolResult {
+interface BridgeToolResult {
   content: [{ type: 'text'; text: string }]
   isError?: true
 }
