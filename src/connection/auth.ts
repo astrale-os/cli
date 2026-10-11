@@ -18,7 +18,7 @@ import {
 } from '../lib/idp-session'
 import { KEYS_DIR } from '../state/index'
 
-export type KeyIdentityAuthOptions = {
+type KeyIdentityAuthOptions = {
   issuer: string
   subject?: string
   audience: string
@@ -276,7 +276,7 @@ export function classifyNoRefreshTokenError(
 }
 
 /** A refresh attempt failed for a reason that re-login will NOT fix. */
-export class IdpRefreshTransientError extends Error {
+class IdpRefreshTransientError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'IdpRefreshTransientError'
@@ -284,7 +284,7 @@ export class IdpRefreshTransientError extends Error {
 }
 
 /** The IdP refused to scope the session to the target's organization. */
-export class IdpOrgMembershipError extends Error {
+class IdpOrgMembershipError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'IdpOrgMembershipError'

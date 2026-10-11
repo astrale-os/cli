@@ -27,7 +27,7 @@ const NOTHING_RAN_REASONS = new Set([
 const BACKEND_UNAVAILABLE = 5001
 
 /** What a registry command does: a claim is a change with its own refusals. */
-export type RegistryAction = 'read' | 'change' | 'claim'
+type RegistryAction = 'read' | 'change' | 'claim'
 
 const MAY_HAVE_APPLIED = 'the change may have applied. Rerun the same command: it is idempotent.'
 

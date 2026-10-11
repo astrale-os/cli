@@ -7,7 +7,7 @@ import { AstraleError } from '../../errors'
 import { RegistryError } from './model'
 
 /** One GET, as the global `fetch` answers it. */
-export type DeploymentFetch = (input: string, init: RequestInit) => Promise<Response>
+type DeploymentFetch = (input: string, init: RequestInit) => Promise<Response>
 
 /** How the bundle plumbing reads what a published deployment serves. */
 export interface DeploymentReader {

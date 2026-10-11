@@ -4,8 +4,6 @@ import { printFailureDebug } from '../../lib/failure-debug'
 import { classifyFailure } from './classify'
 import { renderFailure } from './render'
 
-export { functionInputIssues, schemaUpgradeHint } from '../reasons'
-
 export async function formatKernelError(
   error: unknown,
   machine: boolean,

@@ -5,10 +5,7 @@ import type { QueryAST } from '@astrale-os/sdk/query'
 /** Smallest Kernel graph capability needed by bounded Admin graph reads. */
 export type AdminGraphQueryApi = Pick<GraphApi, 'query'>
 
-/** Caller-scoped graph reads shared by the Admin catalog and Instance journeys. */
-export type AdminGraphApi = Pick<GraphApi, 'query' | 'neighbors'>
-
-export interface ReadAllNodesOptions {
+interface ReadAllNodesOptions {
   readonly label: string
   readonly maximum: number
   readonly maximumPages: number

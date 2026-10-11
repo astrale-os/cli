@@ -4,43 +4,14 @@ import { MutationAST } from '@astrale-os/sdk/mutation'
 
 /** Admit the canonical document or Core's exact rich authoring input at the CLI JSON boundary. */
 export function prepareMutation(input: unknown): MutationASTValue {
-  if (isLegacyPatchData(input)) {
+  const record =
+    input !== null && typeof input === 'object' && !Array.isArray(input) ? input : undefined
+  if (record !== undefined && (Object.hasOwn(record, 'format') || Object.hasOwn(record, 'version')))
+    return MutationAST.decode(record)
+  if (!Array.isArray((record as { readonly operations?: unknown } | undefined)?.operations)) {
     throw new TypeError(
-      'Legacy PatchData { nodes, edges } is not Mutation V3. Author { preconditions, operations } or a canonical astrale.graph.mutation/v3 document.',
+      'A Mutation authors { preconditions?, operations } or is a canonical astrale.graph.mutation/v3 document.',
     )
   }
-  if (hasEmptyOperations(input)) {
-    throw new TypeError('Mutation V3 requires at least one operation')
-  }
-  if (isCanonicalCandidate(input)) return MutationAST.decode(input)
-  return MutationAST.create(input as MutationInput)
-}
-
-function hasEmptyOperations(input: unknown): boolean {
-  return (
-    input !== null &&
-    typeof input === 'object' &&
-    !Array.isArray(input) &&
-    Array.isArray((input as { operations?: unknown }).operations) &&
-    (input as { operations: unknown[] }).operations.length === 0
-  )
-}
-
-function isCanonicalCandidate(input: unknown): boolean {
-  return (
-    input !== null &&
-    typeof input === 'object' &&
-    !Array.isArray(input) &&
-    (Object.hasOwn(input, 'format') || Object.hasOwn(input, 'version'))
-  )
-}
-
-function isLegacyPatchData(input: unknown): boolean {
-  return (
-    input !== null &&
-    typeof input === 'object' &&
-    !Array.isArray(input) &&
-    !Object.hasOwn(input, 'operations') &&
-    (Object.hasOwn(input, 'nodes') || Object.hasOwn(input, 'edges'))
-  )
+  return MutationAST.create(record as MutationInput)
 }

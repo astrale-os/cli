@@ -1,12 +1,5 @@
 import { defineLaw } from '@astrale-os/spec/authoring'
 
-export const CLI_STATE_PATHS_CAPTURED = defineLaw({
-  id: 'CLI-STATE-PATHS-CAPTURED',
-  statement:
-    'Path construction applies explicit-home then environment then platform-home precedence once; later environment mutation cannot change the returned coordinates.',
-  tests: [{ file: '__tests__/paths.test.ts', id: 'TEST-CLI-STATE-PATHS-CAPTURED' }],
-})
-
 export const CLI_STATE_ATOMIC_REPLACEMENT = defineLaw({
   id: 'CLI-STATE-ATOMIC-REPLACEMENT',
   statement:

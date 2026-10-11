@@ -1,17 +1,9 @@
 import type { SessionRouteArtifact, SessionRouteStore } from '@astrale-os/sdk/client/session'
 
-/** Environment values that affect CLI-owned state placement. */
-export interface PathEnvironment {
-  readonly ASTRALE_HOME?: string
-  readonly ASTRALE_KEYS_DIR?: string
-  readonly ASTRALE_DATA_DIR?: string
-}
-
 /** One captured set of CLI-owned durable-state coordinates. */
 export interface Paths {
   readonly home: string
   readonly keys: string
-  readonly data: string
   readonly config: string
   readonly install: string
   readonly identities: string
@@ -25,22 +17,18 @@ export interface Paths {
   idpSession(identityName: string): string
 }
 
-/** Resolve explicit home, environment overrides, and platform home exactly once. */
-export function createPaths(home?: string, environment?: PathEnvironment): Paths
+/** Resolve every CLI state path from ASTRALE_HOME, ASTRALE_KEYS_DIR, or the platform home. */
+export function createPaths(): Paths
 
 export const paths: Paths
 export const ASTRALE_HOME: string
 export const KEYS_DIR: string
-export const DATA_DIR: string
 export const CONFIG_PATH: string
 export const INSTALL_PATH: string
-export const IDENTITIES_PATH: string
 export const INSTANCES_PATH: string
 export const IDPS_PATH: string
 export const IDP_SESSIONS_DIR: string
 export const EXCHANGE_CREDENTIALS_PATH: string
-export const SESSION_ROUTES_PATH: string
-export const INSTALLATIONS_PATH: string
 
 /**
  * What the CLI remembers about one Domain installed on one Kernel. Only facts whose staleness fails
@@ -119,9 +107,9 @@ export class ExchangeCredentialCache {
   clear(): Promise<void>
 }
 
-export type IdentitySource = 'key' | 'idp'
 export type IdentityMode = 'local' | 'remote'
 
+/** Decoded from the strict V1 zod schema of `identities.json`. */
 export interface Registration {
   readonly iss: string
   readonly sub: string
@@ -131,7 +119,7 @@ export interface Registration {
 export interface Identity {
   readonly subject: string
   readonly createdAt: string
-  readonly source?: IdentitySource
+  readonly source?: 'key' | 'idp'
   readonly mode?: IdentityMode
   readonly kid?: string
   readonly idp?: string
@@ -155,7 +143,7 @@ export interface IdentityStoreOptions {
   readonly lock?: FileLockOptions
 }
 
-export interface IdentityUpdate<Value> {
+interface IdentityUpdate<Value> {
   readonly next: IdentityStore
   readonly value: Value
 }

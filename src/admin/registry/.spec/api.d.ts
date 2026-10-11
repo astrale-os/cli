@@ -79,20 +79,17 @@ export interface ClaimResultV1 {
   readonly origin: string
 }
 
-export declare const REGISTRY_ERROR_CODES: readonly [
-  'REGISTRY_DOMAIN_NOT_FOUND',
-  'REGISTRY_ORIGIN_CLAIMED',
-  'REGISTRY_ORIGIN_RESERVED',
-  'PUBLICATION_NOT_FOUND',
-  'REGISTRY_FORBIDDEN',
-  'REGISTRY_UNAVAILABLE',
-  'PUBLICATION_VERSION_CONFLICT',
-  'PUBLICATION_RELEASE_MISMATCH',
-  'PUBLICATION_RELEASE_UNREACHABLE',
-  'PUBLICATION_VERSION_INVALID',
-]
-
-export type RegistryErrorCode = (typeof REGISTRY_ERROR_CODES)[number]
+type RegistryErrorCode =
+  | 'REGISTRY_DOMAIN_NOT_FOUND'
+  | 'REGISTRY_ORIGIN_CLAIMED'
+  | 'REGISTRY_ORIGIN_RESERVED'
+  | 'PUBLICATION_NOT_FOUND'
+  | 'REGISTRY_FORBIDDEN'
+  | 'REGISTRY_UNAVAILABLE'
+  | 'PUBLICATION_VERSION_CONFLICT'
+  | 'PUBLICATION_RELEASE_MISMATCH'
+  | 'PUBLICATION_RELEASE_UNREACHABLE'
+  | 'PUBLICATION_VERSION_INVALID'
 
 export declare class RegistryError extends AstraleError {
   constructor(
@@ -104,10 +101,8 @@ export declare class RegistryError extends AstraleError {
   readonly details?: Readonly<Record<string, unknown>>
 }
 
-export type DeploymentFetch = (input: string, init: RequestInit) => Promise<Response>
-
 export interface DeploymentReader {
-  readonly fetch: DeploymentFetch
+  readonly fetch: (input: string, init: RequestInit) => Promise<Response>
   readonly timeoutMs: number
 }
 
@@ -135,8 +130,6 @@ export function exactPublicationReference(input: string): {
   readonly origin: string
   readonly version: string
 }
-export function publicationVersion(input: unknown, reference?: string): string
 export function registryOrigin(input: string): string
-export type RegistryAction = 'read' | 'change' | 'claim'
-export function registryFailure(error: unknown, action: RegistryAction): AstraleError
+export function registryFailure(error: unknown, action: 'read' | 'change' | 'claim'): AstraleError
 export function compareVersions(left: string, right: string): number

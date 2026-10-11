@@ -11,10 +11,10 @@ import type {
   Registration,
 } from '../../state/.spec/api.js'
 
-export type { Identity, IdentityStore, Registration } from '../../state/.spec/api.js'
+export type { Identity, IdentityStore } from '../../state/.spec/api.js'
 
 /** Filesystem coordinates used only by explicit identity transfer operations. */
-export interface IdentityFileOptions {
+interface IdentityFileOptions {
   readonly state?: IdentityStoreOptions
   readonly keysDir?: string
 }
@@ -36,18 +36,14 @@ export interface IdentityImportOptions extends IdentityFileOptions {
   readonly replace?: boolean
 }
 
+/** An admitted registration response identifies the selected existing Node. */
 export interface IdentityRegistrationResult {
   readonly iss: string
   readonly sub: string
-  readonly nodeId?: string
-}
-
-/** An admitted registration response identifies the selected existing Node. */
-export interface RegisteredIdentity extends IdentityRegistrationResult {
   readonly nodeId: string
 }
 
-export interface IdentityRegistrationSubmission {
+interface IdentityRegistrationSubmission {
   readonly request: RegisterRequest
   readonly nodeId: NodeId
   readonly expectedAuthentication: Authentication
@@ -60,17 +56,13 @@ export interface IdentityRegistrationSubmission {
   }
 }
 
-/** Submit one prepared request either directly or through its explicit Domain authority owner. */
+/**
+ * Submit one prepared request either directly or through its explicit Domain authority owner, and
+ * admit only the selected existing Node; remote callables remain untrusted input.
+ */
 export function submitIdentityRegistration(
   input: IdentityRegistrationSubmission,
-): Promise<RegisteredIdentity>
-
-/** Admit only the selected existing Node; remote callables remain untrusted input. */
-export function acceptRegisteredIdentity(
-  value: unknown,
-  nodeId: NodeId,
-  expectedAuthentication: Authentication,
-): RegisteredIdentity
+): Promise<IdentityRegistrationResult>
 
 export function readIdentities(): Promise<IdentityStore>
 

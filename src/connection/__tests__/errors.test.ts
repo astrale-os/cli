@@ -3,7 +3,8 @@ import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 import { stripVTControlCharacters } from 'node:util'
 
-import { formatKernelError, functionInputIssues, schemaUpgradeHint } from '../errors'
+import { formatKernelError } from '../errors'
+import { functionInputIssues, schemaUpgradeHint } from '../reasons'
 import { transportFailure } from './failure-fixtures'
 
 const CONFLICT = 4001

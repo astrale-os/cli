@@ -4,7 +4,7 @@ import { access, chmod, mkdir, readFile, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { atomicWrite, withFileLock, type FileLockOptions } from './files'
-import { INSTALLATIONS_PATH } from './paths'
+import { paths } from './paths'
 
 const VERSION = 1
 /**
@@ -54,7 +54,7 @@ export namespace installations {
  */
 export class InstallationCache {
   constructor(
-    private readonly path = INSTALLATIONS_PATH,
+    private readonly path = paths.installations,
     private readonly maximumAgeMs = MAXIMUM_AGE_MS,
     private readonly lock: FileLockOptions = LOCK,
   ) {}

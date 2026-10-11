@@ -13,12 +13,12 @@ export const CLI_GRAPH_QUERY_V6 = defineLaw({
   ],
 })
 
-export const CLI_GRAPH_MUTATION_V2 = defineLaw({
-  id: 'CLI-GRAPH-MUTATION-V2',
+export const CLI_GRAPH_MUTATION_V3 = defineLaw({
+  id: 'CLI-GRAPH-MUTATION-V3',
   statement:
-    'CLI mutation input is admitted as canonical Mutation V2 or its exact authoring input; PatchData and other historical shapes never reach GraphApi.mutate.',
+    'CLI mutation input is admitted as canonical Mutation V3 or its exact authoring input; input that names no operations never reaches GraphApi.mutate.',
   tests: [
-    { file: '__tests__/mutation.test.ts', id: 'TEST-CLI-GRAPH-ADMITS-MUTATION-V2' },
-    { file: '__tests__/mutation.test.ts', id: 'TEST-CLI-GRAPH-REJECTS-PATCH-DATA' },
+    { file: '__tests__/mutation.test.ts', id: 'TEST-CLI-GRAPH-ADMITS-MUTATION-V3' },
+    { file: '__tests__/mutation.test.ts', id: 'TEST-CLI-GRAPH-REJECTS-UNAUTHORED-MUTATION' },
   ],
 })

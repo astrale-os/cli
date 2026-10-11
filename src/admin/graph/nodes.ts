@@ -3,9 +3,8 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 import type { QueryAST } from '@astrale-os/sdk/query'
 
 export type AdminGraphQueryApi = Pick<GraphApi, 'query'>
-export type AdminGraphApi = Pick<GraphApi, 'query' | 'neighbors'>
 
-export interface ReadAllNodesOptions {
+interface ReadAllNodesOptions {
   readonly label: string
   readonly maximum: number
   readonly maximumPages: number

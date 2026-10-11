@@ -1,15 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { decodeJwt, decodeProtectedHeader } from 'jose'
+import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair } from 'jose'
 import { access, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { IdentityKeyMissingError } from '../../errors'
 import {
-  generateEd25519Jwk,
   importKeypair,
   keypairPaths,
-  listIdentityKeys,
   persistKeypair,
   readKeypair,
   removeKeypair,
@@ -108,7 +106,9 @@ describe('DESIGN — per-identity keys', () => {
   })
 
   test('signAs(alice) uses the key file algorithm for EdDSA identities', async () => {
-    const { privateJwk, publicJwk } = await generateEd25519Jwk('alice-ed25519')
+    const pair = await generateKeyPair('EdDSA', { crv: 'Ed25519', extractable: true })
+    const privateJwk = { ...(await exportJWK(pair.privateKey)), alg: 'EdDSA' }
+    const publicJwk = { ...(await exportJWK(pair.publicKey)), alg: 'EdDSA' }
     const { privatePath, publicPath } = keypairPaths('alice', tmp)
     await writeFile(privatePath, JSON.stringify(privateJwk, null, 2))
     await writeFile(publicPath, JSON.stringify(publicJwk, null, 2))
@@ -170,13 +170,5 @@ describe('DESIGN — per-identity keys', () => {
     await removeKeypair('alice', tmp)
     const { privatePath } = keypairPaths('alice', tmp)
     await expect(access(privatePath)).rejects.toThrow()
-  })
-
-  test('listIdentityKeys returns names with private keys', async () => {
-    await persistKeypair('manager', { keysDir: tmp })
-    await persistKeypair('alice', { keysDir: tmp })
-    await persistKeypair('bob', { keysDir: tmp })
-    const names = await listIdentityKeys(tmp)
-    expect(names.sort()).toEqual(['alice', 'bob', 'manager'])
   })
 })
