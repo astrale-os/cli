@@ -1,5 +1,4 @@
 import { acceptOperationId, createSchema } from '@astrale-os/sdk/client/schema'
-
 import { expect, test } from 'bun:test'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
