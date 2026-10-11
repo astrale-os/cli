@@ -65,28 +65,21 @@ test('harness status names the running agent and every local one beside it', asy
   expect(status.harnesses.map((entry) => entry.id).sort()).toEqual(['claude', 'codex', 'mock'])
 })
 
-test('a chat update keeps only levels of the shared vocabulary', async () => {
+test('a chat update keeps only shared levels; a reorder persists and tells every window', async () => {
   testDomain()
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
-  const chatId = listChats().activeId
+  const first = listChats().activeId
   const update = (patch: JsonRecord) =>
-    answer<ChatInfo>('/agent/chats', { action: 'update', chatId, ...patch })
-
+    answer<ChatInfo>('/agent/chats', { action: 'update', chatId: first, ...patch })
   expect(await update({ effort: 'xhigh', fastMode: true })).toMatchObject({
     effort: 'xhigh',
     fastMode: true,
     status: 'idle',
   })
   expect(await update({ effort: 'turbo' })).not.toHaveProperty('effort')
-})
 
-test('reordering the tabs persists and tells every window', async () => {
-  testDomain()
-  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
-  const first = listChats().activeId
   const second = (await answer<ChatInfo>('/agent/chats', { action: 'open' })).id
   const events: StudioEvent[] = []
-
   await call('/agent/chats', { action: 'reorder', order: [second, first] }, (event) =>
     events.push(event),
   )

@@ -67,8 +67,6 @@ const schema = defineSchema('docs.example.dev', {
 const namedRef = { origin: dependency.origin, kind: 'class', name: 'Named' } as const
 const documentRef = { origin: schema.origin, kind: 'class', name: 'Document' } as const
 
-const sdkModule = sdk
-
 describe('canonical Schema projection', () => {
   test('recognizes exported V1 roots and preserves an invalid root as a preview', () => {
     expect(isCanonicalDomainSchemaV1(schema)).toBe(true)
@@ -85,7 +83,7 @@ describe('canonical Schema projection', () => {
       views: {},
       core: { nodes: {}, edges: [] },
     } as CanonicalDomainSchemaV1
-    expect(extractCanonicalSchemaFromSdk(sdkModule, invalid)).toMatchObject({
+    expect(extractCanonicalSchemaFromSdk(sdk, invalid)).toMatchObject({
       status: 'preview',
       revision: null,
       ir: { domain: 'not an origin' },
@@ -93,7 +91,7 @@ describe('canonical Schema projection', () => {
   })
 
   test('uses the resolved Domain for Classes, dependency footprint, callables, and Views', () => {
-    const extraction = extractCanonicalSchemaFromSdk(sdkModule, schema)
+    const extraction = extractCanonicalSchemaFromSdk(sdk, schema)
     expect(extraction.status).toBe('admitted')
     expect(extraction.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(extraction.ir.classes.Document).toMatchObject({
@@ -150,7 +148,7 @@ describe('canonical Schema projection', () => {
   })
 
   test('projects Core from the same admitted root without a second Schema import', () => {
-    const extraction = extractCanonicalSchemaFromSdk(sdkModule, schema)
+    const extraction = extractCanonicalSchemaFromSdk(sdk, schema)
     expect(projectCanonicalCore(extraction.root)).toEqual({
       domain: schema.origin,
       nodes: [

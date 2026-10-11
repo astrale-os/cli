@@ -59,11 +59,9 @@ test('a rebuild while the server runs reaches the browser, shell and all', async
 
 test('a path that names no file is the shell; a client that takes no gzip gets it plain', async () => {
   const serve = staticFiles(build('CCCCCCCC'))
-
   const deep = serve('/workspace/schema', browser('/workspace/schema'))
   expect(deep.headers.get('content-type')).toBe('text/html')
   expect(await read(deep)).toContain('/assets/index-CCCCCCCC.js')
-
   const plain = serve('/', new Request('http://127.0.0.1/'))
   expect(plain.headers.get('content-encoding')).toBeNull()
   expect(await read(plain)).toContain('/assets/index-CCCCCCCC.js')

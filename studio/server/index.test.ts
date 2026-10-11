@@ -1,10 +1,6 @@
 /**
- * The other half of the "hand the terminal back" contract.
- *
- * `astrale studio` stops waiting the moment this server exits, so the server
- * must actually exit — and non-zero — when the workspace holds nothing to open,
- * rather than idling on a port it never bound. A server that lingered here would
- * put the CLI back to polling until its indexing budget ran out.
+ * `astrale studio` stops waiting the moment this server exits, so with nothing to open
+ * the server must exit, non-zero, instead of idling on a port it never bound.
  */
 import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -29,7 +25,7 @@ test('the server refuses a workspace with no domain and exits non-zero', async (
       join(import.meta.dir, 'index.ts'),
       workspace,
       '--port',
-      String(port),
+      `${port}`,
       '--no-open',
     ],
     { stdout: 'pipe', stderr: 'pipe' },

@@ -339,6 +339,10 @@ function messages(file: string) {
   return readLog(file).flatMap((entry) => (entry.message ? [entry.message] : []))
 }
 
+/** A turn nobody cancels and nobody watches. */
+const { signal } = new AbortController()
+const quiet = { signal, onEvent: () => {} }
+
 const methods = (file: string) => messages(file).flatMap((message) => message.method ?? [])
 const configs = (file: string) =>
   messages(file).flatMap((message) =>
@@ -465,7 +469,7 @@ describe('ACP harness adapter', () => {
       root,
       prompt: 'run the tests',
       env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: 'tools' },
-      signal: new AbortController().signal,
+      signal,
       onEvent: (event) => events.push(event),
     })
 
@@ -533,7 +537,7 @@ describe('ACP harness adapter', () => {
         },
       ],
       env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex' },
-      signal: new AbortController().signal,
+      signal,
       onEvent: (event) => events.push(`${event.kind}:${event.text}`),
       onContext: (context) => contexts.push(context),
     })
@@ -613,8 +617,7 @@ describe('ACP harness adapter', () => {
         prompt: 'what is wrong here?',
         images: [{ path: image, mimeType: 'image/png', name: 'shot.png' }],
         env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'claude', FAKE_ACP_IMAGES: images },
-        signal: new AbortController().signal,
-        onEvent: () => {},
+        ...quiet,
       })
       expect(result.isError).toBe(false)
       return messages(log).find((message) => message.method === 'session/prompt')!.params!.prompt
@@ -646,8 +649,7 @@ describe('ACP harness adapter', () => {
         FAKE_ACP_PROVIDER: 'claude',
         DOMAIN_STUDIO_CLAUDE_ARGS: '--debug-file trace.log',
       },
-      signal: new AbortController().signal,
-      onEvent: () => {},
+      ...quiet,
     })
 
     expect(result).toMatchObject({
@@ -696,16 +698,8 @@ describe('ACP harness adapter', () => {
     expect((await harness.loadout(root, { env, refresh: true })).efforts).toBeUndefined()
 
     rmSync(log)
-    const { signal } = new AbortController()
-    const run = {
-      root,
-      prompt: 'think',
-      model: 'studio-model',
-      effort: 'max' as const,
-      env,
-      signal,
-    }
-    expect((await harness.run({ ...run, onEvent: () => {} })).isError).toBe(false)
+    const run = { root, prompt: 'think', model: 'studio-model', effort: 'max' as const, env }
+    expect((await harness.run({ ...run, ...quiet })).isError).toBe(false)
     expect(configs(log)).toEqual([['model', 'studio-model']])
   })
 
@@ -719,7 +713,7 @@ describe('ACP harness adapter', () => {
       sessionId: 'parent-session',
       access: 'workspace',
       env: { FAKE_ACP_LOG: claudeLog, FAKE_ACP_PROVIDER: 'claude' },
-      signal: new AbortController().signal,
+      signal,
       onDelta: (text) => claudeDeltas.push(text),
     })
     expect(claude).toEqual({ text: 'Hello world', isError: false, errorMessage: undefined })
@@ -740,7 +734,7 @@ describe('ACP harness adapter', () => {
         FAKE_ACP_PROVIDER: 'codex',
         FAKE_ACP_FORK: '0',
       },
-      signal: new AbortController().signal,
+      signal,
       onDelta: () => {},
     })
     expect(codex).toMatchObject({ text: 'Hello world', isError: false })
@@ -757,8 +751,7 @@ describe('ACP harness adapter', () => {
       prompt: 'continue',
       sessionId: 'missing-session',
       env: { FAKE_ACP_PROVIDER: 'codex' },
-      signal: new AbortController().signal,
-      onEvent: () => {},
+      ...quiet,
     })
     expect(resume).toMatchObject({
       sessionId: 'missing-session',
@@ -779,7 +772,7 @@ describe('ACP harness adapter', () => {
         FAKE_ACP_PROVIDER: 'claude',
         FAKE_ACP_MODE: 'partial-fail',
       },
-      signal: new AbortController().signal,
+      signal,
       onDelta: (text) => deltas.push(text),
     })
     expect(ask).toMatchObject({ text: 'Hello', isError: true })
@@ -797,7 +790,7 @@ describe('ACP harness adapter', () => {
         root,
         prompt: 'hello',
         env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: mode },
-        signal: new AbortController().signal,
+        signal,
         onEvent: (event) => events.push(event),
         onDelta: (text) => deltas.push(text),
       })

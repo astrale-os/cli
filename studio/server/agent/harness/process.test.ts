@@ -18,29 +18,18 @@ function hangingCommand(root: string): string {
   return file
 }
 
-test('bounds hanging probes with a timeout', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-harness-process-timeout-'))
+test('a hanging probe is bounded by its timeout, and setup cancellation aborts it', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-process-'))
   roots.push(root)
-  const result = await captureCommand(hangingCommand(root), [], root, { timeoutMs: 30 })
-  expect(result).toMatchObject({
+  const hang = hangingCommand(root)
+  expect(await captureCommand(hang, [], root, { timeoutMs: 30 })).toMatchObject({
     code: -1,
     timedOut: true,
     stderr: 'command timed out after 30ms',
   })
-})
 
-test('lets setup cancellation abort an in-flight probe', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-harness-process-abort-'))
-  roots.push(root)
   const controller = new AbortController()
-  const pending = captureCommand(hangingCommand(root), [], root, {
-    signal: controller.signal,
-    timeoutMs: 5_000,
-  })
+  const pending = captureCommand(hang, [], root, { signal: controller.signal, timeoutMs: 5_000 })
   controller.abort()
-  expect(await pending).toMatchObject({
-    code: -1,
-    aborted: true,
-    stderr: 'canceled',
-  })
+  expect(await pending).toMatchObject({ code: -1, aborted: true, stderr: 'canceled' })
 })

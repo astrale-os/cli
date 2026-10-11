@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import type { DomainHandle } from '../domain/registry'
 
@@ -13,19 +13,12 @@ afterEach(() => {
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-function fixture(config: string): DomainHandle {
+function fixture(): DomainHandle {
   const root = mkdtempSync(join(tmpdir(), 'studio-datasets-'))
   roots.push(root)
-  mkdirSync(join(root, 'schema'), { recursive: true })
-  mkdirSync(join(root, 'tests', 'datasets'), { recursive: true })
-  writeFileSync(join(root, 'package.json'), '{"type":"module"}\n')
-  const sdk = realpathSync(join(import.meta.dir, '../../../node_modules/@astrale-os/sdk'))
-  const scope = join(root, 'node_modules', '@astrale-os')
-  mkdirSync(scope, { recursive: true })
-  symlinkSync(sdk, join(scope, 'sdk'), 'dir')
-  writeFileSync(
-    join(root, 'schema/index.ts'),
-    `
+  for (const [path, text] of Object.entries({
+    'package.json': '{"type":"module"}\n',
+    'schema/index.ts': `
       import { classIcon, defineSchema, edgeClass, nodeClass } from '@astrale-os/sdk/schema'
       export const Item = nodeClass({ icon: classIcon.neutral, properties: {} })
       export const contains = edgeClass.directed({
@@ -34,10 +27,7 @@ function fixture(config: string): DomainHandle {
       })
       export const schema = defineSchema('datasets.studio.test', { name: 'Test Domain', classes: { Item, contains } })
     `,
-  )
-  writeFileSync(
-    join(root, 'tests/datasets/demo.ts'),
-    `
+    'tests/datasets/demo.ts': `
       import { defineDataset } from '@astrale-os/sdk/testing'
       import { schema } from '../../schema/index.ts'
       export default defineDataset(schema, {
@@ -45,19 +35,27 @@ function fixture(config: string): DomainHandle {
         title: 'Demo data',
         graph({ classes: { Item, contains }, node, edge }) {
           const parent = node(Item, { id: 'parent' })
-          const child = node(Item)
-          edge(contains, parent, child)
+          edge(contains, parent, node(Item))
           return { parent }
         },
       })
     `,
-  )
-  writeFileSync(join(root, 'tests/datasets/broken.ts'), `export default { id: 'broken' }\n`)
-  writeFileSync(
-    join(root, 'domain.ts'),
-    `throw new Error('Domain definition entry was imported')\n`,
-  )
-  writeFileSync(join(root, 'astrale.config.ts'), config)
+    'tests/datasets/broken.ts': `export default { id: 'broken' }\n`,
+    'domain.ts': `throw new Error('Domain definition entry was imported')\n`,
+    'astrale.config.ts': `import { defineProject } from '@astrale-os/sdk/project'
+      import { dataset, tests } from '@astrale-os/sdk/testing'
+      export default defineProject({ domain: {} as never, environments: {}, tests: tests({ datasets: [
+        dataset('./tests/datasets/demo.ts'),
+        dataset('./tests/datasets/broken.ts'),
+        dataset('./tests/datasets/missing.ts'),
+      ] }) })\n`,
+  })) {
+    mkdirSync(dirname(join(root, path)), { recursive: true })
+    writeFileSync(join(root, path), text)
+  }
+  const sdk = realpathSync(join(import.meta.dir, '../../../node_modules/@astrale-os/sdk'))
+  mkdirSync(join(root, 'node_modules/@astrale-os'), { recursive: true })
+  symlinkSync(sdk, join(root, 'node_modules/@astrale-os/sdk'), 'dir')
   return {
     id: 'datasets-studio-test',
     root,
@@ -137,15 +135,7 @@ describe('Dataset envelope', () => {
 
 describe('Dataset extraction', () => {
   test('extracts every referenced Dataset through the domain SDK without touching the Domain definition', async () => {
-    const handle = fixture(
-      `import { defineProject } from '@astrale-os/sdk/project'
-      import { dataset, tests } from '@astrale-os/sdk/testing'
-      export default defineProject({ domain: {} as never, environments: {}, tests: tests({ datasets: [
-        dataset('./tests/datasets/demo.ts'),
-        dataset('./tests/datasets/broken.ts'),
-        dataset('./tests/datasets/missing.ts'),
-      ] }) })\n`,
-    )
+    const handle = fixture()
     const bundle = await buildBundle(handle)
     expect(bundle.schemaMode).toBe('canonical-admitted')
 

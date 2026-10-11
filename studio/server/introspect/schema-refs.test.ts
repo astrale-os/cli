@@ -5,14 +5,8 @@ import type { StudioSchemaBundle } from '../../shared/types'
 import { schemaRefs } from './schema-refs'
 
 test('enumerates local and exact imported Class anchors without collapsing homonyms', () => {
-  const method = {
-    name: 'rename',
-    params: {},
-    returns: {},
-    static: false,
-    abstract: false as const,
-    executable: true,
-  }
+  // only the names of members make anchors
+  const method = {}
   const bundle = {
     ir: {
       version: 'v1',
