@@ -28,31 +28,11 @@
     "THIRD-PARTY-NOTICES.md"
   ],
   "type": "module",
-  "exports": {
-    "./connect-core": {
-      "types": "./dist/types/connect-core.d.ts",
-      "import": "./dist/public/connect-core.js",
-      "default": "./dist/public/connect-core.js"
-    },
-    "./keys": {
-      "types": "./dist/types/keys/index.d.ts",
-      "import": "./dist/public/keys/index.js",
-      "default": "./dist/public/keys/index.js"
-    },
-    "./paths": {
-      "types": "./dist/types/paths/index.d.ts",
-      "import": "./dist/public/paths/index.js",
-      "default": "./dist/public/paths/index.js"
-    },
-    "./identity-export-v1.schema.json": "./src/identity/.spec/schemas/identity-export-v1.schema.json"
-  },
   "scripts": {
     "prepare": "husky",
     "assets:ensure": "bun scripts/build-embedded-assets.ts",
     "agents:pin": "bun scripts/pin-agent-binaries.ts",
     "build": "bun scripts/build.ts",
-    "prepack": "pnpm run package:check",
-    "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs && node scripts/verify-public-dependency-boundary.mjs",
     "typecheck": "pnpm run assets:ensure && tsgo --noEmit && tsgo --noEmit -p tsconfig.tests.json && tsgo --noEmit -p tsconfig.scripts.json && tsgo --noEmit -p viewer && pnpm --dir studio run typecheck",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
