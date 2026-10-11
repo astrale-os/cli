@@ -40,18 +40,6 @@ export interface Installation {
   readonly issuer: string | null
 }
 
-export namespace installations {
-  interface Artifact {
-    readonly version: 1
-    readonly entries: Record<string, Entry>
-  }
-
-  interface Entry extends Installation {
-    /** Unix time in milliseconds of the installation read that produced this entry. */
-    readonly observedAt: number
-  }
-}
-
 /** Remember each Domain installation per source Kernel; installation state, never authority. */
 /**
  * A record is trusted only while the cache can still forget it: without a writable directory every
@@ -67,40 +55,33 @@ export class InstallationCache {
 
 export const INSTALLATION_CACHE: InstallationCache
 
-export namespace exchange {
-  interface Artifact {
-    readonly version: 2
-    readonly entries: Record<string, Entry>
-  }
+interface ExchangeKey {
+  readonly kernelIssuer: string
+  readonly domainIssuer: string
+  readonly sourceIssuer: string
+  readonly sourceSubject: string
+}
 
-  interface Key {
-    readonly kernelIssuer: string
-    readonly domainIssuer: string
-    readonly sourceIssuer: string
-    readonly sourceSubject: string
-  }
-
-  interface Entry {
-    readonly credential: string
-    readonly expiresAt: number
-    readonly user: string
-    readonly sourceIssuer: string
-    readonly sourceSubject: string
-  }
+interface ExchangeEntry {
+  readonly credential: string
+  readonly expiresAt: number
+  readonly user: string
+  readonly sourceIssuer: string
+  readonly sourceSubject: string
 }
 
 /** Persist exact Domain bearer tokens under a private, cross-process synchronized cache. */
 export class ExchangeCredentialCache {
   constructor(path?: string)
   get(
-    key: exchange.Key,
+    key: ExchangeKey,
     minimumRemainingSeconds: number,
     now?: () => number,
   ): Promise<string | undefined>
   getOrRefresh(
-    key: exchange.Key,
+    key: ExchangeKey,
     minimumRemainingSeconds: number,
-    refresh: () => Promise<exchange.Entry>,
+    refresh: () => Promise<ExchangeEntry>,
     now?: () => number,
   ): Promise<string>
   deleteKernel(kernelIssuer: string): Promise<void>
@@ -160,6 +141,22 @@ export function updateIdentityStore<Value>(
 /** Atomically replace one private CLI state file through a same-directory temporary file. */
 export function atomicWrite(path: string, data: string): Promise<void>
 export function atomicWriteSync(path: string, data: string | Uint8Array): void
+
+/** Read-modify-write one owner-private `{ version, entries }` store under its file lock. */
+export function updatePrivateStore<Entry, Value>(
+  path: string,
+  version: number,
+  transition: (
+    entries: Record<string, Entry>,
+  ) => Promise<{ readonly value: Value; readonly changed: boolean }>,
+  options?: FileLockOptions,
+): Promise<Value>
+
+/** The entries of an owner-private store; a missing, unreadable or other-version store is empty. */
+export function readPrivateStore<Entry>(
+  path: string,
+  version: number,
+): Promise<Record<string, Entry>>
 
 /** CLI filesystem representation for Kernel Client's admitted confidential route artifact. */
 export class FileSessionRouteStore implements SessionRouteStore {

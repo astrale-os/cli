@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { OwnedInstanceInfo } from '../admin-instance'
+import type { InstanceInfo } from '../admin-instance'
 import type { InstanceStore } from '../instance'
 
 import { collectInstanceCandidates, describeInstanceCandidate } from '../instance-candidates'
@@ -13,7 +13,7 @@ const store: InstanceStore = {
   },
 }
 
-const managedDemo: OwnedInstanceInfo = {
+const managedDemo: InstanceInfo = {
   id: 'demo',
   slug: 'demo',
   url: 'https://demo.eu.astrale.ai',
@@ -34,7 +34,7 @@ describe('collectInstanceCandidates', () => {
   })
 
   test('bookmark and managed at different URLs are both candidates', () => {
-    const conflicting: OwnedInstanceInfo = {
+    const conflicting: InstanceInfo = {
       ...managedDemo,
       url: 'https://demo.us.astrale.ai',
     }
@@ -63,13 +63,13 @@ describe('collectInstanceCandidates', () => {
   })
 
   test('multiple managed instances with the same slug are all candidates', () => {
-    const a: OwnedInstanceInfo = {
+    const a: InstanceInfo = {
       id: 'x1',
       slug: 'twin',
       url: 'https://twin.eu.astrale.ai',
       state: 'ready',
     }
-    const b: OwnedInstanceInfo = {
+    const b: InstanceInfo = {
       id: 'x2',
       slug: 'twin',
       url: 'https://twin.us.astrale.ai',
@@ -89,7 +89,7 @@ describe('collectInstanceCandidates', () => {
   })
 
   test('managed instances with a different slug are ignored', () => {
-    const unrelated: OwnedInstanceInfo = {
+    const unrelated: InstanceInfo = {
       id: 'z',
       slug: 'zeta',
       url: 'https://zeta.eu.astrale.ai',

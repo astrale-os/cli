@@ -127,11 +127,11 @@ export const CLI_CONNECTION_ISSUER_DISCOVERY = defineLaw({
 export const CLI_AUTH_REGISTRATION_TARGET = defineLaw({
   id: 'CLI-AUTH-REGISTRATION-TARGET',
   statement:
-    'Key identity registration lookup uses the same target key for bookmark, managed, Admin, and direct URL calls that identity registration stores.',
+    'Key identity registration lookup uses the same target key for bookmark, managed, Admin, and direct URL calls that identity registration stores, and signs the registered (issuer, subject).',
   tests: [
     {
-      file: '__tests__/auth.test.ts',
-      id: 'TEST-CLI-AUTH-USES-DIRECT-URL-REGISTRATION',
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH',
     },
   ],
 })

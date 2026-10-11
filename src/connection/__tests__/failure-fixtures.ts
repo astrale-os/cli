@@ -1,24 +1,16 @@
-import { SessionError, TransportError } from '@astrale-os/sdk/client'
-
-import type { TransportDiagnosticContext } from '../failure/model'
+import { SessionError, TransportError, type TransportContext } from '@astrale-os/sdk/client'
 
 export function transportFailure(
   message: string,
   phase: TransportError['phase'],
-  context: TransportDiagnosticContext,
+  context: TransportContext,
 ): TransportError {
   return context.kind === 'acquisition'
     ? TransportError.acquisition(message, { phase, resource: context.resource })
     : TransportError.invocation(message, {
         phase,
         delivery: context.delivery,
-        ...(context.invocation === undefined
-          ? {}
-          : {
-              invocation: context.invocation as Parameters<
-                typeof TransportError.invocation
-              >[1]['invocation'],
-            }),
+        ...(context.invocation === undefined ? {} : { invocation: context.invocation }),
       })
 }
 

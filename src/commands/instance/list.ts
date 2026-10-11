@@ -7,11 +7,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { listOwnedInstances } from '../../lib/admin-instance'
-import {
-  formatInstanceState,
-  type InstanceInfo,
-  type OwnedInstanceInfo,
-} from '../../lib/admin-instance'
+import { formatInstanceState, type InstanceInfo } from '../../lib/admin-instance'
 import {
   ADMIN_TARGET_OPTIONS,
   FLEET_OPTION,
@@ -87,7 +83,7 @@ export default {
         createdAt: entry.createdAt ?? null,
       }))
 
-      let managed: OwnedInstanceInfo[] = []
+      let managed: InstanceInfo[] = []
       if (!opts.bookmarked) {
         try {
           managed = await withSpinner('Fetching instances', !isMachine(opts), () =>

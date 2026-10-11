@@ -1,10 +1,4 @@
-export type TransportDiagnosticContext =
-  | { readonly kind: 'acquisition'; readonly resource: 'release' | 'bundle' }
-  | {
-      readonly kind: 'invocation'
-      readonly delivery: 'not-sent' | 'unknown'
-      readonly invocation?: unknown
-    }
+import type { TransportContext, TransportError } from '@astrale-os/sdk/client'
 
 export type FailureDiagnostic =
   | {
@@ -23,6 +17,6 @@ export type FailureDiagnostic =
       readonly kind: 'transport'
       readonly code: 'CONNECTION_ERROR' | 'DISCONNECTED' | 'TIMEOUT' | 'TRANSPORT_ERROR'
       readonly message: string
-      readonly phase: string
-      readonly context: TransportDiagnosticContext
+      readonly phase: TransportError['phase']
+      readonly context: TransportContext
     }

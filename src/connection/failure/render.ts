@@ -5,6 +5,7 @@ import type { FailureDiagnostic } from './model'
 
 import { log } from '../../lib/log'
 import {
+  CREDENTIAL_REFUSED,
   functionInputIssues,
   queryInputRepair,
   reasonCode,
@@ -116,9 +117,6 @@ function renderResponse(
   }
   if (hint) log.dim(`  ${hint}`)
 }
-
-/** The Kernel code of a credential it does not accept (AUTH_INVALID), including an unregistered account. */
-const CREDENTIAL_REFUSED = 2002
 
 function renderRecovery(recovery: OperationRecovery | undefined): void {
   if (!recovery)

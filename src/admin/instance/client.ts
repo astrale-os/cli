@@ -15,7 +15,6 @@ import {
   type InvitationInfo,
   type InstanceInfo,
   type InstanceState,
-  type OwnedInstanceInfo,
   type RetrievedRootIdentity,
   type RootIdentityRecipient,
   type RootIdentityTransfer,
@@ -28,8 +27,8 @@ export interface AdminInstanceContext {
 }
 
 export interface AdminInstanceApi {
-  require(identifier: string): Promise<OwnedInstanceInfo>
-  list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
+  require(identifier: string): Promise<InstanceInfo>
+  list(options?: Readonly<{ includeRetired?: boolean }>): Promise<InstanceInfo[]>
   create(slug: string, requestedOperationId?: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
@@ -64,7 +63,7 @@ export async function connectAdminInstances(
 
   const list = async (
     options: Readonly<{ includeRetired?: boolean }> = {},
-  ): Promise<OwnedInstanceInfo[]> => {
+  ): Promise<InstanceInfo[]> => {
     const output = await callAdminMethod(
       context.session,
       await fleet(),
@@ -75,12 +74,12 @@ export async function connectAdminInstances(
     if (output.length > MAXIMUM_INSTANCES) {
       throw new TypeError('Admin Instance inventory exceeds its bound.')
     }
-    return output.map((entry) => instanceFromSummary(entry) as OwnedInstanceInfo)
+    return output.map(instanceFromSummary)
   }
 
-  const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
+  const requireInstance = async (identifier: string): Promise<InstanceInfo> => {
     const direct = directNodePath(identifier)
-    let found: OwnedInstanceInfo | undefined
+    let found: InstanceInfo | undefined
     if (direct !== undefined) found = await readExactInstance(context.graph, direct)
     else {
       const nodes = await readAllNodes(
@@ -239,7 +238,7 @@ function instanceInvitationFromSummary(
 async function readExactInstance(
   graph: AdminGraphQueryApi,
   instance: ReturnType<typeof Path.parse>,
-): Promise<OwnedInstanceInfo | undefined> {
+): Promise<InstanceInfo | undefined> {
   const Instance = AdminContract.classes.Instance
   const selected = Query.from({ nodes: [instance] }).filter({ class: { equals: Instance } })
   const nodes = await readAllNodes(
@@ -260,7 +259,7 @@ function directNodePath(input: string): ReturnType<typeof Path.parse> | undefine
   }
 }
 
-function instanceFromNode(node: Node): OwnedInstanceInfo {
+function instanceFromNode(node: Node): InstanceInfo {
   const Instance = AdminContract.classes.Instance
   if (node.class !== ClassKey.of(Instance)) {
     throw new TypeError('Admin Instance inventory returned a non-Instance Node.')
@@ -278,7 +277,7 @@ function instanceFromNode(node: Node): OwnedInstanceInfo {
     failure: node.props[property.failure],
     createdAt: node.props[property.createdAt],
     updatedAt: node.props[property.updatedAt],
-  }) as OwnedInstanceInfo
+  })
 }
 
 function instanceFromSummary(input: unknown): InstanceInfo {

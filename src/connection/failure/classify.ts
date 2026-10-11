@@ -1,29 +1,28 @@
 import { AuthValueError } from '@astrale-os/sdk/auth'
 import {
   ClientError,
+  NodeUnavailableError,
   ProtocolError,
   ResponseError,
   SessionError,
   TransportError,
+  type SessionFailure,
 } from '@astrale-os/sdk/client'
-import { NodeUnavailableError } from '@astrale-os/sdk/client'
 import { PathError } from '@astrale-os/sdk/graph/path'
 
-import type { FailureDiagnostic, TransportDiagnosticContext } from './model'
+import type { FailureDiagnostic } from './model'
 
 import { AstraleError } from '../../errors'
 
 export function classifyFailure(error: unknown): FailureDiagnostic {
   if (error instanceof AstraleError) return simple(error.code, error.message, error.hint)
   if (error instanceof TransportError) {
-    const context = transportContext(error)
-    if (context === undefined) return simple('TRANSPORT_ERROR', error.message)
     return {
       kind: 'transport',
       code: lifecycleCode(error.phase),
       message: error.message,
       phase: error.phase,
-      context,
+      context: error.context,
     }
   }
   if (error instanceof ResponseError) {
@@ -49,7 +48,6 @@ export function classifyFailure(error: unknown): FailureDiagnostic {
 }
 
 type TransportCode = Extract<FailureDiagnostic, { kind: 'transport' }>['code']
-type SessionFailure = 'cancelled' | 'closed' | 'timeout'
 
 function lifecycleCode(value: TransportError['phase']): TransportCode
 function lifecycleCode(value: SessionFailure): string
@@ -58,37 +56,6 @@ function lifecycleCode(value: TransportError['phase'] | SessionFailure): string 
   if (value === 'timeout') return 'TIMEOUT'
   if (value === 'closed') return 'DISCONNECTED'
   return value === 'cancelled' ? 'CANCELLED' : 'TRANSPORT_ERROR'
-}
-
-function transportContext(error: TransportError): TransportDiagnosticContext | undefined {
-  const evidence = error as TransportError & {
-    readonly context?: unknown
-  }
-  if (record(evidence.context)) {
-    if (
-      evidence.context.kind === 'acquisition' &&
-      (evidence.context.resource === 'release' || evidence.context.resource === 'bundle')
-    ) {
-      return { kind: 'acquisition', resource: evidence.context.resource }
-    }
-    if (
-      evidence.context.kind === 'invocation' &&
-      (evidence.context.delivery === 'not-sent' || evidence.context.delivery === 'unknown')
-    ) {
-      return {
-        kind: 'invocation',
-        delivery: evidence.context.delivery,
-        ...(evidence.context.invocation === undefined
-          ? {}
-          : { invocation: evidence.context.invocation }),
-      }
-    }
-  }
-  return undefined
-}
-
-function record(input: unknown): input is Readonly<Record<string, unknown>> {
-  return input !== null && typeof input === 'object' && !Array.isArray(input)
 }
 
 const simple = (code: string, message: string, hint?: string): FailureDiagnostic => ({

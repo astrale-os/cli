@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { IdentityStore } from '../../identity/index'
 
 import { AuthError } from '../../errors'
-import { findOwnedInstance, type OwnedInstanceInfo } from '../../lib/admin-instance'
+import { findOwnedInstance, type InstanceInfo } from '../../lib/admin-instance'
 import {
   assertInstanceCreateIdentity,
   instanceCreateOptions,
@@ -21,7 +21,7 @@ describe('admin-backed instance commands', () => {
       phase: 'installing:default-domains',
       error: 'postInstall failed',
       createdAt: '2026-07-16T00:00:00.000Z',
-    } satisfies OwnedInstanceInfo
+    } satisfies InstanceInfo
 
     expect(findOwnedInstance([owned], 'demo')).toBe(owned)
     expect(findOwnedInstance([owned], 'instance-node')).toBe(owned)

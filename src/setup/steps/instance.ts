@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 
-import type { OwnedInstanceInfo } from '../../lib/admin-instance'
+import type { InstanceInfo } from '../../lib/admin-instance'
 import type { SetupContext, SetupStep } from '../types'
 
 import { AstraleError } from '../../errors'
@@ -15,11 +15,11 @@ import { guiOrigin, slugError } from '../util'
 
 export type InstanceSetupDependencies = {
   fetchOwned: (ctx: SetupContext) => Promise<{
-    readonly instances: OwnedInstanceInfo[]
+    readonly instances: InstanceInfo[]
     readonly identity?: string
   }>
-  adopt: (info: OwnedInstanceInfo, identity?: string) => Promise<void>
-  selectReady: (instances: OwnedInstanceInfo[]) => Promise<OwnedInstanceInfo | null>
+  adopt: (info: InstanceInfo, identity?: string) => Promise<void>
+  selectReady: (instances: InstanceInfo[]) => Promise<InstanceInfo | null>
   confirmCreate: () => Promise<boolean>
   promptSlug: () => Promise<string | undefined>
   provision: (slug: string) => Promise<ProvisionResult>
@@ -38,7 +38,7 @@ function hero(slug: string, kernelUrl: string): void {
 }
 
 export async function adoptOwnedInstance(
-  info: OwnedInstanceInfo,
+  info: InstanceInfo,
   defaultIdentity?: string,
   deps: OwnedInstanceAdoptionDependencies = {
     upsert: upsertManagedBookmark,
@@ -159,7 +159,7 @@ export async function ensureOwnedInstance(
   return 'fixed'
 }
 
-function reportNotReady(instances: OwnedInstanceInfo[]): void {
+function reportNotReady(instances: InstanceInfo[]): void {
   log.warn(
     `${instances.length === 1 ? 'Your instance is' : 'Your instances are'} not ready; setup will not create another.`,
   )

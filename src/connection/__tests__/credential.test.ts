@@ -29,7 +29,7 @@ const config: AstraleConfig = {
 
 describe('connection credential', () => {
   /** @evidence TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH */
-  test('composes named and active IdP identities into exact persisted exchange hits', async () => {
+  test('selects the named, bookmark or default identity and its exact persisted exchange', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'astrale-connection-exchange-'))
     try {
       const fixture = join(import.meta.dir, 'fixtures', 'exchange-cache-cli-process.ts')
@@ -45,7 +45,14 @@ describe('connection credential', () => {
       ])
 
       expect(exitCode, stderr).toBe(0)
-      expect(JSON.parse(stdout)).toEqual({ explicit: true, active: true, fetches: 0 })
+      expect(JSON.parse(stdout)).toEqual({
+        explicit: true,
+        active: true,
+        foreign: false,
+        fetches: 0,
+        registered: { iss: 'https://kernel.example/iss/registered', sub: 'registered-node' },
+        root: { iss: 'https://kernel.example', sub: 'system' },
+      })
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

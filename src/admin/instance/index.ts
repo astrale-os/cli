@@ -7,7 +7,6 @@ export {
   type InvitationState,
   type InstanceInfo,
   type InstanceState,
-  type OwnedInstanceInfo,
   type RetrievedRootIdentity,
   type RootIdentityRecipient,
   type RootIdentityTransfer,

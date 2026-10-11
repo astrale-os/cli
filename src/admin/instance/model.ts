@@ -18,11 +18,6 @@ export interface InstanceInfo {
   readonly organizationId?: string
 }
 
-/** An Instance returned through the caller-scoped Admin graph inventory. */
-export interface OwnedInstanceInfo extends InstanceInfo {
-  readonly state: InstanceState
-}
-
 export interface RootIdentityRecipient {
   readonly kty: 'EC'
   readonly crv: 'P-256'
@@ -43,7 +38,7 @@ export interface RootIdentityTransfer {
 }
 
 export interface RetrievedRootIdentity {
-  readonly instance: OwnedInstanceInfo
+  readonly instance: InstanceInfo
   readonly transfer: RootIdentityTransfer
 }
 
@@ -84,9 +79,9 @@ export class AdminInstanceNotFoundError extends AstraleError {
 
 /** Match an owner-scoped Instance by slug, canonical Node Path, or bare Node id. */
 export function findOwnedInstance(
-  instances: readonly OwnedInstanceInfo[],
+  instances: readonly InstanceInfo[],
   identifier: string,
-): OwnedInstanceInfo | undefined {
+): InstanceInfo | undefined {
   return instances.find(
     (instance) =>
       instance.slug === identifier ||
