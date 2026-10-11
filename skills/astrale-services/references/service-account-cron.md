@@ -1,213 +1,111 @@
-# Plain Service → registered account → Domain callable
+# Scheduled Worker calling an installed Domain
 
-Use this pattern for a background worker or scheduled job calling an already installed Domain.
-The Service itself need not publish an Application. For management calls and deployment payloads,
-read [workflows.md](workflows.md) and [schema.md](schema.md).
+Use a plain Worker for a background job calling an existing Domain. Scaffold and deploy it as
+[workflows.md](workflows.md) describes; it needs no Schema, Publication, or consumer installation.
 
-## Ownership and authority
+## Separate compute from business authority
 
-```text
-Services.CloudflareWorker  owns compute, schedules and write-only secrets
-Business.ServiceAccount  owns the callable's authenticated identity
-Business Domain          owns the protected Function/Method and its effects
-```
+| Owner | Responsibility |
+| --- | --- |
+| Services `CloudflareService` / `CloudflareDeployment` | Compute, deployment routing, Service crons, write-only secrets |
+| Business Domain's account Identity | The job's authenticated identity and business permissions |
+| Target consumer Kernel | Installed callable and its policy enforcement |
 
-These are separate resources. Deploying compute neither creates nor registers an Identity, and
-deleting a Service does not delete its account or uninstall a consumer Domain. Do not invent an
-automatic graph link or shared privileged credential to join these lifecycles.
+Deploying a Worker does not create/register its business account or grant permissions. Deleting
+compute does not delete that account. The deployer's Admin identity and the job's account on its
+target Kernel are independent choices.
 
-The business Domain can define `ServiceAccount extends Shell.User` for Shell membership support.
-Use `astrale-domain` and its Users reference when authoring that Schema, including traversal
-Policies on concrete foreign account/group classes participating in Shell memberships. A direct
-Kernel Identity is valid for authentication; do not assume every Shell release accepts it as a
-Group member. Inspect the installed `Group.assignMember` input contract.
+The first deploy of `(project, environment)` creates a Service owned by the deployer unless an
+admitted owner is specified. Subsequent deploys require `OwnService`; the address is not unique per
+owner. A group owner is supported through `extends_with`, granting members management rights,
+including deletion. See [schema.md](schema.md).
 
-For an `authorized` business callable, the ordinary external caller needs both callable authority
-and the callable's business Policy.
-For example, a custom Group can carry `can_use(Job.run)` and a business relation permitting the
-target Job. Our qualification split these between two Groups to isolate each check; two Groups
-are not a product requirement. Register does not grant either permission. Avoid Root, Shell admin,
-or direct Query/Mutate permissions on the worker account unless its actual purpose requires them.
+## Prepare the account and job
 
-The account's own credential makes the account the principal, so `can_use` on the callable is
-required. SDK `0.6.0-beta.2` and later remove that requirement for Domain callables: with the
-Session option `exchange: {}`, each Domain callable is presented with a credential its declaring
-Domain exchanged for the account. The Domain is then the principal and only the business Policy
-is evaluated against the account. Kernel callables, Queries and Mutations still present the account's own credential. See
-"Headless scripts and Domain callables" in the SDK README.
-
-The deployer's identity and the worker account are separate choices. `CloudflareWorker.deploy` is
-`authenticated`: a registered account may create its own Service. `serviceKey` is unique per owner,
-so changing `--as` can create another Service rather than update the original. Receiver management
-Methods still check ownership; knowing another Service's Node ID does not authorize its secrets.
-
-## Provision once, authenticate on each execution
-
-1. Create the account through its owning Domain, retaining the returned Node ID.
-2. Generate a dedicated local key, then register it on that existing Node through an authorized
-   caller or Domain callable. With the public CLI:
+1. Create the dedicated account through its business Domain, retaining the returned Node ID.
+   If Shell membership is required, use a supported User/concrete account type and inspect the
+   installed membership contract. A bare Kernel Identity is not automatically a Shell member.
+2. Generate a dedicated key and register it on that existing account through an authorized caller:
 
    ```sh
    astrale identity create background-job
    astrale identity register background-job --node @ACCOUNT_NODE -i INSTANCE --as REGISTRAR
    ```
 
-   If the Domain supplies the required authority, use the command's `--via` contract instead.
-   Registration must return the same Node. Do not create another account when retrying it.
-3. Assign the intended custom Group(s) through `Shell.Group.assignMember`, with input `member`
-   and `group`; this maintains the business membership and `extends_with` together.
-4. Deploy plain compute, then provide the private JWK through `CloudflareWorker.setSecret` using
-   stdin, never an argument value, graph property, source constant or logged payload.
-5. Make a real call under the account before enabling a schedule.
+   Use `--via` when the owning Domain supplies registration authority. Registration must return
+   that exact Node; retry registration without inventing another account or key.
+3. Grant only the job's required authority through the Domain/Shell's supported operations.
+   `Group.assignMember` maintains membership and `extends_with`; do not replace it with a partial
+   graph edge write. Registration alone grants no callable or business rights.
+4. In the generated `service.json`, set exact `KERNEL` and `TARGET`, declare
+   `ACCOUNT_PRIVATE_JWK`, and leave `crons: []`. Supply the private JWK through the environment's
+   secret source. Do not put it in source, argv, graph properties, or logs.
+5. Adapt `src/job.js` to real input and repeat-safe business behavior. The scaffold opens an ES256
+   self-account session for one execution and closes it in `finally`; keep that lifecycle and
+   bound the business call below the dispatch deadline.
 
-A self proof authenticates the account itself: no `mint`, delegation or user exchange is required.
-Use the exact Kernel issuer as audience, including its path when present; do not reduce it to an
-origin or derive a different audience from a convenient hostname. SDK131 provides
-`register.selfIssuer` and `connect({ auth: { resolve } })`; do not invent a signing helper that
-the installed SDK does not export. The qualified ES256 proof construction is:
+The self proof's audience is the exact Kernel issuer, including its path. Use the scaffold's
+exported SDK primitives (`register.selfIssuer`, `issuer`, `jwk`, `connect`) rather than a guessed
+signing API. The default generated account session presents the account as principal. For an
+`authorized` callable it therefore needs `can_use` as well as its business Policy.
 
-```js
-import { importJWK, SignJWT } from 'jose'
-import { issuer, jwk, register } from '@astrale-os/sdk/auth'
-import { connect } from '@astrale-os/sdk/client/session'
+When choosing SDK Domain exchange instead, use the installed SDK's supported session option:
+`exchange: { mode: 'auto', ttlSeconds: 120 }`. Hold the three-minute self proof with
+`auth: credentials(() => selfCredential(...))` from `@astrale-os/sdk/client/session` so calls reuse
+it until renewal; a resolver that creates a new proof on every call also causes repeated exchange.
+The declaring Domain becomes principal, while business Policy still evaluates the account.
+Kernel callables, Queries, and Mutations continue to use the account's own authority. Verify the
+selected SDK's contract before adapting the generated account module.
 
-async function selfCredential(kernelIssuer, privateJwk) {
-  if (privateJwk.kty !== 'EC' || privateJwk.crv !== 'P-256' || !privateJwk.d) {
-    throw new TypeError('Expected the registered ES256 private JWK')
-  }
-  const publicJwk = jwk.acceptPublic({
-    kty: 'EC', crv: 'P-256', x: privateJwk.x, y: privateJwk.y,
-  })
-  const accountIssuer = await register.selfIssuer(issuer.accept(kernelIssuer), publicJwk)
-  return new SignJWT({})
-    .setProtectedHeader({ alg: 'ES256', typ: 'JWT', kid: privateJwk.kid })
-    .setIssuer(accountIssuer).setSubject('self').setAudience(kernelIssuer)
-    .setIssuedAt().setExpirationTime('3m')
-    .sign(await importJWK(privateJwk, 'ES256'))
-}
+## Deploy and verify before scheduling
 
-function openAccountSession(kernelIssuer, privateJwk) {
-  return connect({
-    url: kernelIssuer,
-    auth: {
-      ttlSeconds: 60,
-      resolve: async () => ({ credential: await selfCredential(kernelIssuer, privateJwk) }),
-    },
-  })
-}
-```
+Use the 0.8.2-or-newer compatible scaffolder and its pinned packages, then
+`npm run deploy -- <environment> [--admin <bookmark>] [--as <identity>]` from the generated project.
+This uses `@astrale-os/adapter-astrale/services`; the old `--instance` and owner-scoped `serviceKey`
+workflow does not apply. `--no-promote` deploys a candidate without changing current routing/crons.
 
-To use the `exchange` option instead of `can_use`, hold the self proof in `credentials`: Domain
-credentials are cached per source credential, so a `resolve` that signs a new proof on every call
-also exchanges on every call.
+Verify the job's real callable under its actual account before enabling cron. `/health` proves
+readiness of the Worker version, not authorization or a successful business effect. Keep a
+privileged manual test endpoint private and explicitly authorized if the implementation needs one;
+the public scheduling endpoint is intentionally unavailable.
 
-```js
-import { connect, credentials } from '@astrale-os/sdk/client/session'
+Compatibility flags are part of the frozen configuration. Preserve the generated/pinned runtime
+settings or deliberately change them before the adapter computes the label; do not graft historical
+plain-payload defaults onto an already-built deployment.
 
-function openExchangingAccountSession(kernelIssuer, privateJwk) {
-  return connect({
-    url: kernelIssuer,
-    // The proof is a compact JWT: `credentials` reads its expiry from `exp` and signs a new one
-    // only when it no longer covers the 60-second delegation.
-    auth: credentials(() => selfCredential(kernelIssuer, privateJwk)),
-    // A Domain credential never outlives the 3-minute proof; keep it above 65 seconds.
-    exchange: { mode: 'auto', ttlSeconds: 120 },
-  })
-}
-```
-
-Create the session inside the execution and close it in `finally`. Use the SDK's callable
-references, or a canonical `Path.parse` for an exact configured target; await `session.call`
-before acknowledging success. Give the call a bounded AbortSignal. An HTTP timeout does not prove
-that the remote mutation failed, so keep repeat safety in the business operation, not in a blind
-retry loop or a generic exactly-once claim.
-
-## Plain deployment
-
-Bundle the plain Worker entry and its runtime dependencies into the module payload. Do not import
-private Kernel/adapter implementations or require a Schema, Publication, view or Domain signer
-for this compute-only worker. `@astrale-domains/services` supplies the management Schema. Its root
-import remains Schema-only; the candidate scaffolder adds a separate executable to the same package.
-
-## Plain Worker starter
-
-Candidate [Domains PR211](https://github.com/astrale-os/domains/pull/211) adds this executable
-(not yet a published-release guarantee):
-
-```sh
-npm exec --package @astrale-domains/services -- create-astrale-service my-background-job
-cd my-background-job
-npm install
-```
-
-Check that the selected published package actually contains `create-astrale-service` before using
-that command. Qualification used the candidate's packed tarball installed outside the workspace,
-not an unpublished workspace dependency. Do not imply that existing Services0.4.4 has the binary.
-
-The generated files belong to the consumer; there is no scaffolder runtime or Domain to install:
-
-- `src/job.js`: adapt the protected callable's input; configure exact `KERNEL` and `TARGET` in
-  `service.json`. Account creation, registration and group assignment remain business-owned.
-- `src/account.js`: a fresh registered ES256 self-account session per execution, closed in `finally`.
-- `src/index.js`: health route and private cron handler; awaited call, 9-second budget, bounded logs.
-- `npm run deploy -- --instance=INSTANCE --as OWNER`: build and invoke public Services deploy.
-  An explicit target is required. Non-ready deployment results fail the command.
-
-Deploy, set `ACCOUNT_PRIVATE_JWK` through the write-only secret API, verify the account's real
-business call, then enable the schedule. The generator neither installs dependencies automatically
-nor allocates remote resources, credentials or permissions. Redeploy uses the same owner/serviceKey.
-An existing destination is left untouched rather than overwritten.
-
-## Transport defaults and scheduling
-
-Plain Services defaults are supplied only when `compatibilityFlags` is omitted. An explicit array,
-including `[]`, replaces them. Public same-zone fetch routing uses `global_fetch_strictly_public`.
-The SDK Cloudflare adapter already includes it before artifact/digest construction; Services must
-preserve the exact flags of revisioned artifacts. Never append flags after digest calculation.
-
-Rollout note (2026-09-08): [Domains PR210](https://github.com/astrale-os/domains/pull/210) adds this
-plain-provider default, but an open/merged PR or
-published Schema package does not prove the Services Runtime was deployed. Until that deployment
-is attested, an explicit plain payload uses
-`['nodejs_compat', 'nodejs_compat_populate_process_env', 'global_fetch_strictly_public']`.
-This is a deployment setting, not an authentication workaround. Existing Workers need redeployment.
-
-The Services dispatcher, not a native tenant `scheduled()` handler, runs the cron:
+## Private scheduling boundary
 
 | Boundary | Contract |
 | --- | --- |
-| Schedule management | `CloudflareWorker.setSchedule({crons: [...]})`, five-field UTC expressions |
-| Worker entry | Private `POST /__scheduled` handled by `fetch(request, env)` |
-| Metadata | `x-astrale-scheduled-time`: epoch milliseconds; `x-astrale-cron`: matched expression |
-| Deadline | Current dispatcher waits up to 10 seconds; bound the business call below this budget |
-| Public routing | Dispatcher rejects public `/__scheduled`, even with forged headers |
-| Disable | `setSchedule({crons: []})`; observe convergence rather than assuming immediate cancellation |
+| Management | `CloudflareService.setSchedule({crons:[...]})` replaces the complete set; up to 24 five-field UTC expressions |
+| Target | Service's current deployment; promotion moves subsequent runs to the promoted release |
+| Entry | `fetch` handles private `POST /__scheduled`, not a native tenant `scheduled()` handler |
+| Metadata | `x-astrale-cron` and `x-astrale-scheduled-time` (epoch milliseconds) |
+| Budget | Dispatcher deadline is 10 seconds; generated job uses a smaller bounded call budget |
+| Public access | Dispatcher rejects public `/__scheduled`, including alternate spellings and forged headers |
+| Disable | `setSchedule({crons:[]})`; verify convergence and allow already-running work to finish |
 
-Validate the scheduled timestamp, await the business effect, return a non-success status on failure,
-and emit only bounded non-secret correlation fields. Header names are not authentication: the
-private dispatch boundary provides isolation. A separately exposed route must not treat possession
-of these headers as permission. Do not put the private key or proof in cron metadata.
+The dispatcher checks due expressions each minute; execution is not exactly-once. Validate metadata,
+await the business effect, return a non-success status on failure, and keep repeat safety in the
+business operation. A timeout is not proof that a remote mutation failed. Headers alone are not
+authentication; the dispatcher provides the private boundary. Do not expose another route that
+trusts their presence as authorization.
 
-## Qualification and cleanup
+After configuring a cron, correlate natural ticks with independently observed business state and
+bounded logs. A configured schedule or manual invocation alone is insufficient. For requested
+permission/recovery qualification, use dedicated fixtures to verify denied calls cause no effect,
+then restore the intended access and observe recovery. Do not remove real users' permissions to test
+this. Update the source of secret values as well as a current deployment's rotated secret, and
+verify which release is current when checking redeploy/rollback behavior.
 
-- Verify the exact caller with a real account call, then correlate at least two natural ticks with
-  independently observed business state. Do not log arbitrary business results to obtain evidence.
-  A manual POST, health200 or a configured schedule is insufficient.
-- Check an allowed target and a denied target, then remove relevant permissions and observe the
-  next real tick denied without effects. Restore them and observe recovery with the same account.
-- Check a missing secret and recovery; an expired/wrong-audience proof must fail without effects.
-- Verify a redeploy keeps the intended account, secret and schedule; replay safety belongs to the
-  business contract. Distinguish worker elapsed time, scheduling delay and log-ingestion delay.
-- Disable the cron, allow bounded convergence and observe empty schedule/no later invocations.
-  Delete compute through Services; resume `deleting` at its returned retry interval within a
-  bounded cleanup window. Verify provider absence separately from graph absence.
-- Delete the dedicated account, memberships, business fixtures and local keys only when that
-  cleanup is requested. Preserve shared groups, Domains and instances. For a temporary Domain,
-  remove its data before safe uninstall and delete its publishing Service separately.
+## Cleanup
 
-Use Services logs as the normal observation API. If that API itself fails, record the defect;
-provider diagnostics require existing operator authority and must not become a runtime dependency.
-Historical qualification found structured-log decoding and warm-route auth error classification
-defects ([Domains209](https://github.com/astrale-os/domains/pull/209) /
-[Kernel753](https://github.com/astrale-os/kernel/pull/753)); verify their actual deployment before
-assuming they are fixed.
+Disable the Service's schedule first when cleanup is requested, observe cessation after bounded
+convergence, then retire the selected deployment or delete the Service using the returned retry
+intervals. A candidate's retirement and a Service's deletion are different operations. Verify the
+exact target's withdrawal; do not infer provider absence merely from a missing graph row.
+
+Account deletion, local key removal, membership cleanup, and consumer Domain uninstall are separate
+business operations, performed only within the requested cleanup scope. Preserve shared groups,
+Domains, and instances. Use Services logs normally; provider diagnostics require existing operator
+authority and must not become a hidden dependency of the job.
