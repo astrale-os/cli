@@ -19,7 +19,6 @@ type UninstallOpts = KernelCommandOpts & {
   readonly destructive?: boolean
   readonly operation?: string
   readonly ci?: boolean
-  readonly noPrompt?: boolean
 }
 
 type UninstallResult = {

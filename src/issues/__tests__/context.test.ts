@@ -202,6 +202,15 @@ describe('issue context selection', () => {
     ).rejects.toMatchObject({ code: 'ISSUE_INSTANCE_NOT_FOUND' })
   })
 
+  it('rejects an invalid explicit project and accepts an unavailable implicit one', async () => {
+    await expect(collect({ project: 'missing' })).rejects.toMatchObject({
+      code: 'ISSUE_PROJECT_INVALID',
+    })
+    await writeFile(join(root, 'package.json'), 'broken')
+    await expect(collect({ project: '.' })).rejects.toMatchObject({ code: 'ISSUE_PROJECT_INVALID' })
+    expect((await collect()).project).toBeUndefined()
+  })
+
   it('does not forward dependency URLs, paths or unrelated packages', async () => {
     await json(join(root, 'package.json'), {
       name: 'app',

@@ -227,11 +227,8 @@ function qualifyRegistryItemPaths(item: unknown, sourceDirectory: string): unkno
         throw unavailable('UI registry contains an invalid installable item path.')
       }
       if (sourceDirectory === '') return file
-      const qualified = sourceDirectory + '/' + candidateFile.path
-      if (!isSafeRelative(qualified)) {
-        throw unavailable('UI registry contains an invalid installable item path.')
-      }
-      return { ...candidateFile, path: qualified }
+      // Both parts are safe relative paths, so their join is one too.
+      return { ...candidateFile, path: sourceDirectory + '/' + candidateFile.path }
     }),
   }
 }

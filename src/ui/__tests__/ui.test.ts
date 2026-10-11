@@ -247,7 +247,15 @@ describe('UI release', () => {
     expect(raw.every((url) => url.includes(`/${COMMIT}/`))).toBe(true)
   })
 
-  test('a rate-limited tag lookup falls back to the release page; a missing tag does not', async () => {
+  test('an annotated tag resolves through its tag object; a rate-limited lookup falls back to the release page; a missing tag does not', async () => {
+    const annotated = {
+      '/git/ref/tags/v0.3.0-beta.0': Response.json({
+        object: { type: 'tag', sha: 'f'.repeat(40), url: 'https://api.github.com/git/tags/v0' },
+      }),
+      '/git/tags/v0': Response.json({ object: { sha: COMMIT } }),
+    }
+    expect((await resolveUiRelease(VERSION, release([chart], annotated))).commit).toBe(COMMIT)
+
     const page = `<a href="/astrale-os/ui/tree/v${VERSION}">tag</a>
       <a data-hovercard-type="commit" href="/astrale-os/ui/commit/${COMMIT}">commit</a>`
     const limited = { '/git/ref/tags/v0.3.0-beta.0': new Response('limited', { status: 403 }) }
@@ -300,6 +308,11 @@ describe('UI release', () => {
       {
         [root]: Response.json({
           include: Array.from({ length: 100 }, (_, i) => `registry/f${i}/registry.json`),
+        }),
+      },
+      {
+        [root]: Response.json({
+          include: ['registry/family/registry.json', 'registry/family/registry.json'],
         }),
       },
       ...[

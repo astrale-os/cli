@@ -76,10 +76,8 @@ describe('bookmark registry format', () => {
         a: { url: 'https://a.example/api', kind: 'bookmark', organizationId: 'org_123' },
       },
     }
-    const { store: read, changed } = sanitizeStore(recorded)
-    expect(changed).toBe(false)
     // A dangling active pointer is kept, never silently re-aimed.
-    expect(read).toEqual(recorded)
+    expect(sanitizeStore(recorded)).toEqual(recorded)
   })
 
   /** @evidence TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT */
@@ -110,8 +108,8 @@ describe('bookmark registry format', () => {
         control: { url: 'https://admin.eu.astrale.ai/api', kind: 'bookmark' },
       },
     })
-    const { store: read, changed } = sanitizeStore(registry)
-    expect(changed).toBe(false)
+    const read = sanitizeStore(registry)
+    expect(read).toEqual({ active: registry.active, instances: registry.instances })
     expect(read.instances.bryan).not.toHaveProperty('domainIssuer')
     expect(read.instances.dev?.domainIssuer).toBe('https://shell-dev.example')
     expect(read.instances.crm?.domainIssuer).toBe('https://crm.example')

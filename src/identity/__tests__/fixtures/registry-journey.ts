@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { fileExists, keypairPaths } from '../../../keys/index'
+import { saveIdpSession } from '../../../lib/idp/provider'
 import { EXCHANGE_CREDENTIALS_PATH, KEYS_DIR, paths } from '../../../state/index'
 import {
   createIdentity,
@@ -50,6 +51,34 @@ await upsertIdpIdentity('workos', {
   use: false,
 })
 
+// An IdP login never replaces a key identity; deleting an IdP identity deletes its tokens.
+let idpOverKey = ''
+try {
+  await upsertIdpIdentity('alice', {
+    subject: 'user_9',
+    idp: 'workos',
+    issuer: 'https://idp.example',
+  })
+} catch (error) {
+  idpOverKey = error instanceof Error ? error.message : String(error)
+}
+await upsertIdpIdentity('carol', {
+  subject: 'user_456',
+  idp: 'workos',
+  issuer: 'https://idp.example',
+  use: false,
+})
+await saveIdpSession({
+  identity: 'carol',
+  idp: 'workos',
+  issuer: 'https://idp.example',
+  subject: 'user_456',
+  access_token: 'carol-access-token',
+  refresh_token: 'carol-refresh-token',
+  updatedAt: '2026-08-11T12:00:00.000Z',
+})
+await deleteIdentity('carol')
+
 const store = await readIdentities()
 const selected = await getDefault()
 console.log(
@@ -60,6 +89,8 @@ console.log(
     aliceKey: await fileExists(keypairPaths('alice', KEYS_DIR).privatePath),
     bobKey: await fileExists(keypairPaths('bob', KEYS_DIR).privatePath),
     routeCache: await fileExists(paths.sessionRoutes),
+    idpOverKey,
+    carolSession: await fileExists(paths.idpSession('carol')),
     exchangeCache: JSON.parse(await readFile(EXCHANGE_CREDENTIALS_PATH, 'utf8')),
   }),
 )
