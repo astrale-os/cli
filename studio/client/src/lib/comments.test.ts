@@ -1,4 +1,4 @@
-import type { Comment, ThreadRole } from '@shared/types'
+import type { Comment, ThreadRole } from '@shared/contracts/workspace'
 
 import { expect, test } from 'bun:test'
 

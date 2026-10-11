@@ -1,4 +1,4 @@
-import type { StaleReport } from '@shared/types'
+import type { StaleReport } from '@shared/contracts/runtime'
 
 import { ArrowUpCircle, Copy, PackageOpen } from 'lucide-react'
 import { useState } from 'react'

@@ -1,10 +1,4 @@
-/**
- * One process-wide gate around schema work.
- *
- * Startup indexing and browser reads used to own separate concurrency policies:
- * boot limited itself to two jobs, while a page could still start a build for
- * every Domain it queried. This scheduler is the shared boundary both paths use.
- */
+/** One process-wide gate around schema work, shared by startup indexing and browser reads. */
 
 import type { IntrospectionPriority } from '../../shared/contracts/runtime'
 

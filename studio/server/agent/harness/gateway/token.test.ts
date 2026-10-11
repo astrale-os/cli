@@ -24,10 +24,10 @@ async function failure(pending: Promise<unknown>): Promise<string> {
   return (error as HarnessTokenError).kind
 }
 
-test('a static token is trimmed; host mode fails closed, with nothing to relay one', async () => {
+test('a static token is trimmed, and a blank one is refused', async () => {
   const broker = new HarnessTokenBroker()
   expect(await acquire(broker, { mode: 'token', token: ' x ' })).toBe('x')
-  expect(await failure(acquire(broker, { mode: 'host' }))).toBe('host-token-needed')
+  expect(await failure(acquire(broker, { mode: 'token', token: ' ' }))).toBe('config')
 })
 
 test('mints once per audience and instance, coalescing concurrent callers', async () => {

@@ -1,4 +1,4 @@
-import type { AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/contracts/agent'
 
 import { useEffect, useMemo } from 'react'
 import { create } from 'zustand'

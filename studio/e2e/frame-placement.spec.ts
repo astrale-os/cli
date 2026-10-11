@@ -1,4 +1,4 @@
-import type { WorkspaceUiState } from '@shared/types'
+import type { WorkspaceUiState } from '@shared/contracts/workspace'
 
 import { expect, test, FIXTURE_ID, PEER_ID } from './test'
 

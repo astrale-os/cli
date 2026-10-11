@@ -1,6 +1,7 @@
-import type { IrClass, IrClassRef, IrMethod, JsonSchema, StudioSchemaBundle } from '@shared/types'
+import type { IrClass, IrMethod, JsonSchema, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrClassRef } from '@shared/schema/identity'
 
-import { classRefKey } from '@shared/types'
+import { classRefKey } from '@shared/schema/identity'
 
 import { type ClassTier, inheritedGroupsOfClass } from '../inheritance'
 

@@ -1,4 +1,4 @@
-import type { AnchorRef, Comment, ThreadEntry } from '@shared/types'
+import type { AnchorRef, Comment, ThreadEntry } from '@shared/contracts/workspace'
 
 import { Check, Trash2 } from 'lucide-react'
 import { useState } from 'react'

@@ -20,8 +20,7 @@ export function ViewRow({ domainId, view }: { domainId: string; view: ViewModel 
   const [open, setOpen] = useState(false)
   const drift = driftLabel(view.drift)
   const meta = [view.kind, view.mount].filter(Boolean).join(' · ')
-  // Make the row a comment/ask target (ref `view.<slug>`) so commenting on a view
-  // anchors to THAT view — not the enclosing `section.schema` it used to fall back to.
+  // the row is a comment/ask target of its own (`view.<slug>`), not the enclosing section
   const anchorRef = viewNodeId(view.slug)
   return (
     <>

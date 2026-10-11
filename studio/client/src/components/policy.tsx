@@ -1,7 +1,7 @@
-import type { IrSchemaRef } from '@shared/types'
+import type { IrSchemaRef } from '@shared/schema/identity'
 import type { ReactNode } from 'react'
 
-import { schemaRefKey } from '@shared/types'
+import { schemaRefKey } from '@shared/schema/identity'
 
 import { type PolicyCheck, type PolicyCheckLeaf, policyObjectLabel } from '@/lib/policy'
 import { useUI } from '@/lib/store'

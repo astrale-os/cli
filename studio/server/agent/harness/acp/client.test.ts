@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import type { AgentStreamEvent } from '../adapter'
 
 import { AcpClaudeHarness } from './claude'
+import { errorText } from './client'
 import { AcpCodexHarness } from './codex'
+import { probeAcpHealth } from './probe'
 
 const roots: string[] = []
 
@@ -235,6 +237,26 @@ function handle(message) {
           sessionUpdate: 'tool_call_update',
           toolCallId: 'stray',
           status: 'completed',
+        })
+        // an edit that created a file: a diff with no "before"
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tool-3',
+          title: 'Write new.ts',
+          kind: 'edit',
+          status: 'completed',
+          content: [{ type: 'diff', path: '/repo/new.ts', oldText: null, newText: 'export {}' }],
+          locations: [{ path: '/repo/new.ts', line: 1 }],
+        })
+        // a call that shows no content of its own
+        update(params.sessionId, {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tool-4',
+          title: 'ls',
+          kind: 'execute',
+          status: 'failed',
+          rawInput: { command: 'ls' },
+          rawOutput: { formatted_output: 'ls: denied', exit_code: 1 },
         })
       }
       update(params.sessionId, {
@@ -498,6 +520,18 @@ describe('ACP harness adapter', () => {
     })
     // shown as content already, the verbatim output is not kept a second time
     expect(reports.at(-1)?.call?.detail.output).toBeUndefined()
+    const detail = (id: string) => events.findLast((event) => event.call?.id === id)?.call?.detail
+    // a diff keeps both sides; a file the call created has no "before"
+    expect(detail('tool-3')?.content).toEqual([
+      { type: 'diff', path: '/repo/new.ts', newText: 'export {}' },
+    ])
+    expect(detail('tool-3')?.locations).toEqual(['/repo/new.ts:1'])
+    // with no content of its own, a call keeps its verbatim output
+    expect(detail('tool-4')).toMatchObject({
+      status: 'failed',
+      content: [],
+      output: { formatted_output: 'ls: denied', exit_code: 1 },
+    })
 
     const order = events.map((event) =>
       event.call ? `call:${event.call.id}` : `${event.kind}:${event.text}`,
@@ -848,4 +882,43 @@ describe('ACP harness adapter', () => {
     }
     expect(exited).toBe(true)
   }, 10_000)
+})
+
+// The composer shows this text under the field it disabled: "why can I not connect?"
+// is answered there or nowhere.
+test('an agent that dies on startup is quoted, and one that is not there says so', async () => {
+  const root = temporaryRoot('studio-acp-down-')
+  const agent = join(root, 'agent.ts')
+  writeFileSync(agent, `process.stderr.write('claude: command not found\\n')\nprocess.exit(127)\n`)
+  const dying = await probeAcpHealth({
+    provider: 'claude',
+    bin: 'claude',
+    command: [process.execPath, agent],
+  })
+  expect(dying.ok).toBe(false)
+  // the exit and the agent's own words, not the SDK's "connection closed"
+  expect(dying.detail).toContain('exited 127')
+  expect(dying.detail).toContain('claude: command not found')
+  expect(dying.detail).not.toContain('connection closed')
+
+  const missing = await probeAcpHealth({
+    provider: 'codex',
+    bin: 'codex',
+    command: [join(root, 'no-such-agent')],
+  })
+  expect(missing.ok).toBe(false)
+  expect(missing.detail).toContain('failed to spawn codex ACP agent')
+})
+
+test('a JSON-RPC failure keeps its code and data under a clean first line', () => {
+  const error = Object.assign(new Error('Internal error'), {
+    code: -32603,
+    data: { details: 'model overloaded' },
+  })
+  expect(errorText(error).split('\n')[0]).toBe('Internal error (JSON-RPC -32603)')
+  expect(errorText(error)).toContain('"details": "model overloaded"')
+  // data the message already carries is not repeated
+  const same = Object.assign(new Error('Internal error: boom'), { code: -32603, data: ' boom ' })
+  expect(errorText(same)).toBe('Internal error: boom (JSON-RPC -32603)')
+  expect(errorText(new Error('plain'))).toBe('plain')
 })

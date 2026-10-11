@@ -61,8 +61,8 @@ preview usable. It changes no CLI default or Kernel permission. Reopen to pick u
 
 A domain holds several conversations at once, as tabs above the agent panel.
 Each tab keeps its own transcript, its own model, its own harness-native session
-id and its own running turn, all persisted under `.domain-studio/.cache/agent/`
-— two tabs can work at the same time, and they survive a restart.
+id and its own running turn, all persisted machine-wide under
+`$ASTRALE_HOME/studio/agent/` — two tabs can work at the same time, and they survive a restart.
 
 Both the model and the agent are picked from one control: the discreet model
 name in the composer, next to the send button. Its menu lists every harness with

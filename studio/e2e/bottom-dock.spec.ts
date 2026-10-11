@@ -8,7 +8,7 @@
  * exactly why the bar as a whole has to open the dock. Were it only the field,
  * this fixture could never reach the tabs or the control that docks it elsewhere.
  */
-import type { AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/contracts/agent'
 
 import { chatInfo, expect, FIXTURE_ID, stubAgent, test, type Page } from './test'
 

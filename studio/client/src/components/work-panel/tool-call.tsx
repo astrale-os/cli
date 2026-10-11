@@ -1,4 +1,4 @@
-import type { AgentToolCall, AgentToolContent } from '@shared/types'
+import type { AgentToolCall, AgentToolContent } from '@shared/contracts/agent'
 import type { ReactNode } from 'react'
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query'

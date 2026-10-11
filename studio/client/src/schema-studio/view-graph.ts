@@ -7,7 +7,7 @@
  * bound to no Class, so views arrive unconnected and dock with the application.
  * Pure derivation: positions come from the layout engine like every other node.
  */
-import type { StudioSchemaBundle } from '@shared/types'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
 import type { Edge, Node } from '@xyflow/react'
 
 import type { ViewModel, ViewsModel } from '@/lib/views'

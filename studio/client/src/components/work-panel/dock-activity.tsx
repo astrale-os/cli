@@ -12,7 +12,7 @@
  * movement has to mean the same thing wherever the studio shows it, and at a
  * loader's speed this reads as a wait rather than as work.
  */
-import type { AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/contracts/agent'
 
 import { RunElapsed } from '@/components/agent-activity'
 import { hasHarnessLogo, HarnessLogo } from '@/components/harness-logo'

@@ -1,4 +1,6 @@
-import type { DomainIntrospectionTiming, DomainSummary, StudioSchemaBundle } from '@shared/types'
+import type { DomainIntrospectionTiming } from '@shared/contracts/runtime'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
+import type { DomainSummary } from '@shared/contracts/workspace'
 
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Command } from 'cmdk'

@@ -63,6 +63,16 @@ test('domain routes validate their bodies', async () => {
     post({ action: 'set', positions: { valid: { x: 12, y: 24 }, invalid: { x: '12', y: 24 } } }),
   )
   expect((await layout?.json()).positions).toEqual({ valid: { x: 12, y: 24 } })
+  // and a later set merges into the stored layout rather than replacing it
+  const merged = await route(
+    `${base}/layout`,
+    post({ action: 'set', positions: { next: { x: 1, y: 2 } } }),
+  )
+  expect((await merged?.json()).positions).toEqual({
+    valid: { x: 12, y: 24 },
+    next: { x: 1, y: 2 },
+  })
+  expect((await route('/api/instances/use', post({ name: ' ' })))?.status).toBe(400)
 
   // a comment entry, once written, is never rewritten through the API
   const comment = upsertComment(handle.root, {

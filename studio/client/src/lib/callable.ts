@@ -1,4 +1,4 @@
-import type { HandlerLink, IrCallableAuth, IrFunction, IrMethod } from '@shared/types'
+import type { HandlerLink, IrCallableAuth, IrFunction, IrMethod } from '@shared/contracts/schema'
 
 import { Globe, Puzzle, ShieldCheck, UserRound, Zap, type LucideIcon } from 'lucide-react'
 

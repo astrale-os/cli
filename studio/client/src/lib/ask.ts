@@ -1,4 +1,4 @@
-import type { AnchorRef } from '@shared/types'
+import type { AnchorRef } from '@shared/contracts/workspace'
 
 import { create } from 'zustand'
 

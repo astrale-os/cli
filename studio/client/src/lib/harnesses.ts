@@ -6,7 +6,7 @@
  * query lands: a tab strip that briefly says "codex" instead of "Codex" reads
  * as a bug.
  */
-import type { HarnessStatus } from '@shared/types'
+import type { HarnessStatus } from '@shared/contracts/agent'
 
 const FALLBACK: { id: string; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },

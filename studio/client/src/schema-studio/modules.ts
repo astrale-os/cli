@@ -1,4 +1,6 @@
-import { schemaRefKey, type StudioSchemaBundle } from '@shared/types'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
+
+import { schemaRefKey } from '@shared/schema/identity'
 
 /** Authored declarations share a module folder; technical subfolders stay out of the tree. */
 export type MemberKind = 'class' | 'edge' | 'policy' | 'function' | 'view'

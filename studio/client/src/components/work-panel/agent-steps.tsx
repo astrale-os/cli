@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRun, AgentToolStatus } from '@shared/types'
+import type { AgentEvent, AgentRun, AgentToolStatus } from '@shared/contracts/agent'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@radix-ui/react-collapsible'
 import {

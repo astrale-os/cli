@@ -4,7 +4,7 @@ import type {
   HarnessModelCatalog,
   HarnessPresence,
   HarnessStatus,
-} from '@shared/types'
+} from '@shared/contracts/agent'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, test } from 'bun:test'

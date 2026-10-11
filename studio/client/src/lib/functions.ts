@@ -7,9 +7,10 @@
  * it: which Classes it works on (the Definitions its Node-path fields accept), and which
  * Action or Workflow implements it. Pure derivation over the bundle; no I/O.
  */
-import type { HandlerLink, IrClassRef, IrFunction, StudioSchemaBundle } from '@shared/types'
+import type { HandlerLink, IrFunction, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrClassRef } from '@shared/schema/identity'
 
-import { nodePathAccepts } from '@shared/types'
+import { nodePathAccepts } from '@shared/contracts/schema'
 import { Braces, type LucideIcon, Workflow, Zap } from 'lucide-react'
 
 import { handlerLinkFor } from './callable'

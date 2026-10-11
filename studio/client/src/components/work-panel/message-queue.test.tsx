@@ -1,4 +1,4 @@
-import type { QueuedMessage } from '@shared/types'
+import type { QueuedMessage } from '@shared/contracts/agent'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, test } from 'bun:test'

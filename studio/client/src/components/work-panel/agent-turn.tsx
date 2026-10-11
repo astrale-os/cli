@@ -1,4 +1,4 @@
-import type { AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/contracts/agent'
 
 import { Copy, LogIn, MessageSquare } from 'lucide-react'
 

@@ -1,4 +1,4 @@
-import type { StudioDataset, StudioDatasetFailure } from '@shared/types'
+import type { StudioDataset, StudioDatasetFailure } from '@shared/contracts/schema'
 
 import { AlertTriangle, Circle, CircleDot, Database } from 'lucide-react'
 

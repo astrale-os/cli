@@ -493,7 +493,6 @@ export interface AgentRunSnapshot {
 export type HarnessGatewayAuth =
   | { mode: 'mint'; instance?: string }
   | { mode: 'token'; token: string }
-  | { mode: 'host' }
 
 export interface HarnessGatewayConfig {
   /** master switch — off ⇒ the harness uses its own default auth */

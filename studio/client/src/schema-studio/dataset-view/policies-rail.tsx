@@ -1,4 +1,4 @@
-import { schemaRefKey } from '@shared/types'
+import { schemaRefKey } from '@shared/schema/identity'
 import { AlertTriangle, ChevronRight, Link2, ShieldCheck, Spline } from 'lucide-react'
 
 import { type PolicyGuard, type PolicyIndex } from '@/lib/policy'

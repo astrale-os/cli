@@ -148,6 +148,7 @@ function RailButton({
 }
 
 function ExpandedPanel({ side }: { side: DockedSide }) {
+  const tab = useUI((s) => s.panelTab)
   const size = useUI((s) => s.panelSize)
   const setPanelSize = useUI((s) => s.setPanelSize)
   const setPanelOpen = useUI((s) => s.setPanelOpen)
@@ -170,7 +171,9 @@ function ExpandedPanel({ side }: { side: DockedSide }) {
         closeLabel="Collapse the panel"
         onClose={() => setPanelOpen(false)}
       />
-      <PanelContent />
+      <div className="min-h-0 flex-1 border-t">
+        {tab === 'agent' ? <AgentTab /> : <CommentsTab />}
+      </div>
 
       {/* drag handle on the edge that faces the main view */}
       <ResizeHandle
@@ -348,15 +351,7 @@ function FloatingDock() {
             is, the side edges how wide the whole dock is — both sides at once, so
             it stays centred — and the top corners do both. At rest there is only
             a bar, and every press on it means "open". */}
-        {open && (
-          <DockResize
-            onDragStart={resize.start}
-            onDrag={resize.drag}
-            onDragEnd={resize.end}
-            onReset={resize.reset}
-            onStep={resize.step}
-          />
-        )}
+        {open && <DockResize resize={resize} />}
 
         {(!open || tab === 'agent') && (
           <div className="shrink-0" style={beside}>
@@ -390,61 +385,33 @@ function FloatingDock() {
   )
 }
 
-type DockEdge = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
 type DockSide = 'top' | 'left' | 'right'
 
 /**
- * The dock's grips. The straight edges stop where the rounded corners begin (the
- * corners are 16px, `rounded-2xl`), and each corner is its own grip that moves the two
- * edges it joins, lighting both.
+ * The dock's grips: which way each moves the width (`x`) and whether it moves the
+ * height (`y`). The straight edges stop where the rounded corners begin (the corners
+ * are 16px, `rounded-2xl`), and each corner is its own grip that moves the two edges
+ * it joins, lighting both.
  */
-const DOCK_EDGES: Record<
-  DockEdge,
-  { x: -1 | 0 | 1; y: boolean; cursor: string; className: string; label: string; sides: DockSide[] }
-> = {
-  top: {
-    x: 0,
-    y: true,
-    cursor: 'ns-resize',
-    className: 'inset-x-4 top-0 h-2',
-    label: 'Resize the chat height',
-    sides: ['top'],
-  },
-  left: {
-    x: -1,
-    y: false,
-    cursor: 'ew-resize',
-    className: 'inset-y-4 left-0 w-2',
-    label: 'Resize the chat width',
-    sides: ['left'],
-  },
-  right: {
-    x: 1,
-    y: false,
-    cursor: 'ew-resize',
-    className: 'inset-y-4 right-0 w-2',
-    label: 'Resize the chat width',
-    sides: ['right'],
-  },
-  'top-left': {
-    x: -1,
-    y: true,
-    cursor: 'nwse-resize',
-    className: 'left-0 top-0 h-4 w-4',
-    label: 'Resize the chat',
-    sides: ['top', 'left'],
-  },
-  'top-right': {
-    x: 1,
-    y: true,
-    cursor: 'nesw-resize',
-    className: 'right-0 top-0 h-4 w-4',
-    label: 'Resize the chat',
-    sides: ['top', 'right'],
-  },
-}
+const DOCK_EDGES = {
+  top: { x: 0, y: true, className: 'inset-x-4 top-0 h-2' },
+  left: { x: -1, y: false, className: 'inset-y-4 left-0 w-2' },
+  right: { x: 1, y: false, className: 'inset-y-4 right-0 w-2' },
+  'top-left': { x: -1, y: true, className: 'left-0 top-0 h-4 w-4' },
+  'top-right': { x: 1, y: true, className: 'right-0 top-0 h-4 w-4' },
+} as const satisfies Record<string, { x: -1 | 0 | 1; y: boolean; className: string }>
+type DockEdge = keyof typeof DOCK_EDGES
 
 const DOCK_EDGE_NAMES = Object.keys(DOCK_EDGES) as DockEdge[]
+
+/** The sides of the dock an edge moves. */
+function dockSides(edge: DockEdge): DockSide[] {
+  const { x, y } = DOCK_EDGES[edge]
+  return [
+    ...(y ? ['top' as const] : []),
+    ...(x < 0 ? ['left' as const] : x > 0 ? ['right' as const] : []),
+  ]
+}
 
 /** Literal per side and state, so Tailwind sees every class it has to generate. */
 const DOCK_SIDE_TONE: Record<DockSide, Record<ResizeState, string>> = {
@@ -461,22 +428,10 @@ const DOCK_SIDE_TONE: Record<DockSide, Record<ResizeState, string>> = {
  * instead: the border of the side being moved, following the curve into each corner.
  * Same colour, same thickness and same timing as every other edge in the Studio.
  */
-function DockResize({
-  onDragStart,
-  onDrag,
-  onDragEnd,
-  onReset,
-  onStep,
-}: {
-  onDragStart: (edge: DockEdge) => void
-  onDrag: (edge: DockEdge, dx: number, dy: number) => void
-  onDragEnd: () => void
-  onReset: () => void
-  onStep: (edge: DockEdge, dx: number, dy: number) => void
-}) {
+function DockResize({ resize }: { resize: ReturnType<typeof useDockResize> }) {
   const [states, setStates] = useState<Partial<Record<DockEdge, ResizeState>>>({})
   const lit = (side: DockSide): ResizeState =>
-    DOCK_EDGE_NAMES.filter((edge) => DOCK_EDGES[edge].sides.includes(side)).reduce<ResizeState>(
+    DOCK_EDGE_NAMES.filter((edge) => dockSides(edge).includes(side)).reduce<ResizeState>(
       (tone, edge) => strongestResizeState(tone, states[edge] ?? 'idle'),
       'idle',
     )
@@ -493,7 +448,7 @@ function DockResize({
         )}
       />
       {DOCK_EDGE_NAMES.map((edge) => {
-        const { x, y, cursor, className, label } = DOCK_EDGES[edge]
+        const { x, y, className } = DOCK_EDGES[edge]
         const corner = x !== 0 && y
         return (
           <ResizeHandle
@@ -501,16 +456,20 @@ function DockResize({
             data-dock-resize={edge}
             orientation={y && !corner ? 'horizontal' : 'vertical'}
             role={corner ? 'presentation' : 'separator'}
-            label={label}
-            cursor={cursor}
+            label={
+              x === 0 ? 'Resize the chat height' : y ? 'Resize the chat' : 'Resize the chat width'
+            }
+            cursor={
+              x === 0 ? 'ns-resize' : !y ? 'ew-resize' : x < 0 ? 'nwse-resize' : 'nesw-resize'
+            }
             className={className}
             line={false}
             onStateChange={(state) => setStates((all) => ({ ...all, [edge]: state }))}
-            onDragStart={() => onDragStart(edge)}
-            onDrag={(dx, dy) => onDrag(edge, dx, dy)}
-            onDragEnd={onDragEnd}
-            onReset={onReset}
-            onStep={(dx, dy) => onStep(edge, dx, dy)}
+            onDragStart={() => resize.start()}
+            onDrag={(dx, dy) => resize.drag(edge, dx, dy)}
+            onDragEnd={resize.end}
+            onReset={resize.reset}
+            onStep={(dx, dy) => resize.step(edge, dx, dy)}
           />
         )
       })}
@@ -692,22 +651,22 @@ function PanelHeader({
   return (
     <header className="flex h-10 shrink-0 items-center gap-1 px-2">
       <div className="flex min-w-0 items-center gap-0.5 rounded-md bg-muted p-0.5">
-        <TabButton
-          active={tab === 'agent'}
-          onClick={() => setPanelTab('agent')}
-          icon={<MessageCircle />}
-          label="Agent"
-          badge={unread.length}
-          compact={compact}
-        />
-        <TabButton
-          active={tab === 'comments'}
-          onClick={() => setPanelTab('comments')}
-          icon={<MessageSquare />}
-          label="Comments"
-          badge={waiting}
-          compact={compact}
-        />
+        {(
+          [
+            ['agent', 'Agent', <MessageCircle />, unread.length],
+            ['comments', 'Comments', <MessageSquare />, waiting],
+          ] as const
+        ).map(([id, label, icon, badge]) => (
+          <TabButton
+            key={id}
+            active={tab === id}
+            onClick={() => setPanelTab(id)}
+            icon={icon}
+            label={label}
+            badge={badge}
+            compact={compact}
+          />
+        ))}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         <DockPicker />
@@ -722,15 +681,6 @@ function PanelHeader({
         </button>
       </div>
     </header>
-  )
-}
-
-function PanelContent() {
-  const tab = useUI((s) => s.panelTab)
-  return (
-    <div className="min-h-0 flex-1 border-t">
-      {tab === 'agent' ? <AgentTab /> : <CommentsTab />}
-    </div>
   )
 }
 

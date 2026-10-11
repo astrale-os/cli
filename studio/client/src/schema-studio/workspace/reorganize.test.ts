@@ -1,4 +1,4 @@
-import type { LayoutState } from '@shared/types'
+import type { LayoutState } from '@shared/contracts/workspace'
 
 import { expect, test } from 'bun:test'
 

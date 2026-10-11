@@ -16,12 +16,8 @@
  * pins nothing already runs the agent's Studio default, so an extra "agent
  * default" row would only be a second name for a model already in the list.
  */
-import type {
-  AgentModelPreference,
-  ChatInfo,
-  HarnessModelCatalog,
-  HarnessStatus,
-} from '@shared/types'
+import type { ChatInfo, HarnessModelCatalog, HarnessStatus } from '@shared/contracts/agent'
+import type { AgentModelPreference } from '@shared/contracts/runtime'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2, Star } from 'lucide-react'

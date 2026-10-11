@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRun } from '@shared/types'
+import type { AgentEvent, AgentRun } from '@shared/contracts/agent'
 
 import { expect, test } from 'bun:test'
 

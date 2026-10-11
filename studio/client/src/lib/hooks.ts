@@ -1,4 +1,4 @@
-import type { EnvName } from '@shared/types'
+import type { EnvName } from '@shared/contracts/schema'
 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'

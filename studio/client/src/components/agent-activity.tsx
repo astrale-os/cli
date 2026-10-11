@@ -5,7 +5,7 @@
  * The elapsed counter is exported: the bottom dock has no header button to carry
  * it, and a turn has to be timed the same way wherever the studio shows it.
  */
-import type { AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/contracts/agent'
 
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, Send } from 'lucide-react'

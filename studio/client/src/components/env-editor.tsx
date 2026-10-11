@@ -1,4 +1,4 @@
-import type { EnvName, EnvVarRow } from '@shared/types'
+import type { EnvName, EnvVarRow } from '@shared/contracts/schema'
 
 /**
  * env-editor.tsx — the Settings "Environment" section. Reads/parses `.env.<env>`

@@ -14,7 +14,7 @@
  * the domain is real and hiding it would be worse, so the caller goes there and
  * carries the message with it (`unsent`), one keystroke from being sent again.
  */
-import type { AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/contracts/agent'
 
 /** create-astrale-domain's slug shape (kept in sync with the server guard). */
 const SLUG = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/

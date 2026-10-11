@@ -1,5 +1,5 @@
 /** Method security affordance: badge (row glyph + hover), card, inline chip. */
-import { schemaRefKey } from '@shared/types'
+import { schemaRefKey } from '@shared/schema/identity'
 import { FlaskConical, ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 

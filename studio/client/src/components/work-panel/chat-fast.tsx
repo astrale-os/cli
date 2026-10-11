@@ -1,4 +1,4 @@
-import type { ChatInfo } from '@shared/types'
+import type { ChatInfo } from '@shared/contracts/agent'
 
 import { Zap } from 'lucide-react'
 

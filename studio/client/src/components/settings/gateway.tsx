@@ -1,4 +1,4 @@
-import type { HarnessGatewayAuth, HarnessStatus } from '@shared/types'
+import type { HarnessGatewayAuth, HarnessStatus } from '@shared/contracts/agent'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff } from 'lucide-react'
@@ -14,13 +14,9 @@ import { SettingsHint } from './controls'
 
 type GatewayAuthMode = HarnessGatewayAuth['mode']
 
-const embeddedStudio = typeof window !== 'undefined' && window.self !== window.top
-const DEFAULT_MODE: GatewayAuthMode = embeddedStudio ? 'host' : 'mint'
-
 const AUTH_MODES: { mode: GatewayAuthMode; label: string }[] = [
   { mode: 'mint', label: 'Auto-mint' },
   { mode: 'token', label: 'Static token' },
-  { mode: 'host', label: 'Host-managed' },
 ]
 
 const FIELD =
@@ -92,111 +88,6 @@ function GatewayTextField({
   )
 }
 
-/** Authentication-specific fields for one harness gateway. */
-function GatewayAuthFields({
-  mode,
-  setMode,
-  instance,
-  setInstance,
-  token,
-  setToken,
-  reveal,
-  setReveal,
-}: {
-  mode: GatewayAuthMode
-  setMode: (mode: GatewayAuthMode) => void
-  instance: string
-  setInstance: (instance: string) => void
-  token: string
-  setToken: (token: string) => void
-  reveal: boolean
-  setReveal: (reveal: boolean) => void
-}) {
-  return (
-    <div className="space-y-1.5">
-      <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        Authentication
-        <SettingsHint text="How the harness gets its bearer token. Auto-mint: the studio mints a short-lived delegation token per run via `astrale token` (no secret stored) — best for Astrale gateways. Static token: a bearer you paste. Host-managed: the embedding Astrale app supplies it via the shell (used when the studio runs inside the Astrale GUI)." />
-      </span>
-      <div
-        className="grid grid-cols-3 gap-1 rounded-md bg-muted/45 p-1"
-        role="radiogroup"
-        aria-label="Auth mode"
-      >
-        {AUTH_MODES.map((candidate) => (
-          <button
-            key={candidate.mode}
-            type="button"
-            role="radio"
-            aria-checked={mode === candidate.mode}
-            onClick={() => setMode(candidate.mode)}
-            className={cn(
-              'rounded px-1.5 py-1 text-center text-[11px] font-medium transition-colors',
-              mode === candidate.mode
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {candidate.label}
-          </button>
-        ))}
-      </div>
-
-      {mode === 'mint' && (
-        <div className="space-y-1 pt-0.5">
-          <input
-            value={instance}
-            onChange={(event) => setInstance(event.target.value)}
-            placeholder="instance to mint on (blank = active instance)"
-            spellCheck={false}
-            autoComplete="off"
-            className={FIELD}
-          />
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
-            A fresh delegation token is minted per run (no secret stored). You must be signed in to
-            the instance and have USE on the model node.
-          </p>
-        </div>
-      )}
-
-      {mode === 'token' && (
-        <div className="space-y-1 pt-0.5">
-          <div className="flex items-center gap-1">
-            <input
-              type={reveal ? 'text' : 'password'}
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              placeholder="bearer token (e.g. astrale token --audience <gateway-origin>)"
-              spellCheck={false}
-              autoComplete="off"
-              className={cn(FIELD, 'min-w-0')}
-            />
-            <button
-              type="button"
-              onClick={() => setReveal(!reveal)}
-              title={reveal ? 'Hide' : 'Reveal'}
-              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {reveal ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
-            Stored locally under ~/.astrale/studio. It will stop working when the token expires.
-          </p>
-        </div>
-      )}
-
-      {mode === 'host' && (
-        <p className="pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-          {embeddedStudio
-            ? 'The embedding Astrale app supplies (and refreshes) the token via the shell.'
-            : 'For when the studio runs embedded in the Astrale GUI — the host then supplies the token via the shell. No effect standalone.'}
-        </p>
-      )}
-    </div>
-  )
-}
-
 /** Machine-wide Anthropic-compatible gateway configuration. */
 export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus }) {
   const anthropic = harness?.capabilities.gateway === 'anthropic'
@@ -206,7 +97,7 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
   const [enabled, setEnabled] = useState(false)
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
-  const [mode, setMode] = useState<GatewayAuthMode>(DEFAULT_MODE)
+  const [mode, setMode] = useState<GatewayAuthMode>('mint')
   const [instance, setInstance] = useState('')
   const [token, setToken] = useState('')
   const [reveal, setReveal] = useState(false)
@@ -216,7 +107,7 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
     setEnabled(config?.enabled ?? false)
     setBaseUrl(config?.baseUrl ?? '')
     setModel(config?.model ?? '')
-    setMode(config?.auth.mode ?? DEFAULT_MODE)
+    setMode(config?.auth.mode ?? 'mint')
     setInstance(config?.auth.mode === 'mint' ? (config.auth.instance ?? '') : '')
     setToken(config?.auth.mode === 'token' ? config.auth.token : '')
     setReveal(false)
@@ -224,7 +115,6 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
 
   const buildAuth = (): HarnessGatewayAuth => {
     if (mode === 'token') return { mode: 'token', token: token.trim() }
-    if (mode === 'host') return { mode: 'host' }
     return { mode: 'mint', ...(instance.trim() ? { instance: instance.trim() } : {}) }
   }
   const validationError = validateGatewayDraft(enabled, baseUrl, mode, token)
@@ -301,16 +191,84 @@ export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus })
               onChange={setModel}
               placeholder="glm-5.2 (optional)"
             />
-            <GatewayAuthFields
-              mode={mode}
-              setMode={setMode}
-              instance={instance}
-              setInstance={setInstance}
-              token={token}
-              setToken={setToken}
-              reveal={reveal}
-              setReveal={setReveal}
-            />
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                Authentication
+                <SettingsHint text="How the harness gets its bearer token. Auto-mint: the studio mints a short-lived delegation token per run via `astrale token` (no secret stored) — best for Astrale gateways. Static token: a bearer you paste." />
+              </span>
+              <div
+                className="grid grid-cols-2 gap-1 rounded-md bg-muted/45 p-1"
+                role="radiogroup"
+                aria-label="Auth mode"
+              >
+                {AUTH_MODES.map((candidate) => (
+                  <button
+                    key={candidate.mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === candidate.mode}
+                    onClick={() => setMode(candidate.mode)}
+                    className={cn(
+                      'rounded px-1.5 py-1 text-center text-[11px] font-medium transition-colors',
+                      mode === candidate.mode
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {candidate.label}
+                  </button>
+                ))}
+              </div>
+
+              {mode === 'mint' && (
+                <div className="space-y-1 pt-0.5">
+                  <input
+                    value={instance}
+                    onChange={(event) => setInstance(event.target.value)}
+                    placeholder="instance to mint on (blank = active instance)"
+                    spellCheck={false}
+                    autoComplete="off"
+                    className={FIELD}
+                  />
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    A fresh delegation token is minted per run (no secret stored). You must be
+                    signed in to the instance and have USE on the model node.
+                  </p>
+                </div>
+              )}
+
+              {mode === 'token' && (
+                <div className="space-y-1 pt-0.5">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type={reveal ? 'text' : 'password'}
+                      value={token}
+                      onChange={(event) => setToken(event.target.value)}
+                      placeholder="bearer token (e.g. astrale token --audience <gateway-origin>)"
+                      spellCheck={false}
+                      autoComplete="off"
+                      className={cn(FIELD, 'min-w-0')}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setReveal(!reveal)}
+                      title={reveal ? 'Hide' : 'Reveal'}
+                      className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {reveal ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Stored locally under ~/.astrale/studio. It will stop working when the token
+                    expires.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

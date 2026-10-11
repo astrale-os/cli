@@ -1,4 +1,4 @@
-import type { StudioCore, StudioSchemaBundle } from '@shared/types'
+import type { StudioCore, StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { type Edge, MarkerType, type Node } from '@xyflow/react'
 

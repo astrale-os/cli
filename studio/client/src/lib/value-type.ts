@@ -1,6 +1,6 @@
-import type { JsonSchema, TypeDescriptor } from '@shared/types'
+import type { JsonSchema, TypeDescriptor } from '@shared/contracts/schema'
 
-import { isNodePathSchema } from '@shared/types'
+import { isNodePathSchema } from '@shared/contracts/schema'
 import {
   Braces,
   Circle,

@@ -7,7 +7,7 @@
  * harness is fixed, so "switch to the other agent" is a fork that opens a NEW
  * tab and leaves the current conversation alone.
  */
-import type { ChatInfo, ChatList } from '@shared/types'
+import type { ChatInfo, ChatList } from '@shared/contracts/agent'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -137,12 +137,9 @@ export function useChatMutations() {
 /**
  * Every harness's models — one live ACP probe of each, warmed for the workspace.
  *
- * It used to wait for the picker to be opened, on the grounds that probing every
- * agent is expensive. That paid for itself twice over: the composer's label IS
- * the catalog (an unpinned chat runs its harness's default model, and only this
- * knows which), so a panel opened before the answer landed had no model to name.
- * One probe per workspace visit buys a composer that opens already saying it —
- * `WorkPanel` starts it while you are still looking at the graph.
+ * Not deferred to the picker: the composer's label IS the catalog (an unpinned chat
+ * runs its harness's default model, and only this knows which), so `WorkPanel` starts
+ * the probe while you are still looking at the graph.
  *
  * Behind the canvas, though, exactly like the loadout beside it: this is the
  * heaviest read in the studio — an ACP session per installed agent — and the

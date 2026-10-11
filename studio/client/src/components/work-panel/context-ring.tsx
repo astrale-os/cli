@@ -10,7 +10,7 @@
  * as fresh as the agent's last word: it moves during a turn, and between turns
  * stays where the last one left it.
  */
-import type { AgentContextUsage } from '@shared/types'
+import type { AgentContextUsage } from '@shared/contracts/agent'
 
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { cn } from '@/lib/utils'
