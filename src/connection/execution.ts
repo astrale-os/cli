@@ -1,10 +1,20 @@
-import { issuer } from '@astrale-os/sdk/auth'
+import { issuer, type IssuerId } from '@astrale-os/sdk/auth'
 import { isNodeId, NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { z } from 'zod'
 
 /** Public, nonsecret receipt. It describes observation context; it grants no authority. */
-export const executionReceiptSchema = z.strictObject({
+export interface ExecutionReceipt {
+  readonly kind: 'astrale.execution'
+  readonly version: 1
+  readonly id: NodeId
+  readonly kernel: IssuerId
+  readonly caller: NodeId
+  readonly origin: string
+  readonly principal: 'domain' | 'caller'
+}
+
+export const executionReceiptSchema: z.ZodType<ExecutionReceipt> = z.strictObject({
   kind: z.literal('astrale.execution'),
   version: z.literal(1),
   id: z.string().refine(isNodeId).transform(NodeId),
@@ -13,8 +23,6 @@ export const executionReceiptSchema = z.strictObject({
   origin: z.string().min(1),
   principal: z.enum(['domain', 'caller']),
 })
-
-export type ExecutionReceipt = z.infer<typeof executionReceiptSchema>
 
 export function acceptExecutionReceipt(input: unknown): ExecutionReceipt {
   const parsed = executionReceiptSchema.safeParse(input)
