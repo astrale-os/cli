@@ -136,7 +136,6 @@ type InstallReport = InstallResult & {
 }
 
 export interface ReferenceInstallDependencies {
-  readonly acceptOperationId: (input: unknown) => string
   readonly createOperationId: () => string
   readonly withClientSession: typeof withClientSession
   /** Opens the Admin registry with the caller's own credential; only version references do. */
@@ -156,7 +155,6 @@ export interface ReferenceInstallDependencies {
 }
 
 const defaultDependencies: ReferenceInstallDependencies = Object.freeze({
-  acceptOperationId: (input: unknown) => acceptDomainOperationId(input, 'install'),
   createOperationId: () => createDomainOperationId('install'),
   withClientSession,
   openRegistry: openInstallRegistry,
@@ -217,7 +215,7 @@ export async function installByReference(
     operation =
       opts.operation === undefined
         ? deps.createOperationId()
-        : deps.acceptOperationId(opts.operation)
+        : acceptDomainOperationId(opts.operation, 'install')
   } catch (error) {
     fatal(error, opts)
   }
@@ -463,7 +461,7 @@ async function installReleases(
     changes = await Promise.all(
       roots.map(async ({ source, served: deployment }) => {
         if (deployment === undefined) return undefined
-        if (installedOrigin(before, deployment.origin))
+        if (before.some((entry) => entry.origin === deployment.origin))
           return plannedIssuerChange(source.url, deployment, before)
         // The installed listing is caller-scoped and omits registrations with no deployment pin.
         // Its omission does not establish a first install. Read this exact root's publication
@@ -597,11 +595,6 @@ async function installReleases(
     return compatibilityRefusal(failure) ? { ...failure, precheck } : failure
   if (mismatched.length > 0) return { error: pinMismatchError(mismatched), render: 'input' }
   return undefined
-}
-
-/** Whether the pre-check predicted a refusal. */
-function predicted(precheck: InstallPrecheck): boolean {
-  return precheck.dependencies.length > 0 || precheck.dependents.length > 0
 }
 
 /** The Kernel refusals the pre-check predicts. */
@@ -784,7 +777,7 @@ function presentPrecheck(precheck: InstallPrecheck): void {
         `${count === 1 ? 'its' : 'their'} installed schema or bindings are not readable here, or the engine could not compare them.`,
     )
   }
-  if (predicted(precheck)) {
+  if (precheck.dependencies.length > 0 || precheck.dependents.length > 0) {
     log.dim('  The pre-check is advisory: the install is sent and the Kernel decides.')
   } else if (precheck.compared > 0) {
     log.dim(
@@ -812,10 +805,6 @@ interface InstallOutcome {
   readonly after: readonly InstalledRelease[] | undefined
   /** Present when the Kernel refused a request whose install had already committed (AM-81). */
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
-}
-
-function installedOrigin(installed: readonly InstalledRelease[], origin: string): boolean {
-  return installed.some((entry) => entry.origin === origin)
 }
 
 /**
