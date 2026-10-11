@@ -211,7 +211,10 @@ function kernel(installed: readonly Built[], hidden: readonly string[] = []) {
   return { api, reads }
 }
 
-function root(deployment: Built, reference = deployment.url): PrecheckRoot {
+function root(
+  deployment: Built,
+  reference = deployment.url,
+): Extract<PrecheckRoot, { kind: 'release' }> {
   return {
     kind: 'release',
     reference,
@@ -273,6 +276,37 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
         changes: [expect.objectContaining({ key: shellMember.key, kind: 'missing' })],
       }),
     ])
+  })
+
+  test('downward through the closure: a transitive dependency is judged by the capabilities declared on it', async () => {
+    const installed = [deployments.shell2, deployments.crm1]
+    const check = (checked: PrecheckRoot) =>
+      precheckInstall([checked], installed.map(installedFrom), kernel(installed).api)
+    const ledger = root(deployments.ledger1)
+
+    // Ledger reaches Shell only through CRM, which stays at its exact revision.
+    expect(await check(ledger)).toMatchObject({ compared: 0, dependencies: [], unevaluated: [] })
+    // A release declaring Shell's Member (the SDK builds it only on a direct dependency, the
+    // Kernel judges it anywhere in the closure) breaks on Shell R2, which drops it.
+    const declaring = deployments.tasks1.document.requirements
+    const verdict = await check({
+      ...ledger,
+      release: { ...ledger.release, requirements: declaring },
+    })
+    expect(verdict.dependencies).toEqual([
+      expect.objectContaining({
+        origin: LEDGER,
+        dependency: SHELL,
+        expected: R.shell1,
+        actual: R.shell2,
+        changes: expect.arrayContaining([{ key: shellMember.key, kind: 'missing' }]),
+      }),
+    ])
+    // A capability declared on a direct dependency is judged once.
+    expect(await check(root(deployments.tasks1))).toMatchObject({
+      compared: 1,
+      dependencies: [expect.objectContaining({ origin: TASKS, dependency: SHELL })],
+    })
   })
 
   test('a held declaration judges nothing on a dependency the listing omits but introspection shows', async () => {
