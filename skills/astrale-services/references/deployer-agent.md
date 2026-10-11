@@ -11,7 +11,10 @@ Functions. A plain API or background job does not need this workflow; use
    Environment contains deployment configuration and secrets; it names no consumer Kernel.
 3. Run `astrale-domain deploy <environment>` (or the project's deploy script). The adapter sends a
    canonical Worker deployment request to Admin's Services and verifies the served Domain release.
-   Retain the immutable deployment URL, release/build digests, issuer, and Service/deployment IDs.
+   Retain the immutable URL and release/build digests from DeployResultV1. Then run
+   `astrale-domain list --environment <environment> --json` and match that URL: its `id` is the
+   deployment ID, `owner` is the owner, and `callTarget.service` contains the Service node ID.
+   DeployResultV1 itself has no owner or Service/deployment node IDs.
 4. If installation is part of the request, run `astrale domain install <deployment-url> -i <consumer>`
    on each selected consumer. Follow the CLI's issuer-change consent contract when it applies.
    Deploying, promoting a Service, and installing on one consumer do not upgrade other consumers.
@@ -38,7 +41,8 @@ retire useful releases or remove consumer installations merely to tidy a failed 
 
 ## Handoff
 
-Return the source/package versions, project/environment, owner and Service/deployment IDs, exact
+Return the source/package versions, project/environment, owner and Service/deployment IDs from
+the matched listing row, exact
 URLs and digests, promotion state, and observed health/application results. For a Domain, also
 include its release identity, each requested consumer's installed pin, and canonical Function call
 paths with observed results. Distinguish source/package evidence from installed/runtime evidence.

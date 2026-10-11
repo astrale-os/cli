@@ -511,9 +511,10 @@ kernel's installation names it; the Admin Domain issuer only completes the Admin
 target. Put `key=value` params before `--admin`, or write `--admin=<bookmark>`.
 
 Rotating one secret of a Service's current deployment is such a call.
-With `@astrale-os/adapter-astrale` 0.5.0-beta.168 or newer,
+With `@astrale-os/adapter-astrale` 0.5.0-beta.171 or newer,
 `astrale-domain list --json` exposes `current` and `callTarget.service` (the
-`CloudflareService` target), not the Deployment's `callTarget.path`. Put the input
+`CloudflareService` target). Use that Service target for rotation; the listing also exposes
+the Deployment's `callTarget.path`, which is for retirement. Put the input
 in a protected file outside the repository or pipe it, never in argv. The current
 deployment keeps its URL, issuer and key; provider propagation takes a few seconds.
 

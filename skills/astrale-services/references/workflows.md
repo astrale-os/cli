@@ -63,7 +63,8 @@ It requests no Domain record, signer, router, or installation. Pass adapter opti
 `{ admin: '<bookmark>', identity: '<local CLI identity>' }` as the second argument when needed.
 For a candidate use `promote: false`; on a first deploy this leaves no current deployment, so
 promote its returned label before current-only logs, secrets, or schedules can be used.
-Use the scaffold's secret loading for declared values rather than embedding them in source.
+Load declared secret values from protected files or a secret manager in your own deploy script;
+the standalone adapter example does not include a secret loader.
 
 ## Inspect and operate
 
@@ -81,7 +82,8 @@ astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.metho
 ```
 
 `logs` accepts optional deployment `label` and numeric `since`; without a label it reads the current
-deployment. `list` includes `current` and lifecycle state, so select the precise active release.
+deployment. `list` includes `current` and lifecycle state. Set `PREVIOUS_LABEL` to the label of
+the chosen active deployment from that listing before promoting it.
 
 ```sh
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.promote" \
@@ -131,7 +133,7 @@ input is a bare Identity node ID, without `@` (the result formats it as a Path):
 
 ```sh
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.transfer" \
-  owner='<new-owner-id>' --admin --json
+  --admin --data '{"owner":"<new-owner-id>"}' --json
 astrale view /:services.astrale.ai:view.application -i <admin-bookmark>
 ```
 

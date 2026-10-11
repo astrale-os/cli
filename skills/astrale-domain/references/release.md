@@ -197,7 +197,7 @@ Secrets belong to the publisher: each Environment declares its secrets file (`as
 - Never pass a secret value in argv, where `ps` and shell history keep it: write it to a private file
   (`umask 077`) outside the repository, or pipe it from your secret manager.
 
-With `@astrale-os/adapter-astrale` 0.5.0-beta.168 or newer,
+With `@astrale-os/adapter-astrale` 0.5.0-beta.171 or newer,
 `astrale-domain list --environment production --json` includes each Deployment's `current` flag and two call targets. `callTarget.service` names the owning
 `@<serviceId>::services.astrale.ai:class.CloudflareService`; its `setSecret` changes **only the
 Service's current deployment**. `callTarget.path` names a `CloudflareDeployment` for retirement;
@@ -225,11 +225,12 @@ The reply is `{ "name": "API_TOKEN" }`; provider propagation takes a few seconds
 include `retryAfter`. Recheck which deployment is current before retrying: this Method follows
 current, not a pinned deployment. Recheck `current` after success as well: the reply names only
 the secret, so it cannot prove which deployment was rotated if promotion raced with the call.
-Verify the intended deployment’s real behavior after propagation without reading back secrets.
+Verify the intended deployment's real behavior after propagation without reading back secrets.
 
 To rotate a historical **Domain** deployment, use the supported identical-release redeploy:
 
-1. List deployments and retain both the historical label/URL and the Service's current label.
+1. Pause concurrent deployment/promotion pipelines for this Service during the rotation window.
+   List deployments and retain both the historical label/URL and the Service's current label.
    Keep the current label as `PREVIOUS_LABEL` and the Service node ID as `SERVICE_NODE_ID`.
 2. Recover the original source and build inputs, including the same pinned dependencies,
    toolchain and frozen configuration. The listed record's commit helps locate them; a commit
@@ -240,7 +241,9 @@ To rotate a historical **Domain** deployment, use the supported identical-releas
    environment). Require the original `url` and `deployment.script` (label),
    `deployment.state: "reused"`, and `secrets.state: "updated"`; `unchanged` is appropriate only
    when those exact values were already applied.
-4. Immediately restore the previously current label, then list again and confirm `current`:
+4. Recheck `current` immediately before restoring: it should be the deployment this redeploy
+   selected. If another actor promoted something else, resolve that change with them instead of
+   silently rolling it back. Restore the previously current label, then list and confirm `current`:
 
 ```sh
 astrale call "@${SERVICE_NODE_ID}::services.astrale.ai:class.CloudflareService.method.promote" \
@@ -250,11 +253,15 @@ astrale-domain list --environment production --json
 
 The Domain adapter promotes on every deploy, including an identical historical release. The
 stable Service URL and cron target therefore move to the old release during this window;
-consumers pinned to immutable deployment URLs keep their releases. Restore the prior label even
-if the redeploy reports an unexpected identity or a partial failure, and verify stable routing,
+consumers pinned to immutable deployment URLs keep their releases. After an unexpected identity
+or partial failure, inspect current and restore the prior label under the same concurrency check.
+If the result was `created`, an unwanted new active deployment remains: after restoring current,
+retire that exact new deployment if it is not wanted or in use. Verify stable routing,
 cron target, and the intended deployment's behavior after secret propagation. This is not a
-no-interruption rotation procedure. A historical deployment that no consumer or in-flight work
-needs can instead be explicitly retired; do not retire a published or pinned release blindly.
+no-interruption rotation procedure. Deployments made before the Worker-request contract can get
+a different label with current tooling even for the same source. Their secrets are not rotated by
+that new deploy: retire unused legacy deployments or use an operator-supported remediation.
+A historical deployment that no consumer or in-flight work needs can instead be explicitly retired; do not retire a published or pinned release blindly.
 
 Generic Workers with a retained exact deploy input can use `deployWorker` with `promote: false`
 (see the [Services workflow](../../astrale-services/references/workflows.md)). The Domain adapter

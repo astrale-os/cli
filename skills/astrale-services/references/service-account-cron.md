@@ -39,17 +39,20 @@ including deletion. See [schema.md](schema.md).
    graph edge write. Registration alone grants no callable or business rights.
 4. In the generated `service.json`, set exact `KERNEL` and `TARGET`, declare
    `ACCOUNT_PRIVATE_JWK`, and leave `crons: []`. Supply the private JWK through the environment's
-   secret source. Do not put it in source, argv, graph properties, or logs.
+   secret source. `astrale identity export background-job <private-path>` writes an identity
+   envelope; supply its `privateJwk` object serialized as JSON as `ACCOUNT_PRIVATE_JWK`, not the
+   complete envelope. Keep the export and extracted value in protected files or your secret
+   manager, never terminal output. Do not put it in source, argv, graph properties, or logs.
 5. Adapt `src/job.js` to real input and repeat-safe business behavior. The scaffold opens an ES256
    self-account session for one execution and closes it in `finally`; keep that lifecycle and
    bound the business call below the dispatch deadline.
 
-The self proof's audience is the exact Kernel issuer, including its path. Use the scaffold's
-exported SDK primitives (`register.selfIssuer`, `issuer`, `jwk`, `connect`) rather than a guessed
+The self proof's audience is the exact Kernel issuer, including its path. Use the SDK primitives
+imported by the scaffold (`register.selfIssuer`, `issuer`, `jwk`, `connect`) rather than a guessed
 signing API. The default generated account session presents the account as principal. For an
 `authorized` callable it therefore needs `can_use` as well as its business Policy.
 
-The scaffold exports `openAccount`, not `selfCredential`. Its default session uses the account's
+The scaffold exports `openAccount`. Its default session uses the account's
 own authority; do not copy an invented helper to enable Domain exchange. If that distinct mode is
 needed, adapt `openAccount` using the selected SDK's documented credential/session contract and
 verify the actual callable and business authorization before scheduling.
@@ -68,7 +71,12 @@ replace the complete cron set from that file, overriding a manually configured s
 privileged manual test endpoint private and explicitly authorized if the implementation needs one;
 the public scheduling endpoint is intentionally unavailable.
 
-The published 0.8.2 scaffold defaults to `compatibilityFlags: ["nodejs_compat"]`.
+The published 0.8.2 scaffold defaults to `compatibilityFlags: ["nodejs_compat"]`; that is not
+a guarantee that same-zone Worker fetches reach the intended Kernel. For global `fetch()` calls
+to Worker routes in the same Cloudflare zone, add `global_fetch_strictly_public` to `service.json`
+before deployment so requests use public routing instead of bypassing Workers. See
+[Cloudflare's routing contract](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public).
+Verify the job reaches its real Kernel and business callable before enabling cron.
 Compatibility flags are part of the frozen configuration. Preserve the generated/pinned runtime
 settings or deliberately change them before the adapter computes the label; do not graft historical
 plain-payload defaults onto an already-built deployment.
