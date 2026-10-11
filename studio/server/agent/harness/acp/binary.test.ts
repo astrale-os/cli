@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -26,6 +27,7 @@ import {
   type PinnedArtifact,
 } from './binary'
 import { PINNED_AGENT_BINARIES } from './pinned-binaries'
+import { prefetchAgentBinaries } from './prefetch'
 
 const roots: string[] = []
 function temporaryRoot(prefix: string): string {
@@ -276,5 +278,26 @@ describe('agent binary installation', () => {
 
     expect(existsSync(join(root, 'claude', pinned, 'darwin-arm64'))).toBe(true)
     expect(existsSync(join(root, 'claude', '0.0.1'))).toBe(false)
+  })
+
+  test('the post-update prefetch touches only the agents Studio already ran here', async () => {
+    const home = temporaryRoot('studio-agent-prefetch-')
+    const agents = join(home, 'cache', 'agents')
+    const stale = join(agents, 'claude', '0.0.1', 'darwin-arm64')
+    mkdirSync(stale, { recursive: true })
+    const previous = process.env.ASTRALE_HOME
+    process.env.ASTRALE_HOME = home
+    // a local claude stands in for its pinned build, so nothing is downloaded
+    process.env.DOMAIN_STUDIO_CLAUDE_BIN = 'claude'
+    delete process.env.DOMAIN_STUDIO_CODEX_BIN
+    try {
+      await prefetchAgentBinaries()
+    } finally {
+      if (previous === undefined) delete process.env.ASTRALE_HOME
+      else process.env.ASTRALE_HOME = previous
+    }
+    // claude ran here, so its old build is pruned; codex never did, so nothing is fetched
+    expect(existsSync(stale)).toBe(false)
+    expect(readdirSync(agents)).toEqual(['claude'])
   })
 })

@@ -129,6 +129,11 @@ test('a policy lists its direct and indirect consumers, and each link opens both
   await link('mayManageInvoice').click()
   await link('Test on a Dataset').click()
   await expect(heading('mayManageInvoice')).toBeVisible()
+  // a consuming Policy opens in place, still on the Dataset
+  await usages.getByRole('button', { name: 'administerBilling', exact: true }).first().click()
+  await expect(heading('administerBilling')).toBeVisible()
+  await link('manageBilling').click()
+  await link('mayManageInvoice').click()
   await usages.getByRole('button', { name: 'settle', exact: true }).click()
   await expect(heading('Invoice')).toBeVisible()
   await expect(method.locator('[data-method-detail]')).toBeInViewport()

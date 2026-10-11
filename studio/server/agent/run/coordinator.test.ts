@@ -244,6 +244,18 @@ describe.serial('agent runner invariants', () => {
     expect(picked.prompt?.turnPrompt).not.toContain('first question')
     await settled()
     expect(threadOf(handle, first.id).status).toBe('open')
+
+    // behind a running turn, 'all' is resolved when the message is sent: a thread
+    // opened while it waits does not ride along unasked
+    process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = '200'
+    await submitRun(() => {}, { message: 'busy' })
+    const queued = (await submitRun(() => {}, { message: 'then these', comments: 'all' })).queued!
+    expect(queued.comments).toContain(first.id)
+    const late = comment(handle, 'opened while it waits')
+    await drained()
+    const last = readRunHistory(stateRoot(), stored()).at(-1)!
+    expect(last.targetCommentIds).toEqual(queued.comments!)
+    expect(last.targetCommentIds).not.toContain(late.id)
   })
 
   test('reserves setup synchronously and parks the next message behind the turn', async () => {

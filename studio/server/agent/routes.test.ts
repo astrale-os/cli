@@ -86,6 +86,24 @@ test('a chat update keeps only shared levels; a reorder persists and tells every
   )
   expect(listChats().chats.map((chat) => chat.id)).toEqual([second, first])
   expect(events).toContainEqual({ type: 'chats' })
+
+  // switching agent forks a tab, never onto the agent the chat already runs
+  const same = await call('/agent/chats', {
+    action: 'switch-harness',
+    chatId: first,
+    harness: 'mock',
+  })
+  expect(await same?.json()).toEqual({ error: 'this chat already runs mock' })
+  expect(
+    await answer<ChatInfo>('/agent/chats', {
+      action: 'switch-harness',
+      chatId: first,
+      harness: 'codex',
+    }),
+  ).toMatchObject({ harness: 'codex' })
+  // and a chat that carried nothing over has no origin to forget
+  const forget = await call('/agent/chats', { action: 'forget-origin', chatId: first })
+  expect(await forget?.json()).toEqual({ error: 'this chat has no unsent transferred context' })
 })
 
 test('serves the bounded persisted conversation history', async () => {
@@ -126,6 +144,10 @@ test('a session id is refused on a chat of another agent, and so is an invalid g
   expect(
     await answer('/agent/session', { chatId: chat.id, harness: 'codex', sessionId: 'thread' }),
   ).toMatchObject({ sessionId: 'thread', harness: 'codex' })
+  // a blank id clears the conversation rather than storing an empty one
+  expect(
+    await answer('/agent/session', { chatId: chat.id, harness: 'codex', sessionId: '  ' }),
+  ).toMatchObject({ sessionId: null })
 
   const gateway = await call('/agent/harness-gateway', {
     action: 'set',
@@ -241,6 +263,13 @@ test('the queue route parks a message behind a turn and announces every change',
     message: 'on reflection',
   }))!.json()) as ChatInfo
   expect(edited.queued.map((message) => message.text)).toEqual(['on reflection'])
+  const behind = await submit('and me')
+  const moved = (await (await post('/agent/queue', {
+    action: 'move',
+    id: behind.queued!.id,
+    direction: 'up',
+  }))!.json()) as ChatInfo
+  expect(moved.queued.map((message) => message.text)).toEqual(['and me', 'on reflection'])
   expect(events.filter((event) => event.type === 'chats').length).toBeGreaterThanOrEqual(2)
 
   expect((await post('/agent/queue', { action: 'remove', id: 'not-a-message' }))?.status).toBe(400)

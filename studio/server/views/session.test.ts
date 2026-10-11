@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, setSystemTime, test } from 'bun:test'
 
 import type { ViewInfo } from '../../shared/contracts/schema'
 
@@ -84,4 +84,22 @@ test('refuses a launch the preparation does not cover', async () => {
       },
     }),
   ).toEqual({ status: 'unavailable', reason: 'Permission denied.' })
+  // nor is a session the CLI returned without its page or its route
+  expect(
+    await launchViewSession('/workspace', origin, view, { preparationId }, 2000, {
+      ...cli('staging'),
+      open: async () => ({ id: 'v-a1b2' }) as never,
+    }),
+  ).toEqual({ status: 'unavailable', reason: '`astrale view` returned an invalid session.' })
+
+  // ten minutes on, the preparation is gone rather than reused for a stale instance
+  setSystemTime(new Date(Date.now() + 10 * 60_000))
+  try {
+    expect(await launch('/workspace', 'staging')).toEqual({
+      status: 'unavailable',
+      reason: 'The view preparation expired. Refresh the view and try again.',
+    })
+  } finally {
+    setSystemTime()
+  }
 })

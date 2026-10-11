@@ -1,10 +1,11 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { SCAFFOLDER } from '../../../src/lib/scaffolder'
-import { annotateOrigin, scaffoldArgs } from './create'
+import { annotateOrigin, createDomain } from './create'
+import { initWorkspaceRoot, workspaceRoot } from './root'
 
 const roots: string[] = []
 
@@ -37,6 +38,36 @@ export const schema = defineSchema(ORIGIN, input)
   expect(source.match(/\/\/ ORIGIN —/g)).toHaveLength(1)
 })
 
-test('workspace creation scaffolds from the shared range and names no instance', () => {
-  expect(scaffoldArgs('crm')).toEqual(['--yes', SCAFFOLDER, 'crm', '--yes'])
+test('creation refuses a bad name or a taken folder, scaffolds with no instance, and reports a refusal', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-create-'))
+  roots.push(root)
+  mkdirSync(join(root, 'taken'))
+  // an npx that records its argv and refuses, so nothing is fetched or scaffolded
+  const bin = join(root, '.bin')
+  mkdirSync(bin)
+  writeFileSync(
+    join(bin, 'npx'),
+    `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(root, 'argv')}"\necho 'scaffold refused'\nexit 1\n`,
+  )
+  chmodSync(join(bin, 'npx'), 0o755)
+  const previous = { root: workspaceRoot(), path: process.env.PATH }
+  initWorkspaceRoot(root)
+  process.env.PATH = `${bin}:${previous.path}`
+  try {
+    for (const name of ['../escape', '.hidden', 'Two words'])
+      expect(await createDomain(name)).toMatchObject({ ok: false, output: '' })
+    expect((await createDomain('taken')).error).toContain('already exists')
+
+    expect(await createDomain('crm')).toMatchObject({ ok: false, output: 'scaffold refused' })
+    // the shared scaffolder range, non-interactive, naming no instance
+    expect(readFileSync(join(root, 'argv'), 'utf8').trim().split('\n')).toEqual([
+      '--yes',
+      SCAFFOLDER,
+      'crm',
+      '--yes',
+    ])
+  } finally {
+    initWorkspaceRoot(previous.root)
+    process.env.PATH = previous.path
+  }
 })
