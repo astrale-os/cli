@@ -78,18 +78,14 @@ export const CLI_UI_SEARCH_HANDOFF = defineLaw({
   ],
 })
 
-export const CLI_UI_REQUEST_DRAFT = defineLaw({
-  id: 'CLI-UI-REQUEST-DRAFT',
+export const CLI_UI_REQUEST = defineLaw({
+  id: 'CLI-UI-REQUEST',
   statement:
-    'A UI request command produces one bounded prefilled public GitHub form URL; opening it never claims that an issue exists, and machine output has no browser side effect.',
+    'A UI request submits one bounded, normalized intent with a deterministic idempotency key to the UI Domain and admits only an exact receipt.',
   tests: [
     {
       file: '../__tests__/request.test.ts',
-      id: 'normalizes only line endings and outer whitespace into the canonical form URL',
-    },
-    {
-      file: '../__tests__/request.test.ts',
-      id: 'has no browser side effect in machine mode',
+      id: 'submits one normalized intent under a deterministic key and returns the exact receipt',
     },
   ],
 })

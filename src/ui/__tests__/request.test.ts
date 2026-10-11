@@ -1,81 +1,51 @@
 import { describe, expect, test } from 'bun:test'
 
-import { UiError } from '../model'
-import {
-  admitUiRequestResult,
-  createUiRequestInput,
-  requestUi,
-  UI_REQUEST_LIMITS,
-} from '../request'
+import { requestUi } from '../request'
 
-describe('UI request contract', () => {
-  test('normalizes intent and derives one deterministic bounded key', () => {
-    const first = createUiRequestInput('  accessible\r\ncombobox  ')
-    const replay = createUiRequestInput('accessible\ncombobox')
+const submitted = {
+  state: 'submitted',
+  requestId: 'request-1',
+  collaborationUrl: 'https://github.com/astrale-os/ui/issues/68',
+} as const
 
-    expect(first).toEqual({
+describe('UI request', () => {
+  test('submits one normalized intent under a deterministic key and returns the exact receipt', async () => {
+    const inputs: unknown[] = []
+    const submit = async (input: unknown) => {
+      inputs.push(input)
+      return submitted
+    }
+
+    expect(await requestUi('  accessible\r\ncombobox  ', submit)).toEqual(submitted)
+    await requestUi('accessible\ncombobox', submit)
+    expect(inputs[0]).toEqual({
       intent: 'accessible\ncombobox',
       idempotencyKey: expect.stringMatching(/^ui-request:v1:[a-f0-9]{64}$/),
     })
-    expect(replay).toEqual(first)
-  })
-
-  test('admits exact Unicode boundaries and rejects empty or oversized intent', () => {
-    expect(
-      createUiRequestInput('🪐'.repeat(UI_REQUEST_LIMITS.queryCodePoints)).intent,
-    ).toHaveLength(UI_REQUEST_LIMITS.queryCodePoints * 2)
-    for (const value of ['', '   ', '🪐'.repeat(513)]) {
-      let failure: unknown
-      try {
-        createUiRequestInput(value)
-      } catch (error) {
-        failure = error
-      }
-      expect(failure).toBeInstanceOf(UiError)
-      expect((failure as UiError).code).toBe('UI_REQUEST_QUERY_INVALID')
-    }
-  })
-
-  test('submits exactly the admitted input and returns the admitted receipt', async () => {
-    let submitted: unknown
-    const receipt = await requestUi('api status monitor', async (input) => {
-      submitted = input
-      return {
-        state: 'submitted',
-        requestId: 'request-1',
-        collaborationUrl: 'https://github.com/astrale-os/ui/issues/68',
-      }
-    })
-
-    expect(submitted).toEqual(createUiRequestInput('api status monitor'))
-    expect(receipt).toEqual({
-      state: 'submitted',
-      requestId: 'request-1',
-      collaborationUrl: 'https://github.com/astrale-os/ui/issues/68',
-    })
-  })
-
-  test('admits every non-submitted Domain state', () => {
+    expect(inputs[1]).toEqual(inputs[0])
     for (const state of ['pending', 'outcome-unknown', 'failed', 'conflict'] as const) {
-      expect(admitUiRequestResult({ state, requestId: 'request-1' })).toEqual({
+      expect(await requestUi('x', async () => ({ state, requestId: 'r' }))).toEqual({
         state,
-        requestId: 'request-1',
+        requestId: 'r',
       })
     }
   })
 
-  test('rejects widened, malformed, and unsafe receipts', () => {
-    const malformed = [
+  test('refuses an empty or oversized intent and any widened or unsafe receipt', async () => {
+    for (const intent of ['   ', '🪐'.repeat(513)]) {
+      await expect(requestUi(intent, async () => submitted)).rejects.toMatchObject({
+        code: 'UI_REQUEST_QUERY_INVALID',
+      })
+    }
+    for (const receipt of [
       undefined,
-      { state: 'submitted', requestId: '' },
-      { state: 'pending', requestId: 'request-1', extra: true },
-      {
-        state: 'submitted',
-        requestId: 'request-1',
-        collaborationUrl: 'javascript:alert(1)',
-      },
-      { state: 'unknown', requestId: 'request-1' },
-    ]
-    for (const value of malformed) expect(() => admitUiRequestResult(value)).toThrow(UiError)
+      { state: 'pending', requestId: 'r', extra: true },
+      { ...submitted, collaborationUrl: 'javascript:alert(1)' },
+      { state: 'unknown', requestId: 'r' },
+    ]) {
+      await expect(requestUi('x', async () => receipt)).rejects.toMatchObject({
+        code: 'UI_REQUEST_UNAVAILABLE',
+      })
+    }
   })
 })

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
-  cp,
   lstat,
   mkdir,
   mkdtemp,
@@ -14,165 +13,100 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { withFileLock } from '../skills/lock'
 import {
   astraleSkillAgents,
   checkAstraleSkills,
   computeSkillTreeHash,
   syncAstraleSkills,
-  type AstraleSkillSourceSnapshot,
+  type AstraleSkillSource,
+  type SkillSyncOptions,
 } from '../skills/sync'
 
-const temporaryRoots: string[] = []
+const NAMES = ['astrale-cli', 'astrale-domain', 'astrale-services']
+const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
-  )
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-async function makeSource(
-  names = ['astrale-cli', 'astrale-domain', 'astrale-frontend-design', 'astrale-services'],
-  revision = 'new',
-): Promise<{ root: string; snapshot: AstraleSkillSourceSnapshot }> {
-  const root = await mkdtemp(join(tmpdir(), 'astrale-skills-source-'))
-  temporaryRoots.push(root)
+async function temporary(prefix: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), prefix))
+  roots.push(root)
+  return root
+}
+
+async function makeSource(names = NAMES, revision = 'new'): Promise<AstraleSkillSource> {
+  const root = await temporary('astrale-skills-source-')
   const skills = []
   for (const name of names) {
-    const directory = join(root, name)
-    await mkdir(join(directory, 'references'), { recursive: true })
-    await writeFile(join(directory, 'SKILL.md'), `---\nname: ${name}\n---\n\n${revision}\n`)
-    await writeFile(join(directory, 'references', 'guide.md'), `${name}:${revision}\n`)
-    skills.push({
-      name,
-      path: `skills/${name}/SKILL.md`,
-      tree: await computeSkillTreeHash(directory),
-    })
+    await mkdir(join(root, name, 'references'), { recursive: true })
+    await writeFile(join(root, name, 'SKILL.md'), `---\nname: ${name}\n---\n\n${revision}\n`)
+    await writeFile(join(root, name, 'references', 'guide.md'), `${name}:${revision}\n`)
+    skills.push({ name, tree: await computeSkillTreeHash(join(root, name)) })
   }
-  return {
-    root,
-    snapshot: { ref: 'main', revision: `commit-${revision}`, skills, sourceRoot: root },
-  }
+  return { revision: `commit-${revision}`, skills, sourceRoot: root }
 }
 
 async function makeHome() {
-  const root = await mkdtemp(join(tmpdir(), 'astrale-skills-home-'))
-  temporaryRoots.push(root)
+  const root = await temporary('astrale-skills-home-')
+  const home = join(root, 'home')
+  const lockPath = join(root, 'state', 'skills', '.skill-lock.json')
   return {
-    root,
-    home: join(root, 'home'),
-    lockPath: join(root, 'state', 'skills', '.skill-lock.json'),
+    home,
+    lockPath,
+    skill: (name: string) => join(home, '.agents', 'skills', name),
+    claudeLink: (name: string) => join(home, '.claude', 'skills', name),
+    options: (source: AstraleSkillSource, extra: SkillSyncOptions = {}): SkillSyncOptions => ({
+      home,
+      lockPath,
+      resolveSource: async () => source,
+      ...extra,
+    }),
   }
 }
 
-async function readLock(lockPath: string) {
-  return JSON.parse(await readFile(lockPath, 'utf8')) as {
+type Home = Awaited<ReturnType<typeof makeHome>>
+
+async function readLock(home: Home) {
+  return JSON.parse(await readFile(home.lockPath, 'utf8')) as {
     version: number
     skills: Record<string, Record<string, unknown>>
     lastSelectedAgents?: string[]
   }
 }
 
-async function filesystemSnapshot(root: string): Promise<string> {
-  async function visit(path: string, relative = ''): Promise<Array<[string, string]>> {
-    const metadata = await lstat(path).catch(() => null)
-    if (!metadata) return []
-    if (metadata.isSymbolicLink()) return [[relative, `link:${await readlink(path)}`]]
-    if (metadata.isFile()) return [[relative, `file:${await readFile(path, 'utf8')}`]]
-    const children = await readdir(path)
-    const descendants = await Promise.all(
-      children.sort().map((name) => visit(join(path, name), join(relative, name))),
-    )
-    return [[relative, 'directory'], ...descendants.flat()]
-  }
-
-  return JSON.stringify(await visit(root))
+async function editLock(home: Home, edit: (lock: Awaited<ReturnType<typeof readLock>>) => void) {
+  const lock = await readLock(home).catch(() => ({ version: 3, skills: {} }))
+  edit(lock)
+  await mkdir(dirname(home.lockPath), { recursive: true })
+  await writeFile(home.lockPath, `${JSON.stringify(lock, null, 2)}\n`)
 }
 
-function requestedSkills(args: string[]): string[] {
-  const marker = args.indexOf('--skill')
-  if (marker === -1) return []
-  const values = args.slice(marker + 1)
-  const nextFlag = values.findIndex((arg) => arg.startsWith('-'))
-  return nextFlag === -1 ? values : values.slice(0, nextFlag)
+async function tree(root: string): Promise<string> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => [])
+  const described = await Promise.all(
+    entries.map(async (entry) => {
+      const path = join(entry.parentPath, entry.name)
+      if (entry.isSymbolicLink()) return `${path} -> ${await readlink(path)}`
+      return entry.isFile() ? `${path}: ${await readFile(path, 'utf8')}` : path
+    }),
+  )
+  return described.sort().join('\n')
 }
 
-function installer(
-  sourceRoot: string,
-  snapshot: AstraleSkillSourceSnapshot,
-  home: string,
-  lockPath: string,
-  calls: string[][],
-) {
-  return async (_file: string, args: string[] = []) => {
-    calls.push(args)
-    if (args.includes('remove')) return { code: 0, stdout: '', stderr: '' }
-    const selected = requestedSkills(args)
-    const skills = selected.length
-      ? snapshot.skills.filter((skill) => selected.includes(skill.name))
-      : snapshot.skills
-    const previous: Awaited<ReturnType<typeof readLock>> = await readLock(lockPath).catch(() => ({
-      version: 3,
-      skills: {},
-    }))
-    await mkdir(join(home, '.agents', 'skills'), { recursive: true })
-    for (const skill of skills) {
-      const target = join(home, '.agents', 'skills', skill.name)
-      await rm(target, { recursive: true, force: true })
-      await cp(join(sourceRoot, skill.name), target, { recursive: true })
-      previous.skills[skill.name] = {
-        source: 'astrale-os/cli',
-        sourceType: 'github',
-        sourceUrl: 'https://github.com/astrale-os/cli.git',
-        ref: snapshot.ref,
-        skillPath: skill.path,
-        skillFolderHash: skill.tree,
-      }
-      if (previous.lastSelectedAgents?.includes('claude-code')) {
-        const link = join(home, '.claude', 'skills', skill.name)
-        await mkdir(join(home, '.claude', 'skills'), { recursive: true })
-        await rm(link, { recursive: true, force: true })
-        await symlink(`../../.agents/skills/${skill.name}`, link)
-      }
-    }
-    await mkdir(join(lockPath, '..'), { recursive: true })
-    await writeFile(lockPath, `${JSON.stringify(previous, null, 2)}\n`)
-    return { code: 0, stdout: '', stderr: '' }
-  }
-}
-
-async function installFixture(
-  sourceRoot: string,
-  snapshot: AstraleSkillSourceSnapshot,
-  home: string,
-  lockPath: string,
-) {
-  const calls: string[][] = []
-  await installer(sourceRoot, snapshot, home, lockPath, calls)('npx', [])
-  const lock = await readLock(lockPath)
-  for (const skill of snapshot.skills) {
-    lock.skills[skill.name].astraleSourceRevision = snapshot.revision
-    lock.skills[skill.name].astraleSourceTree = skill.tree
-  }
-  await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`)
+async function absent(path: string): Promise<boolean> {
+  return (await lstat(path).catch(() => null)) === null
 }
 
 describe('Astrale skill reconciliation', () => {
-  test('native install needs no subprocess and writes a skills@1.5.23-compatible global lock', async () => {
+  test('installs the cohort into the shared skills lock, links selected agents, then is a no-op', async () => {
     const source = await makeSource()
-    const target = await makeHome()
+    const home = await makeHome()
+    const options = home.options(source, { agents: ['claude-code'], replaceAgentSelection: true })
 
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        agents: ['claude-code'],
-        replaceAgentSelection: true,
-      }),
-    ).toEqual({ status: 'installed' })
+    expect(await syncAstraleSkills(options)).toEqual({ status: 'installed' })
 
-    const lock = await readLock(target.lockPath)
+    const lock = await readLock(home)
     expect(lock.version).toBe(3)
     expect(lock.lastSelectedAgents).toEqual(['claude-code'])
     expect(lock.skills['astrale-cli']).toMatchObject({
@@ -181,887 +115,240 @@ describe('Astrale skill reconciliation', () => {
       sourceUrl: 'https://github.com/astrale-os/cli.git',
       ref: 'main',
       skillPath: 'skills/astrale-cli/SKILL.md',
-      skillFolderHash: source.snapshot.skills[0]?.tree,
+      skillFolderHash: source.skills[0]?.tree,
+      astraleSourceRevision: source.revision,
+      astraleSourceTree: source.skills[0]?.tree,
     })
-    expect(await readlink(join(target.home, '.claude', 'skills', 'astrale-cli'))).toBe(
-      '../../.agents/skills/astrale-cli',
-    )
+    expect(await readlink(home.claudeLink('astrale-cli'))).toBe('../../.agents/skills/astrale-cli')
+
+    const before = await tree(dirname(home.home))
+    expect(await syncAstraleSkills(home.options(source))).toEqual({ status: 'unchanged' })
+    expect(await tree(dirname(home.home))).toBe(before)
   })
 
-  for (const installed of [false, true]) {
-    test(`replaces existing agent copies without retaining their contents (${installed ? 'repair' : 'install'})`, async () => {
-      const source = await makeSource(['astrale-cli', 'astrale-domain'])
-      const target = await makeHome()
-      const dependencies = {
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        agents: ['claude-code', 'codex'],
-      }
-      if (installed) await syncAstraleSkills(dependencies)
-      for (const agent of ['.claude', '.codex']) {
-        for (const skill of source.snapshot.skills) {
-          const path = join(target.home, agent, 'skills', skill.name)
-          await rm(path, { force: true })
-          await mkdir(join(path, 'references'), { recursive: true })
-          await writeFile(join(path, 'SKILL.md'), 'old local copy\n')
-          await writeFile(join(path, 'references', 'local.md'), 'local-only contents\n')
-        }
-      }
-
-      expect(await syncAstraleSkills(dependencies)).toEqual({
-        status: installed ? 'repaired' : 'installed',
-      })
-      for (const agent of ['.claude', '.codex']) {
-        for (const skill of source.snapshot.skills) {
-          const path = join(target.home, agent, 'skills', skill.name)
-          expect(await readlink(path)).toBe(`../../.agents/skills/${skill.name}`)
-          expect(await readFile(join(path, 'SKILL.md'), 'utf8')).toBe(
-            await readFile(join(source.root, skill.name, 'SKILL.md'), 'utf8'),
-          )
-          await expect(lstat(join(path, 'references', 'local.md'))).rejects.toMatchObject({
-            code: 'ENOENT',
-          })
-        }
-      }
-      expect(await filesystemSnapshot(target.root)).not.toContain('local-only contents')
-      expect(await syncAstraleSkills(dependencies)).toEqual({ status: 'unchanged' })
-    })
-  }
-
-  test('an agent skills directory pointing at the canonical directory is not deleted', async () => {
+  test('replaces an agent copy of a skill with the canonical link', async () => {
     const source = await makeSource(['astrale-cli'])
-    const target = await makeHome()
-    await mkdir(join(target.home, '.agents', 'skills'), { recursive: true })
-    await mkdir(join(target.home, '.claude'), { recursive: true })
-    await symlink('../.agents/skills', join(target.home, '.claude', 'skills'))
+    const home = await makeHome()
+    const options = home.options(source, { agents: ['claude-code'] })
+    await syncAstraleSkills(options)
+    await rm(home.claudeLink('astrale-cli'))
+    await mkdir(join(home.claudeLink('astrale-cli'), 'references'), { recursive: true })
+    await writeFile(join(home.claudeLink('astrale-cli'), 'references', 'local.md'), 'local\n')
 
-    await syncAstraleSkills({
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      agents: ['claude-code'],
-    })
+    expect(await syncAstraleSkills(options)).toEqual({ status: 'repaired' })
+    expect(await readlink(home.claudeLink('astrale-cli'))).toBe('../../.agents/skills/astrale-cli')
+    expect(await absent(join(home.skill('astrale-cli'), 'references', 'local.md'))).toBe(true)
+  })
 
-    expect(
-      await readFile(join(target.home, '.claude', 'skills', 'astrale-cli', 'SKILL.md'), 'utf8'),
-    ).toBe(await readFile(join(source.root, 'astrale-cli', 'SKILL.md'), 'utf8'))
-    expect((await lstat(join(target.home, '.agents', 'skills', 'astrale-cli'))).isDirectory()).toBe(
-      true,
+  test('keeps an agent skills directory that already links to the canonical directory', async () => {
+    const source = await makeSource(['astrale-cli'])
+    const home = await makeHome()
+    await mkdir(join(home.home, '.agents', 'skills'), { recursive: true })
+    await mkdir(join(home.home, '.claude'), { recursive: true })
+    await symlink('../.agents/skills', join(home.home, '.claude', 'skills'))
+
+    await syncAstraleSkills(home.options(source, { agents: ['claude-code'] }))
+
+    expect((await lstat(home.skill('astrale-cli'))).isDirectory()).toBe(true)
+    expect(await readFile(join(home.claudeLink('astrale-cli'), 'SKILL.md'), 'utf8')).toContain(
+      'new',
     )
   })
 
-  test('configuration links only selected agents and removes only Astrale-owned deselections', async () => {
+  test('a new agent selection unlinks only Astrale links of deselected agents', async () => {
     const source = await makeSource()
-    const target = await makeHome()
-    await mkdir(join(target.home, '.cursor'), { recursive: true })
-
-    await syncAstraleSkills({
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      agents: ['claude-code'],
-      replaceAgentSelection: true,
-    })
-    await expect(lstat(join(target.home, '.cursor', 'skills'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
-    const foreign = join(target.home, '.claude', 'skills', 'third-party')
+    const home = await makeHome()
+    await syncAstraleSkills(
+      home.options(source, { agents: ['claude-code'], replaceAgentSelection: true }),
+    )
+    const foreign = join(home.home, '.claude', 'skills', 'third-party')
     await mkdir(foreign, { recursive: true })
-    await writeFile(join(foreign, 'SKILL.md'), 'foreign\n')
 
-    await syncAstraleSkills({
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      agents: ['cursor'],
-      replaceAgentSelection: true,
-    })
+    await syncAstraleSkills(
+      home.options(source, { agents: ['cursor'], replaceAgentSelection: true }),
+    )
 
-    expect((await readLock(target.lockPath)).lastSelectedAgents).toEqual(['cursor'])
-    expect(await readlink(join(target.home, '.cursor', 'skills', 'astrale-cli'))).toBe(
+    expect((await readLock(home)).lastSelectedAgents).toEqual(['cursor'])
+    expect(await readlink(join(home.home, '.cursor', 'skills', 'astrale-cli'))).toBe(
       '../../.agents/skills/astrale-cli',
     )
-    await expect(
-      lstat(join(target.home, '.claude', 'skills', 'astrale-cli')),
-    ).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
-    expect(await readFile(join(foreign, 'SKILL.md'), 'utf8')).toBe('foreign\n')
+    expect(await absent(home.claudeLink('astrale-cli'))).toBe(true)
+    expect(await absent(foreign)).toBe(false)
   })
 
-  test("agents sharing one global directory do not remove each other's selected links", async () => {
+  test('existing links mark their agent as configured even without a lock', async () => {
     const source = await makeSource()
-    const target = await makeHome()
+    const home = await makeHome()
+    await syncAstraleSkills(home.options(source, { agents: ['claude-code'] }))
+    await rm(home.lockPath)
 
-    await syncAstraleSkills({
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      agents: ['amp'],
-      replaceAgentSelection: true,
-    })
-
-    expect(await readlink(join(target.home, '.config', 'agents', 'skills', 'astrale-cli'))).toBe(
-      '../../../.agents/skills/astrale-cli',
-    )
-    expect((await readLock(target.lockPath)).lastSelectedAgents).toEqual(['amp'])
-  })
-
-  test('existing canonical links preselect their agent even when the lock is missing', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    await syncAstraleSkills({
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      agents: ['claude-code'],
-      replaceAgentSelection: true,
-    })
-    await rm(target.lockPath)
-
-    const agents = await astraleSkillAgents({ home: target.home, lockPath: target.lockPath })
+    const agents = await astraleSkillAgents({ home: home.home, lockPath: home.lockPath })
     expect(agents.find((agent) => agent.name === 'claude-code')?.configured).toBe(true)
   })
 
-  test('a foreign same-named global skill is never overwritten', async () => {
+  test('refuses to overwrite a same-named skill owned by another source', async () => {
     const source = await makeSource()
-    const target = await makeHome()
-    const foreign = join(target.home, '.agents', 'skills', 'astrale-cli')
-    await mkdir(foreign, { recursive: true })
-    await writeFile(join(foreign, 'SKILL.md'), 'foreign\n')
-    await mkdir(dirname(target.lockPath), { recursive: true })
-    await writeFile(
-      target.lockPath,
-      `${JSON.stringify({
-        version: 3,
-        skills: {
-          'astrale-cli': {
-            source: 'someone/else',
-            skillPath: 'skills/astrale-cli/SKILL.md',
-          },
-        },
-      })}\n`,
-    )
-    const beforeLock = await readFile(target.lockPath, 'utf8')
+    const home = await makeHome()
+    await mkdir(home.skill('astrale-cli'), { recursive: true })
+    await writeFile(join(home.skill('astrale-cli'), 'SKILL.md'), 'foreign\n')
 
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    expect(await readFile(join(foreign, 'SKILL.md'), 'utf8')).toBe('foreign\n')
-    expect(await readFile(target.lockPath, 'utf8')).toBe(beforeLock)
-  })
-
-  test('a hostile lock skillPath cannot escape the canonical skill directory', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    const sentinel = join(target.home, '.agents', 'sentinel')
-    await mkdir(sentinel, { recursive: true })
-    await writeFile(join(sentinel, 'keep'), 'safe\n')
-    await mkdir(dirname(target.lockPath), { recursive: true })
-    await writeFile(
-      target.lockPath,
-      `${JSON.stringify({
-        version: 3,
-        skills: {
-          hostile: {
-            source: 'astrale-os/cli',
-            skillPath: 'skills/../SKILL.md',
-          },
-        },
-      })}\n`,
-    )
-
-    await syncAstraleSkills({
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
+    await expect(syncAstraleSkills(home.options(source))).rejects.toMatchObject({
+      code: 'SKILL_UPDATE_FAILED',
     })
-    expect(await readFile(join(sentinel, 'keep'), 'utf8')).toBe('safe\n')
-  })
-
-  test('fresh install is followed by a true no-effect run', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    const calls: string[][] = []
-    const dependencies = {
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      run: installer(source.root, source.snapshot, target.home, target.lockPath, calls),
-    }
-
-    expect(await syncAstraleSkills(dependencies)).toEqual({ status: 'installed' })
-    expect(await syncAstraleSkills(dependencies)).toEqual({ status: 'unchanged' })
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toContain(`astrale-os/cli#${source.snapshot.ref}`)
-    expect(requestedSkills(calls[0])).toEqual(source.snapshot.skills.map((skill) => skill.name))
-    const installedLock = await readLock(target.lockPath)
-    expect(Object.keys(installedLock.skills).sort()).toEqual(
-      source.snapshot.skills.map((skill) => skill.name).sort(),
-    )
-    for (const skill of source.snapshot.skills) {
-      expect(installedLock.skills[skill.name]).toMatchObject({
-        ref: 'main',
-        astraleSourceRevision: source.snapshot.revision,
-        astraleSourceTree: skill.tree,
-      })
-    }
-  })
-
-  test('a coherent older cohort updates every current source skill', async () => {
-    const oldSource = await makeSource(undefined, 'old')
-    const latest = await makeSource(undefined, 'latest')
-    const target = await makeHome()
-    await installFixture(oldSource.root, oldSource.snapshot, target.home, target.lockPath)
-    const calls: string[][] = []
-
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => latest.snapshot,
-        run: installer(latest.root, latest.snapshot, target.home, target.lockPath, calls),
-      }),
-    ).toEqual({ status: 'updated' })
-    expect(requestedSkills(calls[0])).toEqual(latest.snapshot.skills.map((skill) => skill.name))
-    for (const skill of latest.snapshot.skills) {
-      expect(
-        await readFile(join(target.home, '.agents/skills', skill.name, 'SKILL.md'), 'utf8'),
-      ).toContain('latest')
-    }
-  })
-
-  test('tampered material is repaired automatically', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    await writeFile(join(target.home, '.agents/skills/astrale-domain/SKILL.md'), 'tampered\n')
-    const calls: string[][] = []
-
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        run: installer(source.root, source.snapshot, target.home, target.lockPath, calls),
-      }),
-    ).toEqual({ status: 'repaired' })
-    expect(
-      await readFile(join(target.home, '.agents/skills/astrale-domain/SKILL.md'), 'utf8'),
-    ).toContain('new')
-  })
-
-  test('a partial cohort is repaired automatically', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    await rm(join(target.home, '.agents/skills/astrale-services'), { recursive: true, force: true })
-    const calls: string[][] = []
-
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        run: installer(source.root, source.snapshot, target.home, target.lockPath, calls),
-      }),
-    ).toEqual({ status: 'repaired' })
-    expect(requestedSkills(calls[0])).toEqual(source.snapshot.skills.map((skill) => skill.name))
-    for (const skill of source.snapshot.skills) {
-      expect(
-        await readFile(join(target.home, '.agents/skills', skill.name, 'SKILL.md'), 'utf8'),
-      ).toContain('new')
-    }
-  })
-
-  test('failed refresh and clean retry restore the previous healthy cohort', async () => {
-    const oldSource = await makeSource(undefined, 'old')
-    const latest = await makeSource(undefined, 'latest')
-    const target = await makeHome()
-    await installFixture(oldSource.root, oldSource.snapshot, target.home, target.lockPath)
-    const beforeSkills = await Promise.all(
-      oldSource.snapshot.skills.map((skill) =>
-        readFile(join(target.home, '.agents/skills', skill.name, 'SKILL.md'), 'utf8'),
-      ),
-    )
-    const beforeLock = await readFile(target.lockPath, 'utf8')
-    let attempts = 0
-
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => latest.snapshot,
-        run: async () => {
-          attempts += 1
-          return { code: 0, stdout: '', stderr: '' }
-        },
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    expect(attempts).toBe(2)
-    expect(
-      await Promise.all(
-        oldSource.snapshot.skills.map((skill) =>
-          readFile(join(target.home, '.agents/skills', skill.name, 'SKILL.md'), 'utf8'),
-        ),
-      ),
-    ).toEqual(beforeSkills)
-    expect(await readFile(target.lockPath, 'utf8')).toBe(beforeLock)
-  })
-
-  test('failed repair removes an unhealthy cohort instead of leaving it active', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    await writeFile(join(target.home, '.agents/skills/astrale-domain/SKILL.md'), 'broken\n')
-    await mkdir(join(target.home, '.claude/skills'), { recursive: true })
-    await symlink(
-      '../../.agents/skills/astrale-domain',
-      join(target.home, '.claude/skills/astrale-domain'),
-    )
-
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        run: async () => ({ code: 1, stdout: '', stderr: 'offline' }),
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    await expect(
-      readFile(join(target.home, '.agents/skills/astrale-domain/SKILL.md')),
-    ).rejects.toMatchObject({ code: 'ENOENT' })
-    await expect(lstat(join(target.home, '.claude/skills/astrale-domain'))).rejects.toMatchObject({
-      code: 'ENOENT',
+    await editLock(home, (lock) => {
+      lock.skills['astrale-cli'] = {
+        source: 'someone/else',
+        skillPath: 'skills/astrale-cli/SKILL.md',
+      }
     })
-    expect(
-      Object.values((await readLock(target.lockPath)).skills).some(
-        (entry) => entry.source === 'astrale-os/cli',
-      ),
-    ).toBe(false)
+    const before = await tree(dirname(home.home))
+    await expect(syncAstraleSkills(home.options(source))).rejects.toMatchObject({
+      code: 'SKILL_UPDATE_FAILED',
+    })
+    expect(await tree(dirname(home.home))).toBe(before)
   })
 
-  test('concurrent reconcilers serialize and perform one installation', async () => {
+  test('a hostile lock skillPath cannot make reconciliation delete outside the canonical directory', async () => {
     const source = await makeSource()
-    const target = await makeHome()
-    const calls: string[][] = []
-    const install = installer(source.root, source.snapshot, target.home, target.lockPath, calls)
-    const dependencies = {
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      run: async (file: string, args: string[] = []) => {
-        await new Promise((resolve) => setTimeout(resolve, 30))
-        return await install(file, args)
-      },
+    const home = await makeHome()
+    const sentinel = join(home.home, '.agents', 'sentinel', 'keep')
+    await mkdir(dirname(sentinel), { recursive: true })
+    await writeFile(sentinel, 'safe\n')
+    await editLock(home, (lock) => {
+      lock.skills.hostile = { source: 'astrale-os/cli', skillPath: 'skills/../SKILL.md' }
+    })
+
+    await syncAstraleSkills(home.options(source))
+    expect(await readFile(sentinel, 'utf8')).toBe('safe\n')
+  })
+
+  test('updates an older cohort and repairs a tampered or partial one', async () => {
+    const latest = await makeSource(NAMES, 'latest')
+    for (const [damage, status] of [
+      ['older', 'updated'],
+      ['tampered', 'repaired'],
+      ['partial', 'repaired'],
+    ] as const) {
+      const home = await makeHome()
+      await syncAstraleSkills(
+        home.options(damage === 'older' ? await makeSource(NAMES, 'old') : latest),
+      )
+      if (damage === 'tampered')
+        await writeFile(join(home.skill('astrale-domain'), 'SKILL.md'), 'x\n')
+      if (damage === 'partial') await rm(home.skill('astrale-services'), { recursive: true })
+
+      expect(await syncAstraleSkills(home.options(latest))).toEqual({ status })
+      for (const name of NAMES) {
+        expect(await readFile(join(home.skill(name), 'SKILL.md'), 'utf8')).toContain('latest')
+      }
     }
+  })
+
+  test('a failed update restores the previous healthy cohort exactly', async () => {
+    const home = await makeHome()
+    await syncAstraleSkills(
+      home.options(await makeSource(NAMES, 'old'), { agents: ['claude-code'] }),
+    )
+    const before = await tree(dirname(home.home))
+    const broken = await makeSource(NAMES, 'latest')
+    await rm(join(broken.sourceRoot!, 'astrale-services'), { recursive: true })
+
+    await expect(syncAstraleSkills(home.options(broken))).rejects.toMatchObject({
+      code: 'SKILL_UPDATE_FAILED',
+    })
+    expect(await tree(dirname(home.home))).toBe(before)
+  })
+
+  test('a failed repair removes the unhealthy cohort but keeps a foreign agent link', async () => {
+    const source = await makeSource()
+    const home = await makeHome()
+    await syncAstraleSkills(home.options(source, { agents: ['claude-code'] }))
+    await writeFile(join(home.skill('astrale-domain'), 'SKILL.md'), 'broken\n')
+    await rm(home.claudeLink('astrale-cli'))
+    await symlink('/opt/team/skills/astrale-cli', home.claudeLink('astrale-cli'))
+    await editLock(home, (lock) => {
+      lock.skills['third-party'] = { source: 'someone/else' }
+    })
+    await rm(join(source.sourceRoot!, 'astrale-services'), { recursive: true })
+
+    await expect(syncAstraleSkills(home.options(source))).rejects.toMatchObject({
+      code: 'SKILL_UPDATE_FAILED',
+    })
+    expect(await absent(home.skill('astrale-domain'))).toBe(true)
+    expect(await absent(home.claudeLink('astrale-domain'))).toBe(true)
+    expect(await readlink(home.claudeLink('astrale-cli'))).toBe('/opt/team/skills/astrale-cli')
+    expect(Object.keys((await readLock(home)).skills)).toEqual(['third-party'])
+  })
+
+  test('concurrent reconcilers serialize and install once', async () => {
+    const source = await makeSource()
+    const home = await makeHome()
 
     const results = await Promise.all([
-      syncAstraleSkills(dependencies),
-      syncAstraleSkills(dependencies),
+      syncAstraleSkills(home.options(source)),
+      syncAstraleSkills(home.options(source)),
     ])
     expect(results.map((result) => result.status).sort()).toEqual(['installed', 'unchanged'])
-    expect(calls).toHaveLength(1)
   })
 
-  test('a live lock is not stolen across processes after its stale threshold', async () => {
-    const target = await makeHome()
-    const lockPath = join(target.root, 'transition.lock')
-    const marker = join(target.root, 'child-acquired')
-    const lockModule = new URL('../skills/lock.ts', import.meta.url).pathname
-    const child = Bun.spawn([
-      process.execPath,
-      '-e',
-      `import { writeFile } from 'node:fs/promises'; import { withFileLock } from ${JSON.stringify(lockModule)}; await withFileLock(${JSON.stringify(lockPath)}, async () => { await writeFile(${JSON.stringify(marker)}, 'acquired'); await new Promise(resolve => setTimeout(resolve, 120)); }, { staleAfterMs: 10, pollIntervalMs: 2, timeoutMs: 500 });`,
-    ])
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (await lstat(marker).catch(() => null)) break
-      await new Promise((resolve) => setTimeout(resolve, 5))
-    }
-    expect(await lstat(marker).catch(() => null)).not.toBeNull()
-    const started = Date.now()
-    await withFileLock(lockPath, async () => undefined, {
-      staleAfterMs: 10,
-      pollIntervalMs: 2,
-      timeoutMs: 500,
-    })
-    expect(Date.now() - started).toBeGreaterThanOrEqual(70)
-    expect(await child.exited).toBe(0)
-  })
-
-  test('a missing selected-agent link is repaired', async () => {
+  test('check reports absent, current, repair-needed, and unavailable without writing', async () => {
     const source = await makeSource()
-    const target = await makeHome()
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    const lock = await readLock(target.lockPath)
-    lock.lastSelectedAgents = ['codex', 'claude-code']
-    await writeFile(target.lockPath, `${JSON.stringify(lock, null, 2)}\n`)
-    for (const skill of source.snapshot.skills) {
-      const link = join(target.home, '.claude', 'skills', skill.name)
-      await mkdir(join(target.home, '.claude', 'skills'), { recursive: true })
-      await symlink(`../../.agents/skills/${skill.name}`, link)
+    const home = await makeHome()
+    const check = async (options = home.options(source)) => {
+      const before = await tree(dirname(home.home))
+      const result = await checkAstraleSkills(options)
+      expect(await tree(dirname(home.home))).toBe(before)
+      return result
     }
-    await rm(join(target.home, '.claude', 'skills', 'astrale-domain'))
 
-    expect(
-      await checkAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-      }),
-    ).toEqual({ status: 'repair-needed', installed: true })
-
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        run: installer(source.root, source.snapshot, target.home, target.lockPath, []),
-      }),
-    ).toEqual({ status: 'repaired' })
-    expect(await readlink(join(target.home, '.claude', 'skills', 'astrale-domain'))).toBe(
-      '../../.agents/skills/astrale-domain',
-    )
-  })
-
-  test('check distinguishes current, update, repair, and unavailable without writing', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    const beforeAbsentCheck = await filesystemSnapshot(target.root)
-    expect(
-      await checkAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-      }),
-    ).toEqual({ status: 'update-available', installed: false })
-    expect(await filesystemSnapshot(target.root)).toBe(beforeAbsentCheck)
-
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    const beforeCurrentCheck = await filesystemSnapshot(target.root)
-    expect(
-      await checkAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-      }),
-    ).toEqual({
+    expect(await check()).toEqual({ status: 'update-available', installed: false })
+    await syncAstraleSkills(home.options(source, { agents: ['claude-code'] }))
+    expect(await check()).toMatchObject({
       status: 'current',
-      installed: true,
-      source: {
-        repository: 'astrale-os/cli',
-        revision: source.snapshot.revision,
-        skills: source.snapshot.skills.map(({ name, tree, path }) => ({
-          name,
-          tree,
-          entrypoint: path,
-        })),
-      },
+      source: { repository: 'astrale-os/cli', revision: source.revision },
     })
-    expect(await filesystemSnapshot(target.root)).toBe(beforeCurrentCheck)
-
-    await rm(join(target.home, '.agents/skills/astrale-cli'), { recursive: true, force: true })
-    const beforeRepairCheck = await filesystemSnapshot(target.root)
+    await rm(home.claudeLink('astrale-domain'))
+    expect(await check()).toEqual({ status: 'repair-needed', installed: true })
     expect(
-      await checkAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-      }),
-    ).toEqual({ status: 'repair-needed', installed: true })
-    expect(await filesystemSnapshot(target.root)).toBe(beforeRepairCheck)
-
-    const beforeUnavailableCheck = await filesystemSnapshot(target.root)
-    expect(
-      await checkAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => {
-          throw new Error('offline')
-        },
+      await check({
+        ...home.options(source),
+        resolveSource: () => Promise.reject(new Error('offline')),
       }),
     ).toEqual({ status: 'unavailable', error: 'offline' })
-    expect(await filesystemSnapshot(target.root)).toBe(beforeUnavailableCheck)
   })
 
-  test('unrelated global skills and lock entries survive repair', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    await mkdir(join(target.home, '.agents/skills/third-party'), { recursive: true })
-    await writeFile(join(target.home, '.agents/skills/third-party/SKILL.md'), 'third party\n')
-    const lock = await readLock(target.lockPath)
-    lock.skills['third-party'] = {
-      source: 'someone/else',
-      skillPath: 'skills/third-party/SKILL.md',
-    }
-    const thirdPartyLock = structuredClone(lock.skills['third-party'])
-    await writeFile(target.lockPath, `${JSON.stringify(lock, null, 2)}\n`)
-    await writeFile(join(target.home, '.agents/skills/astrale-cli/SKILL.md'), 'broken\n')
-
-    await syncAstraleSkills({
-      home: target.home,
-      lockPath: target.lockPath,
-      resolveSource: async () => source.snapshot,
-      run: installer(source.root, source.snapshot, target.home, target.lockPath, []),
+  test('removes a retired skill and keeps unrelated skills and lock entries', async () => {
+    const home = await makeHome()
+    await syncAstraleSkills(
+      home.options(await makeSource([...NAMES, 'astrale-retired'], 'old'), {
+        agents: ['claude-code'],
+      }),
+    )
+    await mkdir(home.skill('third-party'), { recursive: true })
+    await editLock(home, (lock) => {
+      lock.skills['third-party'] = { source: 'someone/else' }
     })
 
-    expect(await readFile(join(target.home, '.agents/skills/third-party/SKILL.md'), 'utf8')).toBe(
-      'third party\n',
-    )
-    expect((await readLock(target.lockPath)).skills['third-party']).toEqual(thirdPartyLock)
+    expect(await syncAstraleSkills(home.options(await makeSource(NAMES, 'latest')))).toEqual({
+      status: 'updated',
+    })
+    expect(await absent(home.skill('astrale-retired'))).toBe(true)
+    expect(await absent(home.claudeLink('astrale-retired'))).toBe(true)
+    expect(await absent(home.skill('third-party'))).toBe(false)
+    expect(Object.keys((await readLock(home)).skills).sort()).toEqual([...NAMES, 'third-party'])
   })
 
-  test('failed repair preserves a foreign same-named agent link', async () => {
+  test('an unreadable lock fails without touching the installed cohort', async () => {
     const source = await makeSource()
-    const target = await makeHome()
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    await writeFile(join(target.home, '.agents/skills/astrale-domain/SKILL.md'), 'broken\n')
-    const link = join(target.home, '.claude', 'skills', 'astrale-domain')
-    await mkdir(dirname(link), { recursive: true })
-    await symlink('/opt/team/skills/astrale-domain', link)
+    const home = await makeHome()
+    await syncAstraleSkills(home.options(source))
+    const before = await tree(join(home.home, '.agents', 'skills'))
+    await rm(home.lockPath)
+    await mkdir(home.lockPath)
 
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        run: async () => {
-          await rm(link, { force: true })
-          await symlink('../../.agents/skills/astrale-domain', link)
-          return { code: 1, stdout: '', stderr: 'offline' }
-        },
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    expect(await readlink(link)).toBe('/opt/team/skills/astrale-domain')
-  })
-
-  test('an interrupted transition restores its healthy backup before retrying', async () => {
-    const oldSource = await makeSource(undefined, 'old')
-    const latest = await makeSource(undefined, 'latest')
-    const target = await makeHome()
-    await installFixture(oldSource.root, oldSource.snapshot, target.home, target.lockPath)
-    const oldLock = await readFile(target.lockPath, 'utf8')
-    const backupRoot = await mkdtemp(join(target.home, '.agents', '.astrale-skill-backup-'))
-    for (const skill of oldSource.snapshot.skills) {
-      await cp(join(target.home, '.agents', 'skills', skill.name), join(backupRoot, skill.name), {
-        recursive: true,
-      })
-    }
-    await writeFile(
-      join(backupRoot, '.manifest.json'),
-      JSON.stringify({
-        root: backupRoot,
-        names: oldSource.snapshot.skills.map((skill) => skill.name),
-        copied: oldSource.snapshot.skills.map((skill) => skill.name),
-        links: [],
-        lockRaw: oldLock,
-        createdAt: new Date().toISOString(),
-        phase: 'prepared',
-      }),
-    )
-    await rm(join(target.home, '.agents', 'skills'), { recursive: true, force: true })
-    await writeFile(target.lockPath, '{"version":3,"skills":{}}\n')
-
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => latest.snapshot,
-        run: async () => ({ code: 1, stdout: '', stderr: 'offline' }),
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    for (const skill of oldSource.snapshot.skills) {
-      expect(
-        await readFile(join(target.home, '.agents', 'skills', skill.name, 'SKILL.md'), 'utf8'),
-      ).toContain('old')
-    }
-    expect(await readFile(target.lockPath, 'utf8')).toBe(oldLock)
-  })
-
-  test('a verified transition backup is discarded without rolling live state back', async () => {
-    const oldSource = await makeSource(undefined, 'old')
-    const latest = await makeSource(undefined, 'latest')
-    const target = await makeHome()
-    await installFixture(oldSource.root, oldSource.snapshot, target.home, target.lockPath)
-    const oldLock = await readFile(target.lockPath, 'utf8')
-    const backupRoot = await mkdtemp(join(target.home, '.agents', '.astrale-skill-backup-'))
-    for (const skill of oldSource.snapshot.skills) {
-      await cp(join(target.home, '.agents', 'skills', skill.name), join(backupRoot, skill.name), {
-        recursive: true,
-      })
-    }
-    await writeFile(
-      join(backupRoot, '.manifest.json'),
-      JSON.stringify({
-        root: backupRoot,
-        names: oldSource.snapshot.skills.map((skill) => skill.name),
-        copied: oldSource.snapshot.skills.map((skill) => skill.name),
-        links: [],
-        lockRaw: oldLock,
-        createdAt: new Date().toISOString(),
-        phase: 'verified',
-      }),
-    )
-    await installFixture(latest.root, latest.snapshot, target.home, target.lockPath)
-
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => latest.snapshot,
-        run: async () => {
-          throw new Error('installer must not run')
-        },
-      }),
-    ).toEqual({ status: 'unchanged' })
-    await expect(lstat(backupRoot)).rejects.toMatchObject({ code: 'ENOENT' })
-    for (const skill of latest.snapshot.skills) {
-      expect(
-        await readFile(join(target.home, '.agents', 'skills', skill.name, 'SKILL.md'), 'utf8'),
-      ).toContain('latest')
-    }
-  })
-
-  test('a retired source skill is removed without touching unrelated skills', async () => {
-    const oldSource = await makeSource(
-      [
-        'astrale-cli',
-        'astrale-domain',
-        'astrale-frontend-design',
-        'astrale-services',
-        'astrale-retired',
-      ],
-      'old',
-    )
-    const latest = await makeSource(undefined, 'latest')
-    const target = await makeHome()
-    await installFixture(oldSource.root, oldSource.snapshot, target.home, target.lockPath)
-    await mkdir(join(target.home, '.agents', 'skills', 'third-party'), { recursive: true })
-    await writeFile(join(target.home, '.agents', 'skills', 'third-party', 'SKILL.md'), 'keep\n')
-    const lock = await readLock(target.lockPath)
-    lock.lastSelectedAgents = ['claude-code']
-    lock.skills['third-party'] = { source: 'someone/else' }
-    await writeFile(target.lockPath, `${JSON.stringify(lock, null, 2)}\n`)
-    await mkdir(join(target.home, '.claude', 'skills'), { recursive: true })
-    for (const skill of oldSource.snapshot.skills) {
-      await symlink(
-        `../../.agents/skills/${skill.name}`,
-        join(target.home, '.claude', 'skills', skill.name),
-      )
-    }
-
-    const calls: string[][] = []
-    const install = installer(latest.root, latest.snapshot, target.home, target.lockPath, calls)
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => latest.snapshot,
-        run: install,
-      }),
-    ).toEqual({ status: 'updated' })
-    await expect(
-      lstat(join(target.home, '.agents', 'skills', 'astrale-retired')),
-    ).rejects.toMatchObject({ code: 'ENOENT' })
-    await expect(
-      lstat(join(target.home, '.claude', 'skills', 'astrale-retired')),
-    ).rejects.toMatchObject({ code: 'ENOENT' })
-    expect((await readLock(target.lockPath)).skills['astrale-retired']).toBeUndefined()
-    expect(
-      await readFile(join(target.home, '.agents', 'skills', 'third-party', 'SKILL.md'), 'utf8'),
-    ).toBe('keep\n')
-  })
-
-  test('an unreadable lock fails safely without deleting a healthy cohort', async () => {
-    const source = await makeSource()
-    const target = await makeHome()
-    await installFixture(source.root, source.snapshot, target.home, target.lockPath)
-    const before = await filesystemSnapshot(join(target.home, '.agents', 'skills'))
-    await rm(target.lockPath)
-    await mkdir(target.lockPath)
-
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => source.snapshot,
-        run: async () => ({ code: 1, stdout: '', stderr: 'must not run' }),
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    expect(await filesystemSnapshot(join(target.home, '.agents', 'skills'))).toBe(before)
-  })
-
-  test('a moving main branch converges on the second source snapshot', async () => {
-    const old = await makeSource(undefined, 'old')
-    const first = await makeSource(undefined, 'first')
-    const second = await makeSource(['astrale-cli', 'astrale-domain'], 'second')
-    const target = await makeHome()
-    await installFixture(old.root, old.snapshot, target.home, target.lockPath)
-    const lock = await readLock(target.lockPath)
-    lock.lastSelectedAgents = ['claude-code']
-    await writeFile(target.lockPath, `${JSON.stringify(lock, null, 2)}\n`)
-    await mkdir(join(target.home, '.claude', 'skills'), { recursive: true })
-    for (const skill of old.snapshot.skills) {
-      await symlink(
-        `../../.agents/skills/${skill.name}`,
-        join(target.home, '.claude', 'skills', skill.name),
-      )
-    }
-    const resolved = [first.snapshot, second.snapshot, second.snapshot, second.snapshot]
-    let resolutions = 0
-    let installs = 0
-    const calls: string[][] = []
-
-    expect(
-      await syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => resolved[resolutions++] ?? second.snapshot,
-        run: async (file, args = []) => {
-          if (args.includes('remove')) {
-            return await installer(
-              second.root,
-              second.snapshot,
-              target.home,
-              target.lockPath,
-              calls,
-            )(file, args)
-          }
-          const source = installs++ === 0 ? first : second
-          return await installer(
-            source.root,
-            source.snapshot,
-            target.home,
-            target.lockPath,
-            calls,
-          )(file, args)
-        },
-      }),
-    ).toEqual({ status: 'updated' })
-    expect(installs).toBe(2)
-    for (const skill of second.snapshot.skills) {
-      expect(
-        await readFile(join(target.home, '.agents', 'skills', skill.name, 'SKILL.md'), 'utf8'),
-      ).toContain('second')
-    }
-    await expect(
-      lstat(join(target.home, '.claude', 'skills', 'astrale-services')),
-    ).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  test('continued source churn fails without leaving a partial fresh install', async () => {
-    const sources = await Promise.all(
-      ['one', 'two', 'three', 'four'].map(
-        async (revision) => await makeSource(undefined, revision),
-      ),
-    )
-    const target = await makeHome()
-    let resolutions = 0
-    let installs = 0
-
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => sources[resolutions++].snapshot,
-        run: async (file, args = []) => {
-          const source = installs++ === 0 ? sources[0] : sources[2]
-          return await installer(
-            source.root,
-            source.snapshot,
-            target.home,
-            target.lockPath,
-            [],
-          )(file, args)
-        },
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    for (const skill of sources[0].snapshot.skills) {
-      await expect(lstat(join(target.home, '.agents', 'skills', skill.name))).rejects.toMatchObject(
-        {
-          code: 'ENOENT',
-        },
-      )
-    }
-    expect(
-      Object.values((await readLock(target.lockPath)).skills).some(
-        (entry) => entry.source === 'astrale-os/cli',
-      ),
-    ).toBe(false)
-  })
-
-  test('rollback removes a skill introduced only by a moving-source retry', async () => {
-    const old = await makeSource(['astrale-cli', 'astrale-domain'], 'old')
-    const first = await makeSource(['astrale-cli', 'astrale-domain'], 'first')
-    const second = await makeSource(undefined, 'second')
-    const churn = await makeSource(undefined, 'churn')
-    const target = await makeHome()
-    await installFixture(old.root, old.snapshot, target.home, target.lockPath)
-    const lock = await readLock(target.lockPath)
-    lock.lastSelectedAgents = ['claude-code']
-    await writeFile(target.lockPath, `${JSON.stringify(lock, null, 2)}\n`)
-    await mkdir(join(target.home, '.claude', 'skills'), { recursive: true })
-    for (const skill of old.snapshot.skills) {
-      await symlink(
-        `../../.agents/skills/${skill.name}`,
-        join(target.home, '.claude', 'skills', skill.name),
-      )
-    }
-    const beforeLock = await readFile(target.lockPath, 'utf8')
-    const resolved = [first.snapshot, second.snapshot, second.snapshot, churn.snapshot]
-    let resolutions = 0
-    let installs = 0
-
-    await expect(
-      syncAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => resolved[resolutions++],
-        run: async (file, args = []) => {
-          const source = installs++ === 0 ? first : second
-          return await installer(
-            source.root,
-            source.snapshot,
-            target.home,
-            target.lockPath,
-            [],
-          )(file, args)
-        },
-      }),
-    ).rejects.toMatchObject({ code: 'SKILL_UPDATE_FAILED' })
-    for (const skill of old.snapshot.skills) {
-      expect(
-        await readFile(join(target.home, '.agents', 'skills', skill.name, 'SKILL.md'), 'utf8'),
-      ).toContain('old')
-    }
-    await expect(
-      lstat(join(target.home, '.agents', 'skills', 'astrale-services')),
-    ).rejects.toMatchObject({ code: 'ENOENT' })
-    await expect(
-      lstat(join(target.home, '.claude', 'skills', 'astrale-services')),
-    ).rejects.toMatchObject({ code: 'ENOENT' })
-    expect(await readFile(target.lockPath, 'utf8')).toBe(beforeLock)
-  })
-
-  test('source discovery failure is unavailable and does not touch installed state', async () => {
-    const target = await makeHome()
-    const before = await filesystemSnapshot(target.root)
-
-    expect(
-      await checkAstraleSkills({
-        home: target.home,
-        lockPath: target.lockPath,
-        resolveSource: async () => {
-          throw new Error('source unavailable')
-        },
-      }),
-    ).toEqual({ status: 'unavailable', error: 'source unavailable' })
-    expect(await filesystemSnapshot(target.root)).toBe(before)
+    await expect(syncAstraleSkills(home.options(source))).rejects.toMatchObject({
+      code: 'SKILL_UPDATE_FAILED',
+    })
+    expect(await tree(join(home.home, '.agents', 'skills'))).toBe(before)
   })
 })

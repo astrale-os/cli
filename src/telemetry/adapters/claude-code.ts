@@ -1,20 +1,14 @@
 /**
- * Claude Code adapter: transcripts live at
- * `<base>/projects/<munged-cwd>/<session-uuid>.jsonl`, where the project dir is
- * the absolute cwd with every non-alphanumeric char replaced by '-'. Discovery
- * is stat/readdir only — it never opens a transcript.
+ * Claude Code keeps transcripts at `<base>/projects/<munged-cwd>/<session-uuid>.jsonl`, where the
+ * project directory is the absolute cwd with every non-alphanumeric character replaced by '-'.
+ * Discovery only stats; it never opens a transcript.
  */
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import type { HarnessSession } from '../types'
-import type { HarnessAdapter, TimeWindow } from './types'
-
-/** cwd → project dir name: every non-alphanumeric char becomes '-'. */
-function mungeCwd(cwd: string): string {
-  return cwd.replace(/[^a-zA-Z0-9]/g, '-')
-}
+import type { HarnessAdapter, TimeWindow } from './index'
 
 const READING_GUIDE =
   'This is a Claude Code transcript: one JSON object per line (JSONL). Each entry has a `type` ' +
@@ -24,67 +18,42 @@ const READING_GUIDE =
   'paths and sample the surrounding lines rather than reading the whole transcript. The last line ' +
   'reflects where the session ended.'
 
+function readdir(path: string): string[] {
+  try {
+    return readdirSync(path)
+  } catch {
+    return []
+  }
+}
+
 export function claudeCodeAdapter(base: string = join(homedir(), '.claude')): HarnessAdapter {
   const projectsDir = join(base, 'projects')
 
-  function detect(): boolean {
-    try {
-      return existsSync(projectsDir)
-    } catch {
-      return false
-    }
-  }
-
-  function discover(root: string, window: TimeWindow): Promise<HarnessSession[]> {
+  function discover(root: string, window: TimeWindow): HarnessSession[] {
+    const munged = root.replace(/[^a-zA-Z0-9]/g, '-')
     const sessions: HarnessSession[] = []
-    try {
-      const munged = mungeCwd(root)
-      const prefix = `${munged}-`
-      let dirs: string[]
-      try {
-        dirs = readdirSync(projectsDir)
-      } catch {
-        return Promise.resolve([])
+    for (const dir of readdir(projectsDir)) {
+      if (dir !== munged && !dir.startsWith(`${munged}-`)) continue
+      for (const file of readdir(join(projectsDir, dir))) {
+        if (!file.endsWith('.jsonl')) continue
+        const transcriptPath = join(projectsDir, dir, file)
+        const stat = statSync(transcriptPath, { throwIfNoEntry: false })
+        if (!stat) continue
+        const spanStart = Math.min(stat.birthtimeMs, stat.mtimeMs)
+        const spanEnd = Math.max(stat.birthtimeMs, stat.mtimeMs)
+        if (spanStart > window.end.getTime() || spanEnd < window.start.getTime()) continue
+        sessions.push({
+          harness: 'claude-code',
+          sessionId: file.slice(0, -'.jsonl'.length),
+          transcriptPath,
+          sizeBytes: stat.size,
+          startedAt: stat.birthtime.toISOString(),
+          endedAt: stat.mtime.toISOString(),
+        })
       }
-      const startMs = window.start.getTime()
-      const endMs = window.end.getTime()
-      for (const dir of dirs) {
-        if (dir !== munged && !dir.startsWith(prefix)) continue
-        const projectPath = join(projectsDir, dir)
-        let files: string[]
-        try {
-          files = readdirSync(projectPath)
-        } catch {
-          continue
-        }
-        for (const file of files) {
-          if (!file.endsWith('.jsonl')) continue
-          const transcriptPath = join(projectPath, file)
-          try {
-            const st = statSync(transcriptPath)
-            const mtimeMs = st.mtime.getTime()
-            const birthMs = st.birthtime.getTime()
-            const spanStart = Math.min(birthMs, mtimeMs)
-            const spanEnd = Math.max(birthMs, mtimeMs)
-            if (spanStart > endMs || spanEnd < startMs) continue
-            sessions.push({
-              harness: 'claude-code',
-              sessionId: file.slice(0, -'.jsonl'.length),
-              transcriptPath,
-              sizeBytes: st.size,
-              startedAt: st.birthtime.toISOString(),
-              endedAt: st.mtime.toISOString(),
-            })
-          } catch {
-            /* unreadable transcript — skip it, never fail discovery */
-          }
-        }
-      }
-    } catch {
-      return Promise.resolve([])
     }
-    return Promise.resolve(sessions)
+    return sessions
   }
 
-  return { name: 'claude-code', detect, discover, readingGuide: READING_GUIDE }
+  return { name: 'claude-code', discover, readingGuide: READING_GUIDE }
 }

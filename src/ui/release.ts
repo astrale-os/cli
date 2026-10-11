@@ -1,4 +1,7 @@
+import { fetchBounded, fetchJson, HttpStatusError } from './fetch'
+import { isSafeRelative } from './files'
 import {
+  RELEASE_VERSION,
   UiError,
   type UiCompatibility,
   type UiRegistry,
@@ -14,11 +17,6 @@ const MAX_DOCUMENT_BYTES = 1_048_576
 const MAX_REGISTRY_DOCUMENTS = 100
 
 type Fetch = typeof fetch
-class HttpStatusError extends Error {
-  constructor(readonly status: number) {
-    super('HTTP ' + status)
-  }
-}
 type RegistrySource = {
   name?: string
   homepage?: string
@@ -26,61 +24,16 @@ type RegistrySource = {
   items?: unknown[]
 }
 
-async function json<T>(fetcher: Fetch, url: string, label: string): Promise<T> {
-  let response: Response
-  try {
-    response = await fetcher(url, { headers: { accept: 'application/json' } })
-  } catch (cause) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Unable to reach ' + label + '.', undefined, {
-      cause,
-    })
-  }
-  const body = await responseText(response, label)
-  try {
-    return JSON.parse(body) as T
-  } catch (cause) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned malformed JSON.', undefined, {
-      cause,
-    })
-  }
+function json<T>(fetcher: Fetch, url: string, label: string): Promise<T> {
+  return fetchJson<T>(fetcher, url, {
+    label,
+    code: 'UI_REGISTRY_UNAVAILABLE',
+    maxBytes: MAX_DOCUMENT_BYTES,
+  })
 }
 
-async function responseText(response: Response, label: string): Promise<string> {
-  if (!response.ok) {
-    throw new UiError(
-      'UI_REGISTRY_UNAVAILABLE',
-      label + ' returned HTTP ' + response.status + '.',
-      undefined,
-      { cause: new HttpStatusError(response.status) },
-    )
-  }
-  const declaredLength = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_DOCUMENT_BYTES) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' exceeds the supported response size.')
-  }
-  if (!response.body) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned an empty response.')
-  }
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let bytes = 0
-  while (true) {
-    const result = await reader.read()
-    if (result.done) break
-    bytes += result.value.byteLength
-    if (bytes > MAX_DOCUMENT_BYTES) {
-      await reader.cancel()
-      throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' exceeds the supported response size.')
-    }
-    chunks.push(result.value)
-  }
-  const body = new Uint8Array(bytes)
-  let offset = 0
-  for (const chunk of chunks) {
-    body.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new TextDecoder().decode(body)
+function unavailable(message: string): UiError {
+  return new UiError('UI_REGISTRY_UNAVAILABLE', message)
 }
 
 export async function resolveUiRelease(
@@ -98,16 +51,16 @@ export async function resolveUiReleaseIdentity(
     ? { version: requested.replace(/^v/u, '') }
     : await json<{ version: string }>(fetcher, NPM_PACKAGE + '/beta', 'npm UI release')
   const version = versionDocument.version
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Invalid UI release version: ' + version)
+  if (!RELEASE_VERSION.test(version)) {
+    throw unavailable('Invalid UI release version: ' + version)
   }
   if (!requested && !/-beta\.\d+$/u.test(version)) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Invalid UI beta release version: ' + version)
+    throw unavailable('Invalid UI beta release version: ' + version)
   }
   const ref = 'v' + version
   const commit = await resolveReleaseCommit(ref, fetcher)
   if (!/^[0-9a-f]{40}$/u.test(commit)) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI ref ' + ref + ' did not resolve to a commit.')
+    throw unavailable('UI ref ' + ref + ' did not resolve to a commit.')
   }
   return { version, ref, commit }
 }
@@ -134,18 +87,14 @@ async function resolveReleaseCommit(ref: string, fetcher: Fetch): Promise<string
     if (status !== 403 && status !== 429 && !(status !== undefined && status >= 500)) throw cause
   }
 
-  const label = 'UI release ' + ref
-  let response: Response
-  try {
-    response = await fetcher(GITHUB_WEB + '/releases/tag/' + encodeURIComponent(ref), {
-      headers: { accept: 'text/html' },
+  const html = (
+    await fetchBounded(fetcher, GITHUB_WEB + '/releases/tag/' + encodeURIComponent(ref), {
+      label: 'UI release ' + ref,
+      code: 'UI_REGISTRY_UNAVAILABLE',
+      maxBytes: MAX_DOCUMENT_BYTES,
+      accept: 'text/html',
     })
-  } catch (cause) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Unable to reach ' + label + '.', undefined, {
-      cause,
-    })
-  }
-  const html = await responseText(response, label)
+  ).toString('utf8')
   const marker = 'href="/astrale-os/ui/tree/' + ref + '"'
   const markerOffset = html.lastIndexOf(marker)
   const releaseHeader = markerOffset < 0 ? '' : html.slice(markerOffset, markerOffset + 8_192)
@@ -158,7 +107,7 @@ async function resolveReleaseCommit(ref: string, fetcher: Fetch): Promise<string
   )
   const commit = commits.size === 1 ? commits.values().next().value : undefined
   if (!commit) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI ref ' + ref + ' did not resolve to a commit.')
+    throw unavailable('UI ref ' + ref + ' did not resolve to a commit.')
   }
   return commit
 }
@@ -181,7 +130,7 @@ export async function readUiReleaseSnapshot(
     compatibility.style !== 'nova' ||
     !/^\d+\.\d+\.\d+$/u.test(compatibility.shadcn)
   ) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI compatibility metadata is invalid.')
+    throw unavailable('UI compatibility metadata is invalid.')
   }
   return { ...identity, compatibility, registry }
 }
@@ -195,20 +144,17 @@ async function readRegistry(commit: string, fetcher: Fetch): Promise<UiRegistry>
       !(item && typeof item === 'object' && (item as { type?: unknown }).type === 'registry:base'),
   )
   if (!publicItems.every(isInstallableItem)) {
-    throw new UiError(
-      'UI_REGISTRY_UNAVAILABLE',
-      'UI registry contains an invalid installable item.',
-    )
+    throw unavailable('UI registry contains an invalid installable item.')
   }
   const installable = publicItems
   if (installable.length === 0) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry has no installable items.')
+    throw unavailable('UI registry has no installable items.')
   }
   if (
     new Set(installable.map((item) => item.name)).size !== installable.length ||
     new Set(installable.map((item) => item.meta.canonicalAddress)).size !== installable.length
   ) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry contains duplicate item identities.')
+    throw unavailable('UI registry contains duplicate item identities.')
   }
   return { name: root.name ?? 'astrale-ui', homepage: root.homepage, items: installable }
 }
@@ -228,13 +174,10 @@ async function resolveRegistryItems(
     : []
   const includes = source.include ?? []
   if (!Array.isArray(includes)) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry include must be an array.')
+    throw unavailable('UI registry include must be an array.')
   }
   if (visited.size + includes.length > MAX_REGISTRY_DOCUMENTS) {
-    throw new UiError(
-      'UI_REGISTRY_UNAVAILABLE',
-      'UI registry contains too many included documents.',
-    )
+    throw unavailable('UI registry contains too many included documents.')
   }
   const nested = await Promise.all(
     includes.map(async (include) => {
@@ -245,7 +188,7 @@ async function resolveRegistryItems(
         !include.endsWith('registry.json') ||
         include === 'registry.json'
       ) {
-        throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry contains an unsafe include.')
+        throw unavailable('UI registry contains an unsafe include.')
       }
       const sourceDirectoryUrl = sourceUrl.slice(0, sourceUrl.lastIndexOf('/') + 1)
       const url = new URL(include, sourceUrl).toString()
@@ -255,10 +198,7 @@ async function resolveRegistryItems(
         !url.startsWith(sourceDirectoryUrl) ||
         visited.has(url)
       ) {
-        throw new UiError(
-          'UI_REGISTRY_UNAVAILABLE',
-          'UI registry include escaped or repeated the release snapshot.',
-        )
+        throw unavailable('UI registry include escaped or repeated the release snapshot.')
       }
       visited.add(url)
       const child = await json<RegistrySource>(fetcher, url, 'UI registry include')
@@ -284,18 +224,12 @@ function qualifyRegistryItemPaths(item: unknown, sourceDirectory: string): unkno
           (candidateFile.path === sourceDirectory ||
             candidateFile.path.startsWith(sourceDirectory + '/')))
       ) {
-        throw new UiError(
-          'UI_REGISTRY_UNAVAILABLE',
-          'UI registry contains an invalid installable item path.',
-        )
+        throw unavailable('UI registry contains an invalid installable item path.')
       }
       if (sourceDirectory === '') return file
       const qualified = sourceDirectory + '/' + candidateFile.path
       if (!isSafeRelative(qualified)) {
-        throw new UiError(
-          'UI_REGISTRY_UNAVAILABLE',
-          'UI registry contains an invalid installable item path.',
-        )
+        throw unavailable('UI registry contains an invalid installable item path.')
       }
       return { ...candidateFile, path: qualified }
     }),
@@ -382,28 +316,11 @@ export async function readUiRegistryItem(
       )
     })
   ) {
-    throw new UiError(
-      'UI_REGISTRY_UNAVAILABLE',
+    throw unavailable(
       'UI registry item ' + expected.name + ' does not match the admitted release index.',
     )
   }
   return item
-}
-
-function isSafeRelative(value: string): boolean {
-  const segments = value.split('/')
-  return (
-    value.length > 0 &&
-    !value.startsWith('/') &&
-    !/^[A-Za-z]:[\\/]/u.test(value) &&
-    !value.includes('\\') &&
-    !/[?#%]/u.test(value) &&
-    ![...value].some((character) => {
-      const code = character.codePointAt(0) ?? 0
-      return code <= 31 || code === 127
-    }) &&
-    segments.every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
-  )
 }
 
 export function registryItemUrl(release: UiRelease, itemName: string): string {

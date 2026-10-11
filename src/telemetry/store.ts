@@ -69,24 +69,27 @@ function sessionIds(): string[] {
   }
 }
 
+function lastActivity(id: string, now: number): { lastEventAt: Date | null; closed: boolean } {
+  const lastEventAt = statSync(eventsPath(id), { throwIfNoEntry: false })?.mtime ?? null
+  return {
+    lastEventAt,
+    closed: lastEventAt !== null && now - lastEventAt.getTime() > IDLE_WINDOW_MS,
+  }
+}
+
+function newestFirst<T extends { lastEventAt: Date | null }>(sessions: T[]): T[] {
+  return sessions.sort((a, b) => (b.lastEventAt?.getTime() ?? 0) - (a.lastEventAt?.getTime() ?? 0))
+}
+
 /** Newest activity first. Two stats per session, no file reads, no parsing. */
 export function scanSessions(now = Date.now()): SessionScan[] {
-  return sessionIds()
-    .map((id) => {
-      let lastEventAt: Date | null = null
-      try {
-        lastEventAt = statSync(eventsPath(id)).mtime
-      } catch {
-        /* no events yet */
-      }
-      return {
-        id,
-        lastEventAt,
-        closed: lastEventAt !== null && now - lastEventAt.getTime() > IDLE_WINDOW_MS,
-        analyzed: existsSync(markerPath(id)),
-      }
-    })
-    .sort((a, b) => (b.lastEventAt?.getTime() ?? 0) - (a.lastEventAt?.getTime() ?? 0))
+  return newestFirst(
+    sessionIds().map((id) => ({
+      id,
+      ...lastActivity(id, now),
+      analyzed: existsSync(markerPath(id)),
+    })),
+  )
 }
 
 /** Bytes on disk under `dir`. Unreadable entries count as zero — a directory
@@ -147,28 +150,17 @@ function readJsonSafe<T>(path: string): T | null {
 }
 
 export function inspectSession(id: string, now = Date.now()): SessionInfo | null {
-  const dir = sessionDir(id)
-  if (!existsSync(dir)) return null
-  let lastEventAt: Date | null = null
-  try {
-    lastEventAt = statSync(eventsPath(id)).mtime
-  } catch {
-    /* no events yet */
-  }
-  return {
-    id,
-    meta: readJsonSafe<SessionMeta>(metaPath(id)),
-    lastEventAt,
-    closed: lastEventAt !== null && now - lastEventAt.getTime() > IDLE_WINDOW_MS,
-    analyzed: readJsonSafe<AnalyzedMarker>(markerPath(id)),
-  }
+  if (!existsSync(sessionDir(id))) return null
+  return { id, meta: readMeta(id), ...lastActivity(id, now), analyzed: readMarker(id) }
 }
 
 /** All sessions, newest activity first, fully parsed. Missing store dir → empty
  *  list. Prefer scanSessions() anywhere latency matters — see the file header. */
 export function listSessions(now = Date.now()): SessionInfo[] {
-  return sessionIds()
-    .map((id) => inspectSession(id, now))
-    .filter((s): s is SessionInfo => s !== null)
-    .sort((a, b) => (b.lastEventAt?.getTime() ?? 0) - (a.lastEventAt?.getTime() ?? 0))
+  return newestFirst(
+    sessionIds().flatMap((id) => {
+      const session = inspectSession(id, now)
+      return session ? [session] : []
+    }),
+  )
 }

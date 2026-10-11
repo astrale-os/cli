@@ -3,6 +3,7 @@ import type { CommandDefinition } from '../../program/index'
 import { fatal, log } from '../../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 import { syncAstraleSkills } from '../../lib/skills'
+import { SKILL_APPLY_MESSAGES } from './configure'
 
 export default {
   name: 'update',
@@ -15,10 +16,7 @@ export default {
         output({ ...result, scope: 'global' }, opts)
         return
       }
-      if (result.status === 'unchanged') log.success('Astrale skills already up to date')
-      else if (result.status === 'installed') log.success('Astrale skills installed globally')
-      else if (result.status === 'updated') log.success('Astrale skills updated globally')
-      else if (result.status === 'repaired') log.success('Astrale skills repaired globally')
+      log.success(SKILL_APPLY_MESSAGES[result.status])
     } catch (error) {
       fatal(error, opts)
     }

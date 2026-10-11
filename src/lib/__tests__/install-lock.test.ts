@@ -1,57 +1,50 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { acquireInstallLock } from '../install-lock'
 
-describe('install lock', () => {
-  test('excludes a live owner and releases only its own evidence', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-install-lock-'))
-    const binary = join(root, 'astrale')
-    const first = await acquireInstallLock(binary, { pid: process.pid, token: 'first-owner' })
+const roots: string[] = []
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
 
-    await expect(acquireInstallLock(binary)).rejects.toMatchObject({ code: 'UPDATE_INSTALL_BUSY' })
-    expect(await readFile(join(first.path, 'owner'), 'utf8')).toBe(`${process.pid} first-owner\n`)
-    await first.release()
-    await expect(readFile(join(first.path, 'owner'), 'utf8')).rejects.toMatchObject({
-      code: 'ENOENT',
+async function binary(): Promise<{ binary: string; lock: string }> {
+  const root = await mkdtemp(join(tmpdir(), 'astrale-install-lock-'))
+  roots.push(root)
+  return { binary: join(root, 'astrale'), lock: join(root, '.astrale-install.lock') }
+}
+
+/** The lock format install.sh reads and writes: `<pid> <token>` in `<bin dir>/.astrale-install.lock/owner`. */
+describe('install lock shared with install.sh', () => {
+  test('excludes a live owner, recovers a dead one, and refuses an unreadable owner record', async () => {
+    const paths = await binary()
+    const held = await acquireInstallLock(paths.binary)
+    expect(await readFile(join(paths.lock, 'owner'), 'utf8')).toMatch(
+      new RegExp(`^${process.pid} [A-Za-z0-9-]+\\n$`),
+    )
+    await expect(acquireInstallLock(paths.binary)).rejects.toMatchObject({
+      code: 'UPDATE_INSTALL_BUSY',
     })
-    await rm(root, { recursive: true, force: true })
-  })
+    await held.release()
 
-  test('recovers a definitely dead owner and fails closed on malformed evidence', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-install-lock-'))
-    const binary = join(root, 'astrale')
-    const path = join(root, '.astrale-install.lock')
-    await mkdir(path)
-    await writeFile(join(path, 'owner'), '99999999 stale-owner\n')
+    await mkdir(paths.lock)
+    await writeFile(join(paths.lock, 'owner'), '99999999 dead-owner\n')
+    await (await acquireInstallLock(paths.binary)).release()
 
-    const recovered = await acquireInstallLock(binary, {
-      pid: process.pid,
-      token: 'replacement-owner',
-      processAlive: () => false,
-    })
-    expect(await readFile(join(path, 'owner'), 'utf8')).toBe(`${process.pid} replacement-owner\n`)
-    await recovered.release()
-
-    await mkdir(path)
-    await writeFile(join(path, 'owner'), 'malformed\n')
-    await expect(acquireInstallLock(binary)).rejects.toMatchObject({
+    await mkdir(paths.lock)
+    await writeFile(join(paths.lock, 'owner'), 'malformed\n')
+    await expect(acquireInstallLock(paths.binary)).rejects.toMatchObject({
       code: 'UPDATE_INSTALL_LOCK_INVALID',
     })
-    expect(await readFile(join(path, 'owner'), 'utf8')).toBe('malformed\n')
-    await rm(root, { recursive: true, force: true })
   })
 
-  test('a stale handle never removes replacement ownership', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-install-lock-'))
-    const binary = join(root, 'astrale')
-    const lock = await acquireInstallLock(binary, { token: 'original-owner' })
-    await writeFile(join(lock.path, 'owner'), `${process.pid} replacement-owner\n`)
-
-    await expect(lock.release()).rejects.toMatchObject({ code: 'UPDATE_INSTALL_LOCK_LOST' })
-    expect(await readFile(join(lock.path, 'owner'), 'utf8')).toContain('replacement-owner')
-    await rm(root, { recursive: true, force: true })
+  test('a holder whose ownership changed never removes the new owner', async () => {
+    const paths = await binary()
+    const held = await acquireInstallLock(paths.binary)
+    await writeFile(join(paths.lock, 'owner'), `${process.pid} replacement-owner\n`)
+    await expect(held.release()).rejects.toMatchObject({ code: 'UPDATE_INSTALL_LOCK_LOST' })
+    expect(await readFile(join(paths.lock, 'owner'), 'utf8')).toContain('replacement-owner')
   })
 })
