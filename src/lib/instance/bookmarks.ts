@@ -318,20 +318,7 @@ export async function bookmarkCreatedInstance(
       // A ready receipt replay must not rewrite aliases, trust or the bookmark's identity.
       return { name: existingKey, entry }
     }
-    const { entry } = upsertBookmark(
-      store,
-      input.slug,
-      {
-        url,
-        issuer: url,
-        slug: input.slug,
-        name: input.slug,
-        mode: 'remote',
-        ...(input.organizationId ? { organizationId: input.organizationId } : {}),
-        ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
-      },
-      url,
-    )
+    const { entry } = upsertBookmark(store, input.slug, managedEntry(input, url), url)
     return { name: input.slug, entry }
   })
 }
@@ -354,26 +341,30 @@ export async function upsertManagedBookmark(
   const store = await readInstances()
   const previousUrl = store.instances[input.key]?.url
   const url = normalizeInstanceKernelUrl(input.url)
-  const { entry } = await upsertInstance(
-    input.key,
-    {
-      url,
-      issuer: url,
-      slug: input.slug,
-      name: input.slug,
-      mode: 'remote',
-      ...(input.organizationId ? { organizationId: input.organizationId } : {}),
-      ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
-    },
-    {
-      activateWhenEmpty: input.activateWhenEmpty,
-      // A managed route's users act for themselves: `instance use` resets any exchange issuer.
-      dropDomainIssuer: isManagedRoute(url),
-    },
-  )
+  const { entry } = await upsertInstance(input.key, managedEntry(input, url), {
+    activateWhenEmpty: input.activateWhenEmpty,
+    // A managed route's users act for themselves: `instance use` resets any exchange issuer.
+    dropDomainIssuer: isManagedRoute(url),
+  })
   return {
     entry,
     ...(previousUrl && previousUrl !== entry.url ? { repointedFrom: previousUrl } : {}),
+  }
+}
+
+/** The bookmark of an Admin-managed Instance: its Kernel URL is its issuer, its slug its name. */
+function managedEntry(
+  input: Readonly<{ slug: string; organizationId?: string; defaultIdentity?: string }>,
+  url: string,
+): AddInstanceOpts {
+  return {
+    url,
+    issuer: url,
+    slug: input.slug,
+    name: input.slug,
+    mode: 'remote',
+    ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+    ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
   }
 }
 
@@ -395,11 +386,8 @@ function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {
 
 export async function removeInstance(key: string): Promise<void> {
   const removed = await mutateInstances((store) => {
-    const removed = store.instances[key]
-    if (!removed) throw new Error(`Instance "${key}" not found`)
-    delete store.instances[key]
-    if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
-    return removed
+    if (!store.instances[key]) throw new Error(`Instance "${key}" not found`)
+    return deleteBookmark(store, key)
   })
   await forgetKernel(removed.issuer ?? removed.url!)
 }
@@ -424,12 +412,17 @@ export async function removeDeletedInstanceBookmark(target: {
       (issuer !== undefined && bookmarkCoordinate(entry.issuer ?? entry.url) !== issuer)
     )
       return undefined
-
-    delete store.instances[key]
-    if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
-    return entry
+    return deleteBookmark(store, key)
   })
   if (removed) await forgetKernel(removed.issuer ?? removed.url!)
+}
+
+/** Delete bookmark `key`; the first remaining bookmark becomes active when it was. */
+function deleteBookmark(store: InstanceStore, key: string): InstanceEntry {
+  const entry = store.instances[key]!
+  delete store.instances[key]
+  if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
+  return entry
 }
 
 async function forgetKernel(kernelIssuer: string): Promise<void> {
