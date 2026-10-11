@@ -1,25 +1,24 @@
 import { join } from 'node:path'
 
-import type { AdminConnectionOptions } from '../connection'
-import type { OutputOpts } from '../lib/terminal/output'
-import type { CommandDefinition } from '../program'
+import type { AdminConnectionOptions } from '../../connection'
+import type { OutputOpts } from '../../lib/terminal/output'
+import type { CommandDefinition } from '../../program'
 
-import pkg from '../../package.json' with { type: 'json' }
-import { createPathCall, withAdminClientSession } from '../connection'
-import { AstraleError } from '../errors'
-import { collectIssueContext } from '../issues/context'
+import pkg from '../../../package.json' with { type: 'json' }
+import { createPathCall, withAdminClientSession } from '../../connection'
+import { AstraleError } from '../../errors'
+import { collectIssueContext } from '../../issues/context'
 import {
   ISSUE_REPORT_PATH,
   issueContentSchema,
   submitIssue,
   type IssueContent,
-} from '../issues/submit'
-import { ADMIN_TARGET_OPTIONS } from '../lib/admin/target'
-import { readInstances } from '../lib/instance/bookmarks'
-import { fatal, log } from '../lib/terminal/log'
-import { isMachine, output } from '../lib/terminal/output'
-import { withKernelOptions } from '../program/options'
-import { ASTRALE_HOME } from '../state'
+} from '../../issues/submit'
+import { readInstances } from '../../lib/instance/bookmarks'
+import { fatal, log } from '../../lib/terminal/log'
+import { isMachine, output } from '../../lib/terminal/output'
+import { ASTRALE_HOME } from '../../state'
+import { withIssueAdminOptions } from './options'
 
 export type IssueOptions = AdminConnectionOptions &
   OutputOpts & {
@@ -112,25 +111,29 @@ async function readBodyFromStdin(): Promise<string | undefined> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-const command = withKernelOptions({
-  name: 'issue',
-  description: 'Report a bug, limitation, or friction to Admin',
-  arguments: [
-    { name: 'title', description: 'Short factual title (omit only with --retry)', required: false },
-  ],
-  options: [
-    ...ADMIN_TARGET_OPTIONS,
-    { flags: '--body <text>', description: 'Issue details; otherwise read stdin' },
-    {
-      flags: '--project <directory>',
-      description: 'Project package whose installed versions to observe',
-    },
-    {
-      flags: '--retry <request-id>',
-      description: 'Resume an unconfirmed report with its original context',
-    },
-  ],
-  afterHelpText: `
+export default withIssueAdminOptions(
+  {
+    name: 'report',
+    description: 'Report a bug, limitation, or friction to Admin (default)',
+    arguments: [
+      {
+        name: 'title',
+        description: 'Short factual title (omit only with --retry)',
+        required: false,
+      },
+    ],
+    options: [
+      { flags: '--body <text>', description: 'Issue details; otherwise read stdin' },
+      {
+        flags: '--project <directory>',
+        description: 'Project package whose installed versions to observe',
+      },
+      {
+        flags: '--retry <request-id>',
+        description: 'Resume an unconfirmed report with its original context',
+      },
+    ],
+    afterHelpText: `
   A title and body are enough. Prefer --project and -i when known.
   Optional body type: bug, limitation (including capability requests), or friction.
   Keep it brief: Context, Reproduction for bugs (exact inputs/steps, expected vs.
@@ -140,26 +143,17 @@ const command = withKernelOptions({
   If confirmation fails, use the printed --retry command.
 
   $ astrale issue "Short title" --body "Context and details"
-  $ cat issue.md | astrale issue "Short title" --project ./orders -i staging
+  $ cat issue.md | astrale issue report "Short title" --project ./orders -i staging
 `,
-  action: async (title: string | undefined, options: IssueOptions) => {
-    try {
-      const receipt = await reportIssueCommand(title, options)
-      if (isMachine(options) || options.format !== undefined) output(receipt, options)
-      else log.success(`Reported: ${receipt.reference}`)
-    } catch (cause) {
-      fatal(cause, options)
-    }
-  },
-} satisfies CommandDefinition)
-
-export default {
-  ...command,
-  options: command.options
-    ?.filter((option) => !['--url <url>', '--anonymous'].includes(option.flags))
-    .map((option) =>
-      option.flags === '-i, --instance <name>'
-        ? { ...option, description: 'Affected instance bookmark (optional; never the destination)' }
-        : option,
-    ),
-} satisfies CommandDefinition
+    action: async (title: string | undefined, options: IssueOptions) => {
+      try {
+        const receipt = await reportIssueCommand(title, options)
+        if (isMachine(options) || options.format !== undefined) output(receipt, options)
+        else log.success(`Reported: ${receipt.reference}`)
+      } catch (cause) {
+        fatal(cause, options)
+      }
+    },
+  } satisfies CommandDefinition,
+  { affectedInstance: true },
+)

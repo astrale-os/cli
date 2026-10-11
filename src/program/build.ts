@@ -51,7 +51,18 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, (await import('../commands/setup')).default)
   registerCommand(program, (await import('../commands/use')).default)
   registerCommand(program, (await import('../commands/update')).default)
-  registerCommand(program, (await import('../commands/issue')).default)
+  registerGroup(program, {
+    name: 'issue',
+    description: 'Report issues to Admin and follow your reports',
+    defaultCommand: 'report',
+    commands: [
+      (await import('../commands/issue/report')).default,
+      (await import('../commands/issue/list')).default,
+      (await import('../commands/issue/show')).default,
+      (await import('../commands/issue/edit')).default,
+      (await import('../commands/issue/archive')).default,
+    ],
+  })
 
   // ── Graph / kernel ─────────────────────────────────────────────
   registerCommand(program, withKernelOptions((await import('../commands/call')).default))
