@@ -1,8 +1,4 @@
-import type {
-  AdminInstanceApi,
-  OwnedInstanceInfo,
-  RootIdentityRecipient,
-} from '../../admin/instance'
+import type { AdminInstanceApi, InstanceInfo, RootIdentityRecipient } from '../../admin/instance'
 import type { AdminConnectionOptions, ConnectionContext } from '../../connection'
 
 import { connectAdminInstances, AdminInstanceNotFoundError } from '../../admin/instance'
@@ -49,7 +45,7 @@ type InstanceCreatePlan = Readonly<{ operationId?: string }>
 
 /** @internal Resolve creation from durable caller-visible Admin state. */
 export function planInstanceCreate(
-  inventory: readonly OwnedInstanceInfo[],
+  inventory: readonly InstanceInfo[],
   slug: string,
   operationId?: string,
 ): InstanceCreatePlan {

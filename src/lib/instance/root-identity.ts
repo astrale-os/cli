@@ -2,7 +2,7 @@ import type { JWK } from 'jose'
 
 import { calculateJwkThumbprint } from 'jose'
 
-import type { OwnedInstanceInfo, RootIdentityRecipient } from '../../admin/instance'
+import type { InstanceInfo, RootIdentityRecipient } from '../../admin/instance'
 import type { AdminConnectionOptions } from '../../connection'
 import type {
   Identity,
@@ -26,7 +26,7 @@ import { upsertManagedBookmark } from './bookmarks'
 type RootIdentityVerification = 'live-jwks' | 'host-sealed'
 
 export interface ImportedInstanceRootIdentity {
-  readonly instance: OwnedInstanceInfo
+  readonly instance: InstanceInfo
   readonly name: string
   readonly identity: Identity
   readonly replaced: boolean
@@ -40,7 +40,7 @@ interface ImportInstanceRootIdentityOptions {
 }
 
 interface Retrieval {
-  readonly instance: OwnedInstanceInfo
+  readonly instance: InstanceInfo
   readonly transfer: Awaited<ReturnType<typeof retrieveOwnedInstanceRootIdentity>>['transfer']
   readonly ownerIdentity?: string
 }
@@ -143,7 +143,7 @@ export async function importInstanceRootIdentity(
 }
 
 async function verifyPublishedIdentity(
-  instance: OwnedInstanceInfo,
+  instance: InstanceInfo,
   envelope: IdentityExport,
   dependencies: Pick<Dependencies, 'checkIssuer' | 'thumbprint'>,
 ): Promise<RootIdentityVerification> {

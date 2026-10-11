@@ -1,9 +1,4 @@
-export {
-  connectAdminInstances,
-  type AdminInstanceApi,
-  type AdminInstanceContext,
-  type AdminInstanceDependencies,
-} from './client'
+export { connectAdminInstances, type AdminInstanceApi } from './client'
 export {
   AdminInstanceNotFoundError,
   findOwnedInstance,
@@ -12,7 +7,6 @@ export {
   type InvitationState,
   type InstanceInfo,
   type InstanceState,
-  type OwnedInstanceInfo,
   type RetrievedRootIdentity,
   type RootIdentityRecipient,
   type RootIdentityTransfer,

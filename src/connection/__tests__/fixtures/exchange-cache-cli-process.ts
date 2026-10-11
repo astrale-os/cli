@@ -2,13 +2,15 @@ import type { Fetch } from '@astrale-os/sdk/client'
 import type { SessionAuth } from '@astrale-os/sdk/client/session'
 
 import { issuer } from '@astrale-os/sdk/auth'
+import { credential as inspect } from '@astrale-os/sdk/auth'
 import { Path } from '@astrale-os/sdk/graph/path'
 
 import type { AstraleConfig } from '../../../lib/config'
 
-import { upsertIdpIdentity } from '../../../identity/registry'
+import { createIdentity, setRegistration, upsertIdpIdentity } from '../../../identity/registry'
 import { saveIdpSession } from '../../../lib/idp/provider'
 import { ExchangeCredentialCache } from '../../../state/exchange-credentials'
+import { resolveCredential } from '../../auth'
 import { createCliCredential } from '../../credential'
 
 const KERNEL = issuer.accept('https://kernel.example')
@@ -26,9 +28,23 @@ const config: AstraleConfig = {
   browser: {},
 }
 
+/** Carol's cached session names another subject: its cache entry belongs to someone else. */
 const identities = [
-  { name: 'alice', subject: 'source-alice', user: 'kernel-alice', use: false },
-  { name: 'bob', subject: 'source-bob', user: 'kernel-bob', use: true },
+  {
+    name: 'alice',
+    subject: 'source-alice',
+    claimed: 'source-alice',
+    user: 'kernel-alice',
+    use: false,
+  },
+  { name: 'bob', subject: 'source-bob', claimed: 'source-bob', user: 'kernel-bob', use: true },
+  {
+    name: 'carol',
+    subject: 'source-carol',
+    claimed: 'source-dave',
+    user: 'kernel-dave',
+    use: false,
+  },
 ] as const
 const cache = new ExchangeCredentialCache()
 const expected = new Map<string, string>()
@@ -47,14 +63,14 @@ for (const identity of identities) {
     subject: identity.subject,
     access_token: 'expired-source-token-must-not-be-resolved',
     expires_at: '2026-01-01T00:00:00.000Z',
-    claims: { iss: SOURCE_ISSUER, sub: identity.subject },
+    claims: { iss: SOURCE_ISSUER, sub: identity.claimed },
     updatedAt: new Date().toISOString(),
   })
   const key = {
     kernelIssuer: KERNEL,
     domainIssuer: DOMAIN,
     sourceIssuer: SOURCE_ISSUER,
-    sourceSubject: identity.subject,
+    sourceSubject: identity.claimed,
   }
   const credential = token(identity.user, now + 300)
   expected.set(identity.name, credential)
@@ -66,7 +82,7 @@ for (const identity of identities) {
       expiresAt: now + 300,
       user: identity.user,
       sourceIssuer: SOURCE_ISSUER,
-      sourceSubject: identity.subject,
+      sourceSubject: identity.claimed,
     }),
     () => now,
   )
@@ -89,7 +105,13 @@ const active = createCliCredential(
   config,
   fetch,
 )
-if (explicit === undefined || active === undefined)
+const mismatched = createCliCredential(
+  { url: KERNEL, kernelIssuer: KERNEL, domainIssuer: DOMAIN },
+  { as: 'carol' },
+  config,
+  fetch,
+)
+if (explicit === undefined || active === undefined || mismatched === undefined)
   throw new Error('expected authenticated sources')
 
 const signal = new AbortController().signal
@@ -97,11 +119,32 @@ const [alice, bob] = await Promise.all([
   explicit.resolve(call, signal),
   active.resolve(call, signal),
 ])
+const carol = await Promise.resolve(mismatched.resolve(call, signal)).then(
+  (resolved) => resolved.credential,
+  () => undefined,
+)
+
+// Key identities sign the Kernel registration's (iss, sub); an imported system root, the audience.
+await createIdentity('registered')
+await setRegistration('registered', KERNEL, {
+  iss: `${KERNEL}/iss/registered`,
+  sub: 'registered-node',
+  registeredAt: new Date().toISOString(),
+})
+await createIdentity('root', { subject: 'system' })
+const claims = async (as: string) => {
+  const { iss, sub } = inspect.inspect(await resolveCredential({ as }, config, KERNEL, KERNEL))
+  return { iss, sub }
+}
+
 console.log(
   JSON.stringify({
     explicit: alice.credential === expected.get('alice'),
     active: bob.credential === expected.get('bob'),
+    foreign: carol === expected.get('carol'),
     fetches,
+    registered: await claims('registered'),
+    root: await claims('root'),
   }),
 )
 

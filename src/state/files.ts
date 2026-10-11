@@ -8,7 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /** Atomically publish one complete private state file through a same-directory temporary file. */
@@ -101,6 +101,56 @@ export async function withFileLock<Value>(
       throw new Error(`Timed out after ${timeoutMs}ms waiting for lock ${lockPath}`)
     }
     await sleep(pollIntervalMs)
+  }
+}
+
+/**
+ * Run one read-modify-write of an owner-private `{ version, entries }` store under its file lock.
+ * A missing, unreadable or other-version store reads as empty; the store is rewritten only when
+ * the transition reports a change.
+ */
+export async function updatePrivateStore<Entry, Value>(
+  path: string,
+  version: number,
+  transition: (
+    entries: Record<string, Entry>,
+  ) => Promise<{ readonly value: Value; readonly changed: boolean }>,
+  options?: FileLockOptions,
+): Promise<Value> {
+  return withFileLock(
+    `${path}.lock`,
+    async () => {
+      const directory = dirname(path)
+      await mkdir(directory, { recursive: true, mode: 0o700 })
+      await chmod(directory, 0o700)
+      const entries = await readPrivateStore<Entry>(path, version)
+      const { value, changed } = await transition(entries)
+      if (changed) {
+        await atomicWrite(path, `${JSON.stringify({ version, entries }, null, 2)}\n`)
+        await chmod(path, 0o600)
+      }
+      return value
+    },
+    options,
+  )
+}
+
+/** The entries of an owner-private store; a missing, unreadable or other-version store is empty. */
+export async function readPrivateStore<Entry>(
+  path: string,
+  version: number,
+): Promise<Record<string, Entry>> {
+  try {
+    const store = JSON.parse(await readFile(path, 'utf8')) as {
+      readonly version?: unknown
+      readonly entries?: unknown
+    } | null
+    const entries = store?.version === version ? store.entries : undefined
+    return entries !== null && typeof entries === 'object' && !Array.isArray(entries)
+      ? { ...(entries as Record<string, Entry>) }
+      : {}
+  } catch {
+    return {}
   }
 }
 

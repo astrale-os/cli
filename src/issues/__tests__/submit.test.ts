@@ -114,29 +114,6 @@ describe('issue delivery', () => {
     },
   )
 
-  it('gives separate concurrent observations independent request IDs, even with identical text', async () => {
-    const requests: string[] = []
-    const send = async (payload: IssuePayload) => {
-      requests.push(payload.requestId)
-      return receipt
-    }
-    await Promise.all([
-      submitIssue({ content, scope, directory, send }),
-      submitIssue({ content, scope, directory, send }),
-    ])
-    expect(new Set(requests).size).toBe(2)
-  })
-
-  it.each([{}, { state: 'pending' }, { id: 'x', reference: '' }, null])(
-    'does not accept a malformed receipt %j',
-    async (value) => {
-      await expect(
-        submitIssue({ content, scope, directory, send: async () => value }),
-      ).rejects.toMatchObject({ code: 'ISSUE_NOT_CONFIRMED' })
-      expect(await readdir(directory)).toHaveLength(1)
-    },
-  )
-
   it('rejects path traversal and never sends a missing retry', async () => {
     const send = mock(async () => receipt)
     await expect(

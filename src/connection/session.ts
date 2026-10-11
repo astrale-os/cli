@@ -1,4 +1,4 @@
-import type { AuthApi } from '@astrale-os/sdk/auth'
+import type { AuthApi, IssuerId } from '@astrale-os/sdk/auth'
 import type { GraphApi } from '@astrale-os/sdk/client'
 import type {
   ClientSessionOptions,
@@ -6,7 +6,7 @@ import type {
   SessionRouteStore,
 } from '@astrale-os/sdk/client/session'
 
-import { createGraph, ResponseError } from '@astrale-os/sdk/client'
+import { createGraph } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { AstraleConfig } from '../lib/config'
@@ -37,6 +37,7 @@ import {
   validateCredentialSelection,
 } from './credential'
 import { createInstalledIssuer, type InstalledIssuer } from './installed-issuer'
+import { credentialRefused } from './reasons'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -161,7 +162,9 @@ async function runResolvedClientSession<Value>(
   installations?: InstallationCache,
 ): Promise<Value> {
   let remembered: string | undefined
-  let installedOrigin = target.domainOrigin
+  let installedOrigin: string | undefined
+  /** The issuer the pin named when this command read it itself. */
+  let pinned: IssuerId | null | undefined
   if (credential.principal === 'callable') {
     const origin = callableOrigin(credential.path)
     if (
@@ -184,8 +187,9 @@ async function runResolvedClientSession<Value>(
         } finally {
           discovery.close()
         }
+        pinned = target.domainIssuer ?? null
         await installations
-          ?.set(target.kernelIssuer, origin, { issuer: target.domainIssuer ?? null })
+          ?.set(target.kernelIssuer, origin, { issuer: pinned })
           .catch(() => undefined)
       }
       credential =
@@ -198,7 +202,13 @@ async function runResolvedClientSession<Value>(
     options.anonymous === true ||
     credential.principal === 'caller'
       ? undefined
-      : createInstalledIssuer(target.kernelIssuer, installedOrigin, installations)
+      : createInstalledIssuer(
+          target.kernelIssuer,
+          installedOrigin,
+          installations,
+          undefined,
+          pinned,
+        )
   const connection = open(target, timeoutMs, options, config, credential, installed)
   try {
     return await action(
@@ -219,9 +229,6 @@ async function runResolvedClientSession<Value>(
   }
 }
 
-/** The Kernel code of a credential it does not accept (AUTH_INVALID). */
-const CREDENTIAL_REFUSED = 2002
-
 /** The Session members that are Kernel call capabilities rather than Session methods. */
 const SESSION_APIS: ReadonlySet<PropertyKey> = new Set(['schema', 'graph', 'auth', 'content'])
 
@@ -241,9 +248,7 @@ function reportingRefusedCredentials(
   const report = (pending: unknown): unknown =>
     pending instanceof Promise
       ? pending.catch(async (cause: unknown) => {
-          if (cause instanceof ResponseError && cause.code === CREDENTIAL_REFUSED) {
-            await installed.failed()
-          }
+          if (credentialRefused(cause)) await installed.failed()
           throw cause
         })
       : pending

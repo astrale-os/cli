@@ -38,17 +38,12 @@ export interface ConnectionTarget {
   readonly kernelIssuer: IssuerId
   /** Exact Domain issuer the selected identity is exchanged at. */
   readonly domainIssuer?: IssuerId
-  /**
-   * Origin of the installed Domain the selected identity is exchanged through; the source Kernel's
-   * pin names its issuer. Never set together with `domainIssuer`.
-   */
-  readonly domainOrigin?: string
   readonly slug?: string
   readonly defaultIdentity?: string
   readonly caFile?: string
 }
 
-export interface TargetDependencies {
+interface TargetDependencies {
   readonly instances?: InstanceStore
   readonly managed?: (slug: string) => Promise<InstanceInfo>
 }
@@ -96,7 +91,7 @@ export async function resolveAdminConnectionTarget(
   return connectionTarget(resolved)
 }
 
-export function adminLookupOptions(options: AdminConnectionOptions): AdminTargetCommandOpts {
+function adminLookupOptions(options: AdminConnectionOptions): AdminTargetCommandOpts {
   return {
     ...(options.admin === undefined ? {} : { admin: options.admin }),
     ...(options.adminUrl === undefined ? {} : { adminUrl: options.adminUrl }),
@@ -135,7 +130,6 @@ function connectionTarget(
     ...(resolved.domainIssuer === undefined
       ? {}
       : { domainIssuer: issuer.accept(resolved.domainIssuer) }),
-    ...(resolved.domainOrigin === undefined ? {} : { domainOrigin: resolved.domainOrigin }),
     ...(resolved.name === undefined ? {} : { slug: resolved.name }),
     ...(resolved.defaultIdentity === undefined
       ? {}

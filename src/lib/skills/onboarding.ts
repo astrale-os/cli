@@ -13,7 +13,7 @@ const UPDATE_DECLINE_LIMIT = 2
 export const SKILL_CONFIGURE_COMMAND = 'astrale skills configure'
 
 export type SkillOnboardingSource = 'install' | 'reminder' | 'update'
-export type SkillReminderStage = 'next-day' | 'seven-days'
+type SkillReminderStage = 'next-day' | 'seven-days'
 
 export type SkillOnboardingState = {
   version: typeof STATE_VERSION
@@ -23,7 +23,7 @@ export type SkillOnboardingState = {
   dismissed?: true
 }
 
-export type SkillInstallOffer =
+type SkillInstallOffer =
   | { status: 'accepted' }
   | { status: 'declined'; state: SkillOnboardingState }
   | { status: 'not-due' | 'not-interactive' | 'suppressed' }
@@ -84,7 +84,7 @@ function parseState(value: unknown): SkillOnboardingState | undefined {
   }
 }
 
-export async function readSkillOnboardingState(
+async function readSkillOnboardingState(
   options: Pick<StateOptions, 'home'> = {},
 ): Promise<SkillOnboardingState> {
   try {
@@ -114,7 +114,7 @@ export async function clearSkillOnboardingState(
   await withFileLock(lockPath(home), () => rm(statePath(home), { force: true }))
 }
 
-export function skillInstallOfferDue(
+function skillInstallOfferDue(
   source: SkillOnboardingSource,
   state: SkillOnboardingState,
   now = Date.now(),
@@ -125,7 +125,7 @@ export function skillInstallOfferDue(
   return Date.parse(state.nextPromptAt) <= now
 }
 
-export async function recordSkillInstallDecline(
+async function recordSkillInstallDecline(
   source: SkillOnboardingSource,
   options: StateOptions = {},
 ): Promise<SkillOnboardingState> {

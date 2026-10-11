@@ -113,37 +113,35 @@ export interface ClaimResultV1 {
   readonly origin: string
 }
 
-export const REGISTRY_ERROR_CODES = [
+/** The refusal codes of the registry plumbing. */
+type RegistryErrorCode =
   /** No Domain of that origin is readable by the caller: absent or not permitted. */
-  'REGISTRY_DOMAIN_NOT_FOUND',
+  | 'REGISTRY_DOMAIN_NOT_FOUND'
   /** A claim of an origin whose Domain another account administers. */
-  'REGISTRY_ORIGIN_CLAIMED',
+  | 'REGISTRY_ORIGIN_CLAIMED'
   /** A claim of an origin under `astrale.ai`, which only Astrale operators register. */
-  'REGISTRY_ORIGIN_RESERVED',
+  | 'REGISTRY_ORIGIN_RESERVED'
   /** The Domain is readable but the caller holds no version of that number. */
-  'PUBLICATION_NOT_FOUND',
+  | 'PUBLICATION_NOT_FOUND'
   /** Admin refused the caller (no `domain_admin` for a change, or a credential refusal). */
-  'REGISTRY_FORBIDDEN',
+  | 'REGISTRY_FORBIDDEN'
   /**
    * Admin did not give a usable answer. A rerun of the same command is always safe (reads, and
    * idempotent publish and yank); it can help only when `details.retryable` is true. On a change,
    * `details.delivery === 'unknown'` says the change may have applied.
    */
-  'REGISTRY_UNAVAILABLE',
+  | 'REGISTRY_UNAVAILABLE'
   /** The version already names another release. `details.existing` is that Publication. */
-  'PUBLICATION_VERSION_CONFLICT',
+  | 'PUBLICATION_VERSION_CONFLICT'
   /**
    * The deployment does not serve the named release, serves no publishable release, or serves a
    * bundle that does not match its release.
    */
-  'PUBLICATION_RELEASE_MISMATCH',
+  | 'PUBLICATION_RELEASE_MISMATCH'
   /** Admin, or this CLI for `bundle`, could not read the deployment's release or bundle. */
-  'PUBLICATION_RELEASE_UNREACHABLE',
+  | 'PUBLICATION_RELEASE_UNREACHABLE'
   /** Not a canonical SemVer 2.0.0 version, or not one exact version where one is required. */
-  'PUBLICATION_VERSION_INVALID',
-] as const
-
-export type RegistryErrorCode = (typeof REGISTRY_ERROR_CODES)[number]
+  | 'PUBLICATION_VERSION_INVALID'
 
 /**
  * One refusal of the registry plumbing, printed as `{ error: { code, message, details? } }`. Its

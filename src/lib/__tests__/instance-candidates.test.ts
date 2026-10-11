@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { OwnedInstanceInfo } from '../../admin/instance'
+import type { InstanceInfo } from '../../admin/instance'
 import type { InstanceStore } from '../instance/bookmarks'
 
 import { collectInstanceCandidates, describeInstanceCandidate } from '../instance/candidates'
@@ -13,7 +13,7 @@ const store: InstanceStore = {
   },
 }
 
-const managedDemo: OwnedInstanceInfo = {
+const managedDemo: InstanceInfo = {
   id: 'demo',
   slug: 'demo',
   url: 'https://demo.eu.astrale.ai',
@@ -40,7 +40,7 @@ describe('collectInstanceCandidates', () => {
   })
 
   test('a name matches bookmarks by alias and managed Instances by slug, nothing else', () => {
-    const twin = (id: string, region: string): OwnedInstanceInfo => ({
+    const twin = (id: string, region: string): InstanceInfo => ({
       id,
       slug: 'twin',
       url: `https://twin.${region}.astrale.ai`,

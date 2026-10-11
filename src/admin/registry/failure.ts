@@ -27,7 +27,7 @@ const NOTHING_RAN_REASONS = new Set([
 const BACKEND_UNAVAILABLE = 5001
 
 /** What a registry command does: a claim is a change with its own refusals. */
-export type RegistryAction = 'read' | 'change' | 'claim'
+type RegistryAction = 'read' | 'change' | 'claim'
 
 const MAY_HAVE_APPLIED = 'the change may have applied. Rerun the same command: it is idempotent.'
 
@@ -41,7 +41,7 @@ const MAY_HAVE_APPLIED = 'the change may have applied. Rerun the same command: i
 export function registryFailure(error: unknown, action: RegistryAction): AstraleError {
   if (error instanceof AstraleError) return error
   if (error instanceof TransportError) {
-    const delivery = transportDelivery(error)
+    const delivery = error.context.kind === 'invocation' ? error.context.delivery : undefined
     return new RegistryError(
       'REGISTRY_UNAVAILABLE',
       action !== 'read' && delivery === 'unknown'
@@ -224,12 +224,6 @@ function unavailable(error: ResponseError, reason?: string): RegistryError {
     },
     { cause: error },
   )
-}
-
-function transportDelivery(error: TransportError): 'not-sent' | 'unknown' | undefined {
-  const context = (error as { readonly context?: { readonly delivery?: unknown } }).context
-  const delivery = context?.delivery
-  return delivery === 'not-sent' || delivery === 'unknown' ? delivery : undefined
 }
 
 function pick(

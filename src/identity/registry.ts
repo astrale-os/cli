@@ -62,7 +62,7 @@ export async function deleteIdentity(name: string): Promise<void> {
         `Cannot delete the default identity "${name}". Switch default first with: astrale identity use <other>`,
       )
     }
-    if ((entry.source ?? 'key') === 'idp') await deleteIdpSession(name)
+    if (entry.source === 'idp') await deleteIdpSession(name)
     else if (!hasAnotherKeyIdentity(store, name, entry.subject)) await removeKeypair(entry.subject)
 
     const { [name]: _, ...identities } = store.identities
@@ -75,9 +75,7 @@ export async function deleteIdentity(name: string): Promise<void> {
 function hasAnotherKeyIdentity(store: IdentityStore, name: string, subject: string): boolean {
   return Object.entries(store.identities).some(
     ([candidateName, candidate]) =>
-      candidateName !== name &&
-      (candidate.source ?? 'key') === 'key' &&
-      candidate.subject === subject,
+      candidateName !== name && candidate.source !== 'idp' && candidate.subject === subject,
   )
 }
 
@@ -129,7 +127,7 @@ export async function upsertIdpIdentity(
   validateName(options.idp, 'IdP')
   return updateIdentityStore((store) => {
     const existing = store.identities[name]
-    if (existing && (existing.source ?? 'key') !== 'idp') {
+    if (existing && existing.source !== 'idp') {
       throw new Error(`Identity "${name}" already exists and is key-backed`)
     }
     const identity: Identity = {

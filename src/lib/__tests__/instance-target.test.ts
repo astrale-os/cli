@@ -6,6 +6,7 @@ import type { InstanceStore } from '../instance/bookmarks'
 import { AdminInstanceNotFoundError } from '../../admin/instance/model'
 import { AstraleError } from '../../errors'
 import { DEFAULT_CONFIG } from '../config'
+import { sanitizeStore } from '../instance/bookmarks'
 import { resolveInstanceTarget } from '../instance/target'
 
 const store: InstanceStore = {
@@ -87,22 +88,35 @@ describe('resolveInstanceTarget', () => {
       source: 'managed',
       url: 'https://bryan.eu.astrale.ai/api',
       kernelIssuer: 'https://bryan.eu.astrale.ai/api',
-      domainOrigin: 'shell.astrale.ai',
     })
   })
 
-  test('a managed bookmark exchanges through the installed Shell, or at the exact issuer its user set', async () => {
-    const shell = await named('bryan', store)
-    expect(shell).toMatchObject({ source: 'bookmark', domainOrigin: 'shell.astrale.ai' })
-    expect(shell).not.toHaveProperty('domainIssuer')
+  /** @evidence TEST-CLI-INSTANCE-MANAGED-USER-ACTS-FOR-ITSELF */
+  test('the user of a managed bookmark acts for itself unless an exact issuer is set', async () => {
+    const own = await named('bryan', store)
+    expect(own).toMatchObject({
+      source: 'bookmark',
+      kernelIssuer: 'https://bryan.eu.astrale.ai/api',
+    })
+    expect(own).not.toHaveProperty('domainIssuer')
 
+    // The issuer a user set is exchanged at, in a labelled registry as in an unlabelled one.
     const bryan = { ...store.instances.bryan!, domainIssuer: 'https://shell-dev.example' }
-    const explicit = await named('bryan', { active: 'bryan', instances: { bryan } })
-    expect(explicit).toMatchObject({
+    const legacy = {
+      url: 'https://legacy.eu.astrale.ai/api',
+      slug: 'legacy',
+      name: 'legacy',
+      domainIssuer: 'https://shell.astrale.ai',
+    }
+    const sanitized = sanitizeStore({ active: 'bryan', instances: { bryan, legacy } }).store
+    expect(await named('bryan', sanitized)).toMatchObject({
       source: 'bookmark',
       domainIssuer: 'https://shell-dev.example',
     })
-    expect(explicit).not.toHaveProperty('domainOrigin')
+    expect(await named('legacy', sanitized)).toMatchObject({
+      source: 'bookmark',
+      domainIssuer: 'https://shell.astrale.ai',
+    })
   })
 
   test.each([

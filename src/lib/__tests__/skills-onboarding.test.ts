@@ -1,17 +1,21 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
   clearSkillOnboardingState,
   offerAstraleSkillInstallation,
-  readSkillOnboardingState,
-  skillInstallOfferDue,
+  type SkillOnboardingSource,
 } from '../skills/onboarding'
 
-const DAY_MS = 24 * 60 * 60 * 1_000
+const DAY = 24 * 60 * 60 * 1_000
+const T0 = Date.UTC(2026, 7, 27, 12)
 const homes: string[] = []
+
+afterEach(async () => {
+  await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })))
+})
 
 async function makeHome(): Promise<string> {
   const home = await mkdtemp(join(tmpdir(), 'astrale-skill-onboarding-'))
@@ -19,196 +23,63 @@ async function makeHome(): Promise<string> {
   return home
 }
 
-afterEach(async () => {
-  await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })))
-})
+function offer(
+  home: string,
+  source: SkillOnboardingSource,
+  now: number,
+  answer: 'yes' | 'no' | 'interrupted' = 'no',
+  interactive = true,
+) {
+  const prompt = async () => (answer === 'interrupted' ? undefined : answer)
+  return offerAstraleSkillInstallation(source, { home, now, interactive, prompt })
+}
+
+async function hasState(home: string): Promise<boolean> {
+  return (await stat(join(home, 'skills-onboarding.json')).catch(() => null)) !== null
+}
 
 describe('skill installation reminders', () => {
-  test('a refusal at install schedules tomorrow, then seven days, then stops', async () => {
+  test('a refusal at install reminds the next day, then after seven days, then stops', async () => {
     const home = await makeHome()
-    const installedAt = Date.UTC(2026, 7, 27, 12)
 
-    const first = await offerAstraleSkillInstallation('install', {
-      home,
-      now: installedAt,
-      interactive: true,
-      prompt: async () => 'no',
+    expect(await offer(home, 'install', T0)).toMatchObject({
+      state: { reminderStage: 'next-day', nextPromptAt: new Date(T0 + DAY).toISOString() },
     })
-    expect(first).toMatchObject({
-      status: 'declined',
-      state: {
-        updateDeclines: 0,
-        reminderStage: 'next-day',
-        nextPromptAt: new Date(installedAt + DAY_MS).toISOString(),
-      },
+    expect(await offer(home, 'reminder', T0 + DAY - 1)).toEqual({ status: 'not-due' })
+    expect(await offer(home, 'reminder', T0 + DAY)).toMatchObject({
+      state: { reminderStage: 'seven-days', nextPromptAt: new Date(T0 + 8 * DAY).toISOString() },
     })
-
-    let prompts = 0
-    const early = await offerAstraleSkillInstallation('reminder', {
-      home,
-      now: installedAt + DAY_MS - 1,
-      interactive: true,
-      prompt: async () => {
-        prompts += 1
-        return 'no'
-      },
+    expect(await offer(home, 'reminder', T0 + 8 * DAY)).toMatchObject({
+      state: { dismissed: true },
     })
-    expect(early).toEqual({ status: 'not-due' })
-    expect(prompts).toBe(0)
-
-    const firstReminderAt = installedAt + DAY_MS
-    const second = await offerAstraleSkillInstallation('reminder', {
-      home,
-      now: firstReminderAt,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    expect(second).toMatchObject({
-      status: 'declined',
-      state: {
-        reminderStage: 'seven-days',
-        nextPromptAt: new Date(firstReminderAt + 7 * DAY_MS).toISOString(),
-      },
-    })
-
-    const lastReminderAt = firstReminderAt + 7 * DAY_MS
-    const third = await offerAstraleSkillInstallation('reminder', {
-      home,
-      now: lastReminderAt,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    expect(third).toMatchObject({ status: 'declined', state: { dismissed: true } })
-    expect(
-      skillInstallOfferDue('reminder', await readSkillOnboardingState({ home }), Infinity),
-    ).toBe(false)
+    expect(await offer(home, 'install', T0 + 100 * DAY)).toEqual({ status: 'suppressed' })
   })
 
-  test('an update refusal resets the active reminder phase from the update time', async () => {
+  test('an update refusal restarts the current phase from the update; two dismiss', async () => {
     const home = await makeHome()
-    const installedAt = Date.UTC(2026, 7, 27, 12)
-    await offerAstraleSkillInstallation('install', {
-      home,
-      now: installedAt,
-      interactive: true,
-      prompt: async () => 'no',
-    })
+    await offer(home, 'install', T0)
+    await offer(home, 'reminder', T0 + DAY)
 
-    const beforeTomorrow = installedAt + 2 * 60 * 60 * 1_000
-    const firstUpdate = await offerAstraleSkillInstallation('update', {
-      home,
-      now: beforeTomorrow,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    expect(firstUpdate).toMatchObject({
-      status: 'declined',
+    expect(await offer(home, 'update', T0 + 2 * DAY)).toMatchObject({
       state: {
         updateDeclines: 1,
-        reminderStage: 'next-day',
-        nextPromptAt: new Date(beforeTomorrow + DAY_MS).toISOString(),
+        reminderStage: 'seven-days',
+        nextPromptAt: new Date(T0 + 9 * DAY).toISOString(),
       },
     })
-
-    const secondUpdate = await offerAstraleSkillInstallation('update', {
-      home,
-      now: beforeTomorrow + 1_000,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    expect(secondUpdate).toMatchObject({
-      status: 'declined',
+    expect(await offer(home, 'update', T0 + 2 * DAY + 1)).toMatchObject({
       state: { updateDeclines: 2, dismissed: true },
     })
   })
 
-  test('an update keeps a seven-day reminder in the seven-day phase', async () => {
+  test('neither a non-interactive nor an interrupted offer counts as a refusal', async () => {
     const home = await makeHome()
-    const installedAt = Date.UTC(2026, 7, 27, 12)
-    await offerAstraleSkillInstallation('install', {
-      home,
-      now: installedAt,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    await offerAstraleSkillInstallation('reminder', {
-      home,
-      now: installedAt + DAY_MS,
-      interactive: true,
-      prompt: async () => 'no',
-    })
+    expect(await offer(home, 'update', T0, 'no', false)).toEqual({ status: 'not-interactive' })
+    expect(await offer(home, 'install', T0, 'interrupted')).toEqual({ status: 'not-interactive' })
+    expect(await hasState(home)).toBe(false)
 
-    const updatedAt = installedAt + 2 * DAY_MS
-    const update = await offerAstraleSkillInstallation('update', {
-      home,
-      now: updatedAt,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    expect(update).toMatchObject({
-      status: 'declined',
-      state: {
-        updateDeclines: 1,
-        reminderStage: 'seven-days',
-        nextPromptAt: new Date(updatedAt + 7 * DAY_MS).toISOString(),
-      },
-    })
-  })
-
-  test('non-interactive and interrupted offers do not count as refusals', async () => {
-    const home = await makeHome()
-    expect(
-      await offerAstraleSkillInstallation('update', {
-        home,
-        interactive: false,
-        prompt: async () => 'no',
-      }),
-    ).toEqual({ status: 'not-interactive' })
-    await expect(stat(join(home, 'skills-onboarding.json'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
-
-    await offerAstraleSkillInstallation('install', {
-      home,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    const before = await readFile(join(home, 'skills-onboarding.json'), 'utf8')
-    expect(
-      await offerAstraleSkillInstallation('update', {
-        home,
-        interactive: false,
-        prompt: async () => 'no',
-      }),
-    ).toEqual({ status: 'not-interactive' })
-    expect(await readFile(join(home, 'skills-onboarding.json'), 'utf8')).toBe(before)
-
+    await offer(home, 'install', T0)
     await clearSkillOnboardingState({ home })
-
-    expect(
-      await offerAstraleSkillInstallation('install', {
-        home,
-        interactive: true,
-        prompt: async () => undefined,
-      }),
-    ).toEqual({ status: 'not-interactive' })
-    await expect(stat(join(home, 'skills-onboarding.json'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
-  })
-
-  test('clearing successful onboarding removes only its reminder state', async () => {
-    const home = await makeHome()
-    await offerAstraleSkillInstallation('install', {
-      home,
-      interactive: true,
-      prompt: async () => 'no',
-    })
-    expect(await readFile(join(home, 'skills-onboarding.json'), 'utf8')).toContain('nextPromptAt')
-
-    await clearSkillOnboardingState({ home })
-    await expect(stat(join(home, 'skills-onboarding.json'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
+    expect(await hasState(home)).toBe(false)
   })
 })

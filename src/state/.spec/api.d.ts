@@ -1,17 +1,9 @@
 import type { SessionRouteArtifact, SessionRouteStore } from '@astrale-os/sdk/client/session'
 
-/** Environment values that affect CLI-owned state placement. */
-export interface PathEnvironment {
-  readonly ASTRALE_HOME?: string
-  readonly ASTRALE_KEYS_DIR?: string
-  readonly ASTRALE_DATA_DIR?: string
-}
-
 /** One captured set of CLI-owned durable-state coordinates. */
 export interface Paths {
   readonly home: string
   readonly keys: string
-  readonly data: string
   readonly config: string
   readonly install: string
   readonly identities: string
@@ -25,22 +17,18 @@ export interface Paths {
   idpSession(identityName: string): string
 }
 
-/** Resolve explicit home, environment overrides, and platform home exactly once. */
-export function createPaths(home?: string, environment?: PathEnvironment): Paths
+/** Resolve every CLI state path from ASTRALE_HOME, ASTRALE_KEYS_DIR, or the platform home. */
+export function createPaths(): Paths
 
 export const paths: Paths
 export const ASTRALE_HOME: string
 export const KEYS_DIR: string
-export const DATA_DIR: string
 export const CONFIG_PATH: string
 export const INSTALL_PATH: string
-export const IDENTITIES_PATH: string
 export const INSTANCES_PATH: string
 export const IDPS_PATH: string
 export const IDP_SESSIONS_DIR: string
 export const EXCHANGE_CREDENTIALS_PATH: string
-export const SESSION_ROUTES_PATH: string
-export const INSTALLATIONS_PATH: string
 
 /**
  * What the CLI remembers about one Domain installed on one Kernel. Only facts whose staleness fails
@@ -50,18 +38,6 @@ export const INSTALLATIONS_PATH: string
 export interface Installation {
   /** Issuer the installed pin named when read, or null when the Domain executes on the Kernel. */
   readonly issuer: string | null
-}
-
-export namespace installations {
-  interface Artifact {
-    readonly version: 1
-    readonly entries: Record<string, Entry>
-  }
-
-  interface Entry extends Installation {
-    /** Unix time in milliseconds of the installation read that produced this entry. */
-    readonly observedAt: number
-  }
 }
 
 /** Remember each Domain installation per source Kernel; installation state, never authority. */
@@ -79,49 +55,42 @@ export class InstallationCache {
 
 export const INSTALLATION_CACHE: InstallationCache
 
-export namespace exchange {
-  interface Artifact {
-    readonly version: 2
-    readonly entries: Record<string, Entry>
-  }
+interface ExchangeKey {
+  readonly kernelIssuer: string
+  readonly domainIssuer: string
+  readonly sourceIssuer: string
+  readonly sourceSubject: string
+}
 
-  interface Key {
-    readonly kernelIssuer: string
-    readonly domainIssuer: string
-    readonly sourceIssuer: string
-    readonly sourceSubject: string
-  }
-
-  interface Entry {
-    readonly credential: string
-    readonly expiresAt: number
-    readonly user: string
-    readonly sourceIssuer: string
-    readonly sourceSubject: string
-  }
+interface ExchangeEntry {
+  readonly credential: string
+  readonly expiresAt: number
+  readonly user: string
+  readonly sourceIssuer: string
+  readonly sourceSubject: string
 }
 
 /** Persist exact Domain bearer tokens under a private, cross-process synchronized cache. */
 export class ExchangeCredentialCache {
   constructor(path?: string)
   get(
-    key: exchange.Key,
+    key: ExchangeKey,
     minimumRemainingSeconds: number,
     now?: () => number,
   ): Promise<string | undefined>
   getOrRefresh(
-    key: exchange.Key,
+    key: ExchangeKey,
     minimumRemainingSeconds: number,
-    refresh: () => Promise<exchange.Entry>,
+    refresh: () => Promise<ExchangeEntry>,
     now?: () => number,
   ): Promise<string>
   deleteKernel(kernelIssuer: string): Promise<void>
   clear(): Promise<void>
 }
 
-export type IdentitySource = 'key' | 'idp'
 export type IdentityMode = 'local' | 'remote'
 
+/** Decoded from the strict V1 zod schema of `identities.json`. */
 export interface Registration {
   readonly iss: string
   readonly sub: string
@@ -131,7 +100,7 @@ export interface Registration {
 export interface Identity {
   readonly subject: string
   readonly createdAt: string
-  readonly source?: IdentitySource
+  readonly source?: 'key' | 'idp'
   readonly mode?: IdentityMode
   readonly kid?: string
   readonly idp?: string
@@ -155,7 +124,7 @@ export interface IdentityStoreOptions {
   readonly lock?: FileLockOptions
 }
 
-export interface IdentityUpdate<Value> {
+interface IdentityUpdate<Value> {
   readonly next: IdentityStore
   readonly value: Value
 }
@@ -172,6 +141,22 @@ export function updateIdentityStore<Value>(
 /** Atomically replace one private CLI state file through a same-directory temporary file. */
 export function atomicWrite(path: string, data: string): Promise<void>
 export function atomicWriteSync(path: string, data: string | Uint8Array): void
+
+/** Read-modify-write one owner-private `{ version, entries }` store under its file lock. */
+export function updatePrivateStore<Entry, Value>(
+  path: string,
+  version: number,
+  transition: (
+    entries: Record<string, Entry>,
+  ) => Promise<{ readonly value: Value; readonly changed: boolean }>,
+  options?: FileLockOptions,
+): Promise<Value>
+
+/** The entries of an owner-private store; a missing, unreadable or other-version store is empty. */
+export function readPrivateStore<Entry>(
+  path: string,
+  version: number,
+): Promise<Record<string, Entry>>
 
 /** CLI filesystem representation for Kernel Client's admitted confidential route artifact. */
 export class FileSessionRouteStore implements SessionRouteStore {

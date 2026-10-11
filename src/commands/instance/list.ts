@@ -5,11 +5,7 @@ import type { KernelCommandOpts } from '../../connection'
 import type { Column } from '../../lib/terminal/table'
 import type { CommandDefinition } from '../../program/index'
 
-import {
-  formatInstanceState,
-  type InstanceInfo,
-  type OwnedInstanceInfo,
-} from '../../admin/instance'
+import { formatInstanceState, type InstanceInfo } from '../../admin/instance'
 import { AstraleError } from '../../errors'
 import { listOwnedInstances } from '../../lib/admin/instances'
 import {
@@ -87,7 +83,7 @@ export default {
         createdAt: entry.createdAt ?? null,
       }))
 
-      let managed: OwnedInstanceInfo[] = []
+      let managed: InstanceInfo[] = []
       if (!opts.bookmarked) {
         try {
           managed = await withSpinner('Fetching instances', !isMachine(opts), () =>

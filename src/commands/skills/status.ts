@@ -8,6 +8,7 @@ import {
   RAW_OUTPUT_OPTIONS,
   type RawOutputOpts,
 } from '../../lib/terminal/output'
+import { logSkillCheck } from './configure'
 
 export default {
   name: 'status',
@@ -20,11 +21,7 @@ export default {
       output({ skills, agents, scope: 'global' }, opts)
       return
     }
-    if (skills.status === 'current') log.success('Astrale skills are up to date')
-    else if (skills.status === 'update-available')
-      log.info('Astrale skills are not installed or need an update')
-    else if (skills.status === 'repair-needed') log.warn('Astrale skills need repair')
-    else log.warn(`Astrale skills could not be checked${skills.error ? `: ${skills.error}` : ''}`)
+    logSkillCheck(skills)
     log.info('Global agent targets:')
     if (configured.length === 0) log.dim('  canonical only (~/.agents/skills)')
     for (const agent of configured) log.dim(`  ${agent.displayName}  ${agent.globalSkillsDir}`)

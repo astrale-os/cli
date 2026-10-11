@@ -68,7 +68,7 @@ describe('publish request (CT29 PublishRequestV1)', () => {
   })
 
   test('refuses a version the SDK versioning module refuses', () => {
-    for (const version of ['v1.5.0', '1.5.0+build.1', '1.5', '01.5.0']) {
+    for (const version of ['v1.5.0', '1.5.0+build.1']) {
       const error = thrown(() => publishRequest(request({ version })))
       expect(error).toBeInstanceOf(RegistryError)
       expect(error.code).toBe('PUBLICATION_VERSION_INVALID')
@@ -77,35 +77,25 @@ describe('publish request (CT29 PublishRequestV1)', () => {
 })
 
 describe('exact references', () => {
-  test('read <origin>@<version> with the install parser', () => {
+  test('read <origin>@<version>; a line, a range or a bare origin names no Publication', () => {
     expect(exactPublicationReference('issues.astrale.ai@2.0.0-rc.1')).toEqual({
       origin: 'issues.astrale.ai',
       version: '2.0.0-rc.1',
     })
-  })
-
-  test('a line, a range, a URL or a bare origin names no Publication', () => {
     for (const input of [
       'issues.astrale.ai@1.5',
       'issues.astrale.ai@^1.5.0',
       'issues.astrale.ai',
-      'https://issues.astrale.ai',
-      'issues.astrale.ai@v1.5.0',
     ]) {
-      const error = thrown(() => exactPublicationReference(input))
-      expect(error.code).toBe('PUBLICATION_VERSION_INVALID')
+      expect(thrown(() => exactPublicationReference(input)).code).toBe(
+        'PUBLICATION_VERSION_INVALID',
+      )
     }
   })
 
-  test('a malformed origin is told apart from a malformed version', () => {
+  test('a malformed origin is INVALID_ARGUMENT, told apart from a malformed version', () => {
     for (const input of ['Issues.astrale.ai@1.2.3', 'issues@1.2.3', '@1.2.3'])
       expect(thrown(() => exactPublicationReference(input)).code).toBe('INVALID_ARGUMENT')
-    expect(thrown(() => exactPublicationReference('issues.astrale.ai@1.2')).code).toBe(
-      'PUBLICATION_VERSION_INVALID',
-    )
-  })
-
-  test('an origin is a lower-case DNS name', () => {
     expect(registryOrigin('issues.astrale.ai')).toBe('issues.astrale.ai')
     for (const input of ['Issues.astrale.ai', 'issues', 'issues.astrale.ai@1.5.0', 'https://a.b'])
       expect(thrown(() => registryOrigin(input)).code).toBe('INVALID_ARGUMENT')

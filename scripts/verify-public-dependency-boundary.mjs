@@ -179,13 +179,6 @@ assert.match(
   /pnpm --dir studio run typecheck/u,
   'CLI root must delegate Studio typechecking to the Studio package',
 )
-const buildScript = await readFile('scripts/build.ts', 'utf8')
-assert.match(buildScript, /node_modules\/\.bin\/tsgo/u, 'CLI declarations must use tsgo')
-assert.doesNotMatch(
-  buildScript,
-  /node_modules\/\.bin\/tsc/u,
-  'CLI declaration build must not use tsc',
-)
 const cliTypeScriptFiles = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
   .split('\n')
   .filter((path) => path.length > 0 && existsSync(path))

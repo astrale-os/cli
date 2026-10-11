@@ -8,7 +8,6 @@
  * SDK and Shell implementation dependencies remain build-time inputs, so a
  * global install does not expose their package graph at runtime.
  */
-import { existsSync } from 'node:fs'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { buildEmbeddedAssets } from './build-embedded-assets'
@@ -57,37 +56,3 @@ await writeFile(OUT, withShebang)
 await chmod(OUT, 0o755)
 
 console.log(`built ${OUT}`)
-
-// Public programmatic subpaths must be Node-loadable from an installed
-// package. Ship bundled JavaScript instead of exposing TypeScript source under
-// node_modules (which Node deliberately refuses to type-strip).
-{
-  const r = await Bun.build({
-    entrypoints: ['src/connect-core.ts', 'src/keys/index.ts', 'src/paths/index.ts'],
-    outdir: 'dist/public',
-    root: 'src',
-    target: 'node',
-    format: 'esm',
-    plugins: [preferJsoncParserEsm],
-  })
-  if (!r.success) {
-    for (const message of r.logs) console.error(message)
-    console.error('public subpath build FAILED')
-    process.exit(1)
-  }
-
-  const tsgo = ['node_modules/.bin/tsgo', '../../node_modules/.bin/tsgo'].find(existsSync)
-  if (!tsgo) {
-    console.error('tsgo is required to emit public subpath declarations')
-    process.exit(1)
-  }
-  const declarations = Bun.spawnSync([tsgo, '-p', 'tsconfig.public.json'], {
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
-  if (declarations.exitCode !== 0) {
-    console.error('public subpath declaration build FAILED')
-    process.exit(1)
-  }
-  console.log('built public subpaths')
-}

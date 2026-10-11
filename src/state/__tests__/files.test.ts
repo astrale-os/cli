@@ -25,13 +25,15 @@ afterEach(async () => {
   await rm(temporaryDirectory, { recursive: true, force: true })
 })
 
-describe('atomicWrite', () => {
+/** Each publication mode, over the same contract. */
+describe.each([
+  ['atomicWrite', atomicWrite],
+  ['atomicWriteSync', async (path: string, data: string) => atomicWriteSync(path, data)],
+] as const)('%s', (_name, write) => {
   /** @evidence TEST-CLI-STATE-ATOMIC-WRITE */
   test('publishes a synced mode-0600 file without temporary residue', async () => {
     const path = join(temporaryDirectory, 'nested', 'state.json')
-
-    await atomicWrite(path, '{"value":1}')
-
+    await write(path, '{"value":1}')
     expect(await readFile(path, 'utf-8')).toBe('{"value":1}')
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect(await readdir(join(temporaryDirectory, 'nested'))).toEqual(['state.json'])
@@ -42,43 +44,17 @@ describe('atomicWrite', () => {
     const path = join(temporaryDirectory, 'target')
     await mkdir(path)
     await writeFile(join(path, 'retained'), 'stable')
-
-    await expect(atomicWrite(path, 'replacement')).rejects.toThrow()
-
+    await expect(write(path, 'replacement')).rejects.toThrow()
     expect(await readFile(join(path, 'retained'), 'utf-8')).toBe('stable')
-    expect((await readdir(temporaryDirectory)).sort()).toEqual(['target'])
+    expect(await readdir(temporaryDirectory)).toEqual(['target'])
   })
 })
 
-describe('atomicWriteSync', () => {
-  test('publishes a synced mode-0600 file without temporary residue', async () => {
-    const path = join(temporaryDirectory, 'sync', 'state.json')
-
-    atomicWriteSync(path, '{"value":1}')
-
-    expect(await readFile(path, 'utf-8')).toBe('{"value":1}')
-    expect((await stat(path)).mode & 0o777).toBe(0o600)
-    expect(await readdir(join(temporaryDirectory, 'sync'))).toEqual(['state.json'])
-  })
-
-  test('preserves binary document bytes through atomic publication', async () => {
-    const path = join(temporaryDirectory, 'document.bin')
-    const bytes = new Uint8Array([0, 255, 128, 13, 10])
-    atomicWriteSync(path, bytes)
-    expect(new Uint8Array(await readFile(path))).toEqual(bytes)
-    expect((await stat(path)).mode & 0o777).toBe(0o600)
-  })
-
-  test('does not disturb the target or retain a temporary file after failure', async () => {
-    const path = join(temporaryDirectory, 'sync-target')
-    await mkdir(path)
-    await writeFile(join(path, 'retained'), 'stable')
-
-    expect(() => atomicWriteSync(path, 'replacement')).toThrow()
-
-    expect(await readFile(join(path, 'retained'), 'utf-8')).toBe('stable')
-    expect((await readdir(temporaryDirectory)).sort()).toEqual(['sync-target'])
-  })
+test('atomicWriteSync preserves binary document bytes', async () => {
+  const path = join(temporaryDirectory, 'document.bin')
+  const bytes = new Uint8Array([0, 255, 128, 13, 10])
+  atomicWriteSync(path, bytes)
+  expect(new Uint8Array(await readFile(path))).toEqual(bytes)
 })
 
 describe('withFileLock', () => {

@@ -1,1 +1,230 @@
-export { formatKernelError, functionInputIssues, schemaUpgradeHint } from './failure'
+import { AuthValueError } from '@astrale-os/sdk/auth'
+import {
+  ClientError,
+  NodeUnavailableError,
+  ProtocolError,
+  ResponseError,
+  SessionError,
+  TransportError,
+  type SessionFailure,
+  type TransportContext,
+} from '@astrale-os/sdk/client'
+import { PathError } from '@astrale-os/sdk/graph/path'
+import chalk from 'chalk'
+
+import type { OperationRecovery } from './command'
+
+import { AstraleError } from '../errors'
+import { log, printFailureDebug } from '../lib/terminal/log'
+import {
+  CREDENTIAL_REFUSED,
+  functionInputIssues,
+  queryInputRepair,
+  reasonCode,
+  schemaDataRemovalHint,
+  schemaUpgradeDetails,
+  schemaUpgradeHint,
+} from './reasons'
+
+/** Present one failure of a Kernel-touching command: typed for humans, one JSON line on stderr for machines. */
+export async function formatKernelError(
+  error: unknown,
+  machine: boolean,
+  urlArg = '',
+  debug = false,
+  options: {
+    recovery?: OperationRecovery
+    /** Members the command adds beside a Kernel refusal's `--json` document, never over its own. */
+    fields?: Readonly<Record<string, unknown>>
+  } = {},
+): Promise<void> {
+  renderFailure(classifyFailure(error), machine, urlArg, options.recovery, options.fields)
+  if (debug) printFailureDebug(error, urlArg)
+}
+
+type FailureDiagnostic =
+  | {
+      readonly kind: 'simple'
+      readonly code: string
+      readonly message: string
+      readonly hint?: string
+    }
+  | {
+      readonly kind: 'response'
+      readonly code: number
+      readonly message: string
+      readonly reason?: unknown
+    }
+  | {
+      readonly kind: 'transport'
+      readonly code: 'CONNECTION_ERROR' | 'DISCONNECTED' | 'TIMEOUT' | 'TRANSPORT_ERROR'
+      readonly message: string
+      readonly phase: TransportError['phase']
+      readonly context: TransportContext
+    }
+
+export function classifyFailure(error: unknown): FailureDiagnostic {
+  if (error instanceof AstraleError) return simple(error.code, error.message, error.hint)
+  if (error instanceof TransportError) {
+    return {
+      kind: 'transport',
+      code: lifecycleCode(error.phase),
+      message: error.message,
+      phase: error.phase,
+      context: error.context,
+    }
+  }
+  if (error instanceof ResponseError) {
+    return {
+      kind: 'response',
+      code: error.code,
+      message: error.message,
+      ...(error.reason === undefined ? {} : { reason: error.reason }),
+    }
+  }
+  if (error instanceof SessionError) return simple(lifecycleCode(error.failure), error.message)
+  if (error instanceof ProtocolError) return simple('PROTOCOL_ERROR', error.message)
+  if (error instanceof NodeUnavailableError)
+    return simple(
+      'NODE_UNAVAILABLE',
+      error.message,
+      'Check the instance and identity (-i/--as). Missing and inaccessible nodes have the same result; a Path also requires access to its intermediate nodes and edges.',
+    )
+  if (error instanceof PathError) return simple('PATH_INVALID', error.message)
+  if (error instanceof AuthValueError) return simple('AUTH_VALUE_INVALID', error.message)
+  if (error instanceof ClientError) return simple('CLIENT_ERROR', error.message)
+  return simple('UNEXPECTED_ERROR', 'The CLI encountered an unexpected internal failure.')
+}
+
+type TransportCode = Extract<FailureDiagnostic, { kind: 'transport' }>['code']
+
+function lifecycleCode(value: TransportError['phase']): TransportCode
+function lifecycleCode(value: SessionFailure): string
+function lifecycleCode(value: TransportError['phase'] | SessionFailure): string {
+  if (value === 'connect') return 'CONNECTION_ERROR'
+  if (value === 'timeout') return 'TIMEOUT'
+  if (value === 'closed') return 'DISCONNECTED'
+  return value === 'cancelled' ? 'CANCELLED' : 'TRANSPORT_ERROR'
+}
+
+const simple = (code: string, message: string, hint?: string): FailureDiagnostic => ({
+  kind: 'simple',
+  code,
+  message,
+  ...(hint === undefined ? {} : { hint }),
+})
+
+function renderFailure(
+  failure: FailureDiagnostic,
+  machine: boolean,
+  url: string,
+  recovery: OperationRecovery | undefined,
+  fields: Readonly<Record<string, unknown>> = {},
+): void {
+  if (failure.kind === 'transport') return renderTransport(failure, machine, url, recovery)
+  if (failure.kind === 'response') return renderResponse(failure, machine, fields)
+  if (machine)
+    return writeRaw({ error: failure.code, message: failure.message, hint: failure.hint })
+  log.error(`${chalk.bold(failure.code)}: ${failure.message}`)
+  if (failure.hint) log.dim(`  ${failure.hint}`)
+}
+
+function renderTransport(
+  failure: Extract<FailureDiagnostic, { kind: 'transport' }>,
+  machine: boolean,
+  url: string,
+  recovery: OperationRecovery | undefined,
+): void {
+  const invocation = failure.context.kind === 'invocation' ? failure.context : undefined
+  if (machine) {
+    writeRaw({
+      error: failure.code,
+      message: failure.message,
+      phase: failure.phase,
+      transport: failure.context,
+      ...(url === '' ? {} : { url }),
+      ...(invocation?.delivery === 'unknown' && recovery !== undefined ? recovery : {}),
+    })
+    return
+  }
+  log.error(`${chalk.bold(failure.code)}: ${failure.message}`)
+  if (url) log.dim(`  target: ${url}`)
+  log.dim(`  phase: ${failure.phase}`)
+  if (failure.phase === 'connect') log.dim('  Check the target and run `astrale status`.')
+  else if (failure.phase === 'timeout') log.dim('  Try increasing `--timeout`.')
+  else if (invocation?.delivery === 'unknown') renderRecovery(recovery)
+}
+
+function renderResponse(
+  failure: Extract<FailureDiagnostic, { kind: 'response' }>,
+  machine: boolean,
+  fields: Readonly<Record<string, unknown>>,
+): void {
+  const code = reasonCode(failure.reason)
+  const issues = functionInputIssues(failure.reason)
+  const removalHint = schemaDataRemovalHint(failure.reason)
+  const addressNotPublic = code === 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC'
+  const upgrade = schemaUpgradeDetails(failure.reason)
+  const message = addressNotPublic
+    ? 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.'
+    : removalHint && !machine
+      ? 'Existing business data still uses schema definitions being removed.'
+      : failure.message
+  const hint =
+    code === 'FUNCTION_INPUT_INVALID' && (machine || issues.length === 0)
+      ? 'Use `astrale introspect <path>` to see the callable input.'
+      : (removalHint ??
+        (upgrade
+          ? schemaUpgradeHint(upgrade)
+          : failure.code === CREDENTIAL_REFUSED
+            ? 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.'
+            : undefined))
+  if (machine) {
+    writeRaw({
+      ...fields,
+      error: 'RESPONSE_ERROR',
+      code: failure.code,
+      message,
+      ...(failure.reason === undefined ? {} : { reason: failure.reason }),
+      ...(hint === undefined ? {} : { hint }),
+    })
+    return
+  }
+  const label = addressNotPublic
+    ? 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC'
+    : removalHint
+      ? 'DATA_MIGRATION_REQUIRED'
+      : `RESPONSE_ERROR(${failure.code})`
+  log.error(`${chalk.bold(label)}: ${message}`)
+  if (code && !addressNotPublic && !removalHint) log.dim(`  reason: ${code}`)
+  for (const issue of issues)
+    console.log(
+      chalk.red(`  ${issue.path || '<input>'}: ${issue.message} (${chalk.dim(issue.code)})`),
+    )
+  const repair = queryInputRepair(failure.reason)
+  if (repair?.phase === 'plan') log.dim(`  ${repair.path ?? '/'}  ${repair.issue}`)
+  else if (repair?.phase === 'limit')
+    log.dim(`  ${repair.path ?? '/'}  ${repair.limit} limit ${repair.actual}/${repair.maximum}`)
+  else if (repair) log.dim(`  ${repair.path}  ${repair.phase} input`)
+  if (upgrade?.issue === 'issuer-changed') {
+    log.dim(`  installed issuer: ${upgrade.installedIssuer}`)
+    log.dim(`  replacement issuer: ${upgrade.replacementIssuer}`)
+    if (upgrade.consented !== undefined) {
+      log.dim(`  consented: ${upgrade.consented.from} -> ${upgrade.consented.to}`)
+    }
+  } else if (upgrade?.issue === 'in-flight-limit') {
+    log.dim(`  replaced issuers in flight: ${upgrade.inFlight}`)
+  }
+  if (hint) log.dim(`  ${hint}`)
+}
+
+function renderRecovery(recovery: OperationRecovery | undefined): void {
+  if (!recovery)
+    return log.dim('  Delivery is unknown; do not automatically retry a mutating call.')
+  log.dim('  Delivery is unknown; retry with the same operation id:')
+  log.dim(`  operation: ${recovery.operation}`)
+  log.dim(`  ${recovery.retry}`)
+}
+
+const writeRaw = (payload: Record<string, unknown>): void =>
+  void process.stderr.write(`${JSON.stringify(payload)}\n`)

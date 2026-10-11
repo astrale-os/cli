@@ -1,33 +1,14 @@
-import { access } from 'node:fs/promises'
-
 import type { SearchResponse, SearchResult } from './model'
 
-import { readUiLock } from '../lock'
+import { exists } from '../files'
+import { lockedIdentity, readUiLock } from '../lock'
 import { UiError, type UiReleaseIdentity } from '../model'
 import { discoverUiProject } from '../project'
 import { resolveUiReleaseIdentity } from '../release'
 import { loadSearchArtifacts, type SearchArtifactDependencies } from './artifacts'
 import { admitSearchRequest, executeSearch } from './engine'
 
-export type SearchUiOptions = {
-  project?: string
-  limit?: number
-  offset?: number
-}
-
-export type SearchUiDependencies = SearchArtifactDependencies
-
-export function nextSearchOffset(offset: number, limit: number, total: number): number | null {
-  const next = offset + limit
-  return next < total ? next : null
-}
-
-async function exists(target: string): Promise<boolean> {
-  return access(target).then(
-    () => true,
-    () => false,
-  )
-}
+type SearchUiOptions = { project?: string; limit?: number; offset?: number }
 
 async function searchIdentity(
   project: string | undefined,
@@ -35,29 +16,13 @@ async function searchIdentity(
 ): Promise<{ identity: UiReleaseIdentity; locked: boolean }> {
   if (project) {
     const discovered = await discoverUiProject(project)
-    const lock = await readUiLock(discovered.uiLockPath)
-    return {
-      identity: {
-        version: lock.package.version,
-        ref: lock.registry.ref,
-        commit: lock.registry.commit,
-      },
-      locked: true,
-    }
+    return { identity: lockedIdentity(await readUiLock(discovered.uiLockPath)), locked: true }
   }
 
   try {
     const discovered = await discoverUiProject()
     if (await exists(discovered.uiLockPath)) {
-      const lock = await readUiLock(discovered.uiLockPath)
-      return {
-        identity: {
-          version: lock.package.version,
-          ref: lock.registry.ref,
-          commit: lock.registry.commit,
-        },
-        locked: true,
-      }
+      return { identity: lockedIdentity(await readUiLock(discovered.uiLockPath)), locked: true }
     }
   } catch (error) {
     if (error instanceof UiError && error.code !== 'UI_PROJECT_UNSUPPORTED') throw error
@@ -82,7 +47,7 @@ function unavailable(error: unknown, locked: boolean): UiError {
 export async function searchUi(
   queryInput: string,
   options: SearchUiOptions = {},
-  dependencies: SearchUiDependencies = {},
+  dependencies: SearchArtifactDependencies = {},
 ): Promise<SearchResponse> {
   const request = admitSearchRequest(queryInput, options)
   const fetcher = dependencies.fetcher ?? fetch
@@ -117,7 +82,8 @@ export async function searchUi(
       offset: request.offset,
       limit: request.limit,
       total: ranked.total,
-      nextOffset: nextSearchOffset(request.offset, request.limit, ranked.total),
+      nextOffset:
+        request.offset + request.limit < ranked.total ? request.offset + request.limit : null,
       results,
     }
   } catch (error) {

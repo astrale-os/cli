@@ -1,14 +1,13 @@
-import { createHash } from 'node:crypto'
-
-import { UiError } from './model'
+import { sha256 } from './files'
+import { UiError, isRecord } from './model'
 
 export const UI_REQUEST_PATH = '/:ui.astrale.ai:function.request'
 
-export const UI_REQUEST_LIMITS = {
+const UI_REQUEST_LIMITS = {
   queryCodePoints: 512,
 } as const
 
-export type UiRequestInput = {
+type UiRequestInput = {
   readonly intent: string
   readonly idempotencyKey: string
 }
@@ -24,13 +23,13 @@ export type UiRequestResult =
       readonly requestId: string
     }
 
-export type UiRequestSubmitter = (input: UiRequestInput) => Promise<unknown>
+type UiRequestSubmitter = (input: UiRequestInput) => Promise<unknown>
 
 function normalizeQuery(value: string): string {
   return value.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim()
 }
 
-export function createUiRequestInput(query: string): UiRequestInput {
+function createUiRequestInput(query: string): UiRequestInput {
   const intent = normalizeQuery(query)
   if (!intent || [...intent].length > UI_REQUEST_LIMITS.queryCodePoints) {
     throw new UiError(
@@ -39,8 +38,7 @@ export function createUiRequestInput(query: string): UiRequestInput {
       'Describe the desired UI outcome and observable behavior in one bounded request.',
     )
   }
-  const digest = createHash('sha256').update(intent, 'utf8').digest('hex')
-  return Object.freeze({ intent, idempotencyKey: `ui-request:v1:${digest}` })
+  return Object.freeze({ intent, idempotencyKey: `ui-request:v1:${sha256(intent)}` })
 }
 
 export async function requestUi(
@@ -50,7 +48,7 @@ export async function requestUi(
   return admitUiRequestResult(await submit(createUiRequestInput(query)))
 }
 
-export function admitUiRequestResult(value: unknown): UiRequestResult {
+function admitUiRequestResult(value: unknown): UiRequestResult {
   if (!isRecord(value) || typeof value.requestId !== 'string' || value.requestId.length === 0) {
     throw unavailable()
   }
@@ -93,10 +91,6 @@ function isHttpsUrl(value: string): boolean {
   } catch {
     return false
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function unavailable(): UiError {

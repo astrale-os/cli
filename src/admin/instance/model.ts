@@ -1,3 +1,5 @@
+import { AstraleError } from '../../errors'
+
 /** CLI-stable projection of one caller-visible Admin Instance. */
 export type InstanceState = 'provisioning' | 'ready' | 'deleting' | 'failed' | 'deleted'
 
@@ -16,11 +18,6 @@ export interface InstanceInfo {
   readonly createdAt?: string
   readonly updatedAt?: string
   readonly organizationId?: string
-}
-
-/** An Instance returned through the caller-scoped Admin graph inventory. */
-export interface OwnedInstanceInfo extends InstanceInfo {
-  readonly state: InstanceState
 }
 
 export interface RootIdentityRecipient {
@@ -43,7 +40,7 @@ export interface RootIdentityTransfer {
 }
 
 export interface RetrievedRootIdentity {
-  readonly instance: OwnedInstanceInfo
+  readonly instance: InstanceInfo
   readonly transfer: RootIdentityTransfer
 }
 
@@ -84,9 +81,9 @@ export class AdminInstanceNotFoundError extends AstraleError {
 
 /** Match an owner-scoped Instance by slug, canonical Node Path, or bare Node id. */
 export function findOwnedInstance(
-  instances: readonly OwnedInstanceInfo[],
+  instances: readonly InstanceInfo[],
   identifier: string,
-): OwnedInstanceInfo | undefined {
+): InstanceInfo | undefined {
   return instances.find(
     (instance) =>
       instance.slug === identifier ||
@@ -99,4 +96,3 @@ export function findOwnedInstance(
 export function formatInstanceState(info: InstanceInfo): string {
   return info.state === 'ready' ? '' : `${info.state}${info.phase ? ` (${info.phase})` : ''}`
 }
-import { AstraleError } from '../../errors'

@@ -115,37 +115,6 @@ export async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-export async function listIdentityKeys(keysDir: string = KEYS_DIR): Promise<string[]> {
-  try {
-    const { readdir } = await import('node:fs/promises')
-    const entries = await readdir(keysDir)
-    const names = new Set<string>()
-    for (const entry of entries) {
-      if (entry.endsWith('.private.jwk')) names.add(entry.replace(/\.private\.jwk$/, ''))
-    }
-    return Array.from(names).sort()
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') return []
-    throw error
-  }
-}
-
-export async function generateEd25519Jwk(
-  kid: string,
-): Promise<{ readonly privateJwk: JWK; readonly publicJwk: JWK }> {
-  const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
-    crv: 'Ed25519',
-    extractable: true,
-  })
-  const privateJwk = await exportJWK(privateKey)
-  const publicJwk = await exportJWK(publicKey)
-  privateJwk.alg = 'EdDSA'
-  publicJwk.alg = 'EdDSA'
-  privateJwk.kid = kid
-  publicJwk.kid = kid
-  return { privateJwk, publicJwk }
-}
-
 export async function persistKeypair(
   subject: string,
   opts?: { readonly keysDir?: string; readonly kid?: string },

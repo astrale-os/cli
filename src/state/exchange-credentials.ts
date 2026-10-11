@@ -1,35 +1,27 @@
 import { credential, grant } from '@astrale-os/sdk/auth'
-import { chmod, mkdir, readFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 
 import { credentialLifetimeCovers } from '../lib/credential-lifetime'
 import { exchangeCallerProof } from '../lib/exchange-grant'
-import { atomicWrite, withFileLock } from './files'
+import { readPrivateStore, updatePrivateStore } from './files'
 import { EXCHANGE_CREDENTIALS_PATH } from './paths'
 
 const VERSION = 2
 const MINIMUM_REMAINING_SECONDS = 30
 
-export namespace exchange {
-  export interface Artifact {
-    readonly version: 2
-    readonly entries: Record<string, Entry>
-  }
+/** One persisted Domain credential: exchanged at `domainIssuer` for a source identity on a Kernel. */
+interface ExchangeKey {
+  readonly kernelIssuer: string
+  readonly domainIssuer: string
+  readonly sourceIssuer: string
+  readonly sourceSubject: string
+}
 
-  export interface Key {
-    readonly kernelIssuer: string
-    readonly domainIssuer: string
-    readonly sourceIssuer: string
-    readonly sourceSubject: string
-  }
-
-  export interface Entry {
-    readonly credential: string
-    readonly expiresAt: number
-    readonly user: string
-    readonly sourceIssuer: string
-    readonly sourceSubject: string
-  }
+interface ExchangeEntry {
+  readonly credential: string
+  readonly expiresAt: number
+  readonly user: string
+  readonly sourceIssuer: string
+  readonly sourceSubject: string
 }
 
 export class ExchangeCredentialCache {
@@ -38,24 +30,21 @@ export class ExchangeCredentialCache {
   constructor(private readonly path = EXCHANGE_CREDENTIALS_PATH) {}
 
   async get(
-    key: exchange.Key,
+    key: ExchangeKey,
     minimumRemainingSeconds: number,
     now = () => Math.floor(Date.now() / 1_000),
   ): Promise<string | undefined> {
     requireMinimumRemainingSeconds(minimumRemainingSeconds)
-    const encoded = encodeKey(key)
-    const store = await readStore(this.path)
-    const observedAt = now()
-    const cached = store.entries[encoded]
-    return cached !== undefined && validEntry(key, cached, observedAt, minimumRemainingSeconds)
+    const cached = (await readPrivateStore<ExchangeEntry>(this.path, VERSION))[encodeKey(key)]
+    return cached !== undefined && validEntry(key, cached, now(), minimumRemainingSeconds)
       ? cached.credential
       : undefined
   }
 
   getOrRefresh(
-    key: exchange.Key,
+    key: ExchangeKey,
     minimumRemainingSeconds: number,
-    refresh: () => Promise<exchange.Entry>,
+    refresh: () => Promise<ExchangeEntry>,
     now = () => Math.floor(Date.now() / 1_000),
   ): Promise<string> {
     requireMinimumRemainingSeconds(minimumRemainingSeconds)
@@ -77,55 +66,50 @@ export class ExchangeCredentialCache {
   }
 
   async deleteKernel(kernelIssuer: string): Promise<void> {
-    await this.transition((store) => {
-      for (const encoded of Object.keys(store.entries)) {
+    await this.transition((entries) => {
+      for (const encoded of Object.keys(entries)) {
         const key = decodeKey(encoded)
-        if (key === undefined || key.kernelIssuer === kernelIssuer) delete store.entries[encoded]
+        if (key === undefined || key.kernelIssuer === kernelIssuer) delete entries[encoded]
       }
     })
   }
 
   async clear(): Promise<void> {
-    await this.transition((store) => {
-      for (const encoded of Object.keys(store.entries)) delete store.entries[encoded]
+    await this.transition((entries) => {
+      for (const encoded of Object.keys(entries)) delete entries[encoded]
     })
   }
 
-  private async getOrRefreshOnce(
-    key: exchange.Key,
+  private getOrRefreshOnce(
+    key: ExchangeKey,
     encoded: string,
     minimumRemainingSeconds: number,
-    refresh: () => Promise<exchange.Entry>,
+    refresh: () => Promise<ExchangeEntry>,
     now: () => number,
   ): Promise<string> {
-    return withFileLock(`${this.path}.lock`, async () => {
-      await ensurePrivateDirectory(this.path)
-      const store = await readStore(this.path)
-      const changed = scrub(store, now())
-      const cached = store.entries[encoded]
+    return updatePrivateStore<ExchangeEntry, string>(this.path, VERSION, async (entries) => {
+      const changed = scrub(entries, now())
+      const cached = entries[encoded]
       if (cached !== undefined && validEntry(key, cached, now(), minimumRemainingSeconds)) {
-        if (changed) await writeStore(this.path, store)
-        return cached.credential
+        return { value: cached.credential, changed }
       }
-
       const next = await refresh()
       if (!validEntry(key, next, now(), minimumRemainingSeconds)) {
         throw new Error(
           'Token exchange returned a credential inconsistent with its cache key or required lifetime.',
         )
       }
-      store.entries[encoded] = Object.freeze({ ...next })
-      await writeStore(this.path, store)
-      return next.credential
+      entries[encoded] = Object.freeze({ ...next })
+      return { value: next.credential, changed: true }
     })
   }
 
-  private async transition(change: (store: exchange.Artifact) => void): Promise<void> {
-    await withFileLock(`${this.path}.lock`, async () => {
-      await ensurePrivateDirectory(this.path)
-      const store = await readStore(this.path)
-      change(store)
-      await writeStore(this.path, store)
+  private async transition(
+    change: (entries: Record<string, ExchangeEntry>) => void,
+  ): Promise<void> {
+    await updatePrivateStore<ExchangeEntry, void>(this.path, VERSION, async (entries) => {
+      change(entries)
+      return { value: undefined, changed: true }
     })
   }
 }
@@ -136,43 +120,9 @@ function requireMinimumRemainingSeconds(input: number): void {
   }
 }
 
-async function readStore(path: string): Promise<exchange.Artifact> {
-  try {
-    const input = JSON.parse(await readFile(path, 'utf8')) as unknown
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) return emptyStore()
-    const value = input as Record<string, unknown>
-    if (
-      value.version !== VERSION ||
-      value.entries === null ||
-      typeof value.entries !== 'object' ||
-      Array.isArray(value.entries)
-    ) {
-      return emptyStore()
-    }
-    return { version: VERSION, entries: { ...(value.entries as Record<string, exchange.Entry>) } }
-  } catch {
-    return emptyStore()
-  }
-}
-
-function emptyStore(): exchange.Artifact {
-  return { version: VERSION, entries: {} }
-}
-
-async function writeStore(path: string, store: exchange.Artifact): Promise<void> {
-  await atomicWrite(path, `${JSON.stringify(store, null, 2)}\n`)
-  await chmod(path, 0o600)
-}
-
-async function ensurePrivateDirectory(path: string): Promise<void> {
-  const directory = dirname(path)
-  await mkdir(directory, { recursive: true, mode: 0o700 })
-  await chmod(directory, 0o700)
-}
-
 function validEntry(
-  key: exchange.Key,
-  entry: exchange.Entry,
+  key: ExchangeKey,
+  entry: ExchangeEntry,
   now: number,
   minimumRemaining = MINIMUM_REMAINING_SECONDS,
 ): boolean {
@@ -226,11 +176,11 @@ function validEntry(
   }
 }
 
-function encodeKey(key: exchange.Key): string {
+function encodeKey(key: ExchangeKey): string {
   return JSON.stringify([key.kernelIssuer, key.domainIssuer, key.sourceIssuer, key.sourceSubject])
 }
 
-function decodeKey(input: string): exchange.Key | undefined {
+function decodeKey(input: string): ExchangeKey | undefined {
   try {
     const value = JSON.parse(input) as unknown
     if (
@@ -251,12 +201,12 @@ function decodeKey(input: string): exchange.Key | undefined {
   }
 }
 
-function scrub(store: Pick<exchange.Artifact, 'entries'>, now: number): boolean {
+function scrub(entries: Record<string, ExchangeEntry>, now: number): boolean {
   let changed = false
-  for (const [encoded, entry] of Object.entries(store.entries)) {
+  for (const [encoded, entry] of Object.entries(entries)) {
     const key = decodeKey(encoded)
     if (key === undefined || !validEntry(key, entry, now, 1)) {
-      delete store.entries[encoded]
+      delete entries[encoded]
       changed = true
     }
   }

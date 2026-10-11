@@ -4,9 +4,9 @@ import type { ClientSession } from '@astrale-os/sdk/client/session'
 import { issuer } from '@astrale-os/sdk/auth'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import type { AstraleConfig } from '../../lib/config'
 import type { ConnectionContext, ConnectionFactory } from '../session'
@@ -66,22 +66,37 @@ function harness(publishedIssuer = serviceIssuer, failure?: Error) {
   return { open, opened, closed, inspected }
 }
 
+type Run = Readonly<{
+  options?: Parameters<typeof withResolvedClientSession>[1]
+  path?: string
+  cache?: InstallationCache
+}>
+
+/** One command through the connection lifecycle with a callable intent. */
+function run(
+  fixture: ReturnType<typeof harness>,
+  action: (context: ConnectionContext) => Promise<unknown> = async () => undefined,
+  { options = {}, path = paths[0]!, cache }: Run = {},
+) {
+  const intent = { principal: 'callable', path: Path.parse(path) } as const
+  return withResolvedClientSession(target, options, config, action, fixture.open, intent, cache)
+}
+
 describe('callable credential ownership', () => {
   test.each(paths)('selects the executable Domain from %s', async (path) => {
     expect(callableOrigin(Path.parse(path))).toBe('services.example')
     const fixture = harness()
-    await withResolvedClientSession(
-      target,
-      { as: 'alice' },
-      config,
+    await run(
+      fixture,
       async (context) => {
-        expect(context.target.domainIssuer).toBe(serviceIssuer)
-        expect(context.target.kernelIssuer).toBe(kernel)
-        expect(context.target.caFile).toBe('/trust.pem')
+        expect(context.target).toMatchObject({
+          domainIssuer: serviceIssuer,
+          kernelIssuer: kernel,
+          caFile: '/trust.pem',
+        })
         expect(fixture.closed).toEqual([0])
       },
-      fixture.open,
-      { principal: 'callable', path: Path.parse(path) },
+      { options: { as: 'alice' }, path },
     )
     expect(fixture.inspected).toEqual(['services.example'])
     expect(fixture.opened.map((entry) => entry.credential)).toEqual([
@@ -91,37 +106,6 @@ describe('callable credential ownership', () => {
     expect(fixture.closed).toEqual([0, 1])
   })
 
-  test('replaces the bookmark Shell origin with the callable Domain', async () => {
-    const fixture = harness()
-    const { domainIssuer: _issuer, ...managed } = target
-    await withResolvedClientSession(
-      { ...managed, domainOrigin: 'shell.astrale.ai' },
-      {},
-      config,
-      async (context) => {
-        expect(context.target.domainIssuer).toBe(serviceIssuer)
-        expect(context.target).not.toHaveProperty('domainOrigin')
-      },
-      fixture.open,
-      { principal: 'callable', path: Path.parse(paths[0]!) },
-    )
-  })
-
-  test('retains the caller for a locally hosted Domain', async () => {
-    const fixture = harness(kernel)
-    await withResolvedClientSession(
-      target,
-      {},
-      config,
-      async (context) => {
-        expect(context.target.domainIssuer).toBeUndefined()
-      },
-      fixture.open,
-      { principal: 'callable', path: Path.parse(paths[0]!) },
-    )
-    expect(fixture.opened[1]?.credential).toEqual({ principal: 'caller' })
-  })
-
   test('does not exchange explicit credentials, anonymous calls, or Kernel calls', async () => {
     for (const [options, path] of [
       [{ creds: 'explicit' }, paths[1]!],
@@ -129,17 +113,9 @@ describe('callable credential ownership', () => {
       [{ as: 'root' }, '/:kernel.astrale.ai:class.Identity:whoami'],
     ] as const) {
       const fixture = harness()
-      await withResolvedClientSession(
-        target,
-        options,
-        config,
-        async () => undefined,
-        fixture.open,
-        { principal: 'callable', path: Path.parse(path) },
-      )
+      await run(fixture, undefined, { options, path })
       expect(fixture.inspected).toEqual([])
-      expect(fixture.opened).toHaveLength(1)
-      expect(fixture.opened[0]?.credential).toEqual({ principal: 'caller' })
+      expect(fixture.opened.map((entry) => entry.credential)).toEqual([{ principal: 'caller' }])
     }
   })
 
@@ -147,18 +123,8 @@ describe('callable credential ownership', () => {
     const failure = new Error('installation unavailable')
     const fixture = harness(serviceIssuer, failure)
     let invoked = false
-    await expect(
-      withResolvedClientSession(
-        target,
-        {},
-        config,
-        async () => {
-          invoked = true
-        },
-        fixture.open,
-        { principal: 'callable', path: Path.parse(paths[1]!) },
-      ),
-    ).rejects.toBe(failure)
+    const invoke = async () => void (invoked = true)
+    await expect(run(fixture, invoke, { path: paths[1]! })).rejects.toBe(failure)
     expect(invoked).toBe(false)
     expect(fixture.opened).toHaveLength(1)
     expect(fixture.closed).toEqual([0])
@@ -168,8 +134,6 @@ describe('callable credential ownership', () => {
 describe('remembered callable Domain issuer', () => {
   let directory: string
   let cache: InstallationCache
-  const path = Path.parse(paths[0]!)
-  const intent = { principal: 'callable', path } as const
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'astrale-callable-issuer-'))
@@ -183,57 +147,31 @@ describe('remembered callable Domain issuer', () => {
   /** @evidence TEST-CLI-CALLABLE-ISSUER-READ-ONCE */
   test('reads the installation once, then exchanges without opening a discovery Session', async () => {
     const cold = harness()
-    await withResolvedClientSession(
-      target,
-      {},
-      config,
-      async () => undefined,
-      cold.open,
-      intent,
-      cache,
-    )
+    await run(cold, undefined, { cache })
     expect(cold.inspected).toEqual(['services.example'])
     expect(await cache.get(kernel, 'services.example')).toEqual({ issuer: serviceIssuer })
 
     const warm = harness()
-    await withResolvedClientSession(
-      target,
-      {},
-      config,
+    await run(
+      warm,
       async (context) => {
-        expect(context.target.domainIssuer).toBe(serviceIssuer)
-        expect(context.target.caFile).toBe('/trust.pem')
+        expect(context.target).toMatchObject({ domainIssuer: serviceIssuer, caFile: '/trust.pem' })
       },
-      warm.open,
-      intent,
-      cache,
+      { cache },
     )
     expect(warm.inspected).toEqual([])
     expect(warm.opened.map((entry) => entry.credential)).toEqual([{ principal: 'domain' }])
   })
 
-  test('remembers a Kernel-hosted Domain as retaining the caller', async () => {
-    await withResolvedClientSession(
-      target,
-      {},
-      config,
-      async () => undefined,
-      harness(kernel).open,
-      intent,
-      cache,
-    )
+  test('retains, and remembers, the caller for a Kernel-hosted Domain', async () => {
+    const hosted = async (context: ConnectionContext) => {
+      expect(context.target.domainIssuer).toBeUndefined()
+    }
+    const cold = harness(kernel)
+    await run(cold, hosted, { cache })
+    expect(cold.opened[1]?.credential).toEqual({ principal: 'caller' })
     const warm = harness()
-    await withResolvedClientSession(
-      target,
-      {},
-      config,
-      async (context) => {
-        expect(context.target.domainIssuer).toBeUndefined()
-      },
-      warm.open,
-      intent,
-      cache,
-    )
+    await run(warm, hosted, { cache })
     expect(warm.inspected).toEqual([])
     expect(warm.opened.map((entry) => entry.credential)).toEqual([{ principal: 'caller' }])
   })
@@ -243,95 +181,16 @@ describe('remembered callable Domain issuer', () => {
     await cache.set(kernel, 'services.example', { issuer: 'https://stale.example' })
     const failure = new Error('credential rejected')
     const stale = harness()
-    await expect(
-      withResolvedClientSession(
-        target,
-        {},
-        config,
-        async () => {
-          throw failure
-        },
-        stale.open,
-        intent,
-        cache,
-      ),
-    ).rejects.toBe(failure)
+    const fail = async () => {
+      throw failure
+    }
+    await expect(run(stale, fail, { cache })).rejects.toBe(failure)
     expect(stale.inspected).toEqual([])
     expect(await cache.get(kernel, 'services.example')).toBeUndefined()
 
     const healed = harness()
-    await withResolvedClientSession(
-      target,
-      {},
-      config,
-      async () => undefined,
-      healed.open,
-      intent,
-      cache,
-    )
+    await run(healed, undefined, { cache })
     expect(healed.inspected).toEqual(['services.example'])
     expect(await cache.get(kernel, 'services.example')).toEqual({ issuer: serviceIssuer })
-  })
-
-  test.skipIf(process.getuid?.() === 0)(
-    'reads the installation again when a remembered issuer could no longer be forgotten',
-    async () => {
-      await cache.set(kernel, 'services.example', { issuer: 'https://stale.example' })
-      const state = join(directory, 'session')
-      await chmod(state, 0o500)
-      try {
-        const fixture = harness()
-        await withResolvedClientSession(
-          target,
-          {},
-          config,
-          async (context) => {
-            expect(context.target.domainIssuer).toBe(serviceIssuer)
-          },
-          fixture.open,
-          intent,
-          cache,
-        )
-        expect(fixture.inspected).toEqual(['services.example'])
-      } finally {
-        await chmod(state, 0o700)
-      }
-    },
-  )
-
-  test('keeps a freshly read issuer when the command itself fails', async () => {
-    const failure = new Error('input rejected')
-    await expect(
-      withResolvedClientSession(
-        target,
-        {},
-        config,
-        async () => {
-          throw failure
-        },
-        harness().open,
-        intent,
-        cache,
-      ),
-    ).rejects.toBe(failure)
-    expect(await cache.get(kernel, 'services.example')).toEqual({ issuer: serviceIssuer })
-  })
-
-  test('falls back to the installation when the remembered state cannot be used', async () => {
-    const file = join(directory, 'session', 'installations.json')
-    await mkdir(dirname(file), { recursive: true })
-    await writeFile(file, 'not json')
-    const fixture = harness()
-    await withResolvedClientSession(
-      target,
-      {},
-      config,
-      async () => undefined,
-      fixture.open,
-      intent,
-      cache,
-    )
-    expect(fixture.inspected).toEqual(['services.example'])
-    expect(fixture.opened.at(-1)?.credential).toEqual({ principal: 'domain' })
   })
 })

@@ -24,18 +24,6 @@ export const CLI_IDENTITY_TRANSFER_ROUNDTRIP = defineLaw({
   ],
 })
 
-export const CLI_IDENTITY_TRANSFER_SCHEMA = defineLaw({
-  id: 'CLI-IDENTITY-TRANSFER-SCHEMA',
-  statement:
-    'Plaintext IdentityExport V1 has one independently versioned portable JSON Schema; decoding additionally proves the JWK pair before any durable mutation.',
-  tests: [
-    {
-      file: '__tests__/transfer.test.ts',
-      id: 'TEST-CLI-IDENTITY-TRANSFER-SCHEMA',
-    },
-  ],
-})
-
 export const CLI_IDENTITY_IMPORT_ORDERED = defineLaw({
   id: 'CLI-IDENTITY-IMPORT-ORDERED',
   statement:

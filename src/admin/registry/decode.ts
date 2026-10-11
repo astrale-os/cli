@@ -188,14 +188,14 @@ export function registryOrigin(input: string): string {
 }
 
 /** One canonical SemVer 2.0.0 version, as `@astrale-os/sdk/versioning` admits it. */
-export function publicationVersion(input: unknown, reference?: string): string {
+function publicationVersion(input: unknown): string {
   try {
     return acceptVersion(input)
   } catch {
     throw new RegistryError(
       'PUBLICATION_VERSION_INVALID',
       `${JSON.stringify(input)} is not a SemVer 2.0.0 version without a leading v or build metadata.`,
-      reference === undefined ? { version: input } : { reference },
+      { version: input },
     )
   }
 }

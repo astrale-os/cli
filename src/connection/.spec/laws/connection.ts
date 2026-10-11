@@ -56,26 +56,30 @@ export const CLI_CONNECTION_DOMAIN_EXCHANGE = defineLaw({
   ],
 })
 
-export const CLI_CONNECTION_HOP_CREDENTIAL = defineLaw({
-  id: 'CLI-CONNECTION-HOP-CREDENTIAL',
+export const CLI_CONNECTION_SOURCE_CREDENTIAL = defineLaw({
+  id: 'CLI-CONNECTION-SOURCE-CREDENTIAL',
   statement:
-    'A source hop resolves a fresh credential only when its session-pinned issuer equals the selected source issuer; a destination hop requires the same selected resolver and returns a fresh delegation for the witnessed Publication issuer, never the source credential, with its TTL bounded strictly inside any source JWT expiry.',
+    'Every invocation resolves its source credential at the pinned source Kernel, under the live Session operation signal, before routing; a remote destination receives a delegate carrier bounded strictly inside the source credential lifetime, never the source credential itself. An opaque or raw source credential is presented as it is, an explicit bearer must cover the command window, and a caller-principal nested credential skips the Domain exchange while keeping the selected human principal.',
   tests: [
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-RESOLVES-CREDENTIAL-PER-HOP',
+      id: 'TEST-CLI-CONNECTION-RESOLVES-SOURCE-AUTH-BEFORE-ROUTING',
     },
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-DELEGATES-VIA-SOURCE-AUTH',
+      id: 'TEST-CLI-CONNECTION-BOUNDS-REMOTE-CARRIER-TO-SOURCE-LIFETIME',
     },
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-REJECTS-HOP-SOURCE-ISSUER-MISMATCH',
+      id: 'TEST-CLI-CONNECTION-USES-RAW-SOURCE-CREDENTIAL',
     },
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-BOUNDS-DELEGATION-TO-SOURCE-EXPIRY',
+      id: 'TEST-CLI-CONNECTION-CALLER-PRINCIPAL-SKIPS-DOMAIN-EXCHANGE',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-PROPAGATES-AUTH-CANCELLATION',
     },
   ],
 })
@@ -127,11 +131,11 @@ export const CLI_CONNECTION_ISSUER_DISCOVERY = defineLaw({
 export const CLI_AUTH_REGISTRATION_TARGET = defineLaw({
   id: 'CLI-AUTH-REGISTRATION-TARGET',
   statement:
-    'Key identity registration lookup uses the same target key for bookmark, managed, Admin, and direct URL calls that identity registration stores.',
+    'Key identity registration lookup uses the same target key for bookmark, managed, Admin, and direct URL calls that identity registration stores, and signs the registered (issuer, subject).',
   tests: [
     {
-      file: '__tests__/auth.test.ts',
-      id: 'TEST-CLI-AUTH-USES-DIRECT-URL-REGISTRATION',
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH',
     },
   ],
 })
@@ -192,18 +196,6 @@ export const CLI_CONNECTION_CA_SCOPE = defineLaw({
   ],
 })
 
-export const CLI_CONNECTION_CALL_SHAPE = defineLaw({
-  id: 'CLI-CONNECTION-CALL-SHAPE',
-  statement:
-    'Caller-authored path text and input enter Client as exactly one public Call; the CLI retains no optional callable hint, caller ETag, or second dispatch representation.',
-  tests: [
-    {
-      file: '__tests__/call.test.ts',
-      id: 'TEST-CLI-CONNECTION-CREATES-ONE-CANONICAL-CALL',
-    },
-  ],
-})
-
 export const CLI_CONNECTION_PUBLIC_SEMANTIC_REASON = defineLaw({
   id: 'CLI-CONNECTION-PUBLIC-SEMANTIC-REASON',
   statement:
@@ -230,20 +222,36 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
       id: 'TEST-CLI-CONNECTION-PRESENTS-BOUNDED-REPAIRS',
     },
     {
-      file: '__tests__/reasons.test.ts',
+      file: '__tests__/errors.test.ts',
       id: 'TEST-CLI-CONNECTION-ADMITS-BOUNDED-REASONS',
     },
     {
-      file: '__tests__/failure-safety.test.ts',
+      file: '__tests__/errors.test.ts',
       id: 'TEST-CLI-CONNECTION-FAILURE-SAFETY',
     },
   ],
 })
 
-export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
-  id: 'CLI-CONNECTION-INSTALLED-SHELL-ISSUER',
+export const CLI_CONNECTION_MANAGED_USER_ACTS_FOR_ITSELF = defineLaw({
+  id: 'CLI-CONNECTION-MANAGED-USER-ACTS-FOR-ITSELF',
   statement:
-    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller. The installation cache remembers what the pin named per source Kernel, so a later command exchanges there, or selects the Domain credential persisted under that issuer before resolving the source credential, without reading the pin again. A consented reinstall changes the issuer within one installation, so the record is healed, never trusted: a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and what the session holds when the pin cannot be read again; any failure of a command that relied on the remembered issuer forgets it, and so does any Kernel call of that command the Kernel refuses with 2002, even one the command recovers from, so the next command reads the pin and no command sends a stale remembered issuer after one has failed; a command that read the pin itself keeps the record. No issuer is derived from the route: in every bookmark registry, labelled or unlabelled, every explicit exact Domain issuer is the user's and wins, whatever its value. Every bookmark write rewrites the registry with the format label. Re-running `astrale instance use <slug>` resets a managed bookmark to exchange through its installed Shell. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
+    'A managed Instance derives no exchange Domain from its route: its users act for themselves, so a graph command presents the selected identity, bounded by its own rules and by no Domain principal. Re-running `astrale instance use <slug>` resets a managed bookmark to act so; an explicit exact Domain issuer a user sets on any bookmark is still exchanged at.',
+  tests: [
+    {
+      file: '../lib/__tests__/instance-target.test.ts',
+      id: 'TEST-CLI-INSTANCE-MANAGED-USER-ACTS-FOR-ITSELF',
+    },
+    {
+      file: '../lib/__tests__/instance-concurrency.test.ts',
+      id: 'TEST-CLI-INSTANCE-USE-RESETS-MANAGED-ISSUER',
+    },
+  ],
+})
+
+export const CLI_CONNECTION_INSTALLED_ISSUER = defineLaw({
+  id: 'CLI-CONNECTION-INSTALLED-ISSUER',
+  statement:
+    "A callable of an installed Domain, the Shell's included, exchanges at the issuer the source Kernel's pin names for its origin, read with schema.inspect through the Session that authenticates the source caller. The installation cache remembers what the pin named per source Kernel, so a later command exchanges there, or selects the Domain credential persisted under that issuer before resolving the source credential, without reading the pin again. A consented reinstall changes the issuer within one installation, so the record is healed, never trusted: a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and what the session holds when the pin cannot be read again; any failure of a command that relied on the remembered issuer forgets it, and so does any Kernel call of that command the Kernel refuses with 2002, even one the command recovers from, so the next command reads the pin and no command sends a stale remembered issuer after one has failed; a command that read the pin itself keeps the record. In every bookmark registry, labelled or unlabelled, every explicit exact Domain issuer is the user's and wins, whatever its value. Every bookmark write rewrites the registry with the format label. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
   tests: [
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -252,10 +260,6 @@ export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
     {
       file: '__tests__/installed-issuer.test.ts',
       id: 'TEST-CLI-INSTALLED-SHELL-STALE-ISSUER-RECOVERS-ONCE',
-    },
-    {
-      file: '__tests__/installed-issuer.test.ts',
-      id: 'TEST-CLI-INSTALLED-SHELL-LEGACY-ISSUER-UNCHANGED',
     },
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -271,7 +275,7 @@ export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
     },
     {
       file: '__tests__/installed-issuer.test.ts',
-      id: 'TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-IN-ONE-RETRY',
+      id: 'TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-WITHIN-COMMAND',
     },
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -279,7 +283,7 @@ export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
     },
     {
       file: '__tests__/installed-issuer.test.ts',
-      id: 'TEST-CLI-INSTALLED-SHELL-RECOVERED-REFUSAL-FORGETS',
+      id: 'TEST-CLI-INSTALLED-SHELL-CONCURRENT-REFUSALS-HEAL',
     },
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -295,19 +299,7 @@ export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
     },
     {
       file: '../lib/__tests__/instance.test.ts',
-      id: 'TEST-CLI-INSTANCE-UNLABELLED-REGISTRY-ISSUER-KEPT',
-    },
-    {
-      file: '../lib/__tests__/instance.test.ts',
       id: 'TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT',
-    },
-    {
-      file: '../lib/__tests__/instance-concurrency.test.ts',
-      id: 'TEST-CLI-INSTANCE-REGISTRY-LABELLED-ON-WRITE',
-    },
-    {
-      file: '../lib/__tests__/admin-target.test.ts',
-      id: 'TEST-CLI-ADMIN-UNLABELLED-REGISTRY-ISSUER-KEPT',
     },
   ],
 })

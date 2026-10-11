@@ -16,7 +16,7 @@ export const CLI_KEYS_JWK_ALGORITHM = defineLaw({
     'Every subject uses the same filename convention; supported JWK key types and curves determine the algorithm when optional alg is absent.',
   tests: [
     { file: '__tests__/keys.test.ts', id: 'TEST-CLI-KEYS-SUBJECT-FILENAMES' },
-    { file: '__tests__/algorithm.test.ts', id: 'TEST-CLI-KEYS-INFERS-JWK-ALGORITHM' },
+    { file: '__tests__/keys.test.ts', id: 'TEST-CLI-KEYS-INFERS-JWK-ALGORITHM' },
   ],
 })
 

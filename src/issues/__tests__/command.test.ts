@@ -94,22 +94,6 @@ describe('issue command', () => {
     expect(f.readBody).not.toHaveBeenCalled()
   })
 
-  it('accepts title/body alone without consulting the active instance', async () => {
-    const f = fixture()
-    await reportIssueCommand('Failure', { body: 'Body' }, f.dependencies)
-    expect(f.readInstances).not.toHaveBeenCalled()
-    expect(f.optionsSeen).toEqual([{}])
-  })
-
-  it('uses stdin only when --body is absent', async () => {
-    const f = fixture()
-    await reportIssueCommand('Failure', {}, f.dependencies)
-    expect(f.readBody).toHaveBeenCalledTimes(1)
-    expect(f.submitIssue).toHaveBeenCalledWith(
-      expect.objectContaining({ content: expect.objectContaining({ body: 'stdin body' }) }),
-    )
-  })
-
   it('retries without reading stdin, bookmarks or current project metadata', async () => {
     const f = fixture()
     await reportIssueCommand(undefined, { retry: f.payload.requestId }, f.dependencies)

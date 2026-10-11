@@ -4,13 +4,12 @@
  * a `session_meta` object carrying cwd + session_id + timestamp. Discovery reads
  * only that first line — never the transcript body — and prunes by date shard.
  */
-import { existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs'
-import { closeSync } from 'node:fs'
+import { closeSync, openSync, readdirSync, readSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import type { HarnessSession } from '../types'
-import type { HarnessAdapter, TimeWindow } from './types'
+import type { HarnessAdapter, TimeWindow } from './index'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const HEAD_CHUNK = 64 * 1024
@@ -74,38 +73,25 @@ function numericDirs(path: string): string[] {
 export function codexAdapter(base: string = join(homedir(), '.codex')): HarnessAdapter {
   const sessionsDir = join(base, 'sessions')
 
-  function detect(): boolean {
-    try {
-      return existsSync(sessionsDir)
-    } catch {
-      return false
-    }
-  }
-
-  function discover(root: string, window: TimeWindow): Promise<HarnessSession[]> {
+  function discover(root: string, window: TimeWindow): HarnessSession[] {
     const sessions: HarnessSession[] = []
-    try {
-      const startMs = window.start.getTime()
-      const endMs = window.end.getTime()
-      const lowerMs = startMs - DAY_MS
-      for (const yyyy of numericDirs(sessionsDir)) {
-        for (const mm of numericDirs(join(sessionsDir, yyyy))) {
-          for (const dd of numericDirs(join(sessionsDir, yyyy, mm))) {
-            // Shard names are LOCAL dates but dayStart is computed as UTC —
-            // pad both bounds a day so no timezone offset can skip a shard.
-            const dayStart = Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd))
-            if (dayStart > endMs + DAY_MS || dayStart + DAY_MS <= lowerMs) continue
-            scanDay(join(sessionsDir, yyyy, mm, dd), root, startMs, endMs, sessions)
-          }
+    const startMs = window.start.getTime()
+    const endMs = window.end.getTime()
+    for (const yyyy of numericDirs(sessionsDir)) {
+      for (const mm of numericDirs(join(sessionsDir, yyyy))) {
+        for (const dd of numericDirs(join(sessionsDir, yyyy, mm))) {
+          // Shard names are LOCAL dates but dayStart is computed as UTC —
+          // pad both bounds a day so no timezone offset can skip a shard.
+          const dayStart = Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd))
+          if (dayStart > endMs + DAY_MS || dayStart + DAY_MS <= startMs - DAY_MS) continue
+          scanDay(join(sessionsDir, yyyy, mm, dd), root, startMs, endMs, sessions)
         }
       }
-    } catch {
-      return Promise.resolve([])
     }
-    return Promise.resolve(sessions)
+    return sessions
   }
 
-  return { name: 'codex', detect, discover, readingGuide: READING_GUIDE }
+  return { name: 'codex', discover, readingGuide: READING_GUIDE }
 }
 
 function scanDay(

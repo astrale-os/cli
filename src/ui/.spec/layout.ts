@@ -4,6 +4,8 @@ export default defineLayout({
   entries: [
     '.spec/',
     '__tests__/',
+    'fetch.ts',
+    'files.ts',
     'index.ts',
     'lock.ts',
     'model.ts',
@@ -11,7 +13,6 @@ export default defineLayout({
     'project.ts',
     'release.ts',
     'request.ts',
-    'runner.ts',
     'search/',
     'search/__tests__/',
     'search/artifacts.ts',

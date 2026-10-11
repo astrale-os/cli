@@ -1,17 +1,23 @@
-import { access, lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { isSeq, parseDocument } from 'yaml'
 
-import { digest, parseUiLock, readUiLock } from './lock'
+import { run } from '../lib/proc'
+import { exists, fileDigest, readOptional, sha256, withRollback, writeJson } from './files'
+import { lockedIdentity, parseUiLock, readUiLock } from './lock'
 import {
+  UI_LOCK_FILE,
   UI_PACKAGE,
   UI_PRESETS,
-  UI_LOCK_FILE,
+  THEME_TOKENS,
+  UI_REPOSITORY,
   UiError,
+  type PackageManager,
   type UiLock,
   type UiPreset,
   type UiRegistryItem,
   type UiRelease,
+  type UiRunner,
 } from './model'
 import {
   assertSupportedUiProject,
@@ -26,66 +32,41 @@ import {
   registryItemUrl,
   resolveUiRelease,
 } from './release'
-import { defaultUiRunner, shadcnInvocation, type UiRunner } from './runner'
 
 type Dependencies = { fetcher?: typeof fetch; runner?: UiRunner }
+type SourceOptions = { dryRun?: boolean; overwrite?: boolean }
+
+const defaultRunner: UiRunner = (file, args, cwd) => run(file, args, { cwd })
 
 const LOCAL_THEME_MAX_BYTES = 131_072
 const THEME_SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u
-const REQUIRED_THEME_TOKENS = [
-  'background',
-  'foreground',
-  'card',
-  'card-foreground',
-  'popover',
-  'popover-foreground',
-  'primary',
-  'primary-foreground',
-  'secondary',
-  'secondary-foreground',
-  'muted',
-  'muted-foreground',
-  'accent',
-  'accent-foreground',
-  'destructive',
-  'destructive-foreground',
-  'border',
-  'input',
-  'ring',
-  'chart-1',
-  'chart-2',
-  'chart-3',
-  'chart-4',
-  'chart-5',
-  'font-body',
-  'font-heading',
-  'radius',
-  'radius-panel',
-  'control-height',
-  'control-height-sm',
-  'control-height-lg',
-  'shadow-control',
-  'shadow-panel',
-  'motion-fast',
-  'motion-standard',
-] as const
+const PACKAGE_CSS_IMPORT =
+  /^@import\s+['"]@astrale-os\/ui\/(?:theme\.css|presets\/[a-z-]+\.css)['"];?\s*$/u
 
-async function exists(target: string): Promise<boolean> {
-  return access(target).then(
-    () => true,
-    () => false,
-  )
+function shadcnInvocation(manager: PackageManager, version: string, args: string[]) {
+  const shadcn = 'shadcn@' + version
+  if (manager === 'pnpm') return { file: 'pnpm', args: ['dlx', shadcn, ...args] }
+  if (manager === 'bun') return { file: 'bunx', args: [shadcn, ...args] }
+  if (manager === 'yarn') return { file: 'yarn', args: ['dlx', shadcn, ...args] }
+  return { file: 'npx', args: ['--yes', shadcn, ...args] }
 }
 
-async function readOptional(target: string): Promise<string | undefined> {
-  return readFile(target, 'utf8').catch(() => undefined)
+async function installDependencies(project: UiProject, runner: UiRunner, context: string) {
+  const result = await runner(project.manager, ['install'], project.root)
+  if (result.code !== 0) {
+    throw new UiError(
+      'UI_DEPENDENCY_INSTALL_FAILED',
+      `${project.manager} install failed${context}.`,
+      result.stderr.trim() || undefined,
+    )
+  }
 }
 
 function isLocalThemeAddress(address: string): boolean {
   return (address.startsWith('./') || address.startsWith('../')) && address.endsWith('.css')
 }
 
-function admitLocalThemeCss(source: string, slug: string): void {
+function admitThemeCss(source: string, slug: string): void {
   if (new TextEncoder().encode(source).byteLength > LOCAL_THEME_MAX_BYTES) {
     throw new UiError('UI_ITEM_CONFLICT', 'Local theme CSS exceeds 128 KiB.')
   }
@@ -94,9 +75,7 @@ function admitLocalThemeCss(source: string, slug: string): void {
     !source.includes("[data-ui-theme='" + slug + "']") ||
     !source.includes("[data-ui-theme='" + slug + "'].dark") ||
     /@import\b|url\s*\(/iu.test(source) ||
-    REQUIRED_THEME_TOKENS.some(
-      (token) => source.match(new RegExp(`--ui-${token}:`, 'gu'))?.length !== 2,
-    )
+    THEME_TOKENS.some((token) => source.match(new RegExp(`--ui-${token}:`, 'gu'))?.length !== 2)
   ) {
     throw new UiError(
       'UI_ITEM_CONFLICT',
@@ -112,8 +91,9 @@ function themeImport(project: UiProject, target: string): string {
   return "@import '" + relative + "';"
 }
 
-function activateTheme(current: string, statement: string): string {
-  const lines = current
+/** Replace any active theme import by `statement`, right after the package CSS imports. */
+function activateTheme(css: string, statement: string): string {
+  const lines = css
     .split(/\r?\n/u)
     .filter(
       (line) =>
@@ -121,35 +101,33 @@ function activateTheme(current: string, statement: string): string {
           line,
         ),
     )
-  const packageImport = lines.reduce(
-    (last, line, index) =>
-      /^@import\s+['"]@astrale-os\/ui\/(?:theme\.css|presets\/[a-z-]+\.css)['"];?\s*$/u.test(line)
-        ? index
-        : last,
-    -1,
-  )
-  lines.splice(packageImport + 1, 0, statement)
+  lines.splice(lines.findLastIndex((line) => PACKAGE_CSS_IMPORT.test(line)) + 1, 0, statement)
   return lines
     .join('\n')
     .replace(/\n{3,}/gu, '\n\n')
     .replace(/^\n/u, '')
 }
 
-type ManifestDependencySection = 'dependencies' | 'devDependencies'
+type DependencySection = 'dependencies' | 'devDependencies'
 
-function manifestDependencies(
+function dependenciesOf(
   manifest: Record<string, unknown>,
-  section: ManifestDependencySection = 'dependencies',
+  section: DependencySection = 'dependencies',
 ): Record<string, string> {
   return { ...(manifest[section] as Record<string, string> | undefined) }
 }
 
+function otherSection(section: DependencySection): DependencySection {
+  return section === 'dependencies' ? 'devDependencies' : 'dependencies'
+}
+
+/** The one section that declares the UI package, or `fallback` when none does. */
 function uiDependencySection(
   manifest: Record<string, unknown>,
-  fallback: ManifestDependencySection = 'dependencies',
-): ManifestDependencySection {
-  const runtime = Object.hasOwn(manifestDependencies(manifest), UI_PACKAGE)
-  const development = Object.hasOwn(manifestDependencies(manifest, 'devDependencies'), UI_PACKAGE)
+  fallback: DependencySection = 'dependencies',
+): DependencySection {
+  const runtime = Object.hasOwn(dependenciesOf(manifest), UI_PACKAGE)
+  const development = Object.hasOwn(dependenciesOf(manifest, 'devDependencies'), UI_PACKAGE)
   if (runtime && development) {
     throw new UiError(
       'UI_PROJECT_UNSUPPORTED',
@@ -157,156 +135,134 @@ function uiDependencySection(
       'Remove it from either dependencies or devDependencies, then retry.',
     )
   }
-  if (development) return 'devDependencies'
-  if (runtime) return 'dependencies'
-  return fallback
+  return development ? 'devDependencies' : runtime ? 'dependencies' : fallback
 }
 
 function setUiDependency(
   manifest: Record<string, unknown>,
-  section: ManifestDependencySection,
+  section: DependencySection,
   version: string,
 ): void {
-  const other = section === 'dependencies' ? 'devDependencies' : 'dependencies'
-  manifest[section] = { ...manifestDependencies(manifest, section), [UI_PACKAGE]: version }
-  const otherDependencies = manifestDependencies(manifest, other)
-  if (Object.hasOwn(otherDependencies, UI_PACKAGE)) {
-    delete otherDependencies[UI_PACKAGE]
-    manifest[other] = otherDependencies
+  manifest[section] = { ...dependenciesOf(manifest, section), [UI_PACKAGE]: version }
+  const other = dependenciesOf(manifest, otherSection(section))
+  if (Object.hasOwn(other, UI_PACKAGE)) {
+    delete other[UI_PACKAGE]
+    manifest[otherSection(section)] = other
   }
 }
 
-function domainRegistryPackagePath(project: UiProject): string {
-  return path.join(project.root, 'components/package.json')
+/** An Astrale Domain keeps the shadcn registry source in a private `components` workspace. */
+const REGISTRY_WORKSPACE = 'components'
+
+function registryPackagePath(project: UiProject): string {
+  return path.join(project.root, REGISTRY_WORKSPACE, 'package.json')
 }
 
 function pnpmWorkspacePath(project: UiProject): string {
   return path.join(project.root, 'pnpm-workspace.yaml')
 }
 
-function domainRegistryPackageName(manifest: Record<string, unknown>): string {
-  const name = typeof manifest.name === 'string' ? manifest.name : 'astrale-domain'
-  return name + '-ui-registry'
+function registryPackageName(manifest: Record<string, unknown>): string {
+  return (typeof manifest.name === 'string' ? manifest.name : 'astrale-domain') + '-ui-registry'
 }
 
-function appendWorkspace(manifest: Record<string, unknown>, workspace: string): void {
+function npmWorkspaces(manifest: Record<string, unknown>): unknown {
   const configured = manifest.workspaces
-  if (configured === undefined) {
-    manifest.workspaces = [workspace]
-    return
-  }
-  if (Array.isArray(configured) && configured.every((value) => typeof value === 'string')) {
-    if (!configured.includes(workspace)) manifest.workspaces = [...configured, workspace]
-    return
-  }
-  if (configured && typeof configured === 'object') {
-    const candidate = configured as { packages?: unknown }
-    if (
-      Array.isArray(candidate.packages) &&
-      candidate.packages.every((value) => typeof value === 'string')
-    ) {
-      if (!candidate.packages.includes(workspace)) {
-        manifest.workspaces = { ...candidate, packages: [...candidate.packages, workspace] }
-      }
-      return
-    }
-  }
-  throw new UiError('UI_PROJECT_UNSUPPORTED', 'package.json has an invalid workspaces field.')
+  return configured && typeof configured === 'object' && !Array.isArray(configured)
+    ? (configured as { packages?: unknown }).packages
+    : configured
 }
 
-async function appendPnpmWorkspace(project: UiProject, workspace: string): Promise<void> {
-  const target = pnpmWorkspacePath(project)
-  const source = await readOptional(target)
-  if (source === undefined) {
-    await writeFile(target, "packages:\n  - '" + workspace + "'\n", 'utf8')
-    return
+function addNpmWorkspace(manifest: Record<string, unknown>, workspace: string): void {
+  const current = npmWorkspaces(manifest) ?? []
+  if (!Array.isArray(current) || !current.every((value) => typeof value === 'string')) {
+    throw new UiError('UI_PROJECT_UNSUPPORTED', 'package.json has an invalid workspaces field.')
   }
+  if (current.includes(workspace)) return
+  const packages = [...current, workspace]
+  manifest.workspaces =
+    manifest.workspaces && !Array.isArray(manifest.workspaces)
+      ? { ...(manifest.workspaces as object), packages }
+      : packages
+}
+
+async function pnpmWorkspaces(project: UiProject) {
+  const source = await readOptional(pnpmWorkspacePath(project))
+  if (source === undefined) return undefined
   const document = parseDocument(source)
-  if (document.errors.length > 0) {
-    throw new UiError('UI_PROJECT_UNSUPPORTED', 'pnpm-workspace.yaml is not valid YAML.')
-  }
-  const packages = document.get('packages', true)
-  if (!isSeq(packages)) {
-    throw new UiError(
-      'UI_PROJECT_UNSUPPORTED',
-      'pnpm-workspace.yaml must declare a packages sequence.',
-    )
-  }
-  const values = packages.toJSON()
-  if (!Array.isArray(values) || !values.every((value) => typeof value === 'string')) {
-    throw new UiError(
-      'UI_PROJECT_UNSUPPORTED',
-      'pnpm-workspace.yaml must declare a packages sequence.',
-    )
-  }
-  if (!values.includes(workspace)) packages.add(workspace)
-  await writeFile(target, String(document), 'utf8')
+  const packages = document.errors.length === 0 ? document.get('packages', true) : undefined
+  const values = isSeq(packages) ? packages.toJSON() : undefined
+  const valid = Array.isArray(values) && values.every((value) => typeof value === 'string')
+  return { document, packages: valid && isSeq(packages) ? packages : undefined, values }
 }
 
-async function hasDomainRegistryWorkspace(project: UiProject): Promise<boolean> {
-  if (!project.isAstraleDomain || !(await exists(domainRegistryPackagePath(project)))) return false
-  const registryManifest = JSON.parse(
-    await readFile(domainRegistryPackagePath(project), 'utf8'),
-  ) as Record<string, unknown>
+async function addPnpmWorkspace(project: UiProject, workspace: string): Promise<void> {
+  const workspaces = await pnpmWorkspaces(project)
+  if (workspaces === undefined) {
+    await writeFile(pnpmWorkspacePath(project), "packages:\n  - '" + workspace + "'\n", 'utf8')
+    return
+  }
+  if (!workspaces.packages) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      'pnpm-workspace.yaml must declare a packages sequence.',
+    )
+  }
+  if (!(workspaces.values as string[]).includes(workspace)) workspaces.packages.add(workspace)
+  await writeFile(pnpmWorkspacePath(project), String(workspaces.document), 'utf8')
+}
+
+async function hasRegistryWorkspace(project: UiProject): Promise<boolean> {
+  const manifest = await readOptional(registryPackagePath(project))
+  if (!project.isAstraleDomain || manifest === undefined) return false
+  const registry = JSON.parse(manifest) as Record<string, unknown>
   if (
-    registryManifest.private !== true ||
-    typeof registryManifest.name !== 'string' ||
-    registryManifest.name === UI_PACKAGE ||
-    registryManifest.name === project.packageJson.name
+    registry.private !== true ||
+    typeof registry.name !== 'string' ||
+    registry.name === UI_PACKAGE ||
+    registry.name === project.packageJson.name
   ) {
     return false
   }
-  if (project.manager === 'pnpm') {
-    const source = await readOptional(pnpmWorkspacePath(project))
-    if (source === undefined) return false
-    const document = parseDocument(source)
-    if (document.errors.length > 0) return false
-    const packages = document.get('packages', true)
-    const values = isSeq(packages) ? packages.toJSON() : undefined
-    return Array.isArray(values) && values.includes('components')
-  }
-  const configured = project.packageJson.workspaces
-  const workspaces = Array.isArray(configured)
-    ? configured
-    : configured && typeof configured === 'object'
-      ? (configured as { packages?: unknown }).packages
-      : undefined
-  return Array.isArray(workspaces) && workspaces.includes('components')
+  const workspaces =
+    project.manager === 'pnpm'
+      ? (await pnpmWorkspaces(project))?.values
+      : npmWorkspaces(project.packageJson)
+  return Array.isArray(workspaces) && workspaces.includes(REGISTRY_WORKSPACE)
 }
 
-async function writeDomainRegistryWorkspace(
+async function writeRegistryWorkspace(
   project: UiProject,
   manifest: Record<string, unknown>,
 ): Promise<void> {
   if (!project.isAstraleDomain) return
-  if (project.manager === 'pnpm') await appendPnpmWorkspace(project, 'components')
-  else appendWorkspace(manifest, 'components')
-  const target = domainRegistryPackagePath(project)
-  const existing = await readOptional(target)
-  const registryManifest = existing
+  if (project.manager === 'pnpm') await addPnpmWorkspace(project, REGISTRY_WORKSPACE)
+  else addNpmWorkspace(manifest, REGISTRY_WORKSPACE)
+  const existing = await readOptional(registryPackagePath(project))
+  const registry = existing
     ? (JSON.parse(existing) as Record<string, unknown>)
-    : { name: domainRegistryPackageName(manifest) }
-  if (registryManifest.private === false) {
+    : { name: registryPackageName(manifest) }
+  if (registry.private === false) {
     throw new UiError(
       'UI_PROJECT_UNSUPPORTED',
       'The Astrale registry source workspace must remain private.',
     )
   }
   if (
-    registryManifest.name === UI_PACKAGE ||
-    registryManifest.name === manifest.name ||
-    (registryManifest.name !== undefined && typeof registryManifest.name !== 'string')
+    registry.name === UI_PACKAGE ||
+    registry.name === manifest.name ||
+    (registry.name !== undefined && typeof registry.name !== 'string')
   ) {
     throw new UiError(
       'UI_PROJECT_UNSUPPORTED',
       'The Astrale registry source workspace must have a distinct package name.',
     )
   }
-  await writeJson(target, {
-    ...registryManifest,
-    name: registryManifest.name ?? domainRegistryPackageName(manifest),
+  await writeJson(registryPackagePath(project), {
+    ...registry,
+    name: registry.name ?? registryPackageName(manifest),
     private: true,
-    type: registryManifest.type ?? 'module',
+    type: registry.type ?? 'module',
   })
 }
 
@@ -319,12 +275,35 @@ export type InitUiOptions = {
   install?: boolean
 }
 
+/** Whether an existing initialization already matches the requested release and preset. */
+async function initializedAsRequested(
+  project: UiProject,
+  lock: UiLock,
+  options: InitUiOptions,
+): Promise<boolean> {
+  const declared = dependenciesOf(project.packageJson, uiDependencySection(project.packageJson))
+  const css = (await readOptional(project.cssPath)) ?? ''
+  const components = await readOptional(project.componentsPath)
+    .then((value) => (value ? (JSON.parse(value) as Record<string, unknown>) : undefined))
+    .catch(() => undefined)
+  const requestedVersion = options.version?.replace(/^v/u, '')
+  return (
+    (!requestedVersion || requestedVersion === lock.package.version) &&
+    declared[UI_PACKAGE] === lock.package.version &&
+    (!options.preset || options.preset === lock.preset) &&
+    css.includes(UI_PACKAGE + '/theme.css') &&
+    css.includes(UI_PACKAGE + '/presets/' + lock.preset + '.css') &&
+    components?.style === 'base-nova' &&
+    (!project.isAstraleDomain || (await hasRegistryWorkspace(project)))
+  )
+}
+
 export async function initUi(
   options: InitUiOptions,
   dependencies: Dependencies = {},
 ): Promise<Record<string, unknown>> {
   const project = await discoverUiProject(options.path)
-  await assertSafePlannedTarget(project, UI_LOCK_FILE)
+  await projectPath(project, UI_LOCK_FILE)
   assertSupportedUiProject(project)
   const preset = options.preset ?? 'astrale'
   if (!UI_PRESETS.includes(preset)) {
@@ -332,24 +311,7 @@ export async function initUi(
   }
   if ((await exists(project.uiLockPath)) && !options.force) {
     const lock = await readUiLock(project.uiLockPath)
-    const dependencySection = uiDependencySection(project.packageJson)
-    const dependencyVersion = manifestDependencies(project.packageJson, dependencySection)[
-      UI_PACKAGE
-    ]
-    const css = (await readOptional(project.cssPath)) ?? ''
-    const components = await readOptional(project.componentsPath)
-      .then((value) => (value ? (JSON.parse(value) as Record<string, unknown>) : undefined))
-      .catch(() => undefined)
-    const requestedVersion = options.version?.replace(/^v/u, '')
-    const desired =
-      (!requestedVersion || requestedVersion === lock.package.version) &&
-      dependencyVersion === lock.package.version &&
-      (!options.preset || options.preset === lock.preset) &&
-      css.includes(UI_PACKAGE + '/theme.css') &&
-      css.includes(UI_PACKAGE + '/presets/' + lock.preset + '.css') &&
-      components?.style === 'base-nova' &&
-      (!project.isAstraleDomain || (await hasDomainRegistryWorkspace(project)))
-    if (!desired) {
+    if (!(await initializedAsRequested(project, lock, options))) {
       throw new UiError(
         'UI_ITEM_CONFLICT',
         'Existing Astrale UI initialization differs from the requested state.',
@@ -360,68 +322,55 @@ export async function initUi(
   }
   const release = await resolveUiRelease(options.version, dependencies.fetcher)
   const cssRelative = projectRelative(project, project.cssPath)
+  const domainFiles = project.isAstraleDomain
+    ? [
+        registryPackagePath(project),
+        ...(project.manager === 'pnpm' ? [pnpmWorkspacePath(project)] : []),
+      ]
+    : []
+  const mutated = [
+    project.packageJsonPath,
+    project.cssPath,
+    project.componentsPath,
+    project.uiLockPath,
+    ...domainFiles,
+    ...(project.lockPath ? [project.lockPath] : []),
+  ]
+  const tooling = {
+    shadcn: release.compatibility.shadcn,
+    base: release.compatibility.base,
+    style: release.compatibility.style,
+    baseUi: release.compatibility.baseUi,
+  }
   const plan = {
     status: options.dryRun ? 'planned' : 'initialized',
     root: project.root,
     package: UI_PACKAGE + '@' + release.version,
     manager: project.manager,
     preset,
-    files: [
-      'package.json',
-      cssRelative,
-      'components.json',
-      'astrale-ui.lock.json',
-      ...(project.isAstraleDomain ? ['components/package.json'] : []),
-      ...(project.isAstraleDomain && project.manager === 'pnpm' ? ['pnpm-workspace.yaml'] : []),
-      ...(project.lockPath ? [projectRelative(project, project.lockPath)] : []),
-    ],
-    tooling: {
-      shadcn: release.compatibility.shadcn,
-      base: release.compatibility.base,
-      style: release.compatibility.style,
-      baseUi: release.compatibility.baseUi,
-    },
+    files: mutated.map((target) => projectRelative(project, target)),
+    tooling,
   }
   if (options.dryRun) return plan
+  for (const target of domainFiles) await projectPath(project, projectRelative(project, target))
 
-  if (project.isAstraleDomain) {
-    await assertSafePlannedTarget(project, 'components/package.json')
-    if (project.manager === 'pnpm') {
-      await assertSafePlannedTarget(project, 'pnpm-workspace.yaml')
-    }
-  }
-
-  const mutationPaths = [
-    project.packageJsonPath,
-    project.cssPath,
-    project.componentsPath,
-    project.uiLockPath,
-    ...(project.isAstraleDomain ? [domainRegistryPackagePath(project)] : []),
-    ...(project.isAstraleDomain && project.manager === 'pnpm' ? [pnpmWorkspacePath(project)] : []),
-    ...(project.lockPath ? [project.lockPath] : []),
-  ]
-  const snapshots = new Map<string, string | undefined>()
-  for (const target of mutationPaths) snapshots.set(target, await readOptional(target))
-
-  try {
+  return withRollback(mutated, async () => {
     const manifest = { ...project.packageJson }
     setUiDependency(manifest, uiDependencySection(manifest), release.version)
-    await writeDomainRegistryWorkspace(project, manifest)
+    await writeRegistryWorkspace(project, manifest)
     await writeJson(project.packageJsonPath, manifest)
 
-    const currentCss = (await readOptional(project.cssPath)) ?? ''
+    const css = ((await readOptional(project.cssPath)) ?? '')
+      .split('\n')
+      .filter((line) => !PACKAGE_CSS_IMPORT.test(line))
+      .join('\n')
+      .trimStart()
     const imports = [
       "@import '" + UI_PACKAGE + "/theme.css';",
       "@import '" + UI_PACKAGE + '/presets/' + preset + ".css';",
     ]
-    const withoutAstrale = currentCss
-      .replace(
-        /^@import\s+['"]@astrale-os\/ui\/(?:theme\.css|presets\/[a-z-]+\.css)['"];?\s*$/gmu,
-        '',
-      )
-      .trimStart()
     await mkdir(path.dirname(project.cssPath), { recursive: true })
-    await writeFile(project.cssPath, imports.join('\n') + '\n\n' + withoutAstrale, 'utf8')
+    await writeFile(project.cssPath, imports.join('\n') + '\n\n' + css, 'utf8')
 
     const components = JSON.parse((await readOptional(project.componentsPath)) ?? '{}') as Record<
       string,
@@ -452,84 +401,43 @@ export async function initUi(
     })
 
     if (options.install !== false) {
-      const result = await (dependencies.runner ?? defaultUiRunner)(
-        project.manager,
-        ['install'],
-        project.root,
-      )
-      if (result.code !== 0) {
-        throw new UiError(
-          'UI_DEPENDENCY_INSTALL_FAILED',
-          project.manager + ' install failed.',
-          result.stderr.trim() || undefined,
-        )
-      }
+      await installDependencies(project, dependencies.runner ?? defaultRunner, '')
     }
 
     const lock: UiLock = {
-      $schema:
-        'https://raw.githubusercontent.com/astrale-os/ui/' +
-        release.ref +
-        '/schemas/ui-lock.schema.json',
+      $schema: `https://raw.githubusercontent.com/${UI_REPOSITORY}/${release.ref}/schemas/ui-lock.schema.json`,
       version: 1,
       package: { name: UI_PACKAGE, version: release.version },
-      registry: {
-        repository: 'astrale-os/ui',
-        ref: release.ref,
-        commit: release.commit,
-      },
-      tooling: {
-        shadcn: release.compatibility.shadcn,
-        base: 'base',
-        style: 'nova',
-        baseUi: release.compatibility.baseUi,
-      },
+      registry: { repository: UI_REPOSITORY, ref: release.ref, commit: release.commit },
+      tooling: { shadcn: tooling.shadcn, base: 'base', style: 'nova', baseUi: tooling.baseUi },
       preset,
       items: {},
     }
     await writeJson(project.uiLockPath, lock)
     return { ...plan, lock }
-  } catch (error) {
-    for (const [target, value] of snapshots) {
-      if (value !== undefined) await writeFile(target, value, 'utf8')
-      else await rm(target, { force: true })
-    }
-    throw error
-  }
+  })
 }
 
+/** Put the locked UI version back after shadcn applied its own compatible range. */
 async function pinUiDependency(
   project: UiProject,
   version: string,
-  section: ManifestDependencySection,
+  section: DependencySection,
   runner: UiRunner,
 ): Promise<void> {
   const manifest = JSON.parse(await readFile(project.packageJsonPath, 'utf8')) as Record<
     string,
     unknown
   >
-  const current = manifestDependencies(manifest, section)[UI_PACKAGE]
-  const other = section === 'dependencies' ? 'devDependencies' : 'dependencies'
-  if (current === version && manifestDependencies(manifest, other)[UI_PACKAGE] === undefined) return
+  if (
+    dependenciesOf(manifest, section)[UI_PACKAGE] === version &&
+    dependenciesOf(manifest, otherSection(section))[UI_PACKAGE] === undefined
+  ) {
+    return
+  }
   setUiDependency(manifest, section, version)
   await writeJson(project.packageJsonPath, manifest)
-  const result = await runner(project.manager, ['install'], project.root)
-  if (result.code !== 0) {
-    throw new UiError(
-      'UI_DEPENDENCY_INSTALL_FAILED',
-      project.manager + ' install failed while restoring the locked UI release.',
-      result.stderr.trim() || undefined,
-    )
-  }
-}
-
-export async function listLockedUi(
-  input: string | undefined,
-  dependencies: Dependencies = {},
-): Promise<UiRegistryItem[]> {
-  const project = await discoverUiProject(input)
-  const { release } = await lockedRelease(project, dependencies.fetcher)
-  return release.registry.items
+  await installDependencies(project, runner, ' while restoring the locked UI release')
 }
 
 async function lockedRelease(
@@ -537,25 +445,83 @@ async function lockedRelease(
   fetcher?: typeof fetch,
 ): Promise<{ lock: UiLock; release: UiRelease }> {
   const lock = await readUiLock(project.uiLockPath)
-  const release = await readUiReleaseSnapshot(
-    {
-      version: lock.package.version,
-      ref: lock.registry.ref,
-      commit: lock.registry.commit,
-    },
-    fetcher,
+  return { lock, release: await readUiReleaseSnapshot(lockedIdentity(lock), fetcher) }
+}
+
+export async function listLockedUi(
+  input: string | undefined,
+  dependencies: Dependencies = {},
+): Promise<UiRegistryItem[]> {
+  const { release } = await lockedRelease(await discoverUiProject(input), dependencies.fetcher)
+  return release.registry.items
+}
+
+function localChanges(file: string, hint = 'repeat add'): UiError {
+  return new UiError(
+    'UI_LOCAL_CHANGES',
+    'Installed UI file has local changes: ' + file,
+    `Review the file, then ${hint} with explicit --overwrite --yes.`,
   )
-  return { lock, release }
+}
+
+async function installTheme(
+  slug: string,
+  source: string,
+  sourceDigest: string,
+  sourceLabel: string,
+  project: UiProject,
+  options: SourceOptions,
+): Promise<Record<string, unknown>> {
+  const lock = await readUiLock(project.uiLockPath)
+  const address = 'theme/' + slug
+  const relativeTarget = 'components/astrale/theme/' + slug + '.css'
+  const target = await projectPath(project, relativeTarget)
+  const existing = await readOptional(target)
+  const installed = lock.items[address]
+  if (existing !== undefined && !installed && !options.overwrite) {
+    throw new UiError(
+      'UI_LOCAL_CHANGES',
+      'Theme target already exists outside the Astrale UI lock: ' + relativeTarget,
+      'Review the file, then repeat with explicit --overwrite --yes.',
+    )
+  }
+  if (
+    installed &&
+    !options.overwrite &&
+    installed.files[relativeTarget] !== sha256(existing ?? '')
+  ) {
+    throw localChanges(relativeTarget)
+  }
+  const statement = themeImport(project, target)
+  const files = { [relativeTarget]: sha256(source) }
+  const result = {
+    status: options.dryRun ? 'planned' : 'installed',
+    items: [address],
+    files: { [address]: files },
+    activation: { file: projectRelative(project, project.cssPath), import: statement },
+    source: sourceLabel,
+  }
+  if (options.dryRun) return result
+
+  return withRollback([target, project.cssPath, project.uiLockPath], async () => {
+    await mkdir(path.dirname(target), { recursive: true })
+    await writeFile(target, source, 'utf8')
+    const css = (await readOptional(project.cssPath)) ?? ''
+    await writeFile(project.cssPath, activateTheme(css, statement), 'utf8')
+    lock.items[address] = { address, sourceDigest, files }
+    await writeJson(project.uiLockPath, lock)
+    return result
+  })
 }
 
 async function addLocalTheme(
   address: string,
   project: UiProject,
-  options: { dryRun?: boolean; overwrite?: boolean },
+  options: SourceOptions,
 ): Promise<Record<string, unknown>> {
   const sourcePath = path.resolve(project.root, address)
   const sourceInfo = await lstat(sourcePath).catch(() => undefined)
-  if (!sourceInfo?.isFile() || sourceInfo.isSymbolicLink()) {
+  if (!sourceInfo?.isFile()) {
     throw new UiError('UI_ITEM_NOT_FOUND', 'Local theme is not a regular file: ' + address)
   }
   const slug = path.basename(sourcePath, '.css')
@@ -567,109 +533,35 @@ async function addLocalTheme(
     )
   }
   const source = await readFile(sourcePath, 'utf8')
-  admitLocalThemeCss(source, slug)
-
-  return installThemeCss(slug, source, digest(source), address, project, options)
-}
-
-async function installThemeCss(
-  slug: string,
-  source: string,
-  sourceDigest: string,
-  sourceLabel: string,
-  project: UiProject,
-  options: { dryRun?: boolean; overwrite?: boolean },
-): Promise<Record<string, unknown>> {
-  const lock = await readUiLock(project.uiLockPath)
-  const canonicalAddress = 'theme/' + slug
-  const relativeTarget = 'components/astrale/theme/' + slug + '.css'
-  const target = await assertSafePlannedTarget(project, relativeTarget)
-  const existing = await readOptional(target)
-  const installed = lock.items[canonicalAddress]
-  if (existing !== undefined && !installed && !options.overwrite) {
-    throw new UiError(
-      'UI_LOCAL_CHANGES',
-      'Theme target already exists outside the Astrale UI lock: ' + relativeTarget,
-      'Review the file, then repeat with explicit --overwrite --yes.',
-    )
-  }
-  if (installed && !options.overwrite) {
-    const expected = installed.files[relativeTarget]
-    if (!expected || digest(existing ?? '') !== expected) {
-      throw new UiError(
-        'UI_LOCAL_CHANGES',
-        'Installed UI file has local changes: ' + relativeTarget,
-        'Review the file, then repeat add with explicit --overwrite --yes.',
-      )
-    }
-  }
-  const statement = themeImport(project, target)
-  const result = {
-    status: options.dryRun ? 'planned' : 'installed',
-    items: [canonicalAddress],
-    files: { [canonicalAddress]: { [relativeTarget]: digest(source) } },
-    activation: { file: projectRelative(project, project.cssPath), import: statement },
-    source: sourceLabel,
-  }
-  if (options.dryRun) return result
-
-  const snapshots = new Map<string, string | undefined>()
-  for (const mutation of [target, project.cssPath, project.uiLockPath]) {
-    snapshots.set(mutation, await readOptional(mutation))
-  }
-  try {
-    await mkdir(path.dirname(target), { recursive: true })
-    await writeFile(target, source, 'utf8')
-    const css = (await readOptional(project.cssPath)) ?? ''
-    await writeFile(project.cssPath, activateTheme(css, statement), 'utf8')
-    lock.items[canonicalAddress] = {
-      address: canonicalAddress,
-      sourceDigest,
-      files: { [relativeTarget]: digest(source) },
-    }
-    await writeJson(project.uiLockPath, lock)
-    return result
-  } catch (error) {
-    for (const [mutation, previous] of snapshots) {
-      if (previous === undefined) await rm(mutation, { force: true })
-      else await writeFile(mutation, previous, 'utf8')
-    }
-    throw error
-  }
+  admitThemeCss(source, slug)
+  return installTheme(slug, source, sha256(source), address, project, options)
 }
 
 async function addReleasedTheme(
-  item: UiRegistryItem,
   document: UiRegistryItem,
   project: UiProject,
-  options: { dryRun?: boolean; overwrite?: boolean },
+  options: SourceOptions,
 ): Promise<Record<string, unknown>> {
-  const slug = item.meta.canonicalAddress.slice('theme/'.length)
+  const address = document.meta.canonicalAddress
+  const slug = address.slice('theme/'.length)
   const source = document.files[0]?.content
   if (typeof source !== 'string') {
     throw new UiError('UI_REGISTRY_UNAVAILABLE', 'The released theme has no admitted CSS source.')
   }
-  admitLocalThemeCss(source, slug)
-  return installThemeCss(
-    slug,
-    source,
-    digest(JSON.stringify(document)),
-    item.meta.canonicalAddress,
-    project,
-    options,
-  )
+  admitThemeCss(source, slug)
+  return installTheme(slug, source, sha256(JSON.stringify(document)), address, project, options)
 }
 
 export async function addUi(
   addresses: string[],
-  options: { project?: string; dryRun?: boolean; overwrite?: boolean; yes?: boolean },
+  options: SourceOptions & { project?: string; yes?: boolean },
   dependencies: Dependencies = {},
 ): Promise<Record<string, unknown>> {
   if (addresses.length === 0) {
     throw new UiError('UI_ITEM_NOT_FOUND', 'No UI item was provided.')
   }
   const project = await discoverUiProject(options.project)
-  await assertSafePlannedTarget(project, UI_LOCK_FILE)
+  await projectPath(project, UI_LOCK_FILE)
   if (options.overwrite && !options.yes) {
     throw new UiError(
       'UI_LOCAL_CHANGES',
@@ -677,51 +569,45 @@ export async function addUi(
       'Review the locally edited files, then repeat with both --overwrite and --yes.',
     )
   }
-  const localThemes = addresses.filter(isLocalThemeAddress)
-  if (localThemes.length > 0) {
+  if (addresses.some(isLocalThemeAddress)) {
     if (addresses.length !== 1) {
       throw new UiError(
         'UI_ITEM_CONFLICT',
         'Install one local theme at a time and do not mix local files with registry addresses.',
       )
     }
-    return addLocalTheme(localThemes[0]!, project, options)
+    return addLocalTheme(addresses[0]!, project, options)
   }
   const { lock, release } = await lockedRelease(project, dependencies.fetcher)
   const dependencySection = uiDependencySection(project.packageJson)
   const items = addresses.map((address) => findItem(release, address))
-  const themes = items.filter((item) => item.type === 'registry:theme')
-  if (themes.length > 1) {
-    throw new UiError('UI_ITEM_CONFLICT', 'Only one theme can be activated per add operation.')
-  }
-  const itemDocuments = await Promise.all(
+  const documents = await Promise.all(
     items.map((item) => readUiRegistryItem(release, item, dependencies.fetcher)),
   )
-  if (themes.length === 1) {
+  if (items.some((item) => item.type === 'registry:theme')) {
     if (items.length !== 1) {
       throw new UiError(
         'UI_ITEM_CONFLICT',
         'Install a released theme separately from patterns and blocks.',
       )
     }
-    return addReleasedTheme(themes[0]!, itemDocuments[0]!, project, options)
+    return addReleasedTheme(documents[0]!, project, options)
   }
-  await rejectLocalChanges(project, lock, items, options.overwrite === true)
-  const declaredTargets = items.flatMap((item) =>
-    item.files.flatMap((file) => (file.target ? [file.target] : [])),
-  )
+  if (!options.overwrite) await rejectLocalChanges(project, lock, items)
   const resolvedTargets = new Map(
     await Promise.all(
-      declaredTargets.map(
-        async (target) => [target, await resolveUiRegistryTarget(project, target)] as const,
-      ),
+      items
+        .flatMap((item) => item.files.flatMap((file) => (file.target ? [file.target] : [])))
+        .map(async (target) => [target, await resolveUiRegistryTarget(project, target)] as const),
     ),
   )
-  const targets = (
-    await Promise.all(
-      [...resolvedTargets.values()].map((target) => assertSafePlannedTarget(project, target)),
-    )
-  ).filter((target, index, all) => all.indexOf(target) === index)
+  const targets = [
+    ...new Set(
+      await Promise.all(
+        [...resolvedTargets.values()].map((target) => projectPath(project, target)),
+      ),
+    ),
+  ]
   const invocation = shadcnInvocation(project.manager, release.compatibility.shadcn, [
     'add',
     ...items.map((item) => registryItemUrl(release, item.name)),
@@ -731,25 +617,9 @@ export async function addUi(
     ...(options.overwrite ? ['--overwrite'] : []),
     ...(options.yes ? ['--yes'] : []),
   ])
-  const snapshots = new Map<string, string | undefined>()
-  if (!options.dryRun) {
-    for (const target of [
-      project.packageJsonPath,
-      project.lockPath!,
-      project.cssPath,
-      project.uiLockPath,
-      ...targets,
-    ]) {
-      snapshots.set(target, await readOptional(target))
-    }
-  }
-  let result: Awaited<ReturnType<UiRunner>>
-  try {
-    result = await (dependencies.runner ?? defaultUiRunner)(
-      invocation.file,
-      invocation.args,
-      project.root,
-    )
+  const runner = dependencies.runner ?? defaultRunner
+  const runShadcn = async () => {
+    const result = await runner(invocation.file, invocation.args, project.root)
     if (result.code !== 0) {
       throw new UiError(
         'UI_TOOL_FAILED',
@@ -757,127 +627,90 @@ export async function addUi(
         result.stderr.trim(),
       )
     }
-    if (!options.dryRun) {
-      for (const target of targets) {
-        if (!(await exists(target))) {
-          throw new UiError('UI_TOOL_FAILED', 'The pinned shadcn operation omitted an item file.')
-        }
-      }
-      await pinUiDependency(
-        project,
-        lock.package.version,
-        dependencySection,
-        dependencies.runner ?? defaultUiRunner,
-      )
-      const theme = themes[0]
-      const themeTarget = theme?.files[0]?.target
-      if (themeTarget) {
-        const target = await safeTarget(project, themeTarget)
-        const css = (await readOptional(project.cssPath)) ?? ''
-        await writeFile(project.cssPath, activateTheme(css, themeImport(project, target)), 'utf8')
-      }
-    }
-  } catch (error) {
-    for (const [target, previous] of snapshots) {
-      if (previous === undefined) await rm(target, { force: true })
-      else await writeFile(target, previous, 'utf8')
-    }
-    throw error
+    return result
   }
+
   if (options.dryRun) {
+    const result = await runShadcn()
     return {
       status: 'planned',
       items: items.map((item) => item.meta.canonicalAddress),
-      sources: itemDocuments.map((item) => ({
+      sources: documents.map((item) => ({
         address: item.meta.canonicalAddress,
         dependencies: item.dependencies ?? [],
-        files: item.files
-          .map((file) => (file.target ? resolvedTargets.get(file.target) : undefined))
-          .filter(Boolean),
+        files: item.files.flatMap((file) =>
+          file.target ? [resolvedTargets.get(file.target)!] : [],
+        ),
       })),
       command: [invocation.file, ...invocation.args],
       output: result.stdout,
-      activation: themes[0]
-        ? {
-            file: projectRelative(project, project.cssPath),
-            import: themeImport(
-              project,
-              targets.find((target) => target.endsWith('.css'))!,
-            ),
-          }
-        : undefined,
     }
   }
 
-  try {
+  const mutated = [project.packageJsonPath, project.lockPath!, project.cssPath, project.uiLockPath]
+  return withRollback([...mutated, ...targets], async () => {
+    await runShadcn()
+    for (const target of targets) {
+      if (!(await exists(target))) {
+        throw new UiError('UI_TOOL_FAILED', 'The pinned shadcn operation omitted an item file.')
+      }
+    }
+    await pinUiDependency(project, lock.package.version, dependencySection, runner)
     for (const [index, item] of items.entries()) {
-      const itemDocument = itemDocuments[index]!
       const files: Record<string, string> = {}
       for (const file of item.files) {
         if (!file.target) continue
-        const target = await safeTarget(project, resolvedTargets.get(file.target)!)
-        files[projectRelative(project, target)] = digest(await readFile(target))
+        const target = await projectPath(project, resolvedTargets.get(file.target)!)
+        files[projectRelative(project, target)] = await fileDigest(target)
       }
-      lock.items[item.meta.canonicalAddress] = {
-        address: item.meta.canonicalAddress,
-        sourceDigest: digest(JSON.stringify(itemDocument)),
+      const address = item.meta.canonicalAddress
+      lock.items[address] = {
+        address,
+        sourceDigest: sha256(JSON.stringify(documents[index])),
         files,
       }
     }
     await writeJson(project.uiLockPath, lock)
-  } catch (error) {
-    for (const [target, previous] of snapshots) {
-      if (previous === undefined) await rm(target, { force: true })
-      else await writeFile(target, previous, 'utf8')
+    return {
+      status: 'installed',
+      items: items.map((item) => item.meta.canonicalAddress),
+      files: Object.fromEntries(
+        items.map((item) => [
+          item.meta.canonicalAddress,
+          lock.items[item.meta.canonicalAddress]?.files,
+        ]),
+      ),
     }
-    throw error
-  }
-  return {
-    status: 'installed',
-    items: items.map((item) => item.meta.canonicalAddress),
-    files: Object.fromEntries(
-      items.map((item) => [
-        item.meta.canonicalAddress,
-        lock.items[item.meta.canonicalAddress]?.files,
-      ]),
-    ),
-  }
+  })
 }
+
+type DoctorCheck = { check: string; ok: boolean; detail?: string }
 
 export async function doctorUi(
   input?: string,
-): Promise<{ healthy: boolean; checks: Array<{ check: string; ok: boolean; detail?: string }> }> {
+): Promise<{ healthy: boolean; checks: DoctorCheck[] }> {
   const project = await discoverUiProject(input)
-  const checks: Array<{ check: string; ok: boolean; detail?: string }> = []
+  const checks: DoctorCheck[] = []
   let lock: UiLock | undefined
   try {
     lock = parseUiLock(JSON.parse(await readFile(project.uiLockPath, 'utf8')))
     checks.push({ check: 'lock', ok: true })
   } catch (error) {
-    checks.push({
-      check: 'lock',
-      ok: false,
-      detail: error instanceof Error ? error.message : String(error),
-    })
+    checks.push({ check: 'lock', ok: false, detail: (error as Error).message })
   }
-  const runtimeVersion = manifestDependencies(project.packageJson)[UI_PACKAGE]
-  const developmentVersion = manifestDependencies(project.packageJson, 'devDependencies')[
-    UI_PACKAGE
-  ]
-  const declarations = [runtimeVersion, developmentVersion].filter(
-    (version): version is string => typeof version === 'string',
-  )
-  const packageVersion = declarations.length === 1 ? declarations[0] : undefined
+  const runtime = dependenciesOf(project.packageJson)[UI_PACKAGE]
+  const development = dependenciesOf(project.packageJson, 'devDependencies')[UI_PACKAGE]
+  const declared = [runtime, development].filter((version) => typeof version === 'string')
+  const version = declared.length === 1 ? declared[0] : undefined
   checks.push({
     check: 'package',
-    ok: declarations.length === 1 && (!lock || packageVersion === lock.package.version),
+    ok: version !== undefined && (!lock || version === lock.package.version),
     detail:
-      declarations.length > 1
+      declared.length > 1
         ? 'declared in dependencies and devDependencies'
-        : packageVersion === undefined
+        : version === undefined
           ? 'missing'
-          : (runtimeVersion === packageVersion ? 'dependencies:' : 'devDependencies:') +
-            packageVersion,
+          : (runtime === version ? 'dependencies:' : 'devDependencies:') + version,
   })
   const css = (await readOptional(project.cssPath)) ?? ''
   checks.push({ check: 'theme', ok: css.includes(UI_PACKAGE + '/theme.css') })
@@ -889,9 +722,7 @@ export async function doctorUi(
   if (lock) {
     for (const item of Object.values(lock.items)) {
       for (const [file, expected] of Object.entries(item.files)) {
-        const actual = await readFile(path.join(project.root, file))
-          .then(digest)
-          .catch(() => '')
+        const actual = await fileDigest(path.join(project.root, file))
         checks.push({ check: 'item:' + item.address + ':' + file, ok: actual === expected })
       }
     }
@@ -899,10 +730,12 @@ export async function doctorUi(
       .filter((item) => item.address.startsWith('theme/'))
       .flatMap((item) => Object.keys(item.files).filter((file) => file.endsWith('.css')))
     if (themeFiles.length > 0) {
-      const active = themeFiles.some((file) =>
-        css.includes(themeImport(project, path.join(project.root, file))),
-      )
-      checks.push({ check: 'theme-active', ok: active })
+      checks.push({
+        check: 'theme-active',
+        ok: themeFiles.some((file) =>
+          css.includes(themeImport(project, path.join(project.root, file))),
+        ),
+      })
     }
   }
   return { healthy: checks.every((check) => check.ok), checks }
@@ -916,18 +749,21 @@ export async function applyPreset(
     throw new UiError('UI_ITEM_NOT_FOUND', 'Unknown preset: ' + preset)
   }
   const project = await discoverUiProject(options.project)
-  await assertSafePlannedTarget(project, UI_LOCK_FILE)
+  await projectPath(project, UI_LOCK_FILE)
   const lock = await readUiLock(project.uiLockPath)
   const css = (await readOptional(project.cssPath)) ?? ''
-  const next = css.replace(
-    /@astrale-os\/ui\/presets\/[a-z-]+\.css/gu,
-    '@astrale-os/ui/presets/' + preset + '.css',
-  )
-  if (next === css && !css.includes('@astrale-os/ui/presets/')) {
+  if (!css.includes('@astrale-os/ui/presets/')) {
     throw new UiError('UI_CONFIG_MISSING', 'No Astrale preset import was found.')
   }
   if (!options.dryRun) {
-    await writeFile(project.cssPath, next, 'utf8')
+    await writeFile(
+      project.cssPath,
+      css.replace(
+        /@astrale-os\/ui\/presets\/[a-z-]+\.css/gu,
+        `@astrale-os/ui/presets/${preset}.css`,
+      ),
+      'utf8',
+    )
     lock.preset = preset
     await writeJson(project.uiLockPath, lock)
   }
@@ -963,64 +799,33 @@ async function rejectLocalChanges(
   project: UiProject,
   lock: UiLock,
   items: UiRegistryItem[],
-  overwrite: boolean,
 ): Promise<void> {
-  if (overwrite) return
   for (const item of items) {
     const installed = lock.items[item.meta.canonicalAddress]
-    if (!installed) continue
-    for (const [file, expected] of Object.entries(installed.files)) {
-      const actual = await readFile(path.join(project.root, file))
-        .then(digest)
-        .catch(() => '')
-      if (actual !== expected) {
-        throw new UiError(
-          'UI_LOCAL_CHANGES',
-          'Installed UI file has local changes: ' + file,
-          'Review the file, then repeat add with explicit --overwrite --yes.',
-        )
-      }
+    for (const [file, expected] of Object.entries(installed?.files ?? {})) {
+      if ((await fileDigest(path.join(project.root, file))) !== expected) throw localChanges(file)
     }
   }
 }
 
-async function safeTarget(project: UiProject, relative: string): Promise<string> {
+/**
+ * The absolute path of a project-relative `relative`, refused when it escapes the project or
+ * traverses a symbolic link.
+ */
+async function projectPath(project: UiProject, relative: string): Promise<string> {
   if (path.isAbsolute(relative) || relative.split(/[\\/]/u).includes('..')) {
     throw new UiError('UI_LOCK_INVALID', 'Unsafe registry target: ' + relative)
   }
   const target = path.resolve(project.root, relative)
   projectRelative(project, target)
-  const parent = await realpath(path.dirname(target))
-  const root = await realpath(project.root)
-  if (parent !== root && !parent.startsWith(root + path.sep)) {
-    throw new UiError('UI_LOCK_INVALID', 'Registry target escapes through a symlink: ' + relative)
-  }
-  if ((await exists(target)) && (await lstat(target)).isSymbolicLink()) {
-    throw new UiError('UI_LOCK_INVALID', 'Registry target is a symlink: ' + relative)
-  }
-  return target
-}
-
-async function assertSafePlannedTarget(project: UiProject, relative: string): Promise<string> {
-  if (path.isAbsolute(relative) || relative.split(/[\\/]/u).includes('..')) {
-    throw new UiError('UI_LOCK_INVALID', 'Unsafe registry target: ' + relative)
-  }
-  const target = path.resolve(project.root, relative)
-  projectRelative(project, target)
-  const root = await realpath(project.root)
-  const physicalTarget = path.resolve(root, path.relative(project.root, target))
-  let current = root
-  for (const segment of path.relative(root, physicalTarget).split(path.sep)) {
+  let current = await realpath(project.root)
+  for (const segment of path.relative(project.root, target).split(path.sep)) {
     current = path.join(current, segment)
-    if (!(await exists(current))) break
-    if ((await lstat(current)).isSymbolicLink()) {
+    const stat = await lstat(current).catch(() => undefined)
+    if (!stat) break
+    if (stat.isSymbolicLink()) {
       throw new UiError('UI_LOCK_INVALID', 'Registry target traverses a symlink: ' + relative)
     }
   }
   return target
-}
-
-async function writeJson(target: string, value: unknown): Promise<void> {
-  await mkdir(path.dirname(target), { recursive: true })
-  await writeFile(target, JSON.stringify(value, null, 2) + '\n', 'utf8')
 }

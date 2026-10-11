@@ -32,8 +32,6 @@ export class AuthError extends AstraleError {
   }
 }
 
-// ── Typed errors (DESIGN.md §4.6, §4.7, §5.1, §10, §11, §12) ─────────
-
 export class IssuerUnreachableError extends AstraleError {
   constructor(url: string, hint?: string) {
     super(
@@ -55,7 +53,7 @@ export class IdentifierCollisionError extends AstraleError {
     super(
       'IDENTIFIER_COLLISION',
       `Identifier "${identifier}" collides with existing ${existingEntity}`,
-      'Slug and name share the same CLI namespace (§4.7). Pick a unique value.',
+      'Slug and name share the same CLI namespace. Pick a unique value.',
     )
   }
 }

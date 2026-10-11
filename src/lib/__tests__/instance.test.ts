@@ -5,10 +5,9 @@ import type { InstanceStore } from '../instance/bookmarks'
 import { IdentifierCollisionError, ReservedSlugError } from '../../errors'
 import {
   assertNoCollision,
-  bookmarkExchangeDomain,
   findBookmarkTrustConflicts,
   InstanceStoreSchema,
-  managedShellOrigin,
+  isManagedRoute,
   normalizeInstanceKernelUrl,
   resolveInstanceKey,
   sanitizeStore,
@@ -84,11 +83,12 @@ describe('bookmark registry format', () => {
   })
 
   /** @evidence TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT */
-  test('a bookmark exchanges at its explicit issuer, else a managed one through the Shell', () => {
+  test('a bookmark keeps the explicit issuer its user set; a managed one stores none', () => {
     const managed = 'https://bryan.eu.astrale.ai/api'
-    expect(managedShellOrigin(managed)).toBe('shell.astrale.ai')
-    expect(managedShellOrigin('http://bryan.eu.astrale.ai/api')).toBeUndefined()
-    expect(managedShellOrigin('https://kernel.example.com/api')).toBeUndefined()
+    expect(isManagedRoute(managed)).toBe(true)
+    expect(isManagedRoute('https://bryan.eu.beta.astrale.ai/api')).toBe(true)
+    expect(isManagedRoute('http://bryan.eu.astrale.ai/api')).toBe(false)
+    expect(isManagedRoute('https://kernel.example.com/api')).toBe(false)
 
     const registry = InstanceStoreSchema.parse({
       version: 1,
@@ -112,12 +112,9 @@ describe('bookmark registry format', () => {
     })
     const { store: read, changed } = sanitizeStore(registry)
     expect(changed).toBe(false)
-    const exchange = (name: string) => bookmarkExchangeDomain(read.instances[name]!, managed)
-    expect(exchange('bryan')).toEqual({ domainOrigin: 'shell.astrale.ai' })
-    expect(exchange('dev')).toEqual({ domainIssuer: 'https://shell-dev.example' })
-    expect(exchange('crm')).toEqual({ domainIssuer: 'https://crm.example' })
-    expect(exchange('control')).toEqual({})
     expect(read.instances.bryan).not.toHaveProperty('domainIssuer')
+    expect(read.instances.dev?.domainIssuer).toBe('https://shell-dev.example')
+    expect(read.instances.crm?.domainIssuer).toBe('https://crm.example')
   })
 
   test('finds another bookmark of the same Kernel URL under different TLS trust', () => {

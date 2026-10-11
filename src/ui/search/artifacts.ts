@@ -1,9 +1,10 @@
-import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import path from 'node:path'
 
+import { paths } from '../../state'
 import { atomicWrite, withFileLock } from '../../state/files'
+import { fetchBounded } from '../fetch'
+import { isInside, isSafeRelative, sha256 } from '../files'
 import { UiError, type UiReleaseIdentity } from '../model'
 import {
   SEARCH_LIMITS,
@@ -27,70 +28,25 @@ export type SearchArtifacts = {
   readCode(code: SearchCode): Promise<string>
 }
 
-function cacheBase(commit: string, configured?: string): string {
-  const home = process.env.ASTRALE_HOME ?? path.join(homedir(), '.astrale')
-  return path.join(configured ?? path.join(home, 'cache', 'ui-search'), commit)
-}
-
 function cacheFile(root: string, relative: string): string {
-  if (
-    path.isAbsolute(relative) ||
-    relative.includes('\\') ||
-    relative.split('/').some((part) => part.length === 0 || part === '.' || part === '..')
-  ) {
-    throw new UiError('UI_SEARCH_UNAVAILABLE', 'Astrale UI search referenced an unsafe cache path.')
-  }
   const target = path.resolve(root, relative)
-  const fromRoot = path.relative(root, target)
-  if (fromRoot === '..' || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+  if (!isSafeRelative(relative) || !isInside(root, target)) {
     throw new UiError('UI_SEARCH_UNAVAILABLE', 'Astrale UI search referenced an unsafe cache path.')
   }
   return target
 }
 
-async function responseBytes(response: Response, label: string, maximum: number): Promise<Buffer> {
-  if (!response.ok) {
-    throw new UiError('UI_SEARCH_UNAVAILABLE', `${label} returned HTTP ${response.status}.`)
-  }
-  const declared = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > maximum) {
-    throw new UiError('UI_SEARCH_UNAVAILABLE', `${label} exceeds the supported response size.`)
-  }
-  if (!response.body) throw new UiError('UI_SEARCH_UNAVAILABLE', `${label} returned no body.`)
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let bytes = 0
-  for (;;) {
-    const result = await reader.read()
-    if (result.done) break
-    bytes += result.value.byteLength
-    if (bytes > maximum) {
-      await reader.cancel()
-      throw new UiError('UI_SEARCH_UNAVAILABLE', `${label} exceeds the supported response size.`)
-    }
-    chunks.push(result.value)
-  }
-  return Buffer.concat(
-    chunks.map((chunk) => Buffer.from(chunk)),
-    bytes,
-  )
-}
-
-async function fetchBytes(fetcher: typeof fetch, url: string, label: string, maximum: number) {
-  let response: Response
-  try {
-    response = await fetcher(url, { headers: { accept: 'application/json, text/plain' } })
-  } catch (cause) {
-    throw new UiError('UI_SEARCH_UNAVAILABLE', `Unable to reach ${label}.`, undefined, { cause })
-  }
-  return responseBytes(response, label, maximum)
+function fetchArtifact(fetcher: typeof fetch, url: string, label: string, maxBytes: number) {
+  return fetchBounded(fetcher, url, {
+    label,
+    code: 'UI_SEARCH_UNAVAILABLE',
+    maxBytes,
+    accept: 'application/json, text/plain',
+  })
 }
 
 function verify(bytes: Buffer, file: SearchArtifactFile): boolean {
-  return (
-    bytes.byteLength === file.bytes &&
-    createHash('sha256').update(bytes).digest('hex') === file.sha256
-  )
+  return bytes.byteLength === file.bytes && sha256(bytes) === file.sha256
 }
 
 async function readVerifiedCache(
@@ -114,14 +70,17 @@ export async function loadSearchArtifacts(
   dependencies: SearchArtifactDependencies = {},
 ): Promise<SearchArtifacts> {
   const fetcher = dependencies.fetcher ?? fetch
-  const root = cacheBase(identity.commit, dependencies.cacheRoot)
+  const root = path.join(
+    dependencies.cacheRoot ?? path.join(paths.home, 'cache', 'ui-search'),
+    identity.commit,
+  )
   const manifestPath = cacheFile(root, 'manifest.json')
   let manifest = await readManifestCache(manifestPath)
   if (!manifest) {
     manifest = await withFileLock(cacheFile(root, 'manifest.lock'), async () => {
       const admitted = await readManifestCache(manifestPath)
       if (admitted) return admitted
-      const bytes = await fetchBytes(
+      const bytes = await fetchArtifact(
         fetcher,
         `${RAW}/${identity.commit}/search/public/manifest.json`,
         'Astrale UI search manifest',
@@ -155,7 +114,7 @@ export async function loadSearchArtifacts(
     return withFileLock(cacheFile(root, `locks/${file.sha256}.lock`), async () => {
       const admitted = await readVerifiedCache(target, file)
       if (admitted) return admitted
-      const bytes = await fetchBytes(
+      const bytes = await fetchArtifact(
         fetcher,
         `${RAW}/${identity.commit}/${file.path}`,
         'Astrale UI search artifact',

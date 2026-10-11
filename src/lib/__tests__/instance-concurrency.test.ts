@@ -100,26 +100,32 @@ describe('bookmark registry write ownership', () => {
   })
 })
 
-describe('managed bookmark Shell exchange on write', () => {
+describe('managed bookmark issuer on write', () => {
   const url = 'https://bryan.eu.astrale.ai/api'
   const bryan = { url, issuer: url, slug: 'bryan', name: 'bryan', kind: 'bookmark' }
   const beta = 'https://shell.beta.astrale.ai'
 
-  test('instance use resets a managed bookmark to its installed Shell', async () => {
-    const home = await fixture()
-    await writeRegistry(home, 'bryan', {
-      bryan: { ...bryan, domainIssuer: 'https://shell-dev.example' },
-    })
-    expect(
-      await command(
-        home,
-        `await registry.upsertManagedBookmark({key:'bryan', slug:'bryan', url:${JSON.stringify(url)}});`,
-      ),
-    ).toEqual(ok)
-    const entry = (await instancesOf(home)).instances.bryan
-    expect(entry).toMatchObject({ url, slug: 'bryan', name: 'bryan' })
-    expect(entry).not.toHaveProperty('domainIssuer')
-  })
+  /** @evidence TEST-CLI-INSTANCE-USE-RESETS-MANAGED-ISSUER */
+  test.each([
+    'https://shell.beta.astrale.ai',
+    'https://shell.astrale.ai',
+    'https://shell-dev.example',
+  ])(
+    'instance use resets a managed bookmark with issuer %s to act as its user',
+    async (domainIssuer) => {
+      const home = await fixture()
+      await writeRegistry(home, 'bryan', { bryan: { ...bryan, domainIssuer } })
+      expect(
+        await command(
+          home,
+          `await registry.upsertManagedBookmark({key:'bryan', slug:'bryan', url:${JSON.stringify(url)}});`,
+        ),
+      ).toEqual(ok)
+      const entry = (await instancesOf(home)).instances.bryan
+      expect(entry).toMatchObject({ url, slug: 'bryan', name: 'bryan' })
+      expect(entry).not.toHaveProperty('domainIssuer')
+    },
+  )
 
   /** @evidence TEST-CLI-INSTANCE-REGISTRY-ISSUERS-RETAINED */
   test('a bookmark write preserves explicit issuers on all bookmarks, and reads them back', async () => {
@@ -136,7 +142,7 @@ describe('managed bookmark Shell exchange on write', () => {
         `await registry.upsertInstance('bryan', {url:${JSON.stringify(url)}, defaultIdentity:'alice'});
          registry.resetInstancesMemo();
          const read = await registry.resolveInstance('bryan');
-         if (read.domainIssuer !== '${beta}' || read.domainOrigin !== undefined) throw new Error(JSON.stringify(read));`,
+         if (read.domainIssuer !== '${beta}') throw new Error(JSON.stringify(read));`,
       ),
     ).toEqual(ok)
     const { instances } = await instancesOf(home)

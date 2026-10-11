@@ -58,9 +58,11 @@ export function createInstalledIssuer(
   origin: string,
   installations?: InstallationCache,
   read: InstalledDomainReader = inspectInstalledDomain,
+  /** What a pin this command already read named: held as read, so a failure keeps its record. */
+  pinned?: IssuerId | null,
 ): InstalledIssuer {
   /** The issuer this session exchanges at; null for a Domain hosted by the Kernel. */
-  let held: IssuerId | null | undefined
+  let held: IssuerId | null | undefined = pinned
   /** Whether `held` came from the installation cache rather than from a pin this session read. */
   let remembered = false
   let recalled: Promise<IssuerId | null | undefined> | undefined

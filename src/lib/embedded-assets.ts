@@ -1,5 +1,4 @@
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 
@@ -10,6 +9,7 @@ import {
   EMBEDDED_ASSET_VERSION,
 } from '../generated/embedded-assets'
 import { withFileLock } from '../state/files'
+import { createPaths } from '../state/paths'
 
 type EmbeddedFile = { path: string; mode: number; contents: string }
 type EmbeddedArchive = { format: number; version: string; files: EmbeddedFile[] }
@@ -33,10 +33,7 @@ export function embeddedFiles(prefix: 'skills' | 'studio' | 'viewer'): EmbeddedF
   return archive().files.filter((file) => file.path.startsWith(marker))
 }
 
-export function embeddedAssetDir(
-  group: 'studio' | 'viewer',
-  root = process.env.ASTRALE_HOME ?? join(homedir(), '.astrale'),
-): string {
+export function embeddedAssetDir(group: 'studio' | 'viewer', root = createPaths().home): string {
   return join(
     root,
     'cache',
@@ -48,7 +45,7 @@ export function embeddedAssetDir(
 
 export async function materializeEmbeddedAssets(
   group: 'studio' | 'viewer',
-  root = process.env.ASTRALE_HOME ?? join(homedir(), '.astrale'),
+  root = createPaths().home,
 ): Promise<string> {
   const destination = embeddedAssetDir(group, root)
   const marker = join(destination, '.complete')

@@ -1,10 +1,11 @@
 import type { IssuerId } from '@astrale-os/sdk/auth'
-import type { ExchangeFailure, Fetch } from '@astrale-os/sdk/client'
+import type { ExchangeFailure, Fetch, ResponseError } from '@astrale-os/sdk/client'
 
 import { credential, grant } from '@astrale-os/sdk/auth'
-import { ExchangeError, ResponseError } from '@astrale-os/sdk/client'
+import { ExchangeError } from '@astrale-os/sdk/client'
 import { ClientSession } from '@astrale-os/sdk/client/session'
 
+import type { SourceIdentity } from './auth'
 import type { SourceCredentialResolver } from './credential'
 import type { ConnectionTarget } from './target'
 
@@ -12,8 +13,8 @@ import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
 import { exchangeCallerProof } from '../lib/exchange-grant'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
-import { createInstalledIssuer } from './installed-issuer'
 import { cachedCredentialTtlSeconds, exchangeCredentialTtlSeconds } from './lifetime'
+import { CREDENTIAL_REFUSED, credentialRefused } from './reasons'
 
 /** CLI error code of each Client exchange failure; a Domain refusal keeps the Domain's own code. */
 const EXCHANGE_FAILURE_CODES: Readonly<Record<Exclude<ExchangeFailure, 'rejected'>, string>> =
@@ -33,18 +34,11 @@ const MOVED_ISSUER_CODES: ReadonlySet<string> = new Set([
   EXCHANGE_FAILURE_CODES.discovery,
   EXCHANGE_FAILURE_CODES.unsupported,
   EXCHANGE_FAILURE_CODES.unavailable,
-  '2002',
+  String(CREDENTIAL_REFUSED),
 ])
 
-/**
- * A target that names where its selected identity is exchanged: an exact Domain issuer, or the
- * origin of the installed Domain whose issuer the source Kernel's pin names.
- */
-export type ExchangeTarget = ConnectionTarget &
-  (
-    | { readonly domainIssuer: IssuerId }
-    | { readonly domainIssuer?: undefined; readonly domainOrigin: string }
-  )
+/** A target that names the exact Domain issuer its selected identity is exchanged at. */
+export type ExchangeTarget = ConnectionTarget & { readonly domainIssuer: IssuerId }
 
 /** Where one target exchanges its selected identity. */
 export interface ExchangeIssuer {
@@ -70,10 +64,9 @@ export interface ExchangeIssuer {
  * Exchange exact authenticated User authority for a Domain bearer bound to this Kernel.
  *
  * The Client owns the exchange itself (`session.exchange`). The CLI keeps what outlives one
- * process: the persisted cache, the command-timeout lifetime rules, and its error codes. A target
- * naming an installed Domain by origin exchanges at the issuer its pin names, as `installed` holds
- * it (without one, the pin is read once for this resolver). A callable's resolved issuer remains
- * installation-owned; only a target without an installed origin treats its issuer as exact.
+ * process: the persisted cache, the command-timeout lifetime rules, and its error codes. A
+ * callable's Domain exchanges at the issuer its installed pin names, as `installed` holds it; a
+ * target without it treats its issuer as exact.
  */
 export function createExchangeCredentialResolver(
   target: ExchangeTarget,
@@ -83,15 +76,9 @@ export function createExchangeCredentialResolver(
   cache = new ExchangeCredentialCache(),
   installed?: ExchangeIssuer,
 ): SourceCredentialResolver {
-  const domain =
-    installed ??
-    (target.domainIssuer === undefined
-      ? createInstalledIssuer(target.kernelIssuer, target.domainOrigin)
-      : exactIssuer(target.domainIssuer))
-  const installationOwned = installed !== undefined || target.domainIssuer === undefined
-  if (target.domainIssuer !== undefined) {
-    requireExchangeTransport(target.kernelIssuer, target.domainIssuer)
-  }
+  const domain = installed ?? exactIssuer(target.domainIssuer)
+  const installationOwned = installed !== undefined
+  requireExchangeTransport(target.kernelIssuer, target.domainIssuer)
   const cacheTtlSeconds = cachedCredentialTtlSeconds(timeoutMs)
   const exchangeTtlSeconds = exchangeCredentialTtlSeconds(timeoutMs)
   return Object.freeze({
@@ -120,7 +107,7 @@ export function createExchangeCredentialResolver(
         try {
           return await checked(cached)
         } catch (cause) {
-          if (!(cause instanceof ResponseError) || cause.code !== 2002) throw cause
+          if (!credentialRefused(cause)) throw cause
           refused = cause
           return undefined
         }
@@ -210,7 +197,7 @@ function exactIssuer(domainIssuer: IssuerId): ExchangeIssuer {
 function issuerMayHaveMoved(failure: unknown): boolean {
   return (
     (failure instanceof AstraleError && MOVED_ISSUER_CODES.has(failure.code)) ||
-    (failure instanceof ResponseError && failure.code === 2002)
+    credentialRefused(failure)
   )
 }
 
@@ -222,16 +209,7 @@ async function confirmCredential(
   timeoutMs: number,
   signal: AbortSignal,
 ): Promise<void> {
-  const session = new ClientSession({
-    kernel: kernelIssuer,
-    fetch,
-    timeoutMs,
-    policy: {
-      maximumRouteAgeMs: 60_000,
-      ...(new URL(kernelIssuer).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
-    },
-    auth: { ttlSeconds: 1, resolve: () => ({ credential: token }) },
-  })
+  const session = bearerSession(kernelIssuer, token, fetch, timeoutMs, 1)
   try {
     await session.auth.whoami({ signal })
   } finally {
@@ -239,7 +217,25 @@ async function confirmCredential(
   }
 }
 
-type SourceIdentity = Readonly<{ issuer: string; subject: string }>
+/** A Client Session at the Kernel that presents one bearer as it is. */
+function bearerSession(
+  kernelIssuer: IssuerId,
+  credential: string,
+  fetch: Fetch,
+  timeoutMs: number,
+  ttlSeconds: number,
+): ClientSession {
+  return new ClientSession({
+    kernel: kernelIssuer,
+    fetch,
+    timeoutMs,
+    policy: {
+      maximumRouteAgeMs: 60_000,
+      ...(new URL(kernelIssuer).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
+    },
+    auth: { ttlSeconds, resolve: () => ({ credential }) },
+  })
+}
 
 function exchangeKey(kernelIssuer: IssuerId, domainIssuer: IssuerId, identity: SourceIdentity) {
   return Object.freeze({
@@ -272,16 +268,7 @@ function sourceSession(
       const ttlSeconds = delegationLifetime(sourceToken, exchangeTtlSeconds)
       opened = Object.freeze({
         ttlSeconds,
-        session: new ClientSession({
-          kernel: kernelIssuer,
-          fetch,
-          timeoutMs,
-          policy: {
-            maximumRouteAgeMs: 60_000,
-            ...(new URL(kernelIssuer).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
-          },
-          auth: { ttlSeconds, resolve: () => ({ credential: sourceToken }) },
-        }),
+        session: bearerSession(kernelIssuer, sourceToken, fetch, timeoutMs, ttlSeconds),
       })
       return opened
     },
@@ -440,7 +427,7 @@ function requireExchangeTransport(kernelIssuer: IssuerId, domainIssuer: IssuerId
   )
 }
 
-function requireLive(signal: AbortSignal): void {
+export function requireLive(signal: AbortSignal): void {
   if (!signal.aborted) return
   throw signal.reason instanceof Error
     ? signal.reason

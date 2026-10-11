@@ -1,10 +1,10 @@
 import { issuer } from '@astrale-os/sdk/auth'
 import { constants } from 'node:fs'
-import { access, chmod, mkdir, readFile, rm } from 'node:fs/promises'
+import { access, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import { atomicWrite, withFileLock, type FileLockOptions } from './files'
-import { INSTALLATIONS_PATH } from './paths'
+import { readPrivateStore, updatePrivateStore, type FileLockOptions } from './files'
+import { paths } from './paths'
 
 const VERSION = 1
 /**
@@ -30,16 +30,9 @@ export interface Installation {
   readonly issuer: string | null
 }
 
-export namespace installations {
-  export interface Artifact {
-    readonly version: 1
-    readonly entries: Record<string, Entry>
-  }
-
-  export interface Entry extends Installation {
-    /** Unix time in milliseconds of the installation read that produced this entry. */
-    readonly observedAt: number
-  }
+interface Entry extends Installation {
+  /** Unix time in milliseconds of the installation read that produced this entry. */
+  readonly observedAt: number
 }
 
 /**
@@ -54,7 +47,7 @@ export namespace installations {
  */
 export class InstallationCache {
   constructor(
-    private readonly path = INSTALLATIONS_PATH,
+    private readonly path = paths.installations,
     private readonly maximumAgeMs = MAXIMUM_AGE_MS,
     private readonly lock: FileLockOptions = LOCK,
   ) {}
@@ -71,7 +64,9 @@ export class InstallationCache {
     } catch {
       return undefined
     }
-    const entry = (await readStore(this.path)).entries[encodeKey(kernelIssuer, origin)]
+    const entry = (await readPrivateStore<Entry>(this.path, VERSION))[
+      encodeKey(kernelIssuer, origin)
+    ]
     return entry !== undefined && validEntry(entry, now, this.maximumAgeMs)
       ? Object.freeze({ issuer: entry.issuer })
       : undefined
@@ -83,16 +78,16 @@ export class InstallationCache {
     installation: Installation,
     now = Date.now(),
   ): Promise<void> {
-    await this.transition((store) => {
-      for (const [encoded, entry] of Object.entries(store.entries)) {
-        if (!validEntry(entry, now, this.maximumAgeMs)) delete store.entries[encoded]
+    await this.transition((entries) => {
+      for (const [encoded, entry] of Object.entries(entries)) {
+        if (!validEntry(entry, now, this.maximumAgeMs)) delete entries[encoded]
       }
       const encoded = encodeKey(kernelIssuer, origin)
-      delete store.entries[encoded]
-      store.entries[encoded] = Object.freeze({ issuer: installation.issuer, observedAt: now })
-      const keys = Object.keys(store.entries)
+      delete entries[encoded]
+      entries[encoded] = Object.freeze({ issuer: installation.issuer, observedAt: now })
+      const keys = Object.keys(entries)
       for (const stale of keys.slice(0, Math.max(0, keys.length - MAXIMUM_ENTRIES))) {
-        delete store.entries[stale]
+        delete entries[stale]
       }
     })
   }
@@ -103,8 +98,8 @@ export class InstallationCache {
    */
   async delete(kernelIssuer: string, origin: string): Promise<void> {
     try {
-      await this.transition((store) => {
-        delete store.entries[encodeKey(kernelIssuer, origin)]
+      await this.transition((entries) => {
+        delete entries[encodeKey(kernelIssuer, origin)]
       })
     } catch (cause) {
       await rm(this.path, { force: true }).catch(() => {
@@ -114,25 +109,20 @@ export class InstallationCache {
   }
 
   async deleteKernel(kernelIssuer: string): Promise<void> {
-    await this.transition((store) => {
-      for (const encoded of Object.keys(store.entries)) {
-        if (decodeKernel(encoded) !== kernelIssuer) continue
-        delete store.entries[encoded]
+    await this.transition((entries) => {
+      for (const encoded of Object.keys(entries)) {
+        if (decodeKernel(encoded) === kernelIssuer) delete entries[encoded]
       }
     })
   }
 
-  private async transition(change: (store: installations.Artifact) => void): Promise<void> {
-    await withFileLock(
-      `${this.path}.lock`,
-      async () => {
-        const directory = dirname(this.path)
-        await mkdir(directory, { recursive: true, mode: 0o700 })
-        await chmod(directory, 0o700)
-        const store = await readStore(this.path)
-        change(store)
-        await atomicWrite(this.path, `${JSON.stringify(store, null, 2)}\n`)
-        await chmod(this.path, 0o600)
+  private async transition(change: (entries: Record<string, Entry>) => void): Promise<void> {
+    await updatePrivateStore<Entry, void>(
+      this.path,
+      VERSION,
+      async (entries) => {
+        change(entries)
+        return { value: undefined, changed: true }
       },
       this.lock,
     )
@@ -141,33 +131,7 @@ export class InstallationCache {
 
 export const INSTALLATION_CACHE = new InstallationCache()
 
-async function readStore(path: string): Promise<installations.Artifact> {
-  try {
-    const input = JSON.parse(await readFile(path, 'utf8')) as unknown
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) return emptyStore()
-    const value = input as Record<string, unknown>
-    if (
-      value.version !== VERSION ||
-      value.entries === null ||
-      typeof value.entries !== 'object' ||
-      Array.isArray(value.entries)
-    ) {
-      return emptyStore()
-    }
-    return {
-      version: VERSION,
-      entries: { ...(value.entries as Record<string, installations.Entry>) },
-    }
-  } catch {
-    return emptyStore()
-  }
-}
-
-function emptyStore(): installations.Artifact {
-  return { version: VERSION, entries: {} }
-}
-
-function validEntry(entry: installations.Entry, now: number, maximumAgeMs: number): boolean {
+function validEntry(entry: Entry, now: number, maximumAgeMs: number): boolean {
   if (
     entry === null ||
     typeof entry !== 'object' ||

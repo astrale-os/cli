@@ -6,6 +6,7 @@ export default defineLayout({
     'index.ts',
     'registration.ts',
     'registry.ts',
+    'root-transfer.ts',
     'transfer.ts',
     'tsconfig.json',
   ],

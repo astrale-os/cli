@@ -12,7 +12,6 @@ import { validateSlug } from '../validation'
 import {
   activeName,
   bookmarkIn,
-  managedShellOrigin,
   normalizeInstanceKernelUrl,
   readInstances,
   resolveInstance,
@@ -32,11 +31,6 @@ export type ResolvedInstanceTarget = {
   kernelIssuer: string
   /** Exact Domain issuer the selected identity is exchanged at. */
   domainIssuer?: string
-  /**
-   * Installed Domain the selected identity is exchanged through; the Kernel pin names its issuer.
-   * Never set together with `domainIssuer`.
-   */
-  domainOrigin?: string
   defaultIdentity?: string
   caFile?: string
 }
@@ -105,14 +99,13 @@ async function resolveNamedInstanceTarget(
     throw e
   }
 
+  // A managed Instance's users act for themselves: no Domain principal scopes their commands.
   const url = normalizeInstanceKernelUrl(managed.url)
-  const domainOrigin = managedShellOrigin(url)
   return {
     name: managed.slug,
     source: 'managed',
     url,
     kernelIssuer: url,
-    ...(domainOrigin === undefined ? {} : { domainOrigin }),
   }
 }
 
@@ -129,7 +122,6 @@ async function resolveBookmarkedInstanceTarget(
     url: bookmark.url,
     kernelIssuer: bookmark.issuer ?? bookmark.url,
     ...(bookmark.domainIssuer === undefined ? {} : { domainIssuer: bookmark.domainIssuer }),
-    ...(bookmark.domainOrigin === undefined ? {} : { domainOrigin: bookmark.domainOrigin }),
     defaultIdentity: bookmark.defaultIdentity,
     caFile: bookmark.caFile,
   }

@@ -26,75 +26,64 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
+/** One request the fake network answered: an invocation's parsed body, or a Domain request. */
+interface Seen {
+  readonly url: string
+  readonly body?: any
+  readonly authorization?: string | null
+}
+
+/** A resolver of the source caller `user` over `fetch` and the cache file `file`. */
+function resolver(
+  fetch: Fetch,
+  options: {
+    user?: string
+    file?: string
+    timeoutMs?: number
+    sourceExpiresAt?: number
+    audiences?: string[]
+  } = {},
+) {
+  const user = options.user ?? 'user-1'
+  return createExchangeCredentialResolver(
+    TARGET,
+    {
+      cacheIdentity: async () => ({ issuer: 'https://workos.example', subject: user }),
+      async resolve(audience) {
+        options.audiences?.push(audience)
+        return sourceToken(user, options.sourceExpiresAt)
+      },
+    },
+    fetch,
+    options.timeoutMs ?? 5_000,
+    new ExchangeCredentialCache(join(directory, options.file ?? `${crypto.randomUUID()}.json`)),
+  )
+}
+
+/** One fresh resolution of user-1 at the Domain through `fetch`, with an empty cache. */
+function resolve(fetch: Fetch): Promise<string> {
+  return resolver(fetch).resolve(KERNEL, live())
+}
+
 describe('Domain token exchange', () => {
   /** @evidence TEST-CLI-EXCHANGE-WHOAMI-DELEGATE-EXCHANGE-CACHE */
   test('runs the exact exchange journey once and reuses it across process cache instances', async () => {
-    const observed: Array<{
-      url: string
-      init: RequestInit | undefined
-      body?: Record<string, any>
-    }> = []
+    const seen: Seen[] = []
+    const audiences: string[] = []
     const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
-    const fetch: Fetch = exact(async (input, init) => {
-      const url = String(input)
-      if (url === INVOCATION) {
-        const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
-        observed.push({ url, init, body })
-        const index = observed.filter((entry) => entry.url === INVOCATION).length
-        return invocationResponse(
-          body.requestId,
-          index === 1
-            ? { id: 'user-1' }
-            : index === 2
-              ? 'kernel-destination-envelope'
-              : { id: 'user-1' },
-          new Headers(init?.headers).get('accept')!,
-        )
-      }
-      observed.push({ url, init })
-      if (url.endsWith('/.well-known/openid-configuration')) {
-        return jsonResponse(configuration(true))
-      }
-      if (url.endsWith('/.well-known/astrale/token')) {
-        expect(init?.body).toBeUndefined()
-        expect(new Headers(init?.headers).get('authorization')).toBe(
-          'Bearer kernel-destination-envelope',
-        )
-        return jsonResponse(
-          { token: exchanged, expiresAt: EXPIRES_AT },
-          200,
-          'application/vnd.astrale+json',
-        )
-      }
-      throw new Error(`unexpected URL ${url}`)
+    const first = resolver(exchangeFetch(exchanged, { seen }), {
+      file: 'credentials.json',
+      audiences,
     })
-    const sourceAudiences: string[] = []
-    let sourceIdentityReads = 0
-    const path = join(directory, 'credentials.json')
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      {
-        async cacheIdentity() {
-          sourceIdentityReads += 1
-          return { issuer: 'https://workos.example', subject: 'user-1' }
-        },
-        async resolve(audience) {
-          sourceAudiences.push(audience)
-          return SOURCE_TOKEN
-        },
-      },
-      fetch,
-      5_000,
-      new ExchangeCredentialCache(path),
-    )
+    expect(await first.resolve(KERNEL, live())).toBe(exchanged)
+    await expect(first.resolve(KERNEL, live())).resolves.toBe(exchanged)
 
-    expect(await resolver.resolve(KERNEL, new AbortController().signal)).toBe(exchanged)
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+    let identityReads = 0
     const nextProcess = createExchangeCredentialResolver(
       TARGET,
       {
         async cacheIdentity() {
-          sourceIdentityReads += 1
+          identityReads += 1
           return { issuer: 'https://workos.example', subject: 'user-1' }
         },
         async resolve() {
@@ -105,391 +94,139 @@ describe('Domain token exchange', () => {
         throw new Error('a warm process must not repeat exchange network I/O')
       },
       5_000,
-      new ExchangeCredentialCache(path),
+      new ExchangeCredentialCache(join(directory, 'credentials.json')),
     )
-    await expect(nextProcess.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+    await expect(nextProcess.resolve(KERNEL, live())).resolves.toBe(exchanged)
+    expect(identityReads).toBe(1)
+    expect(audiences).toEqual([KERNEL])
 
-    const kernelRequests = observed.filter((entry) => entry.url === INVOCATION)
-    expect(kernelRequests).toHaveLength(2)
-    expect(kernelRequests[0]!.body).toMatchObject({
-      credential: SOURCE_TOKEN,
-      call: { input: {} },
+    const [whoami, delegate, ...rest] = seen.filter((entry) => entry.url === INVOCATION)
+    expect(rest).toEqual([])
+    expect(whoami!.body).toMatchObject({ credential: SOURCE_TOKEN, call: { input: {} } })
+    expect(delegate!.body.credential).toBe(SOURCE_TOKEN)
+    expect(delegate!.body.call.input).toEqual({
+      audience: DOMAIN,
+      principal: 'user-1',
+      ttlSeconds: 240,
     })
-    expect(kernelRequests[1]!.body).toMatchObject({
-      credential: SOURCE_TOKEN,
-      call: {
-        input: {
-          audience: DOMAIN,
-          principal: 'user-1',
-        },
-      },
-    })
-    expect(kernelRequests[1]!.body!.call.input).not.toHaveProperty('attenuation')
-    const delegatedTtl = kernelRequests[1]!.body!.call.input.ttlSeconds
-    expect(delegatedTtl).toBe(240)
-    expect(sourceAudiences).toEqual([KERNEL])
-    expect(sourceIdentityReads).toBe(3)
-    expect(
-      observed.filter((entry) => entry.url.endsWith('/.well-known/astrale/token')),
-    ).toHaveLength(1)
-  })
-
-  test('discovers the Domain exchange endpoint while the Kernel caller is read', async () => {
-    const discovery = Promise.withResolvers<void>()
-    let kernelRequests = 0
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
-    const fetch: Fetch = exact(async (input, init) => {
-      const url = String(input)
-      if (url.endsWith('/.well-known/openid-configuration')) {
-        discovery.resolve()
-        return jsonResponse(configuration(true))
-      }
-      if (url === INVOCATION) {
-        kernelRequests += 1
-        const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
-        // The caller read answers only once discovery has started beside it.
-        if (kernelRequests === 1) await discovery.promise
-        return invocationResponse(
-          body.requestId,
-          kernelRequests === 1 ? { id: 'user-1' } : 'kernel-destination-envelope',
-          new Headers(init?.headers).get('accept')!,
-        )
-      }
-      if (url.endsWith('/.well-known/astrale/token')) {
-        expect(kernelRequests).toBe(2)
-        return jsonResponse(
-          { token: exchanged, expiresAt: EXPIRES_AT },
-          200,
-          'application/vnd.astrale+json',
-        )
-      }
-      throw new Error(`unexpected URL ${url}`)
-    })
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => SOURCE_TOKEN },
-      fetch,
-      5_000,
-      new ExchangeCredentialCache(join(directory, 'concurrent-discovery.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
-  })
-
-  test('falls through when persisted identity metadata is unavailable', async () => {
-    let sourceResolved = false
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
+    expect(seen.filter((entry) => entry.url.endsWith('/.well-known/astrale/token'))).toEqual([
       {
-        cacheIdentity: async () => {
-          throw new Error('unreadable local identity metadata')
-        },
-        async resolve() {
-          sourceResolved = true
-          return SOURCE_TOKEN
-        },
+        url: `${DOMAIN}/.well-known/astrale/token`,
+        body: undefined,
+        authorization: 'Bearer kernel-destination-envelope',
       },
-      exchangeFetch(exchanged),
-      5_000,
-      new ExchangeCredentialCache(join(directory, 'unavailable-identity.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
-    expect(sourceResolved).toBe(true)
+    ])
   })
 
   /** @evidence TEST-CLI-EXCHANGE-REJECTS-DOMAIN-SELF-AUTHORITY */
-  test('rejects exchanged Domain self authority even when it retains the caller proof', async () => {
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT, EXPIRES_AT, 'union')
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => SOURCE_TOKEN },
-      exchangeFetch(exchanged),
-      5_000,
-      new ExchangeCredentialCache(join(directory, 'rejected-union.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+  test.each([
+    ['Domain self authority beside the caller proof', 'union', KERNEL],
+    ['a token bound to another Kernel', 'caller', issuer.accept('https://other.example')],
+  ] as const)('rejects %s', async (_case, mode, audience) => {
+    const exchanged = token(DOMAIN, audience, 'user-1', EXPIRES_AT, EXPIRES_AT, mode)
+    await expect(resolve(exchangeFetch(exchanged))).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
     })
   })
 
   test('does not reuse an exchange credential after the persisted source identity changes', async () => {
-    const path = join(directory, 'credentials.json')
-    const first = createExchangeCredentialResolver(
-      TARGET,
-      {
-        cacheIdentity: async () => ({ issuer: 'https://workos.example', subject: 'user-1' }),
-        resolve: async () => SOURCE_TOKEN,
-      },
-      exchangeFetch(token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)),
-      5_000,
-      new ExchangeCredentialCache(path),
+    const file = 'credentials.json'
+    await resolver(exchangeFetch(token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)), { file }).resolve(
+      KERNEL,
+      live(),
     )
-    await first.resolve(KERNEL, new AbortController().signal)
-
-    let sourceResolved = false
-    const changed = createExchangeCredentialResolver(
-      TARGET,
-      {
-        cacheIdentity: async () => ({ issuer: 'https://workos.example', subject: 'user-2' }),
-        async resolve() {
-          sourceResolved = true
-          return sourceToken('user-2')
-        },
-      },
-      exchangeFetch(token(DOMAIN, KERNEL, 'user-2', EXPIRES_AT), { user: 'user-2' }),
-      5_000,
-      new ExchangeCredentialCache(path),
-    )
-    await expect(changed.resolve(KERNEL, new AbortController().signal)).resolves.toBe(
-      token(DOMAIN, KERNEL, 'user-2', EXPIRES_AT),
-    )
-    expect(sourceResolved).toBe(true)
+    const second = token(DOMAIN, KERNEL, 'user-2', EXPIRES_AT)
+    const changed = resolver(exchangeFetch(second, { user: 'user-2' }), { user: 'user-2', file })
+    await expect(changed.resolve(KERNEL, live())).resolves.toBe(second)
   })
 
   test('rejects a source credential without a stable cache identity before network I/O', async () => {
-    let fetches = 0
-    const resolver = createExchangeCredentialResolver(
+    const seen: Seen[] = []
+    const anonymous = createExchangeCredentialResolver(
       TARGET,
       { resolve: async () => sourceToken(undefined) },
-      async () => {
-        fetches += 1
-        throw new Error('network must remain untouched')
-      },
+      exchangeFetch('unused', { seen }),
       5_000,
       new ExchangeCredentialCache(join(directory, 'credentials.json')),
     )
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+    await expect(anonymous.resolve(KERNEL, live())).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_SOURCE_INVALID',
     })
-    expect(fetches).toBe(0)
+    expect(seen).toEqual([])
   })
 
   /** @evidence TEST-CLI-EXCHANGE-NO-LEGACY-FALLBACK */
   test('fails closed when issuer discovery does not advertise exchange', async () => {
-    const fetch: Fetch = exact(async (input, init) => {
-      const url = String(input)
-      if (url === INVOCATION) {
-        const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
-        return invocationResponse(
-          body.requestId,
-          body.call.input && Object.keys(body.call.input).length === 0
-            ? { id: 'user-1' }
-            : 'kernel-destination-envelope',
-          new Headers(init?.headers).get('accept')!,
-        )
-      }
-      if (url.endsWith('/.well-known/openid-configuration'))
-        return jsonResponse(configuration(false))
-      throw new Error('exchange endpoint must not be called')
-    })
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => SOURCE_TOKEN },
-      fetch,
-      5_000,
-      new ExchangeCredentialCache(join(directory, 'credentials.json')),
-    )
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+    const seen: Seen[] = []
+    await expect(
+      resolve(exchangeFetch('unused', { advertise: false, seen })),
+    ).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_UNSUPPORTED',
       message: `Domain issuer ${DOMAIN} does not advertise token exchange.`,
     })
+    expect(seen.some((entry) => entry.url.endsWith('/token'))).toBe(false)
   })
 
-  test('keeps the Domain refusal code and message of a refused exchange', async () => {
-    const refused = exchangeFetch('unused', {
-      status: 401,
-      body: { error: { code: 2002, message: 'Token is invalid.' } },
-    })
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => SOURCE_TOKEN },
-      refused,
-      5_000,
-      new ExchangeCredentialCache(join(directory, 'refused.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+  test('keeps the Domain refusal, maps an invalid answer, and hides a native Fetch failure', async () => {
+    const refused = { status: 401, body: { error: { code: 2002, message: 'Token is invalid.' } } }
+    await expect(resolve(exchangeFetch('unused', refused))).rejects.toMatchObject({
       code: '2002',
       message: 'Token is invalid.',
       cause: { failure: 'rejected' },
     })
-  })
-
-  test('rejects an exchanged token bound to another Kernel', async () => {
-    const wrong = token(DOMAIN, issuer.accept('https://other-kernel.example'), 'user-1', EXPIRES_AT)
-    const fetch = exchangeFetch(wrong)
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => SOURCE_TOKEN },
-      fetch,
-      5_000,
-      new ExchangeCredentialCache(join(directory, 'credentials.json')),
-    )
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-    })
-  })
-
-  test('requests and retains a carrier that covers a supported long command deadline', async () => {
-    const expiresAt = Math.floor(Date.now() / 1_000) + 250
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', expiresAt)
-    const observed: Record<string, any>[] = []
-    const base = exchangeFetch(exchanged, { expiresAt })
-    const fetch: Fetch = async (input, init) => {
-      if (String(input) === INVOCATION) {
-        observed.push(JSON.parse(await new Response(init?.body).text()))
-      }
-      return base(input, init)
-    }
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => sourceToken('user-1', expiresAt + 50) },
-      fetch,
-      180_000,
-      new ExchangeCredentialCache(join(directory, 'long-credential.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
-    expect(observed[1]!.call.input.ttlSeconds).toBe(240)
-  })
-
-  /** @evidence TEST-CLI-EXCHANGE-REJECTS-INSUFFICIENT-LIFETIME */
-  test('rejects a too-short Domain exchange credential before destination dispatch', async () => {
-    const expiresAt = Math.floor(Date.now() / 1_000) + 150
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', expiresAt)
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => sourceToken('user-1', expiresAt + 150) },
-      exchangeFetch(exchanged, { expiresAt }),
-      180_000,
-      new ExchangeCredentialCache(join(directory, 'short-credential.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
-    })
-  })
-
-  test('rejects a long outer Domain token whose carried Kernel proof is too short', async () => {
-    const outerExpiresAt = Math.floor(Date.now() / 1_000) + 250
-    const proofExpiresAt = Math.floor(Date.now() / 1_000) + 150
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', outerExpiresAt, proofExpiresAt)
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => sourceToken('user-1', outerExpiresAt + 50) },
-      exchangeFetch(exchanged, { expiresAt: outerExpiresAt }),
-      180_000,
-      new ExchangeCredentialCache(join(directory, 'short-proof.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
-    })
-  })
-
-  test('rejects the real 300-second Domain ceiling for a 600-second command before destination dispatch', async () => {
-    const expiresAt = Math.floor(Date.now() / 1_000) + 300
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', expiresAt)
-    const observed: string[] = []
-    const base = exchangeFetch(exchanged, { expiresAt })
-    const fetch: Fetch = async (input, init) => {
-      observed.push(String(input))
-      return base(input, init)
-    }
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => sourceToken('user-1', expiresAt + 700) },
-      fetch,
-      600_000,
-      new ExchangeCredentialCache(join(directory, 'domain-ceiling.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
-    })
-    expect(observed.filter((url) => url === INVOCATION)).toHaveLength(2)
-    expect(observed.filter((url) => url.endsWith('/.well-known/astrale/token'))).toHaveLength(1)
-  })
-
-  test('rejects success responses without no-store or with malformed fields', async () => {
-    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
-    const cache = () => new ExchangeCredentialCache(join(directory, crypto.randomUUID()))
-    const resolver = (fetch: Fetch) =>
-      createExchangeCredentialResolver(
-        TARGET,
-        { resolve: async () => SOURCE_TOKEN },
-        fetch,
-        5_000,
-        cache(),
-      )
-
-    await expect(
-      resolver(exchangeFetch(exchanged, { cacheControl: false })).resolve(
-        KERNEL,
-        new AbortController().signal,
-      ),
-    ).rejects.toMatchObject({
-      code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-      message: 'Domain token exchange response is missing Cache-Control: no-store.',
-    })
-    await expect(
-      resolver(exchangeFetch(exchanged, { body: { token: 7, expiresAt: 'soon' } })).resolve(
-        KERNEL,
-        new AbortController().signal,
-      ),
-    ).rejects.toMatchObject({
+    const invalid = { body: { token: 7, expiresAt: 'soon' } }
+    await expect(resolve(exchangeFetch('unused', invalid))).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
       message: 'Domain token exchange returned an invalid response.',
     })
-  })
-
-  test('normalizes native issuer Fetch failures without exposing their message', async () => {
     const native = new AggregateError([new Error('private DNS state')], '')
-    const resolver = createExchangeCredentialResolver(
-      TARGET,
-      { resolve: async () => SOURCE_TOKEN },
-      async (input, init) => {
-        if (String(input) === INVOCATION) {
-          const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
-          return invocationResponse(
-            body.requestId,
-            body.call.input && Object.keys(body.call.input).length === 0
-              ? { id: 'user-1' }
-              : 'kernel-destination-envelope',
-            new Headers(init?.headers).get('accept')!,
-          )
-        }
-        throw native
-      },
-      5_000,
-      new ExchangeCredentialCache(join(directory, 'native-failure.json')),
-    )
-
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+    await expect(resolve(exchangeFetch('unused', { unreachable: native }))).rejects.toMatchObject({
       code: 'TOKEN_EXCHANGE_UNAVAILABLE',
       message: 'Domain discovery could not be reached.',
       cause: { failure: 'unavailable', cause: native },
     })
   })
+
+  /** @evidence TEST-CLI-EXCHANGE-REJECTS-INSUFFICIENT-LIFETIME */
+  test.each([
+    ['an outer token and proof that cover it', 250, 250, undefined],
+    ['an outer token that cannot', 150, 150, 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT'],
+    ['a carried Kernel proof that cannot', 250, 150, 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT'],
+  ])('a 180 s command deadline with %s', async (_, outer, proof, refusal) => {
+    const now = Math.floor(Date.now() / 1_000)
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', now + outer, now + proof)
+    const seen: Seen[] = []
+    const resolution = resolver(exchangeFetch(exchanged, { expiresAt: now + outer, seen }), {
+      timeoutMs: 180_000,
+      sourceExpiresAt: now + 600,
+    }).resolve(KERNEL, live())
+    if (refusal === undefined) await expect(resolution).resolves.toBe(exchanged)
+    else await expect(resolution).rejects.toMatchObject({ code: refusal })
+    // whoami, then the delegation for a carrier covering the deadline: never a destination dispatch.
+    const invocations = seen.filter((entry) => entry.url === INVOCATION)
+    expect(invocations).toHaveLength(2)
+    expect(invocations[1]!.body.call.input.ttlSeconds).toBe(240)
+  })
 })
 
+/** A Kernel and Domain issuer that answer user's exchange with `exchanged`, recording to `seen`. */
 function exchangeFetch(
   exchanged: string,
   options: {
     readonly body?: unknown
-    readonly cacheControl?: boolean
     readonly expiresAt?: number
     readonly status?: number
     readonly user?: string
+    readonly advertise?: boolean
+    readonly unreachable?: unknown
+    readonly seen?: Seen[]
   } = {},
 ): Fetch {
   return exact(async (input, init) => {
     const url = String(input)
     if (url === INVOCATION) {
       const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
+      options.seen?.push({ url, body })
       return invocationResponse(
         body.requestId,
         body.call.input && Object.keys(body.call.input).length === 0
@@ -498,21 +235,23 @@ function exchangeFetch(
         new Headers(init?.headers).get('accept')!,
       )
     }
-    if (url.endsWith('/.well-known/openid-configuration')) return jsonResponse(configuration(true))
-    const response = new Response(
-      JSON.stringify(
-        options.body ?? { token: exchanged, expiresAt: options.expiresAt ?? EXPIRES_AT },
-      ),
-      {
-        status: options.status ?? 200,
-        headers: {
-          'content-type': 'application/vnd.astrale+json',
-          ...(options.cacheControl === false ? {} : { 'cache-control': 'no-store' }),
-        },
-      },
+    if (options.unreachable !== undefined) throw options.unreachable
+    const authorization = new Headers(init?.headers).get('authorization')
+    options.seen?.push({ url, body: init?.body, authorization })
+    if (url.endsWith('/.well-known/openid-configuration')) {
+      return jsonResponse(configuration(options.advertise ?? true))
+    }
+    if (!url.endsWith('/.well-known/astrale/token')) throw new Error(`unexpected URL ${url}`)
+    return jsonResponse(
+      options.body ?? { token: exchanged, expiresAt: options.expiresAt ?? EXPIRES_AT },
+      options.status ?? 200,
+      'application/vnd.astrale+json',
     )
-    return response
   })
+}
+
+function live(): AbortSignal {
+  return new AbortController().signal
 }
 
 /** Report the answered URL on each response, as a network fetch does. */

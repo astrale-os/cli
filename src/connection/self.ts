@@ -32,39 +32,6 @@ export async function withSelfHint<T>(
   }
 }
 
-type AuthenticatedSelf = {
-  readonly id?: unknown
-  readonly slug?: string
-}
-
-export type ResolveSelfIdDependencies = {
-  readonly whoami?: (context: ConnectionContext) => Promise<AuthenticatedSelf>
-}
-
-/** Resolve @self from the selected caller, not the Domain used for graph access. */
-export async function resolveSelfIdAuthenticated(
-  context: ConnectionContext,
-  dependencies: ResolveSelfIdDependencies = {},
-): Promise<{ readonly id: string; readonly slug?: string }> {
-  const resolved = await (dependencies.whoami ?? whoamiSelfId)(context)
-  if (typeof resolved.id !== 'string' || resolved.id.trim().length === 0) {
-    throw new AstraleError(
-      'SELF_RESOLUTION_FAILED',
-      '`@self` could not be resolved: authenticated Identity.whoami returned no NodeId.',
-    )
-  }
-  return resolved.slug === undefined
-    ? { id: resolved.id }
-    : { id: resolved.id, slug: resolved.slug }
-}
-
-async function whoamiSelfId({ self, target }: ConnectionContext): Promise<AuthenticatedSelf> {
-  return {
-    ...(await self()),
-    ...(target.slug === undefined ? {} : { slug: target.slug }),
-  }
-}
-
 /** Expand @self in path-like commands and return metadata for NotFound diagnostics. */
 export async function expandSelfInPath(
   path: string,
@@ -118,9 +85,16 @@ async function expandSelfValues(
   if (!containsSelfRef(path) && !parameters.some(containsSelfRef)) {
     return { path, parameters }
   }
-  const self = await resolveSelfIdAuthenticated(context)
-  const expandedPath = expandSelfReferences(path, self.id)
-  const expandedParameters = parameters.map((parameter) => expandSelfReferences(parameter, self.id))
+  // @self is the selected caller (`self`), never the Domain used for graph access.
+  const { id } = await context.self()
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    throw new AstraleError(
+      'SELF_RESOLUTION_FAILED',
+      '`@self` could not be resolved: authenticated Identity.whoami returned no NodeId.',
+    )
+  }
+  const expandedPath = expandSelfReferences(path, id)
+  const expandedParameters = parameters.map((parameter) => expandSelfReferences(parameter, id))
   const changed =
     expandedPath !== path ||
     expandedParameters.some((parameter, index) => parameter !== parameters[index])
@@ -131,8 +105,8 @@ async function expandSelfValues(
     meta: {
       original: path,
       expanded: expandedPath,
-      selfId: self.id,
-      ...(self.slug === undefined ? {} : { slug: self.slug }),
+      selfId: id,
+      ...(context.target.slug === undefined ? {} : { slug: context.target.slug }),
     },
   }
 }
