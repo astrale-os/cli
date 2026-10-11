@@ -1,5 +1,5 @@
 /** Persisted canvas layout and visibility preference routes. */
-import { getBundle } from '../cache'
+import { getBundle } from '../introspect/cache'
 import {
   decodeNodePositions,
   readLayout,

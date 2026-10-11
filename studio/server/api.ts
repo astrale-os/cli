@@ -7,9 +7,7 @@ import { handleAgentRoute } from './agent/routes'
 import { handleDomainRoute } from './api/domain'
 import { crossSiteBlocked, json, notFound, readJsonRecord, type Notify } from './api/http'
 import { handleWorkspaceRoute } from './api/workspace'
-import { getDomain } from './domain'
-
-export type { Notify } from './api/http'
+import { getDomain } from './domain/registry'
 
 export async function handleApi(req: Request, url: URL, notify: Notify): Promise<Response | null> {
   const path = url.pathname

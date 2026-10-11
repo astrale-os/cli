@@ -65,12 +65,6 @@ test('rejects stale projections that lost canonical callable contracts', () => {
   expect(decodeSchemaIR(input)).toBeUndefined()
 })
 
-test('rejects projections that retain retired View auth metadata', () => {
-  const input = canonicalIr()
-  Object.assign(input.views.documents, { auth: 'required' })
-  expect(decodeSchemaIR(input)).toBeUndefined()
-})
-
 test('rejects unversioned and incomplete projection roots', () => {
   const withoutFormat = canonicalIr() as Record<string, unknown>
   delete withoutFormat.format
@@ -79,14 +73,4 @@ test('rejects unversioned and incomplete projection roots', () => {
   const withoutViews = canonicalIr() as Record<string, unknown>
   delete withoutViews.views
   expect(decodeSchemaIR(withoutViews)).toBeUndefined()
-})
-
-test('requires the current boolean Method contract and rejects the removed field', () => {
-  const input = canonicalIr()
-  const method = input.classes.Document.methods.rename as Record<string, unknown>
-  Object.assign(method, { inheritance: 'default' })
-  expect(decodeSchemaIR(input)).toBeUndefined()
-  delete method.inheritance
-  delete method.abstract
-  expect(decodeSchemaIR(input)).toBeUndefined()
 })

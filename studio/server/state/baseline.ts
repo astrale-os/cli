@@ -16,15 +16,10 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import type {
-  ChangeSet,
-  FileChange,
-  SchemaChange,
-  SchemaIR,
-  SchemaRevision,
-} from '../../shared/types'
+import type { SchemaIR, SchemaRevision } from '../../shared/contracts/schema'
+import type { ChangeSet, FileChange, SchemaChange } from '../../shared/contracts/workspace'
 
-import { isSchemaRevision, STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/types'
+import { isSchemaRevision, STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/contracts/schema'
 import { isCanonicalDomainSchemaV1 } from '../introspect/canonical-schema'
 import { diffSchemas, structuralStatusOf } from '../introspect/diff'
 import { decodeSchemaIR } from '../introspect/schema-ir-json'
@@ -149,7 +144,7 @@ export function hashAnatomyFiles(
   return hashes
 }
 
-export interface Baseline {
+interface Baseline {
   formatVersion: typeof BASELINE_FORMAT_VERSION
   projectionVersion: number
   ir: SchemaIR | null
@@ -160,7 +155,7 @@ export interface Baseline {
   capturedAt?: string
 }
 
-export interface BaselineSchemaSnapshot {
+interface BaselineSchemaSnapshot {
   ir: SchemaIR | null
   /** Admitted canonical root only; preview roots must be passed as null. */
   root: unknown | null

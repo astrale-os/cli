@@ -10,9 +10,9 @@ import type {
   IrFunction,
   IrMethod,
   JsonSchema,
-  SchemaChange,
   SchemaIR,
-} from '../../shared/types'
+} from '../../shared/contracts/schema'
+import type { SchemaChange } from '../../shared/contracts/workspace'
 
 function isOptional(s: JsonSchema | undefined): boolean {
   if (!s) return false

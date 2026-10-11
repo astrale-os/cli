@@ -1,22 +1,19 @@
 /** CLI-resolved Domain View preparation and Shell session routes. */
-import type { StudioSchemaBundle, ViewInfo } from '../../shared/types'
+import type { ViewInfo } from '../../shared/contracts/schema'
 
-import { getAnatomy, getBundle } from '../cache'
+import { getAnatomy, getBundle } from '../introspect/cache'
 import { asString } from '../json'
-import { studioSettings } from '../studio-settings'
-import { getViewRuntime } from '../views/runtime'
-import { launchViewSession, releaseViewSession } from '../views/session'
+import { studioSettings } from '../state/settings'
+import { getViewRuntime, launchViewSession, releaseViewSession } from '../views/session'
 import { badRequest, json, notFound, type DomainRouteContext } from './http'
 
 const VALID_SLUG = /^[a-z][a-z0-9-]*$/
 
-/** The View a `/views/<slug>/…` route addresses, with its bundle and origin, or the error response. */
+/** The View a `/views/<slug>/…` route addresses, with its origin, or the error response. */
 async function resolveView(
   id: string,
   encodedSlug: string,
-): Promise<
-  { error: Response } | { view: ViewInfo; bundle: StudioSchemaBundle | null; origin: string }
-> {
+): Promise<{ error: Response } | { view: ViewInfo; origin: string }> {
   const slug = decodeURIComponent(encodedSlug)
   if (!VALID_SLUG.test(slug)) return { error: badRequest('invalid view slug') }
   const anatomy = await getAnatomy(id)
@@ -25,7 +22,7 @@ async function resolveView(
   const bundle = await getBundle(id)
   const origin = bundle?.ir?.domain || anatomy?.overview.origin
   if (!origin) return { error: badRequest('domain origin is unavailable') }
-  return { view, bundle, origin }
+  return { view, origin }
 }
 
 export async function handleViewRoute(context: DomainRouteContext): Promise<Response | null> {
@@ -48,16 +45,9 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
   if (sessionMatch && req.method === 'POST') {
     const resolved = await resolveView(handle.id, sessionMatch[1])
     if ('error' in resolved) return resolved.error
-    const { view, bundle, origin } = resolved
+    const { view, origin } = resolved
     return json(
-      await launchViewSession(
-        root,
-        origin,
-        view,
-        bundle,
-        body,
-        studioSettings().viewProbeTimeoutMs,
-      ),
+      await launchViewSession(root, origin, view, body, studioSettings().viewProbeTimeoutMs),
     )
   }
 

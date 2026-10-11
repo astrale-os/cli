@@ -10,32 +10,17 @@ import type { Readable } from 'node:stream'
 import { spawn } from 'node:child_process'
 import { isAbsolute } from 'node:path'
 
-import { asJsonRecord, asStringArray, parseJson as parseUntrustedJson } from './json'
+import { asJsonRecord, asStringArray, parseJson, type JsonDecoder } from './json'
 
 export const STUDIO_CLI_DESCRIPTOR_ENV = 'DOMAIN_STUDIO_CLI_DESCRIPTOR'
 
-export interface StudioCliDescriptorV1 {
+interface StudioCliDescriptor {
   version: 1
   executable: string
   args: string[]
 }
 
-export type StudioCliDecoder<T> = (value: unknown) => T | null
-
-export interface StudioCliMachineResult<T> {
-  version: 1
-  ok: boolean
-  data: T | null
-  value: unknown | null
-  detail: string
-  exitCode: number
-  stdout: string
-  stderr: string
-  timedOut: boolean
-}
-
-export interface StudioCliTextResult {
-  version: 1
+interface StudioCliResult {
   ok: boolean
   detail: string
   exitCode: number
@@ -59,9 +44,9 @@ interface CapturedProcess {
   spawnError?: string
 }
 
-export function decodeStudioCliDescriptor(value: string | undefined): StudioCliDescriptorV1 | null {
+function decodeStudioCliDescriptor(value: string | undefined): StudioCliDescriptor | null {
   if (!value) return null
-  const parsed = asJsonRecord(parseUntrustedJson(value))
+  const parsed = asJsonRecord(parseJson(value))
   const args = asStringArray(parsed?.args)
   if (
     parsed?.version !== 1 ||
@@ -89,11 +74,7 @@ export function studioCliCommand(
   return [descriptor.executable, ...descriptor.args, ...args]
 }
 
-export function decodeJsonObject(value: unknown): Record<string, unknown> | null {
-  return asJsonRecord(value) ?? null
-}
-
-export function conciseCliFailure(raw: string): string | undefined {
+function conciseCliFailure(raw: string): string | undefined {
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -118,7 +99,7 @@ function nonEmptyString(value: unknown): string | undefined {
 }
 
 function resultDetail(value: unknown, stdout: string, stderr: string): string {
-  const object = decodeJsonObject(value)
+  const object = asJsonRecord(value)
   return (
     nonEmptyString(object?.message) ??
     nonEmptyString(object?.error) ??
@@ -128,14 +109,10 @@ function resultDetail(value: unknown, stdout: string, stderr: string): string {
   )
 }
 
-function parseJson(text: string): unknown | null {
+/** A command's JSON answer on one stream, or undefined when that stream holds none. */
+function parseOutput(text: string): unknown {
   const normalized = text.replace(/^\uFEFF/, '').trim()
-  if (!normalized) return null
-  try {
-    return JSON.parse(normalized)
-  } catch {
-    return null
-  }
+  return normalized ? parseJson(normalized) : undefined
 }
 
 function spawnFailure(error: unknown): CapturedProcess {
@@ -281,22 +258,20 @@ async function captureStudioCli(
 
 export async function runStudioCliJson<T>(
   args: readonly string[],
-  decoder: StudioCliDecoder<T>,
+  decoder: JsonDecoder<T>,
   options: RunOptions = {},
-): Promise<StudioCliMachineResult<T>> {
+): Promise<StudioCliResult & { data: T | undefined }> {
   const machineArgs = args.includes('--json') ? [...args] : [...args, '--json']
   const captured = await captureStudioCli(machineArgs, options)
-  const value = parseJson(captured.stdout) ?? parseJson(captured.stderr)
-  const data = value === null ? null : decoder(value)
+  const value = parseOutput(captured.stdout) ?? parseOutput(captured.stderr)
+  const data = value === undefined ? undefined : decoder(value)
   const accepted = options.acceptedExitCodes ?? [0]
   const detail = captureDetail(captured, options, () =>
     resultDetail(value, captured.stdout, captured.stderr),
   )
   return {
-    version: 1,
-    ok: accepted.includes(captured.exitCode) && data !== null && !captured.timedOut,
+    ok: accepted.includes(captured.exitCode) && data !== undefined && !captured.timedOut,
     data,
-    value,
     detail,
     exitCode: captured.exitCode,
     stdout: captured.stdout,
@@ -308,7 +283,7 @@ export async function runStudioCliJson<T>(
 export async function runStudioCliText(
   args: readonly string[],
   options: RunOptions = {},
-): Promise<StudioCliTextResult> {
+): Promise<StudioCliResult> {
   const captured = await captureStudioCli(args, options)
   const accepted = options.acceptedExitCodes ?? [0]
   const detail = captureDetail(
@@ -317,7 +292,6 @@ export async function runStudioCliText(
     () => conciseCliFailure(captured.stderr) ?? conciseCliFailure(captured.stdout) ?? '',
   )
   return {
-    version: 1,
     ok: accepted.includes(captured.exitCode) && !captured.timedOut,
     detail,
     exitCode: captured.exitCode,

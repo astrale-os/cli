@@ -5,9 +5,10 @@
  * block in the annotate shape so the author can reply by appending
  * {role:'author'} thread entries and merging back by id.
  */
-import type { Comment, ContextItem, DocMeta, SchemaRevision, ThreadEntry } from '../../shared/types'
+import type { SchemaRevision } from '../../shared/contracts/schema'
+import type { Comment, ContextItem, DocMeta, ThreadEntry } from '../../shared/contracts/workspace'
 
-export interface CopyParts {
+interface CopyParts {
   origin: string
   root: string
   /** Studio render fingerprint retained by the handoff machine-state. */
@@ -43,7 +44,7 @@ function formatBytes(n: number): string {
 }
 
 /** annotate machine-state projection of a comment: {id, anchors, status, thread}. */
-export function toMachineState(comment: Comment): {
+function toMachineState(comment: Comment): {
   id: string
   anchors: string[]
   status: 'open' | 'closed'

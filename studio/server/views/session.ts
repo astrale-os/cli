@@ -1,12 +1,20 @@
-import type { StudioSchemaBundle, ViewInfo, ViewSessionResult } from '../../shared/types'
+/**
+ * Studio View sessions: prepare a View on the instance shown to the user, launch it
+ * through the CLI-owned `astrale view` session, and hand it back when its page closes.
+ */
+import { randomBytes } from 'node:crypto'
 
-import { openStudioViewSession, releaseStudioViewSession } from '../../../src/commands/studio-views'
+import type { ViewInfo, ViewRuntime, ViewSessionResult } from '../../shared/contracts/schema'
+
+import {
+  openStudioViewSession,
+  releaseStudioViewSession,
+  studioActiveInstanceName,
+} from '../../../src/commands/studio-views'
 import { studioCliCommand } from '../cli'
-import { activeInstanceName } from '../instances/active'
-import { assertOrigin } from './model'
-import { readViewPreparation } from './preparation'
 
-export { conciseCliFailure } from '../cli'
+const PREPARATION_TTL_MS = 10 * 60_000
+const MAX_PREPARATIONS = 128
 
 /**
  * Idle budget for a Studio-opened session. Studio releases a session as soon as
@@ -17,48 +25,86 @@ export { conciseCliFailure } from '../cli'
  */
 const STUDIO_VIEW_IDLE_MS = 8 * 60 * 60_000
 
-interface ViewSessionDependencies {
-  activeInstance: typeof activeInstanceName
-  release: typeof releaseStudioViewSession
+/** The CLI owners a View session delegates to; tests stand in for the instance and the server. */
+export interface ViewSessionDependencies {
+  activeInstance: typeof studioActiveInstanceName
   open: typeof openStudioViewSession
-  readPreparation: typeof readViewPreparation
-  serveRuntime: typeof studioViewServeRuntime
 }
 
-interface OpenedViewPayload {
-  session?: {
-    id?: string
-    pageUrl?: string
-    view?: { route?: { href?: string } }
+const defaults: ViewSessionDependencies = {
+  activeInstance: studioActiveInstanceName,
+  open: openStudioViewSession,
+}
+
+interface ViewPreparation {
+  id: string
+  root: string
+  origin: string
+  slug: string
+  instance: string | null
+  expiresAt: number
+}
+
+const preparations = new Map<string, ViewPreparation>()
+
+function prunePreparations(now: number): void {
+  for (const [id, preparation] of preparations) {
+    if (preparation.expiresAt <= now) preparations.delete(id)
   }
 }
 
-export function readyViewSession(
-  opened: OpenedViewPayload | null,
-): Extract<ViewSessionResult, { status: 'ready' }> | null {
-  const session = opened?.session
-  const viewUrl = session?.view?.route?.href
-  if (!session?.id || !session.pageUrl || !viewUrl) return null
-  return {
-    status: 'ready',
-    sessionId: session.id,
-    pageUrl: session.pageUrl,
-    viewUrl,
+/** Every View belongs to its Domain: preparing one only pins the instance it will read. */
+export async function getViewRuntime(
+  root: string,
+  origin: string,
+  view: ViewInfo,
+  dependencies: Partial<ViewSessionDependencies> = {},
+): Promise<ViewRuntime> {
+  const instance = await (dependencies.activeInstance ?? defaults.activeInstance)()
+  const now = Date.now()
+  prunePreparations(now)
+  const id = randomBytes(12).toString('hex')
+  preparations.set(id, {
+    id,
+    root,
+    origin,
+    slug: view.slug,
+    instance,
+    expiresAt: now + PREPARATION_TTL_MS,
+  })
+  while (preparations.size > MAX_PREPARATIONS) {
+    const oldest = preparations.keys().next().value
+    if (typeof oldest !== 'string') break
+    preparations.delete(oldest)
   }
+  return { slug: view.slug, preparationId: id, instance }
+}
+
+/** A preparation made for this exact workspace, Domain and View, while it still stands. */
+function readPreparation(
+  id: string,
+  expected: Pick<ViewPreparation, 'root' | 'origin' | 'slug'>,
+): ViewPreparation | null {
+  prunePreparations(Date.now())
+  const preparation = preparations.get(id)
+  return preparation &&
+    preparation.root === expected.root &&
+    preparation.origin === expected.origin &&
+    preparation.slug === expected.slug
+    ? preparation
+    : null
 }
 
 export async function launchViewSession(
   root: string,
   origin: string,
   view: ViewInfo,
-  _bundle: StudioSchemaBundle | null,
   request: { preparationId?: unknown },
   timeoutMs: number,
   dependencies: Partial<ViewSessionDependencies> = {},
 ): Promise<ViewSessionResult> {
   const preparationId =
     typeof request.preparationId === 'string' ? request.preparationId.trim() : ''
-  const readPreparation = dependencies.readPreparation ?? readViewPreparation
   const preparation = preparationId
     ? readPreparation(preparationId, { root, origin, slug: view.slug })
     : null
@@ -71,29 +117,30 @@ export async function launchViewSession(
 
   const instance = preparation.instance
   if (!instance) return { status: 'unavailable', reason: 'No active Astrale instance.' }
-  const currentInstance = await (dependencies.activeInstance ?? activeInstanceName)()
-  if (currentInstance !== instance) {
+  if ((await (dependencies.activeInstance ?? defaults.activeInstance)()) !== instance) {
     return {
       status: 'unavailable',
       reason: 'The active instance changed. Refresh the view and try again.',
     }
   }
 
-  let opened: OpenedViewPayload | null = null
   try {
     // The View opens on the identity this instance is bound to, the one every
     // other Studio read already runs under. No identity list travels with the
     // session, so the page offers no switch: changing who Studio is means
     // changing the instance it works against.
-    opened = {
-      session: await (dependencies.open ?? openStudioViewSession)({
-        viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
-        instance,
-        idleMs: STUDIO_VIEW_IDLE_MS,
-        timeoutMs: Math.max(20_000, timeoutMs + 12_000),
-        serveRuntime: (dependencies.serveRuntime ?? studioViewServeRuntime)(),
-      }),
+    const session = await (dependencies.open ?? defaults.open)({
+      viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
+      instance,
+      idleMs: STUDIO_VIEW_IDLE_MS,
+      timeoutMs: Math.max(20_000, timeoutMs + 12_000),
+      serveRuntime: studioViewServeRuntime(),
+    })
+    const viewUrl = session.view?.route?.href
+    if (!session.id || !session.pageUrl || !viewUrl) {
+      return { status: 'unavailable', reason: '`astrale view` returned an invalid session.' }
     }
+    return { status: 'ready', sessionId: session.id, pageUrl: session.pageUrl, viewUrl }
   } catch (error) {
     return {
       status: 'unavailable',
@@ -103,12 +150,6 @@ export async function launchViewSession(
           : '`astrale view` could not start the preview session.',
     }
   }
-  const session = readyViewSession(opened)
-  if (!session) {
-    return { status: 'unavailable', reason: '`astrale view` returned an invalid session.' }
-  }
-
-  return session
 }
 
 /**
@@ -119,15 +160,20 @@ export async function launchViewSession(
 export async function releaseViewSession(
   sessionId: string,
   page: string | undefined,
-  dependencies: Pick<Partial<ViewSessionDependencies>, 'release'> = {},
 ): Promise<{ ok: true }> {
   if (!/^v-[0-9a-f]+$/.test(sessionId)) return { ok: true }
   // The page id is the browser's, so it is bounded here rather than in the
   // CLI-owned session it reaches. Releasing without one still hands the session
   // back; only its own page stays attached until it goes quiet.
   const named = page !== undefined && /^[A-Za-z0-9-]{1,64}$/.test(page) ? page : undefined
-  await (dependencies.release ?? releaseStudioViewSession)(sessionId, named)
+  await releaseStudioViewSession(sessionId, named)
   return { ok: true }
+}
+
+/** Refuse anything but a plain domain origin before it is spliced into a graph path. */
+function assertOrigin(value: string): string {
+  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(value)) throw new Error(`Invalid domain origin: ${value}`)
+  return value
 }
 
 function assertViewSlug(value: string): string {

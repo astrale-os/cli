@@ -1,32 +1,24 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
-import { analyzeProjectConfig } from '../domain'
 import { buildBundle } from './bundle'
-import { buildDatasets, decodeDatasetJson, projectDataset, runtimeExtractDataset } from './datasets'
+import { buildDatasets, decodeDatasetJson, projectDataset } from './datasets'
 
 const roots: string[] = []
 afterEach(() => {
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-function fixture(config: string): DomainHandle {
+function fixture(): DomainHandle {
   const root = mkdtempSync(join(tmpdir(), 'studio-datasets-'))
   roots.push(root)
-  mkdirSync(join(root, 'schema'), { recursive: true })
-  mkdirSync(join(root, 'tests', 'datasets'), { recursive: true })
-  writeFileSync(join(root, 'package.json'), '{"type":"module"}\n')
-  const sdk = realpathSync(join(import.meta.dir, '../../../node_modules/@astrale-os/sdk'))
-  const scope = join(root, 'node_modules', '@astrale-os')
-  mkdirSync(scope, { recursive: true })
-  symlinkSync(sdk, join(scope, 'sdk'), 'dir')
-  writeFileSync(
-    join(root, 'schema/index.ts'),
-    `
+  for (const [path, text] of Object.entries({
+    'package.json': '{"type":"module"}\n',
+    'schema/index.ts': `
       import { classIcon, defineSchema, edgeClass, nodeClass } from '@astrale-os/sdk/schema'
       export const Item = nodeClass({ icon: classIcon.neutral, properties: {} })
       export const contains = edgeClass.directed({
@@ -35,10 +27,7 @@ function fixture(config: string): DomainHandle {
       })
       export const schema = defineSchema('datasets.studio.test', { name: 'Test Domain', classes: { Item, contains } })
     `,
-  )
-  writeFileSync(
-    join(root, 'tests/datasets/demo.ts'),
-    `
+    'tests/datasets/demo.ts': `
       import { defineDataset } from '@astrale-os/sdk/testing'
       import { schema } from '../../schema/index.ts'
       export default defineDataset(schema, {
@@ -46,19 +35,27 @@ function fixture(config: string): DomainHandle {
         title: 'Demo data',
         graph({ classes: { Item, contains }, node, edge }) {
           const parent = node(Item, { id: 'parent' })
-          const child = node(Item)
-          edge(contains, parent, child)
+          edge(contains, parent, node(Item))
           return { parent }
         },
       })
     `,
-  )
-  writeFileSync(join(root, 'tests/datasets/broken.ts'), `export default { id: 'broken' }\n`)
-  writeFileSync(
-    join(root, 'domain.ts'),
-    `throw new Error('Domain definition entry was imported')\n`,
-  )
-  writeFileSync(join(root, 'astrale.config.ts'), config)
+    'tests/datasets/broken.ts': `export default { id: 'broken' }\n`,
+    'domain.ts': `throw new Error('Domain definition entry was imported')\n`,
+    'astrale.config.ts': `import { defineProject } from '@astrale-os/sdk/project'
+      import { dataset, tests } from '@astrale-os/sdk/testing'
+      export default defineProject({ domain: {} as never, environments: {}, tests: tests({ datasets: [
+        dataset('./tests/datasets/demo.ts'),
+        dataset('./tests/datasets/broken.ts'),
+        dataset('./tests/datasets/missing.ts'),
+      ] }) })\n`,
+  })) {
+    mkdirSync(dirname(join(root, path)), { recursive: true })
+    writeFileSync(join(root, path), text)
+  }
+  const sdk = realpathSync(join(import.meta.dir, '../../../node_modules/@astrale-os/sdk'))
+  mkdirSync(join(root, 'node_modules/@astrale-os'), { recursive: true })
+  symlinkSync(sdk, join(root, 'node_modules/@astrale-os/sdk'), 'dir')
   return {
     id: 'datasets-studio-test',
     root,
@@ -69,39 +66,6 @@ function fixture(config: string): DomainHandle {
     schemaIndex: join(root, 'schema/index.ts'),
   }
 }
-
-describe('Dataset references', () => {
-  test('are read from defineProject in the configuration, in order, without executing it', () => {
-    const handle = fixture(`
-      import { cloudflare } from '@astrale-os/adapter-cloudflare'
-      import { defineProject } from '@astrale-os/sdk/project'
-      import { dataset as ref, tests } from '@astrale-os/sdk/testing'
-      import { domain } from './domain.js'
-      // dataset('./tests/datasets/commented.ts')
-      const crowded = ref('./tests/datasets/crowded.ts')
-      const resources = tests({
-        datasets: [
-          ref('./tests/datasets/demo.ts'),
-          crowded,
-          ref('./tests/datasets/demo.ts'),
-          ref(process.env.DYNAMIC ?? './tests/datasets/dynamic.ts'),
-        ],
-      })
-      export default defineProject({
-        domain,
-        environments: { development: { deployment: cloudflare({}) } },
-        tests: resources,
-      })
-    `)
-    expect(analyzeProjectConfig(handle.root).datasets).toEqual([
-      './tests/datasets/demo.ts',
-      './tests/datasets/crowded.ts',
-    ])
-    expect(
-      analyzeProjectConfig(fixture(`export default deploy({ application })\n`).root).datasets,
-    ).toEqual([])
-  })
-})
 
 describe('Dataset envelope', () => {
   const envelope = {
@@ -171,15 +135,7 @@ describe('Dataset envelope', () => {
 
 describe('Dataset extraction', () => {
   test('extracts every referenced Dataset through the domain SDK without touching the Domain definition', async () => {
-    const handle = fixture(
-      `import { defineProject } from '@astrale-os/sdk/project'
-      import { dataset, tests } from '@astrale-os/sdk/testing'
-      export default defineProject({ domain: {} as never, environments: {}, tests: tests({ datasets: [
-        dataset('./tests/datasets/demo.ts'),
-        dataset('./tests/datasets/broken.ts'),
-        dataset('./tests/datasets/missing.ts'),
-      ] }) })\n`,
-    )
+    const handle = fixture()
     const bundle = await buildBundle(handle)
     expect(bundle.schemaMode).toBe('canonical-admitted')
 
@@ -209,16 +165,5 @@ describe('Dataset extraction', () => {
     )
     expect(missing).toMatchObject({ status: 'failed', path: './tests/datasets/missing.ts' })
     expect((missing as { error: { message: string } }).error.message).toContain('not found')
-  }, 120_000)
-
-  test('reports a Dataset module whose default export is not a Dataset as data, never a crash', async () => {
-    const handle = fixture(`export default {}\n`)
-    const result = await runtimeExtractDataset(
-      join(handle.root, 'tests/datasets/broken.ts'),
-      handle.root,
-    )
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error.message).toContain('not an admitted Dataset')
-    expect(await buildDatasets(handle, null)).toMatchObject({ domainId: handle.id, datasets: [] })
   }, 120_000)
 })

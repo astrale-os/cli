@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Node, type SourceFile } from 'ts-morph'
 
-import type { EnvField } from '../../../shared/types'
+import type { EnvField } from '../../../shared/contracts/schema'
 
 import { makeProject } from './source'
 

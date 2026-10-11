@@ -1,6 +1,6 @@
-import type { DomainHandle } from '../../domain'
+import type { Notify } from '../../api/http'
+import type { DomainHandle } from '../../domain/registry'
 import type { JsonRecord } from '../../json'
-import type { Notify } from '../notify'
 import type { AgentWorkspace } from '../workspace'
 
 import { concreteAnchorKind } from '../../../shared/comment-anchors'
@@ -19,7 +19,7 @@ interface RunBridge {
   onProgress: (text: string) => void
 }
 
-export interface BridgeSession {
+interface BridgeSession {
   token: string
   onReply(callback: (commentId: string, text: string) => void): void
   onProgress(callback: (text: string) => void): void

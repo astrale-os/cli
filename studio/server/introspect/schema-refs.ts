@@ -1,4 +1,4 @@
-import type { StudioSchemaBundle } from '../../shared/types'
+import type { StudioSchemaBundle } from '../../shared/contracts/schema'
 
 /** Enumerate every schema anchor represented by the admitted render IR. */
 export function schemaRefs(bundle: StudioSchemaBundle): string[] {

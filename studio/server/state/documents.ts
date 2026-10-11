@@ -5,18 +5,16 @@
  * They travel with the domain and are part of the agent handoff context.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { extname } from 'node:path'
 
-import type { DocMeta } from '../../shared/types'
+import type { DocMeta } from '../../shared/contracts/workspace'
 
 import { asFiniteNumber, asJsonRecord, asString, decodeEach } from '../json'
 import { readJson, removeState, statePath, writeJson, writeStateBuffer } from './store'
 
 const INDEX = 'context/documents/index.json'
 const DIR = 'context/docs'
-/** Where documents lived before they were named: `context/documents/<uuid>.<ext>`. */
-const LEGACY_DIR = 'context/documents'
 
 /** `Pricing decisions.md` → `pricing-decisions` — a file name you can read. */
 function slugify(name: string): string {
@@ -42,27 +40,6 @@ function uniqueStoredPath(root: string, docs: DocMeta[], name: string): string {
   }
 }
 
-/**
- * Move documents written under the old uuid-named layout into `context/docs/`.
- * Publish each copied document in the atomic index before removing its old bytes.
- * A failed copy or index write leaves the old indexed document readable for retry.
- */
-export function migrateDocuments(root: string): void {
-  const docs = listDocuments(root)
-  if (!docs.some((doc) => doc.stored.startsWith(`${LEGACY_DIR}/`))) return
-  for (const doc of docs) {
-    if (!doc.stored.startsWith(`${LEGACY_DIR}/`)) continue
-    const from = statePath(root, doc.stored)
-    if (!existsSync(from)) continue
-    const next = uniqueStoredPath(root, docs, doc.name)
-    writeStateBuffer(root, next, readFileSync(from))
-    const previous = doc.stored
-    doc.stored = next
-    writeJson(root, INDEX, docs)
-    removeState(root, previous)
-  }
-}
-
 function decodeDocument(value: unknown): DocMeta | undefined {
   const record = asJsonRecord(value)
   const id = asString(record?.id)
@@ -78,7 +55,7 @@ function decodeDocument(value: unknown): DocMeta | undefined {
     size === undefined ||
     size < 0 ||
     !addedAt ||
-    !(stored?.startsWith(`${DIR}/`) || stored?.startsWith(`${LEGACY_DIR}/`)) ||
+    !stored?.startsWith(`${DIR}/`) ||
     stored.split('/').includes('..')
   ) {
     return undefined

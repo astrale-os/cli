@@ -1,22 +1,16 @@
-import type { InstanceInfo, InstancesState } from '../../shared/types'
+import type { InstanceInfo, InstancesState } from '../../shared/contracts/workspace'
 
 import { studioActiveInstanceName } from '../../../src/commands/studio-views'
-import { decodeJsonObject, runStudioCliJson, runStudioCliText } from '../cli'
+import { runStudioCliJson, runStudioCliText } from '../cli'
+import { asJsonRecord, decodeEach } from '../json'
 
-async function astraleJson(args: string[]): Promise<Record<string, unknown> | null> {
-  const result = await runStudioCliJson(args, decodeJsonObject)
-  return result.ok ? result.data : null
+async function astraleJson(args: string[]): Promise<Record<string, unknown> | undefined> {
+  const result = await runStudioCliJson(args, asJsonRecord)
+  return result.ok ? result.data : undefined
 }
 
 function records(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.map(decodeJsonObject).filter((item) => item !== null) : []
-}
-
-/** The CLI-owned global active instance. */
-export const activeInstanceName = (): Promise<string | null> => studioActiveInstanceName()
-
-interface ActiveInstanceDependencies {
-  activeInstanceName: typeof activeInstanceName
+  return decodeEach(value, asJsonRecord) ?? []
 }
 
 export async function listInstances(): Promise<InstancesState> {
@@ -28,7 +22,7 @@ export async function listInstances(): Promise<InstancesState> {
     astraleJson(['instance', 'list', '--bookmarked', '--json']),
     astraleJson(['instance', 'list', '--admin-only', '--json']),
   ])
-  const active = typeof local?.active === 'string' ? local.active : await activeInstanceName()
+  const active = typeof local?.active === 'string' ? local.active : await studioActiveInstanceName()
   const instances: InstanceInfo[] = []
   for (const bookmark of records(local?.bookmarks)) {
     if (typeof bookmark.name !== 'string') continue
@@ -61,7 +55,6 @@ export async function listInstances(): Promise<InstancesState> {
 
 export async function setActiveInstance(
   name: string,
-  dependencies: Partial<ActiveInstanceDependencies> = {},
 ): Promise<{ ok: boolean; active: string | null; output: string }> {
   const result = await runStudioCliText([
     'instance',
@@ -73,7 +66,7 @@ export async function setActiveInstance(
   const combined = `${result.stdout}\n${result.stderr}`.trim()
   return {
     ok: result.ok,
-    active: await (dependencies.activeInstanceName ?? activeInstanceName)(),
+    active: await studioActiveInstanceName(),
     output: (combined || result.detail).slice(-1000),
   }
 }

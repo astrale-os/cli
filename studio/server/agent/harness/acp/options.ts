@@ -12,13 +12,17 @@
  */
 import type * as acp from '@agentclientprotocol/sdk'
 
-import type { AgentEffort, HarnessEffortOption, HarnessModelOption } from '../../../../shared/types'
+import type {
+  AgentEffort,
+  HarnessEffortOption,
+  HarnessModelOption,
+} from '../../../../shared/contracts/agent'
 import type { AcpProvider } from './command'
 
 import { isAgentEffort } from '../../../../shared/agent-effort'
 
-export type SelectConfigOption = Extract<acp.SessionConfigOption, { type: 'select' }>
-export type FastConfigOption = Extract<acp.SessionConfigOption, { type: 'select' | 'boolean' }>
+type SelectConfigOption = Extract<acp.SessionConfigOption, { type: 'select' }>
+type FastConfigOption = Extract<acp.SessionConfigOption, { type: 'select' | 'boolean' }>
 
 function selectByCategory(
   options: acp.SessionConfigOption[],

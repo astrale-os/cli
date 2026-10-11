@@ -2,48 +2,32 @@ import { expect, test } from 'bun:test'
 
 import { forwardBridgeTool } from './client'
 
-test('marks HTTP and transport failures as MCP tool errors', async () => {
-  const denied = await forwardBridgeTool(
-    'http://studio.test',
-    'token',
-    'reply',
-    {},
-    async () => new Response('denied', { status: 401 }),
-  )
-  expect(denied).toEqual({
-    content: [{ type: 'text', text: 'bridge error 401: denied' }],
-    isError: true,
-  })
+type Fetcher = NonNullable<Parameters<typeof forwardBridgeTool>[4]>
+const forward = (fetcher: Fetcher, args: Record<string, unknown> = {}) =>
+  forwardBridgeTool('http://studio.test', 'scoped', 'threads', args, fetcher)
+const content = (text: string): [{ type: 'text'; text: string }] => [{ type: 'text', text }]
 
-  const unavailable = await forwardBridgeTool(
-    'http://studio.test',
-    'token',
-    'reply',
-    {},
-    async () => {
-      throw new Error('offline')
-    },
-  )
-  expect(unavailable).toEqual({
-    content: [{ type: 'text', text: 'bridge call failed: offline' }],
-    isError: true,
-  })
-})
-
-test('keeps the scoped bearer authoritative and returns successful content', async () => {
-  let sent: any
-  const response = await forwardBridgeTool(
-    'http://studio.test',
-    'scoped',
-    'threads',
-    { token: 'forged' },
+test('the scoped bearer is authoritative, and any failure is an MCP tool error', async () => {
+  let sent: unknown
+  const ok = await forward(
     async (_url, init) => {
       sent = JSON.parse(String(init?.body))
       return new Response('{"threads":[]}')
     },
+    { token: 'forged' },
   )
+  expect(ok).toEqual({ content: content('{"threads":[]}') })
   expect(sent).toEqual({ token: 'scoped' })
-  expect(response).toEqual({
-    content: [{ type: 'text', text: '{"threads":[]}' }],
+
+  expect(await forward(async () => new Response('denied', { status: 401 }))).toEqual({
+    content: content('bridge error 401: denied'),
+    isError: true,
+  })
+  const offline = async (): Promise<Response> => {
+    throw new Error('offline')
+  }
+  expect(await forward(offline)).toEqual({
+    content: content('bridge call failed: offline'),
+    isError: true,
   })
 })

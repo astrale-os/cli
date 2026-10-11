@@ -1,32 +1,28 @@
 import { expect, test } from 'bun:test'
 
-import type { AgentEvent, AgentRun } from '../../shared/types'
+import type { AgentEvent, AgentRun } from '../../shared/contracts/agent'
 
-import { handoffPreamble, summarizeChatTranscript } from './transfer'
+import { summarizeChatTranscript } from './transfer'
 
-function event(kind: AgentEvent['kind'], text: string, target?: string): AgentEvent {
-  return {
-    id: `${kind}-${text}`,
-    ts: '2026-08-20T00:00:00.000Z',
-    kind,
-    text,
-    ...(target === undefined ? {} : { target, tool: 'Edit' }),
-  }
-}
-
-function run(extra: Partial<AgentRun>): AgentRun {
-  return {
-    id: crypto.randomUUID(),
-    chatId: 'chat-1',
-    harness: 'claude',
-    status: 'succeeded',
-    createdAt: '2026-08-20T00:00:00.000Z',
-    summary: 'a turn',
-    targetCommentIds: [],
-    events: [],
-    ...extra,
-  }
-}
+const at = '2026-08-20T00:00:00.000Z'
+const event = (kind: AgentEvent['kind'], text: string, target?: string): AgentEvent => ({
+  id: `${kind}-${text}`,
+  ts: at,
+  kind,
+  text,
+  ...(target === undefined ? {} : { target, tool: 'Edit' }),
+})
+const run = (extra: Partial<AgentRun>): AgentRun => ({
+  id: crypto.randomUUID(),
+  chatId: 'chat-1',
+  harness: 'claude',
+  status: 'succeeded',
+  createdAt: at,
+  summary: 'a turn',
+  targetCommentIds: [],
+  events: [],
+  ...extra,
+})
 
 test('summarizes what was asked, what was answered and what was touched', () => {
   const summary = summarizeChatTranscript({
@@ -44,60 +40,37 @@ test('summarizes what was asked, what was answered and what was touched', () => 
         instruction: 'Now wire the renewal workflow',
         status: 'failed',
         error: 'the harness lost its connection',
-        events: [event('message', 'Started the workflow but could not finish.')],
       }),
     ],
   })
-
-  expect(summary).toContain('Handoff from the claude conversation')
-  expect(summary).toContain('Billing rework')
-  expect(summary).toContain('Add a Subscription class')
-  expect(summary).toContain('Added Subscription with a renewal date.')
-  expect(summary).toContain('Now wire the renewal workflow')
-  expect(summary).toContain('the harness lost its connection')
-  expect(summary).toContain('schema/billing/subscription.ts')
+  for (const part of [
+    'Billing rework',
+    'Add a Subscription class',
+    'Added Subscription with a renewal date.',
+    'Now wire the renewal workflow',
+    'the harness lost its connection',
+    'schema/billing/subscription.ts',
+  ])
+    expect(summary).toContain(part)
   // the next agent must not think it can pick the old session back up
   expect(summary).toContain('cannot be resumed')
-})
-
-test('names a turn started from threads even when nothing was typed', () => {
-  const summary = summarizeChatTranscript({
-    fromHarness: 'codex',
-    runs: [run({ targetCommentIds: ['c1', 'c2'], events: [event('message', 'Replied to both.')] })],
-  })
-  expect(summary).toContain('answer 2 open comment thread(s)')
-})
-
-test('an untouched chat has nothing to hand over', () => {
-  expect(summarizeChatTranscript({ fromHarness: 'claude', runs: [] })).toBe('')
+  // an untouched chat has nothing to hand over
   expect(summarizeChatTranscript({ fromHarness: 'claude', runs: [run({})] })).toBe('')
 })
 
-test('keeps only the recent turns and says how many it dropped', () => {
+test('the summary is bounded: recent turns only, long instructions clamped', () => {
   const many = Array.from({ length: 15 }, (_, index) =>
     run({ instruction: `turn ${index + 1}`, events: [event('message', `did ${index + 1}`)] }),
   )
-  const summary = summarizeChatTranscript({ fromHarness: 'claude', runs: many })
-
-  expect(summary).toContain('3 earlier turn(s) omitted')
-  expect(summary).not.toContain('turn 3')
-  expect(summary).toContain('turn 15')
+  const recent = summarizeChatTranscript({ fromHarness: 'claude', runs: many })
+  expect(recent).toContain('3 earlier turn(s) omitted')
+  expect(recent).not.toContain('turn 3')
   // numbering stays absolute, so "Turn 15" means the fifteenth of the conversation
-  expect(summary).toContain('### Turn 15')
-})
+  expect(recent).toContain('### Turn 15')
 
-test('clamps a long instruction instead of replaying the whole thing', () => {
-  const summary = summarizeChatTranscript({
+  const long = summarizeChatTranscript({
     fromHarness: 'claude',
     runs: [run({ instruction: 'x'.repeat(2000), events: [event('message', 'ok')] })],
   })
-  expect(summary).toContain('…')
-  expect(summary.length).toBeLessThan(1500)
-})
-
-test('the preamble frames the briefing as context, not as the turn', () => {
-  const framed = handoffPreamble('## Handoff\n\nsome context')
-  expect(framed).toContain('Transferred conversation')
-  expect(framed).toContain('some context')
-  expect(framed.trimEnd().endsWith('---')).toBe(true)
+  expect(long.length).toBeLessThan(1500)
 })

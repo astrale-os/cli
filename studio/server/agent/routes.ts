@@ -1,4 +1,4 @@
-import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/types'
+import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/contracts/agent'
 import type { ChatResult } from './run/coordinator'
 
 import { badRequest, json, notFound, type AgentRouteContext } from '../api/http'
@@ -10,11 +10,9 @@ import { inspectHarnessHealth } from './harness/adapter'
 import { readModelCatalog } from './harness/catalog'
 import {
   clearHarnessGateway,
-  gatewayAudience,
   getHarnessGatewayState,
   setHarnessGateway,
 } from './harness/gateway/config'
-import { setHostToken } from './harness/gateway/token'
 import { getHarnessById, listHarnesses, probeInstalledHarnesses } from './harness/registry'
 import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './harness/selection'
 import { emitStudioEvent } from './notify'
@@ -351,11 +349,6 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
       if (body.action === 'clear') return json(clearHarnessGateway())
       return badRequest('unknown harness-gateway action')
     }
-  }
-  if (rest === '/agent/harness-gateway/host-token' && req.method === 'POST') {
-    const audience = gatewayAudience()
-    if (!audience) return badRequest('no gateway base URL configured')
-    return json({ ok: setHostToken(audience, asString(body.token) ?? '') })
   }
   if (rest === '/agent/usage' && req.method === 'GET') return json(readUsage(workspace.stateRoot))
   if (rest === '/agent/ask' && req.method === 'POST') {

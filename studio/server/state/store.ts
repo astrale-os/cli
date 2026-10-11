@@ -1,6 +1,6 @@
 /**
  * store.ts — the gateway for Studio-owned persistence. Under a domain that is
- * `<domain>/.domain-studio/`; under the studio's home on this machine (see home.ts)
+ * `<domain>/.domain-studio/`; under the studio's home on this machine (see state/home.ts)
  * it is the folder itself, since nothing else lives there. It rejects every target
  * outside that directory. Explicit user-requested domain edits (for example
  * environment files or workspace creation) belong to their own feature boundary, not
@@ -18,13 +18,13 @@ import {
 import { join, relative, resolve, sep } from 'node:path'
 
 import { atomicWriteSync } from '../../../src/state/files'
-import { isMachineStateRoot } from '../home'
 import { parseJson, type JsonDecoder } from '../json'
+import { isMachineStateRoot } from './home'
 
-export const DOT = '.domain-studio'
+const DOT = '.domain-studio'
 
 /** The state folder of a root: the dotted folder of a domain, the folder itself on the machine. */
-export function dotDir(root: string): string {
+function dotDir(root: string): string {
   return isMachineStateRoot(root) ? resolve(root) : join(root, DOT)
 }
 

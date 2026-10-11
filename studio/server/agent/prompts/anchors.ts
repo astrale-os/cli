@@ -4,17 +4,17 @@
  * agent reads schema/ directly when it needs broader context.
  */
 import type {
-  Comment,
   IrClass,
-  IrClassKey,
   IrFunction,
   IrMethod,
   JsonSchema,
   SchemaIR,
   SchemaOverlay,
-} from '../../../shared/types'
+} from '../../../shared/contracts/schema'
+import type { Comment } from '../../../shared/contracts/workspace'
+import type { IrClassKey } from '../../../shared/schema/identity'
 
-import { isNodePathSchema } from '../../../shared/types'
+import { isNodePathSchema } from '../../../shared/contracts/schema'
 
 /** Terse JSON-Schema type label (mirrors the client's format.tsx describe/typeLabel). */
 function propType(s: JsonSchema | undefined, optionalOverride?: boolean): string {

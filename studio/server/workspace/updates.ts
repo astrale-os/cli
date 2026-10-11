@@ -9,9 +9,10 @@
  * bad output) collapses to "nothing stale" so the badge stays
  * hidden rather than nagging on a hiccup.
  */
-import type { StaleReport } from '../../shared/types'
+import type { StaleReport } from '../../shared/contracts/runtime'
 
-import { decodeJsonObject, runStudioCliJson } from '../cli'
+import { runStudioCliJson } from '../cli'
+import { asJsonRecord } from '../json'
 
 const NOT_STALE: StaleReport = {
   stale: false,
@@ -28,11 +29,11 @@ export async function getUpdates(root: string): Promise<StaleReport> {
   return result.ok && result.data ? result.data : NOT_STALE
 }
 
-function decodeStaleReport(value: unknown): StaleReport | null {
-  const report = decodeJsonObject(value)
-  const cli = decodeJsonObject(report?.cli)
-  const skills = decodeJsonObject(report?.skills)
-  const sdk = decodeJsonObject(report?.sdk)
+function decodeStaleReport(value: unknown): StaleReport | undefined {
+  const report = asJsonRecord(value)
+  const cli = asJsonRecord(report?.cli)
+  const skills = asJsonRecord(report?.skills)
+  const sdk = asJsonRecord(report?.sdk)
   if (
     typeof report?.stale !== 'boolean' ||
     typeof cli?.stale !== 'boolean' ||
@@ -41,17 +42,17 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     typeof sdk.inProject !== 'boolean' ||
     !Array.isArray(sdk.outdated)
   ) {
-    return null
+    return undefined
   }
   const outdated = sdk.outdated.flatMap((value) => {
-    const item = decodeJsonObject(value)
+    const item = asJsonRecord(value)
     return typeof item?.pkg === 'string' &&
       typeof item.current === 'string' &&
       typeof item.latest === 'string'
       ? [{ pkg: item.pkg, current: item.current, latest: item.latest }]
       : []
   })
-  if (outdated.length !== sdk.outdated.length) return null
+  if (outdated.length !== sdk.outdated.length) return undefined
   const skillStatuses = new Set([
     'current',
     'update-available',
@@ -59,15 +60,8 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     'unavailable',
     'skipped',
   ])
-  // Additive compatibility: Studio can briefly run a newer server against an
-  // older CLI report while a binary update is being applied.
-  const skillStatus =
-    skills === null || skills === undefined
-      ? 'current'
-      : typeof skills.status === 'string' && skillStatuses.has(skills.status)
-        ? (skills.status as StaleReport['skills']['status'])
-        : null
-  if (skillStatus === null) return null
+  if (typeof skills?.status !== 'string' || !skillStatuses.has(skills.status)) return undefined
+  const skillStatus = skills.status as StaleReport['skills']['status']
   return {
     stale: report.stale,
     cli: {
@@ -79,7 +73,7 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     },
     skills: {
       status: skillStatus,
-      ...(typeof skills?.error === 'string' ? { error: skills.error } : {}),
+      ...(typeof skills.error === 'string' ? { error: skills.error } : {}),
     },
     sdk: { stale: sdk.stale, inProject: sdk.inProject, outdated },
   }

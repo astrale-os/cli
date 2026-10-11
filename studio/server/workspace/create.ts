@@ -16,11 +16,11 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { SCAFFOLDER } from '../../../src/lib/scaffolder'
-import { getBundle } from '../cache'
-import { registerDomain } from '../domain'
-import { findSchemaDefinition } from '../introspect/anatomy-extras'
-import { bootDomain } from '../lifecycle'
-import { stoppers, workspaceRoot } from '../workspace-state'
+import { bootDomain } from '../domain/boot'
+import { registerDomain } from '../domain/registry'
+import { findSchemaDefinition } from '../introspect/anatomy/schema-definition'
+import { getBundle } from '../introspect/cache'
+import { stoppers, workspaceRoot } from './root'
 
 /** Mirrors create-astrale-domain's `isValidSlug`: lowercase letters, digits, dots, dashes;
  *  must start/end alphanumeric. Also guards the filesystem target (no `/`, no `..`, no leading dot). */
@@ -31,7 +31,7 @@ export function scaffoldArgs(name: string): string[] {
   return ['--yes', SCAFFOLDER, name, '--yes']
 }
 
-export interface CreateDomainResult {
+interface CreateDomainResult {
   ok: boolean
   id?: string
   origin?: string
@@ -62,14 +62,7 @@ async function run(
   }
 }
 
-export interface CreateDomainDependencies {
-  run: typeof run
-}
-
-export async function createDomain(
-  rawName: string,
-  deps: CreateDomainDependencies = { run },
-): Promise<CreateDomainResult> {
+export async function createDomain(rawName: string): Promise<CreateDomainResult> {
   const name = rawName.trim().toLowerCase()
   if (!name || name.length > 64 || !SLUG.test(name)) {
     return {
@@ -90,7 +83,7 @@ export async function createDomain(
   }
 
   // 1. Scaffold (non-interactive). `--yes` accepts defaults (astrale adapter, template).
-  const scaffold = await deps.run('npx', scaffoldArgs(name), root)
+  const scaffold = await run('npx', scaffoldArgs(name), root)
   const scaffolded = registerDomain(dir)
   if (!scaffolded) {
     return {
@@ -108,7 +101,7 @@ export async function createDomain(
   // 2. Install deps so the domain is fully introspectable + deployable. Best-effort:
   //    a scaffolded-but-uninstalled domain still loads (static fallback), so a failed
   //    install is a soft warning, not a hard failure.
-  const install = await deps.run('pnpm', ['install'], dir)
+  const install = await run('pnpm', ['install'], dir)
 
   // 3. Register + boot with deps present. The live watcher may have already booted a
   //    deps-less fallback for this dir mid-install — stop it and boot fresh.

@@ -4,11 +4,12 @@
  * - mint: shell out to `astrale token`, cache the short-lived delegation, and
  *   coalesce concurrent requests for the same audience/instance
  * - token: use the manually configured bearer
- * - host: consume a token relayed by the embedding Astrale application
+ * - host: the embedding Astrale application owns the bearer; nothing relays one into
+ *   Studio, so this mode fails closed instead of falling back to ambient credentials
  *
  * Tokens only flow into the spawned harness child environment.
  */
-import type { HarnessGatewayConfig } from '../../../../shared/types'
+import type { HarnessGatewayConfig } from '../../../../shared/contracts/agent'
 
 import { captureCommand, type CapturedCommand, type CaptureOptions } from '../process'
 
@@ -28,7 +29,7 @@ type CaptureHarnessCommand = (
   options?: CaptureOptions,
 ) => Promise<CapturedCommand>
 
-export interface HarnessTokenBrokerOptions {
+interface HarnessTokenBrokerOptions {
   capture?: CaptureHarnessCommand
   now?: () => number
 }
@@ -67,7 +68,6 @@ function audienceMatches(actual: string | string[] | undefined, expected: string
 
 export class HarnessTokenBroker {
   private readonly mintCache = new Map<string, CachedToken>()
-  private readonly hostTokens = new Map<string, CachedToken>()
   private readonly inFlightMints = new Map<string, Promise<string>>()
   private readonly capture: CaptureHarnessCommand
   private readonly now: () => number
@@ -75,17 +75,6 @@ export class HarnessTokenBroker {
   constructor(options: HarnessTokenBrokerOptions = {}) {
     this.capture = options.capture ?? captureCommand
     this.now = options.now ?? Date.now
-  }
-
-  /** Relay a host-owned delegation token into the embedded Studio process. */
-  setHostToken(audience: string, token: string): boolean {
-    if (!audience || !token || token.split('.').length !== 3) return false
-    const claims = jwtClaims(token)
-    if (!claims || !audienceMatches(claims.audience, audience)) return false
-    const expiresAtMs = claims.expiresAtMs ?? this.now() + MINT_TTL_MS
-    if (expiresAtMs <= this.now()) return false
-    this.hostTokens.set(audience, { token, expiresAtMs })
-    return true
   }
 
   /** Acquire the configured gateway bearer for one child-process invocation. */
@@ -97,20 +86,13 @@ export class HarnessTokenBroker {
         return token
       }
       case 'host':
-        return this.readHostToken(audience)
+        throw new HarnessTokenError(
+          'no valid host-supplied token — the embedding Astrale app must provide one',
+          'host-token-needed',
+        )
       default:
         return this.mintToken(audience, config.auth.instance)
     }
-  }
-
-  private readHostToken(audience: string): string {
-    const cached = this.hostTokens.get(audience)
-    if (!cached || cached.expiresAtMs <= this.now())
-      throw new HarnessTokenError(
-        'no valid host-supplied token — the embedding Astrale app must provide one',
-        'host-token-needed',
-      )
-    return cached.token
   }
 
   private mintToken(audience: string, instance?: string): Promise<string> {
@@ -154,10 +136,6 @@ export class HarnessTokenBroker {
 }
 
 const defaultBroker = new HarnessTokenBroker()
-
-export function setHostToken(audience: string, token: string): boolean {
-  return defaultBroker.setHostToken(audience, token)
-}
 
 export function acquireGatewayToken(
   config: HarnessGatewayConfig,

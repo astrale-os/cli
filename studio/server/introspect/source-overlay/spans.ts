@@ -12,7 +12,7 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
-import type { SchemaIR, SourceSpan } from '../../../shared/types'
+import type { SchemaIR, SourceSpan } from '../../../shared/contracts/schema'
 
 import {
   calleeName,
@@ -69,11 +69,7 @@ function cleanComment(raw: string): string {
 const DECL_HELPERS: Record<string, 'node' | 'edge' | 'function'> = {
   nodeClass: 'node',
   edgeClass: 'edge',
-  // `func` is the V1 DSL's standalone-callable helper; `fn` is its older spelling.
-  // Without both, a Function gets no span — no file to open, no source doc, and the
-  // module tree files it under the domain root instead of the folder declaring it.
   func: 'function',
-  fn: 'function',
 }
 
 /** `<x>.directed` / `<x>.undirected`: the current edge declaration forms. */

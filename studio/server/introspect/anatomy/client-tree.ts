@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { ClientTree } from '../../../shared/types'
+import type { ClientTree } from '../../../shared/contracts/schema'
 
 import { SOURCE_FILE, listDirs, listFiles, readTextSafe } from './source'
 

@@ -3,7 +3,7 @@ import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Node, SyntaxKind, type CallExpression, type Project, type SourceFile } from 'ts-morph'
 
-import type { HandlerLink, SchemaIR } from '../../../shared/types'
+import type { HandlerLink, SchemaIR } from '../../../shared/contracts/schema'
 
 import { scanKernelCalls } from './kernel-calls'
 import { newProject, relToRoot, tryAddFile, unwrapExpression, valueOfIdentifier } from './project'

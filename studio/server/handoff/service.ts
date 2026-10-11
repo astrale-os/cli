@@ -3,17 +3,17 @@
  * + what to read" material the live agent runner depends on. It keeps one
  * definition of the change text and the auto-context refresh.
  */
-import type { ChangeSet } from '../../shared/types'
-import type { DomainHandle } from '../domain'
+import type { ChangeSet } from '../../shared/contracts/workspace'
+import type { DomainHandle } from '../domain/registry'
 
-import { getBundle } from '../cache'
+import { getBundle } from '../introspect/cache'
 import { computeChanges, hashAnatomyFiles } from '../state/baseline'
 import { readComments } from '../state/comments'
 import { materializeAuto } from '../state/context'
 import { detectGit, gitDiff } from '../workspace/git'
 
 /** Current changes vs the review baseline (schema IR diff + anatomy file diff). */
-export async function changeSet(handle: DomainHandle): Promise<ChangeSet> {
+async function changeSet(handle: DomainHandle): Promise<ChangeSet> {
   const bundle = await getBundle(handle.id)
   const files = hashAnatomyFiles(handle.root, handle.schemaDirName, handle.domainFile)
   const { hasGit } = detectGit(handle.root)
@@ -28,7 +28,7 @@ export async function changeSet(handle: DomainHandle): Promise<ChangeSet> {
 }
 
 /** A human-readable "current changes" blob for the handoff payload. */
-export function changeText(cs: ChangeSet): string {
+function changeText(cs: ChangeSet): string {
   const notice =
     'Indicative source/structure diff only; the Kernel Runtime has not assessed installation or data migration.'
   if (cs.schemaDiffText && cs.schemaDiffText.trim()) return `${notice}\n${cs.schemaDiffText.trim()}`

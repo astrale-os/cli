@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 
-import { workspaceKey } from '../server/home'
+import { workspaceKey } from '../server/state/home'
 export const FIXTURE_ID = workspaceKey(resolve(import.meta.dirname, 'fixture'))
 export const PEER_ID = workspaceKey(resolve(import.meta.dirname, 'fixture/peer'))
 

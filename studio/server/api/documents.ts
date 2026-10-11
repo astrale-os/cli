@@ -28,7 +28,7 @@ const INLINE_TYPES = new Set([
   'image/avif',
 ])
 
-export function documentResponseHeaders(type: string, name: string): Record<string, string> {
+function documentResponseHeaders(type: string, name: string): Record<string, string> {
   const mime = (type.split(';')[0] ?? '').trim().toLowerCase()
   if (INLINE_TYPES.has(mime))
     return {

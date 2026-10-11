@@ -1,12 +1,13 @@
 /**
  * Source-only metadata that the admitted DSL Schema cannot carry.
  */
-import type { SchemaIR, SchemaOverlay } from '../../shared/types'
+import type { SchemaIR, SchemaOverlay } from '../../shared/contracts/schema'
 
-import { buildHandlerLinks, buildSourceSpans } from './overlay-tsmorph'
+import { buildHandlerLinks } from './source-overlay/handlers'
 import { newProject } from './source-overlay/project'
+import { buildSourceSpans } from './source-overlay/spans'
 
-export interface OverlayArgs {
+interface OverlayArgs {
   ir: SchemaIR | null
   domainRoot: string
   schemaDir: string

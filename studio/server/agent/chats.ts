@@ -26,11 +26,11 @@ import type {
   ChatStatus,
   NewDomainContext,
   QueuedMessage,
-} from '../../shared/types'
+} from '../../shared/contracts/agent'
 
 import { isAgentEffort } from '../../shared/agent-effort'
 import { isChatTone, nextChatTone } from '../../shared/chat-tone'
-import { DEFAULT_CHAT_TITLE } from '../../shared/types'
+import { DEFAULT_CHAT_TITLE } from '../../shared/contracts/agent'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { listState, readJson, removeState, writeJson } from '../state/store'
 import { decodeAttachments } from './attachments'
@@ -59,7 +59,7 @@ export const MAX_QUEUED_MESSAGES = 20
  * showing it as its opening chip — it is the only trace of where the work
  * came from.
  */
-export interface ChatHandoff {
+interface ChatHandoff {
   fromChatId: string
   fromHarness: string
   createdAt: string
@@ -68,43 +68,22 @@ export interface ChatHandoff {
   delivered?: boolean
 }
 
-export interface StoredChat {
-  id: string
-  title: string
-  harness: string
-  /** colour slot picked at creation and kept for life (see shared/chat-tone.ts);
-   *  absent only on chats written before tones were stored */
-  tone?: number
-  model?: string
-  effort?: AgentEffort
-  fastMode?: boolean
-  sessionId?: string
-  turns: number
-  createdAt: string
-  updatedAt: string
-  /** the workspace root this conversation was opened in — where its session can resume */
-  workspace?: string
-  /** the domains the workspace held when the chat opened, by origin */
-  origins?: string[]
+/** A chat as it is stored: the wire shape without its live status, holding its briefing and queue. */
+export type StoredChat = Omit<ChatInfo, 'status' | 'queued' | 'origin'> & {
   /** carried over from the chat this one was forked from */
   handoff?: ChatHandoff
-  /** domain this chat was opened to build immediately after scaffolding */
-  newDomain?: NewDomainContext
   /** messages typed while a turn was running, oldest first */
   queue?: QueuedMessage[]
 }
 
-export interface ChatStore {
+interface ChatStore {
   activeId: string
   /** every tab, in the order the user arranged them, new ones last */
   chats: StoredChat[]
 }
 
 /** What a new chat records about where it was opened. */
-export interface ChatSeed {
-  workspace?: string
-  origins?: string[]
-}
+export type ChatSeed = Pick<StoredChat, 'workspace' | 'origins'>
 
 function decodeStoredChat(value: unknown): StoredChat | undefined {
   const record = asJsonRecord(value)
@@ -296,27 +275,11 @@ export function ensureChats(
     writeChat(root, chat)
     store.chats.push(chat)
   }
-  backfillTones(root, store.chats)
   if (!store.chats.some((chat) => chat.id === store.activeId)) {
     store.activeId = store.chats[store.chats.length - 1]!.id
     writeActiveId(activeRoot, store.activeId)
   }
   return store
-}
-
-/**
- * Give chats saved before tones were stored the one they will keep from now on,
- * in creation order and next to the tones already handed out.
- */
-function backfillTones(root: string, chats: StoredChat[]): void {
-  if (chats.every((chat) => chat.tone !== undefined)) return
-  const toned = chats.filter((chat) => chat.tone !== undefined)
-  for (const chat of chats) {
-    if (chat.tone !== undefined) continue
-    chat.tone = nextChatTone(toned, chat.harness)
-    toned.push(chat)
-    writeChat(root, chat)
-  }
 }
 
 function seedFields(seed?: ChatSeed): Partial<StoredChat> {

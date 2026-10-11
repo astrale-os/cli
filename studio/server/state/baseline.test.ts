@@ -1,11 +1,11 @@
 import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import type { SchemaIR } from '../../shared/types'
+import type { SchemaIR } from '../../shared/contracts/schema'
 
-import { STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/types'
+import { STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/contracts/schema'
 import {
   BASELINE_FORMAT_VERSION,
   captureBaseline,
@@ -24,42 +24,22 @@ afterEach(() => {
 test('hashes the current Domain definition and vertical authoring files', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-current-baseline-'))
   roots.push(root)
-  for (const dir of [
-    'schema',
-    'functions/risk',
-    'providers/mail',
-    'queries/risk',
-    'ui/risk',
-    'views/risk',
-  ]) {
-    mkdirSync(join(root, dir), { recursive: true })
-  }
-  for (const file of [
-    'schema/index.ts',
+  const anatomy = [
     'domain.ts',
-    'runtime.ts',
     'functions/risk/index.ts',
+    'package.json',
     'providers/mail/index.ts',
     'queries/risk/index.ts',
+    'runtime.ts',
+    'schema/index.ts',
     'ui/risk/screen.tsx',
     'views/risk/index.ts',
-    'package.json',
-  ]) {
+  ]
+  for (const file of [...anatomy, 'README.md']) {
+    mkdirSync(dirname(join(root, file)), { recursive: true })
     writeFileSync(join(root, file), `${file}\n`)
   }
-  writeFileSync(join(root, 'README.md'), 'not part of the anatomy fileset\n')
-
-  expect(Object.keys(hashAnatomyFiles(root, 'schema')).sort()).toEqual([
-    'domain.ts',
-    'functions/risk/index.ts',
-    'package.json',
-    'providers/mail/index.ts',
-    'queries/risk/index.ts',
-    'runtime.ts',
-    'schema/index.ts',
-    'ui/risk/screen.tsx',
-    'views/risk/index.ts',
-  ])
+  expect(Object.keys(hashAnatomyFiles(root, 'schema')).sort()).toEqual(anatomy)
 })
 
 test('hashes a config-selected nested Domain definition explicitly', () => {
@@ -115,115 +95,38 @@ test('persists a versioned canonical baseline with revision and raw root', () =>
   })
 })
 
-test('invalidates an unversioned baseline instead of diffing it through a new projection', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-legacy-baseline-'))
+test('any missing, unparsable, malformed or future part invalidates the baseline', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-corrupt-baseline-'))
   roots.push(root)
-  writeJson(root, '.cache/baseline/meta.json', { capturedAt: '2026-01-01T00:00:00.000Z' })
-  writeJson(root, '.cache/baseline/ir.json', schema('notes.example.dev'))
-  writeJson(root, '.cache/baseline/files.json', {})
-
-  expect(loadBaseline(root)).toBeNull()
-})
-
-const corruptBaselineCases = [
-  {
-    name: 'missing meta',
-    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/meta.json')),
-  },
-  {
-    name: 'syntactically invalid meta',
-    mutate: (root: string) => writeState(root, '.cache/baseline/meta.json', '{'),
-  },
-  {
-    name: 'structurally invalid meta',
-    mutate: (root: string) =>
-      writeJson(root, '.cache/baseline/meta.json', {
-        formatVersion: BASELINE_FORMAT_VERSION,
-        projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION,
-      }),
-  },
-  {
-    name: 'future baseline format',
-    mutate: (root: string) =>
-      writeJson(root, '.cache/baseline/meta.json', {
-        formatVersion: BASELINE_FORMAT_VERSION + 1,
-        projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION,
-        revision: `sha256:${'d'.repeat(64)}`,
-      }),
-  },
-  {
-    name: 'future projection format',
-    mutate: (root: string) =>
-      writeJson(root, '.cache/baseline/meta.json', {
-        formatVersion: BASELINE_FORMAT_VERSION,
-        projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION + 1,
-        revision: `sha256:${'d'.repeat(64)}`,
-      }),
-  },
-  {
-    name: 'missing IR',
-    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/ir.json')),
-  },
-  {
-    name: 'syntactically invalid IR',
-    mutate: (root: string) => writeState(root, '.cache/baseline/ir.json', '{'),
-  },
-  {
-    name: 'structurally invalid IR',
-    mutate: (root: string) =>
-      writeJson(root, '.cache/baseline/ir.json', {
-        ...schema('notes.example.dev'),
-        classes: { Broken: null },
-      }),
-  },
-  {
-    name: 'missing canonical root',
-    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/schema-root.json')),
-  },
-  {
-    name: 'syntactically invalid canonical root',
-    mutate: (root: string) => writeState(root, '.cache/baseline/schema-root.json', '{'),
-  },
-  {
-    name: 'structurally invalid canonical root',
-    mutate: (root: string) =>
-      writeJson(root, '.cache/baseline/schema-root.json', { canonical: true }),
-  },
-  {
-    name: 'missing file hashes',
-    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/files.json')),
-  },
-  {
-    name: 'syntactically invalid file hashes',
-    mutate: (root: string) => writeState(root, '.cache/baseline/files.json', '{'),
-  },
-  {
-    name: 'structurally invalid file hashes',
-    mutate: (root: string) => writeJson(root, '.cache/baseline/files.json', { source: 42 }),
-  },
-] as const
-
-for (const scenario of corruptBaselineCases) {
-  test(`invalidates a baseline with ${scenario.name}`, () => {
-    const root = mkdtempSync(join(tmpdir(), 'studio-corrupt-baseline-'))
-    roots.push(root)
-    const revision = `sha256:${'d'.repeat(64)}` as const
-    captureBaseline(root, { ir: schema('notes.example.dev'), root: canonicalRoot, revision }, {})
-
-    scenario.mutate(root)
-
-    expect(loadBaseline(root)).toBeNull()
+  const revision = `sha256:${'d'.repeat(64)}` as const
+  const meta = (formatVersion: number, projectionVersion: number) => ({
+    formatVersion,
+    projectionVersion,
+    revision,
   })
-}
-
-test('invalidates a current-format baseline whose render IR predates V1', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-retired-ir-baseline-'))
-  roots.push(root)
-  const legacyIr = { ...schema('notes.example.dev'), version: 'legacy' }
-
-  captureBaseline(root, { ir: legacyIr as never, root: null, revision: null }, { source: 'hash' })
-
-  expect(loadBaseline(root)).toBeNull()
+  const V = BASELINE_FORMAT_VERSION
+  const P = STUDIO_SCHEMA_PROJECTION_VERSION
+  for (const [file, content] of [
+    ['meta.json', { formatVersion: V, projectionVersion: P }],
+    ['meta.json', meta(V + 1, P)],
+    ['meta.json', meta(V, P + 1)],
+    ['ir.json', { ...schema('notes.example.dev'), classes: { Broken: null } }],
+    ['ir.json', { ...schema('notes.example.dev'), version: 'legacy' }],
+    ['schema-root.json', { canonical: true }],
+    ['files.json', { source: 42 }],
+    ...['meta.json', 'ir.json', 'schema-root.json', 'files.json'].flatMap((name) => [
+      [name, null],
+      [name, '{'],
+    ]),
+  ] as const) {
+    captureBaseline(root, { ir: schema('notes.example.dev'), root: canonicalRoot, revision }, {})
+    expect(loadBaseline(root)).not.toBeNull()
+    const path = `.cache/baseline/${file}`
+    if (content === null) rmSync(join(root, '.domain-studio', path))
+    else if (typeof content === 'string') writeState(root, path, content)
+    else writeJson(root, path, content)
+    expect(loadBaseline(root)).toBeNull()
+  }
 })
 
 test('uses equal admitted revisions to suppress projection-only schema churn', () => {

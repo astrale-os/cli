@@ -7,21 +7,19 @@ import type {
   IrCallableAuth,
   IrCallableOutput,
   IrClass,
-  IrClassKey,
-  IrClassRef,
   IrEndpoint,
   IrFunction,
   IrImportDescriptor,
   IrMethod,
-  IrSchemaRef,
   IrView,
   JsonSchema,
   SchemaIR,
   SchemaRevision,
   StudioCore,
-} from '../../shared/types'
+} from '../../shared/contracts/schema'
+import type { IrClassKey, IrClassRef, IrSchemaRef } from '../../shared/schema/identity'
 
-import { isSchemaRevision } from '../../shared/types'
+import { isSchemaRevision } from '../../shared/contracts/schema'
 import { dependencyFootprint, type DependencyFootprintSchema } from './dependency-footprint'
 
 type AnyRecord = Record<string, unknown>
@@ -65,17 +63,7 @@ export interface SchemaSdk {
   }
 }
 
-/** Smaller facade used when re-admitting an installed Bundle for drift checks. */
-export interface SchemaAdmissionSdk {
-  readonly bundle: {
-    accept(input: any): { readonly root: CanonicalDomainSchemaV1 }
-  }
-  readonly schema: {
-    resolve(input: any): { readonly source: unknown; readonly revision: unknown }
-  }
-}
-
-export interface CanonicalSchemaExtraction {
+interface CanonicalSchemaExtraction {
   readonly status: 'admitted' | 'preview'
   readonly root: CanonicalDomainSchemaV1
   readonly revision: SchemaRevision | null

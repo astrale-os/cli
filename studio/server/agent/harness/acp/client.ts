@@ -2,7 +2,11 @@ import * as acp from '@agentclientprotocol/sdk'
 import { accessSync, constants, readFileSync } from 'node:fs'
 import { delimiter, isAbsolute, resolve } from 'node:path'
 
-import type { AgentContextUsage, AgentToolCall, AgentToolContent } from '../../../../shared/types'
+import type {
+  AgentContextUsage,
+  AgentToolCall,
+  AgentToolContent,
+} from '../../../../shared/contracts/agent'
 import type {
   AgentTurnImage,
   AgentTurnInput,
@@ -49,7 +53,7 @@ interface ExecutionResult {
  * talks about them. An agent that does not take images gets the text alone — the
  * prompt already lists each image's path, so the message still reaches it whole.
  */
-export function promptBlocks(
+function promptBlocks(
   prompt: string,
   images: readonly AgentTurnImage[] | undefined,
   acceptsImages: boolean,
@@ -96,7 +100,7 @@ function absoluteMcpCommand(
   )
 }
 
-export function acpMcpServers(
+function acpMcpServers(
   servers: HarnessMcpServer[] | undefined,
   cwd: string,
   env?: Record<string, string>,
@@ -147,7 +151,7 @@ function stderrSuffix(stderr: string): string {
  * once (`tool_call`) and then sends only what changed (`tool_call_update`): the
  * command once its input has streamed in, the output and status once it ran.
  */
-export interface AcpToolCallState {
+interface AcpToolCallState {
   title?: string
   name?: string
   kind?: acp.ToolKind
@@ -175,7 +179,7 @@ function toolCallChanged(before: AcpToolCallState, after: AcpToolCallState): boo
 }
 
 /** Fold one report into what was known; a field it leaves out, or sends as null, is unchanged. */
-export function foldToolCall(
+function foldToolCall(
   known: AcpToolCallState | undefined,
   update: acp.ToolCall | acp.ToolCallUpdate,
 ): AcpToolCallState {
@@ -239,7 +243,7 @@ function toolContent(content: acp.ToolCallContent): AgentToolContent[] {
 }
 
 /** A call as Studio keeps it: harness-neutral, and bounded by the store that keeps it. */
-export function toolCallDetail(state: AcpToolCallState): AgentToolCall {
+function toolCallDetail(state: AcpToolCallState): AgentToolCall {
   const content = (state.content ?? []).flatMap(toolContent)
   return {
     title: state.title ?? state.name ?? state.kind ?? 'Tool',
@@ -455,10 +459,7 @@ function transcript(
 }
 
 /** A usage report's context occupancy, when it names a window to measure against. */
-export function contextUsage(update: {
-  used: number
-  size: number
-}): AgentContextUsage | undefined {
+function contextUsage(update: { used: number; size: number }): AgentContextUsage | undefined {
   const { used, size } = update
   if (!Number.isFinite(used) || !Number.isFinite(size) || used < 0 || size <= 0) return undefined
   return { used: Math.round(used), size: Math.round(size) }

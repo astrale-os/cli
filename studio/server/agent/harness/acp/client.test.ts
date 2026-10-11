@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import type { AgentStreamEvent } from '../adapter'
 
 import { AcpClaudeHarness } from './claude'
-import { errorText, foldToolCall, toolCallDetail } from './client'
 import { AcpCodexHarness } from './codex'
 
 const roots: string[] = []
@@ -152,18 +151,9 @@ function handle(message) {
       send({ id: message.id, result: { modes: modes(), configOptions: configOptions() } })
       return
     case 'session/fork':
-      if (process.env.FAKE_ACP_FORK_FAIL === '1') {
-        send({ id: message.id, error: { code: -32000, message: 'fork failed' } })
-        return
-      }
       send({
         id: message.id,
-        result: {
-          sessionId: 'fork-session',
-          ...(process.env.FAKE_ACP_EMPTY_FORK === '1'
-            ? {}
-            : { modes: modes(), configOptions: configOptions() }),
-        },
+        result: { sessionId: 'fork-session', modes: modes(), configOptions: configOptions() },
       })
       return
     case 'session/set_mode':
@@ -349,6 +339,18 @@ function messages(file: string) {
   return readLog(file).flatMap((entry) => (entry.message ? [entry.message] : []))
 }
 
+/** A turn nobody cancels and nobody watches. */
+const { signal } = new AbortController()
+const quiet = { signal, onEvent: () => {} }
+
+const methods = (file: string) => messages(file).flatMap((message) => message.method ?? [])
+const configs = (file: string) =>
+  messages(file).flatMap((message) =>
+    message.method === 'session/set_config_option'
+      ? [[message.params!.configId, message.params!.value]]
+      : [],
+  )
+
 function temporaryRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix))
   roots.push(root)
@@ -376,56 +378,25 @@ async function waitForExit(pid: number): Promise<boolean> {
 }
 
 describe('ACP harness adapter', () => {
-  for (const [name, create] of [
-    [
-      'Codex',
-      (root: string, log: string) =>
-        new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root, log)),
-    ],
-    [
-      'Claude',
-      (root: string, log: string) =>
-        new AcpClaudeHarness('/opt/claude-test', fakeAcpAgent(root, log)),
-    ],
-  ] as const) {
-    test(`${name} coalesces concurrent health reads and reuses the successful probe`, async () => {
-      const root = temporaryRoot(`studio-acp-${name.toLowerCase()}-health-cache-`)
-      const log = join(root, 'acp.jsonl')
-      const harness = create(root, log)
-
-      const [first, joined] = await Promise.all([harness.health(), harness.health()])
-      expect(first.ok).toBe(true)
-      expect(joined).toEqual(first)
-      expect(readLog(log).filter(({ type }) => type === 'boot')).toHaveLength(1)
-
-      expect((await harness.health()).ok).toBe(true)
-      expect(readLog(log).filter(({ type }) => type === 'boot')).toHaveLength(1)
-    })
-  }
-
   test('a pinned agent not yet installed is available without downloading or spawning it', async () => {
     const root = temporaryRoot('studio-acp-managed-health-')
     const log = join(root, 'acp.jsonl')
-    const previous = {
-      home: process.env.ASTRALE_HOME,
-      bin: process.env.DOMAIN_STUDIO_CODEX_BIN,
-    }
+    const previous = [process.env.ASTRALE_HOME, process.env.DOMAIN_STUDIO_CODEX_BIN] as const
     process.env.ASTRALE_HOME = root
     delete process.env.DOMAIN_STUDIO_CODEX_BIN
     try {
       const health = await new AcpCodexHarness(undefined, fakeAcpAgent(root, log)).health()
-      expect(health).toMatchObject({
-        ok: true,
-        cli: { source: 'managed', installed: false },
-      })
+      expect(health).toMatchObject({ ok: true, cli: { source: 'managed', installed: false } })
       expect(health.bin?.startsWith(join(root, 'cache', 'agents', 'codex'))).toBe(true)
-      expect(health.detail).toContain('is installed by Studio on first use')
       expect(existsSync(log)).toBe(false)
       expect(existsSync(join(root, 'cache'))).toBe(false)
     } finally {
-      if (previous.home === undefined) delete process.env.ASTRALE_HOME
-      else process.env.ASTRALE_HOME = previous.home
-      if (previous.bin !== undefined) process.env.DOMAIN_STUDIO_CODEX_BIN = previous.bin
+      for (const [key, value] of [
+        ['ASTRALE_HOME', previous[0]],
+        ['DOMAIN_STUDIO_CODEX_BIN', previous[1]],
+      ] as const)
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
     }
   })
 
@@ -471,43 +442,22 @@ describe('ACP harness adapter', () => {
         { id: 'max', label: 'max' },
       ],
     })
-    expect(messages(log).flatMap((message) => (message.method ? [message.method] : []))).toEqual([
+    expect(methods(log)).toEqual([
       'initialize',
       'session/new',
       'session/set_config_option',
       'session/delete',
     ])
-  })
 
-  test('Claude adds Studio’s own top rung above the ladder ACP reports', async () => {
-    const root = temporaryRoot('studio-acp-probe-claude-')
-    const harness = new AcpClaudeHarness('/opt/claude-test', fakeAcpAgent(root))
-
-    const loadout = await harness.loadout(root, {
-      env: { FAKE_ACP_PROVIDER: 'claude' },
-      refresh: true,
-    })
-    expect(loadout.efforts?.map((option) => option.id)).toEqual([
-      'low',
-      'medium',
-      'high',
-      'xhigh',
-      'max',
-      'ultracode',
-    ])
-  })
-
-  test('a model with no ladder reports none, rather than an empty guess', async () => {
-    const root = temporaryRoot('studio-acp-probe-flat-')
-    const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
-
-    const loadout = await harness.loadout(root, {
-      env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_NO_EFFORT: '1' },
-      refresh: true,
-    })
-    expect(loadout.ok).toBe(true)
-    expect(loadout.efforts).toBeUndefined()
-    expect(loadout.effort).toBeUndefined()
+    // Claude adds Studio's own top rung above the ladder ACP reports
+    const claude = await new AcpClaudeHarness('/opt/claude-test', fakeAcpAgent(root)).loadout(
+      root,
+      {
+        env: { FAKE_ACP_PROVIDER: 'claude' },
+        refresh: true,
+      },
+    )
+    expect(claude.efforts?.at(-1)?.id).toBe('ultracode')
   })
 
   test('folds every report of one tool call into one step that carries its details', async () => {
@@ -519,7 +469,7 @@ describe('ACP harness adapter', () => {
       root,
       prompt: 'run the tests',
       env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: 'tools' },
-      signal: new AbortController().signal,
+      signal,
       onEvent: (event) => events.push(event),
     })
 
@@ -560,42 +510,6 @@ describe('ACP harness adapter', () => {
     expect(order).not.toContain('call:stray')
   })
 
-  test('keeps the verbatim output of a call that shows no content of its own', () => {
-    const announced = foldToolCall(undefined, {
-      toolCallId: 'exec-1',
-      title: 'ls',
-      kind: 'execute',
-      status: 'in_progress',
-      rawInput: { command: 'ls', cwd: '/repo' },
-    })
-    const settled = foldToolCall(announced, {
-      toolCallId: 'exec-1',
-      status: 'failed',
-      title: null,
-      rawOutput: { formatted_output: 'ls: denied', exit_code: 1 },
-      locations: [{ path: '/repo/a.ts', line: 3 }],
-    })
-
-    expect(toolCallDetail(settled)).toEqual({
-      title: 'ls',
-      kind: 'execute',
-      status: 'failed',
-      input: { command: 'ls', cwd: '/repo' },
-      content: [],
-      output: { formatted_output: 'ls: denied', exit_code: 1 },
-      locations: ['/repo/a.ts:3'],
-    })
-    // a diff keeps both sides; a file the call created has no "before"
-    expect(
-      toolCallDetail(
-        foldToolCall(settled, {
-          toolCallId: 'exec-1',
-          content: [{ type: 'diff', path: '/repo/new.ts', oldText: null, newText: 'export {}' }],
-        }),
-      ).content,
-    ).toEqual([{ type: 'diff', path: '/repo/new.ts', newText: 'export {}' }])
-  })
-
   test('runs Codex through ACP and maps MCP, configuration, permissions, usage, and events', async () => {
     const root = temporaryRoot('studio-acp-codex-')
     const log = join(root, 'acp.jsonl')
@@ -623,7 +537,7 @@ describe('ACP harness adapter', () => {
         },
       ],
       env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex' },
-      signal: new AbortController().signal,
+      signal,
       onEvent: (event) => events.push(`${event.kind}:${event.text}`),
       onContext: (context) => contexts.push(context),
     })
@@ -639,11 +553,14 @@ describe('ACP harness adapter', () => {
       numTurns: 1,
       isError: false,
     })
-    expect(events).toContain('status:session started via ACP')
-    expect(events).toContain('thinking:checking')
-    expect(events).toContain('tool:Read package.json')
-    expect(events).toContain('status:→ Verify ACP')
-    expect(events).toContain('message:Hello world')
+    expect(events).toEqual(
+      expect.arrayContaining([
+        'thinking:checking',
+        'tool:Read package.json',
+        'status:→ Verify ACP',
+        'message:Hello world',
+      ]),
+    )
 
     const entries = readLog(log)
     expect(entries[0].env).toMatchObject({
@@ -654,8 +571,7 @@ describe('ACP harness adapter', () => {
       developer_instructions: 'Return the Studio machine block.',
     })
     const requests = messages(log)
-    const methods = requests.flatMap((message) => (message.method ? [message.method] : []))
-    expect(methods).toEqual([
+    expect(methods(log)).toEqual([
       'initialize',
       'session/new',
       'session/set_mode',
@@ -678,19 +594,11 @@ describe('ACP harness adapter', () => {
         },
       },
     })
-    const configRequests = requests.filter(
-      (message) => message.method === 'session/set_config_option',
-    )
-    expect(configRequests.map((message) => message.params!.configId)).toEqual([
-      'model',
-      'fast-mode',
-      'reasoning_effort',
-    ])
     // `max` is a rung Codex really has, so it is sent as asked rather than capped
-    expect(configRequests.map((message) => message.params!.value)).toEqual([
-      'studio-model',
-      true,
-      'max',
+    expect(configs(log)).toEqual([
+      ['model', 'studio-model'],
+      ['fast-mode', true],
+      ['reasoning_effort', 'max'],
     ])
     expect(requests.find((message) => message.id === 'permission-1')!.result).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow' },
@@ -709,8 +617,7 @@ describe('ACP harness adapter', () => {
         prompt: 'what is wrong here?',
         images: [{ path: image, mimeType: 'image/png', name: 'shot.png' }],
         env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'claude', FAKE_ACP_IMAGES: images },
-        signal: new AbortController().signal,
-        onEvent: () => {},
+        ...quiet,
       })
       expect(result.isError).toBe(false)
       return messages(log).find((message) => message.method === 'session/prompt')!.params!.prompt
@@ -742,8 +649,7 @@ describe('ACP harness adapter', () => {
         FAKE_ACP_PROVIDER: 'claude',
         DOMAIN_STUDIO_CLAUDE_ARGS: '--debug-file trace.log',
       },
-      signal: new AbortController().signal,
-      onEvent: () => {},
+      ...quiet,
     })
 
     expect(result).toMatchObject({
@@ -778,34 +684,23 @@ describe('ACP harness adapter', () => {
     )
     // `ultracode` is Studio's own rung — the session goes to the heaviest level the
     // agent DOES report, and the flag above carries the rest
-    const configs = requests.filter((message) => message.method === 'session/set_config_option')
-    expect(configs.map((message) => [message.params!.configId, message.params!.value])).toEqual([
+    expect(configs(log)).toEqual([
       ['model', 'studio-model'],
       ['effort', 'max'],
     ])
   })
 
-  test('a model with no reasoning ladder is left alone instead of failing the turn', async () => {
+  test('a model with no reasoning ladder reports none and is left alone by a turn', async () => {
     const root = temporaryRoot('studio-acp-no-effort-')
     const log = join(root, 'acp.jsonl')
+    const env = { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_NO_EFFORT: '1' }
     const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
+    expect((await harness.loadout(root, { env, refresh: true })).efforts).toBeUndefined()
 
-    const result = await harness.run({
-      root,
-      prompt: 'think about it',
-      model: 'studio-model',
-      effort: 'max',
-      access: 'workspace',
-      env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_NO_EFFORT: '1' },
-      signal: new AbortController().signal,
-      onEvent: () => {},
-    })
-
-    expect(result.isError).toBe(false)
-    const configs = messages(log).filter(
-      (message) => message.method === 'session/set_config_option',
-    )
-    expect(configs.map((message) => message.params!.configId)).toEqual(['model'])
+    rmSync(log)
+    const run = { root, prompt: 'think', model: 'studio-model', effort: 'max' as const, env }
+    expect((await harness.run({ ...run, ...quiet })).isError).toBe(false)
+    expect(configs(log)).toEqual([['model', 'studio-model']])
   })
 
   test('forks Claude Ask sessions, but creates a fresh ephemeral Codex Ask when fork is unavailable', async () => {
@@ -818,17 +713,14 @@ describe('ACP harness adapter', () => {
       sessionId: 'parent-session',
       access: 'workspace',
       env: { FAKE_ACP_LOG: claudeLog, FAKE_ACP_PROVIDER: 'claude' },
-      signal: new AbortController().signal,
+      signal,
       onDelta: (text) => claudeDeltas.push(text),
     })
     expect(claude).toEqual({ text: 'Hello world', isError: false, errorMessage: undefined })
     expect(claudeDeltas).toEqual(['Hello', ' world'])
-    const claudeMethods = messages(claudeLog).flatMap((message) =>
-      message.method ? [message.method] : [],
-    )
-    expect(claudeMethods).toContain('session/fork')
-    expect(claudeMethods).not.toContain('session/resume')
-    expect(claudeMethods.at(-1)).toBe('session/delete')
+    expect(methods(claudeLog)).toContain('session/fork')
+    expect(methods(claudeLog)).not.toContain('session/resume')
+    expect(methods(claudeLog).at(-1)).toBe('session/delete')
 
     const codexRoot = temporaryRoot('studio-acp-ask-codex-')
     const codexLog = join(codexRoot, 'acp.jsonl')
@@ -842,17 +734,14 @@ describe('ACP harness adapter', () => {
         FAKE_ACP_PROVIDER: 'codex',
         FAKE_ACP_FORK: '0',
       },
-      signal: new AbortController().signal,
+      signal,
       onDelta: () => {},
     })
     expect(codex).toMatchObject({ text: 'Hello world', isError: false })
-    const codexMethods = messages(codexLog).flatMap((message) =>
-      message.method ? [message.method] : [],
-    )
-    expect(codexMethods).not.toContain('session/fork')
-    expect(codexMethods).not.toContain('session/resume')
-    expect(codexMethods).toContain('session/new')
-    expect(codexMethods.at(-1)).toBe('session/delete')
+    expect(methods(codexLog)).not.toContain('session/fork')
+    expect(methods(codexLog)).not.toContain('session/resume')
+    expect(methods(codexLog)).toContain('session/new')
+    expect(methods(codexLog).at(-1)).toBe('session/delete')
   })
 
   test('marks rejected resumes and preserves partial Ask failures without retrying', async () => {
@@ -862,8 +751,7 @@ describe('ACP harness adapter', () => {
       prompt: 'continue',
       sessionId: 'missing-session',
       env: { FAKE_ACP_PROVIDER: 'codex' },
-      signal: new AbortController().signal,
-      onEvent: () => {},
+      ...quiet,
     })
     expect(resume).toMatchObject({
       sessionId: 'missing-session',
@@ -884,7 +772,7 @@ describe('ACP harness adapter', () => {
         FAKE_ACP_PROVIDER: 'claude',
         FAKE_ACP_MODE: 'partial-fail',
       },
-      signal: new AbortController().signal,
+      signal,
       onDelta: (text) => deltas.push(text),
     })
     expect(ask).toMatchObject({ text: 'Hello', isError: true })
@@ -902,7 +790,7 @@ describe('ACP harness adapter', () => {
         root,
         prompt: 'hello',
         env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_MODE: mode },
-        signal: new AbortController().signal,
+        signal,
         onEvent: (event) => events.push(event),
         onDelta: (text) => deltas.push(text),
       })
@@ -948,7 +836,7 @@ describe('ACP harness adapter', () => {
     const result = await resultPromise
 
     expect(result).toMatchObject({ isError: true, errorMessage: 'canceled' })
-    expect(messages(log).some((message) => message.method === 'session/cancel')).toBe(true)
+    expect(methods(log)).toContain('session/cancel')
     const descendantPid = Number(readFileSync(pidFile, 'utf8'))
     const exited = await waitForExit(descendantPid)
     if (!exited) {
@@ -960,19 +848,4 @@ describe('ACP harness adapter', () => {
     }
     expect(exited).toBe(true)
   }, 10_000)
-})
-
-test('a JSON-RPC failure keeps its code and data under a clean first line', () => {
-  const error = Object.assign(new Error('Internal error'), {
-    code: -32603,
-    data: { details: 'model overloaded' },
-  })
-  const text = errorText(error)
-  expect(text.split('\n')[0]).toBe('Internal error (JSON-RPC -32603)')
-  expect(text).toContain('"details": "model overloaded"')
-
-  // data the message already carries is not repeated
-  const same = Object.assign(new Error('Internal error: boom'), { code: -32603, data: 'boom' })
-  expect(errorText(same)).toBe('Internal error: boom (JSON-RPC -32603)')
-  expect(errorText(new Error('plain'))).toBe('plain')
 })

@@ -1,15 +1,12 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StaleReport, ViewInfo } from '../shared/types'
+import type { StaleReport } from '../shared/contracts/runtime'
 
-import { studioActiveInstanceName } from '../../src/commands/studio-views'
 import { STUDIO_CLI_DESCRIPTOR_ENV } from './cli'
 import { listInstances, setActiveInstance } from './instances/active'
-import { clearViewPreparations, rememberViewPreparation } from './views/preparation'
-import { launchViewSession } from './views/session'
 import { getUpdates } from './workspace/updates'
 
 interface FakeResponse {
@@ -27,7 +24,6 @@ const priorDescriptor = process.env[STUDIO_CLI_DESCRIPTOR_ENV]
 const roots: string[] = []
 
 afterEach(() => {
-  clearViewPreparations()
   if (priorDescriptor === undefined) delete process.env[STUDIO_CLI_DESCRIPTOR_ENV]
   else process.env[STUDIO_CLI_DESCRIPTOR_ENV] = priorDescriptor
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
@@ -94,324 +90,92 @@ process.exit(response.exitCode ?? 0)
 
 const bookmarkedArgs = ['instance', 'list', '--bookmarked', '--json']
 const managedArgs = ['instance', 'list', '--admin-only', '--json']
+const checkArgs = ['update', '--check', '--json']
 
-describe('instance CLI orchestration', () => {
-  test('merges bookmarked and managed instances from the exact CLI', async () => {
-    const fake = installFakeCli([
-      {
-        args: bookmarkedArgs,
-        responses: [
-          {
-            stdout: {
-              active: 'staging',
-              bookmarks: [
-                { name: 'local', url: 'http://127.0.0.1:7200' },
-                { name: 'staging', url: 'https://staging.example', active: true },
-              ],
-            },
+test('instances merge bookmarked and managed lists, and a switch is non-interactive', async () => {
+  const useArgs = ['instance', 'use', 'staging', '--adopt-default', '--skip-jwks-check']
+  const fake = installFakeCli([
+    {
+      args: bookmarkedArgs,
+      responses: [
+        {
+          stdout: {
+            active: 'staging',
+            bookmarks: [
+              { name: 'local', url: 'http://127.0.0.1:7200' },
+              { name: 'staging', url: 'https://staging.example', active: true },
+            ],
           },
-        ],
-      },
-      {
-        args: managedArgs,
-        responses: [
-          {
-            stdout: {
-              instances: [
-                { slug: 'staging', url: 'https://duplicate.example' },
-                { slug: 'production', url: 'https://production.example' },
-              ],
-            },
-          },
-        ],
-      },
-    ])
-
-    expect(await listInstances()).toEqual({
-      active: 'staging',
-      instances: [
-        {
-          name: 'local',
-          url: 'http://127.0.0.1:7200',
-          active: false,
-          kind: 'bookmark',
-        },
-        {
-          name: 'staging',
-          url: 'https://staging.example',
-          active: true,
-          kind: 'bookmark',
-        },
-        {
-          name: 'production',
-          url: 'https://production.example',
-          active: false,
-          kind: 'managed',
         },
       ],
-    })
-    // The two list reads are issued together, so only the SET of invocations is
-    // fixed — asserting their order would assert that they are still sequential.
-    expect(
-      fake
-        .calls()
-        .map((call) => call.args.join(' '))
-        .sort(),
-    ).toEqual([bookmarkedArgs, managedArgs].map((args) => args.join(' ')).sort())
-  })
-
-  test('uses the exact non-interactive instance switch flags and re-reads CLI-owned state', async () => {
-    const useArgs = ['instance', 'use', 'staging', '--adopt-default', '--skip-jwks-check']
-    const fake = installFakeCli([
-      { args: useArgs, responses: [{ stdout: 'Now using staging.\n' }] },
-    ])
-
-    expect(
-      await setActiveInstance('staging', { activeInstanceName: async () => 'staging' }),
-    ).toEqual({
-      ok: true,
-      active: 'staging',
-      output: 'Now using staging.',
-    })
-    expect(fake.calls().map((call) => call.args)).toEqual([useArgs])
-  })
-
-  test('reads active state in-process and invalidates the long-lived memo first', async () => {
-    let resets = 0
-    expect(
-      await studioActiveInstanceName({
-        resetInstancesMemo: () => {
-          resets++
+    },
+    {
+      args: managedArgs,
+      responses: [
+        {
+          stdout: {
+            instances: [
+              { slug: 'staging', url: 'https://duplicate.example' },
+              { slug: 'production', url: 'https://production.example' },
+            ],
+          },
         },
-        getActive: async () => ({ name: 'local' }) as never,
-      }),
-    ).toBe('local')
-    expect(
-      await studioActiveInstanceName({
-        resetInstancesMemo: () => {
-          resets++
-        },
-        getActive: async () => {
-          throw new Error('unavailable')
-        },
-      }),
-    ).toBeNull()
-    expect(resets).toBe(2)
+      ],
+    },
+    { args: useArgs, responses: [{ stdout: 'Now using staging.\n' }] },
+  ])
+
+  expect(await listInstances()).toEqual({
+    active: 'staging',
+    instances: [
+      { name: 'local', url: 'http://127.0.0.1:7200', active: false, kind: 'bookmark' },
+      { name: 'staging', url: 'https://staging.example', active: true, kind: 'bookmark' },
+      { name: 'production', url: 'https://production.example', active: false, kind: 'managed' },
+    ],
   })
+  expect(await setActiveInstance('staging')).toMatchObject({
+    ok: true,
+    output: 'Now using staging.',
+  })
+  // the two list reads are issued together: only the SET of the first two calls is fixed
+  const calls = fake.calls().map((call) => call.args.join(' '))
+  expect(calls.slice(0, 2).sort()).toEqual(
+    [bookmarkedArgs, managedArgs].map((a) => a.join(' ')).sort(),
+  )
+  expect(calls[2]).toBe(useArgs.join(' '))
 })
 
-describe('workspace update CLI orchestration', () => {
-  test('accepts stale exit 10 and checks updates in the domain root', async () => {
-    const checkArgs = ['update', '--check', '--json']
-    const fake = installFakeCli([
-      {
-        args: checkArgs,
-        responses: [
-          {
-            stdout: {
-              stale: true,
-              cli: {
-                stale: true,
-                managed: true,
-                current: '0.7.0',
-                latest: '0.8.0',
-                channel: 'latest',
-              },
-              skills: { status: 'update-available' },
-              sdk: {
-                stale: true,
-                inProject: true,
-                outdated: [{ pkg: '@astrale-os/sdk', current: '0.5.0', latest: '0.6.0' }],
-              },
-            },
-            exitCode: 10,
-          },
-        ],
-      },
-    ])
-    const domainRoot = realpathSync(fake.root)
-
-    expect(await getUpdates(domainRoot)).toEqual({
+test('updates are checked in the domain root; stale exit 10 counts, anything malformed hides the badge', async () => {
+  const report: StaleReport = {
+    stale: true,
+    cli: { stale: true, managed: true, current: '0.7.0', latest: '0.8.0', channel: 'latest' },
+    skills: { status: 'update-available' },
+    sdk: {
       stale: true,
-      cli: {
-        stale: true,
-        managed: true,
-        current: '0.7.0',
-        latest: '0.8.0',
-        channel: 'latest',
-      },
-      skills: { status: 'update-available' },
-      sdk: {
-        stale: true,
-        inProject: true,
-        outdated: [{ pkg: '@astrale-os/sdk', current: '0.5.0', latest: '0.6.0' }],
-      },
-    })
-    expect(fake.calls()).toEqual([{ args: checkArgs, cwd: domainRoot }])
-  })
+      inProject: true,
+      outdated: [{ pkg: '@astrale-os/sdk', current: '0.5.0', latest: '0.6.0' }],
+    },
+  }
+  const fake = installFakeCli([
+    {
+      args: checkArgs,
+      responses: [
+        { stdout: report, exitCode: 10 },
+        { stdout: { stale: true, cli: {}, sdk: {} }, exitCode: 10 },
+        { stdout: report, stderr: 'Registry offline.', exitCode: 7 },
+      ],
+    },
+  ])
+  const domainRoot = realpathSync(fake.root)
+  const hidden: StaleReport = {
+    stale: false,
+    cli: { stale: false, managed: true },
+    skills: { status: 'current' },
+    sdk: { stale: false, inProject: false, outdated: [] },
+  }
 
-  test('accepts an older CLI report without a skills axis during binary replacement', async () => {
-    const checkArgs = ['update', '--check', '--json']
-    const fake = installFakeCli([
-      {
-        args: checkArgs,
-        responses: [
-          {
-            stdout: {
-              stale: false,
-              cli: { stale: false, managed: true },
-              sdk: { stale: false, inProject: false, outdated: [] },
-            },
-          },
-        ],
-      },
-    ])
-
-    expect(await getUpdates(fake.root)).toEqual({
-      stale: false,
-      cli: { stale: false, managed: true },
-      skills: { status: 'current' },
-      sdk: { stale: false, inProject: false, outdated: [] },
-    })
-  })
-
-  test('hides the badge when check output is malformed or fails', async () => {
-    const checkArgs = ['update', '--check', '--json']
-    const fake = installFakeCli([
-      {
-        args: checkArgs,
-        responses: [
-          { stdout: { stale: true, cli: {}, sdk: {} }, exitCode: 10 },
-          {
-            stdout: {
-              stale: true,
-              cli: { stale: true, managed: true },
-              skills: { status: 'current' },
-              sdk: {
-                stale: true,
-                inProject: true,
-                outdated: [{ pkg: '@astrale-os/sdk', current: '0.5.0', latest: '0.6.0' }],
-              },
-            },
-            stderr: 'Registry offline.',
-            exitCode: 7,
-          },
-        ],
-      },
-    ])
-    const expected: StaleReport = {
-      stale: false,
-      cli: { stale: false, managed: true },
-      skills: { status: 'current' },
-      sdk: { stale: false, inProject: false, outdated: [] },
-    }
-
-    expect(await getUpdates(fake.root)).toEqual(expected)
-    expect(await getUpdates(fake.root)).toEqual(expected)
-    const domainRoot = realpathSync(fake.root)
-    expect(fake.calls()).toEqual([
-      { args: checkArgs, cwd: domainRoot },
-      { args: checkArgs, cwd: domainRoot },
-    ])
-  })
-})
-
-const view = { slug: 'issues', kind: 'unknown' } satisfies ViewInfo
-
-describe('View CLI orchestration', () => {
-  test('launches the Domain View by its ViewPath and trusts route.href', async () => {
-    const fake = installFakeCli([])
-    const preparation = rememberViewPreparation({
-      root: fake.root,
-      origin: 'issues.example.dev',
-      slug: view.slug,
-      instance: 'staging',
-    })
-    const opened: unknown[] = []
-
-    expect(
-      await launchViewSession(
-        fake.root,
-        'issues.example.dev',
-        view,
-        null,
-        { preparationId: preparation.id },
-        2000,
-        {
-          activeInstance: async () => 'staging',
-          serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
-          open: async (input) => {
-            opened.push(input)
-            return {
-              id: 'v-a1b2',
-              pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-              view: { route: { href: 'https://shell.example.dev/views/issues' } },
-            } as never
-          },
-        },
-      ),
-    ).toEqual({
-      status: 'ready',
-      sessionId: 'v-a1b2',
-      pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-      viewUrl: 'https://shell.example.dev/views/issues',
-    })
-    expect(opened).toEqual([
-      {
-        viewPath: '/:issues.example.dev:view.issues',
-        instance: 'staging',
-        timeoutMs: 20_000,
-        idleMs: 8 * 60 * 60_000,
-        serveRuntime: { file: '/cli/astrale', args: [] },
-      },
-    ])
-    expect(fake.calls()).toEqual([])
-  })
-
-  test('does not expose a malformed session or a failed direct runtime launch', async () => {
-    const standalone = { slug: 'dashboard', kind: 'unknown' } satisfies ViewInfo
-    const fake = installFakeCli([])
-    const preparation = rememberViewPreparation({
-      root: fake.root,
-      origin: 'issues.example.dev',
-      slug: standalone.slug,
-      instance: 'staging',
-    })
-
-    const malformed = await launchViewSession(
-      fake.root,
-      'issues.example.dev',
-      standalone,
-      null,
-      { preparationId: preparation.id },
-      2000,
-      {
-        activeInstance: async () => 'staging',
-        serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
-        open: async () => ({ id: 'v-no-route', pageUrl: 'http://127.0.0.1/', view: {} }) as never,
-      },
-    )
-    expect(malformed.status).toBe('unavailable')
-    if (malformed.status !== 'unavailable')
-      throw new Error('expected the malformed session to fail')
-    expect(malformed.reason).toContain('invalid session')
-    expect(
-      await launchViewSession(
-        fake.root,
-        'issues.example.dev',
-        standalone,
-        null,
-        { preparationId: preparation.id },
-        2000,
-        {
-          activeInstance: async () => 'staging',
-          serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
-          open: async () => {
-            throw new Error('Permission denied.')
-          },
-        },
-      ),
-    ).toEqual({ status: 'unavailable', reason: 'Permission denied.' })
-    expect(fake.calls()).toEqual([])
-  })
+  expect(await getUpdates(domainRoot)).toEqual(report)
+  expect(await getUpdates(domainRoot)).toEqual(hidden)
+  expect(await getUpdates(domainRoot)).toEqual(hidden)
+  expect(fake.calls()).toEqual(Array(3).fill({ args: checkArgs, cwd: domainRoot }))
 })

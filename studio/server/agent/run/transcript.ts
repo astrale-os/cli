@@ -8,8 +8,8 @@ import {
   type AgentEvent,
   type AgentPromptSnapshot,
   type AgentRun,
-  type MergeResult,
-} from '../../../shared/types'
+} from '../../../shared/contracts/agent'
+import { type MergeResult } from '../../../shared/contracts/workspace'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
 import { listState, readJson, removeState, writeJson } from '../../state/store'
 import { decodeAttachments } from '../attachments'

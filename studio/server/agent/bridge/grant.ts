@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync } from 'node:fs'
 import { join } from 'node:path'
 
+import type { Notify } from '../../api/http'
 import type { HarnessMcpServer } from '../harness/adapter'
-import type { Notify } from '../notify'
 import type { AgentWorkspace } from '../workspace'
 
 import { studioCliCommand } from '../../cli'

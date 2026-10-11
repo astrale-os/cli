@@ -165,9 +165,6 @@ export interface DocMeta {
   stored: string
 }
 
-/** Where context documents live inside a domain — shown in the UI, read by the agent. */
-export const DOCUMENTS_DIR = '.domain-studio/context/docs'
-
 /** A domain in the catalog — local to this workspace, a faked external service, or the kernel. */
 export interface DomainCatalogEntry {
   origin: string

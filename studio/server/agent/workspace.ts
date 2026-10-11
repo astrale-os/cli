@@ -9,11 +9,11 @@
  */
 import { relative, resolve } from 'node:path'
 
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 
-import { allDomains } from '../domain'
-import { agentStateRoot, workspaceKey, workspaceStateRoot } from '../home'
-import { workspaceRoot } from '../workspace-state'
+import { allDomains } from '../domain/registry'
+import { agentStateRoot, workspaceKey, workspaceStateRoot } from '../state/home'
+import { workspaceRoot } from '../workspace/root'
 
 export interface AgentWorkspace {
   /** the scanned root — the agent's cwd, and what every relative path below is from */

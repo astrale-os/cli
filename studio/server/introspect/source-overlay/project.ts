@@ -15,7 +15,7 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
-import { isPackageImportSpecifier, resolvePackageImport } from '../../package-imports'
+import { isPackageImportSpecifier, resolvePackageImport } from '../../domain/package-imports'
 
 /** A fresh, in-memory-ish ts-morph project: no tsconfig, tolerant of errors. */
 export function newProject(): Project {
@@ -161,7 +161,7 @@ function firstValueDeclaration(node: Node): Node | undefined {
 }
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
-export function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
+function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
   const baseDir = dirname(from.getFilePath())
   if (!spec.startsWith('.')) {
     // Current SDK projects use package `imports` aliases such as `#functions/risk`.

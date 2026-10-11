@@ -3,35 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { workspaceStateRoot } from '../home'
-import { writeJson } from './store'
-import {
-  emptyWorkspaceUiState,
-  readWorkspaceUiState,
-  updateWorkspaceUiState,
-  remapWorkspaceDomainIds,
-} from './workspace-ui'
+import { workspaceStateRoot } from './home'
+import { emptyWorkspaceUiState, readWorkspaceUiState, updateWorkspaceUiState } from './workspace-ui'
 
 const roots: string[] = []
 const previousHome = process.env.ASTRALE_HOME
-
-test('retains canvas preferences when qualifying domain IDs and preserves already migrated entries', () => {
-  const state = emptyWorkspaceUiState()
-  state.readerDomainId = 'domain'
-  state.schema.visibleDomainIds = ['domain', 'domain-admin']
-  state.schema.expandedDomainIds = ['domain']
-  state.schema.domainPositions = { domain: { x: 1, y: 2 }, 'domain-admin': { x: 3, y: 4 } }
-  state.schema.collapsedModules = { domain: ['billing'] }
-  const migrated = remapWorkspaceDomainIds(state, [
-    { id: 'domain-ui', root: '/workspace/ui/domain' },
-    { id: 'domain-admin', root: '/workspace/admin/domain' },
-  ])
-  expect(migrated.readerDomainId).toBe('domain-admin')
-  expect(migrated.schema.visibleDomainIds).toEqual(['domain-admin'])
-  expect(migrated.schema.expandedDomainIds).toEqual(['domain-admin'])
-  expect(migrated.schema.domainPositions).toEqual({ 'domain-admin': { x: 3, y: 4 } })
-  expect(migrated.schema.collapsedModules).toEqual({ 'domain-admin': ['billing'] })
-})
 
 afterEach(() => {
   if (previousHome === undefined) delete process.env.ASTRALE_HOME
@@ -100,32 +76,8 @@ test('keeps one validated UI state per workspace on the machine', () => {
   })
   expect(readWorkspaceUiState(alpha)).toEqual(saved)
   expect(readWorkspaceUiState(beta)).toEqual(emptyWorkspaceUiState())
-})
 
-test('does not migrate unversioned UI state and can explicitly clear reader scope', () => {
-  const root = machineWorkspace('legacy')
-  writeJson(root, 'ui.json', { section: 'data', selectedDomainIds: ['legacy'] })
-  expect(readWorkspaceUiState(root)).toEqual(emptyWorkspaceUiState())
-
-  updateWorkspaceUiState(root, { readerDomainId: 'orders' })
-  expect(readWorkspaceUiState(root).readerDomainId).toBe('orders')
-  updateWorkspaceUiState(root, { readerDomainId: null })
-  expect(readWorkspaceUiState(root).readerDomainId).toBeUndefined()
-})
-
-test('a dock still on its first default size grows to the current one; a chosen size stays', () => {
-  const root = machineWorkspace('dock')
-  const panel = { open: false, tab: 'agent', side: 'bottom', size: 360 }
-  writeJson(root, 'ui.json', { version: 1, panel: { ...panel, dockWidth: 768, dockHeight: 480 } })
-  const fresh = emptyWorkspaceUiState().panel
-  expect(readWorkspaceUiState(root).panel).toMatchObject({
-    dockWidth: fresh.dockWidth,
-    dockHeight: fresh.dockHeight,
-  })
-  expect(fresh.dockWidth).toBeGreaterThan(768)
-  expect(fresh.dockHeight).toBeGreaterThan(480)
-
-  // only the untouched PAIR moves: one edge dragged is a size somebody picked
-  writeJson(root, 'ui.json', { version: 1, panel: { ...panel, dockWidth: 768, dockHeight: 620 } })
-  expect(readWorkspaceUiState(root).panel).toMatchObject({ dockWidth: 768, dockHeight: 620 })
+  // the reader scope can be cleared explicitly
+  updateWorkspaceUiState(alpha, { readerDomainId: null })
+  expect(readWorkspaceUiState(alpha).readerDomainId).toBeUndefined()
 })

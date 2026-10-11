@@ -1,4 +1,4 @@
-import type { SchemaIR, SchemaOverlay } from '../../../shared/types'
+import type { SchemaIR, SchemaOverlay } from '../../../shared/contracts/schema'
 
 import { describeAnchor } from './anchors'
 
@@ -15,7 +15,7 @@ export function buildAskSystemPrompt(): string {
   ].join('\n')
 }
 
-export interface AskParts {
+interface AskParts {
   anchorRef: string
   excerpt: string
   question: string

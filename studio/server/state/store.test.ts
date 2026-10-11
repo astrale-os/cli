@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -38,53 +46,21 @@ test('readJson returns only values admitted by its explicit decoder', () => {
   expect(readJson(root, 'value.json', decodeName, 'fallback')).toBe('accepted')
 })
 
-const guardedOperations = [
-  {
-    name: 'ensureDir',
-    run: (root: string, prefix: string) => ensureDir(root, `${prefix}/created-dir`),
-  },
-  {
-    name: 'writeState',
-    run: (root: string, prefix: string) => writeState(root, `${prefix}/created.txt`, 'nope'),
-  },
-  {
-    name: 'writeStateBuffer',
-    run: (root: string, prefix: string) =>
-      writeStateBuffer(root, `${prefix}/created.bin`, new Uint8Array([1, 2, 3])),
-  },
-  {
-    name: 'statePath',
-    run: (root: string, prefix: string) => statePath(root, `${prefix}/created.txt`),
-  },
-  {
-    name: 'readState',
-    run: (root: string, prefix: string) => readState(root, `${prefix}/marker.txt`),
-  },
-  {
-    name: 'listState',
-    run: (root: string, prefix: string) => listState(root, prefix),
-  },
-  {
-    name: 'removeState',
-    run: (root: string, prefix: string) => removeState(root, prefix),
-  },
-  {
-    name: 'stateExists',
-    run: (root: string, prefix: string) => stateExists(root, prefix),
-  },
-] as const
+const guarded: Record<string, (root: string, prefix: string) => unknown> = {
+  ensureDir: (root, prefix) => ensureDir(root, `${prefix}/created-dir`),
+  writeState: (root, prefix) => writeState(root, `${prefix}/created.txt`, 'nope'),
+  writeStateBuffer: (root, prefix) =>
+    writeStateBuffer(root, `${prefix}/created.bin`, Uint8Array.of(1)),
+  statePath: (root, prefix) => statePath(root, `${prefix}/created.txt`),
+  readState: (root, prefix) => readState(root, `${prefix}/marker.txt`),
+  listState: (root, prefix) => listState(root, prefix),
+  removeState: (root, prefix) => removeState(root, prefix),
+  stateExists: (root, prefix) => stateExists(root, prefix),
+}
 
-for (const operation of guardedOperations) {
-  test(`${operation.name} rejects lexical traversal outside .domain-studio`, () => {
-    const root = mkdtempSync(join(tmpdir(), 'studio-store-traversal-'))
-    roots.push(root)
-
-    expect(() => operation.run(root, '../escape')).toThrow('state-allowlist violation')
-    expect(existsSync(join(root, 'escape'))).toBe(false)
-  })
-
-  test(`${operation.name} rejects an existing descendant symlink escape`, () => {
-    const container = mkdtempSync(join(tmpdir(), 'studio-store-symlink-'))
+for (const [name, run] of Object.entries(guarded))
+  test(`${name} refuses a lexical traversal and an existing symlink escape`, () => {
+    const container = mkdtempSync(join(tmpdir(), 'studio-store-escape-'))
     roots.push(container)
     const root = join(container, 'domain')
     const external = join(container, 'external')
@@ -93,13 +69,11 @@ for (const operation of guardedOperations) {
     writeFileSync(join(external, 'marker.txt'), 'keep')
     symlinkSync(external, join(root, '.domain-studio', 'escape'), 'dir')
 
-    expect(() => operation.run(root, 'escape')).toThrow('state-allowlist violation')
-    expect(existsSync(join(external, 'marker.txt'))).toBe(true)
-    expect(existsSync(join(external, 'created.txt'))).toBe(false)
-    expect(existsSync(join(external, 'created.bin'))).toBe(false)
-    expect(existsSync(join(external, 'created-dir'))).toBe(false)
+    expect(() => run(root, '../escape')).toThrow('state-allowlist violation')
+    expect(existsSync(join(root, 'escape'))).toBe(false)
+    expect(() => run(root, 'escape')).toThrow('state-allowlist violation')
+    expect(readdirSync(external)).toEqual(['marker.txt'])
   })
-}
 
 test('rejects a .domain-studio symlink but permits the domain root itself to be symlinked', () => {
   const container = mkdtempSync(join(tmpdir(), 'studio-store-root-symlink-'))

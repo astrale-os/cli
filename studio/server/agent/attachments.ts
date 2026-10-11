@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto'
 
-import type { ChatAttachment } from '../../shared/types'
+import type { ChatAttachment } from '../../shared/contracts/agent'
 
 import {
   type AttachmentImageType,
@@ -92,7 +92,7 @@ function attachmentName(given: string, mimeType: AttachmentImageType): string {
   return `Pasted image ${stamp}.${EXTENSIONS[mimeType]}`
 }
 
-export type SavedAttachment = { attachment: ChatAttachment } | { error: string }
+type SavedAttachment = { attachment: ChatAttachment } | { error: string }
 
 /** Keep one image for `chatId`, or say why it is not one Studio can send. */
 export function saveAttachment(

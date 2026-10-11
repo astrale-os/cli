@@ -2,13 +2,12 @@
 
 import type {
   IrClass,
-  IrClassRef,
   IrFunction,
   IrMethod,
-  IrSchemaRef,
   JsonSchema,
   SchemaIR,
-} from '../../shared/types'
+} from '../../shared/contracts/schema'
+import type { IrClassRef, IrSchemaRef } from '../../shared/schema/identity'
 
 import { asJsonRecord, asStringArray } from '../json'
 
@@ -51,8 +50,7 @@ function isMethod(value: unknown): value is IrMethod {
     isOutput(record.output) &&
     typeof record.static === 'boolean' &&
     typeof record.abstract === 'boolean' &&
-    typeof record.executable === 'boolean' &&
-    !Object.hasOwn(record, 'inheritance')
+    typeof record.executable === 'boolean'
   )
 }
 
@@ -118,7 +116,6 @@ function isView(value: unknown): boolean {
   const target = asJsonRecord(record?.target)
   return (
     typeof record?.name === 'string' &&
-    record.auth === undefined &&
     !!target &&
     (target.kind === 'domain' ||
       (target.kind === 'definition' &&

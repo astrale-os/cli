@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 /** Deterministic JSON with stable key order — so cosmetic edits/reordering don't churn the hash. */
-export function canonicalJSON(value: unknown): string {
+function canonicalJSON(value: unknown): string {
   return JSON.stringify(sortKeys(value))
 }
 

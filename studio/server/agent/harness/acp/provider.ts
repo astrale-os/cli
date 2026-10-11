@@ -1,4 +1,4 @@
-import type { AgentAccess } from '../../../../shared/types'
+import type { AgentAccess } from '../../../../shared/contracts/agent'
 import type { AgentTurnInput, AskInput } from '../adapter'
 import type { AcpProvider } from './command'
 

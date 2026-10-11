@@ -16,41 +16,19 @@ import { join } from 'node:path'
 
 import type { AcpProvider } from './command'
 
-import {
-  agentBinary,
-  agentBinaryRoot,
-  ensureAgentBinary,
-  pruneAgentBinaries,
-  type AgentBinary,
-} from './binary'
+import { agentBinary, agentBinaryRoot, ensureAgentBinary, pruneAgentBinaries } from './binary'
 
 const PROVIDERS: readonly AcpProvider[] = ['claude', 'codex']
 
-export interface PrefetchDependencies {
-  ensure: (binary: AgentBinary) => Promise<void>
-  prune: (provider: AcpProvider, root: string) => Promise<void>
-}
-
-const DEPENDENCIES: PrefetchDependencies = {
-  ensure: (binary) => ensureAgentBinary(binary),
-  prune: (provider, root) => pruneAgentBinaries(provider, root),
-}
-
-/** Fetch this release's build of every agent Studio already ran here; returns those fetched. */
-export async function prefetchAgentBinaries(
-  root = agentBinaryRoot(),
-  dependencies: PrefetchDependencies = DEPENDENCIES,
-): Promise<AcpProvider[]> {
-  const fetched: AcpProvider[] = []
+/** Fetch this release's build of every agent Studio already ran here. */
+export async function prefetchAgentBinaries(): Promise<void> {
+  const root = agentBinaryRoot()
   for (const provider of PROVIDERS) {
     if (!existsSync(join(root, provider))) continue
-    try {
-      await dependencies.ensure(agentBinary(provider, undefined, undefined, root))
-      fetched.push(provider)
-    } catch {
-      // the next turn retries, and says why if it still cannot
-    }
-    await dependencies.prune(provider, root).catch(() => undefined)
+    // a failure is left to the next turn, which retries and says why if it still cannot
+    await ensureAgentBinary(agentBinary(provider, undefined, undefined, root)).catch(
+      () => undefined,
+    )
+    await pruneAgentBinaries(provider, root).catch(() => undefined)
   }
-  return fetched
 }

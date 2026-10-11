@@ -15,18 +15,18 @@ import type {
   StudioDatasetFailure,
   StudioDatasets,
   StudioSchemaBundle,
-} from '../../shared/types'
-import type { DomainHandle } from '../domain'
+} from '../../shared/contracts/schema'
+import type { DomainHandle } from '../domain/registry'
 
-import { parseClassRefKey, parseSchemaRefKey, schemaRefKey } from '../../shared/types'
-import { analyzeProjectConfig, depsInstalled } from '../domain'
+import { parseClassRefKey, parseSchemaRefKey, schemaRefKey } from '../../shared/schema/identity'
+import { analyzeProjectConfig, depsInstalled } from '../domain/registry'
 import { asJsonArray, asJsonRecord, asString, asStringArray, parseJson } from '../json'
 import { runExtractorIsland } from './runtime'
 
 const EXTRACTOR = new URL('./dataset-extractor.ts', import.meta.url).pathname
 
 /** The portable Dataset bytes the SDK emits (`astrale.sdk.dataset` v1), structurally checked. */
-export interface DatasetJson {
+interface DatasetJson {
   id: string
   title?: string
   description?: string
@@ -45,12 +45,12 @@ export interface DatasetJson {
   references: Record<string, string>
 }
 
-export type DatasetExtractResult =
+type DatasetExtractResult =
   | { ok: true; dataset: DatasetJson }
   | { ok: false; error: { message: string } }
 
 /** The Dataset module coordinates `astrale.config.ts` declares through `defineProject`, in order. */
-export function datasetReferences(handle: DomainHandle): readonly string[] {
+function datasetReferences(handle: DomainHandle): readonly string[] {
   return analyzeProjectConfig(handle.root).datasets
 }
 
@@ -119,7 +119,7 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
 }
 
 /** Spawn the Dataset extractor island for one module, from a neutral directory. */
-export async function runtimeExtractDataset(
+async function runtimeExtractDataset(
   modulePath: string,
   domainDir: string,
   timeoutMs = 60_000,

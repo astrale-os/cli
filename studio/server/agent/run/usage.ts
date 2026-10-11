@@ -4,7 +4,7 @@
  * out of scope here). Stored as `usage.json` beside the global chats in the Studio
  * home; surfaced read-only in the Settings dialog.
  */
-import type { AgentRun, AgentUsage } from '../../../shared/types'
+import type { AgentRun, AgentUsage } from '../../../shared/contracts/agent'
 
 import { asFiniteNumber, asJsonRecord, asString } from '../../json'
 import { readJson, writeJson } from '../../state/store'

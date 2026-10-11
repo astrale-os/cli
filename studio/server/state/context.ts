@@ -5,7 +5,7 @@
  * Auto items are also mirrored to readable .md files under context/auto/ so an
  * external agent can read them from disk. ALL writes go through store.ts.
  */
-import type { ContextItem, ContextStore } from '../../shared/types'
+import type { ContextItem, ContextStore } from '../../shared/contracts/workspace'
 
 import { asBoolean, asJsonRecord, asString, decodeEach } from '../json'
 import { readJson, writeJson, writeState } from './store'

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AgentRun } from '../../../shared/types'
+import type { AgentRun } from '../../../shared/contracts/agent'
 
 import { writeJson } from '../../state/store'
 import { readUsage, recordRun } from './usage'
@@ -28,7 +28,7 @@ function run(values: Partial<AgentRun>): AgentRun {
   }
 }
 
-test('records only reported usage and accumulates machine totals', () => {
+test('records only reported usage, accumulates machine totals, and reads a damaged file as none', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-agent-usage-'))
   roots.push(root)
   recordRun(root, run({}))
@@ -44,27 +44,8 @@ test('records only reported usage and accumulates machine totals', () => {
     lastTokens: 5,
     lastCostUsd: 0.1,
   })
-})
 
-test('normalizes malformed usage fields while accepting future fields', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-agent-usage-boundary-'))
-  roots.push(root)
-  writeJson(root, 'usage.json', {
-    runs: -2,
-    tokens: 'many',
-    costUsd: -1,
-    lastRunAt: 42,
-    lastTokens: -10,
-    futureUsageField: { version: 2 },
-  })
-
+  // malformed fields read as nothing; a field from a later release is ignored
+  writeJson(root, 'usage.json', { runs: -2, tokens: 'many', lastRunAt: 42, future: { v: 2 } })
   expect(readUsage(root)).toEqual({ runs: 0, tokens: 0, costUsd: 0 })
-
-  writeJson(root, 'usage.json', {
-    runs: 3,
-    tokens: 120,
-    costUsd: 1.25,
-    futureUsageField: { version: 2 },
-  })
-  expect(readUsage(root)).toEqual({ runs: 3, tokens: 120, costUsd: 1.25 })
 })

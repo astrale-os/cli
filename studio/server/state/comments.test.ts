@@ -12,21 +12,17 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('missing comment stores do not share entries across domains', () => {
-  const rootA = mkdtempSync(join(tmpdir(), 'studio-comments-a-'))
-  const rootB = mkdtempSync(join(tmpdir(), 'studio-comments-b-'))
-  roots.push(rootA, rootB)
-
-  upsertComment(rootA, {
-    anchors: ['A'],
-    anchorRefs: [{ ref: 'class.A', kind: 'schema' }],
-    text: 'only in A',
-  })
-
-  expect(readComments(rootA).comments.map((comment) => comment.thread[0]!.text)).toEqual([
+test('each domain keeps its own comment store', () => {
+  const [rootA, rootB] = ['a', 'b'].map((name) =>
+    mkdtempSync(join(tmpdir(), `studio-comments-${name}-`)),
+  )
+  roots.push(rootA!, rootB!)
+  const anchor = { anchors: ['A'], anchorRefs: [{ ref: 'class.A', kind: 'schema' as const }] }
+  upsertComment(rootA!, { ...anchor, text: 'only in A' })
+  expect(readComments(rootA!).comments.map((comment) => comment.thread[0]!.text)).toEqual([
     'only in A',
   ])
-  expect(readComments(rootB).comments).toEqual([])
+  expect(readComments(rootB!).comments).toEqual([])
 })
 
 test('normalizes malformed nested comment data and ignores future fields', () => {

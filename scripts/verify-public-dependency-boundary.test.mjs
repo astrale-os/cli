@@ -27,14 +27,14 @@ function fixture() {
       'pnpm-lock.yaml',
       'scripts/build.ts',
       // Preserve the actual compiler-API owner that justifies Studio's TypeScript profile.
-      'studio/shared/contracts/surface.test.ts',
+      'studio/shared/layout.test.ts',
     ]) {
       const target = resolve(directory, path)
       mkdirSync(dirname(target), { recursive: true })
       copyFileSync(resolve(repository, path), target)
     }
     execFileSync('git', ['init', '--quiet', directory], { stdio: 'pipe' })
-    execFileSync('git', ['add', 'scripts/build.ts', 'studio/shared/contracts/surface.test.ts'], {
+    execFileSync('git', ['add', 'scripts/build.ts', 'studio/shared/layout.test.ts'], {
       cwd: directory,
       stdio: 'pipe',
     })

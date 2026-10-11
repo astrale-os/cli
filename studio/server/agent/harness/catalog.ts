@@ -10,7 +10,7 @@
  * adapters' own short-lived loadout cache; probes run in parallel and one
  * harness failing never hides the other's models.
  */
-import type { HarnessModelCatalog } from '../../../shared/types'
+import type { HarnessModelCatalog } from '../../../shared/contracts/agent'
 import type { AgentHarness } from './adapter'
 
 import { inspectHarnessHealth } from './adapter'

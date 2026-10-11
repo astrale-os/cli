@@ -1,4 +1,4 @@
-import type { DomainHandle } from '../domain'
+import type { DomainHandle } from '../domain/registry'
 import type { DomainRouteContext, Notify } from './http'
 
 /** Domain-scoped route composition and the multipart/JSON body boundary. */

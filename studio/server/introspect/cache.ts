@@ -1,0 +1,448 @@
+/**
+ * The in-memory per-domain caches for the (relatively expensive) bundle
+ * and anatomy, so API reads and the file-watcher share one computed value.
+ * Watchers invalidate on change; the next read rebuilds and re-broadcasts.
+ */
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
+
+import type {
+  IntrospectionPriority,
+  IntrospectionStatus,
+  StudioEvent,
+} from '../../shared/contracts/runtime'
+import type {
+  DomainAnatomy,
+  SchemaOverlay,
+  StudioCore,
+  StudioDatasets,
+  StudioSchemaBundle,
+} from '../../shared/contracts/schema'
+
+import { isSchemaRevision } from '../../shared/contracts/schema'
+import { getDomain } from '../domain/registry'
+import { asBoolean, asFiniteNumber, asJsonRecord, asString } from '../json'
+import { hashAnatomyFiles } from '../state/baseline'
+import { studioSettings } from '../state/settings'
+import { readJson, writeJson } from '../state/store'
+import { buildAnatomy } from './anatomy'
+import { buildBundle } from './bundle'
+import { isCanonicalDomainSchemaV1 } from './canonical-schema'
+import { invalidateClientPackage, resolveClientPackage } from './client-package'
+import { buildCore } from './core'
+import { buildDatasets } from './datasets'
+import { introspectionScheduler, type ScheduledWork } from './scheduler'
+import { decodeSchemaIR } from './schema-ir-json'
+import { IntrospectionTimer, introspectionTimings, recordIntrospectionPhase } from './timing'
+
+const bundles = new Map<string, StudioSchemaBundle>()
+/**
+ * The build a caller can JOIN instead of starting a second one.
+ *
+ * `bundles` only ever holds a finished bundle, so concurrent readers of a domain
+ * that has none yet each used to launch their own extraction: opening the studio
+ * asks for `/bundle`, `/anatomy` and `/core` at once, and the boot may still be
+ * indexing the same domain — four subprocesses bundling identical sources.
+ */
+interface RunningBundle {
+  readonly work: ScheduledWork<StudioSchemaBundle>
+  readonly timing: IntrospectionTimer
+}
+
+const building = new Map<string, RunningBundle>()
+interface AnatomyCacheEntry {
+  /** Exact bundle generation whose canonical Views were projected into this anatomy. */
+  bundle: StudioSchemaBundle | null
+  value: Promise<DomainAnatomy>
+}
+const anatomies = new Map<string, AnatomyCacheEntry>()
+/** Demo Datasets, extracted on demand; they follow the bundle (revision) and the tests/ tree. */
+const datasets = new Map<string, Promise<StudioDatasets>>()
+
+const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
+/**
+ * Bump whenever extraction or the overlay can produce a DIFFERENT answer from the
+ * same sources. The key below hashes the domain's files and this server's own
+ * sources — but a shipped standalone has no sources on disk to hash, so there the
+ * version is the only thing that can retire a bundle a newer Studio would compose
+ * differently. v8: source locations include registered Policies and Views.
+ * v9: a handler link's wiring file is its declaring module, not the handler's.
+ * v10: dependency admission uses the inspected SDK's canonical compatibility owner.
+ */
+const BUNDLE_CACHE_VERSION = 10
+const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
+const TOOL_INPUTS = [
+  'introspect/cache.ts',
+  'domain/registry.ts',
+  'introspect/bundle.ts',
+  'introspect/runtime.ts',
+  'introspect/extractor.ts',
+  'introspect/island.ts',
+  'introspect/canonical-schema.ts',
+  'introspect/dependency-footprint.ts',
+  'introspect/overlay.ts',
+  'introspect/source-overlay/handlers.ts',
+  'introspect/source-overlay/kernel-calls.ts',
+  'introspect/source-overlay/project.ts',
+  'introspect/source-overlay/spans.ts',
+  'introspect/hash.ts',
+  'state/baseline.ts',
+  '../shared/types.ts',
+]
+
+interface BundleCacheEntry {
+  version: number
+  key: string
+  bundle: StudioSchemaBundle
+}
+
+function isHandlerLink(value: unknown): boolean {
+  const record = asJsonRecord(value)
+  return (
+    typeof record?.owner === 'string' &&
+    ['class', 'function'].includes(String(record.ownerKind)) &&
+    ['action', 'workflow'].includes(String(record.kind)) &&
+    typeof record.method === 'string' &&
+    typeof record.static === 'boolean' &&
+    typeof record.implemented === 'boolean'
+  )
+}
+
+function isSourceSpan(value: unknown): boolean {
+  const record = asJsonRecord(value)
+  return (
+    typeof record?.file === 'string' &&
+    asFiniteNumber(record.startLine) !== undefined &&
+    asFiniteNumber(record.endLine) !== undefined &&
+    (record.doc === undefined || typeof record.doc === 'string')
+  )
+}
+
+function decodeOverlay(value: unknown): SchemaOverlay | undefined {
+  const record = asJsonRecord(value)
+  const handlerLinks = record?.handlerLinks
+  const sourceSpans = asJsonRecord(record?.sourceSpans)
+  if (
+    !Array.isArray(handlerLinks) ||
+    !handlerLinks.every(isHandlerLink) ||
+    !sourceSpans ||
+    !Object.values(sourceSpans).every(isSourceSpan)
+  ) {
+    return undefined
+  }
+  return record as unknown as SchemaOverlay
+}
+
+function decodeBundle(value: unknown): StudioSchemaBundle | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const domainId = asString(record.domainId)
+  const renderFingerprint = asString(record.renderFingerprint)
+  const schemaMode = (['canonical-admitted', 'canonical-preview', 'unavailable'] as const).find(
+    (candidate) => candidate === record.schemaMode,
+  )
+  const extractedBy = record.extractedBy
+  const depsInstalled = asBoolean(record.depsInstalled)
+  const ir = record.ir === null ? null : decodeSchemaIR(record.ir)
+  const overlay = decodeOverlay(record.overlay)
+  const extractedAt = asString(record.extractedAt)
+  if (
+    !domainId ||
+    renderFingerprint === undefined ||
+    !schemaMode ||
+    (extractedBy !== 'runtime-bun' && extractedBy !== 'static-tsmorph-fallback') ||
+    depsInstalled === undefined ||
+    ir === undefined ||
+    !overlay ||
+    !extractedAt
+  ) {
+    return undefined
+  }
+  const schemaRevision = record.schemaRevision
+  if (schemaRevision !== undefined && !isSchemaRevision(schemaRevision)) return undefined
+  if (
+    schemaMode === 'canonical-admitted' &&
+    (!isSchemaRevision(schemaRevision) || !isCanonicalDomainSchemaV1(record.schemaRoot))
+  ) {
+    return undefined
+  }
+  const errorRecord = record.error === null ? null : asJsonRecord(record.error)
+  const errorMessage = asString(errorRecord?.message)
+  if (record.error !== undefined && record.error !== null && errorMessage === undefined) {
+    return undefined
+  }
+  return {
+    domainId,
+    renderFingerprint,
+    schemaMode,
+    ...(schemaRevision === undefined ? {} : { schemaRevision }),
+    extractedBy,
+    depsInstalled,
+    ir,
+    ...(record.schemaRoot === undefined ? {} : { schemaRoot: record.schemaRoot }),
+    overlay,
+    ...(record.error === undefined
+      ? {}
+      : record.error === null
+        ? { error: null }
+        : {
+            error: {
+              message: errorMessage!,
+              ...(typeof errorRecord!.file === 'string' ? { file: errorRecord!.file } : {}),
+            },
+          }),
+    extractedAt,
+  }
+}
+
+export function decodeBundleCacheEntry(value: unknown): BundleCacheEntry | undefined {
+  const record = asJsonRecord(value)
+  const version = asFiniteNumber(record?.version)
+  const key = asString(record?.key)
+  const bundle = decodeBundle(record?.bundle)
+  return version !== undefined && key !== undefined && bundle ? { version, key, bundle } : undefined
+}
+
+function hashFileIfPresent(hash: ReturnType<typeof createHash>, label: string, file: string): void {
+  try {
+    if (!existsSync(file)) return
+    hash.update(`${label}\0`)
+    hash.update(readFileSync(file))
+    hash.update('\0')
+  } catch {
+    hash.update(`${label}\0unreadable\0`)
+  }
+}
+
+function bundleCacheKey(root: string, schemaDirName: string, domainFile: string): string {
+  const hash = createHash('sha256')
+  hash.update(`domain-studio-bundle-cache-v${BUNDLE_CACHE_VERSION}\0`)
+  hash.update(`schema-dir:${schemaDirName}\0`)
+  hash.update(`bun:${Bun.version}\0`)
+
+  const files = hashAnatomyFiles(root, schemaDirName, domainFile)
+  for (const [file, digest] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
+    hash.update(`${file}\0${digest}\0`)
+  }
+  for (const file of LOCKFILES) hashFileIfPresent(hash, file, join(root, file))
+
+  const serverRoot = join(import.meta.dir, '..')
+  for (const file of TOOL_INPUTS) {
+    const abs = join(serverRoot, file)
+    hashFileIfPresent(hash, `tool:${relative(serverRoot, abs)}`, abs)
+  }
+
+  return hash.digest('hex')
+}
+
+function readCachedBundle(root: string, key: string): StudioSchemaBundle | null {
+  const entry = readJson(root, BUNDLE_CACHE_FILE, decodeBundleCacheEntry, null)
+  if (!entry || entry.version !== BUNDLE_CACHE_VERSION || entry.key !== key || !entry.bundle)
+    return null
+  return entry.bundle
+}
+
+function writeCachedBundle(root: string, key: string, bundle: StudioSchemaBundle): void {
+  try {
+    writeJson(root, BUNDLE_CACHE_FILE, {
+      version: BUNDLE_CACHE_VERSION,
+      key,
+      bundle,
+    } satisfies BundleCacheEntry)
+  } catch {
+    // Cache writes must never make schema rendering fail.
+  }
+}
+
+/**
+ * How long a failed extraction is allowed to stand in for a real one.
+ *
+ * Everything else here is keyed to the sources and stays valid until they change,
+ * which is right for a bundle: it is derived from them. A FAILURE is not — it is a
+ * fact about a moment, a machine that was busy, a lock held elsewhere, an extractor
+ * that ran out of its deadline. Kept like a success it would leave an empty canvas
+ * until someone edited the schema or deleted a cache directory they cannot see;
+ * kept for no time at all it would re-run a 20 s extraction on every request of a
+ * domain that really is broken. So it stands briefly, and then the next reader
+ * tries again — the domain heals itself the moment the cause clears.
+ */
+const FAILED_BUNDLE_TTL_MS = 60_000
+
+/** A bundle to serve, or a failure old enough to be worth retrying? */
+export function stillStands(bundle: StudioSchemaBundle): boolean {
+  if (!bundle.error) return true
+  const extractedAt = Date.parse(bundle.extractedAt)
+  return Number.isFinite(extractedAt) && Date.now() - extractedAt < FAILED_BUNDLE_TTL_MS
+}
+
+export async function getBundle(
+  id: string,
+  rebuild = false,
+  /** Startup/search indexing yields to the Domain a reader is actually viewing. */
+  priority: IntrospectionPriority = 'reader',
+): Promise<StudioSchemaBundle | null> {
+  const h = getDomain(id)
+  if (!h) return null
+  const held = bundles.get(id)
+  if (!rebuild && held && stillStands(held)) return held
+
+  // A plain read joins whatever build is already running; a rebuild is a demand
+  // for fresh sources, so it starts its own — later readers then join THAT one.
+  const running = building.get(id)
+  if (!rebuild && running) {
+    if (priority === 'reader') {
+      running.work.promote()
+      running.timing.promote()
+    }
+    return await running.work.promise
+  }
+
+  const timing = new IntrospectionTimer(id, priority)
+  const work = introspectionScheduler.schedule(
+    id,
+    priority,
+    async (): Promise<StudioSchemaBundle> => {
+      try {
+        const keyBefore = timing.measureSync('cache-key', () =>
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
+        )
+        if (!rebuild) {
+          const cached = timing.measureSync('cache-read', () => readCachedBundle(h.root, keyBefore))
+          if (cached && stillStands(cached)) {
+            if (cached.ir) h.origin = cached.ir.domain
+            bundles.set(id, cached)
+            timing.finish('disk-cache')
+            return cached
+          }
+        }
+        const bundle = await buildBundle(h, timing)
+        bundles.set(id, bundle)
+        const keyAfter = timing.measureSync('cache-key', () =>
+          bundleCacheKey(h.root, h.schemaDirName, h.domainFile),
+        )
+        if (keyAfter === keyBefore) {
+          timing.measureSync('cache-write', () => writeCachedBundle(h.root, keyAfter, bundle))
+        }
+        timing.finish('built')
+        return bundle
+      } catch (error) {
+        timing.fail(error)
+        throw error
+      }
+    },
+    (waitMs) => timing.start(waitMs),
+  )
+
+  const current = { work, timing }
+  building.set(id, current)
+  try {
+    return await work.promise
+  } finally {
+    if (building.get(id) === current) building.delete(id)
+  }
+}
+
+/**
+ * Rebuild a domain's bundle from fresh sources and announce the new generation:
+ * `resolving` first, the compile error if extraction failed, then the schema and
+ * anatomy diffs every client refetches on. Callers invalidate what they need first.
+ */
+export async function rebuildAndAnnounce(
+  id: string,
+  notify: (event: StudioEvent) => void,
+): Promise<void> {
+  notify({ type: 'resolving', domainId: id })
+  const bundle = await getBundle(id, true)
+  if (bundle?.error) notify({ type: 'compile-error', domainId: id, message: bundle.error.message })
+  notify({
+    type: 'schema-diff',
+    domainId: id,
+    renderFingerprint: bundle?.renderFingerprint ?? 'sha-none',
+  })
+  notify({ type: 'anatomy-diff', domainId: id })
+}
+
+export function introspectionStatus(): IntrospectionStatus {
+  const queue = introspectionScheduler.snapshot()
+  return {
+    concurrency: queue.concurrency,
+    active: [...queue.active],
+    queued: {
+      reader: [...queue.queued.reader],
+      background: [...queue.queued.background],
+    },
+    domains: introspectionTimings(),
+  }
+}
+
+export async function getAnatomy(id: string, rebuild = false): Promise<DomainAnatomy | null> {
+  const h = getDomain(id)
+  if (!h) return null
+
+  // Anatomy contains the bundle's canonical Views. Reuse it only while the exact
+  // bundle generation that produced it still stands; a transient extraction
+  // failure may expire and heal without any file-watcher invalidation.
+  const heldBundle = bundles.get(id)
+  const heldAnatomy = anatomies.get(id)
+  if (!rebuild && heldBundle && stillStands(heldBundle) && heldAnatomy?.bundle === heldBundle) {
+    return heldAnatomy.value
+  }
+
+  const [client, bundle] = await Promise.all([
+    resolveClientPackage(h.root, rebuild),
+    getBundle(id, rebuild),
+  ])
+  // Concurrent anatomy readers can both have joined the same bundle build. Let
+  // the first projection win instead of repeating the synchronous source walk.
+  const current = anatomies.get(id)
+  if (!rebuild && current?.bundle === bundle) return current.value
+
+  const anatomy = Promise.resolve().then(() => {
+    const started = performance.now()
+    const result = buildAnatomy({
+      root: h.root,
+      schemaDirName: h.schemaDirName,
+      clientDir: client.status === 'available' ? client.sourceDir : undefined,
+      canonicalViews: bundle?.ir?.format === 'astrale.dsl' ? (bundle.ir.views ?? {}) : undefined,
+    })
+    recordIntrospectionPhase(id, 'anatomy', performance.now() - started)
+    return result
+  })
+  anatomies.set(id, { bundle, value: anatomy })
+  return anatomy
+}
+
+export async function getCore(id: string, rebuild = false): Promise<StudioCore | null> {
+  const h = getDomain(id)
+  if (!h) return null
+  return buildCore(h, await getBundle(id, rebuild))
+}
+
+export async function getDatasets(id: string, rebuild = false): Promise<StudioDatasets | null> {
+  const h = getDomain(id)
+  if (!h) return null
+  const held = datasets.get(id)
+  if (!rebuild && held) return held
+  const run = getBundle(id, rebuild).then((bundle) =>
+    buildDatasets(h, bundle, studioSettings().introspectTimeoutMs),
+  )
+  datasets.set(id, run)
+  return run
+}
+
+export function invalidateDatasets(id: string): void {
+  datasets.delete(id)
+}
+
+export function invalidate(id: string, what: 'schema' | 'anatomy' | 'all'): void {
+  if (what !== 'anatomy') {
+    bundles.delete(id)
+    datasets.delete(id)
+  }
+  if (what !== 'schema') {
+    anatomies.delete(id)
+    const domain = getDomain(id)
+    if (domain) invalidateClientPackage(domain.root)
+  }
+}

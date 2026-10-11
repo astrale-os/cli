@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { DomainHandle } from '../../domain'
+import type { DomainHandle } from '../../domain/registry'
 import type { AgentWorkspace } from '../workspace'
 
 import { readComments, upsertComment } from '../../state/comments'
@@ -178,4 +178,22 @@ test('returns committed success when UI notification delivery fails', async () =
     'committed',
   ])
   bridge.dispose()
+})
+
+test('keeps its bearer out of the harness command line, and out of a tool’s reach', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-bridge-'))
+  roots.push(root)
+  const bridge = startBridge(workspace(root, [domain(root, 'test-domain')]), () => {})
+  const server = bridge.mcpServers[0]!
+  expect(server).toMatchObject({ name: 'domain-studio', approvalMode: 'approve' })
+  const configPath = server.args!.at(-1)!
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as { base: string; token: string }
+  expect(server.args!.join(' ')).not.toContain(config.token)
+  expect(config.base).toContain('/api/agent/bridge')
+  expect(statSync(configPath).mode & 0o777).toBe(0o600)
+
+  // an in-process tool cannot replace its scoped bearer
+  expect(await server.invoke?.('list_open_threads', { token: 'forged' })).toEqual({ threads: [] })
+  bridge.dispose()
+  expect(existsSync(configPath)).toBe(false)
 })
