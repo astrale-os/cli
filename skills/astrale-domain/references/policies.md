@@ -211,6 +211,10 @@ policies: {
 - Each `check(policy, object)` evaluates one Policy against one protected object. Checks on `self` and input
   refs are independent requirements, not a relationship between those objects; use callable `sameNode(...)`
   for exact Node equality.
+- Every way callable checks or a Class rule can hold must pass through a `check`: `sameNode` compares two
+  objects and names no caller. `sameNode(self, input.target)` alone, or as one `anyOf` branch, is refused
+  (`PL_CONNECTIVITY`); put it in an `allOf` beside a `check`. An Identity acting for itself is decided by these
+  checks alone, so a branch that names no caller would admit everyone.
 
 ## Composition consumes a budget
 
