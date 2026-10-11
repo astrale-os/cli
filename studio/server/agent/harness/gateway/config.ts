@@ -115,18 +115,6 @@ function resolveHarnessGateway(): HarnessGatewayConfig | undefined {
   return getHarnessGatewayState().effective ?? undefined
 }
 
-/** The gateway audience (origin) of the effective config — the token audience to
- *  mint/relay for. Null when no gateway is configured / URL invalid. */
-export function gatewayAudience(): string | null {
-  const cfg = resolveHarnessGateway()
-  if (!cfg?.enabled || !cfg.baseUrl) return null
-  try {
-    return new URL(cfg.baseUrl).origin
-  } catch {
-    return null
-  }
-}
-
 /** Either the ANTHROPIC_* env to inject (empty ⇒ no gateway configured), or a
  *  human error when a gateway IS configured but its token can't be obtained — so
  *  callers fail loudly instead of silently falling back to the default Claude auth. */
