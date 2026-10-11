@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
-  bookmarkExchangeDomain,
   findBookmarkTrustConflicts,
   InstanceStoreSchema,
-  managedShellOrigin,
+  isManagedRoute,
   normalizeInstanceKernelUrl,
   sanitizeStore,
 } from '../instance'
@@ -110,35 +109,11 @@ describe('InstanceStoreSchema', () => {
     )
   })
 
-  test('exchanges managed public routes through the installed Shell', () => {
-    expect(managedShellOrigin('https://bryan.eu.beta.astrale.ai/api')).toBe('shell.astrale.ai')
-    expect(managedShellOrigin('https://bryan.eu.astrale.ai/api')).toBe('shell.astrale.ai')
-    expect(managedShellOrigin('https://kernel.example.com/api')).toBeUndefined()
-    expect(managedShellOrigin('http://bryan.eu.astrale.ai/api')).toBeUndefined()
-  })
-
-  test('a bookmark exchanges at its explicit issuer, else a managed one through the Shell origin', () => {
-    const url = 'https://bryan.eu.astrale.ai/api'
-    expect(bookmarkExchangeDomain({ slug: 'bryan', name: 'bryan' }, url)).toEqual({
-      domainOrigin: 'shell.astrale.ai',
-    })
-    // An explicit exact issuer keeps its single meaning, on a managed bookmark too.
-    expect(
-      bookmarkExchangeDomain(
-        { slug: 'bryan', name: 'bryan', domainIssuer: 'https://shell-dev.example' },
-        url,
-      ),
-    ).toEqual({ domainIssuer: 'https://shell-dev.example' })
-    expect(
-      bookmarkExchangeDomain({ name: 'bryan', domainIssuer: 'https://crm.example' }, url),
-    ).toEqual({ domainIssuer: 'https://crm.example' })
-    expect(bookmarkExchangeDomain({ name: 'bryan' }, url)).toEqual({})
-    expect(
-      bookmarkExchangeDomain(
-        { slug: 'local', name: 'local', domainIssuer: 'http://shell.localhost' },
-        'http://localhost:8080/api',
-      ),
-    ).toEqual({ domainIssuer: 'http://shell.localhost' })
+  test('recognizes managed public routes, whose users act for themselves', () => {
+    expect(isManagedRoute('https://bryan.eu.beta.astrale.ai/api')).toBe(true)
+    expect(isManagedRoute('https://bryan.eu.astrale.ai/api')).toBe(true)
+    expect(isManagedRoute('https://kernel.example.com/api')).toBe(false)
+    expect(isManagedRoute('http://bryan.eu.astrale.ai/api')).toBe(false)
   })
 })
 
@@ -232,7 +207,7 @@ describe('sanitizeStore — read must not rewrite', () => {
 
     expect(changed).toBe(false)
     expect(retained.instances.bryan).toEqual(store.instances.bryan)
-    expect(bookmarkExchangeDomain(retained.instances.bryan, url)).toEqual({ domainIssuer })
+    expect(retained.instances.bryan?.domainIssuer).toBe(domainIssuer)
   })
 
   /** @evidence TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT */
@@ -256,9 +231,7 @@ describe('sanitizeStore — read must not rewrite', () => {
     const { store: retained, changed } = sanitizeStore(store)
 
     expect(changed).toBe(false)
-    expect(bookmarkExchangeDomain(retained.instances.bryan!, url)).toEqual({
-      domainIssuer: 'https://shell.beta.astrale.ai',
-    })
+    expect(retained.instances.bryan?.domainIssuer).toBe('https://shell.beta.astrale.ai')
   })
 
   test('refuses an unversioned registry instead of interpreting it as V1', () => {

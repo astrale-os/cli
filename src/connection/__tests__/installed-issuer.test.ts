@@ -13,6 +13,7 @@ import { join } from 'node:path'
 
 import type { AstraleConfig } from '../../lib/config'
 import type { CredentialIntent } from '../credential'
+import type { ExchangeTarget } from '../exchange'
 import type { InstalledDomainReader } from '../installed-issuer'
 import type { ConnectionContext, ConnectionFactory } from '../session'
 import type { ConnectionTarget } from '../target'
@@ -35,7 +36,15 @@ const LEGACY_SHELL = issuer.accept('https://shell.beta.astrale.ai')
 /** Immutable deployments: each one is its own issuer, and none is derivable from the route. */
 const DEPLOYMENT = issuer.accept('https://shell-beta-0123456789abcdef.deployments.example')
 const NEXT_DEPLOYMENT = issuer.accept('https://shell-beta-fedcba9876543210.deployments.example')
-const TARGET = { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainOrigin: SHELL }
+/** The Kernel a command runs on: without a Domain issuer, its user acts for itself. */
+const KERNEL_TARGET = { url: `${KERNEL}/api`, kernelIssuer: KERNEL }
+/** An exchange the installed issuer serves; the issuer a command resolved is only its start. */
+const TARGET = { ...KERNEL_TARGET, domainIssuer: DEPLOYMENT }
+/** A Shell callable: its command exchanges at the issuer the Kernel pin names for the Shell. */
+const SHELL_CALL = {
+  principal: 'callable',
+  path: Path.parse(`/:${SHELL}:function.listEntrypoints`),
+} as const
 const EXPIRES_AT = Math.floor(Date.now() / 1_000) + 500
 const SOURCE_EXPIRES_AT = Math.floor(Date.now() / 1_000) + 600
 /** A Studio per-Class query, and a Kernel callable answered without a Domain. */
@@ -84,7 +93,7 @@ describe('Shell exchange at the installed issuer', () => {
       const path = Path.parse(`/:${origin}:class.CloudflareService:deploy`)
       const intent = { principal: 'callable', path } as const
       const services = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT, {
-        target: { ...TARGET, domainOrigin: origin },
+        target: KERNEL_TARGET,
         intent,
       })
       let executions = 0
@@ -114,7 +123,7 @@ describe('Shell exchange at the installed issuer', () => {
       const origin = 'services.astrale.ai'
       const path = Path.parse(`/:${origin}:class.CloudflareService:deploy`)
       const services = shellCommand({ [DEPLOYMENT]: 'live' }, () => DEPLOYMENT, {
-        target: { ...TARGET, domainOrigin: origin },
+        target: KERNEL_TARGET,
         intent: { principal: 'callable', path },
       })
       await services.run()
@@ -701,8 +710,8 @@ function shellCommand(
   issuers: Record<string, IssuerState>,
   initial: () => string,
   selection: { target: ConnectionTarget; intent: CredentialIntent } = {
-    target: TARGET,
-    intent: {},
+    target: KERNEL_TARGET,
+    intent: SHELL_CALL,
   },
 ) {
   let installed = initial
@@ -727,7 +736,7 @@ function shellCommand(
         _credential?.principal === 'caller'
           ? { resolve: async () => sourceToken(user) }
           : createExchangeCredentialResolver(
-              { ...target, domainOrigin: selection.target.domainOrigin! },
+              target as ExchangeTarget,
               {
                 cacheIdentity: async () => ({ issuer: 'https://workos.example', subject: user }),
                 resolve: async () => sourceToken(user),

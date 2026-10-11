@@ -32,14 +32,8 @@ export type AdminTargetSelection = Pick<
 export interface ConnectionTarget {
   readonly url: string
   readonly issuer: IssuerId
-  /** Exact Domain issuer; presence activates standard token exchange. */
+  /** Exact Domain issuer; presence activates standard token exchange, absence acts for the identity. */
   readonly domainIssuer?: IssuerId
-  /**
-   * Origin of the installed Domain the selected identity is exchanged through (the Shell for an
-   * Astrale-managed Instance). The source Kernel's pin names its issuer; never set together with
-   * `domainIssuer`, and its presence also activates standard token exchange.
-   */
-  readonly domainOrigin?: string
   readonly slug?: string
   readonly defaultIdentity?: string
   readonly caFile?: string

@@ -1,4 +1,4 @@
-import type { AuthApi } from '@astrale-os/sdk/auth'
+import type { AuthApi, IssuerId } from '@astrale-os/sdk/auth'
 import type { GraphApi } from '@astrale-os/sdk/client'
 import type {
   ClientSessionOptions,
@@ -161,7 +161,9 @@ async function runResolvedClientSession<Value>(
   installations?: InstallationCache,
 ): Promise<Value> {
   let remembered: string | undefined
-  let installedOrigin = target.domainOrigin
+  let installedOrigin: string | undefined
+  /** The issuer the pin named when this command read it itself. */
+  let pinned: IssuerId | null | undefined
   if (credential.principal === 'callable') {
     const origin = callableOrigin(credential.path)
     if (
@@ -184,8 +186,9 @@ async function runResolvedClientSession<Value>(
         } finally {
           discovery.close()
         }
+        pinned = target.domainIssuer ?? null
         await installations
-          ?.set(target.kernelIssuer, origin, { issuer: target.domainIssuer ?? null })
+          ?.set(target.kernelIssuer, origin, { issuer: pinned })
           .catch(() => undefined)
       }
       credential =
@@ -198,7 +201,13 @@ async function runResolvedClientSession<Value>(
     options.anonymous === true ||
     credential.principal === 'caller'
       ? undefined
-      : createInstalledIssuer(target.kernelIssuer, installedOrigin, installations)
+      : createInstalledIssuer(
+          target.kernelIssuer,
+          installedOrigin,
+          installations,
+          undefined,
+          pinned,
+        )
   const connection = open(target, timeoutMs, options, config, credential, installed)
   try {
     return await action(

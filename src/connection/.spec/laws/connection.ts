@@ -240,10 +240,26 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
   ],
 })
 
-export const CLI_CONNECTION_INSTALLED_SHELL_ISSUER = defineLaw({
-  id: 'CLI-CONNECTION-INSTALLED-SHELL-ISSUER',
+export const CLI_CONNECTION_MANAGED_USER_ACTS_FOR_ITSELF = defineLaw({
+  id: 'CLI-CONNECTION-MANAGED-USER-ACTS-FOR-ITSELF',
   statement:
-    "A managed Instance exchanges its users at the issuer the source Kernel's pin names for the Shell origin, read with schema.inspect through the Session that authenticates the source caller. The installation cache remembers what the pin named per source Kernel, so a later command exchanges there, or selects the Domain credential persisted under that issuer before resolving the source credential, without reading the pin again. A consented reinstall changes the issuer within one installation, so the record is healed, never trusted: a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and what the session holds when the pin cannot be read again; any failure of a command that relied on the remembered issuer forgets it, and so does any Kernel call of that command the Kernel refuses with 2002, even one the command recovers from, so the next command reads the pin and no command sends a stale remembered issuer after one has failed; a command that read the pin itself keeps the record. No issuer is derived from the route: in every bookmark registry, labelled or unlabelled, every explicit exact Domain issuer is the user's and wins, whatever its value. Every bookmark write rewrites the registry with the format label. Re-running `astrale instance use <slug>` resets a managed bookmark to exchange through its installed Shell. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
+    'A managed Instance derives no exchange Domain from its route: its users act for themselves, so a graph command presents the selected identity, bounded by its own rules and by no Domain principal. Re-running `astrale instance use <slug>` resets a managed bookmark to act so; an explicit exact Domain issuer a user sets on any bookmark is still exchanged at.',
+  tests: [
+    {
+      file: '../lib/__tests__/instance-target.test.ts',
+      id: 'TEST-CLI-INSTANCE-MANAGED-USER-ACTS-FOR-ITSELF',
+    },
+    {
+      file: '../lib/__tests__/instance-concurrency.test.ts',
+      id: 'TEST-CLI-INSTANCE-USE-RESETS-MANAGED-ISSUER',
+    },
+  ],
+})
+
+export const CLI_CONNECTION_INSTALLED_ISSUER = defineLaw({
+  id: 'CLI-CONNECTION-INSTALLED-ISSUER',
+  statement:
+    "A callable of an installed Domain, the Shell's included, exchanges at the issuer the source Kernel's pin names for its origin, read with schema.inspect through the Session that authenticates the source caller. The installation cache remembers what the pin named per source Kernel, so a later command exchanges there, or selects the Domain credential persisted under that issuer before resolving the source credential, without reading the pin again. A consented reinstall changes the issuer within one installation, so the record is healed, never trusted: a fresh exchange that fails as a moved issuer would (issuer unknown or 2002) reads the pin once more and retries once only when it moved, and keeps its failure and what the session holds when the pin cannot be read again; any failure of a command that relied on the remembered issuer forgets it, and so does any Kernel call of that command the Kernel refuses with 2002, even one the command recovers from, so the next command reads the pin and no command sends a stale remembered issuer after one has failed; a command that read the pin itself keeps the record. In every bookmark registry, labelled or unlabelled, every explicit exact Domain issuer is the user's and wins, whatever its value. Every bookmark write rewrites the registry with the format label. A pin the Kernel refuses to read (the Domain absent or not ready, the read denied or not served) or answers with invalid evidence fails with a typed error naming its cause; other read failures keep their own classification.",
   tests: [
     {
       file: '__tests__/installed-issuer.test.ts',

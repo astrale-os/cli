@@ -71,8 +71,6 @@ export type ResolvedInstance = {
   issuer?: string
   /** Exact Domain issuer the bookmark's users are exchanged at. */
   domainIssuer?: string
-  /** Installed Domain the bookmark's users are exchanged through; the Kernel pin names its issuer. */
-  domainOrigin?: string
   createdAt?: string
   defaultIdentity?: string
   caFile?: string
@@ -436,8 +434,8 @@ export async function upsertManagedBookmark(
     },
     {
       activateWhenEmpty: input.activateWhenEmpty,
-      // A managed route exchanges through its installed Shell: `instance use` resets any issuer.
-      dropDomainIssuer: managedShellOrigin(url) !== undefined,
+      // A managed route's users act for themselves: `instance use` resets any exchange issuer.
+      dropDomainIssuer: isManagedRoute(url),
     },
   )
   return {
@@ -446,48 +444,20 @@ export async function upsertManagedBookmark(
   }
 }
 
-/** Origin of the Shell Domain, the same on every Astrale-managed Instance. */
-export const SHELL_ORIGIN = 'shell.astrale.ai'
-
-/**
- * The Domain an Astrale-managed public Instance route exchanges its users through: the installed
- * Shell. Only its origin is fixed; its issuer is whatever the Kernel pin names.
- */
-export function managedShellOrigin(input: string): typeof SHELL_ORIGIN | undefined {
+/** Whether a route is an Astrale-managed public Instance, whose users act for themselves. */
+export function isManagedRoute(input: string): boolean {
   let url: URL
   try {
     url = new URL(input)
   } catch {
-    return undefined
+    return false
   }
   return url.protocol === 'https:' && url.hostname.endsWith('.astrale.ai')
-    ? SHELL_ORIGIN
-    : undefined
-}
-
-/**
- * Where a bookmark's users are exchanged: at its explicit exact Domain issuer when it names one,
- * otherwise through the installed Shell for a bookmark `instance use` wrote for a managed route.
- */
-export function bookmarkExchangeDomain(
-  entry: Pick<InstanceEntry, 'slug' | 'name' | 'domainIssuer'>,
-  url: string,
-): Readonly<{ domainOrigin?: string; domainIssuer?: string }> {
-  if (entry.domainIssuer !== undefined) return { domainIssuer: entry.domainIssuer }
-  const shell = managedBookmarkShell(entry, url)
-  return shell === undefined ? {} : { domainOrigin: shell }
 }
 
 function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {
   const { domainIssuer: _replaced, ...rest } = entry
   return rest
-}
-
-function managedBookmarkShell(
-  entry: Pick<InstanceEntry, 'slug' | 'name'>,
-  url: string,
-): typeof SHELL_ORIGIN | undefined {
-  return entry.slug !== undefined && entry.name !== undefined ? managedShellOrigin(url) : undefined
 }
 
 export async function removeInstance(key: string): Promise<void> {
@@ -588,7 +558,7 @@ export async function resolveInstance(
     kind: 'bookmark',
     url,
     issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer,
-    ...bookmarkExchangeDomain(entry, url),
+    ...(entry.domainIssuer === undefined ? {} : { domainIssuer: entry.domainIssuer }),
     createdAt: entry.createdAt,
     defaultIdentity: entry.defaultIdentity,
     caFile: entry.caFile,

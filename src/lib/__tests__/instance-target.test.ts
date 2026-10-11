@@ -134,11 +134,11 @@ describe('resolveInstanceTarget', () => {
       source: 'managed',
       url: 'https://bryan.eu.astrale.ai/api',
       kernelIssuer: 'https://bryan.eu.astrale.ai/api',
-      domainOrigin: 'shell.astrale.ai',
     })
   })
 
-  test('exchanges a managed bookmark without an explicit issuer through the installed Shell', async () => {
+  /** @evidence TEST-CLI-INSTANCE-MANAGED-USER-ACTS-FOR-ITSELF */
+  test('lets the user of a managed bookmark without an explicit issuer act for itself', async () => {
     const resolved = await resolveInstanceTarget(
       { source: 'name', name: 'bryan' },
       { config: DEFAULT_CONFIG, instances: store },
@@ -146,7 +146,6 @@ describe('resolveInstanceTarget', () => {
     expect(resolved).toMatchObject({
       source: 'bookmark',
       kernelIssuer: 'https://bryan.eu.astrale.ai/api',
-      domainOrigin: 'shell.astrale.ai',
     })
     expect(resolved).not.toHaveProperty('domainIssuer')
   })
@@ -160,7 +159,6 @@ describe('resolveInstanceTarget', () => {
       source: 'bookmark',
       domainIssuer: 'https://shell.astrale.ai',
     })
-    expect(resolved).not.toHaveProperty('domainOrigin')
   })
 
   test('exchanges a managed bookmark at the exact issuer its user set', async () => {
@@ -178,7 +176,6 @@ describe('resolveInstanceTarget', () => {
       source: 'bookmark',
       domainIssuer: 'https://shell-dev.example',
     })
-    expect(resolved).not.toHaveProperty('domainOrigin')
   })
 
   test('unknown slugs surface the original instance-not-found error', async () => {

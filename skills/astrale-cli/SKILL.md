@@ -392,7 +392,7 @@ Policy is evaluated against the identity.
 | Selection | Principal presented | Effect |
 | --- | --- | --- |
 | `call` with `--as <identity>` or the default identity | the callable's declaring Domain | the principal gate passes; the Policy is evaluated against the identity |
-| `get`, `query`, `mutate` on an Astrale-managed instance | Shell | bounded by Shell's authority and the identity's Policies |
+| `get`, `query`, `mutate` on an Astrale-managed instance | the identity | bounded by each Class's rules and the identity's Policies, with no Domain scope |
 | `--creds "$(astrale token --raw)"` | the identity | a Domain callable reached only through a Policy fails with `2004`, unless the identity holds `can_use` on it through a Group |
 
 Reuse a minted token for Kernel reads and writes the identity may perform itself; call Domain

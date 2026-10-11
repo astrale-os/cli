@@ -30,7 +30,7 @@ export function withCallableIssuer(
   target: ConnectionTarget,
   domainIssuer: string | undefined,
 ): ConnectionTarget {
-  const { domainIssuer: _bookmarkIssuer, domainOrigin: _bookmarkOrigin, ...source } = target
+  const { domainIssuer: _bookmarkIssuer, ...source } = target
   return {
     ...source,
     ...(domainIssuer === undefined || domainIssuer === target.kernelIssuer

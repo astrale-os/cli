@@ -38,11 +38,6 @@ export interface ConnectionTarget {
   readonly kernelIssuer: IssuerId
   /** Exact Domain issuer the selected identity is exchanged at. */
   readonly domainIssuer?: IssuerId
-  /**
-   * Origin of the installed Domain the selected identity is exchanged through; the source Kernel's
-   * pin names its issuer. Never set together with `domainIssuer`.
-   */
-  readonly domainOrigin?: string
   readonly slug?: string
   readonly defaultIdentity?: string
   readonly caFile?: string
@@ -135,7 +130,6 @@ function connectionTarget(
     ...(resolved.domainIssuer === undefined
       ? {}
       : { domainIssuer: issuer.accept(resolved.domainIssuer) }),
-    ...(resolved.domainOrigin === undefined ? {} : { domainOrigin: resolved.domainOrigin }),
     ...(resolved.name === undefined ? {} : { slug: resolved.name }),
     ...(resolved.defaultIdentity === undefined
       ? {}

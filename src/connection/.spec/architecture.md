@@ -39,25 +39,24 @@ issuer and subject metadata from the selected persisted IdP identity may select 
 cryptographically admitted exchange entry before source-token refresh. Missing, unreadable, or
 mismatched metadata falls through to ordinary source resolution. Cache misses alone resolve the
 registered Kernel User and perform delegation plus Domain exchange.
-An Astrale-managed Instance exchanges its users through its installed Shell, named by origin
-(`shell.astrale.ai`) and never by an issuer derived from the route: the Shell's issuer is whatever
-the source Kernel's pin names. A bookmark that names an explicit exact Domain issuer is exchanged
-there instead, managed or not. The bookmark registry carries a format label (`version`); every
-bookmark write rewrites the whole registry with the label. In every registry, labelled or unlabelled,
-every `domainIssuer` is the user's and is preserved on read. If an old explicit issuer no longer
-matches the installed Shell, re-run `astrale instance use <slug>` to exchange through the installed
-Shell again.
-The exchange reads the pin with `schema.inspect` through the same Client Session that already
-authenticates the selected identity for `whoami` and `delegate`, so no issuer is needed before the
-Kernel is reached. The state owner's installation cache remembers what the pin named per source
-Kernel and origin, the same record a callable of the Shell Domain reads and writes, so a later
-command exchanges at the remembered issuer, or selects the Domain credential persisted under it
-before source-token refresh, without reading the pin again.
+An Astrale-managed Instance derives no exchange Domain from its route: its users act for
+themselves, so `get`, `query` and `mutate` present the selected identity, bounded by its own rules
+rather than by the Shell's. A bookmark that names an explicit exact Domain issuer is exchanged there
+instead, managed or not; re-run `astrale instance use <slug>` to drop it from a managed bookmark.
+The bookmark registry carries a format label (`version`); every bookmark write rewrites the whole
+registry with the label. In every registry, labelled or unlabelled, every `domainIssuer` is the
+user's and is preserved on read.
+A callable of an installed Domain, the Shell's included, exchanges at the issuer the source Kernel's
+pin names for its origin. The pin is read with `schema.inspect` through the same Client Session that
+already authenticates the selected identity for `whoami` and `delegate`, so no issuer is needed
+before the Kernel is reached. The state owner's installation cache remembers what the pin named per
+source Kernel and origin, so a later command exchanges at the remembered issuer, or selects the
+Domain credential persisted under it before source-token refresh, without reading the pin again.
 The Shell is reinstalled from immutable deployments with a consented issuer change, within the same
 installation, so the remembered issuer is healed rather than trusted. A stale one fails closed: the
 retired issuer no longer serves an exchange, or the Kernel rejects with 2002 the credential it
 issued once it no longer accepts the previous issuer. Any failure of a command that relied on the
-remembered issuer forgets it, as for a callable, so the next command reads the new pin and exchanges
+remembered issuer forgets it, so the next command reads the new pin and exchanges
 there: after a reinstall, the first command of each user that presents a credential exchanged at the
 old issuer outside the Kernel's acceptance window fails once, and its retry succeeds. A command that
 read the pin itself keeps the record when it fails.

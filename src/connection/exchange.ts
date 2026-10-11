@@ -12,7 +12,6 @@ import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
 import { exchangeCallerProof } from '../lib/exchange-grant'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
-import { createInstalledIssuer } from './installed-issuer'
 import { cachedCredentialTtlSeconds, exchangeCredentialTtlSeconds } from './lifetime'
 
 /** CLI error code of each Client exchange failure; a Domain refusal keeps the Domain's own code. */
@@ -36,15 +35,8 @@ const MOVED_ISSUER_CODES: ReadonlySet<string> = new Set([
   '2002',
 ])
 
-/**
- * A target that names where its selected identity is exchanged: an exact Domain issuer, or the
- * origin of the installed Domain whose issuer the source Kernel's pin names.
- */
-export type ExchangeTarget = ConnectionTarget &
-  (
-    | { readonly domainIssuer: IssuerId }
-    | { readonly domainIssuer?: undefined; readonly domainOrigin: string }
-  )
+/** A target that names the exact Domain issuer its selected identity is exchanged at. */
+export type ExchangeTarget = ConnectionTarget & { readonly domainIssuer: IssuerId }
 
 /** Where one target exchanges its selected identity. */
 export interface ExchangeIssuer {
@@ -70,10 +62,9 @@ export interface ExchangeIssuer {
  * Exchange exact authenticated User authority for a Domain bearer bound to this Kernel.
  *
  * The Client owns the exchange itself (`session.exchange`). The CLI keeps what outlives one
- * process: the persisted cache, the command-timeout lifetime rules, and its error codes. A target
- * naming an installed Domain by origin exchanges at the issuer its pin names, as `installed` holds
- * it (without one, the pin is read once for this resolver). A callable's resolved issuer remains
- * installation-owned; only a target without an installed origin treats its issuer as exact.
+ * process: the persisted cache, the command-timeout lifetime rules, and its error codes. A
+ * callable's Domain exchanges at the issuer its installed pin names, as `installed` holds it; a
+ * target without it treats its issuer as exact.
  */
 export function createExchangeCredentialResolver(
   target: ExchangeTarget,
@@ -83,15 +74,9 @@ export function createExchangeCredentialResolver(
   cache = new ExchangeCredentialCache(),
   installed?: ExchangeIssuer,
 ): SourceCredentialResolver {
-  const domain =
-    installed ??
-    (target.domainIssuer === undefined
-      ? createInstalledIssuer(target.kernelIssuer, target.domainOrigin)
-      : exactIssuer(target.domainIssuer))
-  const installationOwned = installed !== undefined || target.domainIssuer === undefined
-  if (target.domainIssuer !== undefined) {
-    requireExchangeTransport(target.kernelIssuer, target.domainIssuer)
-  }
+  const domain = installed ?? exactIssuer(target.domainIssuer)
+  const installationOwned = installed !== undefined
+  requireExchangeTransport(target.kernelIssuer, target.domainIssuer)
   const cacheTtlSeconds = cachedCredentialTtlSeconds(timeoutMs)
   const exchangeTtlSeconds = exchangeCredentialTtlSeconds(timeoutMs)
   return Object.freeze({

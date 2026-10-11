@@ -150,13 +150,11 @@ export function createCliCredential(
   return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
 }
 
-/** The Domain a target's identity is exchanged at: its exact issuer, else its installed origin. */
+/** The Domain a target's identity is exchanged at; without one, the identity acts for itself. */
 function exchangeTarget(target: ConnectionTarget): ExchangeTarget | undefined {
-  if (target.domainIssuer !== undefined) return { ...target, domainIssuer: target.domainIssuer }
-  if (target.domainOrigin !== undefined) {
-    return { ...target, domainIssuer: undefined, domainOrigin: target.domainOrigin }
-  }
-  return undefined
+  return target.domainIssuer === undefined
+    ? undefined
+    : { ...target, domainIssuer: target.domainIssuer }
 }
 
 /** Reject contradictory explicit credential selections before identity or network access. */

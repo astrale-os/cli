@@ -9,9 +9,7 @@ import {
   type ResolvedAdminTarget,
 } from './admin-target'
 import {
-  bookmarkExchangeDomain,
   getActive,
-  managedShellOrigin,
   normalizeInstanceKernelUrl,
   resolveInstance,
   resolveInstanceKey,
@@ -32,11 +30,6 @@ export type ResolvedInstanceTarget = {
   kernelIssuer: string
   /** Exact Domain issuer the selected identity is exchanged at. */
   domainIssuer?: string
-  /**
-   * Installed Domain the selected identity is exchanged through; the Kernel pin names its issuer.
-   * Never set together with `domainIssuer`.
-   */
-  domainOrigin?: string
   defaultIdentity?: string
   caFile?: string
 }
@@ -106,14 +99,13 @@ async function resolveNamedInstanceTarget(
     throw e
   }
 
+  // A managed Instance's users act for themselves: no Domain principal scopes their commands.
   const url = normalizeInstanceKernelUrl(managed.url)
-  const domainOrigin = managedShellOrigin(url)
   return {
     name: managed.slug,
     source: 'managed',
     url,
     kernelIssuer: url,
-    ...(domainOrigin === undefined ? {} : { domainOrigin }),
   }
 }
 
@@ -131,7 +123,7 @@ async function resolveBookmarkedInstanceTarget(
       source: 'bookmark',
       url,
       kernelIssuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : url,
-      ...bookmarkExchangeDomain(entry, url),
+      ...(entry.domainIssuer === undefined ? {} : { domainIssuer: entry.domainIssuer }),
       defaultIdentity: entry.defaultIdentity,
       caFile: entry.caFile,
     }
@@ -144,7 +136,6 @@ async function resolveBookmarkedInstanceTarget(
     url: resolved.url,
     kernelIssuer: resolved.issuer ?? resolved.url,
     ...(resolved.domainIssuer === undefined ? {} : { domainIssuer: resolved.domainIssuer }),
-    ...(resolved.domainOrigin === undefined ? {} : { domainOrigin: resolved.domainOrigin }),
     defaultIdentity: resolved.defaultIdentity,
     caFile: resolved.caFile,
   }
