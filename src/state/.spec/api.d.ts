@@ -84,6 +84,8 @@ export class ExchangeCredentialCache {
     refresh: () => Promise<ExchangeEntry>,
     now?: () => number,
   ): Promise<string>
+  /** Forget `credential` under `key`; a credential that has replaced it since is kept. */
+  delete(key: ExchangeKey, credential: string): Promise<void>
   deleteKernel(kernelIssuer: string): Promise<void>
   clear(): Promise<void>
 }

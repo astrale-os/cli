@@ -89,7 +89,8 @@ describe('browser profile sweep', () => {
 
     const r = await sweepBrowserProfiles({ dir, budget: BUDGET })
 
-    expect(r).toMatchObject({
+    // readdir order is the filesystem's, not alphabetical.
+    expect({ ...r, removed: [...r.removed].sort() }).toMatchObject({
       removed: ['a-dormant', 'b-crashed'],
       purged: ['c-bloated'],
       skipped: ['e-locked'],
@@ -102,7 +103,7 @@ describe('browser profile sweep', () => {
     expect(sessionIntact('d-fine') && sessionIntact('e-locked')).toBe(true)
 
     const strict = { ...BUDGET, maxProfileAgeMs: DAY }
-    expect((await sweepBrowserProfiles({ dir, budget: strict })).removed).toEqual([
+    expect([...(await sweepBrowserProfiles({ dir, budget: strict })).removed].sort()).toEqual([
       'c-bloated',
       'd-fine',
     ])
