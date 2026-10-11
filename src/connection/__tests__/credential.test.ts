@@ -225,7 +225,7 @@ describe('connection credential', () => {
   })
 
   /** @evidence TEST-CLI-CONNECTION-INSTALLED-ISSUER-SERVES-EXCHANGE */
-  test('exchanges for an installed origin where the issuer the command owner hands it says', async () => {
+  test('exchanges for a callable Domain where the issuer the command owner hands it says', async () => {
     const source = token(Math.ceil(Date.now() / 1_000) + 600, 'installed-origin-user')
     const asked: string[] = []
     let fetches = 0
@@ -245,7 +245,11 @@ describe('connection credential', () => {
       },
     }
     const auth = createCliCredential(
-      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, domainOrigin: 'shell.astrale.ai' },
+      {
+        url: `${SOURCE}/invoke`,
+        kernelIssuer: SOURCE,
+        domainIssuer: issuer.accept('https://services.example'),
+      },
       {},
       config,
       async () => {

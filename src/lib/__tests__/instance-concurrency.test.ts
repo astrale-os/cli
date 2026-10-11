@@ -109,19 +109,20 @@ describe('bookmark registry write ownership', () => {
   })
 })
 
-describe('managed bookmark Shell exchange on write', () => {
+describe('managed bookmark issuer on write', () => {
   const url = 'https://bryan.eu.astrale.ai/api'
 
   async function stored(home: string) {
     return JSON.parse(await readFile(join(home, 'instances.json'), 'utf8')).instances.bryan
   }
 
+  /** @evidence TEST-CLI-INSTANCE-USE-RESETS-MANAGED-ISSUER */
   test.each([
     'https://shell.beta.astrale.ai',
     'https://shell.astrale.ai',
     'https://shell-dev.example',
   ])(
-    'instance use resets a managed bookmark with issuer %s to its installed Shell',
+    'instance use resets a managed bookmark with issuer %s to act as its user',
     async (domainIssuer) => {
       const home = await fixture()
       await writeFile(
@@ -199,7 +200,7 @@ describe('managed bookmark Shell exchange on write', () => {
       `await registry.upsertInstance('bryan', {url:${JSON.stringify(url)}, domainIssuer:'https://shell.beta.astrale.ai'});
        registry.resetInstancesMemo();
        const read = await registry.resolveInstance('bryan');
-       if (read.domainIssuer !== 'https://shell.beta.astrale.ai' || read.domainOrigin !== undefined) throw new Error(JSON.stringify(read));`,
+       if (read.domainIssuer !== 'https://shell.beta.astrale.ai') throw new Error(JSON.stringify(read));`,
     )
     expect(explicit).toEqual({ code: 0, stderr: '' })
     expect(await stored(home)).toMatchObject({ domainIssuer: 'https://shell.beta.astrale.ai' })

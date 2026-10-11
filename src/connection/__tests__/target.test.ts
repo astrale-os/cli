@@ -112,7 +112,6 @@ describe('connection target', () => {
     ).toEqual({
       url: 'https://bryan.eu.astrale.ai/api',
       kernelIssuer: issuer.accept('https://bryan.eu.astrale.ai/api'),
-      domainOrigin: 'shell.astrale.ai',
       slug: 'bryan',
     })
 
