@@ -15,7 +15,7 @@ import { AstraleError } from '../errors'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser/agent-browser'
 import { readInstances } from '../lib/instance/bookmarks'
 import { findFreePort } from '../lib/port'
-import { findOnPath, run, spawnHandle } from '../lib/proc'
+import { findOnPath, openUrl, run, spawnHandle } from '../lib/proc'
 import { selfInvocation } from '../lib/self-invocation'
 import { fatal, log, withSpinner } from '../lib/terminal/log'
 import { isMachine, output, outputForMachine, type RawOutputOpts } from '../lib/terminal/output'
@@ -368,16 +368,6 @@ function isPublicHttps(url: string): boolean {
   }
 }
 
-function openSystemBrowser(url: string): void {
-  const argv =
-    process.platform === 'darwin'
-      ? ['open', url]
-      : process.platform === 'win32'
-        ? ['cmd', '/c', 'start', '', url]
-        : ['xdg-open', url]
-  void run(argv[0], argv.slice(1)).catch(() => {})
-}
-
 function driveHint(headed: boolean): string {
   return `agent-browser --profile ${VIEW_PROFILE}${headed ? ' --headed' : ''}`
 }
@@ -645,7 +635,7 @@ Examples:
       }
     } else if (opts.browser) {
       mode = 'system'
-      openSystemBrowser(record.pageUrl)
+      openUrl(record.pageUrl)
     }
 
     const state = mode === 'none' ? null : await waitForPageState(record)

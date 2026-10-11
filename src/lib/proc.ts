@@ -91,6 +91,19 @@ export function spawnHandle(
   })
 }
 
+/** Open `url` with the system's default handler, best-effort: a headless host has none. */
+export function openUrl(url: string): void {
+  // win32: `start` is a cmd.exe builtin, not a PATH executable: it goes through
+  // `cmd /c start "" <url>` (the empty "" is the title argument `start` consumes).
+  const [file, ...args] =
+    process.platform === 'darwin'
+      ? ['open', url]
+      : process.platform === 'win32'
+        ? ['cmd', '/c', 'start', '', url]
+        : ['xdg-open', url]
+  void run(file!, args).catch(() => {})
+}
+
 /**
  * The first executable `name` resolves to on PATH, or null. `command -v` is a POSIX shell builtin
  * (no `command` executable exists on Windows), so Windows resolves through `where`.
