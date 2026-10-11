@@ -55,6 +55,17 @@ export async function buildProgram(): Promise<Command> {
 
   // ── Graph / kernel ─────────────────────────────────────────────
   registerCommand(program, withKernelOptions((await import('../commands/call')).default))
+  const executions = await import('../commands/execution')
+  registerGroup(program, {
+    name: 'execution',
+    description: 'Start and observe durable executions with portable receipts',
+    commands: [
+      withKernelOptions(executions.start),
+      withKernelOptions(executions.observationCommand('status')),
+      withKernelOptions(executions.observationCommand('result')),
+    ],
+  })
+
   registerCommand(program, withKernelOptions((await import('../commands/token')).default))
   registerCommand(program, withKernelOptions((await import('../commands/get')).default))
   registerCommand(program, withKernelOptions((await import('../commands/mutate')).default))

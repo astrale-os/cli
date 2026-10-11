@@ -111,7 +111,7 @@ Choose the boundary from product semantics; callable access and direct graph acc
 | Intended contract | Use |
 | --- | --- |
 | Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session; Policy evaluates its caller |
-| Give an actor that owns the Class or holds its exact capability direct graph access | Direct Query with that actor as principal |
+| Read a Class for the user through the Domain's own scope | Direct Query with the Domain as principal: it must own the Class or hold its exact capability, and the rule still judges the user |
 | Expose a calculated, aggregated, redacted, or graph-independent stable result | Function with explicit callable admission; implement it as an Action or Workflow as appropriate |
 
 The host owns session selection, exchange, and refresh; View code keeps using the supplied client.
