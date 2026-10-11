@@ -21,10 +21,6 @@ import { importInstanceRootIdentity } from './root-identity'
 
 export type ProvisionOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
-    // Programmatic opt-out for callers that drive this command as a function.
-    // The matching CLI flags are read from argv by `canPrompt` — Commander
-    // keeps root options out of a subcommand's action arguments.
-    ci?: boolean
     /** Exact durable create operation to replay after an uncertain outcome. */
     operation?: string
   }

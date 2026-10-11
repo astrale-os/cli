@@ -14,11 +14,7 @@ import {
   type InstalledListV1,
 } from './installed-list'
 
-type ListOpts = KernelCommandOpts &
-  AdminTargetCommandOpts &
-  RawOutputOpts & {
-    format?: 'yaml' | 'json'
-  }
+type ListOpts = KernelCommandOpts & AdminTargetCommandOpts & RawOutputOpts
 
 /**
  * `astrale domain list -i <instance>` / `--url <kernel>`: what runs on that instance (CT24
