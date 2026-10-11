@@ -5,6 +5,7 @@ import type { CommandDefinition } from '../../program/index'
 import {
   fetchOidcMetadata,
   fetchWorkosApplication,
+  normalizeIssuer,
   OidcMetadataSchema,
   type IdpClientConfig,
   upsertIdpConfig,
@@ -129,7 +130,7 @@ Security:
     }
 
     const idp = await upsertIdpConfig({ name, metadata, client })
-    if (outputForMachine(redact(idp), opts)) return
+    if (outputForMachine(idp, opts)) return
 
     log.success(`IdP "${name}" saved`)
     log.dim(`  issuer: ${idp.metadata.issuer}`)
@@ -141,12 +142,4 @@ Security:
 
 function isString(value: unknown): value is string {
   return typeof value === 'string'
-}
-
-function redact<T extends { client: IdpClientConfig }>(value: T): T {
-  return value
-}
-
-function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, '')
 }

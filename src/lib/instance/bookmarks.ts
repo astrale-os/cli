@@ -49,18 +49,7 @@ export interface InstanceStore {
   instances: Record<string, InstanceEntry>
 }
 
-type AddInstanceOpts = {
-  url?: string
-  slug?: string
-  name?: string
-  kind?: InstanceKind
-  mode?: RegistryMode
-  issuer?: string
-  domainIssuer?: string
-  defaultIdentity?: string
-  caFile?: string
-  organizationId?: string
-}
+type AddInstanceOpts = Omit<InstanceEntry, 'createdAt'>
 
 export type ResolvedInstance = {
   name: string
@@ -86,44 +75,23 @@ function seed(): InstanceStore {
 }
 
 /**
- * Normalize a parsed registry, preserving every explicit Domain issuer. `changed` reports
- * normalized content; the returned store carries no format label, which only an encoded registry holds.
+ * Normalize a parsed registry, preserving every explicit Domain issuer. The returned store carries
+ * no format label, which only an encoded registry holds.
  */
-export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
-  let changed = false
+export function sanitizeStore(store: InstanceStore): InstanceStore {
   const instances: Record<string, InstanceEntry> = {}
-
   for (const [key, entry] of Object.entries(store.instances)) {
     if (!entry.url) {
       throw new AstraleError('INSTANCE_STATE_INVALID', `Bookmark "${key}" has no connection URL.`)
     }
-    const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
-    const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
-    const next: InstanceEntry = {
+    instances[key] = {
       ...entry,
-      url: normalizedUrl,
-      issuer: normalizedIssuer,
+      url: normalizeInstanceKernelUrl(entry.url),
+      issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer,
       kind: 'bookmark',
     }
-    // VALUE comparison only. The old `next !== entry` (object identity) was
-    // ALWAYS true, so every read rewrote instances.json fire-and-forget —
-    // concurrent astrale processes clobbered each other's `active` from
-    // stale snapshots (observed: `instance create` setting the active
-    // target, then a parallel command silently reverting it — every call
-    // after that wrote to the WRONG instance).
-    if (
-      entry.kind !== 'bookmark' ||
-      normalizedUrl !== entry.url ||
-      normalizedIssuer !== entry.issuer
-    ) {
-      changed = true
-    }
-    instances[key] = next
   }
-
-  const active = store.active || Object.keys(instances)[0] || ''
-  if (active !== store.active) changed = true
-  return { store: { active, instances }, changed }
+  return { active: store.active || Object.keys(instances)[0] || '', instances }
 }
 
 let instancesMemo: InstanceStore | null = null
@@ -158,7 +126,7 @@ export async function readInstances(): Promise<InstanceStore> {
     return instancesMemo
   }
 
-  const { store } = sanitizeStore(parsed)
+  const store = sanitizeStore(parsed)
   instancesMemo = store
   // Reads never publish a stale snapshot. Normalization is persisted by the
   // next locked mutation, after rereading the current on-disk registry.
@@ -176,7 +144,7 @@ async function mutateInstances<Value>(transition: (store: InstanceStore) => Valu
     }
     // Unlike a diagnostic read, a write must never replace corrupt/unreadable
     // evidence with an empty registry.
-    const store = raw === undefined ? seed() : sanitizeStore(decodeInstanceStore(raw)).store
+    const store = raw === undefined ? seed() : sanitizeStore(decodeInstanceStore(raw))
     const value = transition(store)
     await atomicWrite(INSTANCES_PATH, encodeInstanceStore(store))
     instancesMemo = store
@@ -393,7 +361,6 @@ export async function upsertManagedBookmark(
       issuer: url,
       slug: input.slug,
       name: input.slug,
-      kind: 'bookmark',
       mode: 'remote',
       ...(input.organizationId ? { organizationId: input.organizationId } : {}),
       ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),

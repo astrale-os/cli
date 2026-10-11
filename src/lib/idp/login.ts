@@ -3,6 +3,7 @@ import { readIdentityStore } from '../../state/index'
 import { log, withSpinner } from '../terminal/log'
 import { isMachine } from '../terminal/output'
 import {
+  BUILTIN_WORKOS_IDP_NAME,
   decodeTokenClaims,
   exchangeAuthorizationCode,
   identityNameFromClaims,
@@ -20,7 +21,6 @@ import {
   tokenAudienceMatches,
   tokenExpiresAt,
   withCachedToken,
-  workosClientIdFromEnv,
   type IdpSession,
   type TokenResponse,
 } from './provider'
@@ -136,9 +136,7 @@ export async function resolveIdpName(name: string | undefined): Promise<string> 
   const store = await readIdpStore()
   const names = Object.keys(store.idps)
   if (names.length === 1) return names[0]
-  if (names.length === 0 && workosClientIdFromEnv()) return 'workos'
-  if (names.length === 0)
-    throw new Error('No IdPs configured. Run: astrale idp add <name> --issuer <url>')
+  if (names.length === 0) return BUILTIN_WORKOS_IDP_NAME
   throw new Error(`Multiple IdPs configured. Choose one with --idp: ${names.join(', ')}`)
 }
 

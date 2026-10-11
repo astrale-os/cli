@@ -12,7 +12,6 @@ type InstallOpts = KernelCommandOpts &
     // The matching CLI flags are read from argv by `canPrompt` — Commander
     // keeps root options out of a subcommand's action arguments.
     ci?: boolean
-    noPrompt?: boolean
   }
 
 export default {

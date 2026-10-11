@@ -152,9 +152,13 @@ function harness(
     readonly now?: () => number
     readonly caller?: string
     readonly registry?: 'down'
+    readonly domain?: FakeDomain
   } = {},
 ) {
-  const admin = fakeAdmin({ caller: options.caller ?? 'installer', domains: [agenciesRegistry()] })
+  const admin = fakeAdmin({
+    caller: options.caller ?? 'installer',
+    domains: [options.domain ?? agenciesRegistry()],
+  })
   const run = {
     requests: [] as InstallRequest[],
     credentials: [] as unknown[],
@@ -383,6 +387,35 @@ describe('install by URL', () => {
     expect(run.sleeps).toEqual([])
   })
 
+  test('exits with a refused installed-list read and installs nothing', async () => {
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      listing: async () => {
+        throw new ResponseError(1003 as never, 'Function input is invalid.', INVOCATION, {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: {},
+        })
+      },
+    })
+
+    expect(await refused([A], JSON_OUTPUT, run)).toMatchObject({
+      error: 'RESPONSE_ERROR',
+      code: 1003,
+      reason: { code: 'FUNCTION_INPUT_INVALID' },
+    })
+    expect(run.reads).toEqual([])
+    expect(run.requests).toEqual([])
+  })
+
+  test('tells a human that a URL claims an origin it does not host (AM-19)', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+
+    const { warnings } = await human(() => installByReference([A], {}, run.deps))
+
+    expect(warnings).toContain(`origin ${AGENCIES} claimed by unverified deployment ${A}`)
+    expect(run.requests).toHaveLength(1)
+  })
+
   test('fails when the Kernel reports another pin than the one read before the install', async () => {
     const a = served(AGENCIES, A, '1')
     const run = harness({
@@ -502,6 +535,28 @@ describe('install by version', () => {
     await installByReference([releases.v151.url], JSON_OUTPUT, urls.deps)
     expect(urls.registries).toBe(0)
     expect(urls.requests).toHaveLength(1)
+  })
+
+  test('a version and a URL naming one deployment are refused after the registry read', async () => {
+    const run = harness({ served: everyRelease })
+    expect(await refused([releases.v151.url, `${AGENCIES}@1.5`], JSON_OUTPUT, run)).toMatchObject({
+      error: 'DUPLICATE_ORIGIN',
+    })
+    expect(run.registries).toBe(1)
+    expect(run.credentials).toEqual([])
+  })
+
+  test('a Publication that names no installable deployment is refused, never installed', async () => {
+    const queried = { ...releases.v151, url: `${releases.v151.url}/?preview=1` }
+    const run = harness({
+      domain: { ...agenciesRegistry(), publications: [publication('151', '1.5.1', queried)] },
+    })
+
+    expect(await refused([`${AGENCIES}@1.5`], JSON_OUTPUT, run)).toMatchObject({
+      error: 'REGISTRY_UNAVAILABLE',
+      details: { reason: 'response-invalid', reference: `${AGENCIES}@1.5`, version: '1.5.1' },
+    })
+    expect(run.credentials).toEqual([])
   })
 
   test('refuses a deployment that no longer serves the release its Publication names', async () => {
@@ -736,6 +791,7 @@ describe('issuer change lines and consent flags', () => {
       [deployment('shell-aaaaaaaaaaaaaaaa', 'cccccccccccccccc', 'other.app'), S2],
       [deployment('shell-aaaaaaaaaaaaaaaa', 'cccccccccccccccc', 'astrale.app', 'http'), S2],
       [A_UNLINED, A_UNLINED],
+      ['not-a-url', S2],
       // The served issuer decides with the URL: a same-line URL serving another line is cross-line.
       [otherLine, S2],
     ]) {

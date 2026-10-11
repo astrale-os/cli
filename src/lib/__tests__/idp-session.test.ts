@@ -86,6 +86,16 @@ describe('ensureFreshSession', () => {
     expect(server.forms.at(-1)?.get('client_id')).toBe('c_session')
   })
 
+  test('keeps the rotated refresh token, then refuses a token minted for another audience', async () => {
+    await writeSession({ expires_at: past() })
+
+    const result = await runDriver('ensure', { DRIVER_AUDIENCE: 'https://other.example.com' })
+
+    expect(result).toMatchObject({ ok: false, errorName: 'IdpAudienceMismatchError' })
+    // The refresh token is single-use: the rotated one is stored before the audience is judged.
+    expect((await readSession()).refresh_token).toBe('rt-1')
+  })
+
   test('refreshes at the conservative whole-second lifetime boundary', async () => {
     const shortToken = unsignedJwt({ aud: AUD, exp: Math.ceil(Date.now() / 1_000) + 200 })
     await writeSession({

@@ -3,11 +3,15 @@ import { describe, expect, test } from 'bun:test'
 import {
   accessTokenForAudience,
   classifyRefreshFailure,
+  identityNameFromClaims,
+  normalizeTokenResponse,
   OAuthTokenError,
   postForm,
+  tokenExpiresAt,
   withCachedToken,
   type IdpSession,
 } from '../idp/provider'
+import { validateName } from '../validation'
 import { tokenEndpoint, unsignedJwt } from './idp.fixture'
 
 describe('accessTokenForAudience', () => {
@@ -65,6 +69,8 @@ describe('withCachedToken', () => {
     const tokens = withCachedToken(
       {
         stale: { access_token: 'old', expires_at: '2000-01-01T00:00:00.000Z' },
+        // Without a recorded expiry, the token's own JWT exp decides.
+        lapsed: { access_token: unsignedJwt({ exp: 946_684_800 }) },
         fresh: { access_token: 'kept', expires_at: '2999-01-01T00:00:00.000Z' },
       },
       jwt,
@@ -74,6 +80,27 @@ describe('withCachedToken', () => {
     expect(Object.keys(tokens ?? {}).sort()).toEqual(['a', 'b', 'fresh'])
     expect(tokens?.a?.access_token).toBe(jwt)
   })
+})
+
+test('decodes the expiry and the WorkOS camelCase fields of a token response', () => {
+  const now = Date.now()
+  for (const lifetime of [{ expires_in: 60 }, { expiresIn: 60 }]) {
+    expect(Date.parse(tokenExpiresAt(lifetime)!)).toBeGreaterThanOrEqual(now + 60_000)
+  }
+  expect(
+    normalizeTokenResponse({ accessToken: 'a', idToken: 'i', refreshToken: 'r' }),
+  ).toMatchObject({ access_token: 'a', id_token: 'i', refresh_token: 'r' })
+})
+
+test('names a login identity from its claims as a valid identity name', () => {
+  for (const [claims, name] of [
+    [{ email: 'Ada Lovelace+cli@example.com', sub: 'user_1' }, 'Ada-Lovelace-cli-example.com'],
+    [{ preferred_username: 'ada', sub: 'user_1' }, 'ada'],
+    [{ sub: '///' }, 'workos'],
+  ] as const) {
+    expect(identityNameFromClaims(claims, 'workos')).toBe(name)
+    validateName(name, 'Identity')
+  }
 })
 
 describe('OAuth token errors', () => {

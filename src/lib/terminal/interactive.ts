@@ -7,9 +7,9 @@
  * `--no-prompt` are declared on the ROOT program, so Commander routes them to
  * `program.opts()` and never into a subcommand's action arguments. `opts.ci`
  * inside a command action is always `undefined` — argv is the only place those
- * two flags survive. `ci` / `noPrompt` remain accepted here because internal
- * callers (and tests) drive commands as functions, with no argv to speak for
- * them; on the CLI path they are simply always absent.
+ * two flags survive. `ci` remains accepted here because internal callers (and
+ * tests) drive commands as functions, with no argv to speak for them; on the
+ * CLI path it is simply always absent.
  *
  * Every input is injectable so the policy is testable without touching real
  * process state.
@@ -24,7 +24,6 @@ const INTERACTION_OPT_OUT = new Set(['--ci', '--no-prompt'])
 export type PromptGate = {
   /** Programmatic opt-out, for callers that drive a command as a function. */
   readonly ci?: boolean
-  readonly noPrompt?: boolean
   /** Injectable process state — defaults to the live process. */
   readonly argv?: readonly string[]
   readonly env?: NodeJS.ProcessEnv
@@ -45,7 +44,7 @@ function resolve(gate: PromptGate): {
 }
 
 function available(gate: PromptGate): boolean {
-  if (gate.ci === true || gate.noPrompt === true) return false
+  if (gate.ci === true) return false
   const { env, tty } = resolve(gate)
   return tty && !env.CI && !env.CONTINUOUS_INTEGRATION
 }

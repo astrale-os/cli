@@ -32,7 +32,6 @@ export type SetupOpts = AdminTargetCommandOpts & {
   // The matching CLI flags are read from argv by `canPrompt` — Commander
   // keeps root options out of a subcommand's action arguments.
   ci?: boolean
-  noPrompt?: boolean
   // Threaded into admin-kernel calls (provisioning, instance listing).
   as?: string
   creds?: string

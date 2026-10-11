@@ -84,6 +84,8 @@ describe('auth login command', () => {
       expect(await session()).toMatchObject({
         audience: 'https://kernel.example.com',
         clientId: 'client_123',
+        // The token's own claims name the session, not the IdP configuration.
+        issuer: 'http://127.0.0.1',
         subject: 'user_123',
       })
     } finally {

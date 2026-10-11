@@ -37,7 +37,6 @@ type UseOpts = {
   creds?: string
   debug?: boolean
   ci?: boolean
-  noPrompt?: boolean
   adoptDefault?: boolean
   skipJwksCheck?: boolean
 }

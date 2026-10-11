@@ -19,7 +19,6 @@ type ImportRootOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
     readonly yes?: boolean
     readonly ci?: boolean
-    readonly noPrompt?: boolean
   }
 
 export default {

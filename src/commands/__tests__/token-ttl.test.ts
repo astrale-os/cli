@@ -1,8 +1,9 @@
 import type { AuthApi, Identity, IssuerId, MintedCredential } from '@astrale-os/sdk/auth'
 
-import { describe, expect, mock, test } from 'bun:test'
+import { describe, expect, mock, spyOn, test } from 'bun:test'
 
 import { AstraleError } from '../../errors'
+import { unsignedJwt } from '../../lib/__tests__/idp.fixture'
 import { issueToken, parseTtl, tokenCommand } from '../token'
 
 describe('token lifetime', () => {
@@ -19,6 +20,26 @@ describe('token lifetime', () => {
     )
     // A caller-principal carrier for the complete nested token lifetime.
     expect(runs).toMatchObject([{ credential: { principal: 'caller', nestedTtlSeconds: 90 } }])
+  })
+
+  test('--json prints the token beside the expiry its own exp claim carries', async () => {
+    const runs: Array<{ format: (token: string, opts: { json: boolean }) => void }> = []
+    await tokenCommand(
+      { json: true },
+      { runKernelCommand: (async (input: never) => void runs.push(input)) as never },
+    )
+    const token = unsignedJwt({ exp: 1_893_456_000 })
+    const written: string[] = []
+    const write = spyOn(process.stdout, 'write').mockImplementation(((chunk: string) => {
+      written.push(chunk)
+      return true
+    }) as never)
+    try {
+      runs[0]!.format(token, { json: true })
+    } finally {
+      write.mockRestore()
+    }
+    expect(JSON.parse(written.join(''))).toEqual({ token, expiresAt: '2030-01-01T00:00:00.000Z' })
   })
 })
 

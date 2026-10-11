@@ -108,7 +108,7 @@ describe('resolveInstanceTarget', () => {
       name: 'legacy',
       domainIssuer: 'https://shell.astrale.ai',
     }
-    const sanitized = sanitizeStore({ active: 'bryan', instances: { bryan, legacy } }).store
+    const sanitized = sanitizeStore({ active: 'bryan', instances: { bryan, legacy } })
     expect(await named('bryan', sanitized)).toMatchObject({
       source: 'bookmark',
       domainIssuer: 'https://shell-dev.example',

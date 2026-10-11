@@ -45,6 +45,15 @@ describe('buildJournalInput', () => {
     },
   )
 
+  test.each([
+    [{ since: '2026-01-01T00:00:00Z', until: '1999-01-01T00:00:00Z' }, '--since'],
+    [{ cursor: 'junk' }, '--cursor'],
+    [{ limit: '0' }, '--limit'],
+    [{ limit: 'all' }, '--limit'],
+  ])('rejects %j before any journal read', (opts, flag) => {
+    expect(() => buildJournalInput(opts)).toThrow(flag)
+  })
+
   /** @evidence TEST-CLI-LOGS-CALLER-NOT-SENT */
   test('never sends --caller: the journal syscall input has no caller field', () => {
     expect(buildJournalInput({ caller: 'user-1', principal: 'domain-1' })).toEqual({
@@ -90,9 +99,14 @@ describe('acceptJournalPage', () => {
     }
   })
 
-  test('rejects malformed frontiers, gaps and invented correlation fields', () => {
+  test('rejects malformed records, cursors, frontiers, gaps and invented correlation fields', () => {
     const frontier = { id: 'journal-1', committed: 9, durable: 9 }
     const record = { sequence: 1, topic: 't', occurredAt: '2026-08-19T16:51:10.049Z', payload: {} }
+    expect(() => acceptJournalPage({ records: [{}] })).toThrow('record 0 is invalid')
+    expect(() => acceptJournalPage({ records: [{ sequence: 1, topic: 't' }] })).toThrow(
+      'record 0 is missing occurredAt',
+    )
+    expect(() => acceptJournalPage({ records: [], cursor: 7 })).toThrow('cursor must be text')
     for (const [correlation, message] of [
       ['opaque', 'correlation must be an object'],
       [{ authority: 'forged' }, 'correlation.authority is unsupported'],
