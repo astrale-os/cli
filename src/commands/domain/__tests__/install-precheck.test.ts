@@ -274,6 +274,19 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
       }),
     ])
   })
+
+  test('a held declaration judges nothing on a dependency the listing omits but introspection shows', async () => {
+    // Shell R2 is installed but missing from the caller's listing, as a builtin or local
+    // installation is; Tasks is reinstalled at its own revision with the same declaration, and the
+    // Kernel keeps the answer Tasks' installation got.
+    const verdict = await precheckInstall(
+      [root(deployments.tasks1)],
+      [installedFrom(deployments.tasks1)],
+      kernel([deployments.shell2, deployments.tasks1]).api,
+    )
+
+    expect(verdict).toMatchObject({ compared: 1, dependencies: [], unevaluated: [] })
+  })
 })
 
 function crmRegistry(): FakeDomain {
