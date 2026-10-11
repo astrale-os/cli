@@ -10,7 +10,7 @@
  * opens (`shared/chat-tone.ts`) and stores it, so closing a tab never
  * re-colours the others — a colour keeps meaning "this conversation".
  */
-import type { ChatInfo } from '@shared/types'
+import type { ChatInfo } from '@shared/contracts/agent'
 
 import { BRAND_CHAT_TONE } from '@shared/chat-tone'
 

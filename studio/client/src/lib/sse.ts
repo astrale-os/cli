@@ -1,4 +1,4 @@
-import type { StudioEvent } from '@shared/types'
+import type { StudioEvent } from '@shared/contracts/runtime'
 
 import { useEffect, useRef } from 'react'
 

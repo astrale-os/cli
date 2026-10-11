@@ -1,4 +1,4 @@
-import type { NodePosition } from '@shared/types'
+import type { NodePosition } from '@shared/contracts/workspace'
 import type { Node } from '@xyflow/react'
 
 import { containerBoxSize, DOMAIN_BOX, nodeSize, type Geometry, sizeOfNode } from '../geometry'

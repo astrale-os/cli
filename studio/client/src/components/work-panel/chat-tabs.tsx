@@ -23,9 +23,9 @@
  * conversation - it is picking a model of the other one, in the composer, once you
  * know what you want to ask.
  */
-import type { ChatInfo, HarnessStatus } from '@shared/types'
+import type { ChatInfo, HarnessStatus } from '@shared/contracts/agent'
 
-import { DEFAULT_CHAT_TITLE } from '@shared/types'
+import { DEFAULT_CHAT_TITLE } from '@shared/contracts/agent'
 import { Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 

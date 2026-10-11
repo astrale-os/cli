@@ -1,6 +1,7 @@
-import type { IrClassRef, IrEndpoint, StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrClassRef } from '@shared/schema/identity'
 
-import { classRefKey, isIrClassRef } from '@shared/types'
+import { classRefKey, isIrClassRef } from '@shared/schema/identity'
 import { ArrowRight, Box } from 'lucide-react'
 
 import { useRevealedAnchor } from '@/components/anchor'

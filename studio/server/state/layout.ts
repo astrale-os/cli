@@ -45,16 +45,6 @@ export function readLayout(root: string): LayoutState {
   return readJson(root, FILE, decodeLayout, { positions: {} })
 }
 
-export function saveLayout(
-  root: string,
-  positions: Record<string, NodePosition>,
-  renderFingerprint?: string,
-): LayoutState {
-  const next: LayoutState = { renderFingerprint, positions }
-  writeJson(root, FILE, next)
-  return next
-}
-
 export function setNodePositions(
   root: string,
   updates: Record<string, NodePosition>,

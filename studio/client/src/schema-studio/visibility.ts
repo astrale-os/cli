@@ -1,4 +1,4 @@
-import type { VisibilityState } from '@shared/types'
+import type { VisibilityState } from '@shared/contracts/workspace'
 
 import { memberRefKey } from './modules'
 

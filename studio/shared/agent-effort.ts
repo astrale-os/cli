@@ -1,6 +1,6 @@
-import type { AgentEffort } from './types'
+import type { AgentEffort } from './contracts/agent'
 
-import { AGENT_EFFORT_LEVELS } from './types'
+import { AGENT_EFFORT_LEVELS } from './contracts/agent'
 
 export function isAgentEffort(value: unknown): value is AgentEffort {
   return AGENT_EFFORT_LEVELS.includes(value as AgentEffort)

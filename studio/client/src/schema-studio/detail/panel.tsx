@@ -1,6 +1,7 @@
-import type { IrClassRef, StudioSchemaBundle } from '@shared/types'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrClassRef } from '@shared/schema/identity'
 
-import { classRefKey, parseClassRefKey } from '@shared/types'
+import { classRefKey, parseClassRefKey } from '@shared/schema/identity'
 import { Box, MousePointerClick, Spline } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 

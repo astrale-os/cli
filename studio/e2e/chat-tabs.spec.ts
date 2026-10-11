@@ -3,7 +3,7 @@
  * dropped and keeps the name and colour it was given, a new tab carries on with the
  * current one's settings, and what was written for one agent stays with it.
  */
-import type { ChatInfo, ChatList } from '../shared/types'
+import type { ChatInfo, ChatList } from '../shared/contracts/agent'
 
 import {
   chatAction,

@@ -10,7 +10,7 @@
  * The source is named the way its tab is — its agent's mark, in that tab's
  * colour — so "where this came from" is one glance back at the strip.
  */
-import type { ChatOrigin } from '@shared/types'
+import type { ChatOrigin } from '@shared/contracts/agent'
 
 import { ChevronRight, Trash2 } from 'lucide-react'
 import { useState } from 'react'

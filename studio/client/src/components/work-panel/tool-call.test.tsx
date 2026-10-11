@@ -1,4 +1,4 @@
-import type { AgentToolCall } from '@shared/types'
+import type { AgentToolCall } from '@shared/contracts/agent'
 
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'

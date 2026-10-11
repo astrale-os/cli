@@ -1,4 +1,4 @@
-import type { AnchorKind } from '@shared/types'
+import type { AnchorKind } from '@shared/contracts/workspace'
 
 import { MessageSquare } from 'lucide-react'
 import { useId } from 'react'

@@ -4,7 +4,7 @@
  * in the conversation beside it. The upload, the stored copy and its removal
  * are the real server's; only the agent itself is stood in for.
  */
-import type { AgentRun, ChatAttachment } from '../shared/types'
+import type { AgentRun, ChatAttachment } from '../shared/contracts/agent'
 
 import { dockWorkspacePanel, expect, test, type Locator } from './test'
 

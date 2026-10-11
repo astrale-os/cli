@@ -52,12 +52,7 @@ export function startBridge(workspace: AgentWorkspace, notify: Notify): Bridge {
   try {
     bridgeCommand = studioCliCommand(['__studio-bridge', '--config', bridgeConfigPath])
   } catch {
-    bridgeCommand = [
-      process.env.DOMAIN_STUDIO_BRIDGE_BUN || process.execPath,
-      MCP_SERVER,
-      '--config',
-      bridgeConfigPath,
-    ]
+    bridgeCommand = [process.execPath, MCP_SERVER, '--config', bridgeConfigPath]
   }
 
   const server: HarnessMcpServer = {

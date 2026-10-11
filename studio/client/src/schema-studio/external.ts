@@ -1,4 +1,5 @@
-import type { IrClassRef, IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/contracts/schema'
+import type { IrClassRef } from '@shared/schema/identity'
 
 import { classRefKey, isIrClassRef } from '@shared/schema/identity'
 
@@ -102,9 +103,8 @@ export function crossDomainEdges(bundle: StudioSchemaBundle): CrossDomainEdge[] 
  *
  * Not just the far ends of relationships: `importsByKey` is the footprint the DSL resolved
  * as reachable — Classes named in properties, in policies, in Views, in Core — so a domain
- * imported without a single edge to it is a dependency all the same, and used to appear
- * nowhere in the studio at all. The ones a relationship reaches are marked, because those
- * are the ones the canvas draws a line to.
+ * imported without a single edge to it is a dependency all the same. The ones a
+ * relationship reaches are marked, because those are the ones the canvas draws a line to.
  */
 export function externalDomains(bundle: StudioSchemaBundle): ExternalDomain[] {
   const ir = bundle.ir

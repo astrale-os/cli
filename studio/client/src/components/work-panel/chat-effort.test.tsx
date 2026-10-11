@@ -1,4 +1,4 @@
-import type { ChatInfo, HarnessLoadout, HarnessStatus } from '@shared/types'
+import type { ChatInfo, HarnessLoadout, HarnessStatus } from '@shared/contracts/agent'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, test } from 'bun:test'

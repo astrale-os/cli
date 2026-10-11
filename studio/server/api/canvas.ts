@@ -1,12 +1,6 @@
 /** Persisted canvas layout and visibility preference routes. */
 import { getBundle } from '../introspect/cache'
-import {
-  decodeNodePositions,
-  readLayout,
-  resetLayout,
-  saveLayout,
-  setNodePositions,
-} from '../state/layout'
+import { decodeNodePositions, readLayout, resetLayout, setNodePositions } from '../state/layout'
 import { normalizeVisibility, readVisibility, saveVisibility } from '../state/visibility'
 import { badRequest, json, type DomainRouteContext } from './http'
 
@@ -22,9 +16,6 @@ export async function handleCanvasRoute(context: DomainRouteContext): Promise<Re
       return json(
         setNodePositions(root, decodeNodePositions(body.positions), bundle?.renderFingerprint),
       )
-    }
-    if (body.action === 'save') {
-      return json(saveLayout(root, decodeNodePositions(body.positions), bundle?.renderFingerprint))
     }
     if (body.action === 'reset') {
       resetLayout(root)

@@ -1,4 +1,4 @@
-import { schemaRefKey } from '@shared/types'
+import { schemaRefKey } from '@shared/schema/identity'
 import { ReactFlowProvider } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 

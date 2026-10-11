@@ -5,10 +5,10 @@
  * without knowing the DSL: `Subject —owns→ Object`, "there is a Group such that", "all of",
  * "any of". Terms wear the same words the canvas marks cards with.
  */
-import type { IrSchemaRef } from '@shared/types'
+import type { IrSchemaRef } from '@shared/schema/identity'
 import type { ReactNode } from 'react'
 
-import { schemaRefKey } from '@shared/types'
+import { schemaRefKey } from '@shared/schema/identity'
 import { ArrowRight, Box, Minus, UserRound } from 'lucide-react'
 
 import {

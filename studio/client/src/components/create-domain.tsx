@@ -16,7 +16,7 @@
  * the dock once it does). Files are the exception: they can be staged before
  * the domain exists, and are uploaded to it the moment it does.
  */
-import type { AgentRun } from '@shared/types'
+import type { AgentRun } from '@shared/contracts/agent'
 
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, X } from 'lucide-react'

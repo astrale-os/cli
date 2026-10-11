@@ -4,7 +4,7 @@
  * the studio's view model: each view and its drift status. Every View belongs to its
  * Domain; none is bound to a Class. Pure derivation over server-provided ground truths.
  */
-import type { DomainAnatomy, StudioSchemaBundle, ViewInfo } from '@shared/types'
+import type { DomainAnatomy, StudioSchemaBundle, ViewInfo } from '@shared/contracts/schema'
 
 type ViewDrift = 'ok' | 'missing-impl' // SPA view declares a mount that the client `ROUTES` doesn't implement
 

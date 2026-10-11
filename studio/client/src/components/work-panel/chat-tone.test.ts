@@ -1,4 +1,4 @@
-import type { ChatInfo } from '@shared/types'
+import type { ChatInfo } from '@shared/contracts/agent'
 
 import { CHAT_TONE_RING } from '@shared/chat-tone'
 import { expect, test } from 'bun:test'

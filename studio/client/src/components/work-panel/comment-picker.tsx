@@ -1,4 +1,4 @@
-import type { Comment, DomainSummary } from '@shared/types'
+import type { Comment, DomainSummary } from '@shared/contracts/workspace'
 
 import { Check, MessageSquare, Paperclip } from 'lucide-react'
 import { useState } from 'react'

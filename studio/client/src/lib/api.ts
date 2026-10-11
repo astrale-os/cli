@@ -5,41 +5,47 @@ import type {
   AgentSystemPromptInfo,
   AgentSessionInfo,
   AgentToolCall,
-  AnchorRef,
   ChatAttachment,
   ChatInfo,
   ChatList,
-  Comment,
-  CommentStore,
-  DocMeta,
-  DomainCatalogEntry,
-  DomainAnatomy,
-  DomainSummary,
   AgentUsage,
-  EnvFileModel,
-  EnvName,
   HarnessGatewayConfig,
   HarnessGatewayState,
   HarnessLoadout,
   HarnessModelCatalog,
   HarnessStatus,
-  InstancesState,
+} from '@shared/contracts/agent'
+import type {
   IntrospectionStatus,
   StudioSettings,
   StudioRuntime,
-  LayoutState,
-  MergeResult,
-  NodePosition,
   StaleReport,
+} from '@shared/contracts/runtime'
+import type {
+  DomainAnatomy,
+  EnvFileModel,
+  EnvName,
   StudioCore,
   StudioDatasets,
   StudioSchemaBundle,
-  ThreadEntry,
   ViewRuntime,
   ViewSessionResult,
+} from '@shared/contracts/schema'
+import type {
+  AnchorRef,
+  Comment,
+  CommentStore,
+  DocMeta,
+  DomainCatalogEntry,
+  DomainSummary,
+  InstancesState,
+  LayoutState,
+  MergeResult,
+  NodePosition,
+  ThreadEntry,
   VisibilityState,
   WorkspaceUiState,
-} from '@shared/types'
+} from '@shared/contracts/workspace'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {

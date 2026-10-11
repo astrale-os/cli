@@ -1,4 +1,4 @@
-import type { AgentRun, ChatAttachment, ChatList, QueuedMessage } from '@shared/types'
+import type { AgentRun, ChatAttachment, ChatList, QueuedMessage } from '@shared/contracts/agent'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ClipboardEvent, ReactNode } from 'react'
 

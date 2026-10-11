@@ -451,15 +451,10 @@ export function setChatFastMode(
   })
 }
 
-export function setChatSession(
-  root: string,
-  chatId: string,
-  sessionId: string,
-): StoredChat | undefined {
-  const trimmed = sessionId.trim()
-  return mutateChat(root, chatId, (chat) => {
-    if (trimmed) chat.sessionId = trimmed
-    else delete chat.sessionId
+/** Resume `sessionId` next turn; the caller clears a blank one with `clearChatSession`. */
+export function setChatSession(root: string, chatId: string, sessionId: string): void {
+  mutateChat(root, chatId, (chat) => {
+    chat.sessionId = sessionId
   })
 }
 

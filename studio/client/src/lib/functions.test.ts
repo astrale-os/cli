@@ -1,4 +1,4 @@
-import type { IrFunction, JsonSchema } from '@shared/types'
+import type { IrFunction, JsonSchema } from '@shared/contracts/schema'
 
 import { expect, test } from 'bun:test'
 

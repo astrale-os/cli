@@ -1,4 +1,4 @@
-import type { StudioSchemaBundle } from '@shared/types'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { expect, test } from 'bun:test'
 

@@ -40,10 +40,9 @@ const bundles = new Map<string, StudioSchemaBundle>()
 /**
  * The build a caller can JOIN instead of starting a second one.
  *
- * `bundles` only ever holds a finished bundle, so concurrent readers of a domain
- * that has none yet each used to launch their own extraction: opening the studio
- * asks for `/bundle`, `/anatomy` and `/core` at once, and the boot may still be
- * indexing the same domain — four subprocesses bundling identical sources.
+ * `bundles` only ever holds a finished bundle, and opening the studio asks for
+ * `/bundle`, `/anatomy` and `/core` at once while the boot may still be indexing the
+ * same domain: without this, each would bundle the identical sources itself.
  */
 interface RunningBundle {
   readonly work: ScheduledWork<StudioSchemaBundle>
@@ -88,7 +87,8 @@ const TOOL_INPUTS = [
   'introspect/source-overlay/spans.ts',
   'introspect/hash.ts',
   'state/baseline.ts',
-  '../shared/types.ts',
+  '../shared/contracts/schema.ts',
+  '../shared/schema/identity.ts',
 ]
 
 interface BundleCacheEntry {

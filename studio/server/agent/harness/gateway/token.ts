@@ -37,7 +37,7 @@ interface HarnessTokenBrokerOptions {
 export class HarnessTokenError extends Error {
   constructor(
     message: string,
-    readonly kind: 'mint-failed' | 'host-token-needed' | 'config',
+    readonly kind: 'mint-failed' | 'config',
   ) {
     super(message)
     this.name = 'HarnessTokenError'
@@ -85,11 +85,6 @@ export class HarnessTokenBroker {
         if (!token) throw new HarnessTokenError('no token set for this gateway', 'config')
         return token
       }
-      case 'host':
-        throw new HarnessTokenError(
-          'no valid host-supplied token — the embedding Astrale app must provide one',
-          'host-token-needed',
-        )
       default:
         return this.mintToken(audience, config.auth.instance)
     }

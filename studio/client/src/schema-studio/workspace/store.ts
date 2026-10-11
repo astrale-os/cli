@@ -1,4 +1,4 @@
-import type { WorkspaceSchemaUiState } from '@shared/types'
+import type { WorkspaceSchemaUiState } from '@shared/contracts/workspace'
 
 import { create } from 'zustand'
 

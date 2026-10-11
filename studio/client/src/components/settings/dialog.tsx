@@ -1,5 +1,7 @@
+import type { StudioSettings } from '@shared/contracts/runtime'
+
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@radix-ui/react-collapsible'
-import { AGENT_ACCESS_LEVELS, type HarnessStatus, type StudioSettings } from '@shared/types'
+import { AGENT_ACCESS_LEVELS, type HarnessStatus } from '@shared/contracts/agent'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'

@@ -1,10 +1,10 @@
 import type {
   DomainAnatomy,
   IrClass,
-  IrClassRef,
   JsonSchema,
   StudioSchemaBundle,
-} from '@shared/types'
+} from '@shared/contracts/schema'
+import type { IrClassRef } from '@shared/schema/identity'
 
 export function nodeClass(name: string, input: Partial<IrClass> = {}): IrClass {
   return {

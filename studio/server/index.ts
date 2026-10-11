@@ -120,8 +120,7 @@ async function indexWorkspace(): Promise<void> {
       `${process.env.DOMAIN_STUDIO_TIMINGS === '1' ? ` — ${Math.round(performance.now() - indexingStarted)}ms` : ''}\n`,
   )
   // Flip readiness only after the progress block and its completion message have
-  // been written. The supervising CLI cannot interleave its final success inside
-  // the domain list anymore.
+  // been written, so the supervising CLI never interleaves its success inside them.
   workspaceReady = true
 }
 

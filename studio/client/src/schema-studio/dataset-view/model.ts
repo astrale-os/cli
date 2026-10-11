@@ -1,4 +1,9 @@
-import type { StudioCore, StudioCoreNode, StudioDataset, StudioDatasetFailure } from '@shared/types'
+import type {
+  StudioCore,
+  StudioCoreNode,
+  StudioDataset,
+  StudioDatasetFailure,
+} from '@shared/contracts/schema'
 
 import type { PolicyMatch, PolicyObject } from './policy-evaluate'
 

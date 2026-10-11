@@ -14,7 +14,7 @@ import type {
   AgentEvent,
   AgentRun,
   ChatAttachment,
-} from '@shared/types'
+} from '@shared/contracts/agent'
 
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'

@@ -11,9 +11,10 @@
  * variables introduced by `exists`), combined with `allOf` / `anyOf`. There is no negation and
  * no predicate on properties — a Policy is purely about connectivity.
  */
-import type { IrSchemaRef, SchemaIR } from '@shared/types'
+import type { SchemaIR } from '@shared/contracts/schema'
+import type { IrSchemaRef } from '@shared/schema/identity'
 
-import { isIrSchemaRef, schemaRefKey } from '@shared/types'
+import { isIrSchemaRef, schemaRefKey } from '@shared/schema/identity'
 
 // ── language ────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import type { DomainIntrospectionTiming, IntrospectionPhase } from '@shared/types'
+import type { DomainIntrospectionTiming, IntrospectionPhase } from '@shared/contracts/runtime'
 
 const PHASE_LABELS: Record<IntrospectionPhase, string> = {
   queued: 'Waiting for an introspection slot',
