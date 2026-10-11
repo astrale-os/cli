@@ -54,8 +54,9 @@ installed-Domain binding → source Kernel → local result
 - A Domain token exchange changes the authenticated principal to that Domain's installed identity while
   the caller stays the verified source identity, usually the user. This changes principal
   capabilities/ownership, not the caller: Policies still evaluate the user, and Journal records name the
-  Domain as principal. Class observation Policies do not require such an exchange merely to supply
-  principal Class authority; use the session selected by the host.
+  Domain as principal. It also scopes every read of the session: the Domain must own each Class's
+  installation or hold its exact capability, whatever rule the Class declares. An identity acting for
+  itself meets no such ceiling; use the session selected by the host.
 - A protocol redirect carries a destination credential, not permission to forward the original token
   to any URL. Only the pinned source may redirect; a destination redirect is rejected.
 - Route reuse is partitioned by source, target, credential, delegation, and expected Schema revision.
@@ -69,13 +70,15 @@ installed-Domain binding → source Kernel → local result
 ## Classify admission failures
 
 - Authentication failure: credential/session evidence was not admitted.
-- Graph authority failure: distinguish observation with a Class Policy, observation without one, and
-  effects. Their principal/caller rules differ; see `policies.md` before adding Class capabilities.
+- Graph authority failure: distinguish a delegated observation (principal ceiling, then the caller's
+  rule), a direct one (the rule alone), and effects. Their principal/caller rules differ; see
+  `policies.md` before adding Class capabilities.
 - Callable authority failure: inspect the authenticated principal's effective profile and the caller
   separately. Missing direct `can_use` may be satisfied through groups; a passing callable Policy cannot
   compensate for a failed principal ceiling. The installed executor never substitutes for that principal.
-- Policy refusal: distinguish Function Root/owner alternatives from Class capability/owner alternatives;
-  Function `can_use` does not bypass a business Policy. Check the deployed Kernel's semantics first.
+- Policy refusal: distinguish Function Root/owner alternatives from Class owner/rule alternatives;
+  neither `can_use` nor a Class capability bypasses a business Policy. Check the deployed Kernel's
+  semantics first.
 - Input failure: callable validation rejected input before execution.
 
 Confirm denied calls caused no Action, Workflow step, Provider, or graph effect. Never add a handler
