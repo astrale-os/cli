@@ -52,6 +52,8 @@ already authenticates the selected identity for `whoami` and `delegate`, so no i
 before the Kernel is reached. The state owner's installation cache remembers what the pin named per
 source Kernel and origin, so a later command exchanges at the remembered issuer, or selects the
 Domain credential persisted under it before source-token refresh, without reading the pin again.
+That credential is confirmed with a read-only `whoami` first; one the Kernel refuses with 2002 is
+deleted from the cache, so no later command selects it again.
 The Shell is reinstalled from immutable deployments with a consented issuer change, within the same
 installation, so the remembered issuer is healed rather than trusted. A stale one fails closed: the
 retired issuer no longer serves an exchange, or the Kernel rejects with 2002 the credential it
