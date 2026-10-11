@@ -72,14 +72,6 @@ export async function promptYesNo(
 }
 
 /**
- * Yes/No selector defaulting to No. Returns false when not interactive (use
- * --yes / a flag to bypass).
- */
-export async function confirm(message: string, gate: PromptGate = {}): Promise<boolean> {
-  return (await promptYesNo(message, { ...gate, default: false })) ?? false
-}
-
-/**
  * Yes/No selector defaulting to Yes — the cursor starts on Yes, so Enter
  * accepts. Returns true unless the user explicitly declines; returns true when
  * not interactive.

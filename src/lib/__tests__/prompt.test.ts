@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 
 import {
-  confirm,
   confirmDefaultYes,
   confirmWithInput,
   promptMultiSelect,
@@ -23,7 +22,6 @@ test('a closed terminal never blocks: every prompt resolves to its default or no
   expect(await promptText('Published worker URL', closed)).toBeUndefined()
   // "Nobody was there to ask" is not "the user said no".
   expect(await promptYesNo('Update them now?', { ...closed, default: true })).toBeUndefined()
-  expect(await confirm('Overwrite it?', closed)).toBe(false)
   expect(await confirmDefaultYes('Update them now?', closed)).toBe(true)
   // A dangerous action is never confirmed by default.
   expect(await confirmWithInput('DANGER', 'crm.acme.dev', closed)).toBe(false)
