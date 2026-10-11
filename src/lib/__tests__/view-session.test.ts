@@ -13,10 +13,12 @@ import {
   logPath,
   openSessionLog,
   recordPath,
-  removeSessionFiles,
   saveRecord,
   saveServeConfig,
 } from '../view/session'
+import { viewConfig } from './view.fixture'
+
+type Signal = Parameters<typeof process.kill>[1]
 
 const temporaryDirectories: string[] = []
 let killSpy: ReturnType<typeof spyOn<typeof process, 'kill'>> | undefined
@@ -29,196 +31,131 @@ afterEach(async () => {
   )
 })
 
-function mode(value: Awaited<ReturnType<typeof stat>>): number {
-  return Number(value.mode) & 0o777
-}
+const processError = (code: string) => Object.assign(new Error(`kill ${code}`), { code })
+const files = (id: string, directory: string) => [
+  recordPath(id, directory),
+  configPath(id, directory),
+  logPath(id, directory),
+]
 
-const target = (value: string) => value as ViewServeConfig['session']['view']['target']
-const issuer = (value: string) => value as ViewServeConfig['session']['view']['route']['issuer']
-const revision = (character: string) =>
-  `sha256:${character.repeat(64)}` as ViewServeConfig['session']['view']['route']['revision']
-
-function processError(code: string): NodeJS.ErrnoException {
-  return Object.assign(new Error(`kill ${code}`), { code })
-}
-
-async function sessionFixture(): Promise<{ directory: string; config: ViewServeConfig }> {
+/** A stored session whose process answers each signal with `signal`. */
+async function sessionOf(signal: (value: Signal) => true) {
   const directory = await mkdtemp(join(tmpdir(), 'astrale-view-process-'))
   temporaryDirectories.push(directory)
+  const base = viewConfig('a1b2c3')
   const config: ViewServeConfig = {
+    ...base,
     session: {
-      id: 'v-a1b2c3',
+      ...base.session,
       pid: 246801,
       port: 4419,
-      nonce: 'nonce',
-      pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-      view: {
-        target: target('/:example.test'),
-        route: {
-          key: 'example.test:view.main',
-          href: 'https://example.test/ui',
-          handshake: 'shell',
-          issuer: issuer('https://example.test'),
-          release: `sha256:${'a'.repeat(64)}`,
-          revision: revision('b'),
-          declaration: { target: { kind: 'domain' } },
-        },
-      },
-      createdAt: '2026-10-06T00:00:00.000Z',
+      pageUrl: 'http://127.0.0.1:4419/s/a1b2c3/',
     },
-    kernel: {},
-    proxy: { kernelUrl: 'https://kernel.test', issuer: 'https://kernel.test', direct: true },
-    externalOrigins: [],
-    idleMs: 60_000,
   }
   await saveServeConfig(config, directory)
   await saveRecord(config.session, directory)
   closeSync(await openSessionLog(config.session.id, directory))
-  return { directory, config }
-}
-
-function mockSessionProcess(
-  pid: number,
-  signal: (signal: Parameters<typeof process.kill>[1]) => true,
-): void {
   const originalKill = process.kill.bind(process)
-  killSpy = spyOn(process, 'kill').mockImplementation((targetPid, value) =>
-    targetPid === pid ? signal(value) : originalKill(targetPid, value),
+  killSpy = spyOn(process, 'kill').mockImplementation((pid, value) =>
+    pid === config.session.pid ? signal(value) : originalKill(pid, value),
   )
-}
-
-async function expectSessionFiles(
-  directory: string,
-  config: ViewServeConfig,
-  retained: boolean,
-): Promise<void> {
-  for (const path of [
-    recordPath(config.session.id, directory),
-    configPath(config.session.id, directory),
-    logPath(config.session.id, directory),
-  ]) {
-    if (retained) expect(await stat(path)).toBeDefined()
-    else await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+  const retained = async (kept: boolean) => {
+    expect(await listSessions(directory)).toEqual(kept ? [config.session] : [])
+    for (const path of files(config.session.id, directory)) {
+      if (kept) expect(await stat(path)).toBeDefined()
+      else await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+    }
   }
+  return { directory, session: config.session, retained }
 }
 
 describe('view session process ownership', () => {
   /** @evidence TEST-CLI-VIEW-PROCESS-EPERM-RETAINS-CATALOG */
-  test.each(['EPERM', 'EACCES', 'EIO'])(
-    'retains session files when a probe returns %s',
-    async (code) => {
-      const { directory, config } = await sessionFixture()
-      mockSessionProcess(config.session.pid, () => {
-        throw processError(code)
-      })
-
-      expect(await listSessions(directory)).toEqual([config.session])
-      await expectSessionFiles(directory, config, true)
-    },
-  )
-
-  test('removes session files when ESRCH confirms the process is gone', async () => {
-    const { directory, config } = await sessionFixture()
-    mockSessionProcess(config.session.pid, () => {
-      throw processError('ESRCH')
+  test.each([
+    ['EPERM', true],
+    ['EACCES', true],
+    ['EIO', true],
+    ['ESRCH', false],
+  ] as const)('a listing probe answering %s retains the session: %p', async (code, kept) => {
+    const { retained } = await sessionOf(() => {
+      throw processError(code)
     })
-
-    expect(await listSessions(directory)).toEqual([])
-    await expectSessionFiles(directory, config, false)
+    await retained(kept)
   })
 
   /** @evidence TEST-CLI-VIEW-CLOSE-EPERM-RETAINS-CATALOG */
-  test('rejects a denied SIGTERM and retains the session even when its probe is denied', async () => {
-    const { directory, config } = await sessionFixture()
-    const signals: Parameters<typeof process.kill>[1][] = []
-    mockSessionProcess(config.session.pid, (signal) => {
-      signals.push(signal)
-      throw processError('EPERM')
-    })
-
-    await expect(closeSession(config.session, directory)).rejects.toThrow(
+  test.each([
+    [
+      'a denied SIGTERM',
       'SIGTERM failed: kill EPERM',
-    )
-    expect(signals).toEqual([0, 'SIGTERM'])
-    await expectSessionFiles(directory, config, true)
-    expect(await listSessions(directory)).toEqual([config.session])
-  })
-
-  test('removes a session that was already gone without sending a termination signal', async () => {
-    const { directory, config } = await sessionFixture()
-    const signals: Parameters<typeof process.kill>[1][] = []
-    mockSessionProcess(config.session.pid, (signal) => {
-      signals.push(signal)
-      throw processError('ESRCH')
-    })
-
-    await closeSession(config.session, directory)
-    expect(signals).toEqual([0])
-    await expectSessionFiles(directory, config, false)
-  })
-
-  test('removes a session that disappears between the probe and SIGTERM', async () => {
-    const { directory, config } = await sessionFixture()
-    mockSessionProcess(config.session.pid, (signal) => {
-      if (signal === 0) return true
-      throw processError('ESRCH')
-    })
-
-    await closeSession(config.session, directory)
-    await expectSessionFiles(directory, config, false)
-  })
-
-  test('removes a session after observing its exit following SIGTERM', async () => {
-    const { directory, config } = await sessionFixture()
-    let running = true
-    mockSessionProcess(config.session.pid, (signal) => {
-      if (signal === 'SIGTERM') running = false
-      if (!running && signal === 0) throw processError('ESRCH')
-      return true
-    })
-
-    await closeSession(config.session, directory)
-    await expectSessionFiles(directory, config, false)
-  })
-
-  test('retains a session if SIGKILL is denied after the SIGTERM grace period', async () => {
-    const { directory, config } = await sessionFixture()
-    mockSessionProcess(config.session.pid, (signal) => {
-      if (signal === 'SIGKILL') throw processError('EPERM')
-      return true
-    })
-
-    await expect(closeSession(config.session, directory)).rejects.toThrow(
+      () => (s: Signal) => {
+        if (s === 0) return true
+        throw processError('EPERM')
+      },
+    ],
+    [
+      'a denied SIGKILL after the grace period',
       'SIGKILL failed: kill EPERM',
-    )
-    await expectSessionFiles(directory, config, true)
-    expect(await listSessions(directory)).toEqual([config.session])
-  })
-
-  test('waits for confirmed exit after SIGKILL before dropping the session files', async () => {
-    const { directory, config } = await sessionFixture()
-    let killed = false
-    let postKillProbes = 0
-    mockSessionProcess(config.session.pid, (signal) => {
-      if (signal === 'SIGKILL') killed = true
-      if (signal === 0 && killed && ++postKillProbes >= 3) throw processError('ESRCH')
-      return true
-    })
-
-    await closeSession(config.session, directory)
-    expect(postKillProbes).toBeGreaterThanOrEqual(3)
-    await expectSessionFiles(directory, config, false)
-  })
-
-  test('retains a session when successful signals never establish that the process exited', async () => {
-    const { directory, config } = await sessionFixture()
-    mockSessionProcess(config.session.pid, () => true)
-
-    await expect(closeSession(config.session, directory)).rejects.toThrow(
+      () => (s: Signal) => {
+        if (s === 'SIGKILL') throw processError('EPERM')
+        return true
+      },
+    ],
+    [
+      'signals that never establish an exit',
       'exit could not be confirmed',
-    )
-    await expectSessionFiles(directory, config, true)
-    expect(await listSessions(directory)).toEqual([config.session])
+      () => () => true as const,
+    ],
+  ] as const)('close retains the session on %s', async (_name, message, behaviour) => {
+    const { directory, session, retained } = await sessionOf(behaviour() as (s: Signal) => true)
+    await expect(closeSession(session, directory)).rejects.toThrow(message)
+    await retained(true)
+  })
+
+  test.each([
+    [
+      'was already gone, sending it nothing',
+      () =>
+        (s: Signal): true => {
+          if (s !== 0) throw new Error(`${String(s)} sent to a gone process`)
+          throw processError('ESRCH')
+        },
+    ],
+    [
+      'disappears between the probe and SIGTERM',
+      () =>
+        (s: Signal): true => {
+          if (s === 0) return true
+          throw processError('ESRCH')
+        },
+    ],
+    [
+      'exits after SIGTERM',
+      () => {
+        let running = true
+        return (s: Signal): true => {
+          if (s === 'SIGTERM') running = false
+          if (!running && s === 0) throw processError('ESRCH')
+          return true
+        }
+      },
+    ],
+    [
+      'exits only after SIGKILL, confirmed by later probes',
+      () => {
+        let killed = false
+        let probes = 0
+        return (s: Signal): true => {
+          if (s === 'SIGKILL') killed = true
+          if (s === 0 && killed && ++probes >= 3) throw processError('ESRCH')
+          return true
+        }
+      },
+    ],
+  ] as const)('close removes a session that %s', async (_name, behaviour) => {
+    const { directory, session, retained } = await sessionOf(behaviour())
+    await closeSession(session, directory)
+    await retained(false)
   })
 })
 
@@ -230,63 +167,17 @@ describe('view session private state', () => {
     const directory = join(root, 'view')
     await mkdir(directory, { mode: 0o755 })
     await chmod(directory, 0o755)
-
-    const config = {
-      session: {
-        id: 'v-a1b2c3',
-        pid: 0,
-        port: 4419,
-        nonce: 'nonce',
-        pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-        view: {
-          target: target('/:example.test'),
-          route: {
-            key: 'example.test:view.main',
-            href: 'https://example.test/ui',
-            handshake: 'shell',
-            issuer: issuer('https://example.test'),
-            release: `sha256:${'a'.repeat(64)}`,
-            revision: revision('b'),
-            declaration: { target: { kind: 'domain' } },
-          },
-        },
-        createdAt: '2026-08-12T00:00:00.000Z',
-      },
-      kernel: { creds: 'raw-secret-carrier' },
-      proxy: {
-        kernelUrl: 'https://kernel.test',
-        issuer: 'https://kernel.test',
-        direct: true,
-      },
-      externalOrigins: [],
-      idleMs: 60_000,
-    } satisfies ViewServeConfig
+    const config = viewConfig('nonce', { kernel: { creds: 'raw-secret-carrier' } })
 
     await saveServeConfig(config, directory)
     await saveRecord(config.session, directory)
-    const descriptor = await openSessionLog(config.session.id, directory)
-    closeSync(descriptor)
+    closeSync(await openSessionLog(config.session.id, directory))
 
-    expect(mode(await stat(directory))).toBe(0o700)
-    expect(mode(await stat(configPath(config.session.id, directory)))).toBe(0o600)
-    expect(mode(await stat(recordPath(config.session.id, directory)))).toBe(0o600)
-    expect(mode(await stat(logPath(config.session.id, directory)))).toBe(0o600)
-    expect(await readFile(configPath(config.session.id, directory), 'utf8')).toContain(
-      'raw-secret-carrier',
-    )
+    const mode = async (path: string) => Number((await stat(path)).mode) & 0o777
+    expect(await mode(directory)).toBe(0o700)
+    for (const path of files(config.session.id, directory)) expect(await mode(path)).toBe(0o600)
     expect(JSON.parse(await readFile(configPath(config.session.id, directory), 'utf8'))).toEqual(
       config,
     )
-
-    await removeSessionFiles(config.session.id, directory)
-    await expect(stat(configPath(config.session.id, directory))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
-    await expect(stat(recordPath(config.session.id, directory))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
-    await expect(stat(logPath(config.session.id, directory))).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
   })
 })

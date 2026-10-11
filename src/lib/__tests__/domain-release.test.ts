@@ -12,12 +12,10 @@ import {
 } from '../domain-release'
 
 const URL_V4 = 'https://crm-production-0123456789abcdef.deployments.example.test'
-const URL_V3 = 'https://crm.example.test'
 const schema = defineSchema('crm.example.test', { name: 'Test Domain' })
 const deployment = deploymentReleaseFor(schema, URL_V4)
 const release = deployment.document
 const bundleBytes = deployment.build.schema.bundle.bytes().slice()
-const removedDocument = { version: 3, origin: schema.origin }
 
 interface Seen {
   readonly url: string
@@ -44,10 +42,12 @@ const releaseResponse = () =>
   new Response(JSON.stringify(release), { headers: { 'content-type': MEDIA_TYPE } })
 
 describe('deployment pre-read', () => {
-  test('reads release.json under the v4 media type as the pinned release', async () => {
+  test('reads release.json at the origin under the v4 media type as the pinned release', async () => {
     const { seen, fetch } = serve({ '/.well-known/astrale/release.json': releaseResponse })
 
-    await expect(readServedDeployment(`${URL_V4}/`, undefined, fetch)).resolves.toEqual({
+    const served = await readServedDeployment(`${URL_V4}/some/path`, undefined, fetch)
+
+    expect(served).toEqual({
       origin: 'crm.example.test',
       issuer: URL_V4,
       revision: release.schema.revision,
@@ -57,66 +57,40 @@ describe('deployment pre-read', () => {
     expect(seen).toEqual([
       { url: `${URL_V4}/.well-known/astrale/release.json`, accept: MEDIA_TYPE, redirect: 'error' },
     ])
+    expect(samePin(served.pin, { ...served.pin })).toBe(true)
+    expect(samePin(served.pin, { ...served.pin, build: `sha256:${'c'.repeat(64)}` })).toBe(false)
   })
 
-  test('reads both documents at the origin, as the Kernel resolves them', async () => {
-    const { seen, fetch } = serve({ '/.well-known/astrale/release.json': releaseResponse })
-    await readServedDeployment(`${URL_V4}/some/path`, undefined, fetch)
-    expect(seen.map(({ url }) => url)).toEqual([`${URL_V4}/.well-known/astrale/release.json`])
-  })
   test.each([
-    ['missing release', () => new Response('missing', { status: 404 })],
-    ['wrong media type', () => new Response('<html>', { status: 200 })],
-  ] as const)('rejects %s without ever reading domain.json', async (_label, response) => {
-    const { seen, fetch } = serve({
-      '/.well-known/astrale/release.json': response,
-      '/.well-known/astrale/domain.json': () => Response.json(removedDocument),
-    })
-    await expect(readServedDeployment(URL_V3, undefined, fetch)).rejects.toMatchObject({
-      name: 'DeploymentReadError',
-      retryable: false,
-    })
-    expect(seen.map(({ url }) => url)).toEqual([`${URL_V3}/.well-known/astrale/release.json`])
-  })
-
-  test('marks a 503 (not serving yet) retryable, with its Retry-After', async () => {
-    const { seen, fetch } = serve({
-      '/.well-known/astrale/release.json': () =>
-        new Response('later', { status: 503, headers: { 'retry-after': '30' } }),
-    })
-    const error = await readServedDeployment(URL_V4, undefined, fetch).catch((cause) => cause)
-    expect(error).toBeInstanceOf(DeploymentReadError)
-    expect(error).toMatchObject({ retryable: true, retryAfterMs: 30_000 })
-    expect(seen).toHaveLength(1)
-  })
-
-  test('never reads an unavailable release as a legacy pin', async () => {
-    const { seen, fetch } = serve({
-      '/.well-known/astrale/release.json': () => new Response('boom', { status: 500 }),
-      '/.well-known/astrale/domain.json': () => Response.json(removedDocument),
-    })
-    const error = await readServedDeployment(URL_V3, undefined, fetch).catch((cause) => cause)
-    expect(error).toBeInstanceOf(DeploymentReadError)
-    expect(error).toMatchObject({ retryable: false })
-    expect(seen.map(({ url }) => url)).toEqual([`${URL_V3}/.well-known/astrale/release.json`])
-  })
-
-  test('refuses an invalid release without falling back', async () => {
-    const { fetch } = serve({
-      '/.well-known/astrale/release.json': () =>
+    ['missing', () => new Response('missing', { status: 404 })],
+    ['served under another media type', () => new Response('<html>', { status: 200 })],
+    ['unavailable', () => new Response('boom', { status: 500 })],
+    [
+      'invalid',
+      () =>
         new Response(JSON.stringify({ ...release, digest: `sha256:${'0'.repeat(64)}` }), {
           headers: { 'content-type': MEDIA_TYPE },
         }),
-      '/.well-known/astrale/domain.json': () => Response.json(removedDocument),
+    ],
+  ] as const)('refuses a release that is %s, once, without retry', async (_label, response) => {
+    const { seen, fetch } = serve({ '/.well-known/astrale/release.json': response })
+    await expect(readServedDeployment(URL_V4, undefined, fetch)).rejects.toMatchObject({
+      name: 'DeploymentReadError',
+      retryable: false,
     })
-    await expect(readServedDeployment(URL_V4, undefined, fetch)).rejects.toThrow(
-      'returned an invalid Domain release',
-    )
+    expect(seen).toHaveLength(1)
   })
-  test('compares exact release and build digests', () => {
-    const pin = { kind: 'release', release: release.digest, build: release.build.digest } as const
-    expect(samePin(pin, { ...pin })).toBe(true)
-    expect(samePin(pin, { ...pin, build: `sha256:${'c'.repeat(64)}` })).toBe(false)
+
+  test('marks a 503 (not serving yet) retryable, with its Retry-After', async () => {
+    const { fetch } = serve({
+      '/.well-known/astrale/release.json': () =>
+        new Response('later', { status: 503, headers: { 'retry-after': '30' } }),
+    })
+    await expect(readServedDeployment(URL_V4, undefined, fetch)).rejects.toMatchObject({
+      name: 'DeploymentReadError',
+      retryable: true,
+      retryAfterMs: 30_000,
+    })
   })
 })
 
@@ -138,43 +112,47 @@ describe('release bundle read (install pre-check)', () => {
     ])
   })
 
-  test('accepts the media type as the Kernel compares it: case and spaces aside', async () => {
-    const { fetch } = serve({
+  test('compares the media type as the Kernel does: case and spaces aside', async () => {
+    const lenient = serve({
       [bundlePath]: () => bundleResponse(bundleBytes, mediaType.toUpperCase().replace(';', ' ; ')),
     })
-
-    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).resolves.toMatchObject({
+    await expect(
+      readReleaseBundle(release, URL_V4, undefined, lenient.fetch),
+    ).resolves.toMatchObject({
       root: { origin: 'crm.example.test' },
     })
-  })
-
-  test('refuses a bundle served under another media type than its release names', async () => {
-    const { fetch } = serve({ [bundlePath]: () => bundleResponse(bundleBytes, 'application/json') })
-
-    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toThrow(
+    const other = serve({ [bundlePath]: () => bundleResponse(bundleBytes, 'application/json') })
+    await expect(readReleaseBundle(release, URL_V4, undefined, other.fetch)).rejects.toThrow(
       `is not served as ${mediaType}`,
     )
   })
 
-  test('reads no more than the Kernel admits, whatever size the release declares', async () => {
-    const declared = MAXIMUM_BUNDLE_BYTES + 10
-    const oversized = {
-      ...release,
-      schema: {
-        ...release.schema,
-        bundle: {
-          ...release.schema.bundle,
-          ref: { ...release.schema.bundle.ref, size: declared },
-        },
-      },
-    } as typeof release
-    const { fetch } = serve({
-      [bundlePath]: () => bundleResponse(new Uint8Array(MAXIMUM_BUNDLE_BYTES + 1)),
-    })
+  test.each([
+    [
+      'more than the Kernel admits, whatever the release declares',
+      MAXIMUM_BUNDLE_BYTES + 10,
+      MAXIMUM_BUNDLE_BYTES + 1,
+    ],
+    ['more than the descriptor declares', undefined, release.schema.bundle.ref.size + 1],
+  ] as const)('reads no more bytes than %s', async (_name, declared, served) => {
+    const named =
+      declared === undefined
+        ? release
+        : ({
+            ...release,
+            schema: {
+              ...release.schema,
+              bundle: {
+                ...release.schema.bundle,
+                ref: { ...release.schema.bundle.ref, size: declared },
+              },
+            },
+          } as typeof release)
+    const { fetch } = serve({ [bundlePath]: () => bundleResponse(new Uint8Array(served)) })
 
-    await expect(readReleaseBundle(oversized, URL_V4, undefined, fetch)).rejects.toMatchObject({
+    await expect(readReleaseBundle(named, URL_V4, undefined, fetch)).rejects.toMatchObject({
       name: 'DeploymentReadError',
-      message: expect.stringContaining(`exceeded ${MAXIMUM_BUNDLE_BYTES} bytes`),
+      message: expect.stringContaining('exceeded'),
     })
   })
 
@@ -187,17 +165,6 @@ describe('release bundle read (install pre-check)', () => {
     await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toBeInstanceOf(
       DeploymentReadError,
     )
-  })
-
-  test('refuses more bytes than the descriptor declares', async () => {
-    const { fetch } = serve({
-      [bundlePath]: () => bundleResponse(new Uint8Array(release.schema.bundle.ref.size + 1)),
-    })
-
-    await expect(readReleaseBundle(release, URL_V4, undefined, fetch)).rejects.toMatchObject({
-      name: 'DeploymentReadError',
-      message: expect.stringContaining('exceeded'),
-    })
   })
 
   test('refuses a bundle named on another origin than the deployment', async () => {

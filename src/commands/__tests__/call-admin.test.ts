@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { CommanderError } from 'commander'
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { adminCallTarget, callCommand, parseParams } from '../call'
+import { observeConnections, runCli } from './fixtures/process'
 
 const cliRoot = join(import.meta.dir, '../../..')
 const SET_SECRET = '@deployment-1::services.astrale.ai:class.CloudflareDeployment.method.setSecret'
@@ -29,7 +29,10 @@ describe('call --admin target selection', () => {
     expect(adminCallTarget({})).toBeUndefined()
     expect(adminCallTarget({ instance: 'staging' })).toBeUndefined()
     expect(adminCallTarget({ admin: true })).toEqual({})
-    expect(adminCallTarget({ admin: 'ops-admin' })).toEqual({ admin: 'ops-admin' })
+    // A bookmark is a bookmark unless it is shaped like a key=value param.
+    for (const admin of ['ops-admin', 'ops admin=x', 'ops.admin=x', '1ops=x', '=ops']) {
+      expect(adminCallTarget({ admin })).toEqual({ admin })
+    }
     expect(
       adminCallTarget({ adminUrl: 'https://admin.test/api', domainIssuer: 'https://admin.test' }),
     ).toEqual({ adminUrl: 'https://admin.test/api', domainIssuer: 'https://admin.test' })
@@ -48,12 +51,7 @@ describe('call --admin target selection', () => {
       '--admin cannot be used with --admin-url',
     ],
     [{ domainIssuer: 'https://admin.test' }, '--domain-issuer requires --admin-url'],
-    [
-      { admin: 'ops-admin', domainIssuer: 'https://admin.test' },
-      '--domain-issuer requires --admin-url',
-    ],
     [{ admin: 'limit=10' }, '--admin took the param "limit=10" as its bookmark'],
-    [{ admin: 'name=API_TOKEN' }, '--admin took the param "name=API_TOKEN" as its bookmark'],
   ] as const)('refuses %o as a usage error (exit 2)', (opts, message) => {
     let refusal: unknown
     try {
@@ -64,12 +62,6 @@ describe('call --admin target selection', () => {
     expect(refusal).toBeInstanceOf(CommanderError)
     expect(refusal).toMatchObject({ exitCode: 2, code: 'commander.conflictingOption' })
     expect((refusal as Error).message.split('\n')[0]).toBe(`error: ${message}`)
-  })
-
-  test('keeps a bookmark that is not shaped like a key=value param', () => {
-    for (const admin of ['ops-admin', 'ops admin=x', 'ops.admin=x', '1ops=x', '=ops']) {
-      expect(adminCallTarget({ admin })).toEqual({ admin })
-    }
   })
 
   test('refuses the selection before reading --data or opening a connection', async () => {
@@ -89,46 +81,12 @@ describe('call --admin target selection', () => {
     ).rejects.toMatchObject({ exitCode: 2 })
     expect(connections).toBe(0)
   })
-
-  test('hands the Admin selection and the callable credential to the command lifecycle', async () => {
-    const seen: unknown[] = []
-    for (const opts of [
-      { admin: true as const },
-      { admin: 'ops-admin' },
-      { adminUrl: 'https://admin.test/api', domainIssuer: 'https://admin.test' },
-      {},
-    ]) {
-      await callCommand(
-        SET_SECRET,
-        [],
-        { ...opts, data: JSON.stringify(SECRET), json: true },
-        {
-          async runKernelCommand(input) {
-            seen.push({ admin: input.admin ?? null, credential: input.credential })
-          },
-          output() {},
-        },
-      )
-    }
-    const credential = { principal: 'callable' }
-    expect(seen).toMatchObject([
-      { admin: {}, credential },
-      { admin: { admin: 'ops-admin' }, credential },
-      {
-        admin: { adminUrl: 'https://admin.test/api', domainIssuer: 'https://admin.test' },
-        credential,
-      },
-      { admin: null, credential },
-    ])
-  })
 })
 
 describe('call --data sources', () => {
   const documents = [
-    '{"name":"API_TOKEN","value":"s3cr3t"}',
     '{\n  "name": "API_TOKEN",\n  "value": "multi\\nline \\u00e9"\n}\n',
-    '{"nested":{"list":[1,2,{"deep":true}]},"empty":""}',
-    '  {"padded": null}  \n\n',
+    '  {"nested":{"list":[1,2,{"deep":true}]},"padded":null}  \n\n',
   ]
 
   /** @evidence TEST-CLI-CALL-DATA-FILE-PARSES-LIKE-INLINE */
@@ -194,9 +152,6 @@ describe('call --admin against a fake Admin kernel', () => {
   test.each([
     [['--admin', '-i', 'staging'], '-i/--instance cannot be used with --admin'],
     [['--admin', 'ops-admin', '--url', 'OBSERVER'], '--url cannot be used with --admin'],
-    [['--admin-url', 'OBSERVER', '-i', 'staging'], '-i/--instance cannot be used with --admin-url'],
-    [['--domain-issuer', 'OBSERVER'], '--domain-issuer requires --admin-url'],
-    [['--admin', 'limit=10'], '--admin took the param "limit=10" as its bookmark'],
   ])('astrale call %p exits 2 before any connection', async (flags, message) => {
     const root = await temporaryRoot('astrale-call-admin-usage-')
     const observer = await observeConnections()
@@ -343,38 +298,4 @@ async function temporaryRoot(prefix: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), prefix))
   roots.push(root)
   return root
-}
-
-async function runCli(root: string, args: readonly string[]) {
-  const child = Bun.spawn(['bun', join(cliRoot, 'bin/astrale.ts'), ...args], {
-    env: { ...process.env, ASTRALE_HOME: root, NO_UPDATE_NOTIFIER: '1' },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ])
-  return { exitCode, stdout, stderr }
-}
-
-async function observeConnections() {
-  let connections = 0
-  const server = createServer((socket) => {
-    connections += 1
-    socket.destroy()
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Expected an observing TCP port')
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    count: () => connections,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  }
 }

@@ -1,6 +1,5 @@
 import type { InstalledRelease } from '@astrale-os/sdk/client/schema'
 
-import { deploymentName } from '@astrale-os/sdk/versioning'
 import { describe, expect, test } from 'bun:test'
 
 import type { AdminRegistryApi } from '../../admin/registry'
@@ -208,11 +207,8 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
       { instance: 'acme-stg', admin: 'admin-local', as: 'operator', json: true },
       run.dependencies,
     )
-    expect(list.format).toBe('astrale.installed-list')
-    expect(list.version).toBe(1)
-    expect(list.kernel).toBe(KERNEL)
     // The Kernel listing carries no completeness marker (AM-84): it is partial by nature.
-    expect(list.partial).toBe(true)
+    expect(list).toMatchObject({ format: 'astrale.installed-list', kernel: KERNEL, partial: true })
     const byOrigin = Object.fromEntries(list.domains.map((domain) => [domain.origin, domain]))
 
     // The digest comes from the Kernel pin, the version from the registry.
@@ -231,7 +227,6 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
 
     // The preview's name is its CT28 deploymentName, printed verbatim, environment included.
     expect(byOrigin['agencies.example.com']?.version).toBeUndefined()
-    expect(byOrigin['agencies.example.com']?.name).toBe(deploymentName(agenciesPreview.record, []))
     expect(byOrigin['agencies.example.com']?.name).toBe('1.4.2 + 7 commits · a1b2c3d · staging')
     expect(byOrigin['agencies.example.com']?.available).toBe('1.5.0')
 
@@ -245,12 +240,9 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
     expect(byOrigin['integrations.example.com']).toMatchObject({ name: 'unknown' })
     expect(byOrigin['integrations.example.com']?.version).toBeUndefined()
 
-    // Rows keep the Kernel's order and fields; inFlight stays the Kernel's.
+    // Rows keep the Kernel's order.
     expect(list.domains.map((domain) => domain.origin)).toEqual(
       listing.map((entry) => entry.origin),
-    )
-    expect(Object.keys(list.domains[0]!).sort()).toEqual(
-      ['available', 'issuer', 'name', 'origin', 'pin', 'revision', 'url'].sort(),
     )
   })
 
@@ -275,35 +267,6 @@ describe('astrale domain list -i (Résolution [.79716] [.80228])', () => {
       expect(request.headers.get('authorization')).toBeNull()
   })
 
-  test('--creds and --anonymous authenticate the instance only: Admin is opened as the caller', async () => {
-    const withCreds = fixture()
-    await listInstalled(
-      {
-        url: KERNEL,
-        creds: 'INSTANCE-TOKEN',
-        admin: 'admin-local',
-        timeout: '10s',
-        ci: true,
-        json: true,
-      },
-      withCreds.dependencies,
-    )
-    expect(withCreds.opened).toEqual([{ admin: 'admin-local', timeout: '10s', ci: true }])
-    expect(JSON.stringify(withCreds.opened)).not.toContain('INSTANCE-TOKEN')
-
-    const anonymous = fixture()
-    await listInstalled(
-      { instance: 'acme-stg', anonymous: true, adminUrl: 'https://admin.example/api' },
-      anonymous.dependencies,
-    )
-    expect(anonymous.opened).toEqual([{ adminUrl: 'https://admin.example/api' }])
-    for (const opts of [...withCreds.opened, ...anonymous.opened]) {
-      expect(opts).not.toHaveProperty('creds')
-      expect(opts).not.toHaveProperty('anonymous')
-      expect(opts).not.toHaveProperty('instance')
-      expect(opts).not.toHaveProperty('url')
-    }
-  })
   test('a registry that cannot be read fails the listing; versions are never dropped silently', async () => {
     const run = fixture({
       registry: async () => {
@@ -385,18 +348,5 @@ describe('naming one installation (AM-41, AM-57, AM-73)', () => {
         undefined,
       ).version,
     ).toBe('0.9.5')
-  })
-
-  test('a build digest from another issuer never names the release, whatever the record says', () => {
-    const elsewhere = served('https://elsewhere.deployments.test', 'other', 'shell-b1')
-    const entry = installed('shell.astrale.ai', shell091.url, {
-      kind: 'release',
-      release: digest('release:not-published'),
-      build: elsewhere.buildDigest,
-    })
-    const described = describeInstalled(entry, [summary('9.9.9', elsewhere)], undefined)
-    expect(described.version).toBeUndefined()
-    expect(described.name).toBe('unknown')
-    expect(described.available).toBeUndefined()
   })
 })

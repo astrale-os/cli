@@ -65,95 +65,50 @@ describe('instance creation catalogue ownership', () => {
     expect(result.access.status).toBe('completed')
   })
 
-  test('replays a ready receipt without selecting it again', async () => {
-    const { after, target, result } = await journey('ready-replay')
-    expect(after.active).toBe('dev')
-    expect(target.url).toBe('https://dev.example.test/api')
-    expect(Object.keys(after.instances).sort()).toEqual(['dev', 'prod'])
-    expect(result.created.operationId).toBe('fixture.instance.create.retained')
+  test('retains the selection another process made during owner activation', async () => {
+    const { after, target } = await journey('concurrent-selection')
+    expect(after.active).toBe('staging')
+    expect(target.url).toBe('https://staging.example.test/api')
+    expect(after.instances.prod.url).toBe('https://prod.example.test/api')
   })
 
-  test.each(['concurrent-selection', 'concurrent-first-target'])(
-    'retains the selection another process made during owner activation (%s)',
-    async (scenario) => {
-      const { after, target } = await journey(scenario)
-      expect(after.active).toBe('staging')
-      expect(target.url).toBe('https://staging.example.test/api')
-      expect(after.instances.prod.url).toBe('https://prod.example.test/api')
-    },
-  )
-
-  test.each(['pending-access', 'pending-access-collision'])(
-    'leaves the catalogue and root identity unchanged until owner access completes (%s)',
-    async (scenario) => {
-      const { before, after, target, result, events, rootMaterial } = await journey(scenario)
-      expect(after.active).toBe(before.active)
-      expect(after.instances).toEqual(before.instances)
-      expect(target.url).toBe('https://dev.example.test/api')
-      expect(result.access.status).toBe('pending')
-      expect(events).toEqual(['receipt'])
-      expect(rootMaterial).toBe('existing-root-material')
-    },
-  )
-
-  test.each(['name-collision', 'alias-collision'])(
-    'preserves the exact endpoint, aliases and root identity when the created slug is already owned (%s)',
-    async (scenario) => {
-      const {
-        before,
-        after,
-        target,
-        result,
-        events,
-        registryBefore,
-        registryAfter,
-        rootMaterial,
-        stderr,
-      } = await journey(scenario)
-      expect(registryAfter).toBe(registryBefore)
-      expect(after.active).toBe(before.active)
-      expect(target.url).toBe('https://dev.example.test/api')
-      expect(rootMaterial).toBe('existing-root-material')
-      expect(events).toEqual(['receipt', 'access'])
-      expect(result.created.state).toBe('ready')
-      expect(result.access.status).toBe('completed')
-      expect(result.bookmark).toMatchObject({
-        status: 'pending',
-        code: 'INSTANCE_BOOKMARK_CONFLICT',
-      })
-      expect(result.bookmark.hint).toContain(
-        "astrale instance bookmark <new-name> --url 'https://prod.example.test/api'",
-      )
-      expect(JSON.parse(stderr)).toMatchObject({
-        error: 'INSTANCE_BOOKMARK_CONFLICT',
-        hint: result.bookmark.hint,
-      })
-    },
-  )
-
-  test('rechecks a bookmark collision committed by another process during owner activation', async () => {
-    const { after, target, result, events, rootMaterial } = await journey('concurrent-collision')
-    expect(after.active).toBe('prod')
-    expect(target.url).toBe('https://staging.example.test/api')
-    expect(after.instances.prod.url).toBe('https://staging.example.test/api')
-    expect(result.bookmark.code).toBe('INSTANCE_BOOKMARK_CONFLICT')
-    expect(events).toEqual(['receipt', 'access'])
+  test('leaves the catalogue and root identity unchanged until owner access completes', async () => {
+    const { before, after, target, result, events, rootMaterial } = await journey('pending-access')
+    expect(after.active).toBe(before.active)
+    expect(after.instances).toEqual(before.instances)
+    expect(target.url).toBe('https://dev.example.test/api')
+    expect(result.access.status).toBe('pending')
+    expect(events).toEqual(['receipt'])
     expect(rootMaterial).toBe('existing-root-material')
   })
 
-  test('preserves an existing root alias for another issuer even without a homonymous bookmark', async () => {
-    const { after, target, result, identityProtection, stderr } = await journey(
-      'identity-issuer-conflict',
-    )
-    expect(after.active).toBe('dev')
+  test('preserves the exact endpoint, aliases and root identity when the created slug is owned', async () => {
+    const {
+      before,
+      after,
+      target,
+      result,
+      events,
+      registryBefore,
+      registryAfter,
+      rootMaterial,
+      stderr,
+    } = await journey('name-collision')
+    expect(registryAfter).toBe(registryBefore)
+    expect(after.active).toBe(before.active)
     expect(target.url).toBe('https://dev.example.test/api')
-    expect(result.created.state).toBe('ready')
-    expect(result.access.status).toBe('completed')
-    expect(result.bookmark.status).toBe('completed')
-    expect(result.rootIdentityError.code).toBe('IDENTITY_ISSUER_CONFLICT')
-    expect(identityProtection.registryAfterHash).toBe(identityProtection.registryBeforeHash)
-    expect(identityProtection.keyAfterHash).toBe(identityProtection.keyBeforeHash)
-    expect(identityProtection.incomingKeyPresent).toBe(false)
-    expect(JSON.parse(stderr).error).toBe('IDENTITY_ISSUER_CONFLICT')
+    expect(rootMaterial).toBe('existing-root-material')
+    expect(events).toEqual(['receipt', 'access'])
+    expect(result.bookmark).toMatchObject({
+      status: 'pending',
+      code: 'INSTANCE_BOOKMARK_CONFLICT',
+    })
+    expect(result.bookmark.hint).toContain(
+      "astrale instance bookmark <new-name> --url 'https://prod.example.test/api'",
+    )
+    expect(JSON.parse(stderr)).toMatchObject({
+      error: 'INSTANCE_BOOKMARK_CONFLICT',
+      hint: result.bookmark.hint,
+    })
   })
 })

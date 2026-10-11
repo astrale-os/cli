@@ -15,7 +15,8 @@ describe('containsSelfRef / expandSelfReferences', () => {
     ['target=@self/sub', `target=@${ID}/sub`],
     ['x=@self::m  y=@self', `x=@${ID}::m  y=@${ID}`],
   ])('expands %p -> %p', (input, expected) => {
-    expect(containsSelfRef(input)).toBe(true)
+    // Stateless across calls: a global pattern must not resume where it stopped.
+    expect(containsSelfRef(input) && containsSelfRef(input)).toBe(true)
     expect(expandSelfReferences(input, ID)).toBe(expected)
   })
 
@@ -40,11 +41,5 @@ describe('containsSelfRef / expandSelfReferences', () => {
   ])('does not expand %p', (input) => {
     expect(containsSelfRef(input)).toBe(false)
     expect(expandSelfReferences(input, ID)).toBe(input)
-  })
-
-  test('is stateless across calls', () => {
-    expect(containsSelfRef('@self')).toBe(true)
-    expect(containsSelfRef('@self')).toBe(true)
-    expect(containsSelfRef('@self')).toBe(true)
   })
 })

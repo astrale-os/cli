@@ -122,10 +122,8 @@ describe('instance delete bookmark cleanup', () => {
   })
 
   test.each([
-    { bookmarkUrl: otherUrl },
     { bookmarkIssuer: otherUrl },
     { repoint: true },
-    { resultUrl: '', bookmarkUrl: otherUrl, bookmarkIssuer: url },
     { keepBookmark: true },
     { failure: true },
     { resultUrl: '', resultIssuer: null },

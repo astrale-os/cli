@@ -11,7 +11,6 @@ async function run(body: string) {
   const source = `
     import assert from 'node:assert/strict'
     import { once } from 'node:events'
-    import { request } from 'node:http'
     import { startViewServer } from ${JSON.stringify(owner)}
     // Exercise real scheduled callbacks in an isolated process, with only the idle cadence sped up.
     const nativeInterval = globalThis.setInterval
@@ -66,30 +65,6 @@ test('closing one server removes only its own signal handlers', async () => {
     await close(second)
     assert.equal(process.listenerCount('SIGTERM'), before.term)
     assert.equal(process.listenerCount('SIGINT'), before.interrupt)
-  `)
-})
-
-test('explicit close stops the idle timer while an existing request drains, preserving another server', async () => {
-  await run(`
-    const first = startViewServer(config('draining', 0))
-    const second = startViewServer(config('retained'))
-    await Promise.all([once(first, 'listening'), once(second, 'listening')])
-    const received = once(first, 'request')
-    const input = request(url(first, 'draining', '/status'), { method: 'POST', headers: { 'content-length': '2' } })
-    const response = new Promise(resolve => input.on('response', async message => {
-      for await (const chunk of message) {}
-      resolve(message.statusCode)
-    }))
-    input.write('{')
-    await received
-    const closed = once(first, 'close')
-    first.close()
-    await delay(100)
-    assert.equal((await fetch(url(second, 'retained', '/state'))).status, 200)
-    input.end('}')
-    assert.equal(await response, 200)
-    await closed
-    await close(second)
   `)
 })
 

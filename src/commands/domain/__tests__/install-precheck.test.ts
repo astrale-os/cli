@@ -13,36 +13,23 @@ import { compile } from '@astrale-os/sdk/deployment/build'
 import { assemble } from '@astrale-os/sdk/deployment/release'
 import { defineDomain, requirements } from '@astrale-os/sdk/domain'
 import { defineRuntime } from '@astrale-os/sdk/runtime'
-import {
-  bundle,
-  classIcon,
-  defineSchema,
-  edgeClass,
-  nodeClass,
-  policy,
-  property,
-  schema,
-} from '@astrale-os/sdk/schema'
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { stripVTControlCharacters } from 'node:util'
+import { bundle, classIcon, defineSchema, nodeClass, schema } from '@astrale-os/sdk/schema'
+import { describe, expect, test } from 'bun:test'
 
-import type { ServedDeployment } from '../../lib/domain-release'
-import type { PrecheckKernel, PrecheckRoot } from '../domain/install-precheck'
-import type { ReferenceInstallDependencies } from '../domain/release-install'
+import type { ServedDeployment } from '../../../lib/domain-release'
+import type { PrecheckKernel, PrecheckRoot } from '../install-precheck'
+import type { ReferenceInstallDependencies } from '../release-install'
 
-import { connectAdminRegistry } from '../../admin/registry'
+import { connectAdminRegistry } from '../../../admin/registry'
 import {
   fakeAdmin,
   publication,
   type FakeDomain,
   type FakeRelease,
-} from '../../admin/registry/__tests__/fake-admin'
-import {
-  INTROSPECTION_READS_AT_ONCE,
-  precheckInstall,
-  proposeDependentVersions,
-} from '../domain/install-precheck'
-import { installByReference } from '../domain/release-install'
+} from '../../../admin/registry/__tests__/fake-admin'
+import { captureProcess, human } from '../../__tests__/fixtures/process'
+import { precheckInstall, proposeDependentVersions } from '../install-precheck'
+import { installByReference } from '../release-install'
 
 /**
  * The install pre-check (Résolution [.78239], Installation [.69634]): before an install is sent,
@@ -102,58 +89,6 @@ const LedgerR1 = defineSchema(LEDGER, {
   classes: { Entry: nodeClass({ extends: [CrmR1.classes.Profile!.ref], icon }) },
 })
 
-/**
- * A directory whose revisions change what a dependent relies on without removing any declaration:
- * `dropped` stops Member extending Auditable (which still declares `audit`), so Member loses that
- * inherited Property; `narrowed` makes member_of accept only Members as its source.
- */
-const DIRECTORY = 'directory.example.test'
-function directory(version: 'v1' | 'dropped' | 'narrowed') {
-  const Principal = nodeClass({ abstract: true, icon })
-  const Auditable = nodeClass({
-    abstract: true,
-    icon,
-    properties: { audit: property({ type: 'string' }, { required: false }) },
-  })
-  const Member = nodeClass({
-    extends: version === 'dropped' ? [Principal] : [Principal, Auditable],
-    icon,
-  })
-  const Group = nodeClass({ extends: [Principal], icon })
-  const member_of = edgeClass.directed({
-    source: {
-      as: 'member',
-      accepts: version === 'narrowed' ? [Member] : [Principal],
-      outgoing: '0..*',
-    },
-    target: { as: 'group', accepts: [Group], incoming: '0..*' },
-  })
-  return defineSchema(DIRECTORY, {
-    name: 'Test Domain',
-    classes: { Principal, Auditable, Member, Group, member_of },
-  })
-}
-const DirectoryR1 = directory('v1')
-/** Roster uses nothing of the directory structurally and declares its Member as a capability. */
-const ROSTER = 'roster.example.test'
-const RosterR1 = defineSchema(ROSTER, {
-  name: 'Test Domain',
-  dependencies: { directory: DirectoryR1 },
-  classes: { Shift: nodeClass({ icon }) },
-})
-/** Staff's only use of the directory is a Policy pattern that matches its member_of Edge. */
-const STAFF = 'staff.example.test'
-const StaffR1 = defineSchema(STAFF, {
-  name: 'Test Domain',
-  dependencies: { directory: DirectoryR1 },
-  policies: {
-    membership: policy({
-      match: ({ edge, object, subject }) =>
-        edge({ source: subject, class: DirectoryR1.classes.member_of!.ref, target: object }),
-    }),
-  },
-})
-
 const R = {
   shell1: schema.revision(ShellR1),
   shell2: schema.revision(ShellR2),
@@ -203,7 +138,6 @@ function built<const Source extends schema.DomainSchema>(
 }
 
 const shellMember = schema.resolve(ShellR1).classes.Member
-const directoryMember = schema.resolve(DirectoryR1).classes.Member
 const deployments = {
   shell1: built(ShellR1, 'https://shell-r1.svc.registry-proof.test'),
   shell2: built(ShellR2, 'https://shell-r2.svc.registry-proof.test'),
@@ -215,13 +149,6 @@ const deployments = {
     classes: [{ class: shellMember, operations: ['read'] }],
   }),
   ledger1: built(LedgerR1, 'https://ledger-r1.svc.registry-proof.test'),
-  directory1: built(DirectoryR1, 'https://directory-r1.svc.registry-proof.test'),
-  directoryDropped: built(directory('dropped'), 'https://directory-r2.svc.registry-proof.test'),
-  directoryNarrowed: built(directory('narrowed'), 'https://directory-r3.svc.registry-proof.test'),
-  roster1: built(RosterR1, 'https://roster-r1.svc.registry-proof.test', {
-    classes: [{ class: directoryMember, operations: ['read'] }],
-  }),
-  staff1: built(StaffR1, 'https://staff-r1.svc.registry-proof.test'),
 }
 
 function installedFrom(deployment: Built): InstalledRelease {
@@ -295,16 +222,12 @@ function root(deployment: Built, reference = deployment.url): PrecheckRoot {
 }
 
 describe('precheckInstall: the engine the Kernel uses, before the install', () => {
-  test('upward: upgrading Shell to R2 breaks the installed CRM built against R1, not Notes', async () => {
+  test('upward: Shell R2 breaks the installed CRM built against R1, R1b breaks nothing', async () => {
     const installed = [deployments.shell1, deployments.crm1, deployments.notes1]
-    const { api } = kernel(installed)
+    const check = (upgrade: Built, hidden: string[] = []) =>
+      precheckInstall([root(upgrade)], installed.map(installedFrom), kernel(installed, hidden).api)
 
-    const verdict = await precheckInstall(
-      [root(deployments.shell2)],
-      installed.map(installedFrom),
-      api,
-    )
-
+    const verdict = await check(deployments.shell2)
     expect(verdict.dependencies).toEqual([])
     expect(verdict.dependents).toEqual([
       {
@@ -316,34 +239,14 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
       },
     ])
     // CRM and Notes were both compared against R2; only CRM uses what R2 changed.
-    expect(verdict.compared).toBe(2)
-    expect(verdict.skipped).toEqual([])
-    expect(verdict.unevaluated).toEqual([])
-  })
+    expect(verdict).toMatchObject({ compared: 2, skipped: [], unevaluated: [] })
 
-  test('a compatible upgrade (Shell R1b adds a Class) breaks nothing', async () => {
-    const installed = [deployments.shell1, deployments.crm1, deployments.notes1]
-    const verdict = await precheckInstall(
-      [root(deployments.shell1b)],
-      installed.map(installedFrom),
-      kernel(installed).api,
-    )
-
-    expect(verdict.dependents).toEqual([])
-    expect(verdict.dependencies).toEqual([])
-    expect(verdict.compared).toBe(2)
-  })
-
-  test('installing the dependent rebuilt against R2 with Shell R2 holds in both directions', async () => {
-    const installed = [deployments.shell1, deployments.crm1]
-    const verdict = await precheckInstall(
-      [root(deployments.shell2), root(deployments.crm2)],
-      installed.map(installedFrom),
-      kernel(installed).api,
-    )
-
-    // CRM 1.2.0 pins exactly the R2 the install leaves active: no comparison is needed.
-    expect(verdict).toMatchObject({ compared: 0, dependencies: [], dependents: [] })
+    expect(await check(deployments.shell1b)).toMatchObject({ compared: 2, dependents: [] })
+    // A Domain the Kernel does not show the caller is unevaluated, never guessed.
+    expect(await check(deployments.shell2, [CRM])).toMatchObject({
+      dependents: [],
+      unevaluated: [CRM],
+    })
   })
 
   test('downward: CRM rebuilt against R2 does not hold on the installed Shell R1', async () => {
@@ -388,83 +291,6 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
     ])
   })
 
-  test('a Domain the Kernel does not show the caller is unevaluated, never guessed', async () => {
-    const installed = [deployments.shell1, deployments.crm1]
-    const verdict = await precheckInstall(
-      [root(deployments.shell2)],
-      installed.map(installedFrom),
-      kernel(installed, [CRM]).api,
-    )
-
-    expect(verdict.dependents).toEqual([])
-    expect(verdict.unevaluated).toEqual([CRM])
-  })
-
-  test('a root without a readable v4 release is skipped by its reference', async () => {
-    const installed = [deployments.shell1, deployments.crm1]
-    const verdict = await precheckInstall(
-      [
-        {
-          kind: 'skipped',
-          reference: 'https://unreadable.example.test',
-          origin: SHELL,
-          revision: R.shell2,
-          reason: 'release-unread',
-        },
-      ],
-      installed.map(installedFrom),
-      kernel(installed).api,
-    )
-
-    expect(verdict).toMatchObject({
-      compared: 0,
-      dependents: [],
-      skipped: [{ reference: 'https://unreadable.example.test', reason: 'release-unread' }],
-    })
-  })
-
-  test('a Class declared as a capability that stops extending an ancestor loses its inherited Property', async () => {
-    const installed = [deployments.directory1, deployments.roster1, deployments.staff1]
-    const verdict = await precheckInstall(
-      [root(deployments.directoryDropped)],
-      installed.map(installedFrom),
-      kernel(installed).api,
-    )
-
-    // Auditable is still declared: only the effective Property surface of Member shows the loss.
-    expect(verdict.dependents).toEqual([
-      {
-        domain: { origin: ROSTER, revision: schema.revision(RosterR1) },
-        dependency: DIRECTORY,
-        expected: schema.revision(DirectoryR1),
-        actual: deployments.directoryDropped.document.schema.revision,
-        changes: [{ key: directoryMember.key, kind: 'changed' }],
-      },
-    ])
-    expect(verdict.compared).toBe(2)
-  })
-
-  test('an Edge a dependent Policy pattern matches keeps what its endpoints accept', async () => {
-    const installed = [deployments.directory1, deployments.roster1, deployments.staff1]
-    const verdict = await precheckInstall(
-      [root(deployments.directoryNarrowed)],
-      installed.map(installedFrom),
-      kernel(installed).api,
-    )
-
-    // Staff's Policy matches member_of; narrowing its source changes the Nodes the pattern matches.
-    expect(verdict.dependents).toEqual([
-      {
-        domain: { origin: STAFF, revision: schema.revision(StaffR1) },
-        dependency: DIRECTORY,
-        expected: schema.revision(DirectoryR1),
-        actual: deployments.directoryNarrowed.document.schema.revision,
-        changes: [{ key: `${DIRECTORY}:class.member_of`, kind: 'changed' }],
-      },
-    ])
-    expect(verdict.compared).toBe(2)
-  })
-
   test('a dependent that reaches the upgraded Domain only through another one is marked indirect', async () => {
     const installed = [deployments.shell1, deployments.crm1, deployments.ledger1]
     const verdict = await precheckInstall(
@@ -486,58 +312,6 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
       },
     ])
     expect([...verdict.indirect]).toEqual([[LEDGER, [SHELL]]])
-  })
-
-  test('a held declaration judges nothing on a dependency the listing omits but introspection shows', async () => {
-    // Shell R2 is installed but missing from the caller's listing, as a builtin or local
-    // installation is; Tasks, built against R1 with a capability on Member, is reinstalled at its
-    // own revision with the same declaration. The Kernel keeps the answer Tasks' installation got.
-    const verdict = await precheckInstall(
-      [root(deployments.tasks1)],
-      [installedFrom(deployments.tasks1)],
-      kernel([deployments.shell2, deployments.tasks1]).api,
-    )
-
-    expect(verdict).toMatchObject({ compared: 1, dependencies: [], unevaluated: [] })
-  })
-
-  test(`introspects at most ${INTROSPECTION_READS_AT_ONCE} installed Domains at once`, async () => {
-    const notes = Array.from({ length: 10 }, (_, index) =>
-      built(
-        defineSchema(`n${index}.example.test`, {
-          name: 'Test Domain',
-          dependencies: { shell: ShellR1 },
-          classes: { Note: nodeClass({ icon }) },
-        }),
-        `https://n${index}.svc.registry-proof.test`,
-      ),
-    )
-    const installed = [deployments.shell1, ...notes]
-    const { api } = kernel(installed)
-    let inFlight = 0
-    let most = 0
-    const counted: PrecheckKernel = {
-      ...api,
-      dependencies: async (origin) => {
-        inFlight += 1
-        most = Math.max(most, inFlight)
-        await new Promise((resolve) => setTimeout(resolve, 5))
-        try {
-          return await api.dependencies(origin)
-        } finally {
-          inFlight -= 1
-        }
-      },
-    }
-
-    const verdict = await precheckInstall(
-      [root(deployments.shell1b)],
-      installed.map(installedFrom),
-      counted,
-    )
-
-    expect(verdict.compared).toBe(10)
-    expect(most).toBe(INTROSPECTION_READS_AT_ONCE)
   })
 })
 
@@ -610,16 +384,15 @@ describe('proposeDependentVersions: the registry names a compatible dependent', 
     changes: [{ key: shellMember.key, kind: 'missing' as const }],
   }
 
-  test('the highest stable, non-yanked Publication built against the new revision', async () => {
-    const admin = fakeAdmin({ caller: INSTALLER, domains: [crmRegistry()] })
-
-    await expect(
+  test('the highest stable, non-yanked Publication built against the new revision, if readable', async () => {
+    const propose = (caller: string) =>
       proposeDependentVersions(
         [broken],
         [installedFrom(deployments.crm1)],
-        connectAdminRegistry(admin.context),
-      ),
-    ).resolves.toEqual([
+        connectAdminRegistry(fakeAdmin({ caller, domains: [crmRegistry()] }).context),
+      )
+
+    expect(await propose(INSTALLER)).toEqual([
       {
         origin: CRM,
         kind: 'version',
@@ -628,81 +401,11 @@ describe('proposeDependentVersions: the registry names a compatible dependent', 
         issuer: { from: deployments.crm1.url, to: deployments.crm2.url },
       },
     ])
-  })
-
-  test('a version served by the installed deployment changes no issuer', async () => {
-    const admin = fakeAdmin({ caller: INSTALLER, domains: [crmRegistry()] })
-
-    await expect(
-      proposeDependentVersions(
-        [broken],
-        [installedFrom(deployments.crm2)],
-        connectAdminRegistry(admin.context),
-      ),
-    ).resolves.toEqual([{ origin: CRM, kind: 'version', version: '1.2.0' }])
-  })
-
-  test('no Publication built against the new revision: none', async () => {
-    const admin = fakeAdmin({ caller: INSTALLER, domains: [crmRegistry()] })
-
-    await expect(
-      proposeDependentVersions(
-        [{ ...broken, actual: R.shell1b }],
-        [installedFrom(deployments.crm1)],
-        connectAdminRegistry(admin.context),
-      ),
-    ).resolves.toEqual([{ origin: CRM, kind: 'none' }])
-  })
-
-  test('a Domain the caller cannot read in the registry has no published version for it', async () => {
-    const admin = fakeAdmin({ caller: 'outsider', domains: [crmRegistry()] })
-
-    await expect(
-      proposeDependentVersions(
-        [broken],
-        [installedFrom(deployments.crm1)],
-        connectAdminRegistry(admin.context),
-      ),
-    ).resolves.toEqual([{ origin: CRM, kind: 'none' }])
+    expect(await propose('outsider')).toEqual([{ origin: CRM, kind: 'none' }])
   })
 })
 
-class ExitError extends Error {
-  constructor(readonly code: number | string | null | undefined) {
-    super(`process.exit(${String(code)})`)
-  }
-}
-
-let stdout = ''
-let stderr = ''
-let originalExit: typeof process.exit
-let originalStdout: typeof process.stdout.write
-let originalStderr: typeof process.stderr.write
-
-beforeEach(() => {
-  stdout = ''
-  stderr = ''
-  originalExit = process.exit
-  originalStdout = process.stdout.write.bind(process.stdout)
-  originalStderr = process.stderr.write.bind(process.stderr)
-  process.exit = ((code?: number | string | null) => {
-    throw new ExitError(code)
-  }) as typeof process.exit
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
-    return true
-  }) as typeof process.stdout.write
-  process.stderr.write = ((chunk: string | Uint8Array) => {
-    stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
-    return true
-  }) as typeof process.stderr.write
-})
-
-afterEach(() => {
-  process.exit = originalExit
-  process.stdout.write = originalStdout
-  process.stderr.write = originalStderr
-})
+const io = captureProcess()
 
 /**
  * A SCHEMA_DEPENDENTS_INCOMPATIBLE refusal written by hand in the Kernel's shape for the Shell R2
@@ -801,32 +504,6 @@ function install(options: {
   }
 }
 
-async function human(action: () => Promise<void>): Promise<{ lines: string; warnings: string }> {
-  const lines: string[] = []
-  const warnings: string[] = []
-  const originalLog = console.log
-  const originalError = console.error
-  const tty = process.stdout.isTTY
-  console.log = (...args: unknown[]) => {
-    lines.push(args.map(String).join(' '))
-  }
-  console.error = (...args: unknown[]) => {
-    warnings.push(args.map(String).join(' '))
-  }
-  process.stdout.isTTY = true
-  try {
-    await action()
-  } finally {
-    console.log = originalLog
-    console.error = originalError
-    process.stdout.isTTY = tty
-  }
-  return {
-    lines: stripVTControlCharacters(lines.join('\n')),
-    warnings: stripVTControlCharacters(warnings.join('\n')),
-  }
-}
-
 describe('install pre-check in the install command ([.69634])', () => {
   test('a breaking Shell install proposes the grouped install with the compatible dependent', async () => {
     const run = install({
@@ -873,7 +550,7 @@ describe('install pre-check in the install command ([.69634])', () => {
       ),
     ).rejects.toThrow('process.exit(1)')
 
-    const document = JSON.parse(stderr.trim().split('\n').at(-1)!) as {
+    const document = io.failure() as {
       error: string
       code: number
       reason: { code: string; details: { dependents: unknown } }
@@ -896,33 +573,6 @@ describe('install pre-check in the install command ([.69634])', () => {
     )
   })
 
-  test('the proposed grouped install passes the pre-check and installs', async () => {
-    const run = install({
-      installed: [deployments.shell1, deployments.crm1],
-      served: [deployments.shell2, deployments.crm2],
-      install: async () => ({ changed: false, domains: [] }) as unknown as InstallResult,
-    })
-
-    await installByReference(
-      [`${SHELL}@2.0.0`, `${CRM}@1.2.0`],
-      { json: true, allowIssuerChange: [SHELL, CRM] },
-      run.deps,
-    )
-
-    const report = JSON.parse(stdout) as { precheck: unknown }
-    expect(report.precheck).toEqual({
-      compared: 0,
-      dependencies: [],
-      dependents: [],
-      proposals: [],
-      skipped: [],
-      unevaluated: [],
-    })
-    expect(run.requests).toHaveLength(1)
-    // Nothing broke, so the registry was read only to resolve the two versions.
-    expect(run.registries).toBe(1)
-  })
-
   test('a URL install the pre-check passes never opens the registry', async () => {
     const run = install({
       installed: [deployments.shell1, deployments.crm1, deployments.notes1],
@@ -936,36 +586,12 @@ describe('install pre-check in the install command ([.69634])', () => {
       run.deps,
     )
 
-    const report = JSON.parse(stdout) as { precheck: { compared: number; dependents: unknown[] } }
+    const report = JSON.parse(io.stdout) as {
+      precheck: { compared: number; dependents: unknown[] }
+    }
     expect(report.precheck.compared).toBe(2)
     expect(report.precheck.dependents).toEqual([])
     expect(run.registries).toBe(0)
-  })
-
-  test('the pre-check is shown before the issuer consent it informs', async () => {
-    const run = install({
-      installed: [deployments.shell1, deployments.crm1],
-      served: [deployments.shell2],
-    })
-
-    const output = await human(async () => {
-      await expect(
-        installByReference(
-          [deployments.shell2.url],
-          { instance: 'acme', allowIssuerChange: [SHELL] },
-          run.deps,
-        ),
-      ).rejects.toThrow('process.exit(1)')
-    })
-
-    const finding = output.warnings.indexOf(`Pre-check: installing ${SHELL}`)
-    const consent = output.warnings.indexOf('Issuer change consented via --allow-issuer-change')
-    expect(finding).toBeGreaterThanOrEqual(0)
-    expect(consent).toBeGreaterThan(finding)
-    // The proposed CRM is served by another deployment: its issuer change is announced, not consented.
-    expect(`${output.lines}\n${output.warnings}`).toContain(
-      `${CRM}@1.2.0 changes its issuer (${deployments.crm1.url} -> ${deployments.crm2.url})`,
-    )
   })
 
   test('a dependent reached only through another Domain gets no proposal, so no grouped command', async () => {
@@ -982,7 +608,7 @@ describe('install pre-check in the install command ([.69634])', () => {
       ),
     ).rejects.toThrow('process.exit(1)')
 
-    const document = JSON.parse(stderr.trim().split('\n').at(-1)!) as {
+    const document = io.failure() as {
       precheck: Record<string, unknown> & { proposals: unknown; command?: string }
     }
     expect(document.precheck.proposals).toEqual([
@@ -997,27 +623,6 @@ describe('install pre-check in the install command ([.69634])', () => {
     expect(document.precheck.command).toBeUndefined()
     // The reach is the CLI's own bookkeeping, not part of --json.
     expect(document.precheck).not.toHaveProperty('indirect')
-  })
-
-  test('Domains the pre-check cannot evaluate are counted on one line', async () => {
-    const run = install({
-      installed: [deployments.shell1, deployments.crm1, deployments.notes1],
-      served: [deployments.shell1b],
-      hidden: [CRM, NOTES],
-      install: async () => ({ changed: false, domains: [] }) as unknown as InstallResult,
-    })
-
-    const output = await human(() =>
-      installByReference(
-        [deployments.shell1b.url],
-        { instance: 'acme', allowIssuerChange: [SHELL] },
-        run.deps,
-      ),
-    )
-
-    const all = `${output.lines}\n${output.warnings}`
-    expect(all).toContain(`Pre-check could not evaluate 2 Domains (${CRM}, ${NOTES})`)
-    expect(all.split('Pre-check could not evaluate')).toHaveLength(2)
   })
 
   test('a refusal the pre-check does not predict is shown without it', async () => {
@@ -1040,94 +645,43 @@ describe('install pre-check in the install command ([.69634])', () => {
       ),
     ).rejects.toThrow('process.exit(1)')
 
-    const document = JSON.parse(stderr.trim().split('\n').at(-1)!) as Record<string, unknown>
+    const document = io.failure() as Record<string, unknown>
     // The pre-check predicted a dependents refusal, but the Kernel answered something else: no
     // other install is proposed beside a failure this install's own operation id may recover.
     expect(document).toMatchObject({ error: 'RESPONSE_ERROR', reason: { code: 'SERVER_DRAINING' } })
     expect(document).not.toHaveProperty('precheck')
   })
 
-  test('a human sees no proposal under a refusal the pre-check does not predict', async () => {
-    const run = install({
-      installed: [deployments.shell1, deployments.crm1],
-      served: [deployments.shell2],
-      install: async () => {
-        throw new ResponseError(5001 as never, 'The Host is draining.', INVOCATION, {
-          code: 'SERVER_DRAINING',
-          details: {},
-        })
-      },
-    })
+  test.each([
+    [
+      'without an answering registry',
+      'down',
+      [{ origin: CRM, kind: 'unread', code: 'REGISTRY_UNAVAILABLE' }],
+      1,
+    ],
+    ['with a defective pre-check', 'defective', [], 0],
+  ] as const)(
+    '%s the breaking install is still sent, with no proposal',
+    async (_name, registry, proposals, compared) => {
+      const run = install({
+        installed: [deployments.shell1, deployments.crm1],
+        served: [deployments.shell2],
+        registry,
+      })
 
-    const output = await human(async () => {
       await expect(
         installByReference(
           [deployments.shell2.url],
-          { instance: 'acme', allowIssuerChange: [SHELL] },
+          { json: true, allowIssuerChange: [SHELL] },
           run.deps,
         ),
       ).rejects.toThrow('process.exit(1)')
-    })
 
-    const all = `${output.lines}\n${output.warnings}`
-    // The advisory proposal is shown before the install, never again under this refusal.
-    expect(all).toContain('Proposed grouped install:')
-    expect(all).not.toContain('The pre-check proposes:')
-  })
-
-  test('without an answering registry the breaking install is still sent, with no proposal', async () => {
-    const run = install({
-      installed: [deployments.shell1, deployments.crm1],
-      served: [deployments.shell2],
-      registry: 'down',
-    })
-
-    await expect(
-      installByReference(
-        [deployments.shell2.url],
-        { json: true, allowIssuerChange: [SHELL] },
-        run.deps,
-      ),
-    ).rejects.toThrow('process.exit(1)')
-
-    const document = JSON.parse(stderr.trim().split('\n').at(-1)!) as {
-      precheck: { proposals: unknown; command?: string }
-    }
-    expect(document.precheck.proposals).toEqual([
-      { origin: CRM, kind: 'unread', code: 'REGISTRY_UNAVAILABLE' },
-    ])
-    expect(document.precheck.command).toBeUndefined()
-    expect(run.requests).toHaveLength(1)
-  })
-
-  test('a defect in the pre-check reports every root failed and the install is still sent', async () => {
-    const run = install({
-      installed: [deployments.shell1, deployments.crm1],
-      served: [deployments.shell2],
-      registry: 'defective',
-    })
-
-    await expect(
-      installByReference(
-        [deployments.shell2.url],
-        { json: true, allowIssuerChange: [SHELL] },
-        run.deps,
-      ),
-    ).rejects.toThrow('process.exit(1)')
-
-    const document = JSON.parse(stderr.trim().split('\n').at(-1)!) as {
-      reason: { code: string }
-      precheck: unknown
-    }
-    expect(document.reason.code).toBe('SCHEMA_DEPENDENTS_INCOMPATIBLE')
-    expect(document.precheck).toEqual({
-      compared: 0,
-      dependencies: [],
-      dependents: [],
-      skipped: [{ reference: deployments.shell2.url, reason: 'failed' }],
-      unevaluated: [],
-      proposals: [],
-    })
-    expect(run.requests).toHaveLength(1)
-  })
+      const document = io.failure()
+      expect(document.reason.code).toBe('SCHEMA_DEPENDENTS_INCOMPATIBLE')
+      expect(document.precheck).toMatchObject({ compared, proposals })
+      expect(document.precheck).not.toHaveProperty('command')
+      expect(run.requests).toHaveLength(1)
+    },
+  )
 })

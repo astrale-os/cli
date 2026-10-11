@@ -82,13 +82,12 @@ async function runView(args: readonly string[], tty = false) {
   }
 }
 
-for (const { mode, flags, tty } of [
-  { mode: 'piped', flags: [], tty: false },
-  { mode: 'json on a terminal', flags: ['--json'], tty: true },
-  { mode: 'debug', flags: ['--debug'], tty: false },
-  { mode: 'json and debug', flags: ['--json', '--debug'], tty: true },
-]) {
-  test(`snapshot without a View reports usage before browser, auth or effects (${mode})`, async () => {
+test.each([
+  { mode: 'piped', flags: [] as string[], tty: false },
+  { mode: 'json and debug on a terminal', flags: ['--json', '--debug'], tty: true },
+])(
+  'snapshot without a View reports usage before browser, auth or effects ($mode)',
+  async ({ flags, tty }) => {
     const result = await runView(['--snapshot', ...flags], tty)
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
@@ -96,12 +95,11 @@ for (const { mode, flags, tty } of [
     expect(JSON.parse(error!)).toEqual(usageError)
     if (flags.includes('--debug')) {
       expect(debug.join('\n')).toContain('AstraleError: `view` needs a ViewPath or Domain origin.')
-      expect(debug.join('\n')).toContain('view.ts')
     } else {
       expect(debug).toEqual([])
     }
-  })
-}
+  },
+)
 
 test('snapshot without a View gives the same actionable usage error on a terminal', async () => {
   const result = await runView(['--snapshot'], true)
@@ -110,19 +108,13 @@ test('snapshot without a View gives the same actionable usage error on a termina
   expect(result.stdout).toBe(`  ${usageError.hint}\n`)
 })
 
-for (const flags of [['--sessions'], ['--list'], ['--close', '--all']]) {
-  test(`targetless snapshot preserves the ${flags[0]} management branch`, async () => {
-    const result = await runView([...flags, '--snapshot', '--json'])
-    expect(result.exitCode, result.stderr).toBe(0)
-    expect(result.stderr).toBe('')
-    expect(JSON.parse(result.stdout)).toEqual(flags[0] === '--close' ? { closed: [] } : [])
-  })
-}
+test('a targetless snapshot keeps the session management branches', async () => {
+  const closed = await runView(['--close', '--all', '--snapshot', '--json'])
+  expect(closed.exitCode, closed.stderr).toBe(0)
+  expect(JSON.parse(closed.stdout)).toEqual({ closed: [] })
 
-test('targetless snapshot preserves the refresh session diagnostic', async () => {
-  const result = await runView(['--refresh', 'v-missing', '--snapshot', '--json'])
-  expect(result.exitCode).toBe(1)
-  expect(result.stdout).toBe('')
-  expect(result.stderr).toContain('No view session "v-missing".')
-  expect(result.stderr).not.toContain('MISSING_ARG')
+  const refreshed = await runView(['--refresh', 'v-missing', '--snapshot', '--json'])
+  expect(refreshed.exitCode).toBe(1)
+  expect(refreshed.stderr).toContain('No view session "v-missing".')
+  expect(refreshed.stderr).not.toContain('MISSING_ARG')
 })

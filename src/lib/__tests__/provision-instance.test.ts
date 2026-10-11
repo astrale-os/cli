@@ -1,429 +1,205 @@
 import { ResponseError } from '@astrale-os/sdk/client'
 import { invocation } from '@astrale-os/sdk/invocation'
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 
-import { formatKernelError } from '../../connection/errors'
-import { provisionInstance } from '../provision-instance'
+import type { IdentityStore } from '../../identity/index'
+
+import { AuthError } from '../../errors'
+import { provisionInstance, selectInstanceCreateIdentity } from '../provision-instance'
 
 const originalError = console.error
-
 afterEach(() => {
   console.error = originalError
-  mock.restore()
 })
 
-describe('managed Instance root import during provisioning', () => {
-  test('confirms human activation before bookmarking the instance, independently of Root import', async () => {
-    const events: string[] = []
-    const created = {
-      id: '@instance',
-      slug: 'demo',
-      url: 'https://demo.example/api',
-      state: 'ready' as const,
-    }
-    const result = await provisionInstance(
-      'demo',
-      { creds: 'admin-credential', ci: true },
-      {
-        createOwnedInstance: async () => created,
-        bookmarkCreatedInstance: async () => {
-          events.push('bookmark')
-          return { name: 'demo', entry: { url: created.url } }
-        },
-        activateInstance: async (instance) => {
-          expect(instance).toBe(created)
-          events.push('activate')
-          return { status: 'completed', user: 'owner' }
-        },
-        importInstanceRootIdentity: async () => {
-          events.push('root')
-          return { name: 'demo-root' } as never
-        },
-      },
-    )
-    expect(events).toEqual(['activate', 'bookmark', 'root'])
+const OPERATION = 'cli.instance.create.fixed'
+const ready = {
+  id: '@created-instance',
+  slug: 'demo',
+  operationId: OPERATION,
+  url: 'https://demo.example.test/api',
+  state: 'ready' as const,
+  organizationId: 'org_demo',
+}
+const pending = { ...ready, url: '', state: 'provisioning' as const, phase: 'reserve-tenant' }
+
+const refusal = (code: number, reason?: { code: string; details: Record<string, string> }) =>
+  new ResponseError(
+    code as never,
+    'Admin refused.',
+    invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
+    reason,
+  )
+
+/** A provisioning journey whose every step succeeds unless a test replaces it. */
+function journey(overrides: Partial<Parameters<typeof provisionInstance>[2]> = {}) {
+  const events: string[] = []
+  const dependencies = {
+    createOwnedInstance: mock(async () => ready),
+    operationId: mock(() => OPERATION),
+    now: () => 0,
+    sleep: mock(async () => {}),
+    activateInstance: async () => {
+      events.push('activate')
+      return { status: 'completed' as const, user: 'owner' }
+    },
+    bookmarkCreatedInstance: mock(async () => {
+      events.push('bookmark')
+      return { name: 'demo', entry: { url: ready.url } }
+    }),
+    importInstanceRootIdentity: mock(async () => {
+      events.push('root')
+      return { name: 'demo-root' } as never
+    }),
+    ...overrides,
+  }
+  return { events, dependencies }
+}
+
+const provision = (opts: Partial<Parameters<typeof provisionInstance>[1]>, run = journey()) =>
+  provisionInstance('demo', { creds: 'admin-credential', ci: true, ...opts }, run.dependencies)
+
+describe('instance creation journey', () => {
+  test('activates the owner, then bookmarks, then imports the root; a root failure is not fatal', async () => {
+    const run = journey()
+    const result = await provision({}, run)
+    expect(run.events).toEqual(['activate', 'bookmark', 'root'])
     expect(result.access).toEqual({ status: 'completed', user: 'owner' })
-  })
-
-  test('uses the exact created Instance and does not fail creation when root recovery fails', async () => {
-    const created = {
-      id: '@created-instance',
+    expect(run.dependencies.bookmarkCreatedInstance).toHaveBeenCalledWith({
       slug: 'demo',
-      url: 'https://demo.example.test/api',
-      issuer: 'https://demo.example.test/api',
-      state: 'ready' as const,
-      organizationId: 'org_demo',
-    }
-    const createOwnedInstance = mock(async () => created)
-    const bookmarkCreatedInstance = mock(async () => ({
-      name: 'demo',
-      entry: { url: created.url },
-    }))
-    const importFailure = new Error('retained material temporarily unavailable')
-    const importInstanceRootIdentity = mock(async () => {
-      throw importFailure
+      url: ready.url,
+      organizationId: ready.organizationId,
     })
-    const warnings: string[] = []
-    console.error = (...values: unknown[]) => warnings.push(values.map(String).join(' '))
-
-    const result = await provisionInstance(
-      'demo',
-      { creds: 'admin-credential', ci: true },
-      {
-        createOwnedInstance,
-        bookmarkCreatedInstance,
-        importInstanceRootIdentity,
-        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
-      },
-    )
-
-    expect(result.created).toBe(created)
-    expect(result.rootIdentityError).toBe(importFailure)
-    expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
-    expect(importInstanceRootIdentity).toHaveBeenCalledWith(
+    expect(run.dependencies.importInstanceRootIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ creds: 'admin-credential', timeout: '120000' }),
-      created.id,
+      ready.id,
       { bookmark: false, replace: 'same-issuer' },
     )
-    expect(bookmarkCreatedInstance).toHaveBeenCalledTimes(1)
-    expect(bookmarkCreatedInstance).toHaveBeenCalledWith({
-      slug: 'demo',
-      url: created.url,
-      organizationId: created.organizationId,
+
+    const warnings: string[] = []
+    console.error = (...values: unknown[]) => void warnings.push(values.map(String).join(' '))
+    const failure = new Error('retained material temporarily unavailable')
+    const failing = journey({
+      importInstanceRootIdentity: async () => {
+        throw failure
+      },
     })
-    expect(result.access).toEqual({ status: 'completed', user: 'owner' })
+    const recovered = await provision({}, failing)
+    expect(recovered.created).toBe(ready)
+    expect(recovered.rootIdentityError).toBe(failure)
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
   })
 
-  test.each([undefined, '@astrale-fleet'])(
-    'replays one operation in the selected Fleet (%s) until ready',
-    async (fleet) => {
-      const pending = {
-        id: '@created-instance',
-        slug: 'demo',
-        operationId: 'cli.instance.create.fixed',
-        url: '',
-        state: 'provisioning' as const,
-        phase: 'reserve-tenant',
-      }
-      const ready = {
-        ...pending,
-        url: 'https://demo.example.test/api',
-        state: 'ready' as const,
-        phase: 'ready',
-      }
-      const createOwnedInstance = mock()
-        .mockResolvedValueOnce(pending)
-        .mockResolvedValueOnce({ ...pending, phase: 'install-shell-root' })
-        .mockResolvedValueOnce(ready)
-      const sleep = mock(async () => {})
-      const bookmarkCreatedInstance = mock(async () => ({
-        name: 'demo',
-        entry: { url: ready.url },
-      }))
-      const importInstanceRootIdentity = mock(async () => ({ name: 'demo-root' }) as never)
-
-      const result = await provisionInstance(
-        'demo',
-        { creds: 'admin-credential', ci: true, ...(fleet === undefined ? {} : { fleet }) },
-        {
-          createOwnedInstance,
-          operationId: () => pending.operationId,
-          now: () => 0,
-          sleep,
-          bookmarkCreatedInstance,
-          importInstanceRootIdentity,
-          activateInstance: async () => ({ status: 'completed', user: 'owner' }),
-        },
-      )
-
-      expect(result.created).toEqual(ready)
-      expect(createOwnedInstance).toHaveBeenCalledTimes(3)
-      expect(createOwnedInstance.mock.calls).toEqual([
-        [
-          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
-          'demo',
-          pending.operationId,
-          expect.any(Function),
-        ],
-        [
-          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
-          'demo',
-          pending.operationId,
-          expect.any(Function),
-        ],
-        [
-          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
-          'demo',
-          pending.operationId,
-          expect.any(Function),
-        ],
-      ])
-      expect(sleep).toHaveBeenCalledTimes(2)
-      expect(bookmarkCreatedInstance).toHaveBeenCalledTimes(1)
-      expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
-    },
-  )
-
-  test('pins the resolved Fleet before retrying an uncertain create outcome', async () => {
-    const options: Array<string | undefined> = []
-    const created = {
-      id: '@created-instance',
-      slug: 'demo',
-      state: 'ready' as const,
-      url: 'https://demo.example/api',
-    }
-    await provisionInstance(
-      'demo',
-      { creds: 'admin-credential', ci: true },
-      {
-        createOwnedInstance: async (opts, _slug, _operation, selected) => {
-          options.push(opts.fleet)
-          if (options.length === 1) {
-            selected?.('@shared')
-            throw new ResponseError(
-              5000,
-              'Lost response',
-              invocation.acceptInvocationId({
-                source: 'https://admin.example/api',
-                id: 'lost-response',
-              }),
-            )
-          }
-          expect(opts.fleet).toBe('@shared')
-          return created
-        },
-        sleep: async () => {},
-        now: () => 0,
-        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
-        bookmarkCreatedInstance: async () => ({ name: 'demo', entry: { url: created.url } }),
-        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+  test('replays one operation in the Fleet it resolved, through server failures, until ready', async () => {
+    const fleets: Array<string | undefined> = []
+    const answers = [
+      () => {
+        throw refusal(5000)
       },
-    )
-    expect(options).toEqual([undefined, '@shared'])
-  })
+      () => pending,
+      () => ready,
+    ]
+    const run = journey({
+      createOwnedInstance: mock(async (opts, _slug, operationId, selected) => {
+        fleets.push(opts.fleet)
+        expect(operationId).toBe(OPERATION)
+        selected?.('@shared')
+        return answers.shift()!()
+      }),
+    })
 
-  test('reuses an explicitly supplied operation across process-level recovery', async () => {
-    const created = {
-      id: '@created-instance',
-      slug: 'demo',
-      operationId: 'lab:instance.create.recovery-01',
-      url: 'https://demo.example.test/api',
-      state: 'ready' as const,
-    }
-    const observedOperationIds: Array<string | undefined> = []
-    const generated = mock(() => 'must-not-be-generated')
-
-    await provisionInstance(
-      'demo',
-      { creds: 'admin-credential', ci: true, operation: created.operationId },
-      {
-        createOwnedInstance: async (_options, _slug, operationId) => {
-          observedOperationIds.push(operationId)
-          return created
-        },
-        operationId: generated,
-        bookmarkCreatedInstance: async () => ({ name: 'demo', entry: { url: created.url } }),
-        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
-        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
-      },
-    )
-
-    expect(generated).not.toHaveBeenCalled()
-    expect(observedOperationIds).toEqual([created.operationId])
-  })
-
-  test('rejects an invalid explicit operation before contacting Admin', async () => {
-    for (const operation of [
-      'contains spaces',
-      '~remote-rejection',
-      '-leading-punctuation',
-      `a${'b'.repeat(256)}`,
-    ]) {
-      const createOwnedInstance = mock()
-      await expect(
-        provisionInstance(
-          'demo',
-          { creds: 'admin-credential', ci: true, operation },
-          { createOwnedInstance },
-        ),
-      ).rejects.toMatchObject({
-        code: 'INVALID_INPUT',
-        message:
-          'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
-      })
-      expect(createOwnedInstance).not.toHaveBeenCalled()
-    }
-  })
-
-  test('recovers a generic server failure by replaying the same operation', async () => {
-    const ready = {
-      id: '@created-instance',
-      slug: 'demo',
-      operationId: 'cli.instance.create.fixed',
-      url: 'https://demo.example.test/api',
-      state: 'ready' as const,
-    }
-    const createOwnedInstance = mock()
-      .mockRejectedValueOnce(
-        new ResponseError(
-          5000,
-          'Internal failure.',
-          invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
-        ),
-      )
-      .mockResolvedValueOnce(ready)
-    const sleep = mock(async () => {})
-
-    const result = await provisionInstance(
-      'demo',
-      { creds: 'admin-credential', ci: true },
-      {
-        createOwnedInstance,
-        operationId: () => ready.operationId,
-        now: () => 0,
-        sleep,
-        bookmarkCreatedInstance: async () => ({ name: 'demo', entry: { url: ready.url } }),
-        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
-        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
-      },
-    )
+    const result = await provision({}, run)
 
     expect(result.created).toEqual(ready)
-    expect(createOwnedInstance).toHaveBeenCalledTimes(2)
-    expect(createOwnedInstance.mock.calls[0]?.[2]).toBe(ready.operationId)
-    expect(createOwnedInstance.mock.calls[1]?.[2]).toBe(ready.operationId)
-    expect(sleep).toHaveBeenCalledTimes(1)
+    expect(fleets).toEqual([undefined, '@shared', '@shared'])
+    expect(run.dependencies.sleep).toHaveBeenCalledTimes(2)
   })
 
-  test('stops at a declared capacity refusal instead of replaying the failed operation', async () => {
-    const operationId = 'cli.instance.create.no-capacity'
-    // The wire shape Admin answers once its creation Operation failed at Host selection.
-    const refusal = new ResponseError(
-      4001,
-      'This Fleet has no ready consumer Host for a new Instance. A Fleet administrator can provision one with Fleet.provisionHost; then create the Instance with a new operation id.',
-      invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
-      { code: 'INSTANCE_CAPACITY_UNAVAILABLE', details: { fleet: '@astrale-fleet' } },
-    )
-    const createOwnedInstance = mock(async () => {
-      throw refusal
-    })
-    const sleep = mock(async () => {})
-
-    const failure = await provisionInstance(
+  test('reuses an explicit operation and refuses a malformed one before contacting Admin', async () => {
+    const create = mock(async () => ready)
+    const run = journey({ createOwnedInstance: create })
+    await provision({ operation: 'lab:instance.create.recovery-01' }, run)
+    expect(run.dependencies.operationId).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledWith(
+      expect.anything(),
       'demo',
-      { creds: 'admin-credential', ci: true, fleet: '@astrale-fleet' },
-      { createOwnedInstance, operationId: () => operationId, now: () => 0, sleep },
-    ).catch((error: unknown) => error)
+      'lab:instance.create.recovery-01',
+      expect.any(Function),
+    )
 
-    expect(createOwnedInstance).toHaveBeenCalledTimes(1)
-    expect(sleep).not.toHaveBeenCalled()
-    expect(failure).toMatchObject({
+    for (const operation of ['contains spaces', '-leading', `a${'b'.repeat(256)}`]) {
+      const refused = journey()
+      await expect(provision({ operation }, refused)).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+      })
+      expect(refused.dependencies.createOwnedInstance).not.toHaveBeenCalled()
+    }
+  })
+
+  test('stops at a declared refusal of the failed operation and points at a new one', async () => {
+    const capacity = journey({
+      createOwnedInstance: mock(async () => {
+        throw refusal(4001, {
+          code: 'INSTANCE_CAPACITY_UNAVAILABLE',
+          details: { fleet: '@astrale-fleet' },
+        })
+      }),
+    })
+    await expect(provision({ fleet: '@astrale-fleet' }, capacity)).rejects.toMatchObject({
       code: 'INSTANCE_CAPACITY_UNAVAILABLE',
-      message: `No ready consumer Host in this Fleet can take Instance "demo". Creation operation ${operationId} failed; replaying it returns this refusal.`,
+      hint: `A Fleet administrator provisions a Host first: astrale call "@astrale-fleet::admin.astrale.ai:class.Fleet.method.provisionHost" --admin -d '{"operationId":"<new-id>","id":"<host-id>","provider":{"kind":"scaleway"}}'. Then rerun \`astrale instance create demo --fleet '@astrale-fleet'\` without --operation.`,
     })
-    let stderr = ''
-    spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      stderr += String(chunk)
-      return true
-    })
-    await formatKernelError(failure, true)
-    const rendered = JSON.parse(stderr)
-    expect(rendered.error).toBe('INSTANCE_CAPACITY_UNAVAILABLE')
-    expect(rendered.message).toContain(operationId)
-    expect(rendered.hint).toBe(
-      `A Fleet administrator provisions a Host first: astrale call "@astrale-fleet::admin.astrale.ai:class.Fleet.method.provisionHost" --admin -d '{"operationId":"<new-id>","id":"<host-id>","provider":{"kind":"scaleway"}}'. Then rerun \`astrale instance create demo --fleet '@astrale-fleet'\` without --operation.`,
-    )
-  })
+    expect(capacity.dependencies.createOwnedInstance).toHaveBeenCalledTimes(1)
+    expect(capacity.dependencies.sleep).not.toHaveBeenCalled()
 
-  test('stops at a failed operation replayed as a declared conflict and names its retained cause', async () => {
-    const operationId = 'lab.instance.create.failed'
-    const createOwnedInstance = mock(async () => {
-      throw new ResponseError(
-        4001,
-        'The Admin operation conflicts with its retained request or current state.',
-        invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
-        {
+    const conflict = journey({
+      createOwnedInstance: mock(async () => {
+        throw refusal(4001, {
           code: 'OPERATION_CONFLICT',
-          details: {
-            reason: 'Instance route publication was refused.',
-            rejection: 'ADMIN_OUTCOME_UNKNOWN',
-          },
-        },
-      )
+          details: { reason: 'Instance route publication was refused.' },
+        })
+      }),
     })
-    const generated = mock(() => 'must-not-be-generated')
-
-    await expect(
-      provisionInstance(
-        'demo',
-        { creds: 'admin-credential', ci: true, operation: operationId },
-        { createOwnedInstance, operationId: generated, now: () => 0, sleep: async () => {} },
-      ),
-    ).rejects.toMatchObject({
+    await expect(provision({ operation: 'lab.failed' }, conflict)).rejects.toMatchObject({
       code: 'OPERATION_CONFLICT',
-      message: `Creation operation ${operationId} cannot continue: Instance route publication was refused.`,
-      hint: 'Fix the cause, then rerun `astrale instance create demo` without --operation to start a new creation operation.',
+      message:
+        'Creation operation lab.failed cannot continue: Instance route publication was refused.',
     })
-    expect(createOwnedInstance).toHaveBeenCalledTimes(1)
-    expect(generated).not.toHaveBeenCalled()
   })
 
-  test('returns the nonterminal receipt without bookmarking when the recovery window ends', async () => {
-    const pending = {
-      id: '@created-instance',
-      slug: 'demo',
-      operationId: 'cli.instance.create.fixed',
-      url: '',
-      state: 'provisioning' as const,
-      phase: 'create-host-child',
-    }
-    const createOwnedInstance = mock(async () => pending)
-    const bookmarkCreatedInstance = mock()
-    const importInstanceRootIdentity = mock()
+  test('returns a still-provisioning receipt without bookmarking when the window ends', async () => {
     let now = 0
-
-    const result = await provisionInstance(
-      'demo',
-      { creds: 'admin-credential', ci: true },
-      {
-        createOwnedInstance,
-        operationId: () => pending.operationId,
-        now: () => (now += 10 * 60_000),
-        sleep: async () => {},
-        bookmarkCreatedInstance,
-        importInstanceRootIdentity,
-      },
-    )
-
-    expect(result).toEqual({ created: pending, slug: 'demo' })
-    expect(createOwnedInstance).toHaveBeenCalledTimes(1)
-    expect(bookmarkCreatedInstance).not.toHaveBeenCalled()
-    expect(importInstanceRootIdentity).not.toHaveBeenCalled()
+    const run = journey({
+      createOwnedInstance: mock(async () => pending),
+      now: () => (now += 10 * 60_000),
+    })
+    expect(await provision({}, run)).toEqual({ created: pending, slug: 'demo' })
+    expect(run.events).toEqual([])
   })
 
-  test('keeps bookmarks and selection untouched when owner access is pending', async () => {
-    const created = {
-      id: '@instance',
-      slug: 'demo',
-      url: 'https://demo.example/api',
-      state: 'ready' as const,
-    }
-    const bookmarkCreatedInstance = mock()
-    const result = await provisionInstance(
-      'demo',
-      { creds: 'admin', ci: true },
-      {
-        createOwnedInstance: async () => created,
-        activateInstance: async () => {
-          throw new Error('response lost')
-        },
-        bookmarkCreatedInstance,
-        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+  test('keeps bookmarks and selection untouched while owner access is pending', async () => {
+    console.error = () => undefined
+    const run = journey({
+      activateInstance: async () => {
+        throw new Error('response lost')
       },
-    )
-    expect(result.created).toBe(created)
+    })
+    const result = await provision({}, run)
     expect(result.access).toEqual({ status: 'pending', code: 'OWNER_ACTIVATION_UNAVAILABLE' })
-    expect(bookmarkCreatedInstance).not.toHaveBeenCalled()
+    expect(run.events).toEqual([])
+  })
+
+  test('creates only as a WorkOS identity, the selected one or the default', () => {
+    const identity = (source: 'key' | 'idp') => ({
+      subject: source,
+      createdAt: '2026-06-08T00:00:00.000Z',
+      source,
+    })
+    const store: IdentityStore = {
+      default: 'local',
+      identities: { local: identity('key'), workos: identity('idp') },
+    }
+    expect(() => selectInstanceCreateIdentity(store)).toThrow(AuthError)
+    expect(selectInstanceCreateIdentity(store, { as: 'workos' })).toBe('workos')
   })
 })

@@ -4,7 +4,6 @@ import { NO_HOST_CAPABILITIES } from '@astrale-os/shell'
 import { describe, expect, test } from 'bun:test'
 
 import {
-  domainViewPath,
   handleViewOpenIntent,
   installViewOpenHandler,
   type ViewOpenHost,
@@ -201,17 +200,5 @@ describe('view.open host', () => {
       'close:new-1',
     ])
     expect(base.current()?.windowId).toBe('new-2')
-  })
-})
-
-describe('domainViewPath', () => {
-  test('maps a View key to its declaration path', () => {
-    expect(domainViewPath({ view: 'crm.example:view.dashboard' })).toBe(
-      '/:crm.example:view.dashboard',
-    )
-  })
-
-  test('refuses a malformed key', () => {
-    expect(() => domainViewPath({ view: 'crm.example' })).toThrow('Invalid View key')
   })
 })

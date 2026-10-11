@@ -25,7 +25,8 @@ describe('port', () => {
     }
   })
 
-  it('findFreePort: skips a busy port and returns a later free one', async () => {
+  it('findFreePort: skips a busy port for a later free one, and an empty band has none', async () => {
+    expect(await findFreePort(48000, 0)).toBeNull()
     const base = await findFreePort(48000, 200)
     expect(base).not.toBeNull()
     const srv = await listen(base as number)
@@ -50,9 +51,5 @@ describe('port', () => {
     } finally {
       await close(srv)
     }
-  })
-
-  it('findFreePort: returns null when the band is empty (span 0)', async () => {
-    expect(await findFreePort(48000, 0)).toBeNull()
   })
 })

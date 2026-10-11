@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 import type { SetupContext } from '../types'
 
-import { AstraleError } from '../../errors'
+import { human } from '../../commands/__tests__/fixtures/process'
 import {
   adoptOwnedInstance,
   ensureOwnedInstance,
@@ -49,161 +49,69 @@ function dependencies(
   }
 }
 
+const owned = (instances: OwnedInstanceInfo[]) => mock(async () => inventory(instances, 'manager'))
+const provisioned = (rest: object) =>
+  mock(async (slug: string) => ({ created: instance(slug), slug, ...rest }))
+
 describe('setup owned-instance reconciliation', () => {
-  test('does not claim setup fixed while the created owner access is pending', async () => {
-    const deps = dependencies({
-      provision: mock(async (slug) => ({
-        created: instance(slug),
-        slug,
-        access: { status: 'pending' as const, code: 'OWNER_ACTIVATION_UNAVAILABLE' },
-      })),
-    })
-    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
-    expect(deps.adopt).not.toHaveBeenCalled()
-  })
-  test('silently adopts the sole owned ready instance', async () => {
+  test('adopts the sole ready instance silently, else the one the user picks', async () => {
     const ready = instance('only')
-    const failed = instance('old-attempt', 'failed')
-    const deps = dependencies({
-      fetchOwned: mock(async () => inventory([failed, ready], 'manager')),
-    })
+    const sole = dependencies({ fetchOwned: owned([instance('old', 'failed'), ready]) })
+    await expect(ensureOwnedInstance(ctx, sole)).resolves.toBe('fixed')
+    expect(sole.adopt).toHaveBeenCalledWith(ready, 'manager')
+    expect(sole.selectReady).not.toHaveBeenCalled()
 
-    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('fixed')
-
-    expect(deps.adopt).toHaveBeenCalledTimes(1)
-    expect(deps.adopt).toHaveBeenCalledWith(ready, 'manager')
-    expect(deps.selectReady).not.toHaveBeenCalled()
-    expect(deps.confirmCreate).not.toHaveBeenCalled()
-    expect(deps.provision).not.toHaveBeenCalled()
-  })
-
-  test('asks the user to pick when several owned instances are ready', async () => {
-    const first = instance('first')
-    const second = instance('second')
-    const pending = instance('pending', 'provisioning')
-    const deps = dependencies({
-      fetchOwned: mock(async () => inventory([first, pending, second], 'manager')),
+    const [first, second] = [instance('first'), instance('second')]
+    const several = dependencies({
+      fetchOwned: owned([first, instance('pending', 'provisioning'), second]),
       selectReady: mock(async (instances) => instances[1] ?? null),
     })
-
-    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('fixed')
-
-    expect(deps.selectReady).toHaveBeenCalledWith([first, second])
-    expect(deps.adopt).toHaveBeenCalledWith(second, 'manager')
-    expect(deps.confirmCreate).not.toHaveBeenCalled()
-    expect(deps.provision).not.toHaveBeenCalled()
-  })
-
-  test('leaves setup skipped when the ready-instance picker is cancelled', async () => {
-    const first = instance('first')
-    const second = instance('second')
-    const deps = dependencies({
-      fetchOwned: mock(async () => inventory([first, second])),
-      selectReady: mock(async () => null),
-    })
-
-    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
-
-    expect(deps.selectReady).toHaveBeenCalledWith([first, second])
-    expect(deps.adopt).not.toHaveBeenCalled()
-    expect(deps.confirmCreate).not.toHaveBeenCalled()
-    expect(deps.provision).not.toHaveBeenCalled()
+    await expect(ensureOwnedInstance(ctx, several)).resolves.toBe('fixed')
+    expect(several.selectReady).toHaveBeenCalledWith([first, second])
+    expect(several.adopt).toHaveBeenCalledWith(second, 'manager')
+    for (const deps of [sole, several]) expect(deps.provision).not.toHaveBeenCalled()
   })
 
   test('offers first-instance creation only after a confirmed empty owner list', async () => {
     const deps = dependencies()
-    const original = console.log
-    console.log = mock(() => {})
-
-    try {
-      await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('fixed')
-    } finally {
-      console.log = original
-    }
-
-    expect(deps.confirmCreate).toHaveBeenCalledTimes(1)
-    expect(deps.promptSlug).toHaveBeenCalledTimes(1)
+    await human(async () => await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('fixed'))
     expect(deps.provision).toHaveBeenCalledWith('new-instance')
     expect(deps.adopt).not.toHaveBeenCalled()
   })
 
-  test('does not provision when first-instance creation is declined', async () => {
-    const deps = dependencies({ confirmCreate: mock(async () => false) })
-
-    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
-
-    expect(deps.confirmCreate).toHaveBeenCalledTimes(1)
-    expect(deps.promptSlug).not.toHaveBeenCalled()
-    expect(deps.provision).not.toHaveBeenCalled()
-  })
-
-  test('does not provision when the slug prompt is cancelled', async () => {
-    const deps = dependencies({ promptSlug: mock(async () => undefined) })
-
-    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
-
-    expect(deps.confirmCreate).toHaveBeenCalledTimes(1)
-    expect(deps.promptSlug).toHaveBeenCalledTimes(1)
-    expect(deps.provision).not.toHaveBeenCalled()
-  })
-
-  test('does not report setup fixed when the ready instance could not be bookmarked', async () => {
-    const deps = dependencies({
-      provision: mock(async (slug) => ({
-        created: instance(slug),
-        slug,
-        bookmark: {
-          status: 'pending' as const,
-          code: 'INSTANCE_BOOKMARK_FAILED',
-          message: 'Instance is ready, but instances.json is read-only',
-          hint: 'Fix local CLI storage, then replay instance create',
-        },
-      })),
-    })
-    const logged: string[] = []
-    const original = console.log
-    console.log = mock((...args: unknown[]) => {
-      logged.push(args.map(String).join(' '))
-    })
-
-    let caught: unknown
+  test.each([
+    [
+      'the picker is cancelled',
+      { fetchOwned: owned([instance('a'), instance('b')]), selectReady: mock(async () => null) },
+    ],
+    ['creation is declined', { confirmCreate: mock(async () => false) }],
+    ['the slug prompt is cancelled', { promptSlug: mock(async () => undefined) }],
+    [
+      'owner access is pending',
+      {
+        provision: provisioned({
+          access: { status: 'pending', code: 'OWNER_ACTIVATION_UNAVAILABLE' },
+        }),
+      },
+    ],
+    [
+      'creation returns a resumable receipt',
+      {
+        provision: mock(async (slug: string) => ({
+          created: { ...instance(slug, 'provisioning'), url: '' },
+          slug,
+        })),
+      },
+    ],
+  ] as const)('stays skipped when %s', async (_name, overrides) => {
+    const deps = dependencies(overrides as Partial<InstanceSetupDependencies>)
+    const warn = console.warn
+    console.warn = () => undefined
     try {
-      await ensureOwnedInstance(ctx, deps)
-    } catch (error) {
-      caught = error
+      await human(async () => await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped'))
     } finally {
-      console.log = original
+      console.warn = warn
     }
-
-    expect(caught).toBeInstanceOf(AstraleError)
-    expect((caught as AstraleError).code).toBe('INSTANCE_BOOKMARK_FAILED')
-    expect((caught as AstraleError).message).toContain('instances.json is read-only')
-    expect((caught as AstraleError).hint).toContain('replay instance create')
-    expect(logged.join('\n')).not.toContain('https://new-instance.eu.astrale.ai')
-  })
-
-  test('keeps setup pending when creation returns a resumable receipt', async () => {
-    const pending = {
-      ...instance('new-instance', 'provisioning'),
-      operationId: 'cli.instance.create.retained',
-      phase: 'create-host-child',
-      url: '',
-    }
-    const deps = dependencies({
-      provision: mock(async (slug) => ({ created: pending, slug })),
-    })
-    const originalWarn = console.warn
-    const originalLog = console.log
-    console.warn = mock(() => {})
-    console.log = mock(() => {})
-
-    try {
-      await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
-    } finally {
-      console.warn = originalWarn
-      console.log = originalLog
-    }
-
     expect(deps.adopt).not.toHaveBeenCalled()
   })
 
@@ -213,62 +121,61 @@ describe('setup owned-instance reconciliation', () => {
       phase: 'installing:default-domains',
     }
     const failed = { ...instance('broken', 'failed'), error: 'postInstall failed' }
-    const deps = dependencies({
-      fetchOwned: mock(async () => inventory([provisioning, failed])),
-    })
-    const logged: string[] = []
-    const original = console.log
-    console.log = mock((...args: unknown[]) => {
-      logged.push(args.map(String).join(' '))
-    })
+    const deps = dependencies({ fetchOwned: owned([provisioning, failed]) })
 
-    try {
-      await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
-    } finally {
-      console.log = original
-    }
+    const shown = await human(
+      async () => await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped'),
+    )
 
-    expect(deps.selectReady).not.toHaveBeenCalled()
     expect(deps.confirmCreate).not.toHaveBeenCalled()
-    expect(deps.promptSlug).not.toHaveBeenCalled()
     expect(deps.provision).not.toHaveBeenCalled()
-    expect(logged.join('\n')).toContain('pending: provisioning (installing:default-domains)')
-    expect(logged.join('\n')).toContain('broken: failed')
-    expect(logged.join('\n')).toContain('postInstall failed')
-    expect(logged.join('\n')).toContain('astrale instance status')
+    for (const line of [
+      'pending: provisioning (installing:default-domains)',
+      'broken: failed',
+      'postInstall failed',
+      'astrale instance status',
+    ])
+      expect(shown.lines).toContain(line)
   })
 
-  test('does not treat owner-discovery failure as an empty account', async () => {
-    const deps = dependencies({
+  test('fails, never reports fixed, when discovery or the bookmark fails', async () => {
+    const unreachable = dependencies({
       fetchOwned: mock(async () => {
         throw new Error('admin unavailable')
       }),
     })
+    await expect(ensureOwnedInstance(ctx, unreachable)).rejects.toMatchObject({
+      code: 'INSTANCE_DISCOVERY_FAILED',
+      hint: expect.stringContaining('No instance was created'),
+    })
+    expect(unreachable.provision).not.toHaveBeenCalled()
 
-    let caught: unknown
-    try {
-      await ensureOwnedInstance(ctx, deps)
-    } catch (error) {
-      caught = error
-    }
-
-    expect(caught).toBeInstanceOf(AstraleError)
-    expect((caught as AstraleError).code).toBe('INSTANCE_DISCOVERY_FAILED')
-    expect((caught as AstraleError).hint).toContain('No instance was created')
-    expect(deps.confirmCreate).not.toHaveBeenCalled()
-    expect(deps.provision).not.toHaveBeenCalled()
+    const unbookmarked = dependencies({
+      provision: provisioned({
+        bookmark: {
+          status: 'pending',
+          code: 'INSTANCE_BOOKMARK_FAILED',
+          message: 'Instance is ready, but instances.json is read-only',
+          hint: 'Fix local CLI storage, then replay instance create',
+        },
+      }),
+    })
+    const shown = await human(
+      async () =>
+        await expect(ensureOwnedInstance(ctx, unbookmarked)).rejects.toMatchObject({
+          code: 'INSTANCE_BOOKMARK_FAILED',
+          hint: expect.stringContaining('replay instance create'),
+        }),
+    )
+    expect(shown.lines).not.toContain('https://new-instance.eu.astrale.ai')
   })
 })
 
 describe('owned-instance adoption', () => {
   test('persists the owner organization before activating the bookmark', async () => {
-    const owned = instance('existing')
     const calls: unknown[][] = []
-    const original = console.log
-    console.log = mock(() => {})
-
-    try {
-      await adoptOwnedInstance(owned, 'manager', {
+    await human(() =>
+      adoptOwnedInstance(instance('existing'), 'manager', {
         upsert: mock(async (...args) => {
           calls.push(['upsert', ...args])
           return { entry: {} }
@@ -276,10 +183,8 @@ describe('owned-instance adoption', () => {
         activate: mock(async (...args) => {
           calls.push(['activate', ...args])
         }),
-      })
-    } finally {
-      console.log = original
-    }
+      }),
+    )
 
     expect(calls).toEqual([
       [

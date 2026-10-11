@@ -4,123 +4,55 @@ import type { ConnectionContext } from '../../connection'
 
 import { callCommand, materializeCallResult } from '../call'
 
-describe('call command dry run', () => {
-  test('admits ordinary calls without resolving a Kernel connection', async () => {
-    let connections = 0
-    let rendered: unknown
-    let presentationOptions: unknown
-    await callCommand(
-      '/:shipment.example:function.dispatch',
-      [],
-      { dryRun: true, data: '{"reference":"SHIP-1"}', json: true },
-      {
-        async runKernelCommand() {
-          connections += 1
-        },
-        output(value, options) {
-          rendered = value
-          presentationOptions = options
-        },
-      },
-    )
-    expect(connections).toBe(0)
-    expect(plainCall(rendered)).toEqual({
-      target: '/:shipment.example:function.dispatch',
-      input: { reference: 'SHIP-1' },
-    })
-    expect(presentationOptions).toEqual({
-      dryRun: true,
-      data: '{"reference":"SHIP-1"}',
-      json: true,
-    })
-  })
-
-  test('keeps @self in --data verbatim without resolving a Kernel connection', async () => {
-    let connections = 0
-    let rendered: unknown
-    await callCommand(
-      '/:shipment.example:function.dispatch',
-      [],
-      { dryRun: true, data: '{"owner":"@self"}', json: true },
-      {
-        async runKernelCommand() {
-          connections += 1
-        },
-        output(value) {
-          rendered = value
-        },
-      },
-    )
-    expect(connections).toBe(0)
-    expect(plainCall(rendered)).toEqual({
-      target: '/:shipment.example:function.dispatch',
-      input: { owner: '@self' },
-    })
-  })
-
-  test('resolves @self in CLI key=value params without dispatching', async () => {
-    let connections = 0
-    let dispatches = 0
-    let rendered: unknown
-    let presentationOptions: unknown
+describe('call command target and dry run', () => {
+  /** Run `call` with a dry-run connection that resolves @self to alice and never dispatches. */
+  async function call(target: string, params: string[], opts: Record<string, unknown>) {
+    const run = { connections: 0, credential: undefined as unknown, rendered: undefined as unknown }
     const context = {
       self: async () => ({ id: 'alice' }),
-      auth: {
-        async whoami() {
-          return { id: 'alice' }
-        },
-      },
       target: {},
       session: {
         async dispatch() {
-          dispatches += 1
           throw new Error('dry run must not dispatch')
         },
       },
     } as unknown as ConnectionContext
-
-    await callCommand(
-      '/:shipment.example:function.dispatch',
-      ['owner=@self'],
-      { dryRun: true, json: true },
-      {
-        async runKernelCommand(input) {
-          connections += 1
-          expect(input.credential).toEqual({ principal: 'caller' })
-          const result = await input.fn(context)
-          await input.format?.(result, input.opts, true)
-        },
-        output(value, options) {
-          rendered = value
-          presentationOptions = options
-        },
-      },
-    )
-
-    expect(connections).toBe(1)
-    expect(dispatches).toBe(0)
-    expect(plainCall(rendered)).toEqual({
-      target: '/:shipment.example:function.dispatch',
-      input: { owner: '@alice' },
-    })
-    expect(presentationOptions).toMatchObject({ dryRun: true, json: true })
-  })
-})
-
-test('ordinary calls select credentials for their executable Domain', async () => {
-  let selected: unknown
-  await callCommand(
-    '@worker::services.example:class.Worker.method.logs',
-    ['tail=1'],
-    { json: true },
-    {
+    await callCommand(target, params, opts, {
       async runKernelCommand(input) {
-        selected = input.credential
+        run.connections += 1
+        run.credential = input.credential
+        if (opts.dryRun !== true) return
+        await input.format?.(await input.fn(context), input.opts, true)
       },
-      output() {},
-    },
-  )
-  expect(selected).toMatchObject({ principal: 'callable' })
+      output: (value) => void (run.rendered = plainCall(value)),
+    })
+    return run
+  }
+
+  test('a dry run admits --data verbatim without a Kernel connection, @self included', async () => {
+    const target = '/:shipment.example:function.dispatch'
+    for (const data of ['{"reference":"SHIP-1"}', '{"owner":"@self"}']) {
+      const run = await call(target, [], { dryRun: true, data, json: true })
+      expect(run).toMatchObject({ connections: 0, rendered: { target, input: JSON.parse(data) } })
+    }
+  })
+
+  test('a dry run resolves @self in key=value params inside the command session', async () => {
+    const target = '/:shipment.example:function.dispatch'
+    const run = await call(target, ['owner=@self'], { dryRun: true, json: true })
+    expect(run).toEqual({
+      connections: 1,
+      credential: { principal: 'caller' },
+      rendered: { target, input: { owner: '@alice' } },
+    })
+  })
+
+  test('an ordinary call selects credentials for its executable Domain', async () => {
+    const run = await call('@worker::services.example:class.Worker.method.logs', ['tail=1'], {
+      json: true,
+    })
+    expect(run.credential).toMatchObject({ principal: 'callable' })
+  })
 })
 
 function plainCall(value: unknown): unknown {

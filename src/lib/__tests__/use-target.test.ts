@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 
 import type { IdentityStore } from '../../identity/index'
 import type { InstanceStore } from '../instance'
@@ -21,36 +21,12 @@ const identities: IdentityStore = {
   },
 }
 
-describe('resolveUseTarget', () => {
-  test('resolves identity-only names', () => {
-    expect(resolveUseTarget('alice', instances, identities)).toEqual({
-      kind: 'identity',
-      name: 'alice',
-    })
-  })
-
-  test('resolves instance keys and slugs', () => {
-    expect(resolveUseTarget('staging', instances, identities)).toEqual({
-      kind: 'instance',
-      name: 'staging',
-    })
-    expect(resolveUseTarget('stage', instances, identities)).toEqual({
-      kind: 'instance',
-      name: 'staging',
-    })
-  })
-
-  test('refuses ambiguous names', () => {
-    expect(resolveUseTarget('prod', instances, identities)).toEqual({
-      kind: 'ambiguous',
-      name: 'prod',
-    })
-  })
-
-  test('reports missing names', () => {
-    expect(resolveUseTarget('missing', instances, identities)).toEqual({
-      kind: 'missing',
-      name: 'missing',
-    })
-  })
+test.each([
+  ['alice', 'identity', 'alice'],
+  ['staging', 'instance', 'staging'],
+  ['stage', 'instance', 'staging'],
+  ['prod', 'ambiguous', 'prod'],
+  ['missing', 'missing', 'missing'],
+] as const)('resolveUseTarget(%p) is %s %p', (input, kind, name) => {
+  expect(resolveUseTarget(input, instances, identities)).toEqual({ kind, name })
 })

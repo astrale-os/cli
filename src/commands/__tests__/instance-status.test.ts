@@ -37,6 +37,20 @@ afterEach(async () => {
 })
 
 describe('instance status', () => {
+  /** Status dependencies that fail when used, unless a test provides them. */
+  const dependencies = (provided: Partial<StatusDependencies>): StatusDependencies => {
+    const refuse = (name: string) =>
+      mock(async () => {
+        throw new Error(`${name} must not run`)
+      })
+    return {
+      statusOwnedInstance: refuse('managed status'),
+      resolveInstance: refuse('bookmark resolution'),
+      probeBookmark: refuse('bookmark probe'),
+      ...provided,
+    }
+  }
+
   test('keeps managed lifecycle authoritative when the slug is also bookmarked', async () => {
     const managed: InstanceInfo = {
       id: '@managed',
@@ -45,20 +59,9 @@ describe('instance status', () => {
       state: 'provisioning',
       phase: 'bootstrap',
     }
-    const statusOwnedInstance: StatusDependencies['statusOwnedInstance'] = mock(async () => managed)
-    const resolveInstance: StatusDependencies['resolveInstance'] = mock(async () => {
-      throw new Error('bookmark resolution must not run')
-    })
-    const probeBookmark: StatusDependencies['probeBookmark'] = mock(async () => {
-      throw new Error('bookmark probe must not run')
-    })
-
-    await expect(
-      resolveStatus('shared', {}, { statusOwnedInstance, resolveInstance, probeBookmark }),
-    ).resolves.toEqual(managed)
-    expect(statusOwnedInstance).toHaveBeenCalledWith({}, 'shared')
-    expect(resolveInstance).not.toHaveBeenCalled()
-    expect(probeBookmark).not.toHaveBeenCalled()
+    const deps = dependencies({ statusOwnedInstance: mock(async () => managed) })
+    expect(await resolveStatus('shared', {}, deps)).toEqual(managed)
+    expect(deps.statusOwnedInstance).toHaveBeenCalledWith({}, 'shared')
   })
 
   test('probes only an explicitly selected bookmark and rejects mixed source flags', async () => {
@@ -68,26 +71,21 @@ describe('instance status', () => {
       url: 'https://local.example.com',
       issuer: 'https://issuer.example.com',
     }
-    const statusOwnedInstance: StatusDependencies['statusOwnedInstance'] = mock(async () => {
-      throw new Error('managed status must not run')
+    const deps = dependencies({
+      resolveInstance: mock(async () => bookmark),
+      probeBookmark: mock(async () => undefined),
     })
-    const resolveInstance: StatusDependencies['resolveInstance'] = mock(async () => bookmark)
-    const probeBookmark: StatusDependencies['probeBookmark'] = mock(async () => undefined)
-    const dependencies = { statusOwnedInstance, resolveInstance, probeBookmark }
 
-    await expect(resolveStatus('local', { bookmarked: true }, dependencies)).resolves.toEqual({
+    expect(await resolveStatus('local', { bookmarked: true }, deps)).toEqual({
       slug: 'local',
       url: bookmark.url,
       issuer: 'https://issuer.example.com',
       kind: 'bookmark',
       state: 'ready',
     })
-    expect(resolveInstance).toHaveBeenCalledWith('local')
-    expect(probeBookmark).toHaveBeenCalledWith(bookmark)
-    expect(statusOwnedInstance).not.toHaveBeenCalled()
-
+    expect(deps.probeBookmark).toHaveBeenCalledWith(bookmark)
     await expect(
-      resolveStatus('local', { bookmarked: true, admin: 'admin' }, dependencies),
+      resolveStatus('local', { bookmarked: true, admin: 'admin' }, deps),
     ).rejects.toMatchObject({ code: 'INVALID_FLAG' })
   })
 

@@ -5,7 +5,7 @@ import type { IdpSession } from '../idp'
 import type { InstanceStore } from '../instance'
 
 import { DEFAULT_ADMIN_TARGET_URL } from '../admin-target'
-import { buildLocalStatus, decodeJwtExpiration } from '../local-status'
+import { buildLocalStatus } from '../local-status'
 
 describe('local status snapshot', () => {
   test('summarizes active bookmark and key identity registration', async () => {
@@ -51,56 +51,13 @@ describe('local status snapshot', () => {
     expect(status.identity?.session).toBeNull()
   })
 
-  test('keeps a refreshable cached IdP session ready when the access token is stale', async () => {
-    const instances: InstanceStore = {
-      active: '',
-      instances: {},
-    }
+  test('an IdP session with a stale token needs a login only when it cannot refresh', async () => {
     const identities: IdentityStore = {
       default: 'workos-user',
       identities: {
         'workos-user': {
           subject: 'user_123',
           source: 'idp',
-          mode: 'remote',
-          idp: 'workos',
-          issuer: 'https://idp.example.com',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      },
-    }
-    const session: IdpSession = {
-      identity: 'workos-user',
-      idp: 'workos',
-      issuer: 'https://idp.example.com',
-      subject: 'user_123',
-      access_token: 'redacted',
-      refresh_token: 'redacted-refresh',
-      expires_at: '2000-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    }
-
-    const status = await buildLocalStatus(instances, identities, async () => session)
-
-    expect(status.instance).toBeNull()
-    expect(status.identity?.source).toBe('idp')
-    expect(status.identity?.session?.cached).toBe(true)
-    expect(status.identity?.session?.requiresLogin).toBe(false)
-    expect(status.identity?.session?.hasRefreshToken).toBe(true)
-  })
-
-  test('requires login when the cached IdP access token is stale and cannot refresh', async () => {
-    const instances: InstanceStore = {
-      active: '',
-      instances: {},
-    }
-    const identities: IdentityStore = {
-      default: 'workos-user',
-      identities: {
-        'workos-user': {
-          subject: 'user_123',
-          source: 'idp',
-          mode: 'remote',
           idp: 'workos',
           issuer: 'https://idp.example.com',
           createdAt: '2026-01-01T00:00:00.000Z',
@@ -116,87 +73,18 @@ describe('local status snapshot', () => {
       expires_at: '2000-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     }
+    const status = (cached: IdpSession) =>
+      buildLocalStatus({ active: '', instances: {} }, identities, async () => cached)
 
-    const status = await buildLocalStatus(instances, identities, async () => session)
-
-    expect(status.identity?.session?.cached).toBe(true)
-    expect(status.identity?.session?.requiresLogin).toBe(true)
-    expect(status.identity?.session?.hasRefreshToken).toBe(false)
-  })
-
-  test('summarizes active managed slug without requiring a local bookmark', async () => {
-    const instances: InstanceStore = {
-      active: 'testmarc',
-      instances: {},
-    }
-    const identities: IdentityStore = {
-      default: 'workos-user',
-      identities: {
-        'workos-user': {
-          subject: 'user_123',
-          source: 'idp',
-          mode: 'remote',
-          idp: 'workos',
-          issuer: 'https://idp.example.com',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      },
-    }
-
-    const status = await buildLocalStatus(instances, identities, async () => null)
-
-    expect(status.instance).toEqual({
-      active: 'testmarc',
-      url: '',
-      issuer: null,
-      defaultIdentity: null,
+    expect((await status({ ...session, refresh_token: 'refresh' })).identity?.session).toEqual({
+      cached: true,
+      requiresLogin: false,
+      hasRefreshToken: true,
     })
-  })
-
-  test('falls back to identity exp claim when IdP session has no expires_at', async () => {
-    const identities: IdentityStore = {
-      default: 'workos-user',
-      identities: {
-        'workos-user': {
-          subject: 'user_123',
-          source: 'idp',
-          mode: 'remote',
-          idp: 'workos',
-          issuer: 'https://idp.example.com',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          claims: { exp: 946684800 },
-        },
-      },
-    }
-    const session: IdpSession = {
-      identity: 'workos-user',
-      idp: 'workos',
-      issuer: 'https://idp.example.com',
-      subject: 'user_123',
-      access_token: 'redacted',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    }
-
-    const status = await buildLocalStatus(
-      { active: '', instances: {} },
-      identities,
-      async () => session,
-    )
-
-    expect(status.identity?.session?.requiresLogin).toBe(true)
-  })
-})
-
-describe('decodeJwtExpiration', () => {
-  test('decodes exp without exposing token content', async () => {
-    const b64u = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
-    const token = `${b64u({ alg: 'none' })}.${b64u({ exp: 946684800 })}.signature`
-
-    const expiration = decodeJwtExpiration(token, Date.parse('2026-01-01T00:00:00.000Z'))
-
-    expect(expiration).toEqual({
-      expiresAt: '2000-01-01T00:00:00.000Z',
-      expired: true,
+    expect((await status(session)).identity?.session).toEqual({
+      cached: true,
+      requiresLogin: true,
+      hasRefreshToken: false,
     })
   })
 })

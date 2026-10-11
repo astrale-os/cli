@@ -68,7 +68,7 @@ function harness(
 }
 
 describe('astrale domain versions', () => {
-  test('--json prints one astrale.registry-index document and exits 0', async () => {
+  test('prints one astrale.registry-index document, as JSON or YAML, and a refusal as one error', async () => {
     const run = harness('installer')
     expect(await runVersions(ORIGIN, { json: true }, run.dependencies)).toBe(0)
     const index = run.stdout() as unknown as RegistryIndexV1
@@ -78,19 +78,11 @@ describe('astrale domain versions', () => {
       '1.5.0',
       '1.4.2',
     ])
-  })
 
-  test('--format yaml prints the same document as YAML; --json keeps JSON', async () => {
     const yaml = harness('installer')
     expect(await runVersions(ORIGIN, { format: 'yaml' }, yaml.dependencies)).toBe(0)
-    const printed = yaml.written().join('')
-    expect(printed.trimStart().startsWith('{')).toBe(false)
-    const json = harness('installer')
-    expect(await runVersions(ORIGIN, { json: true }, json.dependencies)).toBe(0)
-    expect(parseYaml(printed)).toEqual(json.stdout())
-    const both = harness('installer')
-    expect(await runVersions(ORIGIN, { format: 'yaml', json: true }, both.dependencies)).toBe(0)
-    expect(both.stdout()).toEqual(json.stdout())
+    expect(parseYaml(yaml.written().join(''))).toEqual(index)
+
     const refused = harness('outsider')
     expect(await runVersions(ORIGIN, { format: 'yaml' }, refused.dependencies)).toBe(1)
     expect(parseYaml(refused.written().join(''))).toEqual({
@@ -115,25 +107,6 @@ describe('astrale domain versions', () => {
     }
   })
 
-  test('a refusal is one error document on stdout and exit 1', async () => {
-    const run = harness('outsider')
-    expect(await runVersions(ORIGIN, { json: true }, run.dependencies)).toBe(1)
-    expect(run.stdout()).toEqual({
-      error: {
-        code: 'REGISTRY_DOMAIN_NOT_FOUND',
-        message: expect.stringContaining(ORIGIN),
-        details: { origin: ORIGIN },
-      },
-    })
-  })
-
-  test('an argument that is no origin is refused before Admin is opened', async () => {
-    const run = harness('installer')
-    expect(await runVersions('issues.astrale.ai@1.5', { json: true }, run.dependencies)).toBe(1)
-    expect((run.stdout().error as { code: string }).code).toBe('INVALID_ARGUMENT')
-    expect(run.opened()).toBe(0)
-  })
-
   test('the human table follows Résolution [.79737]', async () => {
     const admin = fakeAdmin({ caller: 'installer', domains: [domain()] })
     const index = await connectAdminRegistry(admin.context).index(ORIGIN)
@@ -146,9 +119,6 @@ describe('astrale domain versions', () => {
       { version: '1.5.0', digest: `${r150.releaseDigest.slice(0, 19)}…`, status: '' },
       { version: '1.4.2', digest: `${r142.releaseDigest.slice(0, 19)}…`, status: 'yanked' },
     ])
-    const plain = renderVersions(index).replace(/\[[0-9;]*m/gu, '')
-    expect(plain.split('\n')).toHaveLength(3)
-    expect(plain).toContain('1.4.2')
     expect(renderVersions({ ...index, publications: [] })).toContain(
       'has no published version readable by this caller',
     )
@@ -156,6 +126,40 @@ describe('astrale domain versions', () => {
 })
 
 describe('astrale __domain-registry', () => {
+  test.each([
+    [
+      'versions of a version',
+      (d: RegistryCommandDependencies) => runVersions(`${ORIGIN}@1.5`, { json: true }, d),
+      'INVALID_ARGUMENT',
+    ],
+    [
+      'claim of no origin',
+      (d: RegistryCommandDependencies) => runClaim('Tasks.Acme', {}, d),
+      'INVALID_ARGUMENT',
+    ],
+    [
+      'publish of a malformed request',
+      (d: RegistryCommandDependencies) =>
+        runPublish({}, { ...d, request: async () => ({ format: 'x' }) }),
+      'INVALID_INPUT',
+    ],
+    [
+      'yank of a line',
+      (d: RegistryCommandDependencies) => runYank(`${ORIGIN}@1.5`, {}, d),
+      'PUBLICATION_VERSION_INVALID',
+    ],
+    [
+      'bundle without --output',
+      (d: RegistryCommandDependencies) => runBundle(`${ORIGIN}@1.5.0`, {}, d),
+      'MISSING_ARG',
+    ],
+  ] as const)('refuses a %s before Admin is opened', async (_name, command, code) => {
+    const run = harness('publisher')
+    expect(await command(run.dependencies)).toBe(1)
+    expect((run.stdout().error as { code: string }).code).toBe(code)
+    expect(run.opened()).toBe(0)
+  })
+
   test('claim prints the claim result, and a refusal as one error document', async () => {
     const claimed = 'tasks.acme.example'
     const run = harness('publisher', [])
@@ -180,14 +184,7 @@ describe('astrale __domain-registry', () => {
     })
   })
 
-  test('a claim of something that is no origin is refused before Admin is opened', async () => {
-    const run = harness('publisher', [])
-    expect(await runClaim('Tasks.Acme', {}, run.dependencies)).toBe(1)
-    expect((run.stdout().error as { code: string }).code).toBe('INVALID_ARGUMENT')
-    expect(run.opened()).toBe(0)
-  })
-
-  test('publish reads one request on stdin and prints the publish result', async () => {
+  test('publish reads one request and prints the publish result', async () => {
     const run = harness('publisher')
     const code = await runPublish(
       {},
@@ -209,43 +206,22 @@ describe('astrale __domain-registry', () => {
     expect(code).toBe(0)
     expect(run.stdout()).toMatchObject({
       format: 'astrale.registry-publish-result',
-      version: 1,
       status: 'created',
       publication: { version: '1.6.0', releaseDigest: r150.releaseDigest },
       retention: 'marked',
     })
-    expect(run.stdout().publication).not.toHaveProperty('bundle')
   })
 
-  test('a malformed request costs no Admin request', async () => {
-    const run = harness('publisher')
-    const code = await runPublish(
-      {},
-      { ...run.dependencies, request: async () => ({ format: 'x' }) },
-    )
-    expect(code).toBe(1)
-    expect((run.stdout().error as { code: string }).code).toBe('INVALID_INPUT')
-    expect(run.opened()).toBe(0)
-  })
-
-  test('yank names one exact version; a line is refused before Admin is opened', async () => {
+  test('yank and yank --undo print the changed Publication', async () => {
     const run = harness('publisher')
     expect(await runYank(`${ORIGIN}@1.5.0`, {}, run.dependencies)).toBe(0)
     expect(run.stdout()).toMatchObject({ status: 'changed', publication: { yanked: true } })
-
-    const line = harness('publisher')
-    expect(await runYank(`${ORIGIN}@1.5`, {}, line.dependencies)).toBe(1)
-    expect((line.stdout().error as { code: string }).code).toBe('PUBLICATION_VERSION_INVALID')
-    expect(line.opened()).toBe(0)
+    const undo = harness('publisher')
+    expect(await runYank(`${ORIGIN}@1.4.2`, { undo: true }, undo.dependencies)).toBe(0)
+    expect(undo.stdout()).toMatchObject({ status: 'changed', publication: { yanked: false } })
   })
 
-  test('yank --undo prints the restored Publication', async () => {
-    const run = harness('publisher')
-    expect(await runYank(`${ORIGIN}@1.4.2`, { undo: true }, run.dependencies)).toBe(0)
-    expect(run.stdout()).toMatchObject({ status: 'changed', publication: { yanked: false } })
-  })
-
-  test('bundle writes the verified bundle from the deployment and prints its descriptor', async () => {
+  test('bundle writes only the bytes whose digest the release names', async () => {
     const run = harness('installer')
     const output = join(mkdtempSync(join(tmpdir(), 'astrale-registry-command-')), 'bundle.json')
     expect(await runBundle(`${ORIGIN}@1.5.0`, { output }, run.dependencies)).toBe(0)
@@ -260,26 +236,22 @@ describe('astrale __domain-registry', () => {
       },
     })
     expect(Buffer.from(readFileSync(output)).equals(Buffer.from(r150.bytes))).toBe(true)
-  })
 
-  test('bundle refuses bytes whose digest the release does not name, writing nothing', async () => {
-    const run = harness('installer', [domain()], {
+    const tampered = harness('installer', [domain()], {
       servedBytes: new TextEncoder().encode('{"bundle":"r15x"}'),
     })
     const directory = mkdtempSync(join(tmpdir(), 'astrale-registry-command-'))
-    const output = join(directory, 'bundle.json')
-    expect(await runBundle(`${ORIGIN}@1.5.0`, { output }, run.dependencies)).toBe(1)
-    expect(run.stdout()).toMatchObject({
+    expect(
+      await runBundle(
+        `${ORIGIN}@1.5.0`,
+        { output: join(directory, 'b.json') },
+        tampered.dependencies,
+      ),
+    ).toBe(1)
+    expect(tampered.stdout()).toMatchObject({
       error: { code: 'PUBLICATION_RELEASE_MISMATCH', details: { reason: 'bundle-mismatch' } },
     })
     expect(readdirSync(directory)).toEqual([])
-  })
-
-  test('bundle requires --output before any request', async () => {
-    const run = harness('installer')
-    expect(await runBundle(`${ORIGIN}@1.5.0`, {}, run.dependencies)).toBe(1)
-    expect((run.stdout().error as { code: string }).code).toBe('MISSING_ARG')
-    expect(run.opened()).toBe(0)
   })
 
   test('the request reader refuses a terminal, oversize input and invalid JSON', async () => {

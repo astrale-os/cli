@@ -1,15 +1,10 @@
-import { calculateJwkThumbprint } from 'jose'
-import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { resolveConnectionTarget } from '../../connection/target'
-import { importIdentity, type IdentityExport } from '../../identity'
-import { keypairPaths, persistKeypair } from '../../keys'
 import { ensureOwnedInstance } from '../../setup/steps/instance'
 import { DEFAULT_CONFIG } from '../config'
 import { readInstances, setActive, upsertInstance } from '../instance'
-import { importInstanceRootIdentity } from '../instance-root-identity'
 import { provisionInstance } from '../provision-instance'
 
 const scenario = process.argv[2]
@@ -21,24 +16,16 @@ if (scenario === 'read-target') {
   process.exit(0)
 }
 
-if (scenario === 'select-staging' || scenario === 'select-collision') {
-  const name = scenario === 'select-staging' ? 'staging' : 'prod'
-  await upsertInstance(name, { url: 'https://staging.example.test/api' })
-  await setActive(name)
+if (scenario === 'select-staging') {
+  await upsertInstance('staging', { url: 'https://staging.example.test/api' })
+  await setActive('staging')
   process.exit(0)
 }
 
-const empty = ['first-setup', 'concurrent-first-target', 'concurrent-collision'].includes(scenario!)
-if (!empty) {
-  await upsertInstance('dev', {
-    url: 'https://dev.example.test/api',
-    ...(scenario === 'alias-collision' ? { slug: 'prod', name: 'previous-name' } : {}),
-  })
+if (scenario !== 'first-setup') {
+  await upsertInstance('dev', { url: 'https://dev.example.test/api' })
 }
-if (scenario === 'ready-replay') {
-  await upsertInstance('prod', { url: 'https://prod.example.test/api' })
-}
-if (scenario === 'name-collision' || scenario === 'pending-access-collision') {
+if (scenario === 'name-collision') {
   await upsertInstance('prod', { url: 'https://dev.example.test/api' })
   await setActive('prod')
 }
@@ -57,40 +44,6 @@ const receipt = {
   operationId: 'fixture.instance.create.retained',
   organizationId: 'org_fixture',
 }
-const hash = (bytes: string) => createHash('sha256').update(bytes).digest('hex')
-let originalSubject: string | undefined
-let registryHash: string | undefined
-let keyHash: string | undefined
-let incomingRoot: IdentityExport | undefined
-if (scenario === 'identity-issuer-conflict') {
-  const oldPair = await persistKeypair('old-fixture', { keysDir: join(home, 'old-source') })
-  originalSubject = await calculateJwkThumbprint(oldPair.publicJwk)
-  await importIdentity(
-    {
-      version: 1,
-      subject: originalSubject,
-      mode: 'local',
-      issuer: 'https://dev.example.test/api',
-      privateJwk: oldPair.privateJwk,
-      publicJwk: oldPair.publicJwk,
-    },
-    { name: 'prod-root' },
-  )
-  const newPair = await persistKeypair('new-fixture', { keysDir: join(home, 'new-source') })
-  incomingRoot = {
-    version: 1,
-    subject: await calculateJwkThumbprint(newPair.publicJwk),
-    mode: 'local',
-    issuer: receipt.url,
-    privateJwk: newPair.privateJwk,
-    publicJwk: newPair.publicJwk,
-  }
-  registryHash = hash(await readFile(join(home, 'identities.json'), 'utf8'))
-  keyHash = hash(
-    await readFile(keypairPaths(originalSubject, join(home, 'keys')).privatePath, 'utf8'),
-  )
-}
-
 // Replace only remote provisioning/access/root boundaries. Bookmark persistence,
 // target resolution and setup's first-instance journey use their production owners.
 const provision = () =>
@@ -107,26 +60,15 @@ const provision = () =>
         if (JSON.stringify(await readInstances()) !== JSON.stringify(before)) {
           throw new Error('The catalogue changed before owner access completed')
         }
-        if (scenario === 'pending-access' || scenario === 'pending-access-collision') {
+        if (scenario === 'pending-access') {
           throw new Error('Owner access is pending')
         }
-        if (
-          ['concurrent-selection', 'concurrent-first-target', 'concurrent-collision'].includes(
-            scenario!,
-          )
-        ) {
-          const child = Bun.spawn(
-            [
-              process.execPath,
-              import.meta.path,
-              scenario === 'concurrent-collision' ? 'select-collision' : 'select-staging',
-            ],
-            {
-              env: process.env,
-              stdout: 'pipe',
-              stderr: 'pipe',
-            },
-          )
+        if (scenario === 'concurrent-selection') {
+          const child = Bun.spawn([process.execPath, import.meta.path, 'select-staging'], {
+            env: process.env,
+            stdout: 'pipe',
+            stderr: 'pipe',
+          })
           const [code, stderr] = await Promise.all([
             child.exited,
             new Response(child.stderr).text(),
@@ -136,18 +78,8 @@ const provision = () =>
         events.push('access')
         return { status: 'completed', user: 'fixture-owner' }
       },
-      importInstanceRootIdentity: async (connection, identifier, options) => {
+      importInstanceRootIdentity: async () => {
         events.push('root')
-        if (incomingRoot) {
-          return importInstanceRootIdentity(connection, identifier, options, {
-            retrieve: async () => ({
-              instance: { ...receipt, issuer: receipt.url },
-              transfer: {} as never,
-            }),
-            decode: async () => incomingRoot!,
-            checkIssuer: async () => ({ issuer: receipt.url, keys: [incomingRoot!.publicJwk] }),
-          })
-        }
         await writeFile(rootMaterialPath, 'new-root-material')
         return { name: 'prod-root' } as never
       },
@@ -197,25 +129,6 @@ const [readerCode, targetJson, readerError] = await Promise.all([
 if (readerCode !== 0) throw new Error(`Reading the next command's target failed: ${readerError}`)
 const target = JSON.parse(targetJson)
 const rootMaterial = await readFile(rootMaterialPath, 'utf8')
-const identityProtection =
-  originalSubject && incomingRoot
-    ? {
-        registryBeforeHash: registryHash,
-        registryAfterHash: hash(await readFile(join(home, 'identities.json'), 'utf8')),
-        keyBeforeHash: keyHash,
-        keyAfterHash: await readFile(
-          keypairPaths(originalSubject, join(home, 'keys')).privatePath,
-          'utf8',
-        )
-          .then(hash)
-          .catch(() => null),
-        incomingKeyPresent: await readFile(
-          keypairPaths(incomingRoot.subject, join(home, 'keys')).privatePath,
-        )
-          .then(() => true)
-          .catch(() => false),
-      }
-    : undefined
 process.stdout.write(
   JSON.stringify({
     before,
@@ -227,6 +140,5 @@ process.stdout.write(
     registryBefore,
     registryAfter,
     rootMaterial,
-    identityProtection,
   }),
 )
