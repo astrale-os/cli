@@ -65,6 +65,14 @@ export class ExchangeCredentialCache {
     return pending
   }
 
+  /** Forget `credential` under `key`; a credential that has replaced it since is kept. */
+  async delete(key: ExchangeKey, credential: string): Promise<void> {
+    const encoded = encodeKey(key)
+    await this.transition((entries) => {
+      if (entries[encoded]?.credential === credential) delete entries[encoded]
+    })
+  }
+
   async deleteKernel(kernelIssuer: string): Promise<void> {
     await this.transition((entries) => {
       for (const encoded of Object.keys(entries)) {
