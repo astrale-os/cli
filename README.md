@@ -171,6 +171,17 @@ Optional bug evidence: a short log excerpt, stack trace, or screenshot link when
 
 If confirmation fails, use the printed `--retry` command. `--json` returns the issue ID and reference.
 
+Follow your own reports with the reference it returns:
+
+```sh
+astrale issue list                 # your reports and their triage status (--all adds archived ones)
+astrale issue show ASTRALE-12      # one report with the triage comments
+astrale issue edit ASTRALE-12 --title "Clearer title" --body "Updated details"
+astrale issue archive ASTRALE-12   # withdraw it; triage keeps its history
+```
+
+You see and change only the issues you reported. Status, priority and comments stay with triage.
+
 ## Commands
 
 The authoritative command surface is generated from the code:

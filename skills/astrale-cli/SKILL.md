@@ -72,6 +72,19 @@ result) or **Scenario** for limitations/friction (concrete task, obstacle, desir
 Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
 If confirmation fails, use the printed `--retry` command.
 
+The printed reference (`ASTRALE-12`) follows the report. The reporter sees and changes only its own
+reports; status, priority and comments stay with triage:
+
+```sh
+astrale issue list --json
+astrale issue show ASTRALE-12
+astrale issue edit ASTRALE-12 --body "Updated details"
+astrale issue archive ASTRALE-12
+```
+
+`list` omits archived reports unless `--all`; `edit` takes `--title`, `--body` (it replaces the
+details), or both; `archive` withdraws the report, and triage keeps its history.
+
 ## UI Projects
 
 Astrale UI is one tree-shakeable runtime package plus consumer-owned pattern,

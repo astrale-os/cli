@@ -59,6 +59,8 @@ export interface CommandGroup {
   /** One-line summary shown in the program's command list (Commander `.summary()`). */
   readonly summary?: string
   readonly commands: CommandDefinition[]
+  /** Command run when the first argument names no command of the group (Commander `isDefault`). */
+  readonly defaultCommand?: string
   /** Hide from help listings (internal plumbing, e.g. `__domain-registry`). */
   readonly hidden?: boolean
   /** Nested subgroups (one extra level of `astrale foo bar baz` nesting). */

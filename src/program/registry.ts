@@ -7,8 +7,10 @@ type CommanderAction = Parameters<Command['action']>[0]
 /**
  * Register a single command on a Commander program or subcommand.
  */
-export function registerCommand(parent: Command, def: CommandDefinition): void {
-  const cmd = parent.command(def.name, { hidden: def.hidden ?? false }).description(def.description)
+export function registerCommand(parent: Command, def: CommandDefinition, isDefault = false): void {
+  const cmd = parent
+    .command(def.name, { hidden: def.hidden ?? false, isDefault })
+    .description(def.description)
 
   if (def.summary) cmd.summary(def.summary)
 
@@ -74,6 +76,6 @@ export function registerGroup(parent: Command, group: CommandGroup): void {
     .command(group.name, { hidden: group.hidden ?? false })
     .description(group.description)
   if (group.summary) sub.summary(group.summary)
-  for (const def of group.commands) registerCommand(sub, def)
+  for (const def of group.commands) registerCommand(sub, def, def.name === group.defaultCommand)
   for (const nested of group.subgroups ?? []) registerGroup(sub, nested)
 }

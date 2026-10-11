@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from 'bun:test'
 
 import type { ConnectionContext } from '../../connection'
 
-import { reportIssueCommand } from '../../commands/issue'
+import { reportIssueCommand } from '../../commands/issue/report'
 import { createPathCall } from '../../connection'
 import { ISSUE_REPORT_PATH, type IssuePayload } from '../submit'
 

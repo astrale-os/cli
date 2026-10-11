@@ -39,6 +39,8 @@ export interface CommandGroup {
   readonly description: string
   readonly summary?: string
   readonly commands: CommandDefinition[]
+  /** Command run when the first argument names no command of the group. */
+  readonly defaultCommand?: string
   readonly hidden?: boolean
   readonly subgroups?: CommandGroup[]
 }
