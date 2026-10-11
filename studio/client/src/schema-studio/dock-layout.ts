@@ -20,7 +20,7 @@ export const DOCK_COLUMN_GAP = 16
 /** Gap between the application and the Functions under it. */
 export const DOCK_SECTION_GAP = 20
 /** Gap between the dock and the wired graph laid out beside it. */
-export const DOCK_GRAPH_GAP = 96
+const DOCK_GRAPH_GAP = 96
 
 /** How many columns a list of `count` Functions is packed into. */
 export function dockColumns(count: number): number {
@@ -30,7 +30,7 @@ export function dockColumns(count: number): number {
 }
 
 /** An unbound view or Function: wired to nothing, so ELK has nowhere to put it. */
-export function isDocked(node: Node, wired: Set<string>): boolean {
+function isDocked(node: Node, wired: Set<string>): boolean {
   if (node.parentId) return false
   if (node.type !== 'viewNode' && node.type !== 'functionNode') return false
   return !wired.has(node.id)

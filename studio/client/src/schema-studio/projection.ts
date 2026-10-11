@@ -56,7 +56,7 @@ function endpointOf(endpoint?: IrEndpoint): { role?: string; cardinality: string
   }
 }
 
-export interface DomainProjection {
+interface DomainProjection {
   nodes: Node[]
   edges: Edge[]
 }

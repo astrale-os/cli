@@ -106,8 +106,8 @@ export const useDraftImages = create<DraftImagesState>((set, get) => ({
 const MAX_EDGE = 2048
 
 /** The size that fits `width`×`height` inside `MAX_EDGE`, keeping its shape. */
-export function fitWithin(width: number, height: number, edge = MAX_EDGE) {
-  const scale = Math.min(1, edge / Math.max(width, height))
+export function fitWithin(width: number, height: number) {
+  const scale = Math.min(1, MAX_EDGE / Math.max(width, height))
   return {
     width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),
@@ -120,7 +120,7 @@ export function fitWithin(width: number, height: number, edge = MAX_EDGE) {
  * HEIC photo, a BMP, an SVG). Screenshots stay PNG so their text stays sharp;
  * only what is still too big after that becomes a JPEG.
  */
-export async function prepareImage(file: File): Promise<Blob> {
+async function prepareImage(file: File): Promise<Blob> {
   if (isAttachmentImageType(file.type) && file.size <= MAX_ATTACHMENT_BYTES) return file
   let bitmap: ImageBitmap
   try {

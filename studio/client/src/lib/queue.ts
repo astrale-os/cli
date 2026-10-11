@@ -16,7 +16,7 @@ import { useAgentLive } from './agent'
 import { api, qk } from './api'
 
 /** Replace one tab in the cached strip, leaving the others exactly as they were. */
-export function landChat(chats: ChatList | undefined, chat: ChatInfo): ChatList | undefined {
+function landChat(chats: ChatList | undefined, chat: ChatInfo): ChatList | undefined {
   if (!chats) return chats
   return {
     ...chats,

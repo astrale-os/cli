@@ -17,7 +17,7 @@ import { concreteAnchorKind } from '@shared/comment-anchors'
  *
  * `domain.` is keyed by ORIGIN, not by the workspace's local id: the origin is the
  * domain's own name, stable across workspaces and readable by the agent, and the
- * namespace is already spelled that way by canvas visibility (`domainRef`) and by an
+ * namespace is already spelled that way by canvas visibility and by an
  * import request (`domain.import.<origin>`).
  *
  * Resolution rule (see comment-mode.tsx): the NEAREST declared scope wins. Every
@@ -26,12 +26,12 @@ import { concreteAnchorKind } from '@shared/comment-anchors'
  * resolve to their enclosing scope instead of collapsing to the section.
  */
 
-export type SchemaMemberKind = 'class' | 'edge'
+type SchemaMemberKind = 'class' | 'edge'
 
 /** The finest targets in the hierarchy: the fields a schema member owns. */
-export type MemberFieldKind = 'property' | 'method' | 'endpoint'
+type MemberFieldKind = 'property' | 'method' | 'endpoint'
 
-export interface FlowNodeIdentity {
+interface FlowNodeIdentity {
   domainId?: string
   localId: string
 }

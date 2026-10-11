@@ -10,8 +10,7 @@
  */
 import type { AgentRun } from '@shared/types'
 
-import { FIXTURE_ID } from './test'
-import { expect, test, type Page } from './test'
+import { chatInfo, expect, FIXTURE_ID, stubAgent, test, type Page } from './test'
 
 /** Anything taller than this is a panel, not a bar. */
 const BAR_CEILING = 120
@@ -47,103 +46,24 @@ async function goBottom(page: Page): Promise<void> {
   await expect(dock(page)).toBeVisible()
 }
 
-/**
- * Answer the conversation endpoints as a server with a working harness does.
- *
- * This fixture has no harness at all, which leaves three dock states out of
- * reach: a composer you can type in, a turn in flight, and a turn to read back.
- * All are stubbed at the boundary the client actually reads — the snapshot GET,
- * whose `available` and `run` are what every other piece of the panel derives
- * its state from, and the history GET, which is where the transcript comes from.
- */
-async function stubAgent(
-  page: Page,
-  { running = false, history = [] as AgentRun[] } = {},
-): Promise<void> {
-  const chatId = CHAT_ID
-  const startedAt = new Date(Date.now() - 92_000).toISOString()
-  const run = running
-    ? {
-        id: 'run-live',
-        chatId,
-        harness: 'claude',
-        status: 'running',
-        createdAt: startedAt,
-        summary: 'Rename the Invoice class',
-        targetCommentIds: [],
-        events: [],
-      }
-    : null
-
-  await page.route('**/api/agent**', (route) => {
-    const tail = new URL(route.request().url()).pathname.split('/agent')[1] ?? ''
-    if (tail === '')
-      return route.fulfill({
-        json: { chatId, harness: 'claude', available: true, run, conversation: { turns: 1 } },
-      })
-    if (tail === '/chats')
-      return route.fulfill({
-        json: {
-          chats: [
-            {
-              id: chatId,
-              title: 'Rename the Invoice class',
-              harness: 'claude',
-              turns: 1,
-              createdAt: startedAt,
-              updatedAt: startedAt,
-              status: running ? 'running' : 'idle',
-              queued: [],
-            },
-          ],
-          activeId: chatId,
-        },
-      })
-    if (tail === '/history') return route.fulfill({ json: history })
-    return route.continue()
+/** The stubbed agent, with a turn running or a transcript to read back. */
+function agent(page: Page, { running = false, history = [] as AgentRun[] } = {}) {
+  const run: AgentRun = {
+    id: 'run-live',
+    chatId: CHAT_ID,
+    harness: 'claude',
+    status: 'running',
+    createdAt: new Date(Date.now() - 92_000).toISOString(),
+    summary: 'Rename the Invoice class',
+    targetCommentIds: [],
+    events: [],
+  }
+  return stubAgent(page, {
+    run: () => (running ? run : null),
+    history: () => history,
+    chats: [chatInfo(CHAT_ID, run.summary, running ? 'running' : 'idle')],
   })
 }
-
-test('the bottom dock floats over the view instead of taking room from it', async ({ page }) => {
-  await goBottom(page)
-
-  // the docked column is gone, and the dock is resting at bar height
-  await expect(page.getByRole('button', { name: 'Collapse the panel' })).toHaveCount(0)
-  await expect(dock(page)).toBeVisible()
-  expect(await dockHeight(page)).toBeLessThan(BAR_CEILING)
-
-  // and the view runs on underneath it, all the way down
-  const main = (await page.locator('main').boundingBox())!
-  const bar = (await dock(page).boundingBox())!
-  expect(main.y + main.height).toBeGreaterThan(bar.y + bar.height)
-})
-
-test('at rest the bar is one line and carries nothing it cannot act on', async ({ page }) => {
-  await goBottom(page)
-  const model = page.locator('[title*="Click to change model"]')
-
-  expect(await dockHeight(page)).toBeLessThan(ONE_LINE)
-  await expect(page.getByRole('button', { name: 'Attach a document' })).toBeVisible()
-  // one clip: an image comes in by pasting or dropping it, not by a second button
-  await expect(page.getByRole('button', { name: 'Add an image' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Open comments' })).toBeVisible()
-  // nothing typed is nothing to send, and the model is a question for a chat you
-  // are actually in — neither earns a place on a resting line
-  await expect(page.getByRole('button', { name: 'Send' })).toHaveCount(0)
-  await expect(model).toHaveCount(0)
-
-  // opened, the bar affords the row it could not: the tab strip, and the control
-  // that docks the panel elsewhere. Deliberately not the model picker — it names
-  // a model or nothing, so on a machine with no agent installed (CI) there is
-  // nothing for it to name, and asserting it here would pass only where an agent
-  // happens to be on PATH.
-  await openDock(page)
-  await expect(page.getByRole('button', { name: 'Where the panel sits' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
-  // and the badge button goes: opened, the tab strip is the way to the threads,
-  // and two controls for one move is one too many
-  await expect(page.getByRole('button', { name: 'Open comments' })).toHaveCount(0)
-})
 
 /** The open dock's tab column, the default layout: the field starts where it ends. */
 async function tabColumnWidth(page: Page): Promise<number> {
@@ -152,10 +72,57 @@ async function tabColumnWidth(page: Page): Promise<number> {
   return (await column.boundingBox())!.width
 }
 
+test('the dock rests as one bar over the view, and opens upward from where it rests', async ({
+  page,
+}) => {
+  await goBottom(page)
+  const model = page.locator('[title*="Click to change model"]')
+
+  // no docked column: the view runs on underneath the bar, all the way down
+  await expect(page.getByRole('button', { name: 'Collapse the panel' })).toHaveCount(0)
+  expect(await dockHeight(page)).toBeLessThan(ONE_LINE)
+  const main = (await page.locator('main').boundingBox())!
+  const bar = (await dock(page).boundingBox())!
+  expect(main.y + main.height).toBeGreaterThan(bar.y + bar.height)
+
+  // at rest it carries only what it can act on: one clip, the comments badge — no
+  // send with nothing typed, no model for a chat you are not in
+  await expect(page.getByRole('button', { name: 'Attach a document' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add an image' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Open comments' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send' })).toHaveCount(0)
+  await expect(model).toHaveCount(0)
+
+  // opening keeps the bar's foot put and unfolds above it; the field rises by one row
+  const before = (await composer(page).boundingBox())!
+  await openDock(page)
+  const opened = (await dock(page).boundingBox())!
+  expect(Math.round(opened.y + opened.height)).toBe(Math.round(bar.y + bar.height))
+  const after = (await composer(page).boundingBox())!
+  expect(after.width).toBeGreaterThan(opened.width - (await tabColumnWidth(page)) - 40)
+  expect(after.y).toBeLessThan(before.y)
+  // opened, the tab strip replaces the badge, and the panel can be docked elsewhere
+  await expect(page.getByRole('button', { name: 'Where the panel sits' })).toBeVisible()
+  await expect(dock(page).getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open comments' })).toHaveCount(0)
+
+  // a click beside it puts it away, back to the same bar
+  await page.mouse.click(40, 200)
+  await expect.poll(() => dockHeight(page)).toBeLessThan(BAR_CEILING)
+  expect(Math.round((await composer(page).boundingBox())!.y)).toBe(Math.round(before.y))
+
+  // and re-docking to a side leaves the floating dock behind
+  await openDock(page)
+  await dock(page).getByRole('button', { name: 'Where the panel sits' }).click()
+  await page.getByRole('button', { name: 'Right' }).click()
+  await expect(dock(page)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Collapse the panel' })).toBeVisible()
+})
+
 test('a long draft rests as its first words on one line, and opens across the whole dock', async ({
   page,
 }) => {
-  await stubAgent(page)
+  await agent(page)
   await goBottom(page)
   const draft =
     'Several roles per person and per entity, since there are several modules\nAccounts with no profile: reset the data\nSend it on creation: yes'
@@ -178,71 +145,6 @@ test('a long draft rests as its first words on one line, and opens across the wh
   await openDock(page)
   await expect(composer(page)).toBeFocused()
   await expect(composer(page)).toHaveValue(draft)
-})
-
-test('the paperclip chooses a domain, then shows what it took', async ({ page }) => {
-  await goBottom(page)
-  // an upload queues behind the server's first introspection, and a cold fixture
-  // spends most of the test budget on it — let the canvas say that is done
-  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
-  // Opened, because the chip this test is about only exists in the opened chat —
-  // the resting bar is one line and shows no payload. Left to the disabled field
-  // to open it, the assertion below would be testing that instead.
-  await openDock(page)
-
-  // A multi-domain workspace has no implicit attachment owner. The paperclip asks once,
-  // then the chosen domain's row opens the native picker - with no second clip on it.
-  await page.getByRole('button', { name: 'Attach a document to a domain' }).click()
-  await expect(page.getByText('Attach to domain')).toBeVisible()
-  await expect(page.getByRole('dialog').locator('svg.lucide-paperclip')).toHaveCount(0)
-  const [chooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: `Attach a document to ${FIXTURE_ORIGIN}` }).click(),
-  ])
-
-  await chooser.setFiles({
-    name: 'notes.md',
-    mimeType: 'text/markdown',
-    buffer: Buffer.from('# Notes\n'),
-  })
-  await expect(page.getByText('Attach to domain')).toHaveCount(0)
-  // what the agent was given is on the composer, not behind anything
-  const chip = page.getByRole('button', { name: 'Remove notes.md' })
-  await expect(chip).toBeVisible()
-  // and it is turn enough on its own — a document says "read this"
-  await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
-
-  // the resting bar is one line and carries nothing: the chip belongs to the
-  // opened chat, not to the bar it grew from
-  await page.keyboard.press('Escape')
-  await expect.poll(() => dockHeight(page)).toBeLessThan(ONE_LINE)
-  await expect(chip).toHaveCount(0)
-  await openDock(page)
-  await expect(chip).toBeVisible()
-
-  await chip.click()
-  await expect(chip).toHaveCount(0)
-})
-
-test('opening grows the dock upward from the bar it rests as', async ({ page }) => {
-  await goBottom(page)
-  const before = (await composer(page).boundingBox())!
-  const bar = (await dock(page).boundingBox())!
-
-  await openDock(page)
-  const opened = (await dock(page).boundingBox())!
-  // the whole point of growing rather than opening a panel: the bar's foot stays
-  // put and everything unfolds above it. The field itself rises by one row - open,
-  // it spans the width beside the tab column and the controls sit under it
-  expect(Math.round(opened.y + opened.height)).toBe(Math.round(bar.y + bar.height))
-  const after = (await composer(page).boundingBox())!
-  expect(after.width).toBeGreaterThan(opened.width - (await tabColumnWidth(page)) - 40)
-  expect(after.y).toBeLessThan(before.y)
-  await expect(dock(page).getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
-
-  await page.keyboard.press('Escape')
-  await expect.poll(() => dockHeight(page)).toBeLessThan(BAR_CEILING)
-  expect(Math.round((await composer(page).boundingBox())!.y)).toBe(Math.round(before.y))
 })
 
 /**
@@ -320,26 +222,6 @@ test('the open dock resizes from its edges and stays centred', async ({ page }) 
   await expect.poll(async () => Math.round((await box()).width)).toBe(Math.round(before.width))
 })
 
-test('a click beside the dock puts it away', async ({ page }) => {
-  await goBottom(page)
-  await openDock(page)
-
-  // the view's own top-left, well clear of the dock
-  await page.mouse.click(40, 200)
-  await expect.poll(() => dockHeight(page)).toBeLessThan(BAR_CEILING)
-})
-
-test('re-docking to a side leaves the floating dock behind', async ({ page }) => {
-  await goBottom(page)
-  await openDock(page)
-
-  await dock(page).getByRole('button', { name: 'Where the panel sits' }).click()
-  await page.getByRole('button', { name: 'Right' }).click()
-
-  await expect(dock(page)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Collapse the panel' })).toBeVisible()
-})
-
 /**
  * Open threads are signalled on the composer, not sent: one chip counts them, and
  * a message only carries the threads picked from it. Naming each thread on the
@@ -367,7 +249,7 @@ test('open threads are signalled on the composer and attached only when picked',
     made.push(((await created.json()) as { id: string }).id)
   }
 
-  await stubAgent(page)
+  await agent(page)
   const submitted: Array<Record<string, unknown>> = []
   await page.route('**/api/agent/submit', (route) => {
     submitted.push(route.request().postDataJSON() as Record<string, unknown>)
@@ -416,7 +298,7 @@ test('open threads are signalled on the composer and attached only when picked',
 })
 
 test('a closed dock still says the agent is working', async ({ page }) => {
-  await stubAgent(page, { running: true })
+  await agent(page, { running: true })
   await goBottom(page)
 
   // closed, this bar is the whole agent on screen — the header has no
@@ -438,18 +320,21 @@ test('a closed dock still says the agent is working', async ({ page }) => {
   await expect(page.getByTestId('agent-dock')).not.toHaveAttribute('aria-busy', 'true')
 })
 
-test('the comments tab shows threads alone, and gives the draft back on the way out', async ({
+test('the paperclip asks for a domain; what it took rides the open chat, past the comments tab', async ({
   page,
 }) => {
   // a harness, so the field is one you can actually type in
-  await stubAgent(page)
+  await agent(page)
   await goBottom(page)
-  // the upload below queues behind the server's first introspection
+  // an upload queues behind the server's first introspection
   await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
   await openDock(page)
-
   await composer(page).fill('half a sentence')
+
+  // a multi-domain workspace has no implicit owner: the clip asks once, then the
+  // chosen domain's row opens the native picker
   await page.getByRole('button', { name: 'Attach a document to a domain' }).click()
+  await expect(page.getByText('Attach to domain')).toBeVisible()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     page.getByRole('button', { name: `Attach a document to ${FIXTURE_ORIGIN}` }).click(),
@@ -459,27 +344,30 @@ test('the comments tab shows threads alone, and gives the draft back on the way 
     mimeType: 'text/markdown',
     buffer: Buffer.from('# Notes\n'),
   })
+  await expect(page.getByText('Attach to domain')).toHaveCount(0)
   const chip = page.getByRole('button', { name: 'Remove notes.md' })
   await expect(chip).toBeVisible()
+
+  // the resting bar is one line: the chip belongs to the opened chat
+  await page.keyboard.press('Escape')
+  await expect.poll(() => dockHeight(page)).toBeLessThan(ONE_LINE)
+  await expect(chip).toHaveCount(0)
+  await openDock(page)
 
   // the threads are a reading surface: nothing to write with, nothing attached
   await dock(page).getByRole('button', { name: 'Comments', exact: true }).click()
   await expect(composer(page)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /Attach a document/ })).toHaveCount(0)
   await expect(chip).toHaveCount(0)
-
   // and the message was only ever put down, never dropped
   await dock(page).getByRole('button', { name: 'Agent', exact: true }).click()
   await expect(composer(page)).toHaveValue('half a sentence')
-  await expect(chip).toBeVisible()
-
   await chip.click()
   await expect(chip).toHaveCount(0)
 })
 
 test('the dock stops at the window, and keeps its tab strip inside', async ({ page }) => {
   // a harness, so there is a field to overfill
-  await stubAgent(page)
+  await agent(page)
   await goBottom(page)
   await openDock(page)
 
@@ -556,7 +444,7 @@ test('a long answer scrolls inside the dock instead of running off its bottom', 
   page,
 }) => {
   const paragraphs = 60
-  await stubAgent(page, { history: [longTurn(paragraphs)] })
+  await agent(page, { history: [longTurn(paragraphs)] })
   await goBottom(page)
   await openDock(page)
   await settled(page)

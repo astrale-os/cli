@@ -1,3 +1,4 @@
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@radix-ui/react-collapsible'
 import { AGENT_ACCESS_LEVELS, type HarnessStatus, type StudioSettings } from '@shared/types'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
@@ -5,7 +6,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { EnvEditor } from '@/components/env-editor'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { TOUR_STEPS } from '@/components/tour'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -17,12 +19,11 @@ import { api, qk } from '@/lib/api'
 import { useHarness, useSettings, useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
-import { AgentDetails, AgentSettings } from './agent'
-import { resolveAgentAccess } from './agent-access'
+import { AgentDetails, AgentSettings, resolveAgentAccess } from './agent'
 import { AppearanceSettings } from './appearance'
+import { SettingRow, SettingsHeading } from './controls'
 import { generalSettingsPatch, SettingsFields } from './fields'
 import { HarnessGatewaySettings } from './gateway'
-import { HelpSettings } from './help'
 
 interface SettingsSaveInput {
   settings: StudioSettings
@@ -160,15 +161,11 @@ export function SettingsDialog() {
               </button>
             </CollapsibleTrigger>
             <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => changeOpen(false)}
-                className="rounded-md px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-              >
+              <Button size="sm" variant="ghost" onClick={() => changeOpen(false)}>
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                size="sm"
                 disabled={!settings || save.isPending}
                 onClick={() =>
                   save.mutate({
@@ -177,14 +174,42 @@ export function SettingsDialog() {
                     values: { ...values },
                   })
                 }
-                className="rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 Save
-              </button>
+              </Button>
             </div>
           </div>
         </Collapsible>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** The way back to the onboarding tour — the only way in, since it never starts itself. */
+function HelpSettings() {
+  const setSettingsOpen = useUI((state) => state.setSettingsOpen)
+  const setTourOpen = useUI((state) => state.setTourOpen)
+  return (
+    <div>
+      <SettingsHeading>Help</SettingsHeading>
+      <div className="divide-y rounded-lg border bg-card">
+        <SettingRow
+          label="Studio tour"
+          description={`${TOUR_STEPS.length} short steps through the studio and Astrale's building blocks.`}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-52"
+            onClick={() => {
+              setSettingsOpen(false)
+              setTourOpen(true)
+            }}
+          >
+            Start tour
+          </Button>
+        </SettingRow>
+      </div>
+    </div>
   )
 }

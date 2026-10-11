@@ -10,7 +10,6 @@ import {
 } from './new-domain'
 
 const run = { id: 'run-1', chatId: 'chat-1', status: 'running', events: [] } as unknown as AgentRun
-
 const file = (name: string) => new File(['hello'], name, { type: 'text/markdown' })
 
 /** Every port records what it was called with, in the order the flow called it. */
@@ -51,100 +50,70 @@ test('the domain is created, then given its files, then given the message', asyn
     message: '  Model invoices  ',
     files: [file('spec.md'), file('notes.md')],
   })
-
-  // the order is the whole point: nothing can be attached or said to a domain
-  // that does not exist yet
   expect(log).toEqual(['create:crm', 'upload:crm-id:2', 'submit:crm-id:Model invoices'])
   expect(phases).toEqual(['creating', 'attaching', 'briefing'])
   expect(outcome).toMatchObject({ id: 'crm-id', origin: 'crm.example.dev', run })
   expect(outcome.error).toBeUndefined()
 })
 
-test('a name with nothing asked of it creates nothing at all', async () => {
-  const { log, ports: p } = ports()
-  const outcome = await createDomainWithBrief(p, { name: 'crm', message: '   ', files: [] })
-
-  // a scaffold nobody asked anything of is a folder, not a domain
-  expect(log).toEqual([])
-  expect(outcome.id).toBeUndefined()
-  expect(outcome.error).toContain('what this domain is for')
+test('nothing is created without a message, a valid name and a creation that succeeds', async () => {
+  const refusals: [
+    Partial<NewDomainPorts>,
+    { name: string; message: string; files: File[] },
+    string,
+  ][] = [
+    [{}, { name: 'crm', message: '   ', files: [] }, 'what this domain is for'],
+    [{}, { name: 'crm', message: '', files: [file('a.md')] }, 'what this domain is for'],
+    [{}, { name: 'Not A Slug', message: 'go', files: [] }, 'lowercase'],
+    [
+      { createDomain: async () => ({ ok: false, error: 'A folder named “crm” already exists.' }) },
+      { name: 'crm', message: 'go', files: [] },
+      'already exists',
+    ],
+    [
+      {
+        createDomain: async () => {
+          throw new Error('502 /api/workspace/create')
+        },
+      },
+      { name: 'crm', message: 'go', files: [] },
+      '502',
+    ],
+  ]
+  for (const [overrides, input, error] of refusals) {
+    const { log, ports: p } = ports(overrides)
+    const outcome = await createDomainWithBrief(p, input)
+    expect(log).toEqual([])
+    expect(outcome.id).toBeUndefined()
+    expect(outcome.unsent).toBeUndefined()
+    expect(outcome.error).toContain(error)
+  }
 })
 
-test('files are not a request either — the message is', async () => {
-  const { log, ports: p } = ports()
-  const outcome = await createDomainWithBrief(p, {
-    name: 'crm',
-    message: '',
-    files: [file('a.md')],
-  })
-
-  expect(log).toEqual([])
-  expect(outcome.error).toContain('what this domain is for')
-})
-
-test('an invalid name never reaches the server', async () => {
-  const { log, ports: p } = ports()
-  const outcome = await createDomainWithBrief(p, { name: 'Not A Slug', message: 'go', files: [] })
-
-  expect(log).toEqual([])
-  expect(outcome.id).toBeUndefined()
-  expect(outcome.error).toContain('lowercase')
-})
-
-test('a refused creation leaves nothing behind, and says why', async () => {
-  const { log, ports: p } = ports({
-    createDomain: async () => ({ ok: false, error: 'A folder named “crm” already exists.' }),
-  })
-  const outcome = await createDomainWithBrief(p, { name: 'crm', message: 'go', files: [] })
-
-  // nothing was created, so nothing else was attempted — the composer keeps it all
-  expect(log).toEqual([])
-  expect(outcome.id).toBeUndefined()
-  expect(outcome.unsent).toBeUndefined()
-  expect(outcome.error).toContain('already exists')
-})
-
-test('a creation that throws is reported like any other refusal', async () => {
-  const { ports: p } = ports({
-    createDomain: async () => {
-      throw new Error('502 /api/workspace/create')
-    },
-  })
-  const outcome = await createDomainWithBrief(p, { name: 'crm', message: 'go', files: [] })
-
-  expect(outcome.id).toBeUndefined()
-  expect(outcome.error).toContain('502')
-})
-
-test('files that do not land hold the message back rather than brief a blind agent', async () => {
-  const { log, ports: p } = ports({
+test('once the domain exists, a failed upload or first turn hands the message back', async () => {
+  const upload = ports({
     uploadDocuments: async () => {
       throw new Error('413 too large')
     },
   })
-  const outcome = await createDomainWithBrief(p, {
+  const held = await createDomainWithBrief(upload.ports, {
     name: 'crm',
     message: 'read the spec',
     files: [file('spec.md')],
   })
+  // files that do not land hold the message back rather than brief a blind agent
+  expect(upload.log).toEqual(['create:crm'])
+  expect(held).toMatchObject({ id: 'crm-id', unsent: 'read the spec' })
+  expect(held.error).toContain('413')
 
-  expect(log).toEqual(['create:crm'])
-  // the domain exists — the caller opens it, carrying the message that never left
-  expect(outcome.id).toBe('crm-id')
-  expect(outcome.unsent).toBe('read the spec')
-  expect(outcome.error).toContain('413')
-})
-
-test('a refused first turn hands the message back with the domain it belongs to', async () => {
-  const { ports: p } = ports({
-    submit: async () => ({ error: 'a turn is already running in this chat' }),
-  })
-  const outcome = await createDomainWithBrief(p, { name: 'crm', message: 'go', files: [] })
-
-  expect(outcome).toMatchObject({
+  const refused = await createDomainWithBrief(
+    ports({ submit: async () => ({ error: 'a turn is already running in this chat' }) }).ports,
+    { name: 'crm', message: 'go', files: [] },
+  )
+  expect(refused).toMatchObject({
     id: 'crm-id',
     error: 'a turn is already running in this chat',
     unsent: 'go',
   })
-  expect(outcome.run).toBeUndefined()
+  expect(refused.run).toBeUndefined()
 })

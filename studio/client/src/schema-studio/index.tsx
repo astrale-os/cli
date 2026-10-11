@@ -2,11 +2,13 @@ import { ReactFlowProvider } from '@xyflow/react'
 import { useEffect, useState } from 'react'
 
 import { ErrorBanner } from '@/components/error-banner'
-import { ScrollArea } from '@/components/ui/misc'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { useBundle, useCore } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
-import { CoreDetail, CoreTree, CoreView } from './core-view'
+import { CoreView } from './core-view/canvas'
+import { CoreDetail } from './core-view/detail'
+import { CoreTree } from './core-view/tree'
 import { TestsSection } from './dataset-view/section'
 import { DomainPicker, DomainsRailHeader } from './domains-rail'
 import { PanelShell } from './panel-shell'
@@ -15,7 +17,7 @@ import { WorkspaceSchemaSection } from './workspace/section'
 import { uniqueDomainIds, useSchemaWorkspace } from './workspace/store'
 
 /** Which canvas this section shows: the schema graph, the core (genesis) data, or the test data. */
-export type SchemaMode = 'schema' | 'core' | 'tests'
+type SchemaMode = 'schema' | 'core' | 'tests'
 
 /**
  * The schema studio. ONE canvas draws the schema, whether it holds one domain or

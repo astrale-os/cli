@@ -51,7 +51,7 @@ export function DomainsRailHeader() {
   )
 }
 
-export interface DomainRowProps {
+interface DomainRowProps {
   origin: string
   /** Which domain's threads a comment dropped on this row belongs to. */
   domainId: string

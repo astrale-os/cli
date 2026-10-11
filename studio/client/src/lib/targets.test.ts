@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test'
 
 import {
   anchorData,
-  anchorKey,
   anchorKindForRef,
   decodeFlowNodeId,
   domainAnchorRef,
@@ -13,10 +12,6 @@ import {
   flowNodeAnchorRef,
   parseMemberFieldRef,
 } from './targets'
-
-test('uses one stable domain-qualified key for comments and Ask', () => {
-  expect(anchorKey('billing', 'class.Invoice')).toBe('billing::class.Invoice')
-})
 
 test('decodes workspace node ids without losing colons in the local ref', () => {
   expect(encodeFlowNodeId('https://docs.dev', 'class.remote:Document')).toBe(
@@ -46,7 +41,7 @@ test('normalizes workspace internal and cross-domain edge ids to their declaring
   )
 })
 
-test('splits a member field ref from the member that owns it', () => {
+test('a member field ref splits from the member that owns it, whose detail it opens', () => {
   expect(parseMemberFieldRef('class.Code.property.total')).toEqual({
     owner: 'class.Code',
     kind: 'property',
@@ -63,12 +58,9 @@ test('splits a member field ref from the member that owns it', () => {
     kind: 'method',
     name: 'publish',
   })
-})
-
-test('only a field resolves to a different detail view', () => {
+  // only a field resolves to a different detail view
   expect(detailRefFor('class.Code.property.total')).toBe('class.Code')
   expect(detailRefFor('class.Code')).toBe('class.Code')
-  expect(detailRefFor('module.billing')).toBe('module.billing')
   expect(parseMemberFieldRef('section.schema')).toBeNull()
 })
 

@@ -60,9 +60,8 @@ function samePoint(current: WorkspacePoint | undefined, next: WorkspacePoint): b
   return current !== undefined && current.x === next.x && current.y === next.y
 }
 
-export function schemaWorkspaceSnapshot(
-  state = useSchemaWorkspace.getState(),
-): WorkspaceSchemaUiState {
+export function schemaWorkspaceSnapshot(): WorkspaceSchemaUiState {
+  const state = useSchemaWorkspace.getState()
   return {
     visibleDomainIds: state.visibleDomainIds,
     initialized: state.initialized,

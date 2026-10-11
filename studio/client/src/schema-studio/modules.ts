@@ -19,7 +19,7 @@ export interface TreeNode {
   members: MemberRef[]
 }
 
-export interface FolderModule {
+interface FolderModule {
   path: string
   label: string
   hue: number

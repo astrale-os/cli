@@ -1,145 +1,134 @@
-import { describe, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 
 import { bundle, classRef, edgeClass, nodeClass } from './__tests__/fixture'
 import { type ClassNodeData, projectDomainCanvas } from './projection'
 
-describe('Domain canvas projection', () => {
-  test('renders Node Classes, relation edges, and Class inheritance', () => {
-    const fixture = bundle({
-      Base: nodeClass('Base'),
-      Document: nodeClass('Document', {
-        extendsRefs: [classRef('local.example.dev', 'Base')],
-      }),
-      linked: edgeClass('linked', [
-        { name: 'source', types: ['Base'] },
-        { name: 'target', types: ['Document'] },
-      ]),
-    })
-    fixture.overlay.sourceSpans = {
-      'class.Base': { file: 'schema/content/base.ts', startLine: 1, endLine: 2 },
-      'class.Document': { file: 'schema/content/document.ts', startLine: 1, endLine: 2 },
-      'edge.linked': { file: 'schema/content/linked.ts', startLine: 1, endLine: 2 },
-    }
-
-    const result = projectDomainCanvas(fixture, new Set(), {}, true)
-    expect(result.nodes.filter((node) => node.type === 'classNode').map((node) => node.id)).toEqual(
-      ['class.Base', 'class.Document'],
-    )
-    expect(result.edges.map((edge) => edge.id).sort()).toEqual([
-      'edge-linked__class.Base__class.Document',
-      'extends-Document__Base',
-    ])
+test('renders Node Classes, relation edges, and Class inheritance', () => {
+  const fixture = bundle({
+    Base: nodeClass('Base'),
+    Document: nodeClass('Document', {
+      extendsRefs: [classRef('local.example.dev', 'Base')],
+    }),
+    linked: edgeClass('linked', [
+      { name: 'source', types: ['Base'] },
+      { name: 'target', types: ['Document'] },
+    ]),
   })
+  fixture.overlay.sourceSpans = {
+    'class.Base': { file: 'schema/content/base.ts', startLine: 1, endLine: 2 },
+    'class.Document': { file: 'schema/content/document.ts', startLine: 1, endLine: 2 },
+    'edge.linked': { file: 'schema/content/linked.ts', startLine: 1, endLine: 2 },
+  }
 
-  test('routes collapsed module edges through the owning module node', () => {
-    const fixture = bundle({
-      User: nodeClass('User'),
-      Space: nodeClass('Space'),
-      owns: edgeClass('owns', [
-        { name: 'owner', types: ['User'] },
-        { name: 'space', types: ['Space'] },
-      ]),
-    })
-    fixture.overlay.sourceSpans = {
-      'class.User': { file: 'schema/identity/user.ts', startLine: 1, endLine: 2 },
-      'class.Space': { file: 'schema/space/space.ts', startLine: 1, endLine: 2 },
-      'edge.owns': { file: 'schema/space/owns.ts', startLine: 1, endLine: 2 },
-    }
-    const result = projectDomainCanvas(fixture, new Set(['identity']), {}, false)
-    expect(result.edges[0]).toMatchObject({ source: 'grp-identity', target: 'class.Space' })
+  const result = projectDomainCanvas(fixture, new Set(), {}, true)
+  expect(result.nodes.filter((node) => node.type === 'classNode').map((node) => node.id)).toEqual([
+    'class.Base',
+    'class.Document',
+  ])
+  expect(result.edges.map((edge) => edge.id).sort()).toEqual([
+    'edge-linked__class.Base__class.Document',
+    'extends-Document__Base',
+  ])
+})
+
+test('routes collapsed module edges through the owning module node', () => {
+  const fixture = bundle({
+    User: nodeClass('User'),
+    Space: nodeClass('Space'),
+    owns: edgeClass('owns', [
+      { name: 'owner', types: ['User'] },
+      { name: 'space', types: ['Space'] },
+    ]),
   })
+  fixture.overlay.sourceSpans = {
+    'class.User': { file: 'schema/identity/user.ts', startLine: 1, endLine: 2 },
+    'class.Space': { file: 'schema/space/space.ts', startLine: 1, endLine: 2 },
+    'edge.owns': { file: 'schema/space/owns.ts', startLine: 1, endLine: 2 },
+  }
+  const result = projectDomainCanvas(fixture, new Set(['identity']), {}, false)
+  expect(result.edges[0]).toMatchObject({ source: 'grp-identity', target: 'class.Space' })
+})
 
-  test('honors hidden Classes and the inheritance toggle independently', () => {
-    const fixture = bundle({
-      Base: nodeClass('Base'),
-      Document: nodeClass('Document', {
-        extendsRefs: [classRef('local.example.dev', 'Base')],
-      }),
-    })
-    expect(projectDomainCanvas(fixture, new Set(), {}, false).edges).toHaveLength(0)
-    expect(
-      projectDomainCanvas(fixture, new Set(), { 'class.Base': true }, true)
-        .nodes.filter((node) => node.type === 'classNode')
-        .map((node) => node.id),
-    ).toEqual(['class.Document'])
+test('honors hidden Classes, and turns inheritance edges off into parent chips', () => {
+  const fixture = bundle({
+    Base: nodeClass('Base'),
+    Document: nodeClass('Document', {
+      extendsRefs: [classRef('local.example.dev', 'Base')],
+    }),
   })
-
-  test('keeps Kernel concepts while omitting implementation bases and their inheritance', () => {
-    const fixture = bundle({
-      Identity: nodeClass('Identity', {
-        origin: 'kernel.astrale.ai',
-        extendsRefs: [classRef('kernel.astrale.ai', 'Node')],
-      }),
-      Named: nodeClass('Named', { origin: 'kernel.astrale.ai' }),
-      Descriptable: nodeClass('Descriptable', { origin: 'kernel.astrale.ai' }),
-      Timestamped: nodeClass('Timestamped', { origin: 'kernel.astrale.ai' }),
-      Node: nodeClass('Node', { origin: 'kernel.astrale.ai' }),
-      Edge: nodeClass('Edge', { origin: 'kernel.astrale.ai' }),
-    })
-    fixture.ir!.domain = 'kernel.astrale.ai'
-
-    const result = projectDomainCanvas(fixture, new Set(), {}, true)
-
-    expect(result.nodes.filter((node) => node.type === 'classNode').map((node) => node.id)).toEqual(
-      ['class.Identity'],
-    )
-    expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toEqual([])
-  })
-
-  test('badges Kernel roles at any depth and never shows Kernel parents as chips', () => {
-    const fixture = bundle({
-      Principal: nodeClass('Principal', {
-        extendsRefs: [
-          classRef('kernel.astrale.ai', 'Identity'),
-          classRef('kernel.astrale.ai', 'Named'),
-          classRef('kernel.astrale.ai', 'Timestamped'),
-          classRef('shared.example.dev', 'Audited'),
-        ],
-      }),
-      Employee: nodeClass('Employee', {
-        extendsRefs: [
-          classRef('local.example.dev', 'Principal'),
-          classRef('local.example.dev', 'Base'),
-        ],
-      }),
-      RenderableFunction: nodeClass('RenderableFunction', {
-        extendsRefs: [
-          classRef('kernel.astrale.ai', 'Function'),
-          classRef('kernel.astrale.ai', 'View'),
-        ],
-      }),
-      Base: nodeClass('Base'),
-    })
-    const cards = projectDomainCanvas(fixture, new Set(), {}, false)
+  const parentsOf = (showInheritedEdges: boolean) =>
+    projectDomainCanvas(fixture, new Set(), {}, showInheritedEdges)
       .nodes.filter((node) => node.type === 'classNode')
-      .map((node) => node.data as ClassNodeData)
-    const card = (name: string) => cards.find((data) => data.name === name)!
+      .map((node) => (node.data as ClassNodeData).parents)
+  expect(projectDomainCanvas(fixture, new Set(), {}, false).edges).toHaveLength(0)
+  // edges on: the chips would only repeat what the canvas already draws
+  expect(parentsOf(true)).toEqual([[], []])
+  expect(parentsOf(false)).toEqual([[], ['Base']])
+  expect(
+    projectDomainCanvas(fixture, new Set(), { 'class.Base': true }, true)
+      .nodes.filter((node) => node.type === 'classNode')
+      .map((node) => node.id),
+  ).toEqual(['class.Document'])
+})
 
-    expect(card('Employee').roles).toEqual(['identity'])
-    expect(card('Employee').parents).toEqual(['Principal', 'Base'])
-    // Every Kernel parent is semantic metadata on the card, never a parent chip.
-    expect(card('Principal')).toMatchObject({ roles: ['identity'], parents: ['Audited'] })
-    expect(card('RenderableFunction')).toMatchObject({
-      roles: ['function', 'view'],
-      parents: [],
-    })
-    expect(card('Base')).toMatchObject({ roles: [], parents: [] })
+test('keeps Kernel concepts while omitting implementation bases and their inheritance', () => {
+  const fixture = bundle({
+    Identity: nodeClass('Identity', {
+      origin: 'kernel.astrale.ai',
+      extendsRefs: [classRef('kernel.astrale.ai', 'Node')],
+    }),
+    Named: nodeClass('Named', { origin: 'kernel.astrale.ai' }),
+    Descriptable: nodeClass('Descriptable', { origin: 'kernel.astrale.ai' }),
+    Timestamped: nodeClass('Timestamped', { origin: 'kernel.astrale.ai' }),
+    Node: nodeClass('Node', { origin: 'kernel.astrale.ai' }),
+    Edge: nodeClass('Edge', { origin: 'kernel.astrale.ai' }),
   })
+  fixture.ir!.domain = 'kernel.astrale.ai'
 
-  test('hands the Class its parents as chips exactly when the edges are off', () => {
-    const fixture = bundle({
-      Base: nodeClass('Base'),
-      Document: nodeClass('Document', {
-        extendsRefs: [classRef('local.example.dev', 'Base')],
-      }),
-    })
-    const parentsOf = (showInheritedEdges: boolean) =>
-      projectDomainCanvas(fixture, new Set(), {}, showInheritedEdges)
-        .nodes.filter((node) => node.type === 'classNode')
-        .map((node) => (node.data as ClassNodeData).parents)
+  const result = projectDomainCanvas(fixture, new Set(), {}, true)
 
-    // edges on: the chips would only repeat what the canvas already draws
-    expect(parentsOf(true)).toEqual([[], []])
-    expect(parentsOf(false)).toEqual([[], ['Base']])
+  expect(result.nodes.filter((node) => node.type === 'classNode').map((node) => node.id)).toEqual([
+    'class.Identity',
+  ])
+  expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toEqual([])
+})
+
+test('badges Kernel roles at any depth and never shows Kernel parents as chips', () => {
+  const fixture = bundle({
+    Principal: nodeClass('Principal', {
+      extendsRefs: [
+        classRef('kernel.astrale.ai', 'Identity'),
+        classRef('kernel.astrale.ai', 'Named'),
+        classRef('kernel.astrale.ai', 'Timestamped'),
+        classRef('shared.example.dev', 'Audited'),
+      ],
+    }),
+    Employee: nodeClass('Employee', {
+      extendsRefs: [
+        classRef('local.example.dev', 'Principal'),
+        classRef('local.example.dev', 'Base'),
+      ],
+    }),
+    RenderableFunction: nodeClass('RenderableFunction', {
+      extendsRefs: [
+        classRef('kernel.astrale.ai', 'Function'),
+        classRef('kernel.astrale.ai', 'View'),
+      ],
+    }),
+    Base: nodeClass('Base'),
   })
+  const cards = projectDomainCanvas(fixture, new Set(), {}, false)
+    .nodes.filter((node) => node.type === 'classNode')
+    .map((node) => node.data as ClassNodeData)
+  const card = (name: string) => cards.find((data) => data.name === name)!
+
+  expect(card('Employee').roles).toEqual(['identity'])
+  expect(card('Employee').parents).toEqual(['Principal', 'Base'])
+  // Every Kernel parent is semantic metadata on the card, never a parent chip.
+  expect(card('Principal')).toMatchObject({ roles: ['identity'], parents: ['Audited'] })
+  expect(card('RenderableFunction')).toMatchObject({
+    roles: ['function', 'view'],
+    parents: [],
+  })
+  expect(card('Base')).toMatchObject({ roles: [], parents: [] })
 })

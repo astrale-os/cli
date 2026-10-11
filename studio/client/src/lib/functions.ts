@@ -12,7 +12,7 @@ import type { HandlerLink, IrClassRef, IrFunction, StudioSchemaBundle } from '@s
 import { nodePathAccepts } from '@shared/types'
 import { Braces, type LucideIcon, Workflow, Zap } from 'lucide-react'
 
-import { handlerLinkFor } from './method-auth'
+import { handlerLinkFor } from './callable'
 
 export interface FunctionModel {
   name: string

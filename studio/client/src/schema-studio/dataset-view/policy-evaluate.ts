@@ -30,13 +30,13 @@ import type { DataEdge, DataGraph } from './policy-graph'
 /** What a policy is asked about: a node, or an edge given by its Dataset index. */
 export type PolicyObject = { kind: 'node'; id: string } | { kind: 'edge'; index: number }
 
-export interface PolicyProbe {
+interface PolicyProbe {
   subject?: string | null
   object?: PolicyObject | null
 }
 
 /** One complete proof: who, over what, and the exact edges that carried it. */
-export interface PolicyProof {
+interface PolicyProof {
   subject: string | null
   object: PolicyObject | null
   edges: number[]
@@ -48,7 +48,7 @@ export type PolicyEvaluation =
   | { status: 'unsupported'; reason: string }
 
 /** Proofs are enumerated, so a pathological pattern on a big Dataset stops here. */
-export const PROOF_LIMIT = 2000
+const PROOF_LIMIT = 2000
 const MAX_COMPOSITION_DEPTH = 8
 
 class Unsupported extends Error {}

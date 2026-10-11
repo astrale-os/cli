@@ -1,12 +1,11 @@
 import type { SchemaIR } from '@shared/types'
 
-import { describe, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 
 import {
   decodePolicy,
   decodePolicyCheck,
   indexPolicies,
-  parsePolicyCheck,
   patternTerms,
   policyCheckLeaves,
   policyDescription,
@@ -18,42 +17,33 @@ import {
 const ORIGIN = 'org.example.dev'
 const ref = (kind: 'class' | 'policy', name: string, origin = ORIGIN) => ({ origin, kind, name })
 
+/** A path term: `group` is the one Group variable an `exists` binds, anything else a role. */
+const term = (kind: string) => (kind === 'group' ? { kind: 'variable', id: 0 } : { kind })
+const step = (source: string, edge: string, target: string, extra = {}) => ({
+  source: term(source),
+  class: ref('class', edge),
+  target: term(target),
+  ...extra,
+})
+/** Some Group the subject owns, which the object reaches over `edge`. */
+const viaGroup = (edge: string, extra = {}) => ({
+  match: {
+    exists: {
+      nodes: [{ variable: term('group'), class: ref('class', 'Group') }],
+      where: { allOf: [step('subject', 'owns', 'group'), step('object', edge, 'group', extra)] },
+    },
+  },
+})
+
 const observeGroup = {
   ref: ref('policy', 'ObserveGroup'),
   description: 'The subject administers this perimeter.',
-  expression: {
-    match: { source: { kind: 'subject' }, class: ref('class', 'owns'), target: { kind: 'object' } },
-  },
+  expression: { match: step('subject', 'owns', 'object') },
 }
-const observeRecord = {
-  ref: ref('policy', 'ObserveRecord'),
-  expression: {
-    match: {
-      exists: {
-        nodes: [{ variable: { kind: 'variable', id: 0 }, class: ref('class', 'Group') }],
-        where: {
-          allOf: [
-            {
-              source: { kind: 'subject' },
-              class: ref('class', 'owns'),
-              target: { kind: 'variable', id: 0 },
-            },
-            {
-              source: { kind: 'object' },
-              class: ref('class', 'belongs'),
-              target: { kind: 'variable', id: 0 },
-            },
-          ],
-        },
-      },
-    },
-  },
-}
+const observeRecord = { ref: ref('policy', 'ObserveRecord'), expression: viaGroup('belongs') }
 const traverseMembership = {
   ref: ref('policy', 'TraverseMembership'),
-  expression: {
-    match: { source: { kind: 'subject' }, class: ref('class', 'owns'), target: { kind: 'target' } },
-  },
+  expression: { match: step('subject', 'owns', 'target') },
 }
 const either = {
   ref: ref('policy', 'Either'),
@@ -73,12 +63,7 @@ test('decodes the V1 policy shapes and rejects what it cannot read', () => {
   expect(
     decodePolicy(ORIGIN, 'x', {
       expression: {
-        match: {
-          source: { kind: 'subject' },
-          class: ref('class', 'owns'),
-          target: { kind: 'object' },
-          repeat: { min: 2, max: 1 },
-        },
+        match: step('subject', 'owns', 'object', { repeat: { min: 2, max: 1 } }),
       },
     }),
   ).toBeUndefined()
@@ -105,9 +90,17 @@ test('decodes callable checks and lists their leaves', () => {
     ['ObserveRecord', 'input'],
     ['Either', 'ref'],
   ])
-  expect(
-    decodePolicyCheck({ check: ref('policy', 'X'), object: { kind: 'elsewhere' } }),
-  ).toBeUndefined()
+  // what it does not recognise is refused rather than rendered as a guess
+  const leaf = { check: ref('policy', 'X'), object: { kind: 'self' } }
+  for (const unread of [
+    'X',
+    { ...leaf, object: { kind: 'elsewhere' } },
+    { ...leaf, check: ref('class', 'X') },
+    // one bad leaf spoils the branch: half a tree would misstate the rule
+    { allOf: [leaf, {}] },
+    { allOf: [] },
+  ])
+    expect(decodePolicyCheck(unread)).toBeUndefined()
 })
 
 test('tells node policies, edge policies and subject-only policies apart, through composition', () => {
@@ -139,6 +132,12 @@ test('tells node policies, edge policies and subject-only policies apart, throug
   ])
 })
 
+/** A callable check of `name` against `object`. */
+const check = (name: string, object: Record<string, string>) => ({
+  check: ref('policy', name),
+  object,
+})
+
 test('finds where a policy is used: protected classes and checking callables', () => {
   const ir = {
     domain: ORIGIN,
@@ -148,10 +147,7 @@ test('finds where a policy is used: protected classes and checking callables', (
         type: 'node',
         policies: { read: ref('policy', 'ObserveGroup') },
         methods: {
-          rename: {
-            name: 'rename',
-            policy: { check: ref('policy', 'ObserveGroup'), object: { kind: 'self' } },
-          },
+          rename: { name: 'rename', policy: check('ObserveGroup', { kind: 'self' }) },
           archive: { name: 'archive' },
         },
       },
@@ -167,8 +163,8 @@ test('finds where a policy is used: protected classes and checking callables', (
         name: 'createRecord',
         policy: {
           allOf: [
-            { check: ref('policy', 'ObserveGroup'), object: { kind: 'input', field: 'group' } },
-            { check: ref('policy', 'ObserveRecord'), object: { kind: 'input', field: 'group' } },
+            check('ObserveGroup', { kind: 'input', field: 'group' }),
+            check('ObserveRecord', { kind: 'input', field: 'group' }),
           ],
         },
       },
@@ -220,7 +216,7 @@ test('lists ancestor policies and their consumers through diamonds, without conf
         type: 'node',
         policies: { read: ref('policy', 'Grandparent') },
         methods: {
-          rename: { policy: { check: ref('policy', 'Parent'), object: { kind: 'self' } } },
+          rename: { policy: check('Parent', { kind: 'self' }) },
         },
       },
       MemberOf: {
@@ -238,10 +234,7 @@ test('lists ancestor policies and their consumers through diamonds, without conf
     },
     functions: {
       create: {
-        policy: {
-          check: ref('policy', 'GreatGrandparent'),
-          object: { kind: 'input', field: 'group' },
-        },
+        policy: check('GreatGrandparent', { kind: 'input', field: 'group' }),
       },
     },
   } as unknown as SchemaIR
@@ -271,91 +264,19 @@ test('lists ancestor policies and their consumers through diamonds, without conf
   ])
 })
 
-const mayManage = { origin: 'crm.example.dev', kind: 'policy', name: 'mayManage' } as const
-const isAdmin = { origin: 'kernel.astrale.ai', kind: 'policy', name: 'isAdmin' } as const
+test('a check names its object the way the Class reads, and only local Policies describe', () => {
+  expect(policyObjectLabel({ kind: 'self' }, 'Invoice')).toBe('this Invoice')
+  expect(policyObjectLabel({ kind: 'input', field: 'accountId' }, 'Invoice')).toBe(
+    'input.accountId',
+  )
+  const platform = { origin: ORIGIN, kind: 'core', name: 'platform' } as const
+  expect(policyObjectLabel({ kind: 'ref', ref: platform }, 'Invoice')).toBe('core platform')
 
-describe('callable Policy checks', () => {
-  test('reads a single check and every object form the grammar allows', () => {
-    expect(parsePolicyCheck({ check: mayManage, object: { kind: 'self' } })).toEqual({
-      kind: 'check',
-      policy: mayManage,
-      object: { kind: 'self' },
-    })
-    expect(
-      parsePolicyCheck({ check: mayManage, object: { kind: 'input', field: 'projectId' } }),
-    ).toMatchObject({ object: { kind: 'input', field: 'projectId' } })
-    const target = { origin: 'crm.example.dev', kind: 'class', name: 'Project' } as const
-    expect(
-      parsePolicyCheck({ check: mayManage, object: { kind: 'ref', ref: target } }),
-    ).toMatchObject({ object: { kind: 'ref', ref: target } })
-  })
-
-  test('keeps the composition tree, nested as declared', () => {
-    expect(
-      parsePolicyCheck({
-        anyOf: [
-          { check: isAdmin, object: { kind: 'self' } },
-          {
-            allOf: [
-              { check: mayManage, object: { kind: 'self' } },
-              { check: mayManage, object: { kind: 'input', field: 'other' } },
-            ],
-          },
-        ],
-      }),
-    ).toEqual({
-      kind: 'anyOf',
-      items: [
-        { kind: 'check', policy: isAdmin, object: { kind: 'self' } },
-        {
-          kind: 'allOf',
-          items: [
-            { kind: 'check', policy: mayManage, object: { kind: 'self' } },
-            { kind: 'check', policy: mayManage, object: { kind: 'input', field: 'other' } },
-          ],
-        },
-      ],
-    })
-  })
-
-  test('refuses what it does not recognise instead of rendering a guess', () => {
-    expect(parsePolicyCheck(undefined)).toBeUndefined()
-    expect(parsePolicyCheck('mayManage')).toBeUndefined()
-    // a check against a Class ref is not a Policy ref
-    expect(
-      parsePolicyCheck({ check: { ...mayManage, kind: 'class' }, object: { kind: 'self' } }),
-    ).toBeUndefined()
-    expect(parsePolicyCheck({ check: mayManage, object: { kind: 'elsewhere' } })).toBeUndefined()
-    // one bad leaf spoils the branch: half a tree would misstate the rule
-    expect(
-      parsePolicyCheck({ allOf: [{ check: mayManage, object: { kind: 'self' } }, {}] }),
-    ).toBeUndefined()
-    expect(parsePolicyCheck({ allOf: [] })).toBeUndefined()
-  })
-
-  test('names the object the way the Class reads', () => {
-    expect(policyObjectLabel({ kind: 'self' }, 'Invoice')).toBe('this Invoice')
-    expect(policyObjectLabel({ kind: 'input', field: 'accountId' }, 'Invoice')).toBe(
-      'input.accountId',
-    )
-    expect(
-      policyObjectLabel(
-        { kind: 'ref', ref: { origin: 'crm.example.dev', kind: 'core', name: 'platform' } },
-        'Invoice',
-      ),
-    ).toBe('core platform')
-  })
-
-  test('finds a local Policy description and stays quiet about foreign ones', () => {
-    const ir = {
-      domain: 'crm.example.dev',
-      policies: {
-        mayManage: { ref: mayManage, expression: { allOf: [] }, description: 'Owns it.' },
-        silent: { ref: { ...mayManage, name: 'silent' }, expression: { allOf: [] } },
-      },
-    } as unknown as SchemaIR
-    expect(policyDescription(ir, mayManage)).toBe('Owns it.')
-    expect(policyDescription(ir, { ...mayManage, name: 'silent' })).toBeUndefined()
-    expect(policyDescription(ir, isAdmin)).toBeUndefined()
-  })
+  const ir = {
+    domain: ORIGIN,
+    policies: { ObserveGroup: observeGroup, Either: either },
+  } as unknown as SchemaIR
+  expect(policyDescription(ir, observeGroup.ref)).toBe('The subject administers this perimeter.')
+  expect(policyDescription(ir, either.ref)).toBeUndefined()
+  expect(policyDescription(ir, ref('policy', 'ObserveGroup', 'kernel.astrale.ai'))).toBeUndefined()
 })

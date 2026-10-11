@@ -31,7 +31,7 @@ const ENVS: EnvName[] = ['dev', 'prod']
 const MANAGED_PROD_SECRETS =
   '· managed prod → bound by `pnpm run deploy <environment>` to the deployment it makes or reuses'
 
-export function EnvEditor({ domainId }: { domainId?: string }) {
+export function EnvEditor({ domainId }: { domainId: string }) {
   const [env, setEnv] = useState<EnvName>('dev')
   const { data, isLoading } = useEnv(domainId, env)
   const qc = useQueryClient()
@@ -45,9 +45,9 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
   }, [env, domainId])
 
   const save = useMutation({
-    mutationFn: () => api.setEnv(domainId!, env, edits),
+    mutationFn: () => api.setEnv(domainId, env, edits),
     onSuccess: (model) => {
-      qc.setQueryData(qk.env(domainId!, env), model)
+      qc.setQueryData(qk.env(domainId, env), model)
       setEdits({})
       toast.success(`Saved ${model.file}`)
     },

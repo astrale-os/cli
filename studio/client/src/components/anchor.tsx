@@ -2,8 +2,7 @@ import type { AnchorRef, Comment } from '@shared/types'
 
 import { useCallback, useId, useMemo } from 'react'
 
-import { hasUnsentDraft } from '@/lib/comment-drafts'
-import { openCommentThreads } from '@/lib/comments'
+import { hasUnsentDraft, openCommentThreads } from '@/lib/comments'
 import { useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { anchorKey } from '@/lib/targets'

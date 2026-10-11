@@ -5,21 +5,21 @@ import { type HTMLAttributes, type ReactNode, type Ref, useEffect, useState } fr
 
 import { AnchorButton, useRevealedAnchor } from '@/components/anchor'
 import { TRIGGER_TONE } from '@/components/method-auth'
-import { PolicyLink } from '@/components/policy-link'
-import { Chip, DescriptionText, MetaGrid, Row, Surface } from '@/components/studio-kit'
+import { PolicyCheckTree, PolicyLink } from '@/components/policy'
+import { Chip, DescriptionText, MetaGrid, Surface } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
-import { describe, typeLabel } from '@/lib/format'
-import { fieldChildren, friendlyFieldType, methodGlyph } from '@/lib/friendly'
-import { handlerLinkFor, methodAuth } from '@/lib/method-auth'
+import { handlerLinkFor, methodAuth, methodGlyph } from '@/lib/callable'
 import {
-  type ParsedPolicyCheck,
-  parsePolicyCheck,
+  decodePolicyCheck,
+  type PolicyCheck,
+  type PolicyCheckLeaf,
   policyDescription,
   policyObjectLabel,
 } from '@/lib/policy'
 import { useUI } from '@/lib/store'
 import { anchorData } from '@/lib/targets'
 import { cn } from '@/lib/utils'
+import { describe, fieldChildren, friendlyFieldType, typeLabel } from '@/lib/value-type'
 
 import type { MemberOwner, MethodEntry, PropertyEntry } from './model'
 
@@ -28,9 +28,9 @@ import { originLabel } from './model'
 // ── The list card every member kind sits in ──
 // `data-member-list` is what lets a row's targeting outline draw INSIDE the row
 // (see styles.css): the card clips, and a ring drawn outside the first row lost its top.
-export function MemberList({ children, className }: { children: ReactNode; className?: string }) {
+export function MemberList({ children }: { children: ReactNode }) {
   return (
-    <Surface data-member-list="" className={cn('divide-y overflow-hidden', className)}>
+    <Surface data-member-list="" className="divide-y overflow-hidden">
       {children}
     </Surface>
   )
@@ -38,22 +38,18 @@ export function MemberList({ children, className }: { children: ReactNode; class
 
 // A member's parsed description (JSDoc/comment), tucked behind a small glyph so it's
 // there on hover without spelling every doc out inline. An "i", not a "?", because the
-// optional marker next to it already IS a question mark. Non-interactive inside a row
-// that is itself a button — a button may not hold another.
-function DocHint({ doc, interactive = true }: { doc: string; interactive?: boolean }) {
-  const className = 'text-muted-foreground transition-colors hover:text-foreground'
+// optional marker next to it already IS a question mark.
+function DocHint({ doc }: { doc: string }) {
   return (
     <HoverCard openDelay={80}>
       <HoverCardTrigger asChild>
-        {interactive ? (
-          <button type="button" aria-label="Description" className={className}>
-            <Info className="h-3.5 w-3.5" />
-          </button>
-        ) : (
-          <span role="img" aria-label="Description" className={className}>
-            <Info className="h-3.5 w-3.5" />
-          </span>
-        )}
+        <button
+          type="button"
+          aria-label="Description"
+          className="text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
       </HoverCardTrigger>
       <HoverCardContent className="w-auto max-w-xs">
         <DescriptionText className="text-[13px] leading-relaxed text-muted-foreground">
@@ -139,25 +135,19 @@ function FieldRow({
   const children = depth < 2 ? fieldChildren(schema) : []
   return (
     <div {...wrapper}>
-      <Row
-        dense
-        // name and type sit at opposite edges, so the row tints under the cursor
-        // to keep the eye on one line while it crosses the gap between them
-        className="rounded-none hover:bg-accent/50"
-        // A bare glyph, not an IconTile: at one line a tinted 24px square is taller
-        // than the text it labels and turns the list into a column of buttons.
-        leading={
-          <span className="flex shrink-0 items-center" style={{ paddingLeft: depth * 16 }}>
-            <Icon className="h-3.5 w-3.5 text-schema-node" />
-          </span>
-        }
-        title={
+      {/* name and type sit at opposite edges, so the row tints under the cursor to keep
+          the eye on one line while it crosses the gap between them */}
+      <div className="flex w-full items-center gap-2 px-2.5 py-1 transition-colors hover:bg-accent/50">
+        {/* a bare glyph, not an IconTile: at one line a tinted square is taller than the
+            text it labels and turns the list into a column of buttons */}
+        <span className="flex shrink-0 items-center" style={{ paddingLeft: depth * 16 }}>
+          <Icon className="h-3.5 w-3.5 text-schema-node" />
+        </span>
+        <div className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">
           <span className="flex items-center gap-1.5">
             <span className="truncate">
               {qualifier}
               {name}
-              {/* `?` rather than an "optional" pill — it rides along with the name
-                  instead of costing a chip's width */}
               {ft.optional && (
                 <span className="font-normal text-muted-foreground" title="optional">
                   ?
@@ -166,17 +156,17 @@ function FieldRow({
             </span>
             {doc && <DocHint doc={doc} />}
           </span>
-        }
-        subtitle={
+        </div>
+        <div className="ml-auto min-w-0 max-w-[50%] truncate text-right text-xs text-muted-foreground">
           <TypeHover
             label={ft.label}
             schema={schema}
             optional={ft.optional}
             anchorKey={anchorKey}
           />
-        }
-        trailing={trailing}
-      />
+        </div>
+        {trailing && <div className="flex shrink-0 items-center gap-1.5">{trailing}</div>}
+      </div>
       {children.map((child) => (
         <FieldRow
           key={child.name}
@@ -339,7 +329,7 @@ export function CallableDetail({
   doc?: string
 }) {
   const params = fieldChildren(method.input)
-  const check = parsePolicyCheck(method.policy)
+  const check = method.policy === undefined ? undefined : decodePolicyCheck(method.policy)
   return (
     // Keep only the row's small outer gutter. Aligning the detail with the method
     // glyph cost too much width in this narrow panel.
@@ -403,7 +393,7 @@ function PolicyLine({
   bundle: StudioSchemaBundle
   owner: string
   method: IrCallable
-  check?: ParsedPolicyCheck
+  check?: PolicyCheck
 }) {
   const verdict = methodAuth(method)
   if (!verdict) return <Note>no authentication contract declared</Note>
@@ -415,7 +405,15 @@ function PolicyLine({
         <span className="font-medium">{verdict.label}</span>
       </div>
       {check ? (
-        <PolicyTree bundle={bundle} owner={owner} check={check} />
+        <PolicyCheckTree
+          check={check}
+          owner={owner}
+          renderCheck={(leaf) => (
+            <div>
+              <PolicyCheckText bundle={bundle} owner={owner} check={leaf} />
+            </div>
+          )}
+        />
       ) : 'abstract' in method &&
         method.abstract &&
         'executable' in method &&
@@ -438,10 +436,10 @@ function PolicyCheckText({
 }: {
   bundle: StudioSchemaBundle
   owner: string
-  check: Extract<ParsedPolicyCheck, { kind: 'check' }>
+  check: PolicyCheckLeaf
 }) {
-  const foreign = check.policy.origin !== bundle.ir?.domain
-  const description = bundle.ir ? policyDescription(bundle.ir, check.policy) : undefined
+  const foreign = check.check.origin !== bundle.ir?.domain
+  const description = bundle.ir ? policyDescription(bundle.ir, check.check) : undefined
   const label = (
     <span
       data-policy-check=""
@@ -450,9 +448,9 @@ function PolicyCheckText({
         description && 'cursor-help',
       )}
     >
-      <PolicyLink policy={check.policy} domainId={bundle.domainId} className="font-mono" />
+      <PolicyLink policy={check.check} domainId={bundle.domainId} className="font-mono" />
       {foreign && (
-        <span className="text-muted-foreground">· {originLabel(check.policy.origin)}</span>
+        <span className="text-muted-foreground">· {originLabel(check.check.origin)}</span>
       )}
       <span className="text-muted-foreground">on {policyObjectLabel(check.object, owner)}</span>
     </span>
@@ -467,43 +465,6 @@ function PolicyCheckText({
         </DescriptionText>
       </HoverCardContent>
     </HoverCard>
-  )
-}
-
-// A composition, as declared: the word that joins its branches, then the branches one
-// step in.
-function PolicyTree({
-  bundle,
-  owner,
-  check,
-}: {
-  bundle: StudioSchemaBundle
-  owner: string
-  check: ParsedPolicyCheck
-}) {
-  if (check.kind === 'sameNode')
-    return (
-      <span>
-        {policyObjectLabel(check.left, owner)} is the same Node as{' '}
-        {policyObjectLabel(check.right, owner)}
-      </span>
-    )
-  if (check.kind === 'check') {
-    return (
-      <div>
-        <PolicyCheckText bundle={bundle} owner={owner} check={check} />
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-0.5">
-      <p className="text-muted-foreground">{check.kind === 'allOf' ? 'all of' : 'any of'}</p>
-      <div className="space-y-0.5 border-l pl-2.5">
-        {check.items.map((item, index) => (
-          <PolicyTree key={index} bundle={bundle} owner={owner} check={item} />
-        ))}
-      </div>
-    </div>
   )
 }
 

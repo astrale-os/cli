@@ -82,12 +82,12 @@ export function echoesError(text: string, error: string | undefined): boolean {
 }
 
 /** What led up to the failure: the last steps, without what is already on screen. */
-export function trailingActivity(run: AgentRun, limit = 8): AgentEvent[] {
+export function trailingActivity(run: AgentRun): AgentEvent[] {
   return run.events
     .filter(
       (event) => event.kind !== 'message' && !(event.kind === 'error' && event.text === run.error),
     )
-    .slice(-limit)
+    .slice(-8)
 }
 
 function duration(run: AgentRun): string | undefined {
@@ -108,7 +108,7 @@ function eventLine(event: AgentEvent): string {
 }
 
 /** Every fact the details view shows, in reading order; empty values are left out. */
-export function errorContext(run: AgentRun): [label: string, value: string][] {
+function errorContext(run: AgentRun): [label: string, value: string][] {
   const rows: [string, string | undefined][] = [
     ['Agent', run.harness],
     ['Model', run.prompt?.model ?? 'harness default'],
@@ -146,7 +146,7 @@ export function errorDiagnostic(run: AgentRun): string {
 }
 
 /** A turn that ended before it finished, and could be picked back up. */
-export type StoppedStatus = 'interrupted' | 'failed' | 'canceled'
+type StoppedStatus = 'interrupted' | 'failed' | 'canceled'
 
 export function isStopped(run: AgentRun): run is AgentRun & { status: StoppedStatus } {
   return run.status === 'interrupted' || run.status === 'failed' || run.status === 'canceled'

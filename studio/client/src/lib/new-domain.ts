@@ -21,7 +21,7 @@ const SLUG = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 const MAX_NAME = 64
 
 /** A name as the studio reads it: what it will be called, and what is wrong with it. */
-export interface NameReading {
+interface NameReading {
   /** the name, lowercased and trimmed — what the server is asked for */
   slug: string
   valid: boolean
@@ -43,7 +43,7 @@ function errorFor(slug: string): string {
 /** Where the send has got to. Each step is worth saying: none of them is instant. */
 export type NewDomainPhase = 'idle' | 'creating' | 'attaching' | 'briefing'
 
-export interface NewDomainRequest {
+interface NewDomainRequest {
   name: string
   /** the first message, as typed — a domain is asked for, not just named */
   message: string
@@ -66,7 +66,7 @@ export interface NewDomainPorts {
   onPhase: (phase: NewDomainPhase) => void
 }
 
-export interface NewDomainOutcome {
+interface NewDomainOutcome {
   /** set from the moment the domain exists — the point of no return */
   id?: string
   origin?: string

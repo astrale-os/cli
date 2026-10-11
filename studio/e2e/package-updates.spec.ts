@@ -33,7 +33,6 @@ test('a quiet domain package hint prepares a new unsent agent request', async ({
   await page.getByRole('button', { name: 'Prepare update with agent' }).click()
 
   const composer = page.getByPlaceholder('Message the agent…')
-  await expect(composer).toContainText('')
   await expect(composer).toHaveValue(/Update the Astrale packages for the crm\.studio-demo/)
   await expect(composer).toHaveValue(/@astrale-os\/ui: 0\.4\.0 → 0\.5\.0/)
   expect(submitted).toBe(0)

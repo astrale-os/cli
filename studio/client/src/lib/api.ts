@@ -240,10 +240,6 @@ export const api = {
     post<HarnessGatewayState>('/api/agent/harness-gateway', { action: 'set', config }),
   clearHarnessGateway: () =>
     post<HarnessGatewayState>('/api/agent/harness-gateway', { action: 'clear' }),
-  // EMBED seam: relay a host-supplied delegation token to the server for `host`
-  // auth mode. Called by the Astrale GUI glue when the studio runs as an iframe.
-  pushHostToken: (token: string) =>
-    post<{ ok: boolean }>('/api/agent/harness-gateway/host-token', { token }),
   loadout: (refresh = false, chatId?: string) =>
     get<HarnessLoadout>(
       `/api/agent/loadout?${new URLSearchParams({

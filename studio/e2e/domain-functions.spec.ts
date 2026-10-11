@@ -16,35 +16,34 @@ async function openSchema(page: Page): Promise<void> {
   await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
 }
 
-test('every function is drawn on the canvas, tied to the classes it works on', async ({ page }) => {
+test('a function is drawn tied to its classes, opens its contract, and is listed on them', async ({
+  page,
+}) => {
   await openSchema(page)
-
-  const nodes = page.locator(FUNCTION_NODE)
-  await expect(nodes).toHaveCount(3)
-  await expect(page.locator(`${FUNCTION_NODE}[data-id$="function.reconcileInvoice"]`)).toBeVisible()
+  await expect(page.locator(FUNCTION_NODE)).toHaveCount(3)
   // the binding comes from the Node path its input accepts — a Function names no receiver
-  const edge = page.locator(
-    `.react-flow__edge[data-id="workspace:${FIXTURE_ID}:function-reconcileInvoice__class.Invoice"]`,
-  )
-  await expect(edge).toHaveCount(1)
+  await expect(
+    page.locator(
+      `.react-flow__edge[data-id="workspace:${FIXTURE_ID}:function-reconcileInvoice__class.Invoice"]`,
+    ),
+  ).toHaveCount(1)
   // one that accepts no Class still gets a node, it just hangs off nothing
   await expect(page.locator(`.react-flow__edge[data-id*="function-exportLedger__"]`)).toHaveCount(0)
-})
 
-test('clicking a function on the canvas opens its contract', async ({ page }) => {
-  await openSchema(page)
   await page.locator(`${FUNCTION_NODE}[data-id$="function.reconcileInvoice"]`).click()
-
   const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
   await expect(panel.getByRole('heading', { name: 'reconcileInvoice' })).toBeVisible()
   await expect(panel).toContainText('Works on')
-  await expect(panel.getByRole('button', { name: 'Invoice', exact: true })).toBeVisible()
   await expect(panel).toContainText('Authenticated')
   await expect(panel.locator('[data-method-returns]')).toContainText('Yes / no')
 
-  // the Class chip opens the Class it names
+  // the Class chip opens the Class it names, which lists the functions working on it
   await panel.getByRole('button', { name: 'Invoice', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
+  await expect(panel.getByText('Functions', { exact: true })).toBeVisible()
+  await expect(panel.locator('[data-anchor-ref="function.reconcileInvoice"]')).toBeVisible()
+  // a Function that works on another Class stays out of this list
+  await expect(panel.locator('[data-anchor-ref="function.escalateTicket"]')).toHaveCount(0)
 })
 
 test('the Functions overview groups them by the classes they work on', async ({ page }) => {
@@ -62,17 +61,6 @@ test('the Functions overview groups them by the classes they work on', async ({ 
 
   await panel.locator('[data-anchor-ref="function.exportLedger"]').getByRole('button').click()
   await expect(page.getByRole('heading', { name: 'exportLedger' })).toBeVisible()
-})
-
-test('a class lists the functions declared outside it that work on it', async ({ page }) => {
-  await openSchema(page)
-  await page.getByText('Invoice', { exact: true }).first().click()
-
-  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
-  await expect(panel.getByText('Functions', { exact: true })).toBeVisible()
-  await expect(panel.locator('[data-anchor-ref="function.reconcileInvoice"]')).toBeVisible()
-  // a Function that works on another Class stays out of this list
-  await expect(panel.locator('[data-anchor-ref="function.escalateTicket"]')).toHaveCount(0)
 })
 
 test('Process leads back to the schema for a function, as it does for a class', async ({

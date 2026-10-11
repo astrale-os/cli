@@ -2,7 +2,7 @@ import type { Node } from '@xyflow/react'
 
 import { CLASS_H, CLASS_W } from './palette'
 
-export interface CanvasViewport {
+interface CanvasViewport {
   x: number
   y: number
   zoom: number

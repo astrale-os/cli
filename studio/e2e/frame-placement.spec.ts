@@ -1,7 +1,6 @@
 import type { WorkspaceUiState } from '@shared/types'
 
-import { FIXTURE_ID, PEER_ID } from './test'
-import { expect, test } from './test'
+import { expect, test, FIXTURE_ID, PEER_ID } from './test'
 
 const PEER_ORIGIN = 'ops.studio-demo.astrale.ai'
 

@@ -1,5 +1,4 @@
-import { FIXTURE_ID } from './test'
-import { dockWorkspacePanel, expect, test, type Locator, type Page } from './test'
+import { dockWorkspacePanel, expect, test, type Locator, type Page, FIXTURE_ID } from './test'
 
 /**
  * Searching for a RELATIONSHIP and getting an answer on the canvas.

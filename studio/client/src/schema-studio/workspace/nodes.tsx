@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import type { GroupNodeData } from '../projection'
 import type { WorkspaceDomainNodeData } from './projection'
 
-import { GroupNode, schemaNodeTypes } from '../graph'
+import { GroupNode, schemaNodeTypes } from '../graph/nodes'
 import { SchemaIcon } from '../schema-icon'
 
 export interface WorkspaceNodeActions {

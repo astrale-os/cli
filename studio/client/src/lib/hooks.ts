@@ -1,4 +1,4 @@
-import type { CommentStore, DocMeta, DomainSummary, EnvName } from '@shared/types'
+import type { EnvName } from '@shared/types'
 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -112,12 +112,8 @@ export function useUpdates(id?: string) {
   })
 }
 
-export function useAgentSession(chatId?: string, enabled = true) {
-  return useQuery({
-    queryKey: qk.agentSession(chatId),
-    queryFn: () => api.agentSession(chatId),
-    enabled,
-  })
+export function useAgentSession(chatId?: string) {
+  return useQuery({ queryKey: qk.agentSession(chatId), queryFn: () => api.agentSession(chatId) })
 }
 export function useAgentSystemPrompt(enabled = true) {
   return useQuery({
@@ -156,16 +152,12 @@ export function useLoadout(chatId?: string, enabled = true) {
     staleTime: 60_000,
   })
 }
-export function useUsage(enabled = true) {
-  return useQuery({ queryKey: qk.usage, queryFn: api.usage, enabled })
+export function useUsage() {
+  return useQuery({ queryKey: qk.usage, queryFn: api.usage })
 }
-export function useEnv(id?: string, env: EnvName = 'dev', enabled = true) {
+export function useEnv(id: string, env: EnvName) {
   // refetches on any domain SSE (env.ts edits invalidate 'env') — see useInvalidateDomain
-  return useQuery({
-    queryKey: qk.env(id ?? '', env),
-    queryFn: () => api.env(id!, env),
-    enabled: enabled && !!id,
-  })
+  return useQuery({ queryKey: qk.env(id, env), queryFn: () => api.env(id, env) })
 }
 export function useComments(id?: string) {
   return useQuery({
@@ -175,35 +167,20 @@ export function useComments(id?: string) {
   })
 }
 
-export interface WorkspaceDomainComments {
-  domain: DomainSummary
-  store?: CommentStore
-  loading: boolean
-}
-
-export interface WorkspaceResourceOptions {
-  /** The resource is on screen now; do not wait behind the selected schema. */
-  foreground?: boolean
-}
-
-export const workspaceResourceEnabled = (foreground: boolean, schemaSettled: boolean) =>
-  foreground || schemaSettled
-
 /**
  * One per-domain read fanned out over every workspace domain, keeping each result
- * beside the domain that owns it. A background read waits behind the selected schema
- * unless the resource is on screen now.
+ * beside the domain that owns it. A background read waits behind the selected schema;
+ * a `foreground` one is on screen now and does not.
  */
 function useWorkspaceResource<T>(
-  options: WorkspaceResourceOptions,
+  foreground: boolean,
   queryKey: (id: string) => readonly unknown[],
   queryFn: (id: string) => Promise<T>,
 ) {
   const workspace = useWorkspace()
   const domains = workspace.data ?? []
-  const foreground = options.foreground === true
   const schemaSettled = useSchemaSettled(!foreground)
-  const enabled = workspaceResourceEnabled(foreground, schemaSettled)
+  const enabled = foreground || schemaSettled
   const results = useQueries({
     queries: domains.map((domain) => ({
       queryKey: queryKey(domain.id),
@@ -226,12 +203,12 @@ function useWorkspaceResource<T>(
 }
 
 /** Every domain's comments, retaining the owner needed for mutations and navigation. */
-export function useWorkspaceComments(options: WorkspaceResourceOptions = {}): {
-  data: WorkspaceDomainComments[]
-  isLoading: boolean
-  pending: number
-} {
-  const { entries, isLoading, pending } = useWorkspaceResource(options, qk.comments, api.comments)
+export function useWorkspaceComments({ foreground = false } = {}) {
+  const { entries, isLoading, pending } = useWorkspaceResource(
+    foreground,
+    qk.comments,
+    api.comments,
+  )
   return {
     data: entries.map(({ domain, data, loading }) => ({ domain, store: data, loading })),
     isLoading,
@@ -252,19 +229,9 @@ export function useDatasets(id?: string) {
   })
 }
 
-export interface WorkspaceDomainDocuments {
-  domain: DomainSummary
-  documents?: DocMeta[]
-  loading: boolean
-}
-
 /** Every domain's attached context, retaining where each document is stored. */
-export function useWorkspaceDocuments(options: WorkspaceResourceOptions = {}): {
-  data: WorkspaceDomainDocuments[]
-  isLoading: boolean
-  pending: number
-} {
-  const { entries, isLoading, pending } = useWorkspaceResource(options, qk.documents, api.documents)
+export function useWorkspaceDocuments() {
+  const { entries, isLoading, pending } = useWorkspaceResource(false, qk.documents, api.documents)
   return {
     data: entries.map(({ domain, data, loading }) => ({ domain, documents: data, loading })),
     isLoading,

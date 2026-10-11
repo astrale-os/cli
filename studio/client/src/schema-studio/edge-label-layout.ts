@@ -1,9 +1,9 @@
-export interface EdgeLabelPoint {
+interface EdgeLabelPoint {
   x: number
   y: number
 }
 
-export interface EdgeLabelSize {
+interface EdgeLabelSize {
   width: number
   height: number
 }
@@ -29,7 +29,7 @@ export interface EdgePathSample extends EdgeLabelPoint {
   distance: number
 }
 
-export interface EdgeLabelPlacementOptions {
+interface EdgeLabelPlacementOptions {
   /** Preferred distance from the source along the rendered path. */
   preferredDistance: number
   /** Restrict path candidates to one end of the edge (used by cardinality chips). */
@@ -58,10 +58,9 @@ const cellKey = (column: number, row: number) => `${column}:${row}`
 
 export function createEdgeLabelObstacleIndex(
   obstacles: EdgeLabelObstacle[],
-  cellSize = OBSTACLE_CELL_SIZE,
 ): EdgeLabelObstacleIndex {
   const index: MutableEdgeLabelObstacleIndex = {
-    cellSize,
+    cellSize: OBSTACLE_CELL_SIZE,
     cells: new Map(),
     maxRight: Number.NEGATIVE_INFINITY,
   }

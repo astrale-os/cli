@@ -29,7 +29,7 @@ import {
 } from 'react'
 
 import { api, qk } from '@/lib/api'
-import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
+import { hasAnyUnsentDraft } from '@/lib/comments'
 import { useCatalog, useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { decodeFlowNodeId } from '@/lib/targets'

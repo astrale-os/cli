@@ -6,7 +6,7 @@ import { useId } from 'react'
 import { useAnchorThreads } from '@/components/anchor'
 import { ThreadPopover } from '@/components/thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
-import { hasUnsentDraft } from '@/lib/comment-drafts'
+import { hasUnsentDraft } from '@/lib/comments'
 import { useUI } from '@/lib/store'
 import { anchorKey } from '@/lib/targets'
 import { cn } from '@/lib/utils'
@@ -21,13 +21,11 @@ export function NodeCommentPin({
   anchorRef,
   kind,
   excerpt,
-  className,
 }: {
   domainId: string
   anchorRef: string
   kind: AnchorKind
   excerpt: string
-  className?: string
 }) {
   const { openThreads, orphaned } = useAnchorThreads(anchorRef, domainId)
   const myId = useId()
@@ -58,7 +56,6 @@ export function NodeCommentPin({
             orphaned
               ? 'bg-destructive text-white hover:bg-destructive/90'
               : 'bg-primary text-primary-foreground hover:bg-primary/90',
-            className,
           )}
         >
           <MessageSquare className="h-2.5 w-2.5" />

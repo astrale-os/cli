@@ -2,7 +2,7 @@ import type { ChatInfo } from '@shared/types'
 
 import { Zap } from 'lucide-react'
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/misc'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useChatMutations } from '@/lib/chats'
 import { useLoadout } from '@/lib/hooks'
 import { cn } from '@/lib/utils'

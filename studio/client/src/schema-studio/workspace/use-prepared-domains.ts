@@ -9,10 +9,7 @@ import { functionGraphKey } from '../function-graph'
 import { viewGraphKey } from '../view-graph'
 import { prepareWorkspaceDomain, type WorkspaceDomainProjection } from './projection'
 
-export function domainPreparationKey(
-  input: WorkspaceDomainInput,
-  collapsedModules: string[],
-): string {
+function domainPreparationKey(input: WorkspaceDomainInput, collapsedModules: string[]): string {
   return [
     input.summary.id,
     input.summary.origin,
@@ -37,11 +34,11 @@ export function domainPreparationKey(
 }
 
 /** The domains a prepared projection belongs to — its identity, whatever it was prepared from. */
-export function workspaceSelectionKey(inputs: WorkspaceDomainInput[]): string {
+function workspaceSelectionKey(inputs: WorkspaceDomainInput[]): string {
   return inputs.map((input) => input.summary.id).join('::')
 }
 
-export interface PreparedWorkspaceState {
+interface PreparedWorkspaceState {
   selection: string | null
   domains: WorkspaceDomainProjection[]
 }
@@ -98,7 +95,7 @@ export function preparedWorkspaceStatus(
  * now, and this is what pays for it: an unchecked domain's projection survives, so
  * checking it again repaints instead of re-laying out.
  */
-export const PROJECTION_CACHE_SIZE = 12
+const PROJECTION_CACHE_SIZE = 12
 
 /** Least-recently-used eviction, with everything currently on the canvas held back. */
 export function evictStaleProjections<T>(

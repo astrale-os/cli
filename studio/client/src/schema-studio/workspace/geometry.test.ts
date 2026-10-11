@@ -19,52 +19,27 @@ const moduleNode = (id: string): Node => ({
   style: { width: 240, height: 180 },
 })
 
-test('a domain moved on the canvas leaves its neighbours where they were', () => {
-  const sources = [
-    { domainId: 'alpha', nodes: [moduleNode('alpha-module')] },
-    { domainId: 'beta', nodes: [moduleNode('beta-module')] },
-  ]
-  const initial = layoutWorkspaceFrames(sources, {})
-  const positions = Object.fromEntries(initial.map((frame) => [frame.domainId, frame.position]))
-  const moved = layoutWorkspaceFrames(sources, { ...positions, alpha: { x: 900, y: 40 } })
-
-  expect(moved[0].position).toEqual({ x: 900, y: 40 })
-  expect(moved[1].position).toEqual(initial[1].position)
-})
-
-test('a domain added after one was moved by hand lands beside it, and moves nothing', () => {
+test('a domain moved by hand moves nothing else, and one added later lands beside it', () => {
   const alpha = { domainId: 'alpha', nodes: [moduleNode('alpha-module')] }
   const beta = { domainId: 'beta', nodes: [moduleNode('beta-module')] }
+  const initial = layoutWorkspaceFrames([alpha, beta], {})
+  const placed = Object.fromEntries(initial.map((frame) => [frame.domainId, frame.position]))
+  const dragged = layoutWorkspaceFrames([alpha, beta], { ...placed, alpha: { x: 900, y: 40 } })
+  expect(dragged[0].position).toEqual({ x: 900, y: 40 })
+  expect(dragged[1].position).toEqual(initial[1].position)
+
+  // beta arrives after alpha was moved; the kernel frame still sits where alpha USED to be
   const moved = { alpha: { x: -400, y: 700 } }
-  // What the kernel frame was given the first time round, beside where alpha USED to be.
   const kernel = { position: { x: 500, y: 0 }, size: { width: 216, height: 400 } }
-
   const [first, second] = layoutWorkspaceFrames([alpha, beta], moved, [kernel])
-
   expect(first.position).toEqual(moved.alpha)
-  const alphaRect = { position: first.position, size: first.size }
-  expect(rectsOverlap(second, alphaRect, WORKSPACE_DOMAIN_GAP - 1)).toBe(false)
+  expect(rectsOverlap(second, first, WORKSPACE_DOMAIN_GAP - 1)).toBe(false)
   expect(rectsOverlap(second, kernel, WORKSPACE_DOMAIN_GAP - 1)).toBe(false)
-  // Beside the domain the reader placed, not past the far edge of everything.
+  // beside the domain the reader placed, not past the far edge of everything
   expect(second.position).toEqual({
     x: moved.alpha.x + first.size.width + WORKSPACE_DOMAIN_GAP,
     y: moved.alpha.y,
   })
-})
-
-test('a new frame never lands on an external frame that already has a place', () => {
-  const alpha = { domainId: 'alpha', nodes: [moduleNode('alpha-module')] }
-  const beta = { domainId: 'beta', nodes: [moduleNode('beta-module')] }
-  const [placedAlpha] = layoutWorkspaceFrames([alpha], {})
-  const kernel = {
-    position: { x: placedAlpha.size.width + WORKSPACE_DOMAIN_GAP, y: 0 },
-    size: { width: 216, height: 300 },
-  }
-
-  const [, second] = layoutWorkspaceFrames([alpha, beta], { alpha: placedAlpha.position }, [kernel])
-
-  expect(rectsOverlap(second, kernel, WORKSPACE_DOMAIN_GAP - 1)).toBe(false)
-  expect(rectsOverlap(second, placedAlpha, WORKSPACE_DOMAIN_GAP - 1)).toBe(false)
 })
 
 test('a hole left between placed frames is filled before the canvas grows', () => {

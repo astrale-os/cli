@@ -4,7 +4,7 @@ import type { Edge, Node } from '@xyflow/react'
 import { isIrClassRef } from '@shared/schema/identity'
 
 import { buildFunctionsModel } from '@/lib/functions'
-import { encodeFlowEdgeId, encodeFlowNodeId } from '@/lib/targets'
+import { domainAnchorRef, encodeFlowEdgeId, encodeFlowNodeId } from '@/lib/targets'
 import { buildViewsModel } from '@/lib/views'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
@@ -18,7 +18,7 @@ import { moduleOfClass } from '../modules'
 import { EDGE_WIDTH } from '../palette'
 import { projectDomainCanvas } from '../projection'
 import { viewGraph } from '../view-graph'
-import { classRef, domainRef, edgeRef, isHidden } from '../visibility'
+import { classRef, edgeRef, isHidden } from '../visibility'
 import {
   externalLanes,
   projectExternalFrames,
@@ -46,7 +46,7 @@ export interface WorkspaceDomainNodeData extends Record<string, unknown> {
   origin: string
 }
 
-export interface WorkspaceProjection {
+interface WorkspaceProjection {
   nodes: Node[]
   edges: Edge[]
   diagnostics: string[]
@@ -54,7 +54,7 @@ export interface WorkspaceProjection {
   externalPositions: Record<string, WorkspacePoint>
 }
 
-export interface ComposeWorkspaceCanvasOptions {
+interface ComposeWorkspaceCanvasOptions {
   domainPositions?: Record<string, WorkspacePoint>
   externalPositions?: Record<string, WorkspacePoint>
   catalog?: DomainCatalogEntry[]
@@ -182,7 +182,7 @@ function resolveClass(
 
   // An imported domain the reader hid stays hidden — the Domains panel's eye writes
   // `domain.<origin>` into the owner's visibility, and this is where it lands.
-  if (isHidden(domainRef(ref.origin), owner.input.visibility.hidden)) return []
+  if (isHidden(domainAnchorRef(ref.origin), owner.input.visibility.hidden)) return []
 
   const candidates = origins.get(ref.origin) ?? []
   if (candidates.length > 1) {
@@ -288,7 +288,7 @@ function rememberDependencyFootprint(
       const { origin, name } = descriptor.ref
       if (origin === ir.domain) continue
       if ((origins.get(origin)?.length ?? 0) > 0) continue
-      if (isHidden(domainRef(origin), owner.input.visibility.hidden)) continue
+      if (isHidden(domainAnchorRef(origin), owner.input.visibility.hidden)) continue
       // An imported EDGE is a relationship, not a box: it is already on the canvas as the
       // line between its endpoints, and a card for it would name the same thing twice.
       if (ir.importedClassesByKey[descriptor.key]?.type === 'edge') continue

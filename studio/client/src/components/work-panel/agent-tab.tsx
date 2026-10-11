@@ -9,7 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { toast } from 'sonner'
 
 import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
-import { ScrollArea } from '@/components/ui/misc'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   conversationContext,
   type HarnessLink,

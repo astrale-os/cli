@@ -14,29 +14,22 @@ export function SectionShell({
   title,
   subtitle,
   icon,
-  actions,
   children,
-  wide,
-  className,
 }: {
   title: string
   subtitle?: string
   icon?: React.ReactNode
-  actions?: React.ReactNode
   children: React.ReactNode
-  wide?: boolean
-  className?: string
 }) {
   return (
     <div className="h-full overflow-y-auto">
-      <div className={cn('mx-auto px-8 pt-7 pb-16', wide ? 'max-w-6xl' : 'max-w-3xl', className)}>
+      <div className="mx-auto max-w-3xl px-8 pt-7 pb-16">
         <header className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2">
           {icon && <div className="text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">{icon}</div>}
           <div className="min-w-0 flex-1 basis-56">
             <h1 className="text-[15px] font-semibold tracking-tight">{title}</h1>
             {subtitle && <p className="mt-0.5 text-[13px] text-muted-foreground">{subtitle}</p>}
           </div>
-          {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
         </header>
         {children}
       </div>
@@ -49,15 +42,13 @@ export function Group({
   label,
   hint,
   children,
-  className,
 }: {
   label?: string
   hint?: React.ReactNode
   children: React.ReactNode
-  className?: string
 }) {
   return (
-    <section className={cn('mb-7', className)}>
+    <section className="mb-7">
       {label && (
         <div className="mb-2 flex items-baseline justify-between px-0.5">
           <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -101,13 +92,11 @@ export function IconTile({
   tone = 'muted',
   size = 'md',
   className,
-  style,
 }: {
   children: React.ReactNode
   tone?: keyof typeof TONES | string
   size?: keyof typeof TILE_SIZES
   className?: string
-  style?: React.CSSProperties
 }) {
   return (
     <div
@@ -117,7 +106,6 @@ export function IconTile({
         TILE_SIZES[size],
         className,
       )}
-      style={style}
     >
       {children}
     </div>
@@ -125,77 +113,40 @@ export function IconTile({
 }
 
 // ── Row: the one list item — leading icon + title/subtitle + trailing ──
-// `dense` is the same idiom at table weight: the subtitle moves off its own line
-// and onto the title's, pinned right. A field's name and its type are one fact,
-// so a list of them reads as two columns instead of stacked pairs — the same rows
-// in roughly half the height, which is what makes long member lists scannable.
 export function Row({
   leading,
   title,
   subtitle,
   trailing,
   onClick,
-  active,
-  dense,
   className,
-  children,
-  anchorRef,
-  anchorExcerpt,
 }: {
   leading?: React.ReactNode
   title?: React.ReactNode
   subtitle?: React.ReactNode
   trailing?: React.ReactNode
   onClick?: () => void
-  active?: boolean
-  /** single-line variant: subtitle sits right-aligned on the title's line */
-  dense?: boolean
   className?: string
-  children?: React.ReactNode
-  /** makes the whole row a commentable target surface (comment mode) */
-  anchorRef?: string
-  anchorExcerpt?: string
 }) {
   const Comp = onClick ? 'button' : 'div'
   return (
     <Comp
       onClick={onClick}
-      data-anchor-ref={anchorRef}
-      data-anchor-excerpt={anchorExcerpt}
-      data-commentable={anchorRef ? '' : undefined}
       className={cn(
-        'group/row flex w-full items-center rounded-md text-left transition-colors',
-        dense ? 'gap-2 px-2.5 py-1' : 'gap-2.5 px-2.5 py-2',
+        'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
         onClick && 'cursor-pointer hover:bg-accent',
-        active && 'bg-accent',
         className,
       )}
     >
       {leading}
-      {dense ? (
-        <>
-          {title && (
-            <div className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">{title}</div>
-          )}
+      {(title || subtitle) && (
+        <div className="min-w-0 flex-1">
+          {title && <div className="truncate text-[13px] font-medium">{title}</div>}
           {subtitle && (
-            // caps at half the row so a long type never crowds out the name it
-            // describes; `ml-auto` keeps it on the right edge even with no title
-            <div className="ml-auto min-w-0 max-w-[50%] truncate text-right text-xs text-muted-foreground">
-              {subtitle}
-            </div>
+            <div className="truncate text-xs leading-snug text-muted-foreground">{subtitle}</div>
           )}
-        </>
-      ) : (
-        (title || subtitle) && (
-          <div className="min-w-0 flex-1">
-            {title && <div className="truncate text-[13px] font-medium">{title}</div>}
-            {subtitle && (
-              <div className="truncate text-xs leading-snug text-muted-foreground">{subtitle}</div>
-            )}
-          </div>
-        )
+        </div>
       )}
-      {children}
       {trailing && <div className="flex shrink-0 items-center gap-1.5">{trailing}</div>}
     </Comp>
   )
@@ -234,15 +185,9 @@ export function Chip({
 }
 
 // ── MetaGrid: key/value technical detail ──
-export function MetaGrid({
-  items,
-  className,
-}: {
-  items: { label: string; value: React.ReactNode }[]
-  className?: string
-}) {
+export function MetaGrid({ items }: { items: { label: string; value: React.ReactNode }[] }) {
   return (
-    <dl className={cn('grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs', className)}>
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
       {items.map((it, i) => (
         <React.Fragment key={i}>
           <dt className="whitespace-nowrap text-muted-foreground">{it.label}</dt>

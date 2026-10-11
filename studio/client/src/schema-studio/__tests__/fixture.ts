@@ -1,4 +1,10 @@
-import type { IrClass, IrClassRef, StudioSchemaBundle } from '@shared/types'
+import type {
+  DomainAnatomy,
+  IrClass,
+  IrClassRef,
+  JsonSchema,
+  StudioSchemaBundle,
+} from '@shared/types'
 
 export function nodeClass(name: string, input: Partial<IrClass> = {}): IrClass {
   return {
@@ -26,6 +32,14 @@ export function edgeClass(name: string, endpoints: IrClass['endpoints']): IrClas
 
 export function classRef(origin: string, name: string): IrClassRef {
   return { origin, kind: 'class', name }
+}
+
+/** The DSL's Node path value schema, accepting the named Classes. */
+export function nodePath(...accepts: IrClassRef[]): JsonSchema {
+  return {
+    $ref: 'https://schemas.astrale.ai/graph/1/node-path',
+    'x-astrale-path': { target: 'node', cardinality: 'one', accepts },
+  }
 }
 
 export function bundle(
@@ -58,5 +72,25 @@ export function bundle(
     },
     extractedAt: '2026-08-23T00:00:00.000Z',
     ...input,
+  }
+}
+
+/** Record `ref` as a dependency of `value`, optionally with the Class it resolved to. */
+export function importClass(value: StudioSchemaBundle, ref: IrClassRef, resolved?: IrClass): void {
+  const key = `${ref.origin}:class.${ref.name}` as const
+  value.ir!.importsByKey[key] = { origin: ref.origin, ref, key }
+  if (resolved) value.ir!.importedClassesByKey[key] = resolved
+}
+
+export function anatomy(
+  views: DomainAnatomy['views'],
+  origin = 'local.example.dev',
+): DomainAnatomy {
+  return {
+    overview: { origin, adapter: 'astrale', requires: [], astraleDeps: {}, schemaDir: 'schema' },
+    views,
+    client: { routes: {}, shell: [], features: [], present: true },
+    env: [],
+    detectedIntegrations: [],
   }
 }

@@ -164,7 +164,6 @@ export function FilePickButton({
   busy,
   disabled,
   label = 'Attach a document',
-  busyLabel = 'Uploading…',
 }: {
   onFiles: (files: File[]) => void
   /** Give the caret back to the composer — a page with nothing focused reads plain
@@ -175,10 +174,9 @@ export function FilePickButton({
   /** Something ELSE is working: it waits, quietly. One spinner per thing. */
   disabled?: boolean
   label?: string
-  busyLabel?: string
 }) {
   const { pick, field } = useFilePicker({ onFiles, onPicked })
-  const title = busy ? busyLabel : label
+  const title = busy ? 'Uploading…' : label
 
   return (
     <>

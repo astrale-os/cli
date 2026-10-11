@@ -6,17 +6,18 @@ import { toast } from 'sonner'
 
 import { Commentable } from '@/components/commentable'
 import { DescriptionText, IconTile } from '@/components/studio-kit'
-import { ScrollArea, Separator } from '@/components/ui/misc'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { useBundle, useCatalog, useCommentMutations, useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
-import { anchorKey } from '@/lib/targets'
+import { anchorKey, domainAnchorRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { type ExternalDomain, externalDomains } from './external'
 import { KERNEL_ORIGIN } from './inheritance'
 import { SchemaIcon } from './schema-icon'
-import { domainRef, isHidden } from './visibility'
+import { isHidden } from './visibility'
 
 /**
  * DomainsPanel — the "Imported domains" overview in the RIGHT PANEL (opened from the
@@ -73,7 +74,7 @@ function DomainRow({
       </div>
       <button
         type="button"
-        onClick={() => onToggleHidden(domainRef(domain.origin))}
+        onClick={() => onToggleHidden(domainAnchorRef(domain.origin))}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
       >
@@ -247,7 +248,7 @@ export function DomainsPanel({
                 <DomainRow
                   key={d.origin}
                   domain={d}
-                  hidden={isHidden(domainRef(d.origin), visibility.hidden)}
+                  hidden={isHidden(domainAnchorRef(d.origin), visibility.hidden)}
                   onToggleHidden={onToggleHidden}
                 />
               ))}

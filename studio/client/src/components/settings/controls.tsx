@@ -1,5 +1,8 @@
 import type { ReactNode, SelectHTMLAttributes } from 'react'
 
+import { HelpCircle } from 'lucide-react'
+
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { cn } from '@/lib/utils'
 
 /** The small caps title over one group of settings. */
@@ -35,14 +38,49 @@ export function SettingRow({
 }
 
 /** The one dropdown used across Settings. */
-export function SettingSelect({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+export function SettingSelect<T extends string>({
+  options,
+  onValue,
+  className,
+  ...props
+}: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> & {
+  options: readonly { value: T; label: string }[]
+  onValue: (value: T) => void
+}) {
   return (
     <select
       className={cn(
         'h-8 w-52 rounded-md border bg-card px-2 text-[13px] outline-none transition-colors focus:border-ring disabled:cursor-not-allowed disabled:text-muted-foreground',
         className,
       )}
+      onChange={(event) => onValue(event.target.value as T)}
       {...props}
-    />
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/** Compact contextual help shared by Settings controls. */
+export function SettingsHint({ text }: { text: string }) {
+  return (
+    <HoverCard openDelay={80}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          aria-label="What's this?"
+          className="text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-auto max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+        {text}
+      </HoverCardContent>
+    </HoverCard>
   )
 }

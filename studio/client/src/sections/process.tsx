@@ -13,11 +13,10 @@ import {
   SectionShell,
   Surface,
 } from '@/components/studio-kit'
-import { ScrollArea } from '@/components/ui/misc'
-import { methodGlyph } from '@/lib/friendly'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { handlerLinkFor, methodGlyph } from '@/lib/callable'
 import { functionGlyph } from '@/lib/functions'
 import { useAnatomy, useBundle } from '@/lib/hooks'
-import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { DomainPicker, DomainsRailHeader } from '@/schema-studio/domains-rail'
 import { ModulesSidebar } from '@/schema-studio/sidebar'
@@ -41,7 +40,7 @@ interface FnGroup {
 }
 
 /** Count the portable genesis elements in a canonical DomainSchema V1 Core. */
-export function canonicalCoreCount(value: unknown): number {
+function canonicalCoreCount(value: unknown): number {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
   const core = value as { nodes?: unknown; edges?: unknown }
   const nodes =

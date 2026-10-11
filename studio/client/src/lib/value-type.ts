@@ -1,5 +1,6 @@
-import type { IrMethod, JsonSchema } from '@shared/types'
+import type { JsonSchema, TypeDescriptor } from '@shared/types'
 
+import { isNodePathSchema } from '@shared/types'
 import {
   Braces,
   Circle,
@@ -8,13 +9,52 @@ import {
   List,
   ListChecks,
   type LucideIcon,
-  Puzzle,
   ToggleLeft,
   Type,
-  Zap,
 } from 'lucide-react'
 
-import { describe } from './format'
+/** JSON Schema → render-friendly descriptor (never reads zod). */
+export function describe(s?: JsonSchema): TypeDescriptor {
+  if (!s) return { kind: 'unknown', optional: false }
+  const t = s.type
+  const optional = Array.isArray(t) ? t.includes('null') : false
+  const base = Array.isArray(t)
+    ? (t.find((x) => x !== 'null') as string | undefined)
+    : (t as string | undefined)
+  if (s.enum) return { kind: 'enum', values: s.enum, optional }
+  if (isNodePathSchema(s)) return { kind: 'ref', target: 'node', optional }
+  if (base === 'array') return { kind: 'array', items: describe(s.items), optional }
+  if (base === 'object') {
+    const fields: Record<string, TypeDescriptor> = {}
+    for (const [k, v] of Object.entries(s.properties ?? {})) fields[k] = describe(v as JsonSchema)
+    return { kind: 'object', fields, required: s.required ?? [], optional }
+  }
+  if (
+    base === 'string' ||
+    base === 'number' ||
+    base === 'integer' ||
+    base === 'boolean' ||
+    base === 'null'
+  ) {
+    return { kind: base, optional }
+  }
+  return { kind: 'unknown', optional }
+}
+
+export function typeLabel(d: TypeDescriptor): string {
+  switch (d.kind) {
+    case 'enum':
+      return `enum(${d.values.map(String).join(' | ')})`
+    case 'array':
+      return `${typeLabel(d.items)}[]`
+    case 'object':
+      return `{ ${Object.keys(d.fields).join(', ')} }`
+    case 'ref':
+      return `→${d.target}`
+    default:
+      return d.kind
+  }
+}
 
 /** A human-friendly name + icon for a property's type (hides zod/JSON-Schema jargon). */
 export function friendlyType(
@@ -49,12 +89,6 @@ export function friendlyType(
     default:
       return { label: 'Value', icon: Circle, optional }
   }
-}
-
-/** Abstract contracts and concrete operations have distinct glyphs. */
-export function methodGlyph(method: IrMethod): { icon: LucideIcon; tone: string } {
-  if (!method.executable) return { icon: Puzzle, tone: 'fn' }
-  return { icon: Zap, tone: 'primary' }
 }
 
 /** `friendlyType`, with a List naming what it holds: "List of Text" says more than "List". */

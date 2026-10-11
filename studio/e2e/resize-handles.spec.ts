@@ -1,8 +1,9 @@
 /**
  * Every edge in the Studio that resizes something behaves the same way: the domains
- * rail, the docked work panel, and the floating dock. Same grip, the whole edge lit on
- * hover, still lit while a drag outruns the pointer, the resize cursor held over
- * everything on the way, and a double click back to the default size.
+ * rail, the docked work panel and the detail panel. Same grip, lit on hover, still lit
+ * while a drag outruns the pointer, the resize cursor held over everything on the way,
+ * a double click back to the default size, and the width kept where the reader left it.
+ * The floating dock's own edges are bottom-dock.spec.ts's.
  */
 import { dockWorkspacePanel, expect, test, type Locator, type Page } from './test'
 
@@ -22,8 +23,6 @@ async function checkGrip(page: Page, handle: Locator, drag: { dx: number; dy: nu
     })
     .toBe(true)
   const box = (await handle.boundingBox())!
-  // an 8px grip across the edge, live along its whole length
-  expect(Math.round(Math.min(box.width, box.height))).toBe(8)
 
   const x = box.x + box.width / 2
   const y = box.y + box.height / 2
@@ -75,35 +74,41 @@ test('the rail and the docked panel resize the same way, and reset on double cli
   await expect.poll(panelWidth).toBe(panelDefault + 20)
 })
 
-test('the dock lights the whole edge it moves, corners lighting both of theirs', async ({
+test('the detail panel resizes and keeps its width across navigation and reload', async ({
   page,
   request,
 }) => {
-  await dockWorkspacePanel(request, 'bottom')
   await page.goto('/')
-  await page.locator('[data-agent-composer]').click()
-  const dock = page.getByTestId('agent-dock')
-  const top = dock.locator('[data-dock-resize="top"]')
-  const left = dock.locator('[data-dock-resize="left"]')
-  const corner = dock.locator('[data-dock-resize="top-left"]')
-  await expect(top).toBeVisible()
-
-  // the top grip runs the dock's whole straight edge, not a pill in its middle
-  const edge = (await top.boundingBox())!
-  const whole = (await dock.boundingBox())!
-  expect(edge.width).toBeGreaterThan(whole.width - 40)
-
-  await checkGrip(page, top, { dx: 0, dy: -2000 })
-  await checkGrip(page, left, { dx: -2000, dy: 0 })
-
-  // a corner moves two edges, and says so on both
-  const box = (await corner.boundingBox())!
+  await page.getByRole('button', { name: 'Expand crm.studio-demo.astrale.ai', exact: true }).click()
+  const tree = page.getByTestId('workspace-domain-tree')
+  const openPolicy = () =>
+    tree.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
+  await openPolicy()
+  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
+  const width = () => panel.evaluate((element) => element.getBoundingClientRect().width)
+  const start = await width()
+  const handle = page.getByRole('separator', { name: 'Resize detail panel' })
+  const box = (await handle.boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
-  await page.mouse.move(box.x + 30, box.y + 30, { steps: 3 })
-  const outline = dock.locator('span.rounded-2xl.border-2')
-  await expect(outline).toHaveClass(/border-t-primary(?!\/)/)
-  await expect(outline).toHaveClass(/border-l-primary(?!\/)/)
-  await expect(outline).not.toHaveClass(/border-r-primary/)
+  await page.mouse.move(box.x + box.width / 2 - 100, box.y + box.height / 2, { steps: 8 })
   await page.mouse.up()
+  await expect.poll(width).toBe(start + 100)
+
+  await handle.focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect.poll(width).toBe(start + 120)
+  await expect
+    .poll(async () => (await (await request.get('/api/workspace/state')).json()).detailWidth)
+    .toBe(start + 120)
+  await page.getByRole('button', { name: 'Close panel' }).click()
+  await tree.getByRole('button', { name: 'Invoice', exact: true }).click()
+  await expect.poll(width).toBe(start + 120)
+
+  await page.reload()
+  await openPolicy()
+  await expect.poll(width).toBe(start + 120)
+  await handle.focus()
+  await page.keyboard.press('Home')
+  await expect.poll(width).toBe(320)
 })

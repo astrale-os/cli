@@ -8,7 +8,7 @@
  * middle reads as removed-then-added, which is still exactly what happened.
  */
 
-export interface DiffLine {
+interface DiffLine {
   kind: 'same' | 'removed' | 'added'
   text: string
 }

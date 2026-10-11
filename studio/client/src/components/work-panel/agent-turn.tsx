@@ -5,9 +5,8 @@ import { Copy, LogIn, MessageSquare } from 'lucide-react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { isRunActive } from '@/lib/agent'
-import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
-import { cn } from '@/lib/utils'
+import { relativeTime } from '@/lib/time'
 
 import { echoesError, isStopped, StoppedTurnNotice } from './agent-error'
 import { AgentSteps, splitTurn, visibleDraft } from './agent-steps'
@@ -15,7 +14,7 @@ import { MessageImages } from './images'
 
 export { activityLabel, compactTarget } from './agent-steps'
 
-export interface AgentAuthFailure {
+interface AgentAuthFailure {
   title: string
   command: string
 }
@@ -42,7 +41,7 @@ export function agentAuthFailure(run: AgentRun): AgentAuthFailure | undefined {
 }
 
 /** How many comment threads this turn answered in place. */
-export function answeredThreads(run: AgentRun): number {
+function answeredThreads(run: AgentRun): number {
   const replied = new Set(
     run.events
       .filter((event) => event.kind === 'reply')
@@ -182,10 +181,8 @@ function AuthFailureNotice({
 }
 
 /** A turn separator that also dates the exchange, shown between distant turns. */
-export function TurnDivider({ at, className }: { at: string; className?: string }) {
+export function TurnDivider({ at }: { at: string }) {
   return (
-    <div className={cn('py-1 text-center text-[11px] text-muted-foreground', className)}>
-      {relativeTime(at)}
-    </div>
+    <div className="py-1 text-center text-[11px] text-muted-foreground">{relativeTime(at)}</div>
   )
 }

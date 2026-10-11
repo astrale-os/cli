@@ -27,7 +27,7 @@ import {
 import { type FloatingEdgePort, SMART_EDGE_RENDER_OPTIONS } from './edge-routing'
 
 /** One end of a relationship as the schema declares it. */
-export interface FloatingEdgeEnd {
+interface FloatingEdgeEnd {
   role?: string
   cardinality: string
 }
@@ -364,7 +364,7 @@ function useEdgeLabelLayout({
   ])
 }
 
-export function FloatingEdge(props: EdgeProps) {
+function FloatingEdge(props: EdgeProps) {
   const { id, source, target, style, data } = props
   const showCardinality = useUI((state) => state.showCardinality)
   // The reader's choice, canvas-wide: a curve straight between the two ports, or the

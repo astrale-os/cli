@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
 
 /**
  * A schema diagnostic is one unbounded sentence per offending declaration, so a compiler
@@ -19,12 +18,10 @@ import { cn } from '@/lib/utils'
 export function ErrorBanner({
   messages,
   title = 'Schema diagnostics',
-  className,
 }: {
   /** One entry per diagnostic; blank entries are dropped and an empty banner renders nothing. */
   messages: readonly string[]
   title?: string
-  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const items = messages.filter((message) => message.trim().length > 0)
@@ -43,10 +40,7 @@ export function ErrorBanner({
   return (
     <>
       <div
-        className={cn(
-          'flex h-9 shrink-0 items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 text-sm text-warning',
-          className,
-        )}
+        className="flex h-9 shrink-0 items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 text-sm text-warning"
         data-testid="error-banner"
       >
         <AlertTriangle className="h-4 w-4 shrink-0" />

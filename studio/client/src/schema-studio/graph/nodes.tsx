@@ -1,3 +1,4 @@
+import '../focus.css'
 import { Handle, type NodeProps, Position } from '@xyflow/react'
 import {
   AppWindow,

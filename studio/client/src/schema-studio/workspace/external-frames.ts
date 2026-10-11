@@ -32,7 +32,7 @@ export interface WorkspaceExternalCluster {
   expanded?: boolean
 }
 
-export interface WorkspaceExternalProjection {
+interface WorkspaceExternalProjection {
   nodes: Node[]
   positions: Record<string, WorkspacePoint>
 }
@@ -51,13 +51,13 @@ const EXTERNAL_INERT_HEIGHT = 26
 const EXTERNAL_FOOTER_HEIGHT = 18
 const EXTERNAL_VERTICAL_GAP = 40
 
-export interface ExternalMemberPlacement {
+interface ExternalMemberPlacement {
   member: WorkspaceExternalReference
   y: number
   height: number
 }
 
-export interface ExternalFrameLayout {
+interface ExternalFrameLayout {
   placements: ExternalMemberPlacement[]
   size: WorkspaceSize
   connectedCount: number

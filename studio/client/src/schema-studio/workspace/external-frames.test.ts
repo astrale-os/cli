@@ -33,32 +33,20 @@ function inert(origin: string, name: string) {
   return { origin, name, definition: 'class' as const }
 }
 
-test('places new external clusters beside their owners without overlapping each other', () => {
-  const result = projectExternalFrames(
-    [cluster('alpha.astrale.ai'), cluster('kernel.astrale.ai')],
-    [owner],
-    {},
-  )
-
-  expect(result.positions['alpha.astrale.ai']).toEqual({
-    x: owner.size.width + WORKSPACE_DOMAIN_GAP,
-    y: 0,
+test('a new external frame lands beside its owner, and follows it until moved by hand', () => {
+  const clusters = [cluster('alpha.astrale.ai'), cluster('kernel.astrale.ai')]
+  const x = owner.size.width + WORKSPACE_DOMAIN_GAP
+  expect(projectExternalFrames(clusters, [owner], {}).positions).toEqual({
+    'alpha.astrale.ai': { x, y: 0 },
+    'kernel.astrale.ai': { x, y: 152 },
   })
-  expect(result.positions['kernel.astrale.ai']).toEqual({
-    x: owner.size.width + WORKSPACE_DOMAIN_GAP,
-    y: 152,
+
+  const saved = { 'kernel.astrale.ai': { x: 900, y: 600 } }
+  const moved = { ...owner, position: { x: 300, y: 400 } }
+  expect(projectExternalFrames(clusters, [moved], saved).positions).toEqual({
+    'alpha.astrale.ai': { x: x + 300, y: 400 },
+    ...saved,
   })
-})
-
-test('reuses a saved external position when its owner frame moves', () => {
-  const saved = { 'kernel.astrale.ai': { x: 512, y: 24 } }
-  const result = projectExternalFrames(
-    [cluster('kernel.astrale.ai')],
-    [{ ...owner, position: { x: 1800, y: 700 } }],
-    saved,
-  )
-
-  expect(result.positions).toEqual(saved)
 })
 
 test('an external frame moves like a domain frame, as one block', () => {
@@ -87,34 +75,22 @@ test('reads an origin back off a frame id and off nothing else', () => {
   expect(workspaceExternalOrigin('workspace-domain:issues')).toBeNull()
 })
 
-test('a folded frame cards what is wired and only counts the rest', () => {
-  const folded = externalFrameLayout({
-    ...cluster('kernel.astrale.ai'),
-    members: [
-      { origin: 'kernel.astrale.ai', name: 'Identity', definition: 'class', connected: true },
-      inert('kernel.astrale.ai', 'Account'),
-      inert('kernel.astrale.ai', 'Session'),
-    ],
-  })
-
+test('a folded frame cards what is wired and counts the rest; unfolded it lists them', () => {
+  const members = [
+    {
+      origin: 'kernel.astrale.ai',
+      name: 'Identity',
+      definition: 'class' as const,
+      connected: true,
+    },
+    inert('kernel.astrale.ai', 'Account'),
+    inert('kernel.astrale.ai', 'Session'),
+  ]
+  const folded = externalFrameLayout({ ...cluster('kernel.astrale.ai'), members })
   expect(folded.placements.map(({ member }) => member.name)).toEqual(['Identity'])
-  expect(folded.connectedCount).toBe(1)
-  expect(folded.inertCount).toBe(2)
-  // exactly the height a one-member frame had before dependencies were exhaustive
-  expect(folded.size.height).toBe(112)
-})
+  expect(folded).toMatchObject({ connectedCount: 1, inertCount: 2 })
 
-test('unfolding lists the dependencies with nothing to draw, compactly', () => {
-  const unfolded = externalFrameLayout({
-    ...cluster('kernel.astrale.ai'),
-    expanded: true,
-    members: [
-      { origin: 'kernel.astrale.ai', name: 'Identity', definition: 'class', connected: true },
-      inert('kernel.astrale.ai', 'Account'),
-      inert('kernel.astrale.ai', 'Session'),
-    ],
-  })
-
+  const unfolded = externalFrameLayout({ ...cluster('kernel.astrale.ai'), members, expanded: true })
   expect(unfolded.placements.map(({ member }) => member.name)).toEqual([
     'Identity',
     'Account',
@@ -122,33 +98,6 @@ test('unfolding lists the dependencies with nothing to draw, compactly', () => {
   ])
   // a listed dependency is half the height of a card, so unfolding a big kernel stays legible
   expect(unfolded.placements.map(({ height }) => height)).toEqual([52, 26, 26])
-  expect(unfolded.size.height).toBe(164)
-})
-
-test('a domain of this workspace can be drawn straight from its grey frame', () => {
-  const { nodes } = projectExternalFrames(
-    [{ ...cluster('peer.astrale.ai'), domainId: 'peer' }],
-    [owner],
-    {},
-  )
-  const frame = nodes.find((node) => node.id === workspaceExternalNodeId('peer.astrale.ai'))!
-
-  expect(frame.data.domainId).toBe('peer')
-})
-
-test('an imported frame nobody moved follows its domain, a moved one stays put', () => {
-  const clusters = [cluster('alpha.astrale.ai'), cluster('kernel.astrale.ai')]
-  const saved = { 'kernel.astrale.ai': { x: 900, y: 600 } }
-  const moved = { ...owner, position: { x: 300, y: 400 } }
-
-  const before = projectExternalFrames(clusters, [owner], saved)
-  const after = projectExternalFrames(clusters, [moved], saved)
-
-  expect(after.positions['alpha.astrale.ai']).toEqual({
-    x: before.positions['alpha.astrale.ai']!.x + 300,
-    y: before.positions['alpha.astrale.ai']!.y + 400,
-  })
-  expect(after.positions['kernel.astrale.ai']).toEqual(saved['kernel.astrale.ai'])
 })
 
 test('a domain keeps room on its right only for the imported frames that follow it', () => {

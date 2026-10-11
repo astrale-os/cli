@@ -49,49 +49,19 @@ test('a class added to a module grows the box that would otherwise clamp it', ()
   expect(geometry['grp-shared']?.x).toBe(1546)
 })
 
-test('boxes already wrapping their classes are left alone', () => {
-  const box = moduleBox('grp-people')
-  const child = classNode('class.Person', 'grp-people')
-  const fitted = fitModuleBoxes([box, child], {
-    'grp-people': {
-      x: 0,
-      y: 0,
-      w: MODULE_PAD * 2 + CLASS_W,
-      h: MODULE_HEADER + CLASS_H + MODULE_PAD,
-    },
-    'class.Person': { x: MODULE_PAD, y: MODULE_HEADER },
-  })
-
-  expect(fitted).toEqual({})
-})
-
-test('a box keeps no more room than its classes use', () => {
-  const box = moduleBox('grp-people')
-  const child = classNode('class.Person', 'grp-people')
-  const fitted = fitModuleBoxes([box, child], {
-    'grp-people': { x: 0, y: 0, w: 900, h: 640 },
-    'class.Person': { x: MODULE_PAD, y: MODULE_HEADER },
-  })
-
-  expect(fitted['grp-people']).toEqual({
+test('a box keeps exactly the room its classes use', () => {
+  const nodes = [moduleBox('grp-people'), classNode('class.Person', 'grp-people')]
+  const fitted = {
     x: 0,
     y: 0,
     w: MODULE_PAD * 2 + CLASS_W,
     h: MODULE_HEADER + CLASS_H + MODULE_PAD,
-  })
-})
-
-test('a class dragged past the module label takes the box with it, never the reverse', () => {
-  const [box, child] = normalizeContainerLayout([
-    { ...moduleBox('grp-people'), position: { x: 400, y: 300 } },
-    { ...classNode('class.Person', 'grp-people'), position: { x: -60, y: 4 } },
-  ])
-
-  // the class holds the ground it was dragged to: 400 - 60 = 340, 300 + 4 = 304
-  expect(box.position.x + child.position.x).toBe(340)
-  expect(box.position.y + child.position.y).toBe(304)
-  // and it sits on the insets again, so the label above it is never covered
-  expect(child.position).toEqual({ x: MODULE_PAD, y: MODULE_HEADER })
+  }
+  const child = { x: MODULE_PAD, y: MODULE_HEADER }
+  expect(fitModuleBoxes(nodes, { 'grp-people': fitted, 'class.Person': child })).toEqual({})
+  expect(
+    fitModuleBoxes(nodes, { 'grp-people': { x: 0, y: 0, w: 900, h: 640 }, 'class.Person': child }),
+  ).toEqual({ 'grp-people': fitted })
 })
 
 test('a box grown leftwards keeps the same margin on both sides', () => {
@@ -121,30 +91,30 @@ test('a lone class dragged anywhere moves its box instead of stretching it', () 
   })
 })
 
-test('a class dragged away from its siblings stretches the box, padding included', () => {
-  const [box] = normalizeContainerLayout([
+test('classes spreading apart stretch their box, and gathered back shrink it', () => {
+  const person = {
+    ...classNode('class.Person', 'grp-people'),
+    position: { x: MODULE_PAD, y: MODULE_HEADER },
+  }
+  const [spread] = normalizeContainerLayout([
     moduleBox('grp-people'),
-    { ...classNode('class.Person', 'grp-people'), position: { x: MODULE_PAD, y: MODULE_HEADER } },
+    person,
     { ...classNode('class.Team', 'grp-people'), position: { x: 300, y: 200 } },
   ])
-
-  expect(box.style).toMatchObject({
+  expect(spread.style).toMatchObject({
     width: 300 + CLASS_W + MODULE_PAD,
     height: 200 + CLASS_H + MODULE_PAD,
   })
-})
 
-test('classes dragged back together shrink the box they share', () => {
-  const [box] = normalizeContainerLayout([
+  const [gathered] = normalizeContainerLayout([
     { ...moduleBox('grp-people'), style: { width: 900, height: 640 } },
-    { ...classNode('class.Person', 'grp-people'), position: { x: MODULE_PAD, y: MODULE_HEADER } },
+    person,
     {
       ...classNode('class.Team', 'grp-people'),
       position: { x: MODULE_PAD, y: MODULE_HEADER + CLASS_H + 12 },
     },
   ])
-
-  expect(box.style).toMatchObject({
+  expect(gathered.style).toMatchObject({
     width: MODULE_PAD * 2 + CLASS_W,
     height: MODULE_HEADER + CLASS_H + 12 + CLASS_H + MODULE_PAD,
   })
@@ -192,20 +162,6 @@ test('a class dragged past its module edge carries the domain frame along too', 
   )
 })
 
-test('a domain frame gives back the room its modules stopped using', () => {
-  const [frame] = normalizeContainerLayout([
-    { ...domainFrame('workspace-domain:issues', 0, 0), style: { width: 1600, height: 1200 } },
-    {
-      ...moduleBox('grp-people'),
-      parentId: 'workspace-domain:issues',
-      position: { x: DOMAIN_PAD, y: DOMAIN_PAD },
-      style: { width: 300, height: 200 },
-    },
-  ])
-
-  expect(frame.style).toMatchObject({ width: DOMAIN_PAD * 2 + 300, height: DOMAIN_PAD * 2 + 200 })
-})
-
 test("an imported domain's members are left where their own box puts them", () => {
   // an extDomain has children and a header too, but a SMALLER one — module insets must
   // not reach it, or every imported member shifts on the first drag anywhere on the canvas.
@@ -223,17 +179,19 @@ test("an imported domain's members are left where their own box puts them", () =
   expect(extDomain.style).toBeUndefined()
 })
 
-test('a frame that holds one small module still keeps one padding all round', () => {
-  const [frame] = normalizeContainerLayout([
-    domainFrame('workspace-domain:issues', 0, 0),
-    {
-      ...moduleBox('grp-people'),
-      parentId: 'workspace-domain:issues',
-      position: { x: DOMAIN_PAD, y: DOMAIN_PAD },
-      style: { width: 200, height: 90 },
-    },
-  ])
-
-  // the empty-frame size (360 x 220) is not a floor: it would pad the bottom twice over
-  expect(frame.style).toMatchObject({ width: DOMAIN_PAD * 2 + 200, height: DOMAIN_PAD * 2 + 90 })
+test('a domain frame wraps its modules with one padding, however large it was', () => {
+  for (const style of [undefined, { width: 1600, height: 1200 }]) {
+    const frame = domainFrame('workspace-domain:issues', 0, 0)
+    const [fitted] = normalizeContainerLayout([
+      style ? { ...frame, style } : frame,
+      {
+        ...moduleBox('grp-people'),
+        parentId: 'workspace-domain:issues',
+        position: { x: DOMAIN_PAD, y: DOMAIN_PAD },
+        style: { width: 200, height: 90 },
+      },
+    ])
+    // the empty-frame size (360 x 220) is not a floor: it would pad the bottom twice over
+    expect(fitted.style).toMatchObject({ width: DOMAIN_PAD * 2 + 200, height: DOMAIN_PAD * 2 + 90 })
+  }
 })

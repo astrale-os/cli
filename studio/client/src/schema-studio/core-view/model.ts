@@ -28,7 +28,7 @@ export interface CoreSpotlight {
 
 const propertyKeyPattern = /^.+:class\.[A-Za-z][A-Za-z0-9_]*\.property\.([A-Za-z][A-Za-z0-9_]*)$/
 
-export interface CoreDataEntry {
+interface CoreDataEntry {
   /** Exact key retained by the canonical Core declaration. */
   key: string
   /** Short property name when unambiguous, otherwise the exact key. */
@@ -83,15 +83,15 @@ export const fmtVal = (v: unknown): string => {
 }
 
 /** Up to `max` data fields for a compact card preview, skipping the title field. */
-export function previewFields(
-  n: { path: string; data: Record<string, unknown> },
-  max = 2,
-): [string, string][] {
+export function previewFields(n: {
+  path: string
+  data: Record<string, unknown>
+}): [string, string][] {
   const entries = coreDataEntries(n.data)
   const title = titleField(entries)
   return entries
     .filter((entry) => entry.key !== title?.key)
-    .slice(0, max)
+    .slice(0, 2)
     .map(({ label, value }) => [label, fmtVal(value)] as [string, string])
 }
 

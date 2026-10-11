@@ -13,7 +13,7 @@ const FALLBACK: { id: string; label: string }[] = [
   { id: 'codex', label: 'Codex' },
 ]
 
-export function harnessOptions(harness?: HarnessStatus): { id: string; label: string }[] {
+function harnessOptions(harness?: HarnessStatus): { id: string; label: string }[] {
   return harness?.harnesses?.length
     ? harness.harnesses.map(({ id, label }) => ({ id, label }))
     : FALLBACK

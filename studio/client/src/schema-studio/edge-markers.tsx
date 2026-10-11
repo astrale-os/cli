@@ -12,9 +12,9 @@
  */
 
 export const EDGE_ARROW = 'edge-arrow'
-export const EDGE_DOT = 'edge-dot'
+const EDGE_DOT = 'edge-dot'
 
-export type EdgeOrientation = 'directed' | 'undirected'
+type EdgeOrientation = 'directed' | 'undirected'
 
 /** Terminators for one relationship: an arrow where it lands, dots when it has no direction. */
 export function edgeMarkers(orientation?: EdgeOrientation): {

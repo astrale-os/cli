@@ -140,14 +140,14 @@ export function UpdatesBadge({ domainId, domainPath }: { domainId: string; domai
   )
 }
 
-export function packageUpdatePrompt(origin: string, report: StaleReport): string {
+function packageUpdatePrompt(origin: string, report: StaleReport): string {
   const packages = report.sdk.outdated
     .map((item) => `- ${item.pkg}: ${item.current} → ${item.latest}`)
     .join('\n')
   return `Update the Astrale packages for the ${origin} domain to these exact versions:\n${packages}\n\nInstall the updated dependencies, make any required migrations, and run the domain's checks. Do not change unrelated packages.`
 }
 
-export function packageUpdateSummary(report: StaleReport): string {
+function packageUpdateSummary(report: StaleReport): string {
   return report.sdk.outdated
     .map((item) => `${item.pkg} ${item.current} → ${item.latest}`)
     .join(' · ')

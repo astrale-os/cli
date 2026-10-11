@@ -3,7 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { ErrorBanner } from '@/components/error-banner'
-import { ScrollArea } from '@/components/ui/misc'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { useBundle, useDatasets } from '@/lib/hooks'
 import {
   type PolicyGuard,
@@ -16,7 +16,8 @@ import { useUI } from '@/lib/store'
 
 import type { CoreSpotlight } from '../core-view/model'
 
-import { CoreDetail, CoreView } from '../core-view'
+import { CoreView } from '../core-view/canvas'
+import { CoreDetail } from '../core-view/detail'
 import { DomainPicker, DomainsRailHeader } from '../domains-rail'
 import { PanelShell } from '../panel-shell'
 import { ModulesSidebar } from '../sidebar'
