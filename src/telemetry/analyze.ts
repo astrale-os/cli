@@ -13,7 +13,7 @@ import type { AnalyzedMarker, SessionSignals } from './types'
 import { defaultAdapters, discoverAll } from './adapters'
 import { extractSignals, hasSignals, readEvents } from './gate'
 import { tidySession } from './retention'
-import { eventsPath, inspectSession, markerPath, sessionDir } from './store'
+import { eventsPath, inspectSession, markerPath, reportPath, sessionDir } from './store'
 
 const ANALYZER_TIMEOUT_MS = 15 * 60 * 1000
 const WINDOW_PAD_MS = 10 * 60 * 1000
@@ -150,7 +150,7 @@ export async function analyzeSession(
     (signals.lastEventAt ? Date.parse(signals.lastEventAt) : Date.now()) + WINDOW_PAD_MS,
   )
   const adapters = defaultAdapters()
-  signals.harnessSessions = await discoverAll(adapters, root, { start, end })
+  signals.harnessSessions = discoverAll(adapters, root, { start, end })
 
   if (!hasSignals(signals)) {
     const marker: AnalyzedMarker = {
@@ -178,7 +178,7 @@ export async function analyzeSession(
   // Keep the prompt only when the run failed — that is the one case where what
   // the analyzer was asked still matters.
   tidySession(id, { keepPrompt: marker.outcome === 'error' })
-  return { ...marker, reportPath: join(dir, 'report.md') }
+  return { ...marker, reportPath: reportPath(id) }
 }
 
 /** One headless claude pass. Hygiene: no CLAUDE* env inheritance (we may be
