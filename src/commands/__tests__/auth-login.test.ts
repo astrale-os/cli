@@ -103,6 +103,11 @@ describe('auth login command', () => {
         'client_override',
         'client_override',
       ])
+      expect(Object.fromEntries(server.forms[0]!)).toMatchObject({
+        grant_type: 'client_credentials',
+        client_secret: 'secret_123',
+        scope: 'openid profile email offline_access',
+      })
       expect((await session()).clientId).toBe('client_override')
     } finally {
       await server.stop()
