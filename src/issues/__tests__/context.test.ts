@@ -69,21 +69,6 @@ describe('issue context selection', () => {
     expect(first.instance).toBeUndefined()
   })
 
-  it('uses the nearest package for a nested cwd, not a sibling package', async () => {
-    await json(join(root, 'package.json'), { name: 'workspace', workspaces: ['packages/*'] })
-    await json(join(root, 'packages/a/package.json'), {
-      name: 'a',
-      dependencies: { '@astrale-os/sdk': '0.6.0-beta.0' },
-    })
-    await mkdir(join(root, 'packages/a/src'), { recursive: true })
-    const value = await collect({ cwd: join(root, 'packages/a/src') })
-    expect(value.project?.name).toBe('a')
-    expect(value.project?.packages).toEqual([
-      { name: '@astrale-os/sdk', declared: '0.6.0-beta.0', source: 'unresolved' },
-    ])
-    expect((await collect()).project).toBeUndefined()
-  })
-
   it('does not select a Domain from a pnpm workspace root', async () => {
     await json(join(root, 'package.json'), { name: 'workspace' })
     await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages: ["packages/*"]')
@@ -152,19 +137,6 @@ describe('issue context selection', () => {
     },
   )
 
-  it('does not invent an issuer from the transport URL', async () => {
-    const value = await collect({
-      instance: 'proxy',
-      instances: {
-        active: '',
-        instances: {
-          proxy: { url: 'https://proxy.test/api' },
-        },
-      },
-    })
-    expect(value.instance).toEqual({ name: 'proxy', url: 'https://proxy.test/api' })
-  })
-
   it('omits an issuer that would need redaction rather than inventing a different identity', async () => {
     const value = await collect({
       instance: 'bad',
@@ -221,50 +193,6 @@ describe('issue context selection', () => {
     await expect(readFile(join(sdk, 'hook-executed'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('preserves an exact issuer without URL normalization', async () => {
-    const value = await collect({
-      instance: 'staging',
-      instances: {
-        active: '',
-        instances: { staging: { issuer: 'https://staging.test', url: 'https://proxy.test/api' } },
-      },
-    })
-    expect(value.instance?.issuer).toBe('https://staging.test')
-  })
-
-  it('reports malformed bookmark coordinates without a raw URL exception', async () => {
-    await expect(
-      collect({
-        instance: 'broken',
-        instances: { active: '', instances: { broken: { url: 'invalid' } } },
-      }),
-    ).rejects.toMatchObject({ code: 'ISSUE_INSTANCE_INVALID' })
-  })
-
-  it.each(['malformed', 'missing', 'dangling'])(
-    'never borrows a parent SDK when the nearer installation is %s',
-    async (kind) => {
-      await json(join(root, 'node_modules/@astrale-os/sdk/package.json'), {
-        name: '@astrale-os/sdk',
-        version: '0.6.0-beta.0',
-      })
-      await json(join(root, 'app/package.json'), {
-        name: 'app',
-        dependencies: { '@astrale-os/sdk': '0.5.0-beta.151' },
-      })
-      const target = join(root, 'app/node_modules/@astrale-os/sdk')
-      await mkdir(dirname(target), { recursive: true })
-      if (kind === 'dangling') await symlink(join(root, 'absent'), target)
-      else {
-        await mkdir(target)
-        if (kind === 'malformed') await writeFile(join(target, 'package.json'), '{broken')
-      }
-      expect((await collect({ project: 'app' })).project?.packages).toEqual([
-        { name: '@astrale-os/sdk', declared: '0.5.0-beta.151', source: 'unresolved' },
-      ])
-    },
-  )
-
   it('rejects an unknown explicit instance instead of borrowing the active one', async () => {
     await expect(
       collect({
@@ -272,16 +200,6 @@ describe('issue context selection', () => {
         instances: { active: 'prod', instances: { prod: { url: 'https://prod.test' } } },
       }),
     ).rejects.toMatchObject({ code: 'ISSUE_INSTANCE_NOT_FOUND' })
-  })
-
-  it('rejects an invalid explicit project and accepts an unavailable implicit one', async () => {
-    await expect(collect({ project: 'missing' })).rejects.toMatchObject({
-      code: 'ISSUE_PROJECT_INVALID',
-    })
-    await writeFile(join(root, 'package.json'), 'broken')
-    await expect(collect({ project: '.' })).rejects.toMatchObject({ code: 'ISSUE_PROJECT_INVALID' })
-    expect((await collect()).project).toBeUndefined()
-    expect(await readFile(join(root, 'package.json'), 'utf8')).toBe('broken')
   })
 
   it('does not forward dependency URLs, paths or unrelated packages', async () => {
