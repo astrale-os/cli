@@ -185,7 +185,7 @@ Main command groups:
 
 | Group | What it covers |
 |-------|----------------|
-| Kernel | `get`, `call`, `query`, `introspect`, `logs`, `view`, `token` |
+| Kernel | `get`, `call`, `execution`, `query`, `introspect`, `logs`, `view`, `token` |
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
@@ -211,6 +211,10 @@ The viewer offers the initial identity and the explicitly allowed local names. *
 re-resolves the same View in its Domain and mints a fresh credential before reloading the entire page
 (unsaved changes are lost). Failure leaves the previous session usable. This does not change CLI
 defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
+
+Durable calls can retain their observation context with `astrale execution start`, then
+`execution status` or `execution result` using the saved nonsecret receipt. See
+[durable executions](docs/executions.md) for examples and the versioned receipt contract.
 
 ## Path Syntax
 
