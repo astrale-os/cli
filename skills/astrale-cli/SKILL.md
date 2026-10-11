@@ -533,13 +533,14 @@ For its identical-release redeploy path and promotion effects, see
 ## Journal
 
 `astrale logs` reads the public Kernel journal syscall and returns
-`{ records, cursor? }`. Filters match exact values; use `--topic-prefix` for
-prefix matching:
+`{ records, cursor?, frontier?, gap? }`. Filters match exact values; use
+`--topic-prefix` for prefix matching. Function invocation records use
+`function.invoke`; `payload.outcome` contains their outcome:
 
 ```bash
 astrale logs -i staging --limit 50
-astrale logs --topic op:function.failed
-astrale logs --topic-prefix op:function. --follow
+astrale logs --topic function.invoke
+astrale logs --topic-prefix function. --follow
 ```
 
 Use `--principal`, `--caller`, `--since`, `--until`, or an opaque `--cursor` as needed.

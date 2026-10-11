@@ -153,7 +153,7 @@ astrale get @self -i staging --as alice --json
 astrale introspect /:issues.example:class.Issue:close -i staging --as alice
 astrale view /:issues.example:view.application -i staging --as alice
 astrale view issues.example --list -i staging --as alice
-astrale logs -i staging --as alice --topic-prefix op:function. --limit 20
+astrale logs -i staging --as alice --topic-prefix function. --limit 20
 astrale view --sessions
 astrale view --close <session-id>
 ```
