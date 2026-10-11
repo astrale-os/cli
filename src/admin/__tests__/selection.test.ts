@@ -117,7 +117,7 @@ test('the ordinary instance client lists and creates in its sole usable fleet', 
   await expect(api.create('demo', 'create-shared')).resolves.toMatchObject({ id: '@created' })
   const encoded = JSON.stringify(remote.call.mock.calls)
   expect(encoded).toContain('@shared::admin.astrale.ai:class.Fleet.method.createInstance')
-  expect(encoded).not.toContain('core.fleet::')
+  expect(encoded).not.toContain(':core.')
 })
 
 test('lists the usable choices and never creates when default is one of several', async () => {

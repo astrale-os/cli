@@ -139,7 +139,7 @@ stdin JSON, URLs, or arbitrary substrings.
 astrale get @self --json
 astrale introspect /:notes.example:class.Note::notes.example:class.Note.method.archive
 astrale call /:blog.example:class.Author:list limit=10
-astrale call /:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances
+astrale call '@<fleet-id>::admin.astrale.ai:class.Fleet.method.listInstances' --admin
 ```
 
 ## Instances And Domains
@@ -491,7 +491,7 @@ astrale call /:blog.example:class.Author:create \
   --data '{"name":"Ada"}' --json
 astrale call /:assets.example:class.Asset:render id=123 --output asset.png
 astrale call /:blog.example:class.Author:create -d @author.json
-astrale call '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances' \
+astrale call '@<fleet-id>::admin.astrale.ai:class.Fleet.method.listInstances' \
   --admin --json
 ```
 
