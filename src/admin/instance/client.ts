@@ -256,19 +256,11 @@ function instanceFromNode(node: Node): InstanceInfo {
   if (node.class !== ClassKey.of(Instance)) {
     throw new TypeError('Admin Instance inventory returned a non-Instance Node.')
   }
-  const property = AdminContract.properties.instance
+  // The contract names each Instance property after the summary field it carries.
+  const properties = Object.entries(AdminContract.properties.instance)
   return instanceFromSummary({
     id: Path.id(node.id).raw,
-    slug: node.props[property.slug],
-    operationId: node.props[property.operationId],
-    url: node.props[property.url],
-    issuer: node.props[property.issuer],
-    organizationId: node.props[property.organizationId],
-    state: node.props[property.state],
-    phase: node.props[property.phase],
-    failure: node.props[property.failure],
-    createdAt: node.props[property.createdAt],
-    updatedAt: node.props[property.updatedAt],
+    ...Object.fromEntries(properties.map(([field, key]) => [field, node.props[key]])),
   })
 }
 
