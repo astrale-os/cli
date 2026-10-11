@@ -9,7 +9,7 @@ import { connectAdminRegistry, RegistryError, registryFailure } from '../../admi
 import { withAdminClientSession } from '../../connection'
 import { resolveTimeoutMs } from '../../connection/session'
 import { AstraleError } from '../../errors'
-import { printFailureDebug } from '../../lib/failure-debug'
+import { printFailureDebug } from '../../lib/log'
 import { log } from '../../lib/log'
 
 export type RegistryCommandOpts = KernelCommandOpts & AdminTargetCommandOpts

@@ -106,7 +106,7 @@ function isLive(pid: number): boolean {
  * must be read with readlink, never stat'ed. A stale lock (dead pid) is not a
  * reason to skip — Chromium leaves those behind after a crash.
  */
-export function heldByLiveBrowser(profileDir: string): boolean {
+function heldByLiveBrowser(profileDir: string): boolean {
   let target: string
   try {
     target = readlinkSync(join(profileDir, 'SingletonLock'))

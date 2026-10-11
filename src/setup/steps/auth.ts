@@ -1,6 +1,6 @@
 import type { SetupContext, SetupStep } from '../types'
 
-import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activate-account'
+import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activation'
 import { readLocalStatus } from '../../lib/local-status'
 import { log } from '../../lib/log'
 import { loginViaIdp } from '../../lib/login-flow'

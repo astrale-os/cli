@@ -26,7 +26,7 @@ import type {
 import type { ResolvedVersion, VersionReference } from './version-reference'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
-import { withAdminClientSession, withClientSession } from '../../connection'
+import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
 import { reasonCode } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
 import {
@@ -65,7 +65,7 @@ import {
  * details, the code it also gives backend failures, so a refused install is never sent again
  * (AM-97).
  */
-export const NOT_YET_ACTIVE_WINDOW_MS = 60_000
+const NOT_YET_ACTIVE_WINDOW_MS = 60_000
 
 export type ReferenceInstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -255,7 +255,7 @@ export async function installByReference(
     failure = await deps.withClientSession(
       opts,
       async (context) => {
-        const before = await installedReleases(context.session)
+        const before = await context.session.schema.installed()
         return installReleases(context, sources, before, operation, consent, opts, deps)
       },
       { principal: 'caller' },
@@ -308,30 +308,15 @@ function releaseSources(
 /**
  * The Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
  * configuration), read with the caller's own identity ([.79495]): never the install target that
- * `-i`/`--url` select, and never `--creds`, the raw credential of that target. `open` is the
- * Admin session seam the tests stub.
+ * `-i`/`--url` select, and never `--creds`, the raw credential of that target.
  */
-export function openInstallRegistry<Value>(
+function openInstallRegistry<Value>(
   opts: ReferenceInstallOpts,
   work: (registry: Pick<AdminRegistryApi, 'index'>) => Promise<Value>,
-  open: typeof withAdminClientSession = withAdminClientSession,
 ): Promise<Value> {
-  return open(
-    {
-      ...(opts.admin === undefined ? {} : { admin: opts.admin }),
-      ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
-      ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
-      ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
-      ...(opts.as === undefined ? {} : { as: opts.as }),
-      ...(opts.ci === undefined ? {} : { ci: opts.ci }),
-    },
-    async (context) => work(connectAdminRegistry(context)),
+  return withAdminClientSession(adminSessionOptions(opts), async (context) =>
+    work(connectAdminRegistry(context)),
   )
-}
-
-/** The installed releases the caller can read from the selected Kernel. */
-export function installedReleases(session: ClientSession): Promise<readonly InstalledRelease[]> {
-  return session.schema.installed()
 }
 
 /**
@@ -1167,7 +1152,7 @@ type RootStatus = 'installed' | 'replaced' | 'unchanged' | 'unknown'
  * transition without a previous generation installed it, one with a previous generation replaced
  * it, and a root without a transition did not move. `unknown` when the origin was not readable.
  */
-export function rootStatus(result: InstallResult, origin: string | null): RootStatus {
+function rootStatus(result: InstallResult, origin: string | null): RootStatus {
   if (!result.changed) return 'unchanged'
   if (origin === null) return 'unknown'
   const intent = result.receipt.transitions.find(

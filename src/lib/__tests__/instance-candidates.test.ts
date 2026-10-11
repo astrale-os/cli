@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { OwnedInstanceInfo } from '../admin-instance'
+import type { OwnedInstanceInfo } from '../../admin/instance'
 import type { InstanceStore } from '../instance'
 
 import { collectInstanceCandidates, describeInstanceCandidate } from '../instance-candidates'

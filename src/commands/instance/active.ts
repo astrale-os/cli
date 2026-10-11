@@ -2,8 +2,8 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program/index'
 
+import { findOwnedInstance } from '../../admin/instance'
 import { listOwnedInstances } from '../../lib/admin-instance'
-import { findOwnedInstance } from '../../lib/admin-instance'
 import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { RAW_OUTPUT_OPTIONS, isMachine, output, type RawOutputOpts } from '../../lib/output'

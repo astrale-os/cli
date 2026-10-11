@@ -1,6 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activate-account'
+import { ACCOUNT_ACTIVATION_WARNINGS, activateLoggedInAccount } from '../../lib/activation'
 import { type IdpSession } from '../../lib/idp'
 import { log } from '../../lib/log'
 import { loginViaIdp, type LoginFlowOpts } from '../../lib/login-flow'

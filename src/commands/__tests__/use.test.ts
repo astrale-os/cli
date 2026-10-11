@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 
 import type { IdentityStore } from '../../identity/index'
-import type { InstanceStore } from '../instance'
+import type { InstanceStore } from '../../lib/instance'
 
-import { resolveUseTarget } from '../use-target'
+import { resolveUseTarget } from '../use'
 
 const instances: InstanceStore = {
   active: 'staging',

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { paths } from '../state/index'
-import { run } from './proc'
+import { findOnPath, run } from './proc'
 
 /**
  * `astrale browser` is a thin orchestrator over `agent-browser`
@@ -46,18 +46,7 @@ export async function saveSession(session: BrowserSession): Promise<void> {
 }
 
 /** Resolve `agent-browser` on PATH; null when not installed. */
-export async function findAgentBrowser(): Promise<string | null> {
-  // `command -v` is a POSIX shell builtin (no `command` executable exists on
-  // Windows), so resolve via `where` on Windows and a shell on Unix.
-  const lookup =
-    process.platform === 'win32'
-      ? run('where', ['agent-browser'])
-      : run('sh', ['-c', 'command -v agent-browser'])
-  const res = await lookup.catch(() => null)
-  if (!res || res.code !== 0) return null
-  const path = res.stdout.split(/\r?\n/)[0]?.trim()
-  return path || null
-}
+export const findAgentBrowser = () => findOnPath('agent-browser')
 
 export type AbResult = {
   ok: boolean

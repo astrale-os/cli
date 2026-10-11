@@ -57,3 +57,14 @@ function sizeError(url: URL, maximum: number): Error {
 export async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {
   if (body !== null) await body.cancel().catch(() => undefined)
 }
+
+/** The Kernel's media type comparison: parameters kept, case and whitespace ignored. */
+export function hasMediaType(response: Response, expected: string): boolean {
+  const actual = response.headers.get('content-type')
+  const normalize = (input: string) =>
+    input
+      .split(';')
+      .map((part) => part.trim().toLowerCase())
+      .join(';')
+  return actual !== null && normalize(actual) === normalize(expected)
+}

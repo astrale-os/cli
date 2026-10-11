@@ -1,8 +1,14 @@
 import chalk from 'chalk'
 import { stringify as yamlStringify } from 'yaml'
 
-import { invocationWantsMachine } from './invocation'
 import { renderTable, type Column } from './table'
+
+/** Process-wide machine mode from argv (`--json` / `--raw` / `--ci`), set once at startup. */
+let argvMachine = false
+
+export function configureInvocation(argv: readonly string[]): void {
+  argvMachine = argv.some((token) => token === '--json' || token === '--raw' || token === '--ci')
+}
 
 export type OutputOpts = {
   raw?: boolean
@@ -25,11 +31,14 @@ export const RAW_OUTPUT_OPTIONS = [
  * or any non-TTY stdout (pipe, redirect, agent).
  */
 export function isMachine(opts?: MachineOpts): boolean {
-  return (
-    !!(opts?.raw || opts?.json || opts?.ci) ||
-    invocationWantsMachine() ||
-    !(process.stdout.isTTY ?? false)
-  )
+  return !!(opts?.raw || opts?.json || opts?.ci) || argvMachine || !(process.stdout.isTTY ?? false)
+}
+
+/** Print `value` as the one machine-readable result when the caller asked for one. */
+export function outputForMachine(value: unknown, opts: OutputOpts): boolean {
+  if (!isMachine(opts)) return false
+  output(value, opts)
+  return true
 }
 
 /**

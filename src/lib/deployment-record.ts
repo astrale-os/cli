@@ -6,7 +6,7 @@ import {
   type DeploymentRecordV1,
 } from '@astrale-os/sdk/deployment/address'
 
-import { cancel } from './deployment-document'
+import { cancel, hasMediaType, readBounded } from './deployment-document'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
@@ -65,8 +65,7 @@ export async function readDeploymentRecord(
   }
   let record: DeploymentRecordV1
   try {
-    const bytes = await readRecordBytes(response)
-    if (bytes === undefined) return undefined
+    const bytes = await readBounded(response, deployment, MAXIMUM_RECORD_BYTES)
     record = acceptDeploymentRecord(
       JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown,
     )
@@ -94,44 +93,4 @@ export function deploymentLabelOf(url: URL): string | undefined {
     return undefined
   }
   return label
-}
-
-async function readRecordBytes(response: Response): Promise<Uint8Array | undefined> {
-  const declared = response.headers.get('content-length')
-  if (declared !== null && !(/^\d+$/u.test(declared) && Number(declared) <= MAXIMUM_RECORD_BYTES)) {
-    await cancel(response.body)
-    return undefined
-  }
-  if (response.body === null) return new Uint8Array()
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.byteLength
-    if (size > MAXIMUM_RECORD_BYTES) {
-      await reader.cancel().catch(() => undefined)
-      return undefined
-    }
-    chunks.push(value)
-  }
-  const bytes = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return bytes
-}
-
-/** The media type comparison the Kernel uses: parameters kept, case and whitespace ignored. */
-function hasMediaType(response: Response, expected: string): boolean {
-  const actual = response.headers.get('content-type')
-  const normalize = (input: string) =>
-    input
-      .split(';')
-      .map((part) => part.trim().toLowerCase())
-      .join(';')
-  return actual !== null && normalize(actual) === normalize(expected)
 }

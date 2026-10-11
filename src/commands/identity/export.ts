@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { encodeIdentityExport, exportIdentity, writeIdentityExport } from '../../identity/index'
 import { fatal, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 import { readPassphrase } from '../../lib/prompt'
 
 /**
@@ -29,10 +29,7 @@ export default {
         : undefined
       await writeIdentityExport(path, await encodeIdentityExport(envelope, passphrase))
 
-      if (isMachine(opts)) {
-        output({ name, path, encrypted: Boolean(opts.encrypt) }, opts)
-        return
-      }
+      if (outputForMachine({ name, path, encrypted: Boolean(opts.encrypt) }, opts)) return
       log.success(`Exported identity "${name}" → ${path}${opts.encrypt ? ' (encrypted)' : ''}`)
       if (!opts.encrypt) {
         log.warn(

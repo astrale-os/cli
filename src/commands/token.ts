@@ -65,7 +65,7 @@ export async function tokenCommand(
 }
 
 /** Preserve the selected caller and enough parent lifetime for the requested token. */
-export function tokenCredentialIntent(ttlSeconds: number): CredentialIntent {
+function tokenCredentialIntent(ttlSeconds: number): CredentialIntent {
   return Object.freeze({ principal: 'caller', nestedTtlSeconds: ttlSeconds })
 }
 

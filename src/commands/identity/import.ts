@@ -8,7 +8,7 @@ import {
   isEncryptedIdentityExport,
 } from '../../identity/index'
 import { fatal, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 import { readPassphrase } from '../../lib/prompt'
 
 export default {
@@ -47,10 +47,7 @@ export default {
         replace: opts.replace,
       })
 
-      if (isMachine(opts)) {
-        output({ name, ...identity }, opts)
-        return
-      }
+      if (outputForMachine({ name, ...identity }, opts)) return
       log.success(
         `Imported identity "${name}" (subject=${identity.subject}, kid=${identity.kid ?? '?'})`,
       )

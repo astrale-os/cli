@@ -1,15 +1,16 @@
 import chalk from 'chalk'
 
+import type { InstanceInfo } from '../../admin/instance'
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { statusOwnedInstance, type InstanceInfo } from '../../lib/admin-instance'
+import { statusOwnedInstance } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { resolveInstance } from '../../lib/instance'
 import { log, withSpinner } from '../../lib/log'
-import { isMachine, output, type RawOutputOpts } from '../../lib/output'
+import { isMachine, outputForMachine, type RawOutputOpts } from '../../lib/output'
 import { probeBookmark } from './use'
 
 type StatusOpts = KernelCommandOpts &
@@ -37,10 +38,7 @@ export default {
       const result = await withSpinner(`Fetching instance ${id}`, !isMachine(opts), () =>
         resolveStatus(id, opts),
       )
-      if (isMachine(opts)) {
-        output(result, opts)
-        return
-      }
+      if (outputForMachine(result, opts)) return
       console.log(`${chalk.bold(result.slug)} ${chalk.dim(result.url)}`)
       const phase = 'phase' in result ? result.phase : undefined
       log.dim(`  state: ${result.state}${phase ? ` (${phase})` : ''}`)

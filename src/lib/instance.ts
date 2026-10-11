@@ -520,20 +520,29 @@ export async function setActive(identifier: string): Promise<string> {
   })
 }
 
-export async function getActive(): Promise<InstanceEntry & { name: string }> {
-  const store = await readInstances()
+/** The name of the active bookmark of `store`; there is always one to name, or this refuses. */
+export function activeName(store: InstanceStore): string {
   if (!store.active) {
     throw new AstraleError(
       'INSTANCE_NOT_FOUND',
       'No active instance. Run: astrale instance bookmark <name> --url <url> --use',
     )
   }
-  const entry = store.instances[store.active]
-  return { ...entry, name: store.active }
+  return store.active
+}
+
+export async function getActive(): Promise<InstanceEntry & { name: string }> {
+  const store = await readInstances()
+  const name = activeName(store)
+  return { ...store.instances[name], name }
 }
 
 export async function resolveInstance(identifier: string): Promise<ResolvedInstance> {
-  const store = await readInstances()
+  return bookmarkIn(await readInstances(), identifier)
+}
+
+/** The bookmark `identifier` names in `store`, by key, slug or name. */
+export function bookmarkIn(store: InstanceStore, identifier: string): ResolvedInstance {
   const key = resolveInstanceKey(store, identifier)
   const entry = key ? store.instances[key] : undefined
   if (!key || !entry?.url) {

@@ -1,24 +1,10 @@
-import type { OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
+import type { AdminInstanceApi, OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminInstances, AdminInstanceNotFoundError } from '../admin/instance'
 import { resolveAdminFleet } from '../admin/selection'
 import { withAdminClientSession } from '../connection'
 import { AstraleError } from '../errors'
-
-export {
-  AdminInstanceNotFoundError,
-  findOwnedInstance,
-  formatInstanceState,
-  type InstanceInfo,
-  type InstanceState,
-  type InvitationInfo,
-  type InvitationState,
-  type OwnedInstanceInfo,
-  type RetrievedRootIdentity,
-  type RootIdentityRecipient,
-  type RootIdentityTransfer,
-} from '../admin/instance'
 
 /** Resolve the Admin target and read only the caller-visible Instance inventory. */
 export function listOwnedInstances(options: AdminConnectionOptions, includeRetired = false) {
@@ -106,19 +92,23 @@ export function planInstanceCreate(
   return Object.freeze(operationId === undefined ? {} : { operationId })
 }
 
-/** Refresh one exact caller-visible Instance through its V2 receiver Method. */
-export function statusOwnedInstance(options: AdminConnectionOptions, identifier: string) {
+/** Run `work` on the caller-visible Instances of the selected Admin target. */
+function withAdminInstances<Value>(
+  options: AdminConnectionOptions,
+  work: (instances: AdminInstanceApi, context: ConnectionContext) => Promise<Value>,
+): Promise<Value> {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).status(identifier),
+    work(await connectAdminInstances(context), context),
   )
 }
 
+/** Refresh one exact caller-visible Instance through its V2 receiver Method. */
+export const statusOwnedInstance = (options: AdminConnectionOptions, identifier: string) =>
+  withAdminInstances(options, (instances) => instances.status(identifier))
+
 /** Delete one exact caller-visible Instance through its V2 receiver Method. */
-export function deleteOwnedInstance(options: AdminConnectionOptions, identifier: string) {
-  return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).delete(identifier),
-  )
-}
+export const deleteOwnedInstance = (options: AdminConnectionOptions, identifier: string) =>
+  withAdminInstances(options, (instances) => instances.delete(identifier))
 
 /** Retrieve one owner's root identity, sealed to a caller-generated ephemeral recipient. */
 export function retrieveOwnedInstanceRootIdentity(
@@ -126,9 +116,9 @@ export function retrieveOwnedInstanceRootIdentity(
   identifier: string,
   recipient: RootIdentityRecipient,
 ) {
-  return withAdminClientSession(options, async (context) =>
+  return withAdminInstances(options, async (instances, context) =>
     Object.freeze({
-      ...(await (await connectAdminInstances(context)).retrieveRootIdentity(identifier, recipient)),
+      ...(await instances.retrieveRootIdentity(identifier, recipient)),
       ...(context.identity === undefined ? {} : { ownerIdentity: context.identity }),
     }),
   )
@@ -141,38 +131,27 @@ export function inviteOwnedInstance(
   email: string,
   expiresInDays?: number,
 ) {
-  return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).invite(identifier, email, expiresInDays),
+  return withAdminInstances(options, (instances) =>
+    instances.invite(identifier, email, expiresInDays),
   )
 }
 
 /** Observe one retained Instance Invitation without reconciling or mutating it. */
-export function statusManagedInvitation(options: AdminConnectionOptions, invitation: string) {
-  return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).statusInvitation(invitation),
-  )
-}
+export const statusManagedInvitation = (options: AdminConnectionOptions, invitation: string) =>
+  withAdminInstances(options, (instances) => instances.statusInvitation(invitation))
 
 /** Reconcile one Invitation sent by the active caller. */
-export function reconcileOwnedInvitation(options: AdminConnectionOptions, invitation: string) {
-  return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).reconcileInvitation(invitation),
-  )
-}
+export const reconcileOwnedInvitation = (options: AdminConnectionOptions, invitation: string) =>
+  withAdminInstances(options, (instances) => instances.reconcileInvitation(invitation))
 
 /** Resolve a known Instance in its own Admin session, whichever Fleet holds it. */
 export function resolveOwnedInstance(options: AdminConnectionOptions, identifier: string) {
-  return withAdminClientSession(options, (context) =>
-    resolveOwnedInstanceInContext(context, identifier),
-  )
-}
-
-/** Resolve a known Instance independently of default placement. */
-async function resolveOwnedInstanceInContext(context: ConnectionContext, identifier: string) {
-  try {
-    return await (await connectAdminInstances(context)).require(identifier)
-  } catch (cause) {
-    if (cause instanceof AdminInstanceNotFoundError) return undefined
-    throw cause
-  }
+  return withAdminInstances(options, async (instances) => {
+    try {
+      return await instances.require(identifier)
+    } catch (cause) {
+      if (cause instanceof AdminInstanceNotFoundError) return undefined
+      throw cause
+    }
+  })
 }

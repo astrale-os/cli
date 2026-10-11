@@ -11,7 +11,7 @@ import { ADMIN_TARGET_OPTIONS } from '../../../lib/admin-target'
 import { importInstanceRootIdentity } from '../../../lib/instance-root-identity'
 import { canPrompt } from '../../../lib/interactive'
 import { log, withSpinner } from '../../../lib/log'
-import { isMachine, output } from '../../../lib/output'
+import { isMachine, outputForMachine } from '../../../lib/output'
 import { dangerPanel } from '../../../lib/panel'
 import { confirmWithInput } from '../../../lib/prompt'
 
@@ -76,10 +76,7 @@ Examples:
             : String(imported.bookmarkError)
         log.warn(`Root identity imported, but the Instance bookmark was not updated: ${message}`)
       }
-      if (isMachine(opts)) {
-        output(result, opts)
-        return
-      }
+      if (outputForMachine(result, opts)) return
       log.success(`Imported Instance root identity: ${imported.name}`)
       log.dim(`  subject: ${imported.identity.subject}`)
       log.dim(`  issuer: ${imported.identity.issuer}`)

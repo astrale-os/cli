@@ -3,7 +3,7 @@ import type { bundle } from '@astrale-os/sdk/schema'
 
 import { accept, decodeBundle, MEDIA_TYPE, PATH, type DomainRelease } from '@astrale-os/sdk/release'
 
-import { cancel, readBounded } from './deployment-document'
+import { cancel, hasMediaType, readBounded } from './deployment-document'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
@@ -180,19 +180,6 @@ export async function readReleaseBundle(
       },
     )
   }
-}
-
-/** The Kernel's media type comparison: parameters kept, case and whitespace ignored. */
-function hasMediaType(response: Response, expected: string): boolean {
-  const actual = response.headers.get('content-type')
-  return actual !== null && normalizeMediaType(actual) === normalizeMediaType(expected)
-}
-
-function normalizeMediaType(input: string): string {
-  return input
-    .split(';')
-    .map((part) => part.trim().toLowerCase())
-    .join(';')
 }
 
 /** `Retry-After` in delta-seconds; an HTTP date or an invalid value is ignored. */

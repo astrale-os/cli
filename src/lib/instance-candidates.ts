@@ -1,6 +1,6 @@
 import type { InstanceEntry, InstanceStore } from './instance'
 
-import { formatInstanceState, type OwnedInstanceInfo } from './admin-instance'
+import { formatInstanceState, type OwnedInstanceInfo } from '../admin/instance'
 import { normalizeInstanceKernelUrl, resolveInstanceKey } from './instance'
 
 export type InstanceCandidate =

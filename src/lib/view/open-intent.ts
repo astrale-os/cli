@@ -63,7 +63,7 @@ export async function handleViewOpenIntent(
 }
 
 /** The declaration path of a requested View, which always opens on its Domain. */
-export function domainViewPath(request: { readonly view: string }): ViewPath {
+function domainViewPath(request: { readonly view: string }): ViewPath {
   const key = String(request.view)
   const separator = key.lastIndexOf(':view.')
   if (separator <= 0) throw new Error(`Invalid View key: ${key}`)

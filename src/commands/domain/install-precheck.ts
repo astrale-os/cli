@@ -165,7 +165,7 @@ export type PrecheckKernel = Pick<ClientSession['schema'], 'bundle' | 'dependenc
  * Admin keeps when it reads a fleet: Host execution admission is wait-bounded, so an unbounded
  * burst on a busy Host would be refused and leave Domains unevaluated.
  */
-export const INTROSPECTION_READS_AT_ONCE = 6
+const INTROSPECTION_READS_AT_ONCE = 6
 
 /** The schema of one origin the install leaves active, and its revision. */
 interface ActiveSchema {

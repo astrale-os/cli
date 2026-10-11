@@ -5,7 +5,7 @@ import { formatKernelError } from '../../../connection/errors'
 import { statusManagedInvitation } from '../../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../../lib/admin-target'
 import { log, withSpinner } from '../../../lib/log'
-import { isMachine, output } from '../../../lib/output'
+import { isMachine, outputForMachine } from '../../../lib/output'
 
 type StatusOpts = KernelCommandOpts & AdminTargetCommandOpts
 
@@ -46,10 +46,7 @@ Examples:
         const invitation = await withSpinner('Fetching invitation', !isMachine(opts), () =>
           dependencies.statusManagedInvitation(opts, id),
         )
-        if (isMachine(opts)) {
-          output(invitation, opts)
-          return
-        }
+        if (outputForMachine(invitation, opts)) return
         log.success(`Invitation ${invitation.state}: ${invitation.email}`)
         log.dim(`  invitation: ${invitation.id}`)
         log.dim(`  instance: ${invitation.instance}`)

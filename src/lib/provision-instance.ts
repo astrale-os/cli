@@ -10,7 +10,7 @@ import { formatKernelError } from '../connection/errors'
 import { reasonCode } from '../connection/reasons'
 import { AstraleError, AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
-import { activateInstance, type InstanceActivation } from './activate-instance'
+import { activateInstance, type InstanceActivation } from './activation'
 import { createOwnedInstance } from './admin-instance'
 import { randomOperationId } from './idempotency'
 import { bookmarkCreatedInstance } from './instance'
@@ -263,7 +263,7 @@ function acceptInstanceCreateOperationId(input: unknown): string {
   return input
 }
 
-export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {
+function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {
   return { ...opts, timeout: opts.timeout ?? SAGA_TIMEOUT_MS }
 }
 
@@ -339,7 +339,7 @@ export function selectInstanceCreateIdentity(
   return opts.as ?? store.default
 }
 
-export function assertInstanceCreateIdentity(
+function assertInstanceCreateIdentity(
   store: IdentityStore,
   opts: Pick<ProvisionOpts, 'as'> = {},
 ): void {

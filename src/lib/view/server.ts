@@ -42,7 +42,7 @@ const VIEW_TOKEN_TTL_SECONDS = 4 * 60
  * threshold: this server renews the grant once it stops covering that delegation, and the host page
  * anticipates against the same value from `/config.json`.
  */
-export const VIEW_DELEGATION_TTL_SECONDS = 60
+const VIEW_DELEGATION_TTL_SECONDS = 60
 const IDLE_SWEEP_MS = 60_000
 /**
  * Grace between the last page leaving a released session and the shutdown. A
@@ -506,7 +506,7 @@ export function startViewServer(
 }
 
 /** Mint a short-lived credential from the selected CLI identity proof. */
-export async function mintViewCredential(
+async function mintViewCredential(
   auth: Pick<AuthApi, 'mint'>,
   audience: IssuerId,
 ): Promise<string> {

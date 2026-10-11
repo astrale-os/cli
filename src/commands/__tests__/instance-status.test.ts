@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { InstanceInfo } from '../../lib/admin-instance'
+import type { InstanceInfo } from '../../admin/instance'
 import type { ResolvedInstance } from '../../lib/instance'
 
 import { resolveStatus, type StatusDependencies } from '../instance/status'

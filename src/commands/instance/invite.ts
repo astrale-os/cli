@@ -5,7 +5,7 @@ import { formatKernelError } from '../../connection/errors'
 import { inviteOwnedInstance } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { log, withSpinner } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+import { isMachine, outputForMachine } from '../../lib/output'
 
 type InviteOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -49,10 +49,7 @@ Examples:
         { success: () => `Invitation sent to ${email}` },
       )
 
-      if (isMachine(opts)) {
-        output(invitation, opts)
-        return
-      }
+      if (outputForMachine(invitation, opts)) return
       log.dim(`  invitation: ${invitation.id}`)
       log.dim(`  state: ${invitation.state}`)
       if (invitation.instance) log.dim(`  instance: ${invitation.instance}`)

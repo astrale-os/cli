@@ -2,7 +2,7 @@ import type { IssuerId } from '@astrale-os/sdk/auth'
 
 import { issuer } from '@astrale-os/sdk/auth'
 
-import type { InstanceInfo } from '../lib/admin-instance'
+import type { InstanceInfo } from '../admin/instance'
 import type { AdminTargetCommandOpts } from '../lib/admin-target'
 import type { AstraleConfig } from '../lib/config'
 import type { InstanceStore } from '../lib/instance'

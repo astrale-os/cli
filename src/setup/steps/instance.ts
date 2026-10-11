@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 
-import type { OwnedInstanceInfo } from '../../lib/admin-instance'
+import type { OwnedInstanceInfo } from '../../admin/instance'
 import type { SetupContext, SetupStep } from '../types'
 
 import { AstraleError } from '../../errors'

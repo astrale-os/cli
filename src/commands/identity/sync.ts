@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { getIdentity, setIdentityMode } from '../../identity/index'
 import { fatal, fatalNotImplemented, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 
 export default {
   name: 'sync',
@@ -25,10 +25,7 @@ export default {
         )
       }
       await setIdentityMode(name, 'remote')
-      if (isMachine(opts)) {
-        output({ name, mode: 'remote', subject: identity.subject }, opts)
-        return
-      }
+      if (outputForMachine({ name, mode: 'remote', subject: identity.subject }, opts)) return
       log.warn(`Tagged "${name}" as remote locally (cloud sync stubbed in v1)`)
       log.dim(`  subject=${identity.subject}`)
     } catch (e) {

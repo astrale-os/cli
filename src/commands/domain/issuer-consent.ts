@@ -74,7 +74,7 @@ interface DeploymentLineAddress {
  * as a stable Worker host included. The port is not part of the line: a routing domain is a DNS
  * name, and Services gives one author each line prefix under it.
  */
-export function deploymentLineOf(address: string): DeploymentLineAddress | undefined {
+function deploymentLineOf(address: string): DeploymentLineAddress | undefined {
   let url: URL
   try {
     url = new URL(address)
@@ -159,7 +159,7 @@ export function issuerConsentRequest(
 }
 
 /** Whether the flags consent: a same-line change by either form, any other only by its origin. */
-export function consentedByFlags(change: IssuerChange, consent: IssuerChangeConsent): boolean {
+function consentedByFlags(change: IssuerChange, consent: IssuerChangeConsent): boolean {
   if (consent.origins.includes(change.origin)) return true
   return change.line === 'same' && consent.sameLine
 }
@@ -176,7 +176,7 @@ interface UnconsentedIssuerChange {
  * The issuer changes of one install that neither a flag nor the operator's confirmation consented
  * to, all of them at once (CT24 `details.origins`), refused before any install is sent.
  */
-export class IssuerChangeNotConsentedError extends AstraleError {
+class IssuerChangeNotConsentedError extends AstraleError {
   constructor(changes: readonly [IssuerChange, ...IssuerChange[]]) {
     const [first] = changes
     const kind = (change: IssuerChange) =>

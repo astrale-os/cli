@@ -9,12 +9,12 @@ import {
   type ResolvedAdminTarget,
 } from './admin-target'
 import {
-  bookmarkExchangeDomain,
-  getActive,
+  activeName,
+  bookmarkIn,
   managedShellOrigin,
   normalizeInstanceKernelUrl,
+  readInstances,
   resolveInstance,
-  resolveInstanceKey,
   type InstanceStore,
 } from './instance'
 import { validateSlug } from './validation'
@@ -54,8 +54,7 @@ export async function resolveInstanceTarget(
 ): Promise<ResolvedInstanceTarget> {
   switch (request.source) {
     case 'active': {
-      const active = opts.instances ? activeFromStore(opts.instances) : await getActive()
-      return resolveNamedInstanceTarget(active.name, opts)
+      return resolveNamedInstanceTarget(activeName(opts.instances ?? (await readInstances())), opts)
     }
     case 'name':
       return resolveNamedInstanceTarget(request.name, opts)
@@ -121,52 +120,22 @@ async function resolveBookmarkedInstanceTarget(
   identifier: string,
   opts: ResolveInstanceTargetOpts,
 ): Promise<ResolvedInstanceTarget> {
-  if (opts.instances) {
-    const key = resolveInstanceKey(opts.instances, identifier)
-    const entry = key ? opts.instances.instances[key] : undefined
-    if (!key || !entry?.url) throw instanceNotFound(identifier)
-    const url = normalizeInstanceKernelUrl(entry.url)
-    return {
-      name: key,
-      source: 'bookmark',
-      url,
-      kernelIssuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : url,
-      ...bookmarkExchangeDomain(entry, url),
-      defaultIdentity: entry.defaultIdentity,
-      caFile: entry.caFile,
-    }
-  }
-
-  const resolved = await resolveInstance(identifier)
+  const bookmark = opts.instances
+    ? bookmarkIn(opts.instances, identifier)
+    : await resolveInstance(identifier)
   return {
-    name: resolved.name,
+    name: bookmark.name,
     source: 'bookmark',
-    url: resolved.url,
-    kernelIssuer: resolved.issuer ?? resolved.url,
-    ...(resolved.domainIssuer === undefined ? {} : { domainIssuer: resolved.domainIssuer }),
-    ...(resolved.domainOrigin === undefined ? {} : { domainOrigin: resolved.domainOrigin }),
-    defaultIdentity: resolved.defaultIdentity,
-    caFile: resolved.caFile,
+    url: bookmark.url,
+    kernelIssuer: bookmark.issuer ?? bookmark.url,
+    ...(bookmark.domainIssuer === undefined ? {} : { domainIssuer: bookmark.domainIssuer }),
+    ...(bookmark.domainOrigin === undefined ? {} : { domainOrigin: bookmark.domainOrigin }),
+    defaultIdentity: bookmark.defaultIdentity,
+    caFile: bookmark.caFile,
   }
 }
 
-function activeFromStore(store: InstanceStore): { name: string } {
-  if (!store.active) {
-    throw new Error('No active instance. Run: astrale instance bookmark <name> --url <url> --use')
-  }
-  return { name: store.active }
-}
-
-function instanceNotFound(identifier: string): AstraleError {
-  return new AstraleError(
-    'INSTANCE_NOT_FOUND',
-    `Instance "${identifier}" is not bookmarked.\n` +
-      `  Bookmark: astrale instance bookmark ${identifier} --url <url>\n` +
-      `  Or pass --url <kernel-url> directly.`,
-  )
-}
-
-export function couldBeConfiguredAdminInstance(identifier: string, config: AstraleConfig): boolean {
+function couldBeConfiguredAdminInstance(identifier: string, config: AstraleConfig): boolean {
   const admin = config.admin
   if (admin.instance) return identifier === admin.instance
   return identifier === (admin.name ?? DEFAULT_ADMIN_TARGET_NAME)
@@ -200,7 +169,7 @@ function isAdminDiscoveryFailure(error: unknown): boolean {
   return error instanceof AstraleError && ADMIN_DISCOVERY_CODES.has(error.code)
 }
 
-export function isManagedInstanceNotFound(error: unknown): boolean {
+function isManagedInstanceNotFound(error: unknown): boolean {
   return (
     error instanceof AdminInstanceNotFoundError ||
     (error instanceof AstraleError && error.code === 'INSTANCE_NOT_FOUND')

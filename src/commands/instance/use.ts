@@ -1,4 +1,4 @@
-import type { OwnedInstanceInfo } from '../../lib/admin-instance'
+import type { OwnedInstanceInfo } from '../../admin/instance'
 import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'

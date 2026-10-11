@@ -7,7 +7,7 @@ import { resolveAdminTargetFromStore } from '../../lib/admin-target'
 import { readConfig } from '../../lib/config'
 import { readInstances } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
-import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 
 type AdminStatus = {
   target: ReturnType<typeof resolveAdminTargetFromStore>
@@ -39,10 +39,7 @@ export default {
           : null,
       }
 
-      if (isMachine(opts)) {
-        output(status, opts)
-        return
-      }
+      if (outputForMachine(status, opts)) return
 
       console.log(chalk.bold('Admin'))
       console.log(`  ${chalk.bold(target.name)} ${chalk.dim(target.url)}`)

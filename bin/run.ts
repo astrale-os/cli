@@ -1,7 +1,7 @@
 import { type Command, CommanderError } from 'commander'
 
 import { renderCommanderError } from '../src/lib/command-dx'
-import { configureInvocation } from '../src/lib/invocation'
+import { configureInvocation } from '../src/lib/output'
 import { maybeRunStartupMaintenance } from '../src/lib/startup-maintenance'
 import { buildProgram, normalizeRootVersionArgv } from '../src/program/index'
 import { beginInvocation } from '../src/telemetry/recorder'

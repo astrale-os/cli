@@ -13,7 +13,6 @@ import { adminSessionOptions, withAdminClientSession, withClientSession } from '
 import { mapBounded } from '../../lib/concurrency'
 import { readDeploymentRecord, type RecordedInstallation } from '../../lib/deployment-record'
 import { renderTable } from '../../lib/table'
-import { installedReleases } from './release-install'
 
 /**
  * What runs on one instance (Résolution [.79716] [.80228], overview [.112991]), as `astrale domain
@@ -189,7 +188,7 @@ const defaultDependencies: InstalledListDependencies = Object.freeze({
   installed: (opts: KernelCommandOpts) =>
     withClientSession(opts, async (context: ConnectionContext) => ({
       kernel: context.target.url,
-      releases: await installedReleases(context.session),
+      releases: await context.session.schema.installed(),
     })),
   registry: <Value>(
     opts: AdminConnectionOptions,

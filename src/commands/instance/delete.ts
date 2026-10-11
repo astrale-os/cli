@@ -11,7 +11,7 @@ import {
   resolveInstanceKey,
 } from '../../lib/instance'
 import { log, withSpinner } from '../../lib/log'
-import { isMachine, output } from '../../lib/output'
+import { isMachine, outputForMachine } from '../../lib/output'
 
 type DeleteOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -48,10 +48,7 @@ Behavior:
         await removeDeletedInstanceBookmark(result)
       }
 
-      if (isMachine(opts)) {
-        output(result, opts)
-        return
-      }
+      if (outputForMachine(result, opts)) return
     } catch (e) {
       // Bookmark-only id → no admin Instance → kernel NOT_FOUND. Point to
       // `forget` (local drop) instead of surfacing the raw path error.

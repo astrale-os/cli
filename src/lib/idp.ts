@@ -110,7 +110,7 @@ export const OidcMetadataSchema = z
 
 type OidcMetadata = z.infer<typeof OidcMetadataSchema>
 
-export const IdpClientConfigSchema = z
+const IdpClientConfigSchema = z
   .object({
     client_id: z.string().optional(),
     client_secret_env: z.string().optional(),
@@ -140,7 +140,7 @@ const IdpStoreSchema = z.object({
 type IdpStore = z.infer<typeof IdpStoreSchema>
 type IdpIndexEntry = z.infer<typeof IdpIndexEntrySchema>
 
-export const IdpSessionSchema = z
+const IdpSessionSchema = z
   .object({
     identity: z.string(),
     idp: z.string(),
@@ -384,7 +384,7 @@ export function workosAuthKitMetadata(
   })
 }
 
-export function builtinIdpConfig(
+function builtinIdpConfig(
   name: string,
   clientIdOverride?: string,
   env: NodeJS.ProcessEnv = process.env,

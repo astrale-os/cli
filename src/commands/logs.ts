@@ -162,7 +162,7 @@ export function acceptJournalPage(input: unknown): JournalPage {
 }
 
 /** One sentence naming what the reader lost or why its cursor was refused. */
-export function describeJournalGap(gap: JournalGap): string {
+function describeJournalGap(gap: JournalGap): string {
   switch (gap.kind) {
     case 'retention':
       return gap.frontier.first === undefined
@@ -329,7 +329,7 @@ function printRecord(record: JournalRecord, opts: LogsOpts): void {
 }
 
 /** Machine follow is an NDJSON stream: one complete admitted record per line. */
-export function formatFollowRecord(record: JournalRecord): string {
+function formatFollowRecord(record: JournalRecord): string {
   return `${JSON.stringify(record)}\n`
 }
 

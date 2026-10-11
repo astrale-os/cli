@@ -1,7 +1,7 @@
 import { ResponseError } from '@astrale-os/sdk/client'
 import { describe, expect, test } from 'bun:test'
 
-import type { InstanceInfo } from '../../lib/admin-instance'
+import type { InstanceInfo } from '../../admin/instance'
 
 import { AstraleError } from '../../errors'
 import {

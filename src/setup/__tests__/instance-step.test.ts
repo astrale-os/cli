@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 
-import type { OwnedInstanceInfo } from '../../lib/admin-instance'
+import type { OwnedInstanceInfo } from '../../admin/instance'
 import type { SetupContext } from '../types'
 
 import { human } from '../../commands/__tests__/fixtures/process'
