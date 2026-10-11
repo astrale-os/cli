@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { hasUnsentDraft } from '@/lib/comment-drafts'
+import { hasUnsentDraft } from '@/lib/comments'
 import { useUI } from '@/lib/store'
 
 import { useAnchorThreads } from './anchor'

@@ -1,12 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import {
-  clearCommentDraft,
-  hasUnsentDraft,
-  newCommentDraftKey,
-  replyDraftKey,
-  writeCommentDraft,
-} from './comment-drafts'
+import { hasUnsentDraft, newCommentDraftKey, replyDraftKey, writeCommentDraft } from './comments'
 
 test('new comment drafts are isolated by domain even when refs are identical', () => {
   const billingKey = newCommentDraftKey('billing', 'class.Invoice')
@@ -15,7 +9,7 @@ test('new comment drafts are isolated by domain even when refs are identical', (
   expect(hasUnsentDraft('billing', 'class.Invoice', [])).toBe(true)
   expect(hasUnsentDraft('archive', 'class.Invoice', [])).toBe(false)
 
-  clearCommentDraft(billingKey)
+  writeCommentDraft(billingKey, '')
 })
 
 test('reply drafts are isolated by their owning domain', () => {
@@ -25,5 +19,5 @@ test('reply drafts are isolated by their owning domain', () => {
   expect(hasUnsentDraft('billing', 'class.Invoice', [{ id: 'comment-1' }])).toBe(true)
   expect(hasUnsentDraft('archive', 'class.Invoice', [{ id: 'comment-1' }])).toBe(false)
 
-  clearCommentDraft(billingKey)
+  writeCommentDraft(billingKey, '')
 })

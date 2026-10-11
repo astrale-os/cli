@@ -78,13 +78,7 @@ const NOTE: Record<ContextLevel, string> = {
 const RADIUS = 6
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
-export function ContextRing({
-  context,
-  className,
-}: {
-  context?: AgentContextUsage
-  className?: string
-}) {
+export function ContextRing({ context }: { context?: AgentContextUsage }) {
   const level = contextLevel(context)
   const ratio = context ? contextRatio(context) : 0
   const percent = context ? contextPercent(context) : undefined
@@ -104,7 +98,6 @@ export function ContextRing({
           className={cn(
             'flex h-7 min-w-7 shrink-0 cursor-default items-center justify-center gap-1 rounded-md px-1.5 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
             TONE[level],
-            className,
           )}
         >
           <svg viewBox="0 0 16 16" className="h-4 w-4 -rotate-90" aria-hidden>

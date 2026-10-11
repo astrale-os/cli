@@ -129,9 +129,9 @@ export function placeBeside(
   size: WorkspaceSize,
   obstacles: WorkspaceRect[],
   anchors: WorkspaceRect[] = obstacles,
-  gap = WORKSPACE_DOMAIN_GAP,
 ): WorkspacePoint {
   if (obstacles.length === 0) return { x: 0, y: 0 }
+  const gap = WORKSPACE_DOMAIN_GAP
   const left = Math.min(...obstacles.map((rect) => rect.position.x))
   const top = Math.min(...obstacles.map((rect) => rect.position.y))
   const right = Math.max(...obstacles.map((rect) => rect.position.x + rect.size.width))

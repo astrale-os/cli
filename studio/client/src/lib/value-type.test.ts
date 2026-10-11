@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { friendlyType } from './friendly'
+import { friendlyType } from './value-type'
 
 test('keeps canonical optionality separate from nullable value schemas', () => {
   expect(friendlyType({ type: 'string' }, true)).toMatchObject({

@@ -106,8 +106,8 @@ export const useDraftImages = create<DraftImagesState>((set, get) => ({
 const MAX_EDGE = 2048
 
 /** The size that fits `width`×`height` inside `MAX_EDGE`, keeping its shape. */
-export function fitWithin(width: number, height: number, edge = MAX_EDGE) {
-  const scale = Math.min(1, edge / Math.max(width, height))
+export function fitWithin(width: number, height: number) {
+  const scale = Math.min(1, MAX_EDGE / Math.max(width, height))
   return {
     width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),

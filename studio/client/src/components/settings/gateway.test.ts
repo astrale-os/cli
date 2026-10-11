@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { validateGatewayDraft } from './gateway-validation'
+import { validateGatewayDraft } from './gateway'
 
 test('gateway drafts fail closed only when an enabled configuration is unsafe', () => {
   expect(validateGatewayDraft(false, '', 'token', '')).toBeNull()

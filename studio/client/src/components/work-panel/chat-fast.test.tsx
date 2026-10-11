@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { TooltipProvider } from '@/components/ui/misc'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { qk } from '@/lib/api'
 
 import { ChatFastToggle } from './chat-fast'

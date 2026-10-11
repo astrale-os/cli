@@ -13,11 +13,10 @@ import {
   SectionShell,
   Surface,
 } from '@/components/studio-kit'
-import { ScrollArea } from '@/components/ui/misc'
-import { methodGlyph } from '@/lib/friendly'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { handlerLinkFor, methodGlyph } from '@/lib/callable'
 import { functionGlyph } from '@/lib/functions'
 import { useAnatomy, useBundle } from '@/lib/hooks'
-import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { DomainPicker, DomainsRailHeader } from '@/schema-studio/domains-rail'
 import { ModulesSidebar } from '@/schema-studio/sidebar'

@@ -3,7 +3,7 @@ import type { HandlerLink, IrCallableAuth, IrFunction } from '@shared/types'
 import { expect, test } from 'bun:test'
 import { Globe, ShieldCheck, UserRound } from 'lucide-react'
 
-import { handlerLinkFor, methodAuth } from './method-auth'
+import { handlerLinkFor, methodAuth } from './callable'
 
 const callable = (auth: IrCallableAuth): Pick<IrFunction, 'auth'> => ({ auth })
 

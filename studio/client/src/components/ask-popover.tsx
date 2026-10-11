@@ -1,7 +1,7 @@
 import { Loader2, Minus, Send, Sparkles, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { type AskEntry, type AskStatus, useAsks } from '@/lib/asks'
+import { type AskEntry, type AskStatus, useAsks } from '@/lib/ask'
 import { locateTargetElement } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 

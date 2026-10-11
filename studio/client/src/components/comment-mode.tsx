@@ -1,7 +1,7 @@
 import { MousePointerClick, Sparkles } from 'lucide-react'
 import { useEffect } from 'react'
 
-import { useAsks } from '@/lib/asks'
+import { useAsks } from '@/lib/ask'
 import { type CommentDraft, useUI } from '@/lib/store'
 import {
   anchorKindForRef,

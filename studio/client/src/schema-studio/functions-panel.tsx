@@ -5,7 +5,7 @@ import { ArrowRight, Box, Braces } from 'lucide-react'
 import { AnchorButton } from '@/components/anchor'
 import { MethodAuthBadge } from '@/components/method-auth'
 import { Chip, EmptyState, Group, IconTile } from '@/components/studio-kit'
-import { ScrollArea } from '@/components/ui/misc'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   type FunctionModel,
   type FunctionsModel,

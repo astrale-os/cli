@@ -7,7 +7,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FunctionModel } from '@/lib/functions'
 
 import { AnchorButton } from '@/components/anchor'
-import { PolicyLink } from '@/components/policy-link'
+import { PolicyLink } from '@/components/policy'
 import { Chip, DescriptionText, EmptyState, Group, IconTile } from '@/components/studio-kit'
 import { buildFunctionsModel, functionGlyph, functionsForClass } from '@/lib/functions'
 import { useViewsModel } from '@/lib/hooks'

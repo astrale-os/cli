@@ -58,10 +58,9 @@ const cellKey = (column: number, row: number) => `${column}:${row}`
 
 export function createEdgeLabelObstacleIndex(
   obstacles: EdgeLabelObstacle[],
-  cellSize = OBSTACLE_CELL_SIZE,
 ): EdgeLabelObstacleIndex {
   const index: MutableEdgeLabelObstacleIndex = {
-    cellSize,
+    cellSize: OBSTACLE_CELL_SIZE,
     cells: new Map(),
     maxRight: Number.NEGATIVE_INFINITY,
   }

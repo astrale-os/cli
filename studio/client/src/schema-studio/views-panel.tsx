@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import { AnchorButton } from '@/components/anchor'
 import { EmptyState, Group, IconTile } from '@/components/studio-kit'
-import { ScrollArea } from '@/components/ui/misc'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { ViewModal } from '@/components/view-modal'
 import { cn } from '@/lib/utils'
 import { type ViewModel, type ViewsModel, driftLabel } from '@/lib/views'

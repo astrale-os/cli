@@ -6,18 +6,17 @@ import { toast } from 'sonner'
 
 import { useAgentSnapshot } from '@/lib/agent'
 import {
-  clearCommentDraft,
   newCommentDraftKey,
   readCommentDraft,
   replyDraftKey,
   writeCommentDraft,
-} from '@/lib/comment-drafts'
-import { relativeTime } from '@/lib/format'
+} from '@/lib/comments'
 import { useCommentMutations } from '@/lib/hooks'
+import { relativeTime } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
 import { Markdown } from './markdown'
-import { Badge } from './ui/badge'
+import { Chip } from './studio-kit'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
 
@@ -41,7 +40,7 @@ function useDraft(key: string): [string, (value: string) => void, () => void] {
     update,
     () => {
       setValue('')
-      clearCommentDraft(key)
+      writeCommentDraft(key, '')
     },
   ]
 }
@@ -184,9 +183,9 @@ function Entries({ domainId, comment }: { domainId: string; comment: Comment }) 
                 ) : (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {entry.options.map((option) => (
-                      <Badge key={option} variant={entry.answer === option ? 'default' : 'outline'}>
+                      <Chip key={option} tone={entry.answer === option ? 'primary' : 'outline'}>
                         {option}
-                      </Badge>
+                      </Chip>
                     ))}
                   </div>
                 ))}

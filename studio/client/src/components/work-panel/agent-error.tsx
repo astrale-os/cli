@@ -82,12 +82,12 @@ export function echoesError(text: string, error: string | undefined): boolean {
 }
 
 /** What led up to the failure: the last steps, without what is already on screen. */
-export function trailingActivity(run: AgentRun, limit = 8): AgentEvent[] {
+export function trailingActivity(run: AgentRun): AgentEvent[] {
   return run.events
     .filter(
       (event) => event.kind !== 'message' && !(event.kind === 'error' && event.text === run.error),
     )
-    .slice(-limit)
+    .slice(-8)
 }
 
 function duration(run: AgentRun): string | undefined {

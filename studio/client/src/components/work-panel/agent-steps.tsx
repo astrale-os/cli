@@ -1,5 +1,6 @@
 import type { AgentEvent, AgentRun, AgentToolStatus } from '@shared/types'
 
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@radix-ui/react-collapsible'
 import {
   Brain,
   ChevronRight,
@@ -16,7 +17,6 @@ import { useLayoutEffect, useRef, useState } from 'react'
 
 import { RunElapsed } from '@/components/agent-activity'
 import { Markdown } from '@/components/markdown'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { isRunActive } from '@/lib/agent'
 import { cn } from '@/lib/utils'
 

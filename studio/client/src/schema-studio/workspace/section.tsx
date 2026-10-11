@@ -5,7 +5,7 @@ import { ReactFlowProvider } from '@xyflow/react'
 import { useCallback, useEffect, useMemo } from 'react'
 
 import { ErrorBanner } from '@/components/error-banner'
-import { ScrollArea } from '@/components/ui/misc'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { api, qk } from '@/lib/api'
 import { buildFunctionsModel } from '@/lib/functions'
 import { useWorkspace } from '@/lib/hooks'
@@ -14,7 +14,7 @@ import { useUI } from '@/lib/store'
 import { isModuleRef } from '@/lib/targets'
 import { buildViewsModel } from '@/lib/views'
 
-import { SchemaDetail } from '../detail'
+import { SchemaDetail } from '../detail/panel'
 import { DomainsPanel } from '../domains-panel'
 import { DomainsRailHeader } from '../domains-rail'
 import { FunctionsPanel } from '../functions-panel'
@@ -24,13 +24,12 @@ import { SchemaPolicyDetail } from '../policy-detail'
 import { ModulesSidebar } from '../sidebar'
 import { ViewsPanel } from '../views-panel'
 import { toggleVisibilityRef } from '../visibility'
-import { WorkspaceFunctionsPanel } from './functions-panel'
 import { WorkspaceSchemaGraph } from './graph'
+import { WorkspaceOverviewPanel } from './overview-panel'
 import { useSchemaWorkspace } from './store'
 import { WorkspaceDomainTree } from './tree'
 import { useWorkspaceDomainInputs } from './use-domain-inputs'
 import { usePreparedWorkspaceDomains } from './use-prepared-domains'
-import { WorkspaceViewsPanel } from './views-panel'
 
 export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const { data: domains } = useWorkspace()
@@ -169,7 +168,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
                 model={buildViewsModel(overlayInput.anatomy, overlayInput.bundle)}
               />
             ) : (
-              <WorkspaceViewsPanel inputs={inputs} />
+              <WorkspaceOverviewPanel kind="views" inputs={inputs} />
             )}
           </PanelShell>
         ) : panelOverlay?.kind === 'functions' ? (
@@ -181,7 +180,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
                 bundle={overlayInput.bundle}
               />
             ) : (
-              <WorkspaceFunctionsPanel inputs={inputs} />
+              <WorkspaceOverviewPanel kind="functions" inputs={inputs} />
             )}
           </PanelShell>
         ) : panelOverlay?.kind === 'domains' && overlayInput ? (

@@ -6,7 +6,6 @@ import {
   decodePolicy,
   decodePolicyCheck,
   indexPolicies,
-  parsePolicyCheck,
   patternTerms,
   policyCheckLeaves,
   policyDescription,
@@ -275,62 +274,17 @@ const mayManage = { origin: 'crm.example.dev', kind: 'policy', name: 'mayManage'
 const isAdmin = { origin: 'kernel.astrale.ai', kind: 'policy', name: 'isAdmin' } as const
 
 describe('callable Policy checks', () => {
-  test('reads a single check and every object form the grammar allows', () => {
-    expect(parsePolicyCheck({ check: mayManage, object: { kind: 'self' } })).toEqual({
-      kind: 'check',
-      policy: mayManage,
-      object: { kind: 'self' },
-    })
-    expect(
-      parsePolicyCheck({ check: mayManage, object: { kind: 'input', field: 'projectId' } }),
-    ).toMatchObject({ object: { kind: 'input', field: 'projectId' } })
-    const target = { origin: 'crm.example.dev', kind: 'class', name: 'Project' } as const
-    expect(
-      parsePolicyCheck({ check: mayManage, object: { kind: 'ref', ref: target } }),
-    ).toMatchObject({ object: { kind: 'ref', ref: target } })
-  })
-
-  test('keeps the composition tree, nested as declared', () => {
-    expect(
-      parsePolicyCheck({
-        anyOf: [
-          { check: isAdmin, object: { kind: 'self' } },
-          {
-            allOf: [
-              { check: mayManage, object: { kind: 'self' } },
-              { check: mayManage, object: { kind: 'input', field: 'other' } },
-            ],
-          },
-        ],
-      }),
-    ).toEqual({
-      kind: 'anyOf',
-      items: [
-        { kind: 'check', policy: isAdmin, object: { kind: 'self' } },
-        {
-          kind: 'allOf',
-          items: [
-            { kind: 'check', policy: mayManage, object: { kind: 'self' } },
-            { kind: 'check', policy: mayManage, object: { kind: 'input', field: 'other' } },
-          ],
-        },
-      ],
-    })
-  })
-
   test('refuses what it does not recognise instead of rendering a guess', () => {
-    expect(parsePolicyCheck(undefined)).toBeUndefined()
-    expect(parsePolicyCheck('mayManage')).toBeUndefined()
+    expect(decodePolicyCheck('mayManage')).toBeUndefined()
     // a check against a Class ref is not a Policy ref
     expect(
-      parsePolicyCheck({ check: { ...mayManage, kind: 'class' }, object: { kind: 'self' } }),
+      decodePolicyCheck({ check: { ...mayManage, kind: 'class' }, object: { kind: 'self' } }),
     ).toBeUndefined()
-    expect(parsePolicyCheck({ check: mayManage, object: { kind: 'elsewhere' } })).toBeUndefined()
     // one bad leaf spoils the branch: half a tree would misstate the rule
     expect(
-      parsePolicyCheck({ allOf: [{ check: mayManage, object: { kind: 'self' } }, {}] }),
+      decodePolicyCheck({ allOf: [{ check: mayManage, object: { kind: 'self' } }, {}] }),
     ).toBeUndefined()
-    expect(parsePolicyCheck({ allOf: [] })).toBeUndefined()
+    expect(decodePolicyCheck({ allOf: [] })).toBeUndefined()
   })
 
   test('names the object the way the Class reads', () => {

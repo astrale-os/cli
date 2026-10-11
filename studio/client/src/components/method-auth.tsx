@@ -3,12 +3,11 @@ import { schemaRefKey } from '@shared/types'
 import { FlaskConical, ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 
-import { PolicyCheckTree } from '@/components/policy-check-tree'
-import { PolicyLink } from '@/components/policy-link'
+import { PolicyCheckTree, PolicyLink } from '@/components/policy'
 import { Chip, IconTile } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { type AuthCallable, methodAuth } from '@/lib/callable'
 import { useBundle } from '@/lib/hooks'
-import { type AuthCallable, methodAuth } from '@/lib/method-auth'
 import {
   decodePolicyCheck,
   indexPolicies,

@@ -3,39 +3,20 @@ import type { AgentUsage, HarnessLoadout } from '@shared/types'
 import { RefreshCw } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 
+import { formatTokens } from '@/components/work-panel/context-ring'
 import { useAgentSystemPrompt } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-import { SettingsHint } from './hint'
+import { SettingsHint } from './controls'
 
-function MetaRow({
-  label,
-  value,
-  title,
-  hint,
-}: {
-  label: string
-  value: ReactNode
-  title?: string
-  hint?: string
-}) {
+function MetaRow({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
   return (
     <div className="flex items-center gap-3" title={title}>
-      <span className="flex items-center gap-1.5 text-muted-foreground">
-        {label}
-        {hint && <SettingsHint text={hint} />}
-      </span>
+      <span className="text-muted-foreground">{label}</span>
       <span className="ml-auto truncate font-mono text-[11px]">{value}</span>
     </div>
   )
 }
-
-const formatTokens = (tokens: number) =>
-  tokens >= 1_000_000
-    ? `${(tokens / 1_000_000).toFixed(1)}M`
-    : tokens >= 1_000
-      ? `${(tokens / 1_000).toFixed(1)}k`
-      : String(tokens)
 
 function SystemPrompt() {
   const [open, setOpen] = useState(false)
@@ -114,11 +95,7 @@ export function AgentLoadout({
           </button>
         </div>
         {errorMessage ? (
-          <p className="text-[11px] leading-relaxed text-destructive">
-            {errorMessage.includes('404')
-              ? 'The studio server predates this feature (no /agent/loadout route). Restart it — bun server/index.ts … — to pick it up.'
-              : errorMessage}
-          </p>
+          <p className="text-[11px] leading-relaxed text-destructive">{errorMessage}</p>
         ) : loading && !loadout ? (
           <p className="text-[11px] text-muted-foreground">Probing the ACP agent…</p>
         ) : !loadout?.ok ? (

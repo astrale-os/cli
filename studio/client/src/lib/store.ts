@@ -485,12 +485,13 @@ export const useUI = create<UIState>((set) => ({
 }))
 
 /** The small persistent projection of the UI store; transient selections stay in memory. */
-export function uiWorkspaceSnapshot(state = useUI.getState()): Pick<
+export function uiWorkspaceSnapshot(): Pick<
   WorkspaceUiState,
   'section' | 'edgeStyle' | 'panel' | 'rail' | 'detailWidth'
 > & {
   readerDomainId: string | null
 } {
+  const state = useUI.getState()
   return {
     section: state.section,
     edgeStyle: state.edgeStyle,

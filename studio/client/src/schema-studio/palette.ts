@@ -46,16 +46,12 @@ const PARTS: Part[] = ['surface', 'border', 'text', 'mark', 'wash']
 const tone = ([lightness, chroma]: Tone, hue: number) => `oklch(${lightness} ${chroma} ${hue})`
 
 /**
- * Tint for a module hue. Without a scheme the colour is a `light-dark()` pair —
- * the browser picks the side, so a theme switch repaints without re-rendering.
- * Pass a scheme where the value lands in an SVG *attribute*, which
- * would not resolve a CSS function.
+ * Tint for a module hue, as `light-dark()` pairs: the browser picks the side, so a
+ * theme switch repaints without re-rendering.
  */
-export function moduleTint(hue: number, scheme?: 'light' | 'dark'): ModuleTint {
+export function moduleTint(hue: number): ModuleTint {
   const paint = (part: Part) =>
-    scheme
-      ? tone(TONES[scheme][part], hue)
-      : `light-dark(${tone(TONES.light[part], hue)}, ${tone(TONES.dark[part], hue)})`
+    `light-dark(${tone(TONES.light[part], hue)}, ${tone(TONES.dark[part], hue)})`
   return Object.fromEntries(PARTS.map((part) => [part, paint(part)])) as unknown as ModuleTint
 }
 
@@ -66,15 +62,11 @@ export const CLASS_H = 40
  *  never read as the same kind of thing even before you reach their shapes. */
 export const VIEW_W = 168
 export const VIEW_H = 32
-/** The view hue (matching `--schema-view`), for surfaces that need a literal colour. */
-export const VIEW_HUE = 205
 /** Rendered size of a function node. Same pill metrics as a view — both are callables
  *  or screens hanging off the classes, and one shape for "not a class" keeps the
  *  canvas readable at a glance; the hue is what tells them apart. */
 export const FUNCTION_W = 168
 export const FUNCTION_H = 32
-/** The function hue (matching `--schema-function`). */
-export const FUNCTION_HUE = 300
 /** Module box insets: children start below the header, padded on every side. */
 export const MODULE_HEADER = 38
 export const MODULE_PAD = 18

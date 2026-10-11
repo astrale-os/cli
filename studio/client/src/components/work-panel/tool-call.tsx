@@ -11,14 +11,9 @@ import { lineDiff } from '@/lib/line-diff'
 import { cn } from '@/lib/utils'
 
 /** A block of verbatim text: wrapped to the panel, and scrolled past a few screens' worth. */
-function Verbatim({ text, className }: { text: string; className?: string }) {
+function Verbatim({ text }: { text: string }) {
   return (
-    <pre
-      className={cn(
-        'max-h-60 overflow-auto whitespace-pre-wrap rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85 [overflow-wrap:anywhere]',
-        className,
-      )}
-    >
+    <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85 [overflow-wrap:anywhere]">
       {text}
     </pre>
   )

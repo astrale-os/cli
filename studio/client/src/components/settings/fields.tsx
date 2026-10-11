@@ -6,8 +6,7 @@ import {
   type NumericStudioSetting,
 } from '@shared/settings-values'
 
-import { SettingsHint } from './hint'
-import { SettingsHeading } from './row'
+import { SettingsHeading, SettingsHint } from './controls'
 
 interface FieldDef {
   key: keyof StudioSettings

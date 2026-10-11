@@ -13,8 +13,8 @@ import { Eye, ShieldCheck, Zap } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { MethodAuthBadge } from '@/components/method-auth'
-import { PolicyCheckTree } from '@/components/policy-check-tree'
-import { methodGlyph } from '@/lib/friendly'
+import { PolicyCheckTree } from '@/components/policy'
+import { methodGlyph } from '@/lib/callable'
 import {
   type PolicyCheckLeaf,
   type PolicyIndex,

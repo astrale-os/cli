@@ -83,15 +83,15 @@ export const fmtVal = (v: unknown): string => {
 }
 
 /** Up to `max` data fields for a compact card preview, skipping the title field. */
-export function previewFields(
-  n: { path: string; data: Record<string, unknown> },
-  max = 2,
-): [string, string][] {
+export function previewFields(n: {
+  path: string
+  data: Record<string, unknown>
+}): [string, string][] {
   const entries = coreDataEntries(n.data)
   const title = titleField(entries)
   return entries
     .filter((entry) => entry.key !== title?.key)
-    .slice(0, max)
+    .slice(0, 2)
     .map(({ label, value }) => [label, fmtVal(value)] as [string, string])
 }
 

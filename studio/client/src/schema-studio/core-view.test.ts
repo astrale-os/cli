@@ -2,8 +2,7 @@ import type { StudioCore, StudioSchemaBundle } from '@shared/types'
 
 import { expect, test } from 'bun:test'
 
-import { buildCoreGraph } from './core-view'
-import { coreDataEntries, displayName, previewFields } from './core-view/model'
+import { buildCoreGraph, coreDataEntries, displayName, previewFields } from './core-view/model'
 
 test('renders canonical Core edges connected to the owning Domain endpoint', () => {
   const core: StudioCore = {

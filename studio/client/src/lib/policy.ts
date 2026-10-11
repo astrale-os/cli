@@ -241,45 +241,9 @@ export function decodePolicyCheck(value: unknown): PolicyCheck | undefined {
     return anyOf && { anyOf }
   }
   const object = decodeCheckObject(record.object)
-  return isIrSchemaRef(record.check) && object ? { check: record.check, object } : undefined
-}
-
-/**
- * A callable Policy check normalized for recursive UI rendering. The canonical decoder above
- * deliberately preserves the DSL shape for the Dataset policy tooling; this reader adds an
- * explicit discriminator without changing that existing contract.
- */
-export type ParsedPolicyCheck =
-  | { kind: 'sameNode'; left: PolicyCheckObject; right: PolicyCheckObject }
-  | { kind: 'check'; policy: IrSchemaRef; object: PolicyCheckObject }
-  | { kind: 'allOf' | 'anyOf'; items: ParsedPolicyCheck[] }
-
-function parsePolicyCheckBranch(value: unknown): ParsedPolicyCheck[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined
-  const items = value.map(parsePolicyCheck)
-  return items.every((item): item is ParsedPolicyCheck => item !== undefined) ? items : undefined
-}
-
-export function parsePolicyCheck(value: unknown): ParsedPolicyCheck | undefined {
-  const record = asRecord(value)
-  if (!record) return undefined
-  if ('sameNode' in record) {
-    const decoded = decodePolicyCheck(record)
-    return decoded && 'sameNode' in decoded ? { kind: 'sameNode', ...decoded.sameNode } : undefined
-  }
-  if ('check' in record) {
-    const object = decodeCheckObject(record.object)
-    return isIrSchemaRef(record.check) && record.check.kind === 'policy' && object
-      ? { kind: 'check', policy: record.check, object }
-      : undefined
-  }
-  for (const operator of ['allOf', 'anyOf'] as const) {
-    if (operator in record) {
-      const items = parsePolicyCheckBranch(record[operator])
-      return items ? { kind: operator, items } : undefined
-    }
-  }
-  return undefined
+  return isIrSchemaRef(record.check) && record.check.kind === 'policy' && object
+    ? { check: record.check, object }
+    : undefined
 }
 
 // ── reading ─────────────────────────────────────────────────────────────────

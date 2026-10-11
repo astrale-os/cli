@@ -21,7 +21,7 @@ import {
 import { Box, Group, Spline } from 'lucide-react'
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
+import { hasAnyUnsentDraft } from '@/lib/comments'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
