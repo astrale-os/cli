@@ -30,6 +30,7 @@ const config: AstraleConfig = {
 const context: ConnectionContext = Object.freeze({
   session: {} as ClientSession,
   self: async () => ({ id: 'caller' }),
+  credentialPrincipal: () => 'caller',
   graph: {} as GraphApi,
   auth: {} as AuthApi,
   target,
