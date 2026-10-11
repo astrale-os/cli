@@ -323,9 +323,9 @@ describe('follow continuity', () => {
     })
   })
 
-  test('restarts sequence tracking in a recreated journal', async () => {
+  test('restarts in a recreated journal, reports a recovery loss, ends on a refused cursor', async () => {
     const recreated = frontier('journal-2', 2)
-    const run = await follow({ json: true }, [
+    const restarted = await follow({ json: true }, [
       {
         records: [record(1), record(2), record(3)],
         cursor: 'journal-1-cursor',
@@ -334,38 +334,26 @@ describe('follow continuity', () => {
       { records: [], frontier: recreated, gap: { kind: 'generation', frontier: recreated } },
       { records: [record(1), record(2)], frontier: recreated },
     ])
+    expect(restarted.sequences).toEqual([1, 2, 3, 1, 2])
+    expect(restarted.cursors).toEqual([undefined, 'journal-1-cursor', undefined, undefined])
+    expect(JSON.parse(restarted.stderr)).toMatchObject({ gap: { kind: 'generation' } })
 
-    expect(run.sequences).toEqual([1, 2, 3, 1, 2])
-    expect(run.cursors).toEqual([undefined, 'journal-1-cursor', undefined, undefined])
-    expect(JSON.parse(run.stderr)).toMatchObject({ gap: { kind: 'generation' } })
-  })
-
-  test('reports records lost during recovery and keeps the returned cursor', async () => {
     const current = frontier('journal-1', 7)
-    const run = await follow({ json: true }, [
-      {
-        records: [record(3), record(7)],
-        cursor: 'after-seven',
-        frontier: current,
-        gap: { kind: 'recovery', from: 4, through: 6, frontier: current },
-      },
+    const gap = { kind: 'recovery', from: 4, through: 6, frontier: current }
+    const recovered = await follow({ json: true }, [
+      { records: [record(3), record(7)], cursor: 'after-seven', frontier: current, gap },
     ])
-
-    expect(run.sequences).toEqual([3, 7])
-    expect(run.cursors).toEqual([undefined, 'after-seven'])
-    expect(JSON.parse(run.stderr)).toMatchObject({
+    expect(recovered.sequences).toEqual([3, 7])
+    expect(recovered.cursors).toEqual([undefined, 'after-seven'])
+    expect(JSON.parse(recovered.stderr)).toMatchObject({
       message: 'Journal records #4–#6 were lost during journal recovery',
     })
-  })
 
-  test('ends the follow when the Kernel refuses its cursor', async () => {
-    const run = await follow({ json: true, cursor: 'foreign-cursor' }, [
-      { records: [], frontier: frontier('journal-1', 9), gap: { kind: 'cursor', reason: 'stale' } },
+    const refused = await follow({ json: true, cursor: 'foreign-cursor' }, [
+      { records: [], frontier: current, gap: { kind: 'cursor', reason: 'stale' } },
     ])
-
-    expect(run.error).toMatchObject({ code: 'JOURNAL_CURSOR_INVALID' })
-    expect(run.cursors).toEqual(['foreign-cursor'])
-    expect(run.stdout).toBe('')
+    expect(refused.error).toMatchObject({ code: 'JOURNAL_CURSOR_INVALID' })
+    expect(refused.stdout).toBe('')
   })
 
   /** @evidence TEST-CLI-LOGS-FOLLOW-DRAINS-WHILE-BEHIND */

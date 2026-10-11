@@ -8,6 +8,7 @@ import {
   withCachedToken,
   type IdpSession,
 } from '../idp/provider'
+import { tokenEndpoint, unsignedJwt } from './idp.fixture'
 
 describe('accessTokenForAudience', () => {
   const session = (overrides: Partial<IdpSession>): IdpSession => ({
@@ -77,41 +78,41 @@ describe('withCachedToken', () => {
 
 describe('OAuth token errors', () => {
   test('postForm surfaces the OAuth error code as a typed error', async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: () =>
+    const server = tokenEndpoint({
+      answer: () =>
         Response.json(
           { error: 'invalid_grant', error_description: 'Refresh token already exchanged.' },
           { status: 400 },
         ),
     })
     try {
-      const promise = postForm(
-        `http://${server.hostname}:${server.port}/token`,
-        new URLSearchParams(),
+      const error = await postForm(`${server.url}/token`, new URLSearchParams()).catch(
+        (cause: unknown) => cause,
       )
-      await expect(promise).rejects.toBeInstanceOf(OAuthTokenError)
-      const error = await promise.catch((e) => e as OAuthTokenError)
-      expect(error.code).toBe('invalid_grant')
-      expect(error.status).toBe(400)
-      expect(error.message).toContain('Refresh token already exchanged.')
+      expect(error).toBeInstanceOf(OAuthTokenError)
+      expect(error).toMatchObject({
+        code: 'invalid_grant',
+        status: 400,
+        message: expect.stringContaining('Refresh token already exchanged.'),
+      })
     } finally {
-      await server.stop(true)
+      await server.stop()
     }
   })
 
   test('classifies refresh failures: dead grant vs transient vs unknown', () => {
-    expect(classifyRefreshFailure(new OAuthTokenError({ code: 'invalid_grant' }))).toBe(
-      'session-ended',
-    )
-    expect(classifyRefreshFailure(new OAuthTokenError({ status: 503 }))).toBe('transient')
-    expect(classifyRefreshFailure(new OAuthTokenError({ status: 429 }))).toBe('transient')
-    expect(classifyRefreshFailure(new TypeError('fetch failed'))).toBe('transient')
-    const abort = new Error('aborted')
-    abort.name = 'AbortError'
-    expect(classifyRefreshFailure(abort)).toBe('transient')
-    expect(classifyRefreshFailure(new OAuthTokenError({ code: 'invalid_client' }))).toBe('unknown')
-    expect(classifyRefreshFailure(new Error('weird'))).toBe('unknown')
+    const abort = Object.assign(new Error('aborted'), { name: 'AbortError' })
+    for (const [failure, kind] of [
+      [new OAuthTokenError({ code: 'invalid_grant' }), 'session-ended'],
+      [new OAuthTokenError({ status: 503 }), 'transient'],
+      [new OAuthTokenError({ status: 429 }), 'transient'],
+      [new TypeError('fetch failed'), 'transient'],
+      [abort, 'transient'],
+      [new OAuthTokenError({ code: 'invalid_client' }), 'unknown'],
+      [new Error('weird'), 'unknown'],
+    ] as const) {
+      expect(classifyRefreshFailure(failure)).toBe(kind)
+    }
     // A healthy session refused for a stale org scope: a re-login can never fix it.
     expect(
       classifyRefreshFailure(
@@ -123,11 +124,3 @@ describe('OAuth token errors', () => {
     ).toBe('org-rejected')
   })
 })
-
-function unsignedJwt(payload: Record<string, unknown>): string {
-  return [base64url({ alg: 'none', typ: 'JWT' }), base64url(payload), ''].join('.')
-}
-
-function base64url(value: Record<string, unknown>): string {
-  return Buffer.from(JSON.stringify(value)).toString('base64url')
-}

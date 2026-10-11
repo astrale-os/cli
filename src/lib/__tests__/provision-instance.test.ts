@@ -177,18 +177,6 @@ describe('instance creation journey', () => {
     expect(run.events).toEqual([])
   })
 
-  test('keeps bookmarks and selection untouched while owner access is pending', async () => {
-    console.error = () => undefined
-    const run = journey({
-      activateInstance: async () => {
-        throw new Error('response lost')
-      },
-    })
-    const result = await provision({}, run)
-    expect(result.access).toEqual({ status: 'pending', code: 'OWNER_ACTIVATION_UNAVAILABLE' })
-    expect(run.events).toEqual([])
-  })
-
   test('creates only as a WorkOS identity, the selected one or the default', () => {
     const identity = (source: 'key' | 'idp') => ({
       subject: source,

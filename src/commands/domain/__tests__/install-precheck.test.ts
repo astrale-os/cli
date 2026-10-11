@@ -222,31 +222,15 @@ function root(deployment: Built, reference = deployment.url): PrecheckRoot {
 }
 
 describe('precheckInstall: the engine the Kernel uses, before the install', () => {
-  test('upward: Shell R2 breaks the installed CRM built against R1, R1b breaks nothing', async () => {
+  test('upward: a Domain the Kernel does not show the caller is unevaluated, never guessed', async () => {
+    // The breaking and compatible upgrades themselves are proven through the install command below.
     const installed = [deployments.shell1, deployments.crm1, deployments.notes1]
-    const check = (upgrade: Built, hidden: string[] = []) =>
-      precheckInstall([root(upgrade)], installed.map(installedFrom), kernel(installed, hidden).api)
-
-    const verdict = await check(deployments.shell2)
-    expect(verdict.dependencies).toEqual([])
-    expect(verdict.dependents).toEqual([
-      {
-        domain: { origin: CRM, revision: R.crm1 },
-        dependency: SHELL,
-        expected: R.shell1,
-        actual: R.shell2,
-        changes: [expect.objectContaining({ key: shellMember.key, kind: 'missing' })],
-      },
-    ])
-    // CRM and Notes were both compared against R2; only CRM uses what R2 changed.
-    expect(verdict).toMatchObject({ compared: 2, skipped: [], unevaluated: [] })
-
-    expect(await check(deployments.shell1b)).toMatchObject({ compared: 2, dependents: [] })
-    // A Domain the Kernel does not show the caller is unevaluated, never guessed.
-    expect(await check(deployments.shell2, [CRM])).toMatchObject({
-      dependents: [],
-      unevaluated: [CRM],
-    })
+    const verdict = await precheckInstall(
+      [root(deployments.shell2)],
+      installed.map(installedFrom),
+      kernel(installed, [CRM]).api,
+    )
+    expect(verdict).toMatchObject({ dependents: [], unevaluated: [CRM], compared: 1 })
   })
 
   test('downward: CRM rebuilt against R2 does not hold on the installed Shell R1', async () => {
@@ -289,29 +273,6 @@ describe('precheckInstall: the engine the Kernel uses, before the install', () =
         changes: [expect.objectContaining({ key: shellMember.key, kind: 'missing' })],
       }),
     ])
-  })
-
-  test('a dependent that reaches the upgraded Domain only through another one is marked indirect', async () => {
-    const installed = [deployments.shell1, deployments.crm1, deployments.ledger1]
-    const verdict = await precheckInstall(
-      [root(deployments.shell2)],
-      installed.map(installedFrom),
-      kernel(installed).api,
-    )
-
-    // Ledger's Entry extends CRM's Profile, which extends Shell's Member: the Kernel compares every
-    // binding of the closure, so Ledger breaks on Shell although it depends on CRM only.
-    expect(verdict.dependents).toEqual([
-      expect.objectContaining({ domain: { origin: CRM, revision: R.crm1 }, dependency: SHELL }),
-      {
-        domain: { origin: LEDGER, revision: schema.revision(LedgerR1) },
-        dependency: SHELL,
-        expected: R.shell1,
-        actual: R.shell2,
-        changes: [{ key: shellMember.key, kind: 'missing' }],
-      },
-    ])
-    expect([...verdict.indirect]).toEqual([[LEDGER, [SHELL]]])
   })
 })
 
@@ -621,7 +582,8 @@ describe('install pre-check in the install command ([.69634])', () => {
       { origin: LEDGER, kind: 'indirect', dependencies: [SHELL] },
     ])
     expect(document.precheck.command).toBeUndefined()
-    // The reach is the CLI's own bookkeeping, not part of --json.
+    // Ledger's Entry extends CRM's Profile, which extends Shell's Member: Ledger breaks on Shell
+    // although it depends on CRM only. The reach is the CLI's bookkeeping, not part of --json.
     expect(document.precheck).not.toHaveProperty('indirect')
   })
 

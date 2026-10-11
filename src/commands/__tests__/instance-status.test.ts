@@ -7,8 +7,7 @@ import type { InstanceInfo } from '../../admin/instance'
 import type { ResolvedInstance } from '../../lib/instance/bookmarks'
 
 import { resolveStatus, type StatusDependencies } from '../instance/status'
-
-const cliRoot = join(import.meta.dir, '../../..')
+import { runCli } from './fixtures/process'
 
 let home: string
 let server: ReturnType<typeof Bun.serve>
@@ -91,42 +90,15 @@ describe('instance status', () => {
 
   test('probes an explicit local bookmark without rewriting its registry', async () => {
     const issuer = `http://127.0.0.1:${server.port}`
-    const registry = `${JSON.stringify({
-      version: 1,
-      active: 'local',
-      instances: {
-        local: {
-          url: issuer,
-          issuer,
-          mode: 'remote',
-        },
-      },
-    })}\n`
+    const local = { url: issuer, issuer, mode: 'remote' }
+    const registry = `${JSON.stringify({ version: 1, active: 'local', instances: { local } })}\n`
     const path = join(home, 'instances.json')
     await writeFile(path, registry)
 
-    const process = Bun.spawn({
-      cmd: [
-        'bun',
-        join(cliRoot, 'bin/astrale.ts'),
-        'instance',
-        'status',
-        'local',
-        '--bookmarked',
-        '--json',
-      ],
-      env: { ...Bun.env, ASTRALE_HOME: home },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
-      process.exited,
-    ])
+    const result = await runCli(home, ['instance', 'status', 'local', '--bookmarked', '--json'])
 
-    expect(exitCode, stderr).toBe(0)
-    expect(JSON.parse(stdout)).toEqual({
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual({
       slug: 'local',
       url: issuer,
       issuer,

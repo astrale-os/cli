@@ -1,7 +1,9 @@
 import type { ResolvedView } from '@astrale-os/shell'
 
 import { Path } from '@astrale-os/sdk/graph/path'
-import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+
+import { captureProcess, ExitError } from './fixtures/process'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
 const bundleMock = mock(async (_origin: unknown): Promise<unknown> => installedDomain)
@@ -11,6 +13,8 @@ const abMock = mock(async (_args: string[]) => ({
   error: null,
 }))
 const findAgentBrowserMock = mock(async () => '/usr/bin/agent-browser' as string | null)
+
+const io = captureProcess()
 
 mock.module('../../connection', () => ({
   createPathCall: (target: string, input: unknown) => ({ target, input }),
@@ -87,29 +91,14 @@ const installedDomain = {
 describe('view session resolution', () => {
   test('reports a missing installed View through the structured command error boundary', async () => {
     const command = (await import('../view')).default
-    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true)
-    const exited = new Error('fixture exit')
-    const exit = spyOn(process, 'exit').mockImplementation(() => {
-      throw exited
+    await expect(
+      command.action(`/:${ORIGIN}:view.absent`, { open: false, json: true }),
+    ).rejects.toEqual(new ExitError(1))
+    expect(io.failure()).toMatchObject({
+      error: 'VIEW_NOT_FOUND',
+      message: `View "absent" is not installed for ${ORIGIN}`,
     })
-    try {
-      await expect(
-        command.action('/:ai-gateway.astrale.ai:view.absent', {
-          open: false,
-          json: true,
-        }),
-      ).rejects.toBe(exited)
-      expect(exit).toHaveBeenCalledWith(1)
-      expect(stderr).toHaveBeenCalledTimes(1)
-      expect(JSON.parse(String(stderr.mock.calls[0]![0]))).toMatchObject({
-        error: 'VIEW_NOT_FOUND',
-        message: 'View "absent" is not installed for ai-gateway.astrale.ai',
-      })
-      expect(abMock).not.toHaveBeenCalled()
-    } finally {
-      exit.mockRestore()
-      stderr.mockRestore()
-    }
+    expect(abMock).not.toHaveBeenCalled()
   })
 
   /** @evidence TEST-CLI-VIEW-PRESERVES-HOST-PROVENANCE */

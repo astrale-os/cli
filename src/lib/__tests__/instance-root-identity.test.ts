@@ -46,6 +46,26 @@ const envelope = {
 } satisfies IdentityExport
 
 describe('Instance root identity import', () => {
+  /** An import whose every boundary answers for a ready, live Instance unless overridden. */
+  const importing = (
+    overrides: Partial<Parameters<typeof importInstanceRootIdentity>[3]> = {},
+    options: Parameters<typeof importInstanceRootIdentity>[2] = {},
+  ) =>
+    importInstanceRootIdentity({}, 'demo', options, {
+      createRecipient: async () => recipient,
+      retrieve: async () => ({ instance, transfer }),
+      decode: async () => envelope,
+      readIdentities: async () => ({ default: '', identities: {} }),
+      importIdentity: async () => ({
+        subject: envelope.subject,
+        createdAt: '2026-09-02T00:00:00.000Z',
+      }),
+      checkIssuer: async () => ({ issuer: instance.issuer, keys: [envelope.publicJwk] }),
+      thumbprint: async () => envelope.subject,
+      clearCaches: async () => {},
+      ...overrides,
+    })
+
   test('installs the canonical identity, verifies live publication, and preserves owner bookmark auth', async () => {
     const importIdentity = mock(async () => ({
       subject: envelope.subject,
@@ -57,40 +77,28 @@ describe('Instance root identity import', () => {
     const bookmark = mock(async () => ({ entry: { url: instance.url } }))
     const clearCaches = mock(async () => {})
 
-    const result = await importInstanceRootIdentity(
-      {},
-      'demo',
-      {},
-      {
-        createRecipient: async () => recipient,
-        retrieve: async () => ({ instance, transfer, ownerIdentity: 'workos-owner' }),
-        decode: async (_transfer, _recipient, scope) => {
-          expect(scope).toEqual({
-            instance: instance.id,
-            issuer: instance.issuer,
-            requestId: transfer.requestId,
-            recipientThumbprint: recipient.recipient.kid,
-            subject: transfer.subject,
-          })
-          return envelope
-        },
-        readIdentities: async () => ({
-          default: 'workos-owner',
-          identities: { 'demo-root': { subject: 'stale', createdAt: 'yesterday' } },
-        }),
-        importIdentity,
-        checkIssuer: async () => ({ issuer: instance.issuer, keys: [envelope.publicJwk] }),
-        thumbprint: async () => envelope.subject,
-        bookmark,
-        clearCaches,
+    const result = await importing({
+      retrieve: async () => ({ instance, transfer, ownerIdentity: 'workos-owner' }),
+      decode: async (_transfer, _recipient, scope) => {
+        expect(scope).toEqual({
+          instance: instance.id,
+          issuer: instance.issuer,
+          requestId: transfer.requestId,
+          recipientThumbprint: recipient.recipient.kid,
+          subject: transfer.subject,
+        })
+        return envelope
       },
-    )
-
-    expect(result).toMatchObject({
-      name: 'demo-root',
-      replaced: true,
-      verification: 'live-jwks',
+      readIdentities: async () => ({
+        default: 'workos-owner',
+        identities: { 'demo-root': { subject: 'stale', createdAt: 'yesterday' } },
+      }),
+      importIdentity,
+      bookmark,
+      clearCaches,
     })
+
+    expect(result).toMatchObject({ name: 'demo-root', replaced: true, verification: 'live-jwks' })
     expect(importIdentity).toHaveBeenCalledWith(envelope, {
       name: 'demo-root',
       issuer: instance.issuer,
@@ -107,26 +115,10 @@ describe('Instance root identity import', () => {
   })
 
   test('falls back to the authenticated Host transfer while a ready issuer is offline', async () => {
-    const result = await importInstanceRootIdentity(
-      {},
-      'demo',
-      { bookmark: false },
-      {
-        createRecipient: async () => recipient,
-        retrieve: async () => ({ instance, transfer }),
-        decode: async () => envelope,
-        readIdentities: async () => ({ default: '', identities: {} }),
-        importIdentity: async () => ({
-          subject: envelope.subject,
-          createdAt: '2026-09-02T00:00:00.000Z',
-        }),
-        checkIssuer: async () => {
-          throw new IssuerUnreachableError(instance.issuer)
-        },
-        clearCaches: async () => {},
-      },
-    )
-
+    const offline = async () => {
+      throw new IssuerUnreachableError(instance.issuer)
+    }
+    const result = await importing({ checkIssuer: offline }, { bookmark: false })
     expect(result.verification).toBe('host-sealed')
   })
 })
