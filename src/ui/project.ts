@@ -1,7 +1,8 @@
-import { access, lstat, readFile, realpath } from 'node:fs/promises'
+import { lstat, readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { loadConfig } from 'tsconfig-paths'
 
+import { exists, isInside } from './files'
 import { UiError, type PackageManager } from './model'
 
 export type UiProject = {
@@ -24,13 +25,6 @@ const MANAGERS: readonly [string, PackageManager][] = [
   ['package-lock.json', 'npm'],
 ]
 
-async function exists(target: string): Promise<boolean> {
-  return access(target).then(
-    () => true,
-    () => false,
-  )
-}
-
 async function readManifest(target: string): Promise<Record<string, unknown>> {
   try {
     return JSON.parse(await readFile(target, 'utf8')) as Record<string, unknown>
@@ -41,87 +35,77 @@ async function readManifest(target: string): Promise<Record<string, unknown>> {
   }
 }
 
-function pathPatternMatch(pattern: string, candidate: string): string | undefined {
-  const wildcard = pattern.indexOf('*')
-  if (wildcard === -1) return pattern === candidate ? '' : undefined
-  const prefix = pattern.slice(0, wildcard)
-  const suffix = pattern.slice(wildcard + 1)
+type PatternMatch = { exact: boolean; prefix: number; suffix: number; resolved: string }
+
+/**
+ * `candidate` against `pattern` (one optional `*`), resolved through `target`; ranked the way
+ * Node package imports and TypeScript paths pick the most specific pattern.
+ */
+function matchPattern(
+  pattern: string,
+  candidate: string,
+  resolve: (wildcard: string) => string,
+): PatternMatch | undefined {
+  const star = pattern.indexOf('*')
+  if (star === -1) {
+    return pattern === candidate
+      ? { exact: true, prefix: pattern.length, suffix: 0, resolved: resolve('') }
+      : undefined
+  }
+  const prefix = pattern.slice(0, star)
+  const suffix = pattern.slice(star + 1)
   if (!candidate.startsWith(prefix) || !candidate.endsWith(suffix)) return undefined
-  return candidate.slice(prefix.length, candidate.length - suffix.length)
+  const wildcard = candidate.slice(prefix.length, candidate.length - suffix.length)
+  return { exact: false, prefix: prefix.length, suffix: suffix.length, resolved: resolve(wildcard) }
+}
+
+function bySpecificity(left: PatternMatch, right: PatternMatch): number {
+  return (
+    Number(right.exact) - Number(left.exact) ||
+    right.prefix - left.prefix ||
+    right.suffix - left.suffix
+  )
 }
 
 function resolvePackageImport(project: UiProject, candidate: string): string | undefined {
   const imports = project.packageJson.imports
   if (!imports || typeof imports !== 'object' || Array.isArray(imports)) return undefined
-  const matches = Object.entries(imports as Record<string, unknown>)
+  return Object.entries(imports as Record<string, unknown>)
     .flatMap(([pattern, target]) => {
-      const wildcard = pathPatternMatch(pattern, candidate)
-      if (wildcard === undefined || typeof target !== 'string' || !target.startsWith('./'))
-        return []
-      const wildcardIndex = pattern.indexOf('*')
-      return [
-        {
-          exact: wildcardIndex === -1,
-          prefixLength: wildcardIndex === -1 ? pattern.length : wildcardIndex,
-          suffixLength: wildcardIndex === -1 ? 0 : pattern.length - wildcardIndex - 1,
-          target: target.replaceAll('*', wildcard),
-        },
-      ]
+      if (typeof target !== 'string' || !target.startsWith('./')) return []
+      const match = matchPattern(pattern, candidate, (wildcard) =>
+        path.resolve(project.root, target.replaceAll('*', wildcard)),
+      )
+      return match ? [match] : []
     })
-    .sort(
-      (left, right) =>
-        Number(right.exact) - Number(left.exact) ||
-        right.prefixLength - left.prefixLength ||
-        right.suffixLength - left.suffixLength,
-    )
-  return matches[0] ? path.resolve(project.root, matches[0].target) : undefined
+    .sort(bySpecificity)[0]?.resolved
 }
 
 async function resolveAlias(project: UiProject, candidate: string): Promise<string | undefined> {
   const config = loadConfig(project.root)
   if (config.resultType === 'failed') return undefined
-  const matches: Array<{
-    exact: boolean
-    prefixLength: number
-    suffixLength: number
-    resolved: string
-  }> = []
-  for (const [pattern, replacements] of Object.entries(config.paths)) {
-    const wildcard = pathPatternMatch(pattern, candidate)
-    if (wildcard === undefined) continue
-    const replacement = replacements?.[0]
-    if (!replacement) continue
-    const wildcardIndex = pattern.indexOf('*')
-    matches.push({
-      exact: wildcardIndex === -1,
-      prefixLength: wildcardIndex === -1 ? pattern.length : wildcardIndex,
-      suffixLength: wildcardIndex === -1 ? 0 : pattern.length - wildcardIndex - 1,
-      resolved: path.resolve(config.absoluteBaseUrl, replacement.replaceAll('*', wildcard)),
+  const matches = Object.entries(config.paths)
+    .flatMap(([pattern, replacements]) => {
+      const replacement = replacements?.[0]
+      if (!replacement) return []
+      const match = matchPattern(pattern, candidate, (wildcard) =>
+        path.resolve(config.absoluteBaseUrl, replacement.replaceAll('*', wildcard)),
+      )
+      return match ? [match] : []
     })
-  }
-  matches.sort(
-    (left, right) =>
-      Number(right.exact) - Number(left.exact) ||
-      right.prefixLength - left.prefixLength ||
-      right.suffixLength - left.suffixLength,
-  )
+    .sort(bySpecificity)
   const best = matches[0]
-  if (!best) return undefined
-  const ambiguous = matches.some(
-    (match) =>
-      match.exact === best.exact &&
-      match.prefixLength === best.prefixLength &&
-      match.suffixLength === best.suffixLength &&
-      match.resolved !== best.resolved,
-  )
-  if (ambiguous) {
+  if (
+    best &&
+    matches.some((match) => bySpecificity(match, best) === 0 && match.resolved !== best.resolved)
+  ) {
     throw new UiError(
       'UI_PROJECT_UNSUPPORTED',
       'The components alias resolves to conflicting project paths.',
       'Keep one authoritative compilerOptions.paths mapping for the components alias.',
     )
   }
-  return best.resolved
+  return best?.resolved
 }
 
 export async function resolveUiRegistryTarget(
@@ -147,19 +131,23 @@ export async function resolveUiRegistryTarget(
       'Define a matching compilerOptions.paths entry for ' + componentsAlias + '.',
     )
   }
-  const relative = path.relative(project.root, path.join(resolved, suffix))
-  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+  const target = path.join(resolved, suffix)
+  if (!isInside(project.root, target)) {
     throw new UiError('UI_PROJECT_UNSUPPORTED', 'components.json alias escapes the project.')
   }
-  return relative.split(path.sep).join('/')
+  return path.relative(project.root, target).split(path.sep).join('/')
 }
 
-function hasReactTailwind(manifest: Record<string, unknown>): boolean {
-  const dependencies = {
+function declaredDependencies(manifest: Record<string, unknown>): Record<string, string> {
+  return {
     ...(manifest.dependencies as Record<string, string> | undefined),
     ...(manifest.devDependencies as Record<string, string> | undefined),
     ...(manifest.peerDependencies as Record<string, string> | undefined),
   }
+}
+
+function hasReactTailwind(manifest: Record<string, unknown>): boolean {
+  const dependencies = declaredDependencies(manifest)
   return Boolean(dependencies.react && dependencies['react-dom'] && dependencies.tailwindcss)
 }
 
@@ -171,9 +159,7 @@ async function assertPhysicalProjectPath(root: string, target: string): Promise<
     if (parent === existing) break
     existing = parent
   }
-  const physicalTarget = await realpath(existing)
-  const relative = path.relative(physicalRoot, physicalTarget)
-  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+  if (!isInside(physicalRoot, await realpath(existing))) {
     throw new UiError('UI_PROJECT_UNSUPPORTED', 'components.json CSS path escapes the project.')
   }
 }
@@ -256,11 +242,10 @@ export async function discoverUiProject(input = process.cwd()): Promise<UiProjec
       const css = components.tailwind?.css
       if (typeof css !== 'string' || css.length === 0) return undefined
       const target = path.resolve(root, css)
-      const relative = path.relative(root, target)
-      if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+      if (!isInside(root, target)) {
         throw new UiError('UI_PROJECT_UNSUPPORTED', 'components.json CSS path escapes the project.')
       }
-      return { relative: relative.split(path.sep).join('/'), target }
+      return { relative: path.relative(root, target).split(path.sep).join('/'), target }
     })
     .catch((error: unknown) => {
       if (error instanceof UiError) throw error
@@ -296,12 +281,7 @@ export async function discoverUiProject(input = process.cwd()): Promise<UiProjec
 }
 
 export function assertSupportedUiProject(project: UiProject): void {
-  const manifest = project.packageJson
-  const dependencies = {
-    ...(manifest.dependencies as Record<string, string> | undefined),
-    ...(manifest.devDependencies as Record<string, string> | undefined),
-    ...(manifest.peerDependencies as Record<string, string> | undefined),
-  }
+  const dependencies = declaredDependencies(project.packageJson)
   if (!dependencies.react || !dependencies['react-dom']) {
     throw new UiError(
       'UI_PROJECT_UNSUPPORTED',
@@ -321,12 +301,7 @@ export function assertSupportedUiProject(project: UiProject): void {
 
 export function projectRelative(project: UiProject, target: string): string {
   const relative = path.relative(project.root, target)
-  if (
-    relative === '' ||
-    relative === '..' ||
-    relative.startsWith('..' + path.sep) ||
-    path.isAbsolute(relative)
-  ) {
+  if (relative === '' || !isInside(project.root, target)) {
     throw new UiError('UI_LOCK_INVALID', 'Path escapes the project root: ' + target)
   }
   return relative.split(path.sep).join('/')

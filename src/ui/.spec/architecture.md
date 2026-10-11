@@ -19,7 +19,5 @@ canonical demos. Admitted artifacts and code are cached under that commit with d
 corrupt cache entries are repaired from the same release. The public result exposes no internal
 family, provider, or score and hands registry candidates directly to `astrale ui add`.
 
-Request is the separate contribution journey. It creates one bounded prefilled public GitHub issue
-form draft and opens it only for human output. The browser uses the user's existing GitHub session;
-the CLI receives no GitHub or managed-agent credential and never claims a request exists before the
-form is submitted.
+Request is the separate contribution journey. It submits one bounded intent, keyed by its
+digest, to the `ui.astrale.ai` Domain of the current Instance and returns only an exact receipt.

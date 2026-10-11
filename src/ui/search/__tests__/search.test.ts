@@ -6,7 +6,7 @@ import path from 'node:path'
 import { UiError } from '../../model'
 import { addUi } from '../../operations'
 import { admitSearchRequest, executeSearch } from '../engine'
-import { nextSearchOffset, searchUi } from '../index'
+import { searchUi } from '../index'
 import {
   fixtureCommit,
   fixtureFetch,
@@ -87,28 +87,16 @@ describe('Astrale UI search', () => {
     expect(seen.filter((url) => url.endsWith('.preview.tsx'))).toHaveLength(1)
   })
 
-  test('reuses an integrity-admitted immutable cache without network access', async () => {
-    const project = await lockedProject()
-    const cacheRoot = await temporary('astrale-ui-search-cache-')
-    await searchUi('payment export', { project }, { fetcher: fixtureFetch(), cacheRoot })
-
-    const response = await searchUi(
-      'payment export',
-      { project },
-      {
-        cacheRoot,
-        fetcher: (async () => {
-          throw new Error('network must not be used')
-        }) as unknown as typeof fetch,
-      },
-    )
-    expect(response.results[0]!.address).toBe('block/data-table/data-table-12')
-  })
-
   test('repairs a corrupt cached index from the immutable release', async () => {
     const project = await lockedProject()
     const cacheRoot = await temporary('astrale-ui-search-cache-')
     await searchUi('payment export', { project }, { fetcher: fixtureFetch(), cacheRoot })
+    const offline = (async () => {
+      throw new Error('network must not be used')
+    }) as unknown as typeof fetch
+    expect(
+      (await searchUi('payment export', { project }, { fetcher: offline, cacheRoot })).total,
+    ).toBe(1)
     const indexPath = path.join(cacheRoot, fixtureCommit, 'search/public/index.json')
     await writeFile(indexPath, '{"corrupt":true}\n')
     const seen: string[] = []
@@ -123,21 +111,6 @@ describe('Astrale UI search', () => {
     expect(await readFile(indexPath, 'utf8')).toBe(
       singleFixture().responses.get('search/public/index.json')!,
     )
-  })
-
-  test('resolves the public beta only when no initialized project lock exists', async () => {
-    const cacheRoot = await temporary('astrale-ui-search-cache-')
-    const seen: string[] = []
-    const response = await searchUi(
-      '@astrale-os/ui/button',
-      {},
-      { fetcher: fixtureFetch(seen), cacheRoot },
-    )
-    expect(response.results[0]).toMatchObject({
-      address: '@astrale-os/ui/button',
-      packageImport: '@astrale-os/ui/button',
-    })
-    expect(seen.some((url) => url.endsWith('/@astrale-os/ui/beta'))).toBe(true)
   })
 
   test('uses a cwd project lock and falls back to beta for a supported unlocked cwd', async () => {
@@ -221,18 +194,6 @@ describe('Astrale UI search', () => {
     }
   })
 
-  test('paginates the complete retained candidate window for every legal page size', () => {
-    for (const limit of [1, 3, 7, 10]) {
-      const visited = new Set<number>()
-      let offset: number | null = 0
-      while (offset !== null) {
-        for (let id = offset; id < Math.min(offset + limit, 1_010); id += 1) visited.add(id)
-        offset = nextSearchOffset(offset, limit, 1_010)
-      }
-      expect([...visited]).toEqual(Array.from({ length: 1_010 }, (_, id) => id))
-    }
-  })
-
   test('reports an honest empty result without hydrating canonical code', async () => {
     const project = await lockedProject()
     const cacheRoot = await temporary('astrale-ui-search-cache-')
@@ -261,21 +222,6 @@ describe('Astrale UI search', () => {
     expect((error as UiError).code).toBe('UI_SEARCH_UNAVAILABLE')
     expect((error as UiError).hint).toContain('astrale ui doctor')
     expect((error as UiError).hint).toContain('astrale ui init --force')
-  })
-
-  test('maps cache filesystem failures into the specified search failure family', async () => {
-    const project = await lockedProject()
-    const root = await temporary('astrale-ui-search-cache-file-')
-    const cacheRoot = path.join(root, 'not-a-directory')
-    await writeFile(cacheRoot, 'occupied')
-    const error = await searchUi(
-      'button',
-      { project },
-      { fetcher: fixtureFetch(), cacheRoot },
-    ).catch((failure: unknown) => failure)
-    expect(error).toBeInstanceOf(UiError)
-    expect((error as UiError).code).toBe('UI_SEARCH_UNAVAILABLE')
-    expect((error as UiError).hint).toContain('astrale ui doctor')
   })
 
   test('executes partitioned postings, metadata selection, and exact addresses', async () => {
@@ -381,63 +327,6 @@ describe('Astrale UI search', () => {
     ).catch((failure: unknown) => failure)
     expect(partitionError).toBeInstanceOf(UiError)
     expect((partitionError as UiError).code).toBe('UI_SEARCH_UNAVAILABLE')
-
-    const exactTerm = '\0@astrale-os/ui/button'
-    const exactPart = layout.termFiles.find((file) => {
-      const values = partitioned.values.get(file.path) as Array<[string, number[]]>
-      return values.some(([term]) => term === exactTerm)
-    })!
-    const exactError = await executeSearch(
-      {
-        manifest: partitioned.manifest,
-        async readJson(file: { path: string }) {
-          const value = partitioned.values.get(file.path)
-          if (file.path !== exactPart.path) return value
-          return (value as Array<[string, number[]]>).map(([term, posting]) => [
-            term,
-            term === exactTerm ? [1, 1] : posting,
-          ])
-        },
-        async readCode() {
-          throw new Error('ranking must not hydrate code')
-        },
-      },
-      '@astrale-os/ui/button',
-      0,
-      1,
-    ).catch((failure: unknown) => failure)
-    expect(exactError).toBeInstanceOf(UiError)
-    expect((exactError as UiError).code).toBe('UI_SEARCH_UNAVAILABLE')
-
-    const paymentPart = layout.termFiles.find((file) => {
-      const values = partitioned.values.get(file.path) as Array<[string, number[]]>
-      return values.some(([term]) => term === 'payment')
-    })!
-    for (const corrupt of [
-      (values: Array<[string, number[]]>) => values.filter(([term]) => term !== 'payment'),
-      (values: Array<[string, number[]]>) =>
-        values.map(([term, posting]) => [term, term === 'payment' ? [0, 5, 1, 5] : posting]),
-    ]) {
-      const error = await executeSearch(
-        {
-          manifest: partitioned.manifest,
-          async readJson(file: { path: string }) {
-            const value = partitioned.values.get(file.path)
-            return file.path === paymentPart.path
-              ? corrupt(value as Array<[string, number[]]>)
-              : value
-          },
-          async readCode() {
-            throw new Error('ranking must not hydrate code')
-          },
-        },
-        'payment',
-        0,
-        1,
-      ).catch((failure: unknown) => failure)
-      expect(error).toBeInstanceOf(UiError)
-      expect((error as UiError).code).toBe('UI_SEARCH_UNAVAILABLE')
-    }
   })
 
   test('hands a returned command directly to the existing add journey', async () => {

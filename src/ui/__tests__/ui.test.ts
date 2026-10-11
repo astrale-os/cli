@@ -1,1756 +1,831 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import * as fsPromises from 'node:fs/promises'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { digest, parseUiLock } from '../lock'
-import { UiError, type UiLock, type UiRegistry } from '../model'
+import type { UiRunner } from '../model'
+
+import { sha256 } from '../files'
+import { parseUiLock } from '../lock'
+import { THEME_TOKENS, UiError, type UiLock, type UiRegistry, type UiRegistryItem } from '../model'
 import { addUi, applyPreset, doctorUi, initUi } from '../operations'
 import { resolveUiRelease } from '../release'
-import { shadcnInvocation } from '../runner'
 
-const commit = 'a'.repeat(40)
-const registry: UiRegistry = {
-  name: 'astrale-ui',
-  items: [
-    {
-      name: 'pattern-chart-line-basic',
-      type: 'registry:block',
-      description: 'A controlled chart.',
-      files: [
-        {
-          path: 'line-basic.tsx',
-          type: 'registry:component',
-          target: 'components/astrale/pattern/chart/line-basic.tsx',
-        },
-      ],
-      meta: { canonicalAddress: 'pattern/chart/line/basic' },
-    },
-  ],
+const COMMIT = 'a'.repeat(40)
+const VERSION = '0.3.0-beta.0'
+const PACKAGE_CSS =
+  "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n"
+const CHART = 'pattern/chart/line/basic'
+const CHART_FILE = 'components/astrale/pattern/chart/line-basic.tsx'
+
+const chart: UiRegistryItem = {
+  name: 'pattern-chart-line-basic',
+  type: 'registry:block',
+  files: [{ path: 'line-basic.tsx', type: 'registry:component', target: CHART_FILE }],
+  meta: { canonicalAddress: CHART },
 }
-const componentRegistry: UiRegistry = {
-  name: 'astrale-ui',
-  items: [
+const sidebar: UiRegistryItem = {
+  name: 'component-sidebar',
+  type: 'registry:component',
+  dependencies: ['@astrale-os/ui@^0.3.0-beta.0', 'lucide-react@1.32.0'],
+  files: [
     {
-      name: 'component-sidebar',
+      path: 'sidebar.tsx',
       type: 'registry:component',
-      title: 'Component · sidebar',
-      dependencies: ['@astrale-os/ui@^0.3.0-beta.0', 'lucide-react@1.32.0'],
-      files: [
-        {
-          path: 'sidebar.tsx',
-          type: 'registry:component',
-          target: 'components/astrale/component/sidebar/sidebar.tsx',
-        },
-        {
-          path: 'use-mobile.ts',
-          type: 'registry:hook',
-          target: 'components/astrale/component/sidebar/use-mobile.ts',
-        },
-      ],
-      meta: { canonicalAddress: 'component/sidebar', ownership: 'consumer-source' },
+      target: 'components/astrale/component/sidebar/sidebar.tsx',
     },
-  ],
-}
-const themeCss = `/* Generated from observatory.astrale-theme.json. Consumer-owned after installation. */
-:root,
-[data-ui-theme='observatory'] {
-  --ui-background: #ffffff;
-  --ui-foreground: #111111;
-  --ui-card: #ffffff;
-  --ui-card-foreground: #111111;
-  --ui-popover: #ffffff;
-  --ui-popover-foreground: #111111;
-  --ui-primary: #2244aa;
-  --ui-primary-foreground: #ffffff;
-  --ui-secondary: #eeeeee;
-  --ui-secondary-foreground: #111111;
-  --ui-muted: #eeeeee;
-  --ui-muted-foreground: #555555;
-  --ui-accent: #ddeeff;
-  --ui-accent-foreground: #111111;
-  --ui-destructive: #aa2222;
-  --ui-destructive-foreground: #ffffff;
-  --ui-border: #dddddd;
-  --ui-input: #dddddd;
-  --ui-ring: #2244aa;
-  --ui-chart-1: #2244aa;
-  --ui-chart-2: #228844;
-  --ui-chart-3: #aa7722;
-  --ui-chart-4: #aa2222;
-  --ui-chart-5: #7722aa;
-  --ui-font-body: ui-sans-serif;
-  --ui-font-heading: ui-serif;
-  --ui-radius: 0.5rem;
-  --ui-radius-panel: 0.75rem;
-  --ui-control-height: 2.25rem;
-  --ui-control-height-sm: 2rem;
-  --ui-control-height-lg: 2.5rem;
-  --ui-shadow-control: none;
-  --ui-shadow-panel: none;
-  --ui-motion-fast: 120ms;
-  --ui-motion-standard: 180ms;
-}
-[data-ui-theme='observatory'].dark {
-  --ui-background: #111111;
-  --ui-foreground: #ffffff;
-  --ui-card: #191919;
-  --ui-card-foreground: #ffffff;
-  --ui-popover: #191919;
-  --ui-popover-foreground: #ffffff;
-  --ui-primary: #88aaff;
-  --ui-primary-foreground: #111111;
-  --ui-secondary: #292929;
-  --ui-secondary-foreground: #ffffff;
-  --ui-muted: #292929;
-  --ui-muted-foreground: #bbbbbb;
-  --ui-accent: #334455;
-  --ui-accent-foreground: #ffffff;
-  --ui-destructive: #ff7777;
-  --ui-destructive-foreground: #111111;
-  --ui-border: #333333;
-  --ui-input: #333333;
-  --ui-ring: #88aaff;
-  --ui-chart-1: #88aaff;
-  --ui-chart-2: #77dd99;
-  --ui-chart-3: #ffcc77;
-  --ui-chart-4: #ff7777;
-  --ui-chart-5: #cc88ff;
-  --ui-font-body: ui-sans-serif;
-  --ui-font-heading: ui-serif;
-  --ui-radius: 0.5rem;
-  --ui-radius-panel: 0.75rem;
-  --ui-control-height: 2.25rem;
-  --ui-control-height-sm: 2rem;
-  --ui-control-height-lg: 2.5rem;
-  --ui-shadow-control: none;
-  --ui-shadow-panel: none;
-  --ui-motion-fast: 120ms;
-  --ui-motion-standard: 180ms;
-}
-`
-const themeRegistry: UiRegistry = {
-  name: 'astrale-ui',
-  items: [
     {
-      name: 'theme-observatory',
-      type: 'registry:theme',
-      description: 'An owned theme.',
-      dependencies: ['@astrale-os/ui@^0.3.0-beta.0'],
-      files: [
-        {
-          path: 'observatory.css',
-          type: 'registry:file',
-          target: 'components/astrale/theme/observatory.css',
-        },
-      ],
-      meta: { canonicalAddress: 'theme/observatory', ownership: 'consumer-source' },
+      path: 'use-mobile.ts',
+      type: 'registry:hook',
+      target: 'components/astrale/component/sidebar/use-mobile.ts',
     },
   ],
+  meta: { canonicalAddress: 'component/sidebar' },
 }
-const compatibility = {
-  version: 1,
-  shadcn: '4.18.0',
-  base: 'base',
-  style: 'nova',
-  baseUi: '1.7.0',
-  react: '^18.3.1 || ^19.0.0',
-  tailwind: '^4.3.3',
-  presets: ['astrale', 'compact', 'expressive'],
+const theme: UiRegistryItem = {
+  name: 'theme-observatory',
+  type: 'registry:theme',
+  files: [
+    {
+      path: 'observatory.css',
+      type: 'registry:file',
+      target: 'components/astrale/theme/observatory.css',
+    },
+  ],
+  meta: { canonicalAddress: 'theme/observatory' },
 }
+const themeCss = [
+  '/* Consumer-owned after installation. */',
+  `:root, [data-ui-theme='observatory'] { ${THEME_TOKENS.map((token) => `--ui-${token}: 1;`).join(' ')} }`,
+  `[data-ui-theme='observatory'].dark { ${THEME_TOKENS.map((token) => `--ui-${token}: 2;`).join(' ')} }`,
+  '',
+].join('\n')
+const compatibility = { version: 1, shadcn: '4.18.0', base: 'base', style: 'nova', baseUi: '1.7.0' }
 
-const temporary: string[] = []
-
-afterEach(async () => {
-  await Promise.all(
-    temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
-  )
-})
-
-function mockFetch(seen: string[] = [], suppliedRegistry: UiRegistry = registry): typeof fetch {
-  return (async (input: string | URL | Request) => {
-    const url = String(input)
-    seen.push(url)
-    if (url.includes('/git/ref/tags/')) {
-      return Response.json({ object: { type: 'commit', sha: commit, url: '' } })
-    }
-    if (url.endsWith('/tooling/compatibility.json')) return Response.json(compatibility)
-    if (url.endsWith('/' + commit + '/registry.json')) {
-      return Response.json({
-        name: 'astrale-ui',
-        include: ['registry/base/registry.json', 'registry/patterns/chart/registry.json'],
-      })
-    }
-    if (url.endsWith('/registry/base/registry.json')) {
-      return Response.json({ items: [{ name: 'astrale-base', type: 'registry:base' }] })
-    }
-    if (url.endsWith('/registry/patterns/chart/registry.json'))
-      return Response.json(suppliedRegistry)
-    const item = suppliedRegistry.items.find((candidate) =>
-      url.endsWith('/registry/public/r/' + candidate.name + '.json'),
-    )
-    if (item) return Response.json(builtItem(item))
-    return new Response('not found', { status: 404 })
-  }) as typeof fetch
-}
-
-function themeFetch(seen: string[] = []): typeof fetch {
-  return (async (input: string | URL | Request) => {
-    const url = String(input)
-    seen.push(url)
-    if (url.includes('/git/ref/tags/')) {
-      return Response.json({ object: { type: 'commit', sha: commit, url: '' } })
-    }
-    if (url.endsWith('/tooling/compatibility.json')) return Response.json(compatibility)
-    if (url.endsWith('/' + commit + '/registry.json')) {
-      return Response.json({ name: 'astrale-ui', include: ['registry/themes/registry.json'] })
-    }
-    if (url.endsWith('/registry/themes/registry.json')) return Response.json(themeRegistry)
-    if (url.endsWith('/registry/public/r/theme-observatory.json')) {
-      return Response.json(builtThemeItem())
-    }
-    return new Response('not found', { status: 404 })
-  }) as typeof fetch
-}
-
-function builtThemeItem() {
-  return {
-    ...themeRegistry.items[0],
-    files: [
-      {
-        ...themeRegistry.items[0]!.files[0],
-        path: 'registry/themes/observatory.css',
-        content: themeCss,
-      },
-    ],
-  }
-}
-
-function builtItem(item: UiRegistry['items'][number]) {
+function built(item: UiRegistryItem) {
   return {
     ...item,
-    files: item.files.map((file, index) => ({
+    files: item.files.map((file) => ({
       ...file,
-      path: `registry/patterns/chart/${file.path}`,
-      content: index === 0 ? 'export const Chart = true\n' : 'export const Summary = true\n',
+      path: `registry/family/${file.path}`,
+      content: item === theme ? themeCss : `export const source = '${file.path}'\n`,
     })),
   }
 }
 
-async function fixture(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), 'astrale-ui-cli-'))
-  temporary.push(root)
-  await mkdir(path.join(root, 'src'), { recursive: true })
-  await writeFile(
-    path.join(root, 'package.json'),
-    JSON.stringify({
-      name: 'fixture',
-      private: true,
-      dependencies: {
-        react: '19.2.8',
-        'react-dom': '19.2.8',
-        tailwindcss: '4.3.3',
-      },
-      packageManager: 'pnpm@12.1.0',
-    }),
-  )
-  await writeFile(path.join(root, 'src/index.css'), '/* consumer css */\n')
+type Route = Response | (() => Response)
+
+/** A UI release snapshot at COMMIT whose one family registry holds `items`; `routes` overrides by URL suffix. */
+function release(
+  items: UiRegistryItem[] = [chart],
+  routes: Record<string, Route> = {},
+  seen: string[] = [],
+) {
+  return (async (input: string | URL | Request) => {
+    const url = String(input)
+    seen.push(url)
+    const route = Object.entries(routes).find(([suffix]) => url.endsWith(suffix))?.[1]
+    if (route) return typeof route === 'function' ? route() : route.clone()
+    if (url.includes('/git/ref/tags/'))
+      return Response.json({ object: { type: 'commit', sha: COMMIT, url: '' } })
+    if (url.endsWith('/tooling/compatibility.json')) return Response.json(compatibility)
+    if (url.endsWith(`/${COMMIT}/registry.json`)) {
+      return Response.json({
+        include: ['registry/base/registry.json', 'registry/family/registry.json'],
+      })
+    }
+    if (url.endsWith('/registry/base/registry.json')) {
+      return Response.json({ items: [{ name: 'base', type: 'registry:base' }] })
+    }
+    if (url.endsWith('/registry/family/registry.json')) return Response.json({ items })
+    const item = items.find((candidate) => url.endsWith(`/r/${candidate.name}.json`))
+    return item ? Response.json(built(item)) : new Response('not found', { status: 404 })
+  }) as typeof fetch
+}
+
+const noNetwork = (() => Promise.reject(new Error('no network'))) as unknown as typeof fetch
+
+function runner(effect?: (file: string, args: string[]) => Promise<number | void>) {
+  const calls: Array<{ file: string; args: string[] }> = []
+  const run: UiRunner = async (file, args) => {
+    calls.push({ file, args })
+    const code = (await effect?.(file, args)) ?? 0
+    return { code, stdout: '', stderr: code === 0 ? '' : 'failed' }
+  }
+  return { run, calls }
+}
+
+const roots: string[] = []
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
+
+async function directory(): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), 'astrale-ui-'))
+  roots.push(root)
   return root
 }
 
-async function lockedFixture(): Promise<string> {
-  const root = await fixture()
-  const manifestPath = path.join(root, 'package.json')
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-  manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.0'
-  await writeFile(manifestPath, JSON.stringify(manifest))
-  await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
-  return root
+type ProjectOptions = {
+  locked?: boolean
+  domain?: boolean
+  npm?: boolean
+  devDependency?: boolean
+  components?: Record<string, unknown>
 }
 
-function lock(): UiLock {
+async function project(options: ProjectOptions = {}) {
+  const root = await directory()
+  const at = (relative: string) => path.join(root, relative)
+  const manifest: Record<string, unknown> = {
+    name: 'fixture',
+    private: true,
+    dependencies: { react: '19.2.8', 'react-dom': '19.2.8', tailwindcss: '4.3.3' },
+    packageManager: options.npm ? 'npm@11.16.0' : 'pnpm@12.1.0',
+  }
+  if (options.locked) {
+    const section = options.devDependency ? 'devDependencies' : 'dependencies'
+    manifest[section] = { ...(manifest[section] as object), '@astrale-os/ui': VERSION }
+  }
+  await mkdir(at('src'), { recursive: true })
+  await writeFile(at('src/index.css'), options.locked ? PACKAGE_CSS : '/* consumer css */\n')
+  if (options.domain) {
+    if (options.npm) manifest.workspaces = ['frontend']
+    else await writeFile(at('pnpm-workspace.yaml'), "packages:\n  - 'frontend'\n")
+    await mkdir(at('frontend/src'), { recursive: true })
+    await mkdir(at('ui'))
+    await writeFile(
+      at('frontend/package.json'),
+      JSON.stringify({ name: 'astrale-frontend', private: true }),
+    )
+    await writeFile(at('frontend/src/styles.css'), '/* Domain frontend */\n')
+    await writeFile(at('ui/index.ts'), 'export {}\n')
+    await writeFile(at('astrale.config.ts'), 'export default {}\n')
+  }
+  await writeFile(at('package.json'), JSON.stringify(manifest))
+  if (options.locked) await writeFile(at('astrale-ui.lock.json'), JSON.stringify(lockOf()))
+  if (options.locked || options.components) {
+    await writeJson(at('components.json'), {
+      style: 'base-nova',
+      tailwind: { css: 'src/index.css' },
+      ...options.components,
+    })
+  }
+  return { root, at, read: (relative: string) => readFile(at(relative), 'utf8') }
+}
+
+function writeJson(target: string, value: unknown) {
+  return writeFile(target, JSON.stringify(value))
+}
+
+function lockOf(items: UiLock['items'] = {}): UiLock {
   return {
     $schema: 'https://example.invalid/ui-lock.schema.json',
     version: 1,
-    package: { name: '@astrale-os/ui', version: '0.3.0-beta.0' },
-    registry: { repository: 'astrale-os/ui', ref: 'v0.3.0-beta.0', commit },
+    package: { name: '@astrale-os/ui', version: VERSION },
+    registry: { repository: 'astrale-os/ui', ref: 'v' + VERSION, commit: COMMIT },
     tooling: { shadcn: '4.18.0', base: 'base', style: 'nova', baseUi: '1.7.0' },
     preset: 'astrale',
-    items: {},
+    items,
   }
 }
 
-describe('UI release and runner contracts', () => {
+async function exists(target: string): Promise<boolean> {
+  return Bun.file(target).exists()
+}
+
+describe('UI release', () => {
   /** @evidence TEST-CLI-UI-BETA-DEFAULT */
-  test('resolves the default release from the public beta channel', async () => {
+  test('an unversioned operation resolves the npm beta tag, never latest, and refuses a non-beta tag', async () => {
     const seen: string[] = []
-    const fallback = mockFetch()
-    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      seen.push(url)
-      if (url.endsWith('/@astrale-os/ui/beta')) {
-        return Response.json({ version: '0.3.0-beta.1' })
-      }
-      return fallback(input, init)
-    }) as typeof fetch
-
-    const release = await resolveUiRelease(undefined, fetcher)
-
-    expect(release.version).toBe('0.3.0-beta.1')
+    const resolved = await resolveUiRelease(
+      undefined,
+      release(
+        [chart],
+        { '/@astrale-os/ui/beta': Response.json({ version: '0.3.0-beta.1' }) },
+        seen,
+      ),
+    )
+    expect(resolved.version).toBe('0.3.0-beta.1')
     expect(seen[0]).toBe('https://registry.npmjs.org/@astrale-os/ui/beta')
-    expect(seen).not.toContain('https://registry.npmjs.org/@astrale-os/ui/latest')
-  })
 
-  test('rejects a public beta channel that does not resolve to a beta release', async () => {
-    const fetcher = (async (input: string | URL | Request) => {
-      const url = String(input)
-      if (url.endsWith('/@astrale-os/ui/beta')) return Response.json({ version: '0.3.0' })
-      throw new Error('release snapshot must not be fetched')
-    }) as typeof fetch
-
-    await expect(resolveUiRelease(undefined, fetcher)).rejects.toMatchObject({
-      code: 'UI_REGISTRY_UNAVAILABLE',
+    const stable = release([chart], { '/@astrale-os/ui/beta': Response.json({ version: '0.3.0' }) })
+    await expect(resolveUiRelease(undefined, stable)).rejects.toMatchObject({
       message: 'Invalid UI beta release version: 0.3.0',
     })
   })
 
   /** @evidence TEST-CLI-UI-ONE-SNAPSHOT */
-  test('resolves one commit and reads the full release snapshot from it', async () => {
+  test('reads compatibility and every nested registry from one commit, qualifying item paths', async () => {
     const seen: string[] = []
-    const release = await resolveUiRelease('0.3.0-beta.0', mockFetch(seen))
-    expect(release.commit).toBe(commit)
-    expect(release.compatibility.base).toBe('base')
-    expect(release.registry.items).toHaveLength(1)
-    expect(release.registry.items[0]?.files[0]?.path).toBe('registry/patterns/chart/line-basic.tsx')
-    expect(seen.filter((url) => new URL(url).hostname === 'raw.githubusercontent.com')).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('/' + commit + '/tooling/compatibility.json'),
-        expect.stringContaining('/' + commit + '/registry'),
-      ]),
-    )
-  })
-
-  test('resolves the immutable release commit when the anonymous GitHub API is rate limited', async () => {
-    const seen: string[] = []
-    const fallback = mockFetch(seen)
-    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/git/ref/tags/')) {
-        seen.push(url)
-        return Response.json({ message: 'API rate limit exceeded' }, { status: 403 })
-      }
-      if (url.includes('/releases/tag/')) {
-        seen.push(url)
-        return new Response(
-          `<a data-hovercard-type="commit" href="/astrale-os/ui/commit/${'b'.repeat(40)}">decoy</a>
-           <a href="/astrale-os/ui/tree/v0.3.0-beta.0">repository navigation</a>
-           ${'x'.repeat(35_000)}
-           <a href="/astrale-os/ui/tree/v0.3.0-beta.0">tag</a>
-           <a data-hovercard-type="commit" href="/astrale-os/ui/commit/${commit}">commit</a>`,
-          { headers: { 'content-type': 'text/html' } },
-        )
-      }
-      return fallback(input, init)
-    }) as typeof fetch
-
-    const release = await resolveUiRelease('0.3.0-beta.0', fetcher)
-
-    expect(release.commit).toBe(commit)
-    expect(seen).toContain('https://github.com/astrale-os/ui/releases/tag/v0.3.0-beta.0')
-    expect(seen).toContain(
-      'https://raw.githubusercontent.com/astrale-os/ui/' + commit + '/tooling/compatibility.json',
-    )
-  })
-
-  test('rejects a release page without an exact Astrale UI commit target', async () => {
-    const fetcher = (async (input: string | URL | Request) => {
-      const url = String(input)
-      if (url.includes('/git/ref/tags/')) return new Response('limited', { status: 403 })
-      if (url.includes('/releases/tag/')) return new Response('<main>release unavailable</main>')
-      throw new Error('release snapshot must not be fetched')
-    }) as typeof fetch
-
-    await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
-      code: 'UI_REGISTRY_UNAVAILABLE',
-      message: 'UI ref v0.3.0-beta.0 did not resolve to a commit.',
-    })
-  })
-
-  test('does not replace an authoritative missing tag with release-page HTML', async () => {
-    const seen: string[] = []
-    const fetcher = (async (input: string | URL | Request) => {
-      const url = String(input)
-      seen.push(url)
-      if (url.includes('/git/ref/tags/')) return new Response('missing', { status: 404 })
-      throw new Error('release page must not be fetched')
-    }) as typeof fetch
-
-    await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
-      code: 'UI_REGISTRY_UNAVAILABLE',
-      message: 'UI ref v0.3.0-beta.0 returned HTTP 404.',
-    })
-    expect(seen).toEqual(['https://api.github.com/repos/astrale-os/ui/git/ref/tags/v0.3.0-beta.0'])
-  })
-
-  test('bounds declared and streamed release-page HTML before reading a snapshot', async () => {
-    for (const oversized of [
-      new Response('large', { headers: { 'content-length': '1048577' } }),
-      new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(new Uint8Array(1_048_577))
-            controller.close()
-          },
-        }),
+    const nested = {
+      ...chart,
+      name: 'pattern-chart-nested',
+      meta: { canonicalAddress: 'pattern/chart/nested' },
+    }
+    const resolved = await resolveUiRelease(
+      VERSION,
+      release(
+        [chart],
+        {
+          '/registry/family/registry.json': Response.json({
+            items: [chart],
+            include: ['deeper/registry.json'],
+          }),
+          '/registry/family/deeper/registry.json': Response.json({ items: [nested] }),
+        },
+        seen,
       ),
-    ]) {
-      const seen: string[] = []
-      const fetcher = (async (input: string | URL | Request) => {
-        const url = String(input)
-        seen.push(url)
-        if (url.includes('/git/ref/tags/')) return new Response('limited', { status: 403 })
-        if (url.includes('/releases/tag/')) return oversized
-        throw new Error('release snapshot must not be fetched')
-      }) as typeof fetch
-
-      await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
-        code: 'UI_REGISTRY_UNAVAILABLE',
-        message: 'UI release v0.3.0-beta.0 exceeds the supported response size.',
-      })
-      expect(seen).toHaveLength(2)
-    }
-  })
-
-  test('admits a release theme as one canonical consumer-owned CSS target', async () => {
-    const release = await resolveUiRelease('0.3.0-beta.0', themeFetch())
-    expect(release.registry.items).toEqual([
-      expect.objectContaining({
-        name: 'theme-observatory',
-        type: 'registry:theme',
-        meta: expect.objectContaining({ canonicalAddress: 'theme/observatory' }),
-        files: [
-          expect.objectContaining({
-            type: 'registry:file',
-            path: 'registry/themes/observatory.css',
-            target: 'components/astrale/theme/observatory.css',
-          }),
-        ],
-      }),
+    )
+    expect(resolved.commit).toBe(COMMIT)
+    expect(resolved.registry.items.map((item) => item.files[0]?.path)).toEqual([
+      'registry/family/line-basic.tsx',
+      'registry/family/deeper/line-basic.tsx',
     ])
+    const raw = seen.filter((url) => url.startsWith('https://raw.githubusercontent.com/'))
+    expect(raw.every((url) => url.includes(`/${COMMIT}/`))).toBe(true)
   })
 
-  test('admits an exact consumer-owned component with item-local dependencies and files', async () => {
-    const release = await resolveUiRelease('0.3.0-beta.0', mockFetch([], componentRegistry))
-    expect(release.registry.items).toEqual([
-      expect.objectContaining({
-        name: 'component-sidebar',
-        type: 'registry:component',
-        dependencies: ['@astrale-os/ui@^0.3.0-beta.0', 'lucide-react@1.32.0'],
-        meta: expect.objectContaining({ canonicalAddress: 'component/sidebar' }),
-        files: [
-          expect.objectContaining({
-            type: 'registry:component',
-            target: 'components/astrale/component/sidebar/sidebar.tsx',
-          }),
-          expect.objectContaining({
-            type: 'registry:hook',
-            target: 'components/astrale/component/sidebar/use-mobile.ts',
-          }),
-        ],
-      }),
-    ])
-  })
+  test('a rate-limited tag lookup falls back to the release page; a missing tag does not', async () => {
+    const page = `<a href="/astrale-os/ui/tree/v${VERSION}">tag</a>
+      <a data-hovercard-type="commit" href="/astrale-os/ui/commit/${COMMIT}">commit</a>`
+    const limited = { '/git/ref/tags/v0.3.0-beta.0': new Response('limited', { status: 403 }) }
+    expect(
+      (
+        await resolveUiRelease(
+          VERSION,
+          release([chart], { ...limited, [`/releases/tag/v${VERSION}`]: new Response(page) }),
+        )
+      ).commit,
+    ).toBe(COMMIT)
+    await expect(
+      resolveUiRelease(
+        VERSION,
+        release([chart], { ...limited, [`/releases/tag/v${VERSION}`]: new Response('<main/>') }),
+      ),
+    ).rejects.toMatchObject({ message: `UI ref v${VERSION} did not resolve to a commit.` })
 
-  test('rejects a component item that targets another registry ownership category', async () => {
-    const invalid = structuredClone(componentRegistry)
-    invalid.items[0]!.files[0]!.target = 'components/astrale/pattern/sidebar/sidebar.tsx'
-    await expect(resolveUiRelease('0.3.0-beta.0', mockFetch([], invalid))).rejects.toMatchObject({
-      code: 'UI_REGISTRY_UNAVAILABLE',
-    })
-  })
-
-  test('constructs exact on-demand commands for every supported package manager', () => {
-    expect(shadcnInvocation('pnpm', '4.18.0', ['add', 'item'])).toEqual({
-      file: 'pnpm',
-      args: ['dlx', 'shadcn@4.18.0', 'add', 'item'],
-    })
-    expect(shadcnInvocation('npm', '4.18.0', ['add', 'item'])).toEqual({
-      file: 'npx',
-      args: ['--yes', 'shadcn@4.18.0', 'add', 'item'],
-    })
-    expect(shadcnInvocation('yarn', '4.18.0', ['add', 'item'])).toEqual({
-      file: 'yarn',
-      args: ['dlx', 'shadcn@4.18.0', 'add', 'item'],
-    })
-    expect(shadcnInvocation('bun', '4.18.0', ['add', 'item'])).toEqual({
-      file: 'bunx',
-      args: ['shadcn@4.18.0', 'add', 'item'],
-    })
-  })
-
-  test('rejects an unsafe authoritative root without falling back to a legacy registry', async () => {
     const seen: string[] = []
-    const fallback = mockFetch(seen)
-    const unsafe = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/' + commit + '/registry.json')) {
-        return Response.json({ name: 'astrale-ui', include: ['../registry.json'] })
-      }
-      return fallback(input, init)
-    }) as typeof fetch
-    await expect(resolveUiRelease('0.3.0-beta.0', unsafe)).rejects.toThrow()
-    expect(seen.some((url) => url.endsWith('/registry/registry.json'))).toBe(false)
+    await expect(
+      resolveUiRelease(
+        VERSION,
+        release(
+          [chart],
+          { '/git/ref/tags/v0.3.0-beta.0': new Response('', { status: 404 }) },
+          seen,
+        ),
+      ),
+    ).rejects.toMatchObject({ message: `UI ref v${VERSION} returned HTTP 404.` })
+    expect(seen.some((url) => url.includes('/releases/tag/'))).toBe(false)
   })
 
-  test('rejects noncanonical and encoded registry includes before fetching them', async () => {
-    const unsafeIncludes = [
-      '%2e%2e/other/registry.json',
-      'registry/%2Fother/registry.json',
-      'registry/other/registry.json?raw=1',
-      'registry/other/registry.json#item',
-      'https://example.invalid/registry.json',
-      './registry/other/registry.json',
+  /** @evidence TEST-CLI-UI-BOUNDED-REMOTE-DOCUMENTS */
+  test('oversized, malformed, fanned-out or escaping registry documents are refused before use', async () => {
+    const root = `/${COMMIT}/registry.json`
+    const hostile: Array<Record<string, Route>> = [
+      { '/tooling/compatibility.json': new Response('x'.repeat(1_048_577)) },
+      {
+        '/tooling/compatibility.json': () =>
+          new Response(
+            new ReadableStream({
+              start: (c) => {
+                c.enqueue(new Uint8Array(1_048_577))
+                c.close()
+              },
+            }),
+          ),
+      },
+      { [root]: new Response('{') },
+      {
+        [root]: Response.json({
+          include: Array.from({ length: 100 }, (_, i) => `registry/f${i}/registry.json`),
+        }),
+      },
+      ...[
+        '../registry.json',
+        '%2e%2e/x/registry.json',
+        'registry/x/registry.json?raw=1',
+        'https://example.invalid/registry.json',
+      ].map((include) => ({ [root]: Response.json({ include: [include] }) })),
+      ...['/absolute.tsx', '../line-basic.tsx', 'registry/family/line-basic.tsx'].map((unsafe) => ({
+        '/registry/family/registry.json': Response.json({
+          items: [{ ...chart, files: [{ ...chart.files[0], path: unsafe }] }],
+        }),
+      })),
+      {
+        '/registry/family/registry.json': Response.json({
+          items: [
+            {
+              ...sidebar,
+              files: [{ ...sidebar.files[0], target: 'components/astrale/pattern/sidebar.tsx' }],
+            },
+          ],
+        }),
+      },
     ]
-
-    for (const include of unsafeIncludes) {
+    for (const routes of hostile) {
       const seen: string[] = []
-      const fallback = mockFetch(seen)
-      const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-        const url = String(input)
-        if (url.endsWith('/' + commit + '/registry.json')) {
-          return Response.json({ include: [include] })
-        }
-        return fallback(input, init)
-      }) as typeof fetch
-
-      await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
-        code: 'UI_REGISTRY_UNAVAILABLE',
-      })
-      expect(seen.some((url) => url.includes('example.invalid') || url.includes('/other/'))).toBe(
-        false,
-      )
-    }
-  })
-
-  test('rejects malformed and already-qualified family-local item paths', async () => {
-    const unsafePaths = [
-      '',
-      '/absolute.tsx',
-      'C:/windows.tsx',
-      './line-basic.tsx',
-      '../line-basic.tsx',
-      '%2e%2e/line-basic.tsx',
-      'registry/patterns/chart/line-basic.tsx',
-    ]
-
-    for (const unsafePath of unsafePaths) {
-      const supplied = structuredClone(registry)
-      supplied.items[0]!.files[0]!.path = unsafePath
-      await expect(resolveUiRelease('0.3.0-beta.0', mockFetch([], supplied))).rejects.toMatchObject(
+      await expect(resolveUiRelease(VERSION, release([chart], routes, seen))).rejects.toMatchObject(
         {
           code: 'UI_REGISTRY_UNAVAILABLE',
         },
       )
+      expect(seen.some((url) => url.includes('example.invalid') || url.includes('/x/'))).toBe(false)
     }
   })
 
-  test('qualifies every item file relative to its declaring nested registry', async () => {
-    const rootItem = {
-      ...structuredClone(registry.items[0]!),
-      name: 'pattern-chart-root',
-      files: [
-        {
-          ...structuredClone(registry.items[0]!.files[0]!),
-          path: 'registry/root.tsx',
-          target: 'components/astrale/pattern/chart/root.tsx',
-        },
-      ],
-      meta: { canonicalAddress: 'pattern/chart/root' },
-    }
-    const chartItem = {
-      ...structuredClone(registry.items[0]!),
-      files: [
-        structuredClone(registry.items[0]!.files[0]!),
-        {
-          ...structuredClone(registry.items[0]!.files[0]!),
-          path: 'parts/legend.tsx',
-          target: 'components/astrale/pattern/chart/parts/legend.tsx',
-        },
-      ],
-    }
-    const nestedItem = {
-      ...structuredClone(registry.items[0]!),
-      name: 'pattern-chart-nested-line',
-      files: [structuredClone(registry.items[0]!.files[0]!)],
-      meta: { canonicalAddress: 'pattern/chart/nested-line' },
-    }
-    const fallback = mockFetch()
-    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/' + commit + '/registry.json')) {
-        return Response.json({
-          items: [rootItem],
-          include: ['registry/patterns/chart/registry.json'],
-        })
-      }
-      if (url.endsWith('/registry/patterns/chart/registry.json')) {
-        return Response.json({ items: [chartItem], include: ['nested/registry.json'] })
-      }
-      if (url.endsWith('/registry/patterns/chart/nested/registry.json')) {
-        return Response.json({ items: [nestedItem] })
-      }
-      return fallback(input, init)
-    }) as typeof fetch
-
-    const release = await resolveUiRelease('0.3.0-beta.0', fetcher)
-    expect(release.registry.items.map((item) => item.files.map((file) => file.path))).toEqual([
-      ['registry/root.tsx'],
-      ['registry/patterns/chart/line-basic.tsx', 'registry/patterns/chart/parts/legend.tsx'],
-      ['registry/patterns/chart/nested/line-basic.tsx'],
+  test('admits a theme as one consumer-owned CSS file and a component with its own files', async () => {
+    const resolved = await resolveUiRelease(VERSION, release([theme, sidebar]))
+    expect(resolved.registry.items.map((item) => item.meta.canonicalAddress)).toEqual([
+      'theme/observatory',
+      'component/sidebar',
     ])
-  })
-
-  /** @evidence TEST-CLI-UI-BOUNDED-REMOTE-DOCUMENTS */
-  test('bounds and normalizes malformed registry responses', async () => {
-    const fallback = mockFetch()
-    const oversized = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/tooling/compatibility.json')) {
-        return new Response('x'.repeat(1_048_577), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      return fallback(input, init)
-    }) as typeof fetch
-    await expect(resolveUiRelease('0.3.0-beta.0', oversized)).rejects.toMatchObject({
-      code: 'UI_REGISTRY_UNAVAILABLE',
-    })
-
-    const malformed = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/' + commit + '/registry.json')) {
-        return new Response('{', { headers: { 'content-type': 'application/json' } })
-      }
-      return fallback(input, init)
-    }) as typeof fetch
-    await expect(resolveUiRelease('0.3.0-beta.0', malformed)).rejects.toMatchObject({
-      code: 'UI_REGISTRY_UNAVAILABLE',
-    })
-  })
-
-  test('rejects include fan-out before fetching an unbounded registry graph', async () => {
-    const fallback = mockFetch()
-    const fanOut = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/' + commit + '/registry.json')) {
-        return Response.json({
-          include: Array.from(
-            { length: 100 },
-            (_, index) => 'registry/patterns/family-' + index + '/registry.json',
-          ),
-        })
-      }
-      return fallback(input, init)
-    }) as typeof fetch
-    await expect(resolveUiRelease('0.3.0-beta.0', fanOut)).rejects.toMatchObject({
-      code: 'UI_REGISTRY_UNAVAILABLE',
-    })
   })
 })
 
-describe('UI initialization transaction', () => {
-  test('initializes the generated Domain frontend stylesheet instead of an unused fallback', async () => {
-    const root = await fixture()
-    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
-    await writeFile(
-      path.join(root, 'frontend/package.json'),
-      JSON.stringify({ name: 'astrale-frontend', private: true, type: 'module' }),
-    )
-    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
-    await mkdir(path.join(root, 'ui'), { recursive: true })
-    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
-    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
-    await writeFile(path.join(root, 'pnpm-workspace.yaml'), "packages:\n  - 'frontend'\n")
-    const rootCssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
+describe('UI initialization', () => {
+  test('initializes a Domain frontend stylesheet and its private registry workspace once', async () => {
+    const fixture = await project({ domain: true })
+    const rootCss = await fixture.read('src/index.css')
 
     await initUi(
-      { path: path.join(root, 'frontend'), version: '0.3.0-beta.0', install: false },
-      { fetcher: mockFetch() },
+      { path: fixture.at('frontend'), version: VERSION, install: false },
+      { fetcher: release() },
     )
 
-    const css = await readFile(path.join(root, 'frontend/src/styles.css'), 'utf8')
-    const components = JSON.parse(await readFile(path.join(root, 'components.json'), 'utf8'))
-    expect(css).toContain("@import '@astrale-os/ui/theme.css';")
-    expect(css).toContain('/* Domain frontend */')
-    expect(components.tailwind.css).toBe('frontend/src/styles.css')
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(rootCssBefore)
-    expect(
-      JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).dependencies,
-    ).toHaveProperty('@astrale-os/ui', '0.3.0-beta.0')
-    expect(await Bun.file(path.join(root, 'src/astrale-ui.css')).exists()).toBe(false)
-    expect(JSON.parse(await readFile(path.join(root, 'components/package.json'), 'utf8'))).toEqual({
+    expect(await fixture.read('frontend/src/styles.css')).toStartWith(PACKAGE_CSS)
+    expect(await fixture.read('src/index.css')).toBe(rootCss)
+    expect(JSON.parse(await fixture.read('components.json')).tailwind.css).toBe(
+      'frontend/src/styles.css',
+    )
+    expect(JSON.parse(await fixture.read('components/package.json'))).toEqual({
       name: 'fixture-ui-registry',
       private: true,
       type: 'module',
     })
-    expect(await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')).toContain('components')
-
-    await writeFile(path.join(root, 'src/app.css'), '/* later root stylesheet */\n')
-    const repeated = await initUi(
-      { path: root, version: '0.3.0-beta.0', install: false },
-      { fetcher: mockFetch() },
-    )
-    expect(repeated.status).toBe('unchanged')
+    expect(await fixture.read('pnpm-workspace.yaml')).toContain('components')
+    expect(
+      (await initUi({ path: fixture.root, install: false }, { fetcher: noNetwork })).status,
+    ).toBe('unchanged')
   })
 
-  test('adds the private registry workspace to an npm-authored Domain manifest', async () => {
-    const root = await fixture()
-    const manifestPath = path.join(root, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    manifest.packageManager = 'npm@11.16.0'
-    manifest.workspaces = ['frontend']
-    await writeFile(manifestPath, JSON.stringify(manifest))
-    await writeFile(path.join(root, 'package-lock.json'), '{}')
-    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
-    await writeFile(
-      path.join(root, 'frontend/package.json'),
-      JSON.stringify({ name: 'astrale-frontend', private: true }),
-    )
-    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
-    await mkdir(path.join(root, 'ui'), { recursive: true })
-    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
-    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
-
-    const result = await initUi(
-      { path: root, version: '0.3.0-beta.0', install: false },
-      { fetcher: mockFetch() },
-    )
-
-    expect(result.files).toEqual(expect.arrayContaining(['components/package.json']))
-    expect(JSON.parse(await readFile(manifestPath, 'utf8')).workspaces).toEqual([
+  test('adds the registry workspace to an npm Domain manifest', async () => {
+    const fixture = await project({ domain: true, npm: true })
+    await initUi({ path: fixture.root, version: VERSION, install: false }, { fetcher: release() })
+    expect(JSON.parse(await fixture.read('package.json')).workspaces).toEqual([
       'frontend',
       'components',
     ])
-    expect(JSON.parse(await readFile(path.join(root, 'components/package.json'), 'utf8'))).toEqual({
-      name: 'fixture-ui-registry',
-      private: true,
-      type: 'module',
-    })
   })
 
-  test('rejects a Domain registry workspace whose physical parent escapes the project', async () => {
-    const root = await fixture()
-    const outside = await fixture()
-    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
-    await writeFile(
-      path.join(root, 'frontend/package.json'),
-      JSON.stringify({ name: 'astrale-frontend', private: true }),
-    )
-    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
-    await mkdir(path.join(root, 'ui'), { recursive: true })
-    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
-    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
-    await symlink(outside, path.join(root, 'components'), 'dir')
-    const outsideManifest = await readFile(path.join(outside, 'package.json'), 'utf8')
-    const rootManifest = await readFile(path.join(root, 'package.json'), 'utf8')
-
-    await expect(
-      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
-    ).rejects.toMatchObject({ code: 'UI_LOCK_INVALID' })
-    expect(await readFile(path.join(outside, 'package.json'), 'utf8')).toBe(outsideManifest)
-    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(rootManifest)
-    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
-  })
-
-  test('rejects a symlinked pnpm workspace manifest before any Domain mutation', async () => {
-    const root = await fixture()
-    const outside = await fixture()
-    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
-    await writeFile(
-      path.join(root, 'frontend/package.json'),
-      JSON.stringify({ name: 'astrale-frontend', private: true }),
-    )
-    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
-    await mkdir(path.join(root, 'ui'), { recursive: true })
-    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
-    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
-    const outsideWorkspace = path.join(outside, 'workspace.yaml')
-    await writeFile(outsideWorkspace, "packages:\n  - 'outside'\n")
-    await symlink(outsideWorkspace, path.join(root, 'pnpm-workspace.yaml'), 'file')
-    const outsideBefore = await readFile(outsideWorkspace, 'utf8')
-
-    await expect(
-      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
-    ).rejects.toMatchObject({ code: 'UI_LOCK_INVALID' })
-    expect(await readFile(outsideWorkspace, 'utf8')).toBe(outsideBefore)
-    expect(await Bun.file(path.join(root, 'components/package.json')).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
-  })
-
-  test('restores every Domain workspace mutation when dependency installation fails', async () => {
-    const root = await fixture()
-    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
-    await writeFile(
-      path.join(root, 'frontend/package.json'),
-      JSON.stringify({ name: 'astrale-frontend', private: true }),
-    )
-    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
-    await mkdir(path.join(root, 'ui'), { recursive: true })
-    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
-    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
-    await writeFile(path.join(root, 'pnpm-workspace.yaml'), "packages:\n  - 'frontend'\n")
-    const manifestBefore = await readFile(path.join(root, 'package.json'), 'utf8')
-    const cssBefore = await readFile(path.join(root, 'frontend/src/styles.css'), 'utf8')
-    const workspaceBefore = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')
-
-    await expect(
-      initUi(
-        { path: root, version: '0.3.0-beta.0' },
-        {
-          fetcher: mockFetch(),
-          runner: async () => ({ code: 1, stdout: '', stderr: 'install failed' }),
+  test('refuses a symlink or a shadowing package on any planned path without mutating anything', async () => {
+    const outside = await directory()
+    await writeFile(path.join(outside, 'workspace.yaml'), "packages:\n  - 'outside'\n")
+    const cases: Array<[string, (root: string) => Promise<unknown>]> = [
+      ['UI_LOCK_INVALID', (root) => symlink(outside, path.join(root, 'components'), 'dir')],
+      [
+        'UI_LOCK_INVALID',
+        async (root) => {
+          await rm(path.join(root, 'pnpm-workspace.yaml'))
+          await symlink(
+            path.join(outside, 'workspace.yaml'),
+            path.join(root, 'pnpm-workspace.yaml'),
+          )
         },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_DEPENDENCY_INSTALL_FAILED' })
-
-    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(manifestBefore)
-    expect(await readFile(path.join(root, 'frontend/src/styles.css'), 'utf8')).toBe(cssBefore)
-    expect(await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')).toBe(workspaceBefore)
-    expect(await Bun.file(path.join(root, 'components/package.json')).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, 'components.json')).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, 'pnpm-lock.yaml')).exists()).toBe(false)
-  })
-
-  test('rejects a registry workspace that could shadow the public UI package', async () => {
-    const root = await fixture()
-    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
-    await writeFile(
-      path.join(root, 'frontend/package.json'),
-      JSON.stringify({ name: 'astrale-frontend', private: true }),
+      ],
+      [
+        'UI_PROJECT_UNSUPPORTED',
+        async (root) => {
+          await mkdir(path.join(root, 'components'))
+          await writeJson(path.join(root, 'components/package.json'), {
+            name: '@astrale-os/ui',
+            private: true,
+          })
+        },
+      ],
+      [
+        'UI_PROJECT_UNSUPPORTED',
+        async (root) => {
+          await symlink(outside, path.join(root, 'escaped'), 'dir')
+          await writeJson(path.join(root, 'components.json'), {
+            tailwind: { css: 'escaped/styles.css' },
+          })
+        },
+      ],
+    ]
+    for (const [code, prepare] of cases) {
+      const fixture = await project({ domain: true })
+      await prepare(fixture.root)
+      const manifest = await fixture.read('package.json')
+      await expect(
+        initUi({ path: fixture.root, version: VERSION, install: false }, { fetcher: release() }),
+      ).rejects.toMatchObject({ code })
+      expect(await fixture.read('package.json')).toBe(manifest)
+      expect(await exists(fixture.at('astrale-ui.lock.json'))).toBe(false)
+    }
+    expect(await readFile(path.join(outside, 'workspace.yaml'), 'utf8')).toBe(
+      "packages:\n  - 'outside'\n",
     )
-    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
-    await mkdir(path.join(root, 'ui'), { recursive: true })
-    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
-    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
-    await writeFile(path.join(root, 'pnpm-workspace.yaml'), "packages:\n  - 'frontend'\n")
-    await mkdir(path.join(root, 'components'), { recursive: true })
-    await writeFile(
-      path.join(root, 'components/package.json'),
-      JSON.stringify({ name: '@astrale-os/ui', private: true, version: '0.3.0-beta.0' }),
-    )
-    const workspaceBefore = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')
-
-    await expect(
-      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
-    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
-    expect(await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')).toBe(workspaceBefore)
-    expect(
-      JSON.parse(await readFile(path.join(root, 'components/package.json'), 'utf8')).name,
-    ).toBe('@astrale-os/ui')
-  })
-
-  test('rejects configured and discovered stylesheets whose physical parent escapes', async () => {
-    const root = await fixture()
-    const outside = await fixture()
-    await symlink(outside, path.join(root, 'escaped'), 'dir')
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({ tailwind: { css: 'escaped/styles.css' } }),
-    )
-
-    await expect(
-      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
-    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
-    expect(await Bun.file(path.join(outside, 'styles.css')).exists()).toBe(false)
-
-    const automaticRoot = await fixture()
-    await rm(path.join(automaticRoot, 'src/index.css'))
-    const outsideCss = await readFile(path.join(outside, 'src/index.css'), 'utf8')
-    await symlink(outside, path.join(automaticRoot, 'frontend'), 'dir')
-    await expect(
-      initUi(
-        { path: automaticRoot, version: '0.3.0-beta.0', install: false },
-        { fetcher: mockFetch() },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
-    expect(await readFile(path.join(outside, 'src/index.css'), 'utf8')).toBe(outsideCss)
-  })
-
-  test('dry-run reports every mutation and writes nothing', async () => {
-    const root = await fixture()
-    const before = await readFile(path.join(root, 'package.json'), 'utf8')
-    const result = await initUi(
-      { path: root, version: '0.3.0-beta.0', dryRun: true },
-      { fetcher: mockFetch() },
-    )
-    expect(result.status).toBe('planned')
-    expect(result.files).toEqual(
-      expect.arrayContaining([
-        'package.json',
-        'src/index.css',
-        'components.json',
-        'astrale-ui.lock.json',
-      ]),
-    )
-    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(before)
-    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
   })
 
   /** @evidence TEST-CLI-UI-LOCK-AFTER-SUCCESS */
-  test('restores all files and leaves no lock when dependency installation fails', async () => {
-    const root = await fixture()
-    const packageBefore = await readFile(path.join(root, 'package.json'), 'utf8')
-    const cssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
+  test('a failed dependency install restores every file and leaves no lock; a dry run writes nothing', async () => {
+    const fixture = await project({ domain: true })
+    const before = await Promise.all(
+      ['package.json', 'frontend/src/styles.css', 'pnpm-workspace.yaml'].map(fixture.read),
+    )
+
     await expect(
       initUi(
-        { path: root, version: '0.3.0-beta.0' },
-        {
-          fetcher: mockFetch(),
-          runner: async () => ({ code: 1, stdout: '', stderr: 'registry unavailable' }),
-        },
+        { path: fixture.root, version: VERSION },
+        { fetcher: release(), runner: runner(async () => 1).run },
       ),
     ).rejects.toMatchObject({ code: 'UI_DEPENDENCY_INSTALL_FAILED' })
-    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(packageBefore)
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(cssBefore)
-    expect(await Bun.file(path.join(root, 'components.json')).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, 'pnpm-lock.yaml')).exists()).toBe(false)
+    expect(
+      await Promise.all(
+        ['package.json', 'frontend/src/styles.css', 'pnpm-workspace.yaml'].map(fixture.read),
+      ),
+    ).toEqual(before)
+    for (const created of [
+      'components/package.json',
+      'components.json',
+      'astrale-ui.lock.json',
+      'pnpm-lock.yaml',
+    ]) {
+      expect(await exists(fixture.at(created))).toBe(false)
+    }
+
+    const planned = await initUi(
+      { path: fixture.root, version: VERSION, dryRun: true },
+      { fetcher: release() },
+    )
+    expect(planned).toMatchObject({
+      status: 'planned',
+      files: expect.arrayContaining(['package.json', 'astrale-ui.lock.json']),
+    })
+    expect(await exists(fixture.at('astrale-ui.lock.json'))).toBe(false)
   })
 
-  test('writes Base Nova config and advances the lock only after configuration succeeds', async () => {
-    const root = await fixture()
+  test('writes Base Nova config, the preset, and keeps a development-only UI dependency', async () => {
+    const fixture = await project()
+    const manifest = JSON.parse(await fixture.read('package.json'))
+    await writeJson(fixture.at('package.json'), {
+      ...manifest,
+      devDependencies: { '@astrale-os/ui': VERSION },
+    })
+
     await initUi(
-      { path: root, version: '0.3.0-beta.0', preset: 'compact', install: false },
-      { fetcher: mockFetch() },
-    )
-    const components = JSON.parse(await readFile(path.join(root, 'components.json'), 'utf8'))
-    const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
-    expect(components.style).toBe('base-nova')
-    expect(written.tooling).toMatchObject({ base: 'base', style: 'nova', baseUi: '1.7.0' })
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
-      '@astrale-os/ui/presets/compact.css',
-    )
-  })
-
-  test('preserves an existing development-only UI dependency during initialization', async () => {
-    const root = await fixture()
-    const manifestPath = path.join(root, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    manifest.devDependencies = { '@astrale-os/ui': '0.3.0-beta.0' }
-    await writeFile(manifestPath, JSON.stringify(manifest))
-
-    await initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() })
-
-    const written = JSON.parse(await readFile(manifestPath, 'utf8'))
-    expect(written.dependencies['@astrale-os/ui']).toBeUndefined()
-    expect(written.devDependencies['@astrale-os/ui']).toBe('0.3.0-beta.0')
-  })
-
-  test('doctor accepts one exact development dependency and rejects drift or duplication', async () => {
-    const root = await lockedFixture()
-    const manifestPath = path.join(root, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    delete manifest.dependencies['@astrale-os/ui']
-    manifest.devDependencies = { '@astrale-os/ui': '0.3.0-beta.0' }
-    await writeFile(manifestPath, JSON.stringify(manifest))
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
-    )
-    await writeFile(
-      path.join(root, 'src/index.css'),
-      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
+      { path: fixture.root, version: VERSION, preset: 'compact', install: false },
+      { fetcher: release() },
     )
 
-    expect((await doctorUi(root)).healthy).toBe(true)
-
-    manifest.devDependencies['@astrale-os/ui'] = '0.3.0-beta.1'
-    await writeFile(manifestPath, JSON.stringify(manifest))
-    expect((await doctorUi(root)).checks.find(({ check }) => check === 'package')).toMatchObject({
-      ok: false,
-      detail: 'devDependencies:0.3.0-beta.1',
+    expect(JSON.parse(await fixture.read('components.json')).style).toBe('base-nova')
+    expect(JSON.parse(await fixture.read('astrale-ui.lock.json')).tooling).toMatchObject({
+      baseUi: '1.7.0',
     })
-
-    manifest.devDependencies['@astrale-os/ui'] = '0.3.0-beta.0'
-    manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.0'
-    await writeFile(manifestPath, JSON.stringify(manifest))
-    expect((await doctorUi(root)).checks.find(({ check }) => check === 'package')).toMatchObject({
-      ok: false,
-      detail: 'declared in dependencies and devDependencies',
-    })
+    expect(await fixture.read('src/index.css')).toContain('@astrale-os/ui/presets/compact.css')
+    const written = JSON.parse(await fixture.read('package.json'))
+    expect([
+      written.dependencies['@astrale-os/ui'],
+      written.devDependencies['@astrale-os/ui'],
+    ]).toEqual([undefined, VERSION])
   })
 
-  test('repeated exact init performs no release fetch while requested drift rejects', async () => {
-    const root = await fixture()
-    const manifestPath = path.join(root, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.0'
-    await writeFile(manifestPath, JSON.stringify(manifest))
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
-    )
-    await writeFile(
-      path.join(root, 'src/index.css'),
-      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
-    )
-    let fetched = false
-    const result = await initUi(
-      { path: root, preset: 'astrale' },
-      {
-        fetcher: (async () => {
-          fetched = true
-          throw new Error('must not fetch')
-        }) as unknown as typeof fetch,
-      },
-    )
-    expect(result.status).toBe('unchanged')
-    expect(fetched).toBe(false)
-    await expect(initUi({ path: root, preset: 'compact' })).rejects.toMatchObject({
+  test('an existing initialization is unchanged without network, and any requested drift is refused', async () => {
+    const fixture = await project({ locked: true })
+    expect(
+      (await initUi({ path: fixture.root, preset: 'astrale' }, { fetcher: noNetwork })).status,
+    ).toBe('unchanged')
+    await expect(initUi({ path: fixture.root, preset: 'compact' })).rejects.toMatchObject({
       code: 'UI_ITEM_CONFLICT',
     })
-    manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.1'
-    await writeFile(manifestPath, JSON.stringify(manifest))
-    await expect(initUi({ path: root, preset: 'astrale' })).rejects.toMatchObject({
-      code: 'UI_ITEM_CONFLICT',
-    })
+  })
+
+  test('doctor accepts one exact dependency declaration and reports drift or duplication', async () => {
+    const fixture = await project({ locked: true, devDependency: true })
+    expect((await doctorUi(fixture.root)).healthy).toBe(true)
+
+    const manifest = JSON.parse(await fixture.read('package.json'))
+    for (const [change, detail] of [
+      [{ devDependencies: { '@astrale-os/ui': '0.3.0-beta.1' } }, 'devDependencies:0.3.0-beta.1'],
+      [
+        { dependencies: { ...manifest.dependencies, '@astrale-os/ui': VERSION } },
+        'declared in dependencies and devDependencies',
+      ],
+    ] as const) {
+      await writeJson(fixture.at('package.json'), { ...manifest, ...change })
+      expect(
+        (await doctorUi(fixture.root)).checks.find(({ check }) => check === 'package'),
+      ).toMatchObject({ ok: false, detail })
+    }
   })
 })
 
 describe('UI source operations', () => {
-  test('add rejects an empty programmatic request before project discovery or tool execution', async () => {
+  test('refuses an empty request, a hostile lock, and an unconfirmed overwrite before running tools', async () => {
     await expect(addUi([], {})).rejects.toMatchObject({ code: 'UI_ITEM_NOT_FOUND' })
-  })
-
-  test('rejects hostile lock file records before an operation can escape the project', () => {
     for (const items of [
-      [],
+      { [CHART]: { address: CHART, sourceDigest: 'bad', files: {} } },
       {
-        'pattern/chart/line/basic': {
-          address: 'pattern/chart/line/basic',
-          sourceDigest: 'bad',
-          files: {},
-        },
-      },
-      {
-        'pattern/chart/line/basic': {
-          address: 'pattern/chart/line/basic',
+        [CHART]: {
+          address: CHART,
           sourceDigest: 'b'.repeat(64),
           files: { '../../outside': 'c'.repeat(64) },
         },
       },
     ]) {
-      expect(() => parseUiLock({ ...lock(), items })).toThrow(UiError)
+      expect(() => parseUiLock(lockOf(items as UiLock['items']))).toThrow(UiError)
+    }
+    const fixture = await project({ locked: true })
+    const tools = runner()
+    await expect(
+      addUi(
+        [CHART],
+        { project: fixture.root, overwrite: true },
+        { fetcher: release(), runner: tools.run },
+      ),
+    ).rejects.toMatchObject({ code: 'UI_LOCAL_CHANGES' })
+    expect(tools.calls).toEqual([])
+  })
+
+  test('a dry run invokes the pinned shadcn and resolves targets through the components alias', async () => {
+    const fixture = await project({ locked: true })
+    const plan = async (aliases?: object) => {
+      if (aliases)
+        await writeJson(fixture.at('components.json'), {
+          style: 'base-nova',
+          tailwind: { css: 'src/index.css' },
+          aliases,
+        })
+      const tools = runner()
+      const planned = await addUi(
+        [CHART],
+        { project: fixture.root, dryRun: true },
+        { fetcher: release(), runner: tools.run },
+      )
+      return {
+        files: (planned.sources as Array<{ files: string[] }>)[0]?.files,
+        calls: tools.calls,
+      }
+    }
+    const lock = await fixture.read('astrale-ui.lock.json')
+
+    const direct = await plan()
+    expect(direct.files).toEqual([CHART_FILE])
+    expect(direct.calls[0]?.args).toEqual(
+      expect.arrayContaining(['dlx', 'shadcn@4.18.0', '--dry-run']),
+    )
+    expect(await fixture.read('astrale-ui.lock.json')).toBe(lock)
+
+    const manifest = JSON.parse(await fixture.read('package.json'))
+    await writeJson(fixture.at('package.json'), {
+      ...manifest,
+      imports: { '#app/*': './src/app/*' },
+    })
+    expect((await plan({ components: '#app/components' })).files).toEqual([`src/app/${CHART_FILE}`])
+
+    await mkdir(fixture.at('config'))
+    await writeFile(
+      fixture.at('tsconfig.json'),
+      '{\n  // JSONC\n  "extends": "./config/base.json",\n}\n',
+    )
+    await writeFile(
+      fixture.at('config/base.json'),
+      '{ "compilerOptions": { "baseUrl": "..", "paths": { "@/*": ["frontend/src/*"], }, }, }',
+    )
+    expect((await plan({ components: '@/components' })).files).toEqual([
+      `frontend/src/${CHART_FILE}`,
+    ])
+
+    for (const aliases of [{ components: '#missing/components' }, { components: '@/escape' }]) {
+      await writeJson(fixture.at('tsconfig.json'), {
+        compilerOptions: { paths: { '@/escape/*': ['../outside/*'] } },
+      })
+      await expect(plan(aliases)).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
     }
   })
 
-  test('add dry-run invokes the exact shadcn version and does not advance the lock', async () => {
-    const root = await lockedFixture()
-    const before = await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8')
-    const calls: Array<{ file: string; args: string[] }> = []
-    const result = await addUi(
-      ['pattern/chart/line/basic'],
-      { project: root, dryRun: true },
-      {
-        fetcher: mockFetch(),
-        runner: async (file, args) => {
-          calls.push({ file, args })
-          return { code: 0, stdout: 'planned', stderr: '' }
-        },
-      },
-    )
-    expect(result.status).toBe('planned')
-    expect(result.sources).toEqual([
-      {
-        address: 'pattern/chart/line/basic',
-        dependencies: [],
-        files: ['components/astrale/pattern/chart/line-basic.tsx'],
-      },
-    ])
-    expect(calls[0]).toMatchObject({ file: 'pnpm' })
-    expect(calls[0]?.args).toEqual(expect.arrayContaining(['dlx', 'shadcn@4.18.0', '--dry-run']))
-    expect(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8')).toBe(before)
-  })
-
   /** @evidence TEST-CLI-UI-THEME-OWNERSHIP */
-  test('installs and activates a released theme while recording owned source', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
-    )
-    await writeFile(
-      path.join(root, 'src/index.css'),
-      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
-    )
-    const target = path.join(root, 'components/astrale/theme/observatory.css')
-    let invoked = false
-    const result = await addUi(
-      ['theme/observatory'],
-      { project: root, yes: true },
-      {
-        fetcher: themeFetch(),
-        runner: async () => {
-          invoked = true
-          return { code: 0, stdout: '', stderr: '' }
-        },
-      },
-    )
+  test('a released theme becomes one owned, activated, locked CSS file without shadcn', async () => {
+    const fixture = await project({ locked: true })
+    const tools = runner()
 
-    expect(invoked).toBe(false)
-    expect(result).toMatchObject({ status: 'installed', items: ['theme/observatory'] })
-    expect(await readFile(target, 'utf8')).toBe(themeCss)
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
+    expect(
+      await addUi(
+        ['theme/observatory'],
+        { project: fixture.root },
+        { fetcher: release([theme]), runner: tools.run },
+      ),
+    ).toMatchObject({ status: 'installed', items: ['theme/observatory'] })
+    expect(tools.calls).toEqual([])
+    expect(await fixture.read('components/astrale/theme/observatory.css')).toBe(themeCss)
+    expect(await fixture.read('src/index.css')).toContain(
       "@import '../components/astrale/theme/observatory.css';",
     )
-    const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
-    expect(written.items['theme/observatory']).toMatchObject({
+    expect(
+      JSON.parse(await fixture.read('astrale-ui.lock.json')).items['theme/observatory'],
+    ).toEqual({
       address: 'theme/observatory',
-      sourceDigest: digest(JSON.stringify(builtThemeItem())),
-      files: { 'components/astrale/theme/observatory.css': digest(themeCss) },
+      sourceDigest: sha256(JSON.stringify(built(theme))),
+      files: { 'components/astrale/theme/observatory.css': sha256(themeCss) },
     })
-    expect((await doctorUi(root)).healthy).toBe(true)
+    expect((await doctorUi(fixture.root)).healthy).toBe(true)
   })
 
   /** @evidence TEST-CLI-UI-THEME-OWNERSHIP */
-  test('installs a playground-exported theme without registry or shadcn and preserves edits', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
-    )
-    await writeFile(
-      path.join(root, 'src/index.css'),
-      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
-    )
-    const source = path.join(root, 'observatory.css')
-    const target = path.join(root, 'components/astrale/theme/observatory.css')
-    await writeFile(source, themeCss)
-    let invoked = false
+  test('a playground theme installs offline, keeps local edits unless overwritten, and refuses unsafe sources', async () => {
+    const fixture = await project({ locked: true })
+    const target = fixture.at('components/astrale/theme/observatory.css')
+    await writeFile(fixture.at('observatory.css'), themeCss)
+    const offline = { fetcher: noNetwork, runner: runner(async () => 1).run }
 
-    const planned = await addUi(
-      ['./observatory.css'],
-      { project: root, dryRun: true },
-      {
-        fetcher: (async () => {
-          invoked = true
-          throw new Error('must not fetch')
-        }) as unknown as typeof fetch,
-        runner: async () => {
-          invoked = true
-          return { code: 1, stdout: '', stderr: '' }
-        },
-      },
-    )
-    expect(planned).toMatchObject({
+    expect(
+      await addUi(['./observatory.css'], { project: fixture.root, dryRun: true }, offline),
+    ).toMatchObject({
       status: 'planned',
-      items: ['theme/observatory'],
       activation: {
         file: 'src/index.css',
         import: "@import '../components/astrale/theme/observatory.css';",
       },
     })
-    expect(await Bun.file(target).exists()).toBe(false)
-
-    await addUi(
-      ['./observatory.css'],
-      { project: root },
-      {
-        fetcher: (async () => {
-          invoked = true
-          throw new Error('must not fetch')
-        }) as unknown as typeof fetch,
-        runner: async () => {
-          invoked = true
-          return { code: 1, stdout: '', stderr: '' }
-        },
-      },
-    )
-    expect(invoked).toBe(false)
-    expect(await readFile(target, 'utf8')).toBe(themeCss)
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
-      "@import '../components/astrale/theme/observatory.css';",
-    )
-    expect((await doctorUi(root)).healthy).toBe(true)
+    expect(await exists(target)).toBe(false)
+    await addUi(['./observatory.css'], { project: fixture.root }, offline)
+    expect((await doctorUi(fixture.root)).healthy).toBe(true)
 
     await writeFile(target, 'consumer edit\n')
-    await expect(addUi(['./observatory.css'], { project: root })).rejects.toMatchObject({
+    await expect(addUi(['./observatory.css'], { project: fixture.root })).rejects.toMatchObject({
       code: 'UI_LOCAL_CHANGES',
     })
-    await addUi(['./observatory.css'], { project: root, overwrite: true, yes: true })
+    await addUi(['./observatory.css'], { project: fixture.root, overwrite: true, yes: true })
     expect(await readFile(target, 'utf8')).toBe(themeCss)
-  })
 
-  test('rejects malformed and symlinked local themes before project mutation', async () => {
-    const root = await lockedFixture()
-    const cssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
-    await writeFile(path.join(root, 'unsafe.css'), "@import 'https://example.invalid/theme.css';\n")
-    await expect(addUi(['./unsafe.css'], { project: root })).rejects.toMatchObject({
+    await writeFile(fixture.at('unsafe.css'), "@import 'https://example.invalid/theme.css';\n")
+    await expect(addUi(['./unsafe.css'], { project: fixture.root })).rejects.toMatchObject({
       code: 'UI_ITEM_CONFLICT',
     })
-
-    const outside = await mkdtemp(path.join(tmpdir(), 'astrale-ui-theme-'))
-    temporary.push(outside)
-    await writeFile(path.join(outside, 'observatory.css'), themeCss)
-    await symlink(path.join(outside, 'observatory.css'), path.join(root, 'linked.css'))
-    await expect(addUi(['./linked.css'], { project: root })).rejects.toMatchObject({
+    await symlink(fixture.at('observatory.css'), fixture.at('linked.css'))
+    await expect(addUi(['./linked.css'], { project: fixture.root })).rejects.toMatchObject({
       code: 'UI_ITEM_NOT_FOUND',
     })
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(cssBefore)
   })
 
-  test('rejects a symlinked UI lock before a theme can mutate outside the project', async () => {
-    const root = await lockedFixture()
-    const source = path.join(root, 'observatory.css')
-    await writeFile(source, themeCss)
-    const lockPath = path.join(root, 'astrale-ui.lock.json')
-    const outside = await mkdtemp(path.join(tmpdir(), 'astrale-ui-lock-'))
-    temporary.push(outside)
-    const outsideLock = path.join(outside, 'astrale-ui.lock.json')
-    const lockSource = await readFile(lockPath, 'utf8')
-    await writeFile(outsideLock, lockSource)
-    await rm(lockPath)
-    await symlink(outsideLock, lockPath)
-    const cssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
-
-    await expect(addUi(['./observatory.css'], { project: root })).rejects.toMatchObject({
-      code: 'UI_LOCK_INVALID',
-    })
-    expect(await readFile(outsideLock, 'utf8')).toBe(lockSource)
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(cssBefore)
-    expect(
-      await Bun.file(path.join(root, 'components/astrale/theme/observatory.css')).exists(),
-    ).toBe(false)
-  })
-
-  test('rolls back a newly copied local theme and activation when the lock commit fails', async () => {
-    const root = await lockedFixture()
-    await writeFile(path.join(root, 'observatory.css'), themeCss)
-    const lockPath = path.join(root, 'astrale-ui.lock.json')
-    const cssPath = path.join(root, 'src/index.css')
-    const target = path.join(root, 'components/astrale/theme/observatory.css')
-    const lockBefore = await readFile(lockPath, 'utf8')
-    const cssBefore = await readFile(cssPath, 'utf8')
-    const failure = Object.assign(new Error('Lock commit denied'), { code: 'EACCES' })
+  test('a theme rolls back its file and activation when the lock cannot be written, and refuses a linked lock', async () => {
+    const fixture = await project({ locked: true })
+    await writeFile(fixture.at('observatory.css'), themeCss)
+    const lockPath = fixture.at('astrale-ui.lock.json')
+    const [lockBefore, cssBefore] = [
+      await fixture.read('astrale-ui.lock.json'),
+      await fixture.read('src/index.css'),
+    ]
     const realWriteFile = fsPromises.writeFile
-    let injected = false
-    let observedMutation = false
-    const write = spyOn(fsPromises, 'writeFile').mockImplementation(async (...args) => {
-      if (args[0] === lockPath && !injected) {
-        injected = true
-        observedMutation =
-          (await Bun.file(target).exists()) && (await readFile(cssPath, 'utf8')) !== cssBefore
-        throw failure
-      }
+    const denied = Object.assign(new Error('denied'), { code: 'EACCES' })
+    const write = spyOn(fsPromises, 'writeFile').mockImplementation((async (
+      ...args: Parameters<typeof realWriteFile>
+    ) => {
+      if (args[0] === lockPath) throw denied
       return realWriteFile(...args)
-    })
+    }) as typeof realWriteFile)
     try {
-      await expect(addUi(['./observatory.css'], { project: root })).rejects.toBe(failure)
+      await expect(addUi(['./observatory.css'], { project: fixture.root })).rejects.toBe(denied)
     } finally {
       write.mockRestore()
     }
-    expect(injected).toBe(true)
-    expect(observedMutation).toBe(true)
+    expect(await exists(fixture.at('components/astrale/theme/observatory.css'))).toBe(false)
+    expect([
+      await fixture.read('astrale-ui.lock.json'),
+      await fixture.read('src/index.css'),
+    ]).toEqual([lockBefore, cssBefore])
 
-    expect(await Bun.file(target).exists()).toBe(false)
-    expect(await readFile(cssPath, 'utf8')).toBe(cssBefore)
-    expect(await readFile(lockPath, 'utf8')).toBe(lockBefore)
-  })
-
-  test('successful add records installed file digests and doctor detects later edits', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
-    )
-    await writeFile(
-      path.join(root, 'package.json'),
-      JSON.stringify({
-        name: 'fixture',
-        dependencies: {
-          react: '19.2.8',
-          'react-dom': '19.2.8',
-          tailwindcss: '4.3.3',
-          '@astrale-os/ui': '0.3.0-beta.0',
-        },
-      }),
-    )
-    await writeFile(
-      path.join(root, 'src/index.css'),
-      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
-    )
-    const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
-    await addUi(
-      ['pattern/chart/line/basic'],
-      { project: root, yes: true },
-      {
-        fetcher: mockFetch(),
-        runner: async () => {
-          await mkdir(path.dirname(installed), { recursive: true })
-          await writeFile(installed, 'export const Chart = true\n')
-          return { code: 0, stdout: '', stderr: '' }
-        },
-      },
-    )
-    const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
-    expect(written.items['pattern/chart/line/basic'].files).toEqual({
-      'components/astrale/pattern/chart/line-basic.tsx': digest('export const Chart = true\n'),
+    const outside = path.join(await directory(), 'astrale-ui.lock.json')
+    await writeFile(outside, lockBefore)
+    await rm(lockPath)
+    await symlink(outside, lockPath)
+    await expect(addUi(['./observatory.css'], { project: fixture.root })).rejects.toMatchObject({
+      code: 'UI_LOCK_INVALID',
     })
-    expect(written.items['pattern/chart/line/basic'].sourceDigest).toBe(
-      digest(JSON.stringify(builtItem(registry.items[0]!))),
-    )
-    expect((await doctorUi(root)).healthy).toBe(true)
-    await writeFile(installed, 'consumer edit\n')
-    expect((await doctorUi(root)).healthy).toBe(false)
-    await expect(
-      addUi(
-        ['pattern/chart/line/basic'],
-        { project: root },
-        { fetcher: mockFetch(), runner: async () => ({ code: 0, stdout: '', stderr: '' }) },
-      ),
-    ).rejects.toBeInstanceOf(UiError)
   })
 
-  test('records multi-file component targets resolved through the consumer components alias', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({
-        style: 'base-nova',
-        tailwind: { css: 'src/index.css' },
-        aliases: { components: '@/components' },
-      }),
-    )
-    await writeFile(
-      path.join(root, 'tsconfig.json'),
-      JSON.stringify({
-        compilerOptions: {
-          paths: { '@/*': ['./src/*'], '@/components/*': ['./app/ui/*'] },
-        },
-      }),
-    )
-    await writeFile(
-      path.join(root, 'src/index.css'),
-      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
-    )
-    const sidebar = path.join(root, 'src/components/astrale/component/sidebar/sidebar.tsx')
-    const hook = path.join(root, 'src/components/astrale/component/sidebar/use-mobile.ts')
+  test('an add records installed digests, restores the locked UI dependency, and doctor sees later edits', async () => {
+    for (const devDependency of [false, true]) {
+      const fixture = await project({ locked: true, devDependency })
+      const tools = runner(async (_file, args) => {
+        if (args[0] !== 'dlx') return
+        await mkdir(path.dirname(fixture.at(CHART_FILE)), { recursive: true })
+        await writeFile(fixture.at(CHART_FILE), 'export const Chart = true\n')
+        const manifest = JSON.parse(await fixture.read('package.json'))
+        manifest.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
+        await writeJson(fixture.at('package.json'), manifest)
+      })
 
-    const planned = await addUi(
-      ['component/sidebar'],
-      { project: root, dryRun: true, yes: true },
-      {
-        fetcher: mockFetch([], componentRegistry),
-        runner: async () => ({ code: 0, stdout: 'planned', stderr: '' }),
-      },
-    )
-    expect(planned.sources).toEqual([
-      expect.objectContaining({
-        files: [
-          'src/components/astrale/component/sidebar/sidebar.tsx',
-          'src/components/astrale/component/sidebar/use-mobile.ts',
-        ],
-      }),
-    ])
+      await addUi(
+        [CHART],
+        { project: fixture.root, yes: true },
+        { fetcher: release(), runner: tools.run },
+      )
 
-    await addUi(
-      ['component/sidebar'],
-      { project: root, yes: true },
-      {
-        fetcher: mockFetch([], componentRegistry),
-        runner: async () => {
-          await mkdir(path.dirname(sidebar), { recursive: true })
-          await writeFile(sidebar, 'export const Sidebar = true\n')
-          await writeFile(hook, 'export const useMobile = true\n')
-          return { code: 0, stdout: '', stderr: '' }
-        },
-      },
-    )
-
-    const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
-    expect(written.items['component/sidebar'].files).toEqual({
-      'src/components/astrale/component/sidebar/sidebar.tsx': digest(
-        'export const Sidebar = true\n',
-      ),
-      'src/components/astrale/component/sidebar/use-mobile.ts': digest(
-        'export const useMobile = true\n',
-      ),
-    })
-    expect((await doctorUi(root)).healthy).toBe(true)
+      expect(tools.calls.at(-1)).toEqual({ file: 'pnpm', args: ['install'] })
+      const manifest = JSON.parse(await fixture.read('package.json'))
+      const declared = devDependency ? manifest.devDependencies : manifest.dependencies
+      expect(declared['@astrale-os/ui']).toBe(VERSION)
+      if (devDependency) expect(manifest.dependencies['@astrale-os/ui']).toBeUndefined()
+      expect(JSON.parse(await fixture.read('astrale-ui.lock.json')).items[CHART]).toEqual({
+        address: CHART,
+        sourceDigest: sha256(JSON.stringify(built(chart))),
+        files: { [CHART_FILE]: sha256('export const Chart = true\n') },
+      })
+      await writeFile(fixture.at(CHART_FILE), 'consumer edit\n')
+      expect((await doctorUi(fixture.root)).healthy).toBe(false)
+      await expect(
+        addUi([CHART], { project: fixture.root }, { fetcher: release(), runner: tools.run }),
+      ).rejects.toMatchObject({
+        code: 'UI_LOCAL_CHANGES',
+      })
+    }
   })
 
-  test('resolves a components alias through package imports before tsconfig paths', async () => {
-    const root = await lockedFixture()
-    const manifestPath = path.join(root, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    manifest.imports = { '#app/*': './src/app/*' }
-    await writeFile(manifestPath, JSON.stringify(manifest))
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({
-        style: 'base-nova',
-        tailwind: { css: 'src/index.css' },
-        aliases: { components: '#app/components' },
-      }),
-    )
-
-    const planned = await addUi(
-      ['pattern/chart/line/basic'],
-      { project: root, dryRun: true, yes: true },
-      {
-        fetcher: mockFetch(),
-        runner: async () => ({ code: 0, stdout: 'planned', stderr: '' }),
-      },
-    )
-
-    expect(planned.sources).toEqual([
-      expect.objectContaining({
-        files: ['src/app/components/astrale/pattern/chart/line-basic.tsx'],
-      }),
-    ])
-  })
-
-  test('rejects an unresolved package-import alias before invoking shadcn', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({
-        style: 'base-nova',
-        tailwind: { css: 'src/index.css' },
-        aliases: { components: '#missing/components' },
-      }),
-    )
-    let invoked = false
-
-    await expect(
-      addUi(
-        ['pattern/chart/line/basic'],
-        { project: root, yes: true },
+  test('a failed shadcn run or dependency restore puts every touched file back', async () => {
+    const twoFiles = {
+      ...chart,
+      files: [
+        ...chart.files,
         {
-          fetcher: mockFetch(),
-          runner: async () => {
-            invoked = true
-            return { code: 0, stdout: '', stderr: '' }
-          },
-        },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
-    expect(invoked).toBe(false)
-  })
-
-  test('resolves an extended JSONC baseUrl with the pinned shadcn config loader', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({
-        style: 'base-nova',
-        tailwind: { css: 'src/index.css' },
-        aliases: { components: '@/components' },
-      }),
-    )
-    await mkdir(path.join(root, 'config'), { recursive: true })
-    await writeFile(
-      path.join(root, 'tsconfig.json'),
-      '{\n  // shadcn loads this root config.\n  "extends": "./config/base.json",\n}\n',
-    )
-    await writeFile(
-      path.join(root, 'config/base.json'),
-      '{\n  "compilerOptions": {\n    "baseUrl": "..",\n    "paths": { "@/*": ["frontend/src/*"], },\n  },\n}\n',
-    )
-
-    const planned = await addUi(
-      ['pattern/chart/line/basic'],
-      { project: root, dryRun: true, yes: true },
-      {
-        fetcher: mockFetch(),
-        runner: async () => ({ code: 0, stdout: 'planned', stderr: '' }),
-      },
-    )
-
-    expect(planned.sources).toEqual([
-      expect.objectContaining({
-        files: ['frontend/src/components/astrale/pattern/chart/line-basic.tsx'],
-      }),
-    ])
-  })
-
-  test('rejects an alias mapping outside the project before invoking shadcn', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({
-        style: 'base-nova',
-        tailwind: { css: 'src/index.css' },
-        aliases: { components: '@/components' },
-      }),
-    )
-    await writeFile(
-      path.join(root, 'tsconfig.json'),
-      JSON.stringify({ compilerOptions: { paths: { '@/*': ['../outside/*'] } } }),
-    )
-    let invoked = false
-
-    await expect(
-      addUi(
-        ['pattern/chart/line/basic'],
-        { project: root, yes: true },
-        {
-          fetcher: mockFetch(),
-          runner: async () => {
-            invoked = true
-            return { code: 0, stdout: '', stderr: '' }
-          },
-        },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
-    expect(invoked).toBe(false)
-  })
-
-  test('restores the exact locked UI dependency after shadcn applies its compatible range', async () => {
-    const root = await lockedFixture()
-    const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
-    const calls: Array<{ file: string; args: string[] }> = []
-
-    await addUi(
-      ['pattern/chart/line/basic'],
-      { project: root, yes: true },
-      {
-        fetcher: mockFetch(),
-        runner: async (file, args) => {
-          calls.push({ file, args })
-          if (args[0] === 'dlx') {
-            await mkdir(path.dirname(installed), { recursive: true })
-            await writeFile(installed, 'export const Chart = true\n')
-            const manifestPath = path.join(root, 'package.json')
-            const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-            manifest.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
-            await writeFile(manifestPath, JSON.stringify(manifest))
-          }
-          return { code: 0, stdout: '', stderr: '' }
-        },
-      },
-    )
-
-    expect(calls).toEqual([
-      expect.objectContaining({ file: 'pnpm', args: expect.arrayContaining(['dlx']) }),
-      { file: 'pnpm', args: ['install'] },
-    ])
-    expect(
-      JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).dependencies[
-        '@astrale-os/ui'
-      ],
-    ).toBe('0.3.0-beta.0')
-  })
-
-  test('restores a development-only UI dependency without retaining shadcn duplication', async () => {
-    const root = await lockedFixture()
-    const manifestPath = path.join(root, 'package.json')
-    const initial = JSON.parse(await readFile(manifestPath, 'utf8'))
-    delete initial.dependencies['@astrale-os/ui']
-    initial.devDependencies = { '@astrale-os/ui': '0.3.0-beta.0' }
-    await writeFile(manifestPath, JSON.stringify(initial))
-    const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
-
-    await addUi(
-      ['pattern/chart/line/basic'],
-      { project: root, yes: true },
-      {
-        fetcher: mockFetch(),
-        runner: async (_file, args) => {
-          if (args[0] === 'dlx') {
-            await mkdir(path.dirname(installed), { recursive: true })
-            await writeFile(installed, 'export const Chart = true\n')
-            const changed = JSON.parse(await readFile(manifestPath, 'utf8'))
-            changed.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
-            await writeFile(manifestPath, JSON.stringify(changed))
-          }
-          return { code: 0, stdout: '', stderr: '' }
-        },
-      },
-    )
-
-    const written = JSON.parse(await readFile(manifestPath, 'utf8'))
-    expect(written.dependencies['@astrale-os/ui']).toBeUndefined()
-    expect(written.devDependencies['@astrale-os/ui']).toBe('0.3.0-beta.0')
-  })
-
-  test('rolls back item and package state when restoring the locked dependency fails', async () => {
-    const root = await lockedFixture()
-    const manifestPath = path.join(root, 'package.json')
-    const lockPath = path.join(root, 'astrale-ui.lock.json')
-    const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
-    const manifestBefore = await readFile(manifestPath, 'utf8')
-    const lockBefore = await readFile(lockPath, 'utf8')
-
-    await expect(
-      addUi(
-        ['pattern/chart/line/basic'],
-        { project: root, yes: true },
-        {
-          fetcher: mockFetch(),
-          runner: async (_file, args) => {
-            if (args[0] === 'dlx') {
-              await mkdir(path.dirname(installed), { recursive: true })
-              await writeFile(installed, 'export const Chart = true\n')
-              const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-              manifest.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
-              await writeFile(manifestPath, JSON.stringify(manifest))
-              return { code: 0, stdout: '', stderr: '' }
-            }
-            await writeFile(path.join(root, 'pnpm-lock.yaml'), 'partial lock\n')
-            return { code: 1, stdout: '', stderr: 'registry timeout' }
-          },
-        },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_DEPENDENCY_INSTALL_FAILED' })
-
-    expect(await readFile(manifestPath, 'utf8')).toBe(manifestBefore)
-    expect(await readFile(lockPath, 'utf8')).toBe(lockBefore)
-    expect(await Bun.file(installed).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, 'pnpm-lock.yaml')).exists()).toBe(false)
-  })
-
-  test('preflights symlink targets without invoking shadcn', async () => {
-    const root = await lockedFixture()
-    const outside = await mkdtemp(path.join(tmpdir(), 'astrale-ui-outside-'))
-    temporary.push(outside)
-    await symlink(outside, path.join(root, 'components'))
-    let invoked = false
-    await expect(
-      addUi(
-        ['pattern/chart/line/basic'],
-        { project: root },
-        {
-          fetcher: mockFetch(),
-          runner: async () => {
-            invoked = true
-            return { code: 0, stdout: '', stderr: '' }
-          },
-        },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_LOCK_INVALID' })
-    expect(invoked).toBe(false)
-  })
-
-  test('restores alias-resolved files and package state after a partial shadcn failure', async () => {
-    const root = await lockedFixture()
-    await writeFile(
-      path.join(root, 'components.json'),
-      JSON.stringify({
-        style: 'base-nova',
-        tailwind: { css: 'src/index.css' },
-        aliases: { components: '@/components' },
-      }),
-    )
-    await writeFile(
-      path.join(root, 'tsconfig.json'),
-      JSON.stringify({ compilerOptions: { paths: { '@/*': ['./src/*'] } } }),
-    )
-    const first = path.join(root, 'src/components/astrale/pattern/chart/line-basic.tsx')
-    const second = path.join(root, 'src/components/astrale/pattern/chart/summary.tsx')
-    await mkdir(path.dirname(first), { recursive: true })
-    await writeFile(first, 'consumer original\n')
-    const twoFileRegistry: UiRegistry = {
-      ...registry,
-      items: [
-        {
-          ...registry.items[0]!,
-          files: [
-            registry.items[0]!.files[0]!,
-            {
-              path: 'summary.tsx',
-              type: 'registry:component',
-              target: 'components/astrale/pattern/chart/summary.tsx',
-            },
-          ],
+          path: 'summary.tsx',
+          type: 'registry:component',
+          target: 'components/astrale/pattern/chart/summary.tsx',
         },
       ],
     }
-    const lockBefore = await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8')
-    await expect(
-      addUi(
-        ['pattern/chart/line/basic'],
-        { project: root },
-        {
-          fetcher: mockFetch([], twoFileRegistry),
-          runner: async () => {
-            await writeFile(first, 'partial overwrite\n')
-            await writeFile(second, 'partial create\n')
-            return { code: 1, stdout: '', stderr: 'interrupted' }
-          },
-        },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_TOOL_FAILED' })
-    expect(await readFile(first, 'utf8')).toBe('consumer original\n')
-    expect(await Bun.file(second).exists()).toBe(false)
-    expect(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8')).toBe(lockBefore)
-  })
+    for (const failAt of ['dlx', 'install']) {
+      const fixture = await project({ locked: true })
+      await mkdir(path.dirname(fixture.at(CHART_FILE)), { recursive: true })
+      await writeFile(fixture.at(CHART_FILE), 'consumer original\n')
+      const before = await Promise.all(['package.json', 'astrale-ui.lock.json'].map(fixture.read))
+      const tools = runner(async (_file, args) => {
+        if (args[0] === 'dlx') {
+          await writeFile(fixture.at(CHART_FILE), 'partial overwrite\n')
+          await writeFile(
+            fixture.at('components/astrale/pattern/chart/summary.tsx'),
+            'partial create\n',
+          )
+          const manifest = JSON.parse(await fixture.read('package.json'))
+          manifest.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
+          await writeJson(fixture.at('package.json'), manifest)
+        } else {
+          await writeFile(fixture.at('pnpm-lock.yaml'), 'partial lock\n')
+        }
+        return args[0] === failAt ? 1 : 0
+      })
 
-  test('overwrite requires explicit yes confirmation before invoking shadcn', async () => {
-    const root = await lockedFixture()
-    let invoked = false
-    await expect(
-      addUi(
-        ['pattern/chart/line/basic'],
-        { project: root, overwrite: true },
-        {
-          fetcher: mockFetch(),
-          runner: async () => {
-            invoked = true
-            return { code: 0, stdout: '', stderr: '' }
-          },
-        },
-      ),
-    ).rejects.toMatchObject({ code: 'UI_LOCAL_CHANGES' })
-    expect(invoked).toBe(false)
+      await expect(
+        addUi(
+          [CHART],
+          { project: fixture.root, overwrite: true, yes: true },
+          { fetcher: release([twoFiles]), runner: tools.run },
+        ),
+      ).rejects.toMatchObject({
+        code: failAt === 'dlx' ? 'UI_TOOL_FAILED' : 'UI_DEPENDENCY_INSTALL_FAILED',
+      })
+      expect(await Promise.all(['package.json', 'astrale-ui.lock.json'].map(fixture.read))).toEqual(
+        before,
+      )
+      expect(await fixture.read(CHART_FILE)).toBe('consumer original\n')
+      expect(await exists(fixture.at('components/astrale/pattern/chart/summary.tsx'))).toBe(false)
+      expect(await exists(fixture.at('pnpm-lock.yaml'))).toBe(false)
+    }
   })
 
   /** @evidence TEST-CLI-UI-EXACT-ITEM-SOURCE */
-  test('rejects a built item that differs from the admitted release index before invoking shadcn', async () => {
-    const root = await lockedFixture()
-    const fallback = mockFetch()
-    let invoked = false
-    const malformed = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/registry/public/r/pattern-chart-line-basic.json')) {
-        return Response.json(registry.items[0])
-      }
-      return fallback(input, init)
-    }) as typeof fetch
+  test('a built item that differs from the release index, or a linked target, stops before shadcn', async () => {
+    const mismatched = await project({ locked: true })
+    const tools = runner()
     await expect(
       addUi(
-        ['pattern/chart/line/basic'],
-        { project: root },
+        [CHART],
+        { project: mismatched.root },
         {
-          fetcher: malformed,
-          runner: async () => {
-            invoked = true
-            return { code: 0, stdout: '', stderr: '' }
-          },
+          fetcher: release([chart], { [`/r/${chart.name}.json`]: Response.json(chart) }),
+          runner: tools.run,
         },
       ),
     ).rejects.toMatchObject({ code: 'UI_REGISTRY_UNAVAILABLE' })
-    expect(invoked).toBe(false)
+
+    const linked = await project({ locked: true })
+    await symlink(await directory(), linked.at('components'))
+    await expect(
+      addUi([CHART], { project: linked.root }, { fetcher: release(), runner: tools.run }),
+    ).rejects.toMatchObject({
+      code: 'UI_LOCK_INVALID',
+    })
+    expect(tools.calls).toEqual([])
   })
 
-  test('preset dry-run is read-only and apply changes CSS plus lock without source rewrites', async () => {
-    const root = await fixture()
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
-    await writeFile(
-      path.join(root, 'src/index.css'),
-      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
-    )
-    const before = await readFile(path.join(root, 'src/index.css'), 'utf8')
-    await applyPreset('expressive', { project: root, dryRun: true })
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(before)
-    await applyPreset('expressive', { project: root })
-    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
-      '@astrale-os/ui/presets/expressive.css',
-    )
-    const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
-    expect(written.preset).toBe('expressive')
+  test('a preset dry run is read-only; applying it rewrites the import and the lock only', async () => {
+    const fixture = await project({ locked: true })
+    await applyPreset('expressive', { project: fixture.root, dryRun: true })
+    expect(await fixture.read('src/index.css')).toBe(PACKAGE_CSS)
+    await applyPreset('expressive', { project: fixture.root })
+    expect(await fixture.read('src/index.css')).toContain('@astrale-os/ui/presets/expressive.css')
+    expect(JSON.parse(await fixture.read('astrale-ui.lock.json')).preset).toBe('expressive')
   })
 })

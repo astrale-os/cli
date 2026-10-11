@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto'
-
-import { UiError } from '../model'
+import { isSafeRelative, sha256 } from '../files'
+import { UiError, isRecord, isSha256 } from '../model'
 
 export const SEARCH_LIMITS = Object.freeze({
   queryCodePoints: 256,
@@ -103,26 +102,11 @@ function unavailable(message: string): never {
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const prototype = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
-    ? (value as Record<string, unknown>)
-    : undefined
+  return isRecord(value) ? value : undefined
 }
 
 function safePath(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    !value.startsWith('/') &&
-    !value.includes('\\') &&
-    !/[?#%]/u.test(value) &&
-    !value.split('/').some((part) => part.length === 0 || part === '.' || part === '..')
-  )
-}
-
-function digest(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)
+  return typeof value === 'string' && isSafeRelative(value)
 }
 
 function finite(value: unknown, minimum = 0, maximum = Number.MAX_SAFE_INTEGER): value is number {
@@ -140,7 +124,7 @@ export function acceptArtifactFile(value: unknown): SearchArtifactFile {
     !safePath(candidate.path) ||
     !candidate.path.startsWith('search/public/') ||
     !integer(candidate.bytes, 1, SEARCH_LIMITS.maxArtifactBytes) ||
-    !digest(candidate.sha256)
+    !isSha256(candidate.sha256)
   ) {
     unavailable('Astrale UI search references an invalid artifact file.')
   }
@@ -154,7 +138,7 @@ function acceptScoring(value: unknown): { fingerprint: string; parameters: Searc
   const lengthNormalization = parameters?.lengthNormalization
   if (
     !candidate ||
-    !digest(candidate.fingerprint) ||
+    !isSha256(candidate.fingerprint) ||
     !parameters ||
     !Array.isArray(boosts) ||
     boosts.length !== SEARCH_FIELD_NAMES.length ||
@@ -171,15 +155,9 @@ function acceptScoring(value: unknown): { fingerprint: string; parameters: Searc
   ) {
     unavailable('Astrale UI search scoring metadata is incompatible.')
   }
-  const expected = createHash('sha256')
-    .update(
-      JSON.stringify({
-        engine: 'lexical-v1',
-        fieldNames: SEARCH_FIELD_NAMES,
-        ...parameters,
-      }),
-    )
-    .digest('hex')
+  const expected = sha256(
+    JSON.stringify({ engine: 'lexical-v1', fieldNames: SEARCH_FIELD_NAMES, ...parameters }),
+  )
   if (candidate.fingerprint !== expected)
     unavailable('Astrale UI search scoring metadata is stale.')
   return candidate as { fingerprint: string; parameters: SearchScoring }
@@ -271,7 +249,7 @@ function acceptCode(value: unknown): SearchCode {
     (candidate.language !== 'tsx' && candidate.language !== 'css') ||
     !safePath(candidate.path) ||
     !integer(candidate.bytes, 1, SEARCH_LIMITS.maxCodeBytes) ||
-    !digest(candidate.sha256)
+    !isSha256(candidate.sha256)
   ) {
     unavailable('Astrale UI search contains invalid canonical code metadata.')
   }
