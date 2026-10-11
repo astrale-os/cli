@@ -13,6 +13,7 @@ import {
   syncAstraleSkills,
   type AstraleSkillAgentStatus,
   type SkillApplyResult,
+  type SkillCheckResult,
   type SkillOnboardingSource,
   type SkillOnboardingState,
 } from '../../lib/skills'
@@ -101,6 +102,16 @@ export const SKILL_APPLY_MESSAGES: Record<SkillApplyResult['status'], string> = 
   installed: 'Astrale skills installed globally',
   updated: 'Astrale skills updated globally',
   repaired: 'Astrale skills repaired globally',
+}
+
+export function logSkillCheck(skills: SkillCheckResult): void {
+  if (skills.status === 'current') log.success('Astrale skills are up to date')
+  else if (skills.status === 'update-available')
+    log.info('Astrale skills are not installed or need an update')
+  else if (skills.status === 'repair-needed') log.warn('Astrale skills need repair')
+  else if (skills.status === 'unavailable') {
+    log.warn(`Astrale skills could not be checked${skills.error ? `: ${skills.error}` : ''}`)
+  }
 }
 
 export function renderSkillConfigureOutcome(outcome: SkillConfigureOutcome): void {

@@ -21,7 +21,12 @@ import {
 import { checkAstraleSkills, SKILL_CONFIGURE_COMMAND, type SkillCheckResult } from '../lib/skills'
 import { DEFAULT_UPDATE_CHANNEL, packageManagedUpdateError, updateAstrale } from '../lib/update'
 import { ASTRALE_HOME } from '../state'
-import { configureAstraleSkills, renderSkillConfigureOutcome } from './skills/configure'
+import {
+  configureAstraleSkills,
+  logSkillCheck,
+  renderSkillConfigureOutcome,
+  SKILL_APPLY_MESSAGES,
+} from './skills/configure'
 
 type UpdateOpts = RawOutputOpts & {
   check?: boolean
@@ -44,15 +49,6 @@ function skillInstallPromptAllowed(opts: UpdateOpts): boolean {
 
 function skillCheckStale(skills: SkillCheckResult): boolean {
   return skills.status === 'update-available' || skills.status === 'repair-needed'
-}
-
-function printSkillCheck(skills: SkillCheckResult): void {
-  if (skills.status === 'current') log.success('Astrale skills are up to date')
-  else if (skills.status === 'update-available') log.info('Astrale skills update available')
-  else if (skills.status === 'repair-needed') log.warn('Astrale skills need repair')
-  else if (skills.status === 'unavailable') {
-    log.warn(`Could not verify Astrale skills${skills.error ? `: ${skills.error}` : ''}`)
-  }
 }
 
 /**
@@ -122,7 +118,7 @@ async function refreshSdkDeps(check: boolean, assumeYes = false): Promise<boolea
  * The SDK axis is already best-effort. A current skill cohort exposes its
  * embedded revision, trees, and entrypoints without installer-local paths.
  */
-export type StaleReport = {
+type StaleReport = {
   stale: boolean
   cli: {
     stale: boolean
@@ -136,42 +132,20 @@ export type StaleReport = {
   sdk: { stale: boolean; inProject: boolean; outdated: SdkOutdated[] }
 }
 
-type CliStaleDependencies = {
-  update: typeof updateAstrale
-}
-
-const CLI_STALE_DEPENDENCIES: CliStaleDependencies = {
-  update: updateAstrale,
-}
-
-export async function cliStale(
+async function cliStale(
   opts: Pick<UpdateOpts, 'channel' | 'version'>,
-  dependencies: CliStaleDependencies = CLI_STALE_DEPENDENCIES,
 ): Promise<StaleReport['cli']> {
   const running = pkg.version
-  const target = { ...opts, channel: opts.channel ?? DEFAULT_UPDATE_CHANNEL }
   try {
-    const r = await dependencies.update({
+    const r = await updateAstrale({
       check: true,
-      channel: target.channel,
-      version: target.version,
+      channel: opts.channel ?? DEFAULT_UPDATE_CHANNEL,
+      version: opts.version,
       currentVersion: running,
     })
-    if (r.status === 'managed') {
-      return {
-        stale: false,
-        managed: true,
-        current: running,
-      }
-    }
+    if (r.status === 'managed') return { stale: false, managed: true, current: running }
     if (r.status === 'updated') {
-      return {
-        stale: false,
-        managed: false,
-        current: r.currentVersion,
-        latest: r.currentVersion,
-        channel: r.channel,
-      }
+      return { stale: false, managed: false, current: r.currentVersion, channel: r.channel }
     }
     return {
       stale: r.status === 'available',
@@ -212,13 +186,11 @@ async function refreshSkillsWithUpdatedBinary(bin: string, interactive: boolean)
   if (result.code === 0) {
     if (!isMachine()) {
       try {
-        const outcome = JSON.parse(result.stdout) as { status?: string }
-        if (outcome.status === 'not-interactive') {
+        const { status } = JSON.parse(result.stdout) as { status?: string }
+        if (status === 'not-interactive') {
           log.dim(`  Skills are not installed. Run: ${SKILL_CONFIGURE_COMMAND}`)
-        } else if (outcome.status === 'unchanged') {
-          log.success('Astrale skills already up to date')
-        } else if (['installed', 'updated', 'repaired'].includes(outcome.status ?? '')) {
-          log.success('Astrale skills updated')
+        } else if (status && status in SKILL_APPLY_MESSAGES) {
+          log.success(SKILL_APPLY_MESSAGES[status as keyof typeof SKILL_APPLY_MESSAGES])
         }
       } catch {
         // The child succeeded; its optional machine output is only for nicer human feedback.
@@ -239,14 +211,10 @@ async function refreshSkillsWithUpdatedBinary(bin: string, interactive: boolean)
  * first chat after an update does not wait on the download. Only on a machine
  * whose Studio already installed an agent; the child fetches just those agents.
  */
-export function prefetchStudioAgents(
-  bin: string,
-  home = ASTRALE_HOME,
-  spawnImpl: typeof spawn = spawn,
-): boolean {
-  if (!existsSync(join(home, 'cache', 'agents'))) return false
+function prefetchStudioAgents(bin: string): boolean {
+  if (!existsSync(join(ASTRALE_HOME, 'cache', 'agents'))) return false
   try {
-    const child = spawnImpl(bin, ['__studio-agents-prefetch'], {
+    const child = spawn(bin, ['__studio-agents-prefetch'], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
@@ -398,7 +366,7 @@ Examples:
         const humanSkills = !isMachine(opts)
         if (opts.check) {
           const skills = await checkAstraleSkills()
-          printSkillCheck(skills)
+          logSkillCheck(skills)
           if (skillCheckStale(skills)) anyAvailable = true
         } else if (result.status === 'updated') {
           if (humanSkills) log.step('Applying skills embedded in the updated CLI')

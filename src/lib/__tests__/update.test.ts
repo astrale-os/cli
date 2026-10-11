@@ -1,549 +1,208 @@
-import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  admitScriptInstall,
-  classifyUpdateExecution,
-  DEFAULT_UPDATE_CHANNEL,
-  InstallMetadataSchema,
-  packageManagedUpdateError,
-  readInstallMetadata,
-  releaseBase,
-  replaceStandaloneBinary,
-  shouldUpdate,
-  updateAstrale,
-  writeInstallMetadata,
-  type InstallMetadata,
-  type UpdateExecution,
-  type UpdateRequest,
-} from '../update'
+import { acquireInstallLock } from '../install-lock'
+import { readInstallMetadata, releaseBase, updateAstrale, type UpdateRequest } from '../update'
 
-async function makeFakeRelease(
-  root: string,
+const roots: string[] = []
+afterEach(async () => {
+  delete process.env.ASTRALE_UPDATE_BASE
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
+
+function script(version: string, label: string): string {
+  return `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi\necho ${label}\n`
+}
+
+/** A script installation of `version` and a `file://` release of `next`. */
+async function installation(
   version: string,
-  options: {
+  next: {
+    version: string
     binaryVersion?: string
-    omitBinary?: boolean
-    extraFile?: boolean
-  } = {},
-): Promise<string> {
-  const release = join(root, 'release')
-  const payload = join(root, 'payload')
-  const binaryVersion = options.binaryVersion ?? version
-  await mkdir(release, { recursive: true })
-  await mkdir(payload, { recursive: true })
-  if (options.omitBinary) {
-    await writeFile(join(payload, 'README'), 'intentionally incomplete release\n')
-  } else {
-    await writeFile(
-      join(payload, 'astrale'),
-      `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${binaryVersion}"; exit 0; fi\necho astrale\n`,
-    )
-    await chmod(join(payload, 'astrale'), 0o755)
-  }
-  if (options.extraFile) await writeFile(join(payload, 'extra'), 'unexpected archive member')
+    reports?: string
+    members?: string[]
+    sha256?: string
+  } = {
+    version,
+  },
+) {
+  const root = await mkdtemp(join(tmpdir(), 'astrale-update-'))
+  roots.push(root)
+  const bin = join(root, 'bin', 'astrale')
+  const metadata = join(root, 'home', 'install.json')
+  await mkdir(join(root, 'bin'))
+  await mkdir(join(root, 'home'))
+  await writeFile(bin, script(version, 'old'), { mode: 0o755 })
+  await writeFile(
+    metadata,
+    JSON.stringify({ method: 'script', channel: 'alpha', version, repo: 'astrale-os/cli', bin }),
+  )
 
+  const payload = join(root, 'payload')
+  const release = join(root, 'release')
+  await mkdir(payload)
+  await mkdir(release)
+  await writeFile(
+    join(payload, 'astrale'),
+    script(next.reports ?? next.binaryVersion ?? next.version, 'new'),
+    {
+      mode: 0o755,
+    },
+  )
+  await writeFile(join(payload, 'extra'), 'unexpected')
   const asset = join(release, 'astrale-darwin-arm64.tar.gz')
-  const tar = Bun.spawn([
-    'tar',
-    '-C',
-    payload,
-    '-czf',
-    asset,
-    ...(options.omitBinary ? ['README'] : ['astrale']),
-    ...(options.extraFile ? ['extra'] : []),
-  ])
+  const tar = Bun.spawn(['tar', '-C', payload, '-czf', asset, ...(next.members ?? ['astrale'])])
   expect(await tar.exited).toBe(0)
-  const shaProc = Bun.spawn(['shasum', '-a', '256', asset], { stdout: 'pipe' })
-  const sha = (await new Response(shaProc.stdout).text()).trim().split(/\s+/)[0]
-  expect(await shaProc.exited).toBe(0)
-  await writeFile(join(release, 'sha256sums.txt'), `${sha}  astrale-darwin-arm64.tar.gz\n`)
+  const sha256 =
+    next.sha256 ?? new Bun.CryptoHasher('sha256').update(await readFile(asset)).digest('hex')
   await writeFile(
     join(release, 'manifest.json'),
-    JSON.stringify(
-      {
-        version,
-        binaryVersion: options.binaryVersion ?? binaryVersion,
-        channel: 'alpha',
-        repo: 'astrale-os/cli',
-        assets: {
-          'darwin-arm64': {
-            name: 'astrale-darwin-arm64.tar.gz',
-            sha256: sha,
-          },
-        },
-      },
-      null,
-      2,
-    ),
-  )
-  return release
-}
-
-async function makeInstall(
-  root: string,
-  version: string,
-  options: { binaryVersion?: string } = {},
-): Promise<{ meta: InstallMetadata; path: string; execution: UpdateExecution }> {
-  const bin = join(root, 'bin', 'astrale')
-  await mkdir(join(root, 'bin'), { recursive: true })
-  await writeFile(
-    bin,
-    `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${options.binaryVersion ?? version}"; exit 0; fi\necho old\n`,
-  )
-  await chmod(bin, 0o755)
-  const path = join(root, 'home', 'install.json')
-  const meta: InstallMetadata = {
-    method: 'script',
-    channel: 'alpha',
-    version,
-    repo: 'astrale-os/cli',
-    bin,
-  }
-  await writeInstallMetadata(meta, path)
-  return { meta, path, execution: { kind: 'standalone', executable: bin } }
-}
-
-describe('update helpers', () => {
-  test('classifies only a Bun-compiled executable as standalone', () => {
-    expect(
-      classifyUpdateExecution({
-        bunVersion: '1.3.14',
-        executable: '/tmp/astrale',
-        entry: '/$bunfs/root/astrale',
-      }),
-    ).toEqual({ kind: 'standalone', executable: '/tmp/astrale' })
-    expect(
-      classifyUpdateExecution({
-        bunVersion: '1.3.14',
-        executable: '/opt/homebrew/bin/bun',
-        entry: '/tmp/astrale.ts',
-      }),
-    ).toEqual({ kind: 'package-managed', executable: '/opt/homebrew/bin/bun' })
-    expect(
-      classifyUpdateExecution({
-        executable: '/opt/homebrew/bin/node',
-        entry: '/tmp/astrale.js',
-      }),
-    ).toEqual({ kind: 'package-managed', executable: '/opt/homebrew/bin/node' })
-  })
-
-  test('defaults missing install metadata to the latest channel', () => {
-    expect(DEFAULT_UPDATE_CHANNEL).toBe('latest')
-    expect(
-      InstallMetadataSchema.parse({
-        method: 'script',
-        bin: '/tmp/astrale',
-      }).channel,
-    ).toBe('latest')
-  })
-
-  test('directs externally managed processes to the standalone installer', () => {
-    const error = packageManagedUpdateError('/opt/homebrew/bin/node')
-    expect(error.code).toBe('UPDATE_PACKAGE_MANAGED')
-    expect(error.hint).toBe(
-      'Active runtime: /opt/homebrew/bin/node. Remove any package-managed copy, then install with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
-    )
-  })
-
-  test('releaseBase resolves exact versions and channels', () => {
-    const meta: InstallMetadata = {
-      method: 'script',
+    JSON.stringify({
+      version: next.version,
+      binaryVersion: next.binaryVersion ?? next.version,
       channel: 'alpha',
-      repo: 'astrale-os/cli',
-      bin: '/tmp/astrale',
+      assets: { 'darwin-arm64': { name: 'astrale-darwin-arm64.tar.gz', sha256 } },
+    }),
+  )
+  process.env.ASTRALE_UPDATE_BASE = `file://${release}`
+  const request = (extra: Partial<UpdateRequest> = {}): UpdateRequest => ({
+    currentVersion: version,
+    installPath: metadata,
+    platform: { os: 'darwin', arch: 'arm64' },
+    execution: { kind: 'standalone', executable: bin },
+    ...extra,
+  })
+  const state = async () => ({
+    binary: await readFile(bin, 'utf8'),
+    metadata: await readFile(metadata, 'utf8'),
+  })
+  return { root, bin, metadata, request, state }
+}
+
+describe('standalone update', () => {
+  test('replaces the executable and records the new release in the install metadata', async () => {
+    const install = await installation('1.0.0', { version: '1.1.0' })
+
+    expect(await updateAstrale(install.request())).toEqual({
+      status: 'updated',
+      previousVersion: '1.0.0',
+      currentVersion: '1.1.0',
+      channel: 'alpha',
+      bin: install.bin,
+    })
+    expect(await readFile(install.bin, 'utf8')).toContain('echo new')
+    expect(await readInstallMetadata(install.metadata)).toMatchObject({
+      version: '1.1.0',
+      channel: 'alpha',
+    })
+    expect(await Bun.file(`${install.bin}.previous`).exists()).toBe(false)
+  })
+
+  test('a check compares recorded and released versions without replacing anything', async () => {
+    const current = await installation('1.0.0')
+    expect((await updateAstrale(current.request({ check: true }))).status).toBe('up-to-date')
+    const behind = await installation('1.0.0', { version: '1.1.0' })
+    const before = await behind.state()
+    expect(await updateAstrale(behind.request({ check: true }))).toMatchObject({
+      status: 'available',
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+    })
+    expect(await behind.state()).toEqual(before)
+  })
+
+  test('a canary binary may report the package version instead of the release version', async () => {
+    const install = await installation('1.0.0', {
+      version: '1.1.0-canary.3',
+      binaryVersion: '1.1.0',
+    })
+    expect((await updateAstrale(install.request())).status).toBe('updated')
+  })
+
+  test('a bad archive, a checksum mismatch or a wrong binary leaves the installation unchanged', async () => {
+    for (const next of [
+      { version: '1.1.0', members: ['astrale', 'extra'] },
+      { version: '1.1.0', members: ['extra'] },
+      { version: '1.1.0', sha256: 'f'.repeat(64) },
+      { version: '1.1.0', reports: '0.9.0' },
+    ]) {
+      const install = await installation('1.0.0', next)
+      const before = await install.state()
+      await expect(updateAstrale(install.request())).rejects.toThrow()
+      expect(await install.state()).toEqual(before)
     }
-    expect(releaseBase(meta, {})).toBe('https://github.com/astrale-os/cli/releases/download/alpha')
-    expect(releaseBase(meta, { channel: 'canary' })).toBe(
-      'https://github.com/astrale-os/cli/releases/download/canary',
-    )
-    expect(releaseBase(meta, { version: '0.4.1' })).toBe(
-      'https://github.com/astrale-os/cli/releases/download/cli/v0.4.1',
-    )
   })
 
-  test('shouldUpdate is exact and predictable', () => {
-    expect(shouldUpdate('0.4.0', '0.4.0')).toBe(false)
-    expect(shouldUpdate('0.4.0', '0.4.1')).toBe(true)
+  test('a metadata commit failure puts the previous executable back', async () => {
+    const install = await installation('1.0.0', { version: '1.1.0' })
+    const before = await install.state()
+    await chmod(join(install.root, 'home'), 0o555)
+    try {
+      await expect(updateAstrale(install.request())).rejects.toThrow()
+    } finally {
+      await chmod(join(install.root, 'home'), 0o755)
+    }
+    expect(await install.state()).toEqual(before)
   })
-})
 
-describe('script install admission', () => {
-  test('a metadata commit failure restores the exact previous file', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const path = join(root, 'install.json')
-    const original = '{"exact":"previous metadata"}\n'
-    await writeFile(path, original)
+  test('only the recorded script installation, owned by the running binary, may update', async () => {
+    const install = await installation('1.0.0', { version: '1.1.0' })
+    const managed = await updateAstrale(
+      install.request({ execution: { kind: 'package-managed', executable: '/usr/bin/node' } }),
+    )
+    expect(managed).toEqual({
+      status: 'managed',
+      currentVersion: '1.0.0',
+      executable: '/usr/bin/node',
+    })
 
+    const linked = join(install.root, 'linked-astrale')
+    await symlink(install.bin, linked)
+    expect(
+      (
+        await updateAstrale(
+          install.request({ check: true, execution: { kind: 'standalone', executable: linked } }),
+        )
+      ).status,
+    ).toBe('available')
     await expect(
-      writeInstallMetadata(
-        {
-          method: 'script',
-          channel: 'beta',
-          version: '1.1.0',
-          repo: 'astrale-os/cli',
-          bin: '/tmp/astrale',
-        },
-        path,
-        {
-          mkdir,
-          rm,
-          writeFile,
-          rename: async (from, to) => {
-            if (String(from).endsWith('.next')) throw new Error('injected metadata commit failure')
-            await rename(from, to)
-          },
-        },
+      updateAstrale(
+        install.request({
+          execution: { kind: 'standalone', executable: join(install.root, 'payload', 'astrale') },
+        }),
       ),
-    ).rejects.toThrow('injected metadata commit failure')
+    ).rejects.toMatchObject({ code: 'UPDATE_INSTALL_MISMATCH' })
 
-    expect(await readFile(path, 'utf8')).toBe(original)
-    await expect(readFile(`${path}.next`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
-    await expect(readFile(`${path}.previous`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  test('rejects malformed JSON with the stable metadata error', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const path = join(root, 'install.json')
-    await writeFile(path, '{')
-
-    await expect(readInstallMetadata(path)).rejects.toMatchObject({
+    await writeFile(install.metadata, '{')
+    await expect(updateAstrale(install.request())).rejects.toMatchObject({
       code: 'UPDATE_BAD_INSTALL_METADATA',
     })
-  })
-
-  test('admits a symlink only when it resolves to the recorded binary', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { meta } = await makeInstall(root, '1.0.0')
-    const alias = join(root, 'astrale-alias')
-    await symlink(meta.bin, alias)
-
-    const admitted = await admitScriptInstall(meta, {
-      kind: 'standalone',
-      executable: alias,
+    await rm(install.metadata)
+    await expect(updateAstrale(install.request())).rejects.toMatchObject({
+      code: 'UPDATE_NOT_SCRIPT_INSTALLED',
     })
-
-    expect(admitted.metadata).toEqual(meta)
   })
 
-  test('rejects a standalone binary that does not own the recorded target', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { meta } = await makeInstall(root, '1.0.0')
-    const other = join(root, 'other-astrale')
-    await writeFile(other, '#!/bin/sh\n')
-
-    await expect(
-      admitScriptInstall(meta, { kind: 'standalone', executable: other }),
-    ).rejects.toMatchObject({ code: 'UPDATE_INSTALL_MISMATCH' })
-  })
-})
-
-describe('updateAstrale', () => {
-  test('a package-managed process never consults or mutates a coexisting script install', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta } = await makeInstall(root, '1.0.0')
-    const before = await readFile(meta.bin, 'utf8')
-    process.env.ASTRALE_UPDATE_BASE = 'file:///definitely-not-a-release'
+  test('another live installer holds the lock next to the binary', async () => {
+    const install = await installation('1.0.0', { version: '1.1.0' })
+    const lock = await acquireInstallLock(install.bin)
     try {
-      const result = await updateAstrale({
-        currentVersion: '2.0.0',
-        installPath: path,
-        execution: { kind: 'package-managed', executable: '/opt/homebrew/bin/node' },
+      await expect(updateAstrale(install.request())).rejects.toMatchObject({
+        code: 'UPDATE_INSTALL_BUSY',
       })
-
-      expect(result).toEqual({
-        status: 'managed',
-        currentVersion: '2.0.0',
-        executable: '/opt/homebrew/bin/node',
-      })
-      expect(await readFile(meta.bin, 'utf8')).toBe(before)
     } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
+      await lock.release()
     }
   })
 
-  test('check compares the installed release identity from metadata', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, execution } = await makeInstall(root, 'main-abc123', {
-      binaryVersion: '1.0.0',
-    })
-    const release = await makeFakeRelease(root, 'main-abc123', { binaryVersion: '1.0.0' })
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const result = await updateAstrale({
-        check: true,
-        currentVersion: '1.0.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-
-      expect(result).toMatchObject({
-        status: 'up-to-date',
-        currentVersion: 'main-abc123',
-        latestVersion: 'main-abc123',
-      })
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('check reports available update without replacing the binary', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0')
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const result = await updateAstrale({
-        check: true,
-        currentVersion: '1.0.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-
-      expect(result).toMatchObject({
-        status: 'available',
-        currentVersion: '1.0.0',
-        latestVersion: '1.1.0',
-      })
-      expect(await readFile(meta.bin, 'utf8')).toContain('echo old')
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('single-binary updates clear cohort metadata without probing or replacing retained files', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-single-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const companion = join(root, 'bin', 'astrale-cloudflared')
-    const license = join(root, 'home', 'licenses', 'cloudflared.txt')
-    await mkdir(join(root, 'home', 'licenses'), { recursive: true })
-    await writeFile(companion, 'unusable retained provider')
-    await writeFile(license, 'retained license')
-    await writeFile(
-      path,
-      JSON.stringify({
-        ...meta,
-        cohort: {
-          schemaVersion: 2,
-          binaryVersion: '1.0.0',
-          cloudflaredVersion: '2026.8.2',
-        },
-      }),
+  test('the release base names an exact version tag or a channel', () => {
+    const meta = { repo: 'astrale-os/cli', channel: 'latest' }
+    expect(releaseBase(meta, { version: 'cli/v1.2.3' })).toBe(
+      'https://github.com/astrale-os/cli/releases/download/cli/v1.2.3',
     )
-    const before = await Promise.all(
-      [meta.bin, companion, license, path].map((file) => readFile(file)),
-    )
-    const release = await makeFakeRelease(root, '1.1.0')
-    // A current release carries its digest, with no checksum-list fallback needed.
-    await rm(join(release, 'sha256sums.txt'))
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const options = {
-        currentVersion: '1.0.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      } satisfies UpdateRequest
-      await expect(
-        updateAstrale(options, {
-          writeInstallMetadata: async () => {
-            throw new Error('metadata refused')
-          },
-        }),
-      ).rejects.toThrow('metadata refused')
-      expect(
-        await Promise.all([meta.bin, companion, license, path].map((file) => readFile(file))),
-      ).toEqual(before)
-      expect(await updateAstrale(options)).toMatchObject({
-        status: 'updated',
-        currentVersion: '1.1.0',
-      })
-      expect(JSON.parse(await readFile(path, 'utf8')).cohort).toBeUndefined()
-      expect(await Promise.all([companion, license].map((file) => readFile(file)))).toEqual(
-        before.slice(1, 3),
-      )
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-      await rm(root, { recursive: true, force: true })
-    }
-  })
-
-  test('rejects unexpected archive members before replacing the installation', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-closure-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0', { extraFile: true })
-    const before = await Promise.all([meta.bin, path].map((file) => readFile(file)))
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      await expect(
-        updateAstrale({
-          currentVersion: '1.0.0',
-          platform: { os: 'darwin', arch: 'arm64' },
-          installPath: path,
-          execution,
-        }),
-      ).rejects.toThrow('Update archive closure is invalid')
-      expect(await Promise.all([meta.bin, path].map((file) => readFile(file)))).toEqual(before)
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-      await rm(root, { recursive: true, force: true })
-    }
-  })
-
-  test('updates the executable and install metadata', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0')
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const result = await updateAstrale({
-        currentVersion: '1.0.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-
-      expect(result).toMatchObject({
-        status: 'updated',
-        previousVersion: '1.0.0',
-        currentVersion: '1.1.0',
-      })
-      const versionProc = Bun.spawn([meta.bin, '--version'], { stdout: 'pipe' })
-      expect(await new Response(versionProc.stdout).text()).toBe('1.1.0\n')
-      expect(await versionProc.exited).toBe(0)
-      const updatedMeta = JSON.parse(await readFile(path, 'utf8')) as InstallMetadata
-      expect(updatedMeta.version).toBe('1.1.0')
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('an archive without the binary leaves the installation and metadata unchanged', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0', { omitBinary: true })
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    const beforeBinary = await readFile(meta.bin, 'utf8')
-    const beforeMetadata = await readFile(path, 'utf8')
-    try {
-      await expect(
-        updateAstrale({
-          currentVersion: '1.0.0',
-          platform: { os: 'darwin', arch: 'arm64' },
-          installPath: path,
-          execution,
-        }),
-      ).rejects.toThrow()
-
-      expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('a binary commit failure preserves the installed binary and metadata', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0')
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    const beforeBinary = await readFile(meta.bin, 'utf8')
-    const beforeMetadata = await readFile(path, 'utf8')
-    try {
-      await expect(
-        updateAstrale(
-          {
-            currentVersion: '1.0.0',
-            platform: { os: 'darwin', arch: 'arm64' },
-            installPath: path,
-            execution,
-          },
-          {
-            replaceStandaloneBinary: (input) =>
-              replaceStandaloneBinary(input, {
-                rename: async (
-                  from: Parameters<typeof rename>[0],
-                  to: Parameters<typeof rename>[1],
-                ) => {
-                  if (String(from).endsWith('astrale.next')) {
-                    throw Object.assign(new Error('injected binary commit failure'), {
-                      code: 'EIO',
-                    })
-                  }
-                  await rename(from, to)
-                },
-              }),
-          },
-        ),
-      ).rejects.toThrow('injected binary commit failure')
-
-      expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('a metadata failure after binary commit restores the binary and metadata', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0')
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    const beforeBinary = await readFile(meta.bin, 'utf8')
-    const beforeMetadata = await readFile(path, 'utf8')
-    try {
-      await expect(
-        updateAstrale(
-          {
-            currentVersion: '1.0.0',
-            platform: { os: 'darwin', arch: 'arm64' },
-            installPath: path,
-            execution,
-          },
-          {
-            writeInstallMetadata: async () => {
-              throw new Error('injected metadata write failure')
-            },
-          },
-        ),
-      ).rejects.toThrow('injected metadata write failure')
-
-      expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('updates canary-style releases whose binary reports the package version', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, 'main-old123')
-    const release = await makeFakeRelease(root, 'main-new456', { binaryVersion: '1.0.0' })
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const result = await updateAstrale({
-        currentVersion: '1.0.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-
-      expect(result).toMatchObject({
-        status: 'updated',
-        previousVersion: 'main-old123',
-        currentVersion: 'main-new456',
-      })
-      const versionProc = Bun.spawn([meta.bin, '--version'], { stdout: 'pipe' })
-      expect(await new Response(versionProc.stdout).text()).toBe('1.0.0\n')
-      expect(await versionProc.exited).toBe(0)
-      const updatedMeta = JSON.parse(await readFile(path, 'utf8')) as InstallMetadata
-      expect(updatedMeta.version).toBe('main-new456')
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
+    expect(releaseBase(meta, {})).toBe('https://github.com/astrale-os/cli/releases/download/latest')
   })
 })

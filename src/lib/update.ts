@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import {
   chmod,
   copyFile,
-  mkdir,
   mkdtemp,
   readFile,
   realpath,
@@ -11,20 +10,21 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { z } from 'zod'
 
 import { AstraleError } from '../errors'
+import { atomicWrite } from '../state/files'
 import { INSTALL_PATH } from '../state/index'
+import { acquireInstallLock } from './install-lock'
 import { run } from './proc'
-import { replaceStandaloneBinary } from './standalone-binary'
-
-export { replaceStandaloneBinary, type StandaloneBinaryReplacement } from './standalone-binary'
 
 const DEFAULT_REPO = 'astrale-os/cli'
+const INSTALLER_HINT =
+  'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh'
 export const DEFAULT_UPDATE_CHANNEL = 'latest'
 
-export const InstallMetadataSchema = z.object({
+const InstallMetadataSchema = z.object({
   method: z.literal('script'),
   channel: z.string().min(1).default(DEFAULT_UPDATE_CHANNEL),
   version: z.string().min(1).optional(),
@@ -35,32 +35,21 @@ export const InstallMetadataSchema = z.object({
 
 export type InstallMetadata = z.infer<typeof InstallMetadataSchema>
 
-const ManifestAssetSchema = z.object({
-  name: z.string().min(1),
-  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
-})
-
-const ManifestBaseSchema = z.object({
+const UpdateManifestSchema = z.object({
   version: z.string().min(1),
+  binaryVersion: z.string().min(1),
   channel: z.string().min(1),
   repo: z.string().min(1).optional(),
+  assets: z.record(
+    z.string(),
+    z.object({ name: z.string().min(1), sha256: z.string().regex(/^[a-fA-F0-9]{64}$/) }),
+  ),
 })
 
-// The original single-binary shape remains understood by released CLIs.
-const SingleBinaryUpdateManifestSchema = ManifestBaseSchema.extend({
-  schemaVersion: z.undefined().optional(),
-  binaryVersion: z.string().min(1),
-  assets: z.record(z.string(), ManifestAssetSchema),
-})
+export type Platform = { os: 'darwin' | 'linux'; arch: 'arm64' | 'x64' }
 
-export const UpdateManifestSchema = SingleBinaryUpdateManifestSchema
-
-export type UpdateManifest = z.infer<typeof UpdateManifestSchema>
-
-export type Platform = {
-  os: 'darwin' | 'linux'
-  arch: 'arm64' | 'x64'
-}
+/** A Bun-compiled executable can replace itself; any other runtime is managed elsewhere. */
+export type UpdateExecution = { kind: 'standalone' | 'package-managed'; executable: string }
 
 export type UpdateRequest = {
   check?: boolean
@@ -73,31 +62,10 @@ export type UpdateRequest = {
   signal?: AbortSignal
 }
 
-export type UpdateExecution =
-  | { kind: 'standalone'; executable: string }
-  | { kind: 'package-managed'; executable: string }
-
-const admittedScriptInstall = Symbol('admittedScriptInstall')
-export type AdmittedScriptInstall = Readonly<{
-  metadata: InstallMetadata
-  executable: string
-  [admittedScriptInstall]: true
-}>
-
 export type UpdateResult =
+  | { status: 'managed'; currentVersion: string; executable: string }
   | {
-      status: 'managed'
-      currentVersion: string
-      executable: string
-    }
-  | {
-      status: 'up-to-date'
-      currentVersion: string
-      latestVersion: string
-      channel: string
-    }
-  | {
-      status: 'available'
+      status: 'up-to-date' | 'available'
       currentVersion: string
       latestVersion: string
       channel: string
@@ -110,9 +78,8 @@ export type UpdateResult =
       bin: string
     }
 
-export function detectPlatform(): Platform {
-  const os = process.platform
-  const arch = process.arch
+function detectPlatform(): Platform {
+  const { platform: os, arch } = process
   if (os !== 'darwin' && os !== 'linux') {
     throw new AstraleError(
       'UNSUPPORTED_PLATFORM',
@@ -128,26 +95,9 @@ export function detectPlatform(): Platform {
   return { os, arch }
 }
 
-export function platformKey(platform: Platform): string {
-  return `${platform.os}-${platform.arch}`
-}
-
-export function classifyUpdateExecution(input: {
-  bunVersion?: string
-  executable: string
-  entry?: string
-}): UpdateExecution {
-  return input.bunVersion && input.entry?.startsWith('/$bunfs/')
-    ? { kind: 'standalone', executable: input.executable }
-    : { kind: 'package-managed', executable: input.executable }
-}
-
 export function detectUpdateExecution(): UpdateExecution {
-  return classifyUpdateExecution({
-    bunVersion: (process.versions as { bun?: string }).bun,
-    executable: process.execPath,
-    entry: process.argv[1],
-  })
+  const standalone = process.versions.bun !== undefined && process.argv[1]?.startsWith('/$bunfs/')
+  return { kind: standalone ? 'standalone' : 'package-managed', executable: process.execPath }
 }
 
 export function packageManagedUpdateError(executable: string): AstraleError {
@@ -158,174 +108,161 @@ export function packageManagedUpdateError(executable: string): AstraleError {
   )
 }
 
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
+}
+
 export async function readInstallMetadata(path = INSTALL_PATH): Promise<InstallMetadata> {
   let raw: string
   try {
     raw = await readFile(path, 'utf8')
   } catch (error) {
-    if (!isMissingFile(error)) throw error
+    if (!isMissing(error)) throw error
     throw new AstraleError(
       'UPDATE_NOT_SCRIPT_INSTALLED',
       'Astrale was not installed by the official install script.',
-      'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
+      INSTALLER_HINT,
     )
   }
-
-  let decoded: unknown
+  let parsed: ReturnType<typeof InstallMetadataSchema.safeParse> | undefined
   try {
-    decoded = JSON.parse(raw)
+    parsed = InstallMetadataSchema.safeParse(JSON.parse(raw))
   } catch {
-    throw badInstallMetadata(path)
+    // Reported below as invalid metadata.
   }
-  const parsed = InstallMetadataSchema.safeParse(decoded)
-  if (!parsed.success) {
-    throw badInstallMetadata(path)
+  if (!parsed?.success) {
+    throw new AstraleError(
+      'UPDATE_BAD_INSTALL_METADATA',
+      `Invalid install metadata at ${path}.`,
+      INSTALLER_HINT,
+    )
   }
   return parsed.data
 }
 
-function isMissingFile(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
-}
-
-function badInstallMetadata(path: string): AstraleError {
-  return new AstraleError(
-    'UPDATE_BAD_INSTALL_METADATA',
-    `Invalid install metadata at ${path}.`,
-    'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
-  )
-}
-
-export async function admitScriptInstall(
-  meta: InstallMetadata,
-  execution: Extract<UpdateExecution, { kind: 'standalone' }>,
-): Promise<AdmittedScriptInstall> {
-  const [running, recorded] = await Promise.all([
-    realpathIfExists(execution.executable),
-    realpathIfExists(meta.bin),
-  ])
-  if (running === undefined || recorded === undefined || running !== recorded) {
+/** The running binary must be the one the script installation recorded. */
+async function assertOwnsInstallation(meta: InstallMetadata, executable: string): Promise<void> {
+  const resolve = (path: string) =>
+    realpath(path).catch((error) => (isMissing(error) ? undefined : Promise.reject(error)))
+  const [running, recorded] = await Promise.all([resolve(executable), resolve(meta.bin)])
+  if (running === undefined || running !== recorded) {
     throw new AstraleError(
       'UPDATE_INSTALL_MISMATCH',
       'The running Astrale binary does not own the recorded script installation.',
-      `Running binary: ${execution.executable}; recorded binary: ${meta.bin}. Refusing to replace a different installation.`,
+      `Running binary: ${executable}; recorded binary: ${meta.bin}. Refusing to replace a different installation.`,
     )
-  }
-  return Object.freeze({
-    metadata: meta,
-    executable: running,
-    [admittedScriptInstall]: true as const,
-  })
-}
-
-async function realpathIfExists(path: string): Promise<string | undefined> {
-  try {
-    return await realpath(path)
-  } catch (error) {
-    if (isMissingFile(error)) return undefined
-    throw error
-  }
-}
-
-export async function writeInstallMetadata(
-  meta: InstallMetadata,
-  path = INSTALL_PATH,
-  filesystem: Readonly<{
-    mkdir: typeof mkdir
-    rename: typeof rename
-    rm: typeof rm
-    writeFile: typeof writeFile
-  }> = {
-    mkdir,
-    rename,
-    rm,
-    writeFile,
-  },
-): Promise<void> {
-  const staged = `${path}.next`
-  const previous = `${path}.previous`
-  await filesystem.mkdir(dirname(path), { recursive: true })
-  await filesystem.rm(staged, { force: true })
-  await filesystem.rm(previous, { force: true })
-  await filesystem.writeFile(staged, JSON.stringify(meta, null, 2) + '\n')
-
-  let backedUp = false
-  try {
-    try {
-      await filesystem.rename(path, previous)
-      backedUp = true
-    } catch (error) {
-      if (!isMissingFile(error)) throw error
-    }
-    await filesystem.rename(staged, path)
-    await filesystem.rm(previous, { force: true })
-  } catch (error) {
-    const rollback: unknown[] = []
-    if (backedUp) {
-      await filesystem.rename(previous, path).catch((failure) => rollback.push(failure))
-    }
-    await filesystem.rm(staged, { force: true }).catch((failure) => rollback.push(failure))
-    if (rollback.length > 0) {
-      throw new AggregateError(
-        [error, ...rollback],
-        'Install metadata update and rollback both failed.',
-      )
-    }
-    throw error
   }
 }
 
 export function releaseBase(
-  meta: InstallMetadata,
-  req: Pick<UpdateRequest, 'channel' | 'version'>,
+  meta: Pick<InstallMetadata, 'repo' | 'channel'>,
+  request: Pick<UpdateRequest, 'channel' | 'version'>,
 ): string {
   if (process.env.ASTRALE_UPDATE_BASE) return process.env.ASTRALE_UPDATE_BASE.replace(/\/+$/, '')
   const repo = meta.repo || DEFAULT_REPO
-  if (req.version) {
-    const version = req.version.replace(/^cli\/v/, '').replace(/^v/, '')
+  if (request.version) {
+    const version = request.version.replace(/^cli\/v/, '').replace(/^v/, '')
     return `https://github.com/${repo}/releases/download/cli/v${version}`
   }
-  return `https://github.com/${repo}/releases/download/${req.channel ?? meta.channel ?? DEFAULT_UPDATE_CHANNEL}`
+  return `https://github.com/${repo}/releases/download/${request.channel ?? meta.channel}`
 }
 
-export async function fetchManifest(base: string, signal?: AbortSignal): Promise<UpdateManifest> {
-  const raw = await readUrlText(`${base}/manifest.json`, signal)
-  return UpdateManifestSchema.parse(JSON.parse(raw))
+/** GET a release file; `file://` bases serve local release directories. */
+async function download(url: string, signal?: AbortSignal): Promise<Buffer> {
+  if (url.startsWith('file://')) return readFile(new URL(url))
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`)
+  return Buffer.from(await response.arrayBuffer())
 }
 
-export function shouldUpdate(currentVersion: string, manifestVersion: string): boolean {
-  return currentVersion !== manifestVersion
+/** Extract an archive holding exactly the `astrale` executable into `directory`. */
+async function extractBinary(archive: string, directory: string): Promise<string> {
+  const listed = await run('tar', ['-tzf', archive])
+  if (listed.code !== 0) {
+    throw new Error(`Could not inspect update archive: ${listed.stderr.trim()}`)
+  }
+  if (listed.stdout !== 'astrale\n') {
+    throw new Error(
+      `Update archive closure is invalid: expected astrale, got ${listed.stdout.trim().split(/\r?\n/u).join(', ')}`,
+    )
+  }
+  const extracted = await run('tar', ['-xzf', archive, '-C', directory])
+  if (extracted.code !== 0) {
+    throw new Error(`Could not extract update archive: ${extracted.stderr.trim()}`)
+  }
+  const binary = join(directory, 'astrale')
+  await chmod(binary, 0o755)
+  return binary
 }
 
-interface UpdateDependencies {
-  readonly replaceStandaloneBinary: typeof replaceStandaloneBinary
-  readonly writeInstallMetadata: typeof writeInstallMetadata
+async function assertVersion(binary: string, expected: string): Promise<void> {
+  const { code, stdout, stderr } = await run(binary, ['--version'])
+  if (code !== 0) throw new Error(`Updated binary failed --version: ${stderr.trim()}`)
+  if (stdout.trim() !== expected) {
+    throw new Error(`Updated binary reported version ${stdout.trim()}, expected ${expected}`)
+  }
 }
 
-const defaultUpdateDependencies = Object.freeze({ replaceStandaloneBinary, writeInstallMetadata })
+/**
+ * Swap `installed` for `next` under the install lock shared with install.sh, then `commit`.
+ * When `commit` throws, the previous executable is renamed back before the error propagates.
+ */
+export async function replaceStandaloneBinary(
+  installed: string,
+  next: string,
+  commit: () => Promise<void>,
+): Promise<void> {
+  const lock = await acquireInstallLock(installed)
+  const staged = `${installed}.next`
+  const previous = `${installed}.previous`
+  try {
+    try {
+      await copyFile(installed, previous)
+      await copyFile(next, staged)
+      await chmod(staged, 0o755)
+      await rename(staged, installed)
+    } catch (error) {
+      // The rename did not commit: the installed executable is unchanged.
+      await rm(staged, { force: true })
+      await rm(previous, { force: true })
+      throw error
+    }
+    try {
+      await commit()
+    } catch (error) {
+      await rename(previous, installed).catch((rollback) => {
+        throw new AggregateError([error, rollback], 'Standalone update rollback failed.')
+      })
+      throw error
+    }
+    await rm(previous, { force: true })
+  } finally {
+    await lock.release()
+  }
+}
 
-export async function updateAstrale(
-  req: UpdateRequest,
-  dependencies: Partial<UpdateDependencies> = {},
-): Promise<UpdateResult> {
-  const update = { ...defaultUpdateDependencies, ...dependencies }
-  const execution = req.execution ?? detectUpdateExecution()
+export async function updateAstrale(request: UpdateRequest): Promise<UpdateResult> {
+  const execution = request.execution ?? detectUpdateExecution()
   if (execution.kind === 'package-managed') {
     return {
       status: 'managed',
-      currentVersion: req.currentVersion,
+      currentVersion: request.currentVersion,
       executable: execution.executable,
     }
   }
 
-  const install = await admitScriptInstall(await readInstallMetadata(req.installPath), execution)
-  const meta = install.metadata
-  const currentVersion = meta.version ?? req.currentVersion
-  const channel = req.channel ?? meta.channel ?? DEFAULT_UPDATE_CHANNEL
-  const platform = req.platform ?? detectPlatform()
-  const key = platformKey(platform)
-  const base = releaseBase(meta, { channel, version: req.version })
-  const manifest = await fetchManifest(base, req.signal)
+  const meta = await readInstallMetadata(request.installPath)
+  await assertOwnsInstallation(meta, execution.executable)
+  const currentVersion = meta.version ?? request.currentVersion
+  const platform = request.platform ?? detectPlatform()
+  const key = `${platform.os}-${platform.arch}`
+  const base = releaseBase(meta, {
+    channel: request.channel ?? meta.channel,
+    version: request.version,
+  })
+  const manifest = UpdateManifestSchema.parse(
+    JSON.parse((await download(`${base}/manifest.json`, request.signal)).toString('utf8')),
+  )
   const asset = manifest.assets[key]
   if (!asset) {
     throw new AstraleError(
@@ -334,71 +271,41 @@ export async function updateAstrale(
       `Available platforms: ${Object.keys(manifest.assets).join(', ')}`,
     )
   }
+  const release = { currentVersion, latestVersion: manifest.version, channel: manifest.channel }
+  if (currentVersion === manifest.version) return { status: 'up-to-date', ...release }
+  if (request.check) return { status: 'available', ...release }
 
-  if (!shouldUpdate(currentVersion, manifest.version)) {
-    return {
-      status: 'up-to-date',
-      currentVersion,
-      latestVersion: manifest.version,
-      channel: manifest.channel,
-    }
-  }
-
-  if (req.check) {
-    return {
-      status: 'available',
-      currentVersion,
-      latestVersion: manifest.version,
-      channel: manifest.channel,
-    }
-  }
-
-  const tmp = await mkdtemp(join(tmpdir(), 'astrale-update-'))
+  const directory = await mkdtemp(join(tmpdir(), 'astrale-update-'))
   try {
-    const archive = join(tmp, asset.name)
-    await downloadToFile(`${base}/${asset.name}`, archive)
-    const expected = asset.sha256
-    const actual = await sha256File(archive)
-    if (actual !== expected.toLowerCase()) {
+    const bytes = await download(`${base}/${asset.name}`)
+    const actual = createHash('sha256').update(bytes).digest('hex')
+    if (actual !== asset.sha256.toLowerCase()) {
       throw new AstraleError(
         'UPDATE_CHECKSUM_MISMATCH',
         `Checksum mismatch for ${asset.name}.`,
-        `Expected ${expected}; got ${actual}.`,
+        `Expected ${asset.sha256}; got ${actual}.`,
       )
     }
+    const archive = join(directory, asset.name)
+    await writeFile(archive, bytes)
+    const binary = await extractBinary(archive, directory)
+    await assertVersion(binary, manifest.binaryVersion)
 
-    await extractTarGz(archive, tmp, ['astrale'])
-    const nextBin = join(tmp, 'astrale')
-    await chmod(nextBin, 0o755)
-    await smokeVersion(nextBin, manifest.binaryVersion)
-
-    const replacement = await update.replaceStandaloneBinary({
-      installedBinary: meta.bin,
-      nextBinary: nextBin,
-    })
-    try {
-      await update.writeInstallMetadata(
-        {
-          ...meta,
-          channel: manifest.channel,
-          version: manifest.version,
-          installedAt: new Date().toISOString(),
-        },
-        req.installPath,
-      )
-    } catch (error) {
-      try {
-        await replacement.rollback()
-      } catch (rollbackError) {
-        throw new AggregateError(
-          [error, rollbackError],
-          'Standalone update metadata commit and binary rollback both failed.',
-        )
-      }
-      throw error
-    }
-    await replacement.finalize()
-
+    await replaceStandaloneBinary(meta.bin, binary, () =>
+      atomicWrite(
+        request.installPath ?? INSTALL_PATH,
+        JSON.stringify(
+          {
+            ...meta,
+            channel: manifest.channel,
+            version: manifest.version,
+            installedAt: new Date().toISOString(),
+          },
+          null,
+          2,
+        ) + '\n',
+      ),
+    )
     return {
       status: 'updated',
       previousVersion: currentVersion,
@@ -407,62 +314,6 @@ export async function updateAstrale(
       bin: meta.bin,
     }
   } finally {
-    await rm(tmp, { recursive: true, force: true })
-  }
-}
-
-async function readUrlText(url: string, signal?: AbortSignal): Promise<string> {
-  if (url.startsWith('file://')) {
-    return readFile(new URL(url), 'utf8')
-  }
-  const res = await fetch(url, { signal })
-  if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status}`)
-  return res.text()
-}
-
-async function downloadToFile(url: string, path: string): Promise<void> {
-  if (url.startsWith('file://')) {
-    await copyFile(new URL(url), path)
-    return
-  }
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status}`)
-  const bytes = new Uint8Array(await res.arrayBuffer())
-  await writeFile(path, bytes)
-}
-
-async function sha256File(path: string): Promise<string> {
-  const hash = createHash('sha256')
-  hash.update(await readFile(path))
-  return hash.digest('hex')
-}
-
-async function extractTarGz(
-  archive: string,
-  cwd: string,
-  exactFiles?: readonly string[],
-): Promise<void> {
-  const listed = await run('tar', ['-tzf', archive])
-  if (listed.code !== 0) {
-    throw new Error(`Could not inspect update archive: ${listed.stderr.trim()}`)
-  }
-  if (exactFiles && listed.stdout !== `${exactFiles.join('\n')}\n`) {
-    throw new Error(
-      `Update archive closure is invalid: expected ${exactFiles.join(', ')}, got ` +
-        `${listed.stdout.trim().split(/\r?\n/u).join(', ')}`,
-    )
-  }
-  const { code, stderr } = await run('tar', ['-xzf', archive, '-C', cwd])
-  if (code !== 0) {
-    throw new Error(`Could not extract update archive: ${stderr.trim()}`)
-  }
-}
-
-async function smokeVersion(bin: string, expectedVersion: string): Promise<void> {
-  const { code, stdout, stderr } = await run(bin, ['--version'])
-  if (code !== 0) throw new Error(`Updated binary failed --version: ${stderr.trim()}`)
-  const actual = stdout.trim()
-  if (actual !== expectedVersion) {
-    throw new Error(`Updated binary reported version ${actual}, expected ${expectedVersion}`)
+    await rm(directory, { recursive: true, force: true })
   }
 }
