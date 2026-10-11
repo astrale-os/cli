@@ -149,6 +149,15 @@ export async function buildProgram(): Promise<Command> {
       withKernelOptions((await import('../commands/domain/install')).default),
       withKernelOptions((await import('../commands/domain/uninstall')).default),
     ],
+    subgroups: [
+      {
+        name: 'installation',
+        description: 'Observe durable installations and operate Root repair sessions',
+        commands: (await import('../commands/domain/installation')).installationCommands.map(
+          withKernelOptions,
+        ),
+      },
+    ],
   })
 
   // Machine plumbing of the Domain version registry (CT29), driven by `astrale-domain diff`,

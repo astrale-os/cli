@@ -16,7 +16,7 @@ export interface ServedDeployment {
   readonly origin: string
   readonly issuer: string
   readonly revision: string
-  readonly pin: InstalledPin
+  readonly pin: Extract<InstalledPin, { readonly kind: 'release' }>
   /** The admitted `DomainRelease` v4 itself, present exactly when `pin` is a release pin. */
   readonly release: DomainRelease
 }
@@ -78,7 +78,10 @@ export async function readServedDeployment(
 
 /** Whether two pins name the same pinned document: one meaning per variant. */
 export function samePin(left: InstalledPin, right: InstalledPin): boolean {
-  return left.release === right.release && left.build === right.build
+  if (left.kind === 'release' && right.kind === 'release') {
+    return left.release === right.release && left.build === right.build
+  }
+  return left.kind === 'artifact' && right.kind === 'artifact' && left.artifact === right.artifact
 }
 
 async function acceptRelease(response: Response, url: URL): Promise<DomainRelease> {

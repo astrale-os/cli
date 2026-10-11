@@ -16,6 +16,7 @@ import type { OperationRecovery } from './command'
 
 import { AstraleError } from '../errors'
 import { log, printFailureDebug } from '../lib/terminal/log'
+import { IncompleteInstallation, renderIncompleteInstallation } from './installation-result'
 import {
   CREDENTIAL_REFUSED,
   functionInputIssues,
@@ -38,6 +39,10 @@ export async function formatKernelError(
     fields?: Readonly<Record<string, unknown>>
   } = {},
 ): Promise<void> {
+  if (error instanceof IncompleteInstallation) {
+    renderIncompleteInstallation(error, machine, options.recovery, options.fields)
+    return
+  }
   renderFailure(classifyFailure(error), machine, urlArg, options.recovery, options.fields)
   if (debug) printFailureDebug(error, urlArg)
 }

@@ -34,7 +34,7 @@ astrale query [sources...]
 astrale introspect <origin-or-path>
 astrale mutate
 astrale call <path> [key=value...]
-astrale execution status|result <receipt>
+astrale execution ...
 astrale token
 astrale logs
 astrale view [domain-or-view]
@@ -120,14 +120,14 @@ neither the CLI nor the SDK embeds the UI package or Base UI.
 
 Use canonical Kernel Paths:
 
-| Form | Example |
-|---|---|
-| Domain root | `/:notes.example.dev` |
-| Class | `/:notes.example.dev:class.Note` |
-| Static callable | `/:notes.example.dev:class.Note:list` |
-| Instance callable | `@node-id::notes.example.dev:class.Note.method.archive` |
-| Node ID | `@node-id` |
-| Active caller shorthand | `@self` |
+| Form                    | Example                                                 |
+| ----------------------- | ------------------------------------------------------- |
+| Domain root             | `/:notes.example.dev`                                   |
+| Class                   | `/:notes.example.dev:class.Note`                        |
+| Static callable         | `/:notes.example.dev:class.Note:list`                   |
+| Instance callable       | `@node-id::notes.example.dev:class.Note.method.archive` |
+| Node ID                 | `@node-id`                                              |
+| Active caller shorthand | `@self`                                                 |
 
 Static dispatch uses one colon before the method. Instance dispatch uses `::` followed by the complete Domain-qualified Method key.
 Discover methods with `astrale introspect <origin> --bundle`. Introspection can use a Class
@@ -228,6 +228,48 @@ The CLI is connect-only: it does not build or run domains. The SDK's
 `package`, and test workflows; a deploy or a publish never installs. Project Environments say how to
 deploy and with which secrets; they name no instance and do not use the CLI's active instance. Only
 `astrale domain install` changes what an instance runs.
+
+Installation and uninstallation are durable Kernel executions. The CLI waits
+within the request timeout and reports completion only from a completed outcome.
+`--json` adds `execution` and `status` to the committed result. An unfinished,
+failed or cancelled install/uninstall exits 1, retaining those fields on stderr
+with the exact operation ID and retry command. Keep them: retrying an exact
+operation observes the same run; generating another operation starts another
+intent. Only a completed install normally reads back and verifies the installed pins.
+A replay after an issuer transition can recompute different consent: the CLI does
+not store or reconstruct the original request. If that exact replay is refused
+with `IDEMPOTENCY_KEY_CONFLICT`, it checks every requested release/build pin,
+URL and issuer against the installed state and reads each generation. Only an
+exact match is reported as `changed:false` with
+`recovered.refusal:"IDEMPOTENCY_KEY_CONFLICT"`. This is an observed already-current
+postcondition, not evidence that the original Execution succeeded; no execution
+ID or status is invented and no new operation is started. A mismatch or an
+unreadable postcondition preserves the conflict.
+
+`--mode maintenance` starts a Root repair session and returns without waiting.
+The Instance excludes other callers during this session. Read its `status`,
+repair data using the Root identity, then send its exact next `detail.command`
+with `apply --command`. `--validation-scope full` and
+`--validation-counts exact` widen validation; `--no-wait` also returns an online
+installation without waiting. None of these states means the target is installed.
+
+```bash
+astrale domain installation status <execution-id> -i staging --as root --json
+astrale domain installation apply <execution-id> --command 1 -i staging --as root --json
+astrale domain installation result <execution-id> --wait-ms 10000 -i staging --as root --json
+astrale domain installation abort <execution-id> --attempt 1 -i staging --as root --json
+astrale domain installation cancel <execution-id> -i staging --as root --json
+astrale domain installation resume <execution-id> -i staging --as root --json
+```
+
+Use the same Instance and initiating identity (or Root) for observation; apply,
+abort and resume require Root. Status/result are reads and report the exact
+state/outcome, including failed outcomes; an unfinished result preserves
+`EXECUTION_PENDING`. An accepted apply/abort signal is not completion: observe
+again. Signals are not retried automatically. Cooperative cancel attempts to
+restore the source schema; inspect the resulting status. These commands offer
+neither forced cancellation nor Execution deletion. Use `--uninstall` with
+status/result/cancel/resume for an uninstall Execution.
 
 `astrale domain install` takes deployment URLs and versions:
 
@@ -346,7 +388,6 @@ passphrase-encrypted compact JWE. Unversioned exports are rejected; do not remov
 field or invent missing identity metadata to bypass admission. Use `astrale identity import --help`
 and `astrale identity export --help` for the transfer options.
 
-
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`
 creates a local key identity. Registration targets an existing Identity Node;
 it never creates a Node, changes business properties, assigns a Group, or replaces
@@ -391,11 +432,11 @@ callable's Policy alone decides, with no `can_use` needed. Without `--creds`, `c
 selected identity's credential through the callable's Domain instead: the Domain becomes the
 principal, the identity stays the caller, and the Policy is evaluated against the identity.
 
-| Selection | Principal presented | Effect |
-| --- | --- | --- |
-| `call` with `--as <identity>` or the default identity | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity |
-| `get`, `query`, `mutate` on an Astrale-managed instance | the identity | bounded by each Class's rules and the identity's Policies, with no Domain scope |
-| `--creds "$(astrale token --raw)"` | the identity | the callable's Policy alone decides; a Kernel syscall's `canUseSyscall` still asks for the identity's own `can_use` |
+| Selection                                               | Principal presented             | Effect                                                                                                              |
+| ------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `call` with `--as <identity>` or the default identity   | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity                              |
+| `get`, `query`, `mutate` on an Astrale-managed instance | the identity                    | bounded by each Class's rules and the identity's Policies, with no Domain scope                                     |
+| `--creds "$(astrale token --raw)"`                      | the identity                    | the callable's Policy alone decides; a Kernel syscall's `canUseSyscall` still asks for the identity's own `can_use` |
 
 Reuse a minted token for anything the identity may do itself; `call --as` presents the Domain's
 credential instead, for a Domain that must act for the identity.

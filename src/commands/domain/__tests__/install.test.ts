@@ -1,6 +1,12 @@
-import type { InstalledRelease, InstallRequest, InstallResult } from '@astrale-os/sdk/client/schema'
+import type {
+  Installation,
+  InstalledRelease,
+  InstallRequest,
+  InstallResult,
+} from '@astrale-os/sdk/client/schema'
 
 import { ResponseError } from '@astrale-os/sdk/client'
+import { createSchema } from '@astrale-os/sdk/client/schema'
 import { defineSchema, schema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 import { Command } from 'commander'
@@ -75,6 +81,16 @@ function installedFrom(deployment: ServedDeployment, url = deployment.issuer): I
   } as unknown as InstalledRelease
 }
 
+const EXECUTION = 'execution-install-1'
+
+/** An install that ended without a result, in `state` with `outcome` when terminal. */
+function unsettled(state: string, outcome?: unknown): Installation {
+  return {
+    execution: EXECUTION,
+    status: { id: EXECUTION, state, ...(outcome === undefined ? {} : { outcome }) },
+  } as unknown as Installation
+}
+
 function committed(
   origins: readonly string[],
   replaced: readonly string[] = [],
@@ -147,6 +163,8 @@ function harness(
   options: {
     readonly served?: Readonly<Record<string, ServedDeployment | (() => Promise<ServedDeployment>)>>
     readonly listing?: (call: number) => Promise<readonly InstalledRelease[]>
+    readonly lifecycle?: (request: InstallRequest) => Promise<Installation>
+    readonly installation?: Installation
     readonly install?: (request: InstallRequest) => Promise<InstallResult>
     readonly inspect?: (origin: string) => Promise<unknown>
     readonly now?: () => number
@@ -174,7 +192,10 @@ function harness(
       installed: async () => options.listing?.(listings++) ?? (listings++, []),
       install: async (request: InstallRequest) => {
         run.requests.push(request)
-        return (options.install ?? (async () => committed([AGENCIES])))(request)
+        if (options.lifecycle !== undefined) return options.lifecycle(request)
+        if (options.installation !== undefined) return options.installation
+        const result = await (options.install ?? (async () => committed([AGENCIES])))(request)
+        return completedInstallation(result)
       },
       inspect: async (origin: string) =>
         options.inspect?.(origin) ?? { origin, revision: REVISION, generation: digest('e') },
@@ -240,6 +261,32 @@ async function refused(
 }
 
 describe('install by URL', () => {
+  test('reports an install that ended without a result by its reason or its Execution', async () => {
+    const refusal = { code: 'SCHEMA_MIGRATION_REQUIRED', message: 'A migration is required.' }
+    for (const [answer, expected] of [
+      [
+        unsettled('failed', { kind: 'failed', error: refusal }),
+        { error: refusal.code, message: refusal.message },
+      ],
+      [
+        unsettled('running'),
+        {
+          error: 'INSTALLATION_PENDING',
+          message: `Installation ${EXECUTION} is running.`,
+          execution: EXECUTION,
+          status: { state: 'running' },
+        },
+      ],
+      [unsettled('cancelled', { kind: 'cancelled' }), { error: 'INSTALLATION_CANCELLED' }],
+    ] as const) {
+      const run = harness({
+        served: { [A]: served(AGENCIES, A, '1') },
+        installation: answer,
+      })
+      expect(await refused([A], JSON_OUTPUT, run)).toMatchObject(expected)
+    }
+  })
+
   test('guards each URL by the digest it serves and installs all of them atomically, in order', async () => {
     const a = served(AGENCIES, A, '1')
     const b = served('employees.test', B, '2')
@@ -750,7 +797,11 @@ describe('issuer changes need consent, planned from readable installations', () 
         },
       })
     const consent = { ...JSON_OUTPUT, allowIssuerChange: [''] }
-    for (const code of ['SCHEMA_INPUT_INVALID', 'SCHEMA_OPERATION_CONFLICT']) {
+    for (const code of [
+      'SCHEMA_INPUT_INVALID',
+      'SCHEMA_OPERATION_CONFLICT',
+      'IDEMPOTENCY_KEY_CONFLICT',
+    ]) {
       io.stdout = ''
       await installByReference([A2], consent, refusing(code, '/domains/0/consent').deps)
       expect(JSON.parse(io.stdout)).toMatchObject({
@@ -861,3 +912,264 @@ describe('issuer change lines and consent flags', () => {
     expect(asked).toEqual(['one.test', 'two.test'])
   })
 })
+
+function completedInstallation(result: InstallResult) {
+  return {
+    execution: 'install-execution' as never,
+    status: {
+      id: 'install-execution' as never,
+      function: 'install-function' as never,
+      version: digest('a'),
+      state: 'completed',
+      createdAt: '2026-10-11T18:00:00.000Z',
+      outcome: { kind: 'completed', value: result },
+    },
+    result,
+  } satisfies Installation
+}
+
+describe('durable installations', () => {
+  test('retains execution and terminal status beside the committed JSON result', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+    await installByReference([A], JSON_OUTPUT, run.deps)
+    expect(JSON.parse(io.stdout)).toMatchObject({
+      changed: true,
+      execution: 'install-execution',
+      status: { state: 'completed' },
+    })
+  })
+
+  for (const state of ['pending', 'running', 'waiting', 'paused', 'failed', 'cancelled'] as const) {
+    test(`${state} never claims success or reads installed pins after the call`, async () => {
+      let listings = 0
+      const status = {
+        ...completedInstallation(committed([AGENCIES])).status,
+        state,
+        outcome:
+          state === 'failed'
+            ? {
+                kind: 'failed' as const,
+                error: {
+                  code: 'DATA_MIGRATION_REQUIRED',
+                  message: 'Stored data requires repair.',
+                  details: { count: 2 },
+                },
+              }
+            : state === 'cancelled'
+              ? { kind: 'cancelled' as const }
+              : undefined,
+        ...(state === 'waiting'
+          ? { detail: { phase: 'awaiting' as const, command: 1, mode: 'maintenance' as const } }
+          : {}),
+      }
+      const run = harness({
+        served: { [A]: served(AGENCIES, A, '1') },
+        listing: async () => {
+          listings++
+          return []
+        },
+        installation: { execution: 'install-execution' as never, status },
+      })
+      const failure = await refused(
+        [A],
+        {
+          ...JSON_OUTPUT,
+          operation: RETRY,
+          mode: 'maintenance',
+          validationScope: 'full',
+          validationCounts: 'exact',
+          wait: false,
+        },
+        run,
+      )
+      expect(io.stdout).toBe('')
+      expect(failure).toMatchObject({
+        execution: 'install-execution',
+        status: { state },
+        operation: RETRY,
+        error:
+          state === 'failed'
+            ? 'DATA_MIGRATION_REQUIRED'
+            : state === 'cancelled'
+              ? 'INSTALLATION_CANCELLED'
+              : 'INSTALLATION_PENDING',
+      })
+      expect(failure.retry).toContain(`--operation ${RETRY}`)
+      expect(failure.retry).toContain(
+        '--mode maintenance --validation-scope full --validation-counts exact --no-wait',
+      )
+      expect(run.requests).toHaveLength(1)
+      expect(run.requests[0]).toMatchObject({
+        operation: RETRY,
+        mode: 'maintenance',
+        validation: { scope: 'full', counts: 'exact' },
+        wait: false,
+      })
+      expect(listings).toBe(1)
+    })
+  }
+
+  test('a human sees the failed execution, never already current', async () => {
+    const status = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      state: 'failed' as const,
+      outcome: {
+        kind: 'failed' as const,
+        error: { code: 'DATA_MIGRATION_REQUIRED', message: 'Repair stored data.' },
+      },
+    }
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: { execution: 'install-execution' as never, status },
+    })
+    const shown = await human(async () => {
+      await expect(installByReference([A], {}, run.deps)).rejects.toBeInstanceOf(ExitError)
+    })
+    expect(shown.all).toContain('DATA_MIGRATION_REQUIRED')
+    expect(shown.all).toContain('install-execution')
+    expect(shown.all).not.toContain('already current')
+  })
+})
+
+describe('published SDK durable decoder through the install command', () => {
+  for (const state of ['completed', 'failed', 'waiting'] as const) {
+    test(`${state}: consumes the reference and exact Execution reads before presenting`, async () => {
+      const calls: string[] = []
+      const result = {
+        changed: false as const,
+        domains: [{ origin: AGENCIES, revision: REVISION, generation: digest('a') }] as const,
+      }
+      const outcome =
+        state === 'failed'
+          ? {
+              kind: 'failed' as const,
+              error: {
+                code: 'DATA_MIGRATION_REQUIRED',
+                message: 'Repair required.',
+                details: { count: 2 },
+              },
+            }
+          : { kind: 'completed' as const, value: result }
+      const status = {
+        id: 'install-execution',
+        function: 'install-function',
+        version: digest('a'),
+        state,
+        createdAt: '2026-10-11T18:00:00Z',
+        ...(state === 'waiting'
+          ? { detail: { phase: 'awaiting', command: 1, mode: 'maintenance' } }
+          : { outcome }),
+      }
+      const api = createSchema(
+        async (call) => {
+          calls.push(typeof call.target === 'string' ? call.target : String(call.target))
+          if (calls.length === 1)
+            return { kind: 'execution', execution: 'install-execution' } as never
+          if (calls.at(-1)!.endsWith('.result')) return { kind: 'value', value: outcome } as never
+          return { kind: 'value', value: status } as never
+        },
+        { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
+      )
+      let listings = 0
+      const run = harness({
+        served: { [A]: served(AGENCIES, A, '1') },
+        listing: async () => {
+          listings++
+          return []
+        },
+        lifecycle: (request) => api.install(request),
+      })
+      if (state === 'completed') {
+        await installByReference([A], JSON_OUTPUT, run.deps)
+        expect(JSON.parse(io.stdout)).toMatchObject({
+          execution: 'install-execution',
+          changed: false,
+          status: { state },
+        })
+        expect(listings).toBe(2)
+      } else {
+        const failure = await refused(
+          [A],
+          { ...JSON_OUTPUT, ...(state === 'waiting' ? { mode: 'maintenance' as const } : {}) },
+          run,
+        )
+        expect(failure).toMatchObject({
+          execution: 'install-execution',
+          status: { state },
+          error: state === 'failed' ? 'DATA_MIGRATION_REQUIRED' : 'INSTALLATION_PENDING',
+        })
+        expect(listings).toBe(1)
+      }
+      expect(calls[0]).toContain('function.install')
+      expect(calls.at(-1)).toContain('Execution.method.status')
+      expect(calls).toHaveLength(state === 'waiting' ? 2 : 3)
+      expect(run.requests).toHaveLength(1)
+    })
+  }
+})
+
+test('durable dependency refusal retains its advisory precheck and exact Kernel failure', async () => {
+  const status = {
+    ...completedInstallation(committed([AGENCIES])).status,
+    state: 'failed' as const,
+    outcome: {
+      kind: 'failed' as const,
+      error: {
+        code: 'SCHEMA_DEPENDENTS_INCOMPATIBLE',
+        message: 'Dependent would break.',
+        details: { origins: ['consumer.test'] },
+      },
+    },
+  }
+  const run = harness({
+    served: { [A]: served(AGENCIES, A, '1') },
+    installation: { execution: 'install-execution' as never, status },
+  })
+  const failure = await refused([A], JSON_OUTPUT, run)
+  expect(failure).toMatchObject({
+    error: 'SCHEMA_DEPENDENTS_INCOMPATIBLE',
+    precheck: { skipped: [{ reference: A, reason: 'bundle-unread' }] },
+    status: { outcome: { error: { details: { origins: ['consumer.test'] } } } },
+  })
+})
+
+for (const exact of [true, false]) {
+  test(`durable replay after issuer change needs exact installed pin evidence (${exact})`, async () => {
+    const a2 = served(AGENCIES, A2, '2')
+    const api = createSchema(
+      async () => {
+        throw new ResponseError(1003, 'Operation input conflicts.', INVOCATION, {
+          code: 'IDEMPOTENCY_KEY_CONFLICT',
+          details: {},
+        })
+      },
+      { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
+    )
+    const run = harness({
+      served: { [A2]: a2 },
+      listing: async () => [installedFrom(exact ? a2 : served(AGENCIES, A2, '9'))],
+      lifecycle: (request) => api.install(request),
+    })
+    if (exact) {
+      await installByReference(
+        [A2],
+        { ...JSON_OUTPUT, operation: RETRY, allowIssuerChange: [''] },
+        run.deps,
+      )
+      expect(JSON.parse(io.stdout)).toMatchObject({
+        changed: false,
+        recovered: { refusal: 'IDEMPOTENCY_KEY_CONFLICT' },
+        references: [{ installed: { issuer: A2, pin: a2.pin } }],
+      })
+      expect(JSON.parse(io.stdout)).not.toHaveProperty('execution')
+    } else {
+      expect(
+        await refused([A2], { ...JSON_OUTPUT, operation: RETRY, allowIssuerChange: [''] }, run),
+      ).toMatchObject({ error: 'RESPONSE_ERROR', reason: { code: 'IDEMPOTENCY_KEY_CONFLICT' } })
+      expect(io.stdout).toBe('')
+    }
+    expect(run.requests).toHaveLength(1)
+    expect(String(run.requests[0]!.operation)).toBe(RETRY)
+    expect(run.requests[0]!.domains[0]).not.toHaveProperty('consent')
+  })
+}

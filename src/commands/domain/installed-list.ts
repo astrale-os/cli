@@ -39,7 +39,8 @@ interface InstalledDomainV1 {
   readonly origin: string
   readonly revision: string
   readonly issuer: string
-  readonly url: string
+  /** The deployment URL; absent for a local install, pinned to a stored artifact. */
+  readonly url?: string
   readonly pin: InstalledPin
   /**
    * The registry version naming this exact release (`1.5.0`), else the version naming the same
@@ -50,7 +51,7 @@ interface InstalledDomainV1 {
   /**
    * The deployment's name, printed verbatim (AM-57): the version naming it, else the CT28
    * `deploymentName` of its record (`1.4.2 + 7 commits · a1b2c3d · staging`); `unknown` for a
-   * release no Publication and no record names.
+   * release no Publication and no record names; `local` for a stored artifact.
    */
   readonly name: string
   /** The highest stable, non-yanked version above the installed one, when one is known. */
@@ -59,6 +60,8 @@ interface InstalledDomainV1 {
 
 /** The name of a release pin that neither a Publication nor a record names. */
 const UNKNOWN_NAME = 'unknown'
+/** The name of a local install: its stored artifact names no deployment. */
+const LOCAL_NAME = 'local'
 
 /** Deployment records read at once; each is one GET to the deployment's dispatcher. */
 const RECORD_READS = 6
@@ -81,10 +84,11 @@ export function describeInstalled(
     origin: installed.origin,
     revision: installed.revision,
     issuer: installed.issuer,
-    url: installed.url,
+    ...(installed.url === undefined ? {} : { url: installed.url }),
     pin: installed.pin,
   }
   const pin = installed.pin
+  if (pin.kind === 'artifact') return Object.freeze({ ...base, name: LOCAL_NAME })
   const exact = publications.filter((entry) => entry.releaseDigest === pin.release)
   const sameBuild =
     exact.length > 0
@@ -212,14 +216,18 @@ export async function listInstalled(
 ): Promise<InstalledListV1> {
   const deps = { ...defaultDependencies, ...dependencies }
   const { kernel, releases } = await deps.installed(opts)
-  const origins = [...new Set(releases.map((entry) => entry.origin))]
+  const deployed = releases.filter((entry) => entry.pin.kind === 'release')
+  // The Kernel lists a deployment URL exactly for a release pin.
+  const recordOf = async ({ origin, url, pin }: InstalledRelease) =>
+    pin.kind === 'release' && url !== undefined ? deps.record({ origin, url, pin }) : undefined
+  const origins = [...new Set(deployed.map((entry) => entry.origin))]
   const [publications, records] = await Promise.all([
     origins.length === 0
       ? new Map<string, readonly PublicationSummaryV1[]>()
       : deps.registry(adminSessionOptions(opts), (registry) => readPublications(registry, origins)),
-    mapBounded(releases, RECORD_READS, async (entry) => [entry, await deps.record(entry)] as const),
+    mapBounded(deployed, RECORD_READS, async (entry) => [entry, await recordOf(entry)] as const),
   ])
-  const recordOf = new Map<InstalledRelease, DeploymentRecordV1 | undefined>(records)
+  const recorded = new Map<InstalledRelease, DeploymentRecordV1 | undefined>(records)
   return Object.freeze({
     format: 'astrale.installed-list',
     version: 1,
@@ -227,7 +235,7 @@ export async function listInstalled(
     partial: true,
     domains: Object.freeze(
       releases.map((entry) =>
-        describeInstalled(entry, publications.get(entry.origin) ?? [], recordOf.get(entry)),
+        describeInstalled(entry, publications.get(entry.origin) ?? [], recorded.get(entry)),
       ),
     ),
   })
@@ -255,7 +263,7 @@ export function installedRows(list: InstalledListV1): Array<Record<string, strin
   return list.domains.map((domain) => ({
     origin: domain.origin,
     version: domain.version ?? domain.name,
-    digest: shortDigest(domain.pin.release),
+    digest: shortDigest(domain.pin.kind === 'release' ? domain.pin.release : domain.pin.artifact),
     available: domain.available ?? '—',
   }))
 }

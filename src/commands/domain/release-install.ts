@@ -1,4 +1,5 @@
 import type {
+  Installation,
   InstalledPin,
   InstalledRelease,
   InstallRequest,
@@ -19,7 +20,9 @@ import type { ResolvedVersion, VersionReference } from './version-reference'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
 import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
+import { IncompleteInstallation, installationResult } from '../../connection/installation-result'
 import { reasonCode } from '../../connection/reasons'
+import { resolveTimeoutMs } from '../../connection/session'
 import { AstraleError } from '../../errors'
 import {
   DeploymentReadError,
@@ -28,6 +31,7 @@ import {
   samePin,
   type ServedDeployment,
 } from '../../lib/deployment/release'
+import { shellCommand } from '../../lib/shell-command'
 import { fatal, log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
@@ -59,6 +63,10 @@ const NOT_YET_ACTIVE_WINDOW_MS = 60_000
 
 export type ReferenceInstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
+    readonly mode?: 'online' | 'maintenance'
+    readonly validationScope?: 'incremental' | 'full'
+    readonly validationCounts?: 'sample' | 'exact'
+    readonly wait?: boolean
     readonly operation?: string
     readonly token?: string
     /** Every `--allow-issuer-change` occurrence: `''` without an origin, else the origin it names. */
@@ -92,7 +100,10 @@ interface InstallReference {
 }
 
 /** A Kernel refusal of a request whose install had already committed (AM-81). */
-type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
+type CommittedInstallRefusal =
+  | 'SCHEMA_INPUT_INVALID'
+  | 'SCHEMA_OPERATION_CONFLICT'
+  | 'IDEMPOTENCY_KEY_CONFLICT'
 
 /**
  * `--json` of an install: the Kernel result, unchanged, plus one entry per reference. When the
@@ -101,6 +112,8 @@ type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLI
  * refusal, so a consumer can tell it from a Kernel replay.
  */
 type InstallReport = InstallResult & {
+  readonly execution?: Installation['execution']
+  readonly status?: Installation['status']
   readonly references: readonly InstallReference[]
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
   /** The advisory pre-check this install ran before it was sent ([.78239] [.69634]). */
@@ -163,7 +176,7 @@ interface PlannedRoot {
   readonly source: ReleaseSource
   readonly served: ServedDeployment | undefined
   readonly origin: string | undefined
-  readonly expected: InstalledPin | null
+  readonly expected: Extract<InstalledPin, { readonly kind: 'release' }> | null
 }
 
 /**
@@ -271,6 +284,7 @@ interface InstallRun {
 
 /** What the install call gives the presentation: the Kernel result and the listing read after it. */
 interface InstallOutcome {
+  readonly installation?: Installation
   readonly result: InstallResult
   readonly after: readonly InstalledRelease[] | undefined
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
@@ -335,6 +349,16 @@ async function installReleases(
 
   const request = {
     operation,
+    ...(opts.mode === undefined ? {} : { mode: opts.mode }),
+    ...(opts.wait === undefined ? {} : { wait: opts.wait }),
+    ...(opts.validationScope === undefined && opts.validationCounts === undefined
+      ? {}
+      : {
+          validation: {
+            ...(opts.validationScope === undefined ? {} : { scope: opts.validationScope }),
+            ...(opts.validationCounts === undefined ? {} : { counts: opts.validationCounts }),
+          },
+        }),
     domains: roots.map(({ source, expected }, index) => {
       const change = changes[index]
       return {
@@ -361,15 +385,19 @@ async function installReleases(
     },
     call: async () => {
       try {
-        const result = await session.schema.install(request)
-        return { result, after: await installedAfter(session, machine) }
+        const installation = await session.schema.install(
+          request,
+          opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
+        )
+        const result = installationResult(installation)
+        return { installation, result, after: await installedAfter(session, machine) }
       } catch (error) {
         const recovered = await recoverCommittedInstall(error, session, roots)
         if (recovered !== undefined) return recovered
         throw error
       }
     },
-    format: ({ result, after, recovered }, raw) => {
+    format: ({ installation, result, after, recovered }, raw) => {
       const report = installReferences(roots, before, after, recovered ? [] : changes, consent)
       mismatched = report.filter((reference) => {
         const installed = after?.find((entry) => entry.origin === reference.origin)
@@ -383,6 +411,9 @@ async function installReleases(
         output(
           {
             ...result,
+            ...(installation === undefined
+              ? {}
+              : { execution: installation.execution, status: installation.status }),
             references: report,
             ...(recovered === undefined ? {} : { recovered }),
             precheck,
@@ -417,11 +448,14 @@ async function installReleases(
   if (failure !== undefined) {
     // Only a refusal the pre-check predicts is shown beside it. A transport failure or an unknown
     // outcome is resent with its own operation id, never replaced by the proposed install.
-    const predicted =
-      failure.error instanceof ResponseError &&
-      ['SCHEMA_DEPENDENCY_INCOMPATIBLE', 'SCHEMA_DEPENDENTS_INCOMPATIBLE'].includes(
-        reasonCode(failure.error.reason) ?? '',
-      )
+    const predicted = ['SCHEMA_DEPENDENCY_INCOMPATIBLE', 'SCHEMA_DEPENDENTS_INCOMPATIBLE'].includes(
+      failure.error instanceof IncompleteInstallation &&
+        failure.error.installation.status.outcome?.kind === 'failed'
+        ? failure.error.installation.status.outcome.error.code
+        : failure.error instanceof ResponseError
+          ? (reasonCode(failure.error.reason) ?? '')
+          : '',
+    )
     return predicted ? { ...failure, precheck } : failure
   }
   if (mismatched.length > 0) return { error: pinMismatchError(mismatched), render: 'input' }
@@ -820,6 +854,7 @@ async function recoverCommittedInstall(
   if (
     !(
       refusal === 'SCHEMA_OPERATION_CONFLICT' ||
+      refusal === 'IDEMPOTENCY_KEY_CONFLICT' ||
       (refusal === 'SCHEMA_INPUT_INVALID' &&
         typeof path === 'string' &&
         /^\/domains\/\d+\/consent$/u.test(path))
@@ -930,10 +965,16 @@ function installCommand(
       : opts.adminUrl === undefined
         ? []
         : [...flag('--admin-url', opts.adminUrl), ...flag('--domain-issuer', opts.domainIssuer)]
-  return [
-    'astrale domain install',
+  return shellCommand([
+    'astrale',
+    'domain',
+    'install',
     ...references,
     ...flag('--operation', operation),
+    ...flag('--mode', opts.mode),
+    ...flag('--validation-scope', opts.validationScope),
+    ...flag('--validation-counts', opts.validationCounts),
+    ...(opts.wait === false ? ['--no-wait'] : []),
     ...changes.flatMap((change) =>
       change === undefined ? [] : [`--allow-issuer-change=${change.origin}`],
     ),
@@ -941,8 +982,9 @@ function installCommand(
     ...flag('--url', opts.url),
     ...flag('-i', opts.instance),
     ...flag('--as', opts.as),
+    ...flag('--timeout', opts.timeout),
     ...admin,
-  ].join(' ')
+  ])
 }
 
 function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError {
@@ -1012,7 +1054,9 @@ function presentReferences(
 }
 
 function pinLabel(pin: InstalledPin): string {
-  return `release ${shortDigest(pin.release)}`
+  return pin.kind === 'release'
+    ? `release ${shortDigest(pin.release)}`
+    : `artifact ${shortDigest(pin.artifact)}`
 }
 
 function shortDigest(digest: string): string {

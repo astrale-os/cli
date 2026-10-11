@@ -476,7 +476,9 @@ function install(options: {
           ...listing.filter((entry) => !origins.has(entry.origin)),
           ...pinned.map(installedFrom),
         ]
-        return result
+        // The install the call waited for completed with this result.
+        const outcome = { kind: 'completed', value: result } as const
+        return { execution: 'execution-1', status: { state: 'completed', outcome }, result }
       },
     },
   }
