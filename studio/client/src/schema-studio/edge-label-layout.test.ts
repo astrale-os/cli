@@ -11,93 +11,70 @@ import {
 
 const samples = (...points: Array<[x: number, y: number, distance: number]>): EdgePathSample[] =>
   points.map(([x, y, distance]) => ({ x, y, distance }))
-
-const obstacle = (
-  id: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): EdgeLabelObstacle => ({ id, x, y, width, height })
-
-test('keeps a clear relationship label at the middle of its rendered path', () => {
-  expect(
-    placeEdgeLabel(samples([0, 0, 0], [50, 0, 50], [100, 0, 100]), { width: 30, height: 14 }, [], {
-      preferredDistance: 50,
-    }),
-  ).toEqual({ x: 50, y: 0 })
-})
-
-test('moves along the path instead of covering a node', () => {
-  const nodes = [obstacle('node', 35, -20, 30, 40)]
-  const placed = placeEdgeLabel(
-    samples([0, 0, 0], [25, 0, 25], [50, 0, 50], [75, 0, 75], [100, 0, 100]),
-    { width: 20, height: 12 },
-    nodes,
-    { preferredDistance: 50 },
+/** A straight path along y = 0, sampled every `step` up to `length`. */
+const line = (length: number, step: number) =>
+  samples(
+    ...Array.from(
+      { length: length / step + 1 },
+      (_, i) => [i * step, 0, i * step] as [number, number, number],
+    ),
   )
+const obstacle = (id: string, x: number, y: number, width: number, height: number) =>
+  ({ id, x, y, width, height }) as EdgeLabelObstacle
+const overlaps = (
+  at: { x: number; y: number },
+  size: { width: number; height: number },
+  box: EdgeLabelObstacle,
+  pad?: number,
+) => edgeLabelRectsOverlap(edgeLabelRect(at, size, pad), box)
 
-  expect(placed).toEqual({ x: 0, y: 0 })
-  expect(
-    edgeLabelRectsOverlap(edgeLabelRect(placed!, { width: 20, height: 12 }, 4), nodes[0]!),
-  ).toBe(false)
+test('a label sits mid-path when clear, slides along it past a card, and leaves it only when it must', () => {
+  const size = { width: 30, height: 14 }
+  expect(placeEdgeLabel(line(100, 50), size, [], { preferredDistance: 50 })).toEqual({
+    x: 50,
+    y: 0,
+  })
+
+  const node = obstacle('node', 35, -20, 30, 40)
+  const small = { width: 20, height: 12 }
+  const slid = placeEdgeLabel(line(100, 25), small, [node], { preferredDistance: 50 })!
+  expect(slid).toEqual({ x: 0, y: 0 })
+  expect(overlaps(slid, small, node, 4)).toBe(false)
+
+  const wide = obstacle('wide-node', -20, -20, 140, 40)
+  const off = placeEdgeLabel(line(100, 50), size, [wide], { preferredDistance: 50 })
+  expect(off).not.toBeNull()
+  expect(overlaps(off!, size, wide, 4)).toBe(false)
 })
 
-test('moves off the path when a card occupies every path candidate', () => {
-  const nodes = [obstacle('wide-node', -20, -20, 140, 40)]
+test('an endpoint chip stays near its own end of the edge', () => {
   const placed = placeEdgeLabel(
-    samples([0, 0, 0], [50, 0, 50], [100, 0, 100]),
-    { width: 30, height: 14 },
-    nodes,
-    { preferredDistance: 50 },
-  )
-
-  expect(placed).not.toBeNull()
-  expect(
-    edgeLabelRectsOverlap(edgeLabelRect(placed!, { width: 30, height: 14 }, 4), nodes[0]!),
-  ).toBe(false)
-})
-
-test('keeps an endpoint chip near its own end of the edge', () => {
-  const placed = placeEdgeLabel(
-    samples([0, 0, 0], [25, 0, 25], [50, 0, 50], [75, 0, 75], [100, 0, 100]),
+    line(100, 25),
     { width: 16, height: 12 },
     [obstacle('source-neighbour', 15, -12, 20, 24)],
     { preferredDistance: 25, maxPathDistance: 24 },
   )
-
-  expect(placed).not.toBeNull()
   expect(placed!.x).toBeLessThan(50)
 })
 
-test('slides along its path to clear a label another edge already holds', () => {
-  const path = samples([0, 0, 0], [25, 0, 25], [50, 0, 50], [75, 0, 75], [100, 0, 100])
-  const held = [obstacle('other:0', 35, -7, 30, 14)]
-  const placed = placeEdgeLabel(path, { width: 20, height: 12 }, [], {
+test('another edge’s label is slid past on the path, and overlapped rather than a card', () => {
+  const small = { width: 20, height: 12 }
+  const held = obstacle('other:0', 35, -7, 30, 14)
+  const slid = placeEdgeLabel(line(100, 25), small, [], {
     preferredDistance: 50,
-    softObstacles: held,
-  })
+    softObstacles: [held],
+  })!
+  expect(slid.y).toBe(0)
+  expect(overlaps(slid, small, held)).toBe(false)
 
-  expect(placed).not.toBeNull()
-  expect(placed!.y).toBe(0)
-  expect(edgeLabelRectsOverlap(edgeLabelRect(placed!, { width: 20, height: 12 }), held[0]!)).toBe(
-    false,
-  )
-})
-
-test('overlaps another label as little as possible rather than covering a card', () => {
-  const path = samples([0, 0, 0], [50, 0, 50], [100, 0, 100])
+  const size = { width: 30, height: 14 }
   const card = obstacle('card', -40, -60, 180, 44)
-  const held = [obstacle('other:0', -60, -12, 220, 24)]
-  const placed = placeEdgeLabel(path, { width: 30, height: 14 }, [card], {
+  const wide = obstacle('other:0', -60, -12, 220, 24)
+  const placed = placeEdgeLabel(line(100, 50), size, [card], {
     preferredDistance: 50,
-    softObstacles: held,
+    softObstacles: [wide],
   })
-
-  expect(placed).not.toBeNull()
-  expect(edgeLabelRectsOverlap(edgeLabelRect(placed!, { width: 30, height: 14 }, 4), card)).toBe(
-    false,
-  )
+  expect(overlaps(placed!, size, card, 4)).toBe(false)
 })
 
 test('lays parallel edges out so their names do not stack', () => {
@@ -128,7 +105,7 @@ test('lays parallel edges out so their names do not stack', () => {
 
 test('orders the pass by edge, never by input order', () => {
   const size = { width: 40, height: 14 }
-  const path = samples([0, 0, 0], [50, 0, 50], [100, 0, 100], [150, 0, 150], [200, 0, 200])
+  const path = line(200, 50)
   const a = { edgeId: 'a', slot: 0, samples: path, size, obstacles: [], preferredDistance: 100 }
   const b = { edgeId: 'b', slot: 0, samples: path, size, obstacles: [], preferredDistance: 100 }
 
@@ -138,9 +115,7 @@ test('orders the pass by edge, never by input order', () => {
 
 test('never lets a chip cover its own edge name', () => {
   const size = { width: 40, height: 14 }
-  const path = samples(
-    ...Array.from({ length: 11 }, (_, i) => [i * 10, 0, i * 10] as [number, number, number]),
-  )
+  const path = line(100, 10)
   const placements = layoutEdgeLabels([
     { edgeId: 'e', slot: 0, samples: path, size, obstacles: [], preferredDistance: 50 },
     {

@@ -132,6 +132,12 @@ test('tells node policies, edge policies and subject-only policies apart, throug
   ])
 })
 
+/** A callable check of `name` against `object`. */
+const check = (name: string, object: Record<string, string>) => ({
+  check: ref('policy', name),
+  object,
+})
+
 test('finds where a policy is used: protected classes and checking callables', () => {
   const ir = {
     domain: ORIGIN,
@@ -141,10 +147,7 @@ test('finds where a policy is used: protected classes and checking callables', (
         type: 'node',
         policies: { read: ref('policy', 'ObserveGroup') },
         methods: {
-          rename: {
-            name: 'rename',
-            policy: { check: ref('policy', 'ObserveGroup'), object: { kind: 'self' } },
-          },
+          rename: { name: 'rename', policy: check('ObserveGroup', { kind: 'self' }) },
           archive: { name: 'archive' },
         },
       },
@@ -160,8 +163,8 @@ test('finds where a policy is used: protected classes and checking callables', (
         name: 'createRecord',
         policy: {
           allOf: [
-            { check: ref('policy', 'ObserveGroup'), object: { kind: 'input', field: 'group' } },
-            { check: ref('policy', 'ObserveRecord'), object: { kind: 'input', field: 'group' } },
+            check('ObserveGroup', { kind: 'input', field: 'group' }),
+            check('ObserveRecord', { kind: 'input', field: 'group' }),
           ],
         },
       },
@@ -213,7 +216,7 @@ test('lists ancestor policies and their consumers through diamonds, without conf
         type: 'node',
         policies: { read: ref('policy', 'Grandparent') },
         methods: {
-          rename: { policy: { check: ref('policy', 'Parent'), object: { kind: 'self' } } },
+          rename: { policy: check('Parent', { kind: 'self' }) },
         },
       },
       MemberOf: {
@@ -231,10 +234,7 @@ test('lists ancestor policies and their consumers through diamonds, without conf
     },
     functions: {
       create: {
-        policy: {
-          check: ref('policy', 'GreatGrandparent'),
-          object: { kind: 'input', field: 'group' },
-        },
+        policy: check('GreatGrandparent', { kind: 'input', field: 'group' }),
       },
     },
   } as unknown as SchemaIR
