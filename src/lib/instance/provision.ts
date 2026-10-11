@@ -25,7 +25,6 @@ export type ProvisionOpts = KernelCommandOpts &
     // The matching CLI flags are read from argv by `canPrompt` — Commander
     // keeps root options out of a subcommand's action arguments.
     ci?: boolean
-    noPrompt?: boolean
     /** Exact durable create operation to replay after an uncertain outcome. */
     operation?: string
   }

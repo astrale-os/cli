@@ -16,7 +16,6 @@ test('a question is asked only of a human on a terminal who did not opt out', ()
     expect(canPrompt(flagged(flag))).toBe(false)
   }
   // Internal callers drive commands as functions, with no argv to speak for them.
-  expect(canPrompt({ ...terminal, noPrompt: true })).toBe(false)
   expect(canPrompt({ ...terminal, ci: true })).toBe(false)
 })
 

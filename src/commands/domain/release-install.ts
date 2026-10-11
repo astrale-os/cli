@@ -77,7 +77,6 @@ export type ReferenceInstallOpts = KernelCommandOpts &
     // Programmatic opt-out for callers that drive the install as a function; the CLI flags are read
     // from argv by `canPrompt`.
     readonly ci?: boolean
-    readonly noPrompt?: boolean
   }
 
 /** The pin, revision and issuer of one installation, as the installed listing reports them. */
