@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.142](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.141...cli/v1.0.0-beta.142) (2026-10-11)
+
+
+### Features
+
+* support durable executions and installation maintenance ([#674](https://github.com/astrale-os/cli/issues/674)) ([e5a7daf](https://github.com/astrale-os/cli/commit/e5a7daf6190b2a10a2d5da2d3a29bcbbe6f3f1b1))
+
 ## [1.0.0-beta.141](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.140...cli/v1.0.0-beta.141) (2026-10-11)
 
 
