@@ -192,31 +192,49 @@ Secrets belong to the publisher: each Environment declares its secrets file (`as
 
 - A deploy binds the Environment's current secrets to the new deployment only; every other
   deployment keeps its own.
-- A secret rotates in place on one deployment, which keeps its script, URL, issuer and key, so
-  nothing is reinstalled: deploy the identical release again with the new value in the secrets file
-  (the deploy reuses the deployment and reports its secrets `updated`), or call the deployment's
-  `setSecret` for one name it declares. Adding or removing a secret name is a new release.
+- Secret values can rotate in place while the deployment keeps its script, URL, issuer and key,
+  so consumers do not reinstall. Adding or removing a secret name is a new release.
 - Never pass a secret value in argv, where `ps` and shell history keep it: write it to a private file
   (`umask 077`) outside the repository, or pipe it from your secret manager.
 
-A deployment on the Admin instance's Services (adapter-astrale) is listed by
-`astrale-domain list --json` with its `callTarget.path`, `@<id>::services.astrale.ai:class.CloudflareDeployment`.
-Call its `setSecret` on the Admin instance (`--admin`, or `--admin=<bookmark>` when `callTarget.admin`
-names one) as an identity of the organization holding its line, with the input in a private file
-(`{"name":"API_TOKEN","value":"..."}`) or piped from the command that prints only the new value
-(`read-new-secret` below):
+For adapter-astrale, `astrale-domain list --environment production --json` includes each
+Deployment's `current` flag and two call targets. `callTarget.service` names the owning
+`@<serviceId>::services.astrale.ai:class.CloudflareService`; its `setSecret` changes **only the
+Service's current deployment**. `callTarget.path` names a `CloudflareDeployment` for retirement;
+that class has no `setSecret` Method. Selecting a historical row's Service still targets current,
+not that historical deployment.
+
+To rotate current, inspect the list and copy its `callTarget.service` into `SERVICE_TARGET`.
+Call on the Admin instance (`--admin`, or `--admin=<bookmark>` when `callTarget.admin` names one)
+as the Service owner or an identity authorized to act as that owner. Put
+`{"name":"API_TOKEN","value":"..."}` in a protected file outside the repository (referenced as
+`rotate.json` below), or pipe the output of your secret manager (`read-new-secret` below):
 
 ```sh
 astrale-domain list --environment production --json
-astrale call "@$ID::services.astrale.ai:class.CloudflareDeployment.method.setSecret" \
+SERVICE_TARGET='@<serviceId>::services.astrale.ai:class.CloudflareService'
+astrale call "${SERVICE_TARGET}.method.setSecret" \
   --admin -d @rotate.json --json
 read-new-secret | jq -Rs '{ name: "API_TOKEN", value: rtrimstr("\n") }' \
-  | astrale call "@$ID::services.astrale.ai:class.CloudflareDeployment.method.setSecret" \
+  | astrale call "${SERVICE_TARGET}.method.setSecret" \
       --admin -d - --json
 ```
 
-The reply is `{ "name": "API_TOKEN" }`, and the new value is served about 4 s later. `secret-undeclared` means that release declares no such
-name; `service-unavailable` with `retryAfter` asks for the same call again later.
+The reply is `{ "name": "API_TOKEN" }`; provider propagation takes a few seconds.
+`secret-undeclared` means the current release declares no such name; `service-unavailable` may
+include `retryAfter`. Recheck which deployment is current before retrying: this Method follows
+current, not a pinned deployment.
+
+To rotate another active deployment, redeploy its **identical sealed release and configuration**
+with the complete declared secret set and updated values. Preserve the original Worker
+modules/assets, record and declared secret names; inspect the same deployment label/URL and
+`reused` / secrets `updated` receipt.
+Rebuilding changed code or configuration creates a different deployment and leaves the old
+secrets untouched. The Domain adapter's normal `astrale-domain deploy` also promotes the release,
+including an older release: it changes the stable Service endpoint and cron target. If rotation
+must preserve current, use the Services adapter `deployWorker` with the original deployment input
+and `promote: false` (see the [Services workflow](../../astrale-services/references/workflows.md)).
+Do not promote an old release merely to reach its secrets through `setSecret`.
 
 A deployment in the platform dispatch namespace (adapter-cloudflare `namespace` mode: Shell, the
 Services runtime and the other platform Domains) has no Services node. Services operators rotate it

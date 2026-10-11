@@ -108,6 +108,10 @@ astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.metho
 The current deployment must declare the secret. Rotation keeps its code/URL/key, propagates
 asynchronously, and affects no other deployment. Update the source of secret values used by future
 deploys too, or a redeploy can restore the old value. New/removed names require a new configuration.
+For another active deployment, redeploy its exact original Worker/configuration/record with updated
+values and `promote: false` (`--no-promote` in the scaffold); check the same label/URL, `reused`, and
+secrets `updated`. Preserve all declared secret values. Changed artifacts create a different
+deployment, and a normal promoting redeploy moves the stable endpoint and cron target.
 
 Schedules replace the complete set (up to 24 five-field UTC expressions), not append to it.
 `{"crons":[]}` disables it. See [service-account-cron.md](service-account-cron.md) for the private
