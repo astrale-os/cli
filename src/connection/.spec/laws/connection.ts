@@ -56,26 +56,30 @@ export const CLI_CONNECTION_DOMAIN_EXCHANGE = defineLaw({
   ],
 })
 
-export const CLI_CONNECTION_HOP_CREDENTIAL = defineLaw({
-  id: 'CLI-CONNECTION-HOP-CREDENTIAL',
+export const CLI_CONNECTION_SOURCE_CREDENTIAL = defineLaw({
+  id: 'CLI-CONNECTION-SOURCE-CREDENTIAL',
   statement:
-    'A source hop resolves a fresh credential only when its session-pinned issuer equals the selected source issuer; a destination hop requires the same selected resolver and returns a fresh delegation for the witnessed Publication issuer, never the source credential, with its TTL bounded strictly inside any source JWT expiry.',
+    'Every invocation resolves its source credential at the pinned source Kernel, under the live Session operation signal, before routing; a remote destination receives a delegate carrier bounded strictly inside the source credential lifetime, never the source credential itself. An opaque or raw source credential is presented as it is, an explicit bearer must cover the command window, and a caller-principal nested credential skips the Domain exchange while keeping the selected human principal.',
   tests: [
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-RESOLVES-CREDENTIAL-PER-HOP',
+      id: 'TEST-CLI-CONNECTION-RESOLVES-SOURCE-AUTH-BEFORE-ROUTING',
     },
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-DELEGATES-VIA-SOURCE-AUTH',
+      id: 'TEST-CLI-CONNECTION-BOUNDS-REMOTE-CARRIER-TO-SOURCE-LIFETIME',
     },
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-REJECTS-HOP-SOURCE-ISSUER-MISMATCH',
+      id: 'TEST-CLI-CONNECTION-USES-RAW-SOURCE-CREDENTIAL',
     },
     {
       file: '__tests__/credential.test.ts',
-      id: 'TEST-CLI-CONNECTION-BOUNDS-DELEGATION-TO-SOURCE-EXPIRY',
+      id: 'TEST-CLI-CONNECTION-CALLER-PRINCIPAL-SKIPS-DOMAIN-EXCHANGE',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-PROPAGATES-AUTH-CANCELLATION',
     },
   ],
 })
@@ -218,11 +222,11 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
       id: 'TEST-CLI-CONNECTION-PRESENTS-BOUNDED-REPAIRS',
     },
     {
-      file: '__tests__/reasons.test.ts',
+      file: '__tests__/errors.test.ts',
       id: 'TEST-CLI-CONNECTION-ADMITS-BOUNDED-REASONS',
     },
     {
-      file: '__tests__/failure-safety.test.ts',
+      file: '__tests__/errors.test.ts',
       id: 'TEST-CLI-CONNECTION-FAILURE-SAFETY',
     },
   ],
@@ -259,10 +263,6 @@ export const CLI_CONNECTION_INSTALLED_ISSUER = defineLaw({
     },
     {
       file: '__tests__/installed-issuer.test.ts',
-      id: 'TEST-CLI-INSTALLED-SHELL-LEGACY-ISSUER-UNCHANGED',
-    },
-    {
-      file: '__tests__/installed-issuer.test.ts',
       id: 'TEST-CLI-INSTALLED-SHELL-ISSUER-UNRESOLVED',
     },
     {
@@ -275,7 +275,7 @@ export const CLI_CONNECTION_INSTALLED_ISSUER = defineLaw({
     },
     {
       file: '__tests__/installed-issuer.test.ts',
-      id: 'TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-IN-ONE-RETRY',
+      id: 'TEST-CLI-INSTALLED-SHELL-REINSTALL-HEALS-WITHIN-COMMAND',
     },
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -283,7 +283,7 @@ export const CLI_CONNECTION_INSTALLED_ISSUER = defineLaw({
     },
     {
       file: '__tests__/installed-issuer.test.ts',
-      id: 'TEST-CLI-INSTALLED-SHELL-RECOVERED-REFUSAL-FORGETS',
+      id: 'TEST-CLI-INSTALLED-SHELL-CONCURRENT-REFUSALS-HEAL',
     },
     {
       file: '__tests__/installed-issuer.test.ts',
@@ -299,19 +299,7 @@ export const CLI_CONNECTION_INSTALLED_ISSUER = defineLaw({
     },
     {
       file: '../lib/__tests__/instance.test.ts',
-      id: 'TEST-CLI-INSTANCE-UNLABELLED-REGISTRY-ISSUER-KEPT',
-    },
-    {
-      file: '../lib/__tests__/instance.test.ts',
       id: 'TEST-CLI-INSTANCE-LABELLED-REGISTRY-ISSUER-KEPT',
-    },
-    {
-      file: '../lib/__tests__/instance-concurrency.test.ts',
-      id: 'TEST-CLI-INSTANCE-REGISTRY-LABELLED-ON-WRITE',
-    },
-    {
-      file: '../lib/__tests__/admin-target.test.ts',
-      id: 'TEST-CLI-ADMIN-UNLABELLED-REGISTRY-ISSUER-KEPT',
     },
   ],
 })

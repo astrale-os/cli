@@ -47,24 +47,29 @@ function domain(over: Partial<FakeDomain> = {}): FakeDomain {
   }
 }
 
-async function thrownBy(promise: Promise<unknown>): Promise<AstraleError> {
-  try {
-    await promise
-  } catch (error) {
-    expect(error).toBeInstanceOf(AstraleError)
-    return error as AstraleError
-  }
-  throw new Error('expected a refusal')
+async function refusalOf<Refusal extends AstraleError = RegistryError>(
+  promise: Promise<unknown>,
+  kind: abstract new (...args: never[]) => Refusal = RegistryError as never,
+): Promise<Refusal> {
+  const error = await promise.then(
+    () => undefined,
+    (error: unknown) => error,
+  )
+  expect(error).toBeInstanceOf(kind)
+  return error as Refusal
 }
 
-async function refusalOf(promise: Promise<unknown>): Promise<RegistryError> {
-  try {
-    await promise
-  } catch (error) {
-    expect(error).toBeInstanceOf(RegistryError)
-    return error as RegistryError
-  }
-  throw new Error('expected a refusal')
+/** An Admin whose graph Query fails with `cause`. */
+function failingQuery(cause: unknown) {
+  const admin = fakeAdmin({ caller: 'installer', domains: [domain()] })
+  return connectAdminRegistry({
+    ...admin.context,
+    graph: {
+      query: async () => {
+        throw cause
+      },
+    },
+  } as never)
 }
 
 describe('registry index (Résolution [.78020] [.79495])', () => {
@@ -115,21 +120,17 @@ describe('registry index (Résolution [.78020] [.79495])', () => {
     expect(text).not.toContain('domain_installer')
   })
 
-  test('a readable Domain without versions answers an empty index after one more Query', async () => {
-    const admin = fakeAdmin({ caller: 'installer', domains: [domain({ publications: [] })] })
-    const index = await connectAdminRegistry(admin.context).index(ORIGIN)
-    expect(index.publications).toEqual([])
-    expect(admin.queries).toHaveLength(2)
-  })
-
-  test("a Fleet catalog's member reads the Domain but none of its versions", async () => {
-    const admin = fakeAdmin({
-      caller: 'fleet-member',
-      domains: [domain({ catalogReaders: new Set(['fleet-member']) })],
-    })
-    const index = await connectAdminRegistry(admin.context).index(ORIGIN)
-    expect(index.publications).toEqual([])
-    expect(admin.queries).toHaveLength(2)
+  test("a Domain without versions, or a Fleet catalog member's read, is an empty index", async () => {
+    for (const admin of [
+      fakeAdmin({ caller: 'installer', domains: [domain({ publications: [] })] }),
+      fakeAdmin({
+        caller: 'fleet-member',
+        domains: [domain({ catalogReaders: new Set(['fleet-member']) })],
+      }),
+    ]) {
+      expect((await connectAdminRegistry(admin.context).index(ORIGIN)).publications).toEqual([])
+      expect(admin.queries).toHaveLength(2)
+    }
   })
 
   test('an unreadable Domain and an absent one are the same refusal', async () => {
@@ -156,58 +157,26 @@ describe('registry index (Résolution [.78020] [.79495])', () => {
     expect(error.details).toEqual({ reason: 'response-invalid' })
   })
 
-  test('an Admin that does not answer is REGISTRY_UNAVAILABLE', async () => {
-    const admin = fakeAdmin({ caller: 'installer', domains: [domain()] })
-    const context = {
-      ...admin.context,
-      graph: {
-        query: async () => {
-          throw TransportError.invocation('connect refused', {
-            phase: 'connect',
-            delivery: 'not-sent',
-          })
-        },
-      },
-    }
-    const error = await refusalOf(connectAdminRegistry(context as never).index(ORIGIN))
-    expect(error.code).toBe('REGISTRY_UNAVAILABLE')
-    expect(error.details).toEqual({
-      reason: 'transport',
-      phase: 'connect',
-      delivery: 'not-sent',
-      retryable: true,
-    })
-  })
-
-  test('a read refused with 5001 may be retried; another server refusal may not', async () => {
-    const cases: Array<[ResponseError, Record<string, unknown>]> = [
-      [
-        declared(5001, 'CAPACITY_EXHAUSTED', { retryAfterMs: 1_000 }),
-        {
-          status: 5001,
-          reason: 'CAPACITY_EXHAUSTED',
-          retryable: true,
-        },
-      ],
-      [new ResponseError(5000 as never, 'internal', 'inv' as never), { status: 5000 }],
-    ]
-    for (const [cause, details] of cases) {
-      const admin = fakeAdmin({ caller: 'installer', domains: [domain()] })
-      const context = {
-        ...admin.context,
-        graph: {
-          query: async () => {
-            throw cause
-          },
-        },
-      }
-      const error = await refusalOf(connectAdminRegistry(context as never).index(ORIGIN))
+  test.each([
+    [
+      TransportError.invocation('connect refused', { phase: 'connect', delivery: 'not-sent' }),
+      { reason: 'transport', phase: 'connect', delivery: 'not-sent', retryable: true },
+    ],
+    [
+      declared(5001, 'CAPACITY_EXHAUSTED', { retryAfterMs: 1_000 }),
+      { status: 5001, reason: 'CAPACITY_EXHAUSTED', retryable: true },
+    ],
+    [new ResponseError(5000 as never, 'internal', 'inv' as never), { status: 5000 }],
+  ])(
+    'an unanswered or refused read is REGISTRY_UNAVAILABLE, retryable only when nothing ran (%#)',
+    async (cause, details) => {
+      const error = await refusalOf(failingQuery(cause).index(ORIGIN))
       expect({ code: error.code, details: error.details }).toEqual({
         code: 'REGISTRY_UNAVAILABLE',
         details,
       })
-    }
-  })
+    },
+  )
 })
 
 describe('registry claim (first claim of an origin)', () => {
@@ -228,6 +197,9 @@ describe('registry claim (first claim of an origin)', () => {
       { target: '/:admin.astrale.ai:class.Domain:create', input: { origin: CLAIMED } },
     ])
     expect((await registry.index(CLAIMED)).publications).toEqual([])
+    // A rerun by the Domain's administrator answers the same and writes nothing.
+    expect(await registry.claim(CLAIMED)).toEqual(await registry.claim(CLAIMED))
+    expect(admin.calls).toHaveLength(3)
     const published = await registry.publish({
       format: 'astrale.registry-publish-request',
       version: 1,
@@ -240,13 +212,6 @@ describe('registry claim (first claim of an origin)', () => {
       },
     })
     expect(published.status).toBe('created')
-  })
-
-  test('a rerun by an administrator of the Domain answers the same and writes nothing', async () => {
-    const admin = fakeAdmin({ caller: 'publisher', domains: [] })
-    const registry = connectAdminRegistry(admin.context)
-    const first = await registry.claim(CLAIMED)
-    expect(await registry.claim(CLAIMED)).toEqual(first)
   })
 
   test('an origin another account holds is REGISTRY_ORIGIN_CLAIMED', async () => {
@@ -364,6 +329,11 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
     const conflict = await refusalOf(registry.publish(request('1.6.0', r200)))
     expect(conflict.code).toBe('PUBLICATION_VERSION_CONFLICT')
     expect(conflict.details).toEqual({ existing: created.publication })
+
+    // A dirty build is sent, and recorded, as dirty.
+    const dirty = await registry.publish(request('1.7.0', r150, { dirty: true }))
+    expect((admin.calls.at(-1)!.input as Record<string, unknown>).dirty).toBe(true)
+    expect(dirty.publication.dirty).toBe(true)
   })
 
   test("Admin's retention mark is passed through; an unknown one is never guessed", async () => {
@@ -391,19 +361,6 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
       code: 'REGISTRY_UNAVAILABLE',
       details: { reason: 'response-invalid' },
     })
-  })
-
-  test('a dirty build is sent as dirty: true', async () => {
-    const admin = fakeAdmin({
-      caller: 'publisher',
-      domains: [domain({ publications: [] })],
-      releases: [r150],
-    })
-    const result = await connectAdminRegistry(admin.context).publish(
-      request('1.6.0', r150, { dirty: true }),
-    )
-    expect((admin.calls[0]!.input as Record<string, unknown>).dirty).toBe(true)
-    expect(result.publication.dirty).toBe(true)
   })
 
   test('only a domain_admin publishes; an installer is REGISTRY_FORBIDDEN, an outsider sees no Domain', async () => {
@@ -488,25 +445,18 @@ describe('registry publish (Registry [.119344], CT27 publish)', () => {
       })
       const error = await refusalOf(connectAdminRegistry(admin.context).publish(request('1.6.0')))
       expect({ code: error.code, details: error.details }).toEqual({ code, details })
+      if (details.delivery === 'unknown') {
+        expect(error.message).toContain('the change may have applied')
+        expect(error.message).toContain('Rerun the same command')
+      }
     }
-  })
-
-  test('a change whose outcome Admin cannot settle says it may have applied', async () => {
-    const admin = fakeAdmin({
-      caller: 'publisher',
-      domains: [domain({ publications: [] })],
-      publishRefusal: () => new ResponseError(5000 as never, 'outcome is unknown', 'inv' as never),
+    // A deployment Admin cannot find.
+    const absent = fakeAdmin({ caller: 'publisher', domains: [domain({ publications: [] })] })
+    const error = await refusalOf(connectAdminRegistry(absent.context).publish(request('1.6.0')))
+    expect({ code: error.code, details: error.details }).toEqual({
+      code: 'PUBLICATION_RELEASE_UNREACHABLE',
+      details: { reason: 'release-absent' },
     })
-    const error = await refusalOf(connectAdminRegistry(admin.context).publish(request('1.6.0')))
-    expect(error.message).toContain('the change may have applied')
-    expect(error.message).toContain('Rerun the same command')
-  })
-
-  test('a deployment Admin cannot find is PUBLICATION_RELEASE_UNREACHABLE', async () => {
-    const admin = fakeAdmin({ caller: 'publisher', domains: [domain({ publications: [] })] })
-    const error = await refusalOf(connectAdminRegistry(admin.context).publish(request('1.6.0')))
-    expect(error.code).toBe('PUBLICATION_RELEASE_UNREACHABLE')
-    expect(error.details).toEqual({ reason: 'release-absent' })
   })
 
   test('a lost reply says the change may have applied and that a rerun is safe', async () => {
@@ -724,13 +674,15 @@ describe('registry bundle: read from the published deployment (AM-241)', () => {
     const registry = connectAdminRegistry(admin.context)
     const root = mkdtempSync(join(tmpdir(), 'astrale-registry-bundle-'))
 
-    const missing = await thrownBy(registry.bundle(ORIGIN, '1.5.0', join(root, 'none', 'b.json')))
-    expect(missing).toBeInstanceOf(AstraleError)
+    const missing = await refusalOf(
+      registry.bundle(ORIGIN, '1.5.0', join(root, 'none', 'b.json')),
+      AstraleError,
+    )
     expect(missing).not.toBeInstanceOf(RegistryError)
     expect(missing.code).toBe('FILE_WRITE_FAILED')
     expect(missing.message).toContain('(ENOENT)')
 
-    const directory = await thrownBy(registry.bundle(ORIGIN, '1.5.0', root))
+    const directory = await refusalOf(registry.bundle(ORIGIN, '1.5.0', root), AstraleError)
     expect(directory.code).toBe('FILE_WRITE_FAILED')
     expect(directory.message).toContain('(EISDIR)')
 

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { access, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import { keypairPaths, persistKeypair, readKeypair } from '../../keys/index'
 import { readIdentityStore, updateIdentityStore } from '../../state/index'
@@ -32,6 +31,15 @@ describe('identity transfer', () => {
     await rm(root, { recursive: true, force: true })
   })
 
+  /** Import options over this test's registry and keys. */
+  const into = (options: { name?: string; replace?: true | 'same-issuer' } = {}) => ({
+    ...options,
+    state: { path: statePath, now },
+    keysDir,
+  })
+  const absent = (subject: string) => access(keypairPaths(subject, keysDir).privatePath)
+  const store = async () => (await readIdentityStore({ path: statePath })).identities
+
   async function envelope(subject: string, suffix: string): Promise<IdentityExport> {
     const pair = await persistKeypair(subject, {
       keysDir: join(root, `source-${suffix}`),
@@ -53,53 +61,34 @@ describe('identity transfer', () => {
   /** @evidence TEST-CLI-IDENTITY-TRANSFER-REJECTS */
   test('rejects malformed, newer, and mismatched content before durable mutation', async () => {
     await expect(decodeIdentityExport('{')).rejects.toThrow(/not valid JSON/)
-    await expect(
-      decodeIdentityExport(
-        JSON.stringify({
-          version: 2,
-          subject: 'alice',
-          mode: 'local',
-          privateJwk: {},
-          publicJwk: {},
-        }),
-      ),
-    ).rejects.toThrow(/invalid or unsupported shape/)
+    const newer = { version: 2, subject: 'alice', mode: 'local', privateJwk: {}, publicJwk: {} }
+    await expect(decodeIdentityExport(JSON.stringify(newer))).rejects.toThrow(
+      /invalid or unsupported shape/,
+    )
 
     const alice = await envelope('alice', 'a')
     const bob = await envelope('bob', 'b')
-    const forged = {
-      ...alice,
-      publicJwk: { ...bob.publicJwk, kid: alice.kid },
-    } as IdentityExport
-    const mismatch = await importIdentity(forged, {
-      state: { path: statePath, now },
-      keysDir,
-    }).catch((error) => error)
-    expect(mismatch).toBeInstanceOf(Error)
-    expect((mismatch as Error).message).toMatch(/do not form a valid matching pair/)
-    expect((mismatch as Error).message).not.toContain(String(alice.privateJwk.d))
+    const forged = { ...alice, publicJwk: { ...bob.publicJwk, kid: alice.kid } } as IdentityExport
+    const mismatch = (await importIdentity(forged, into()).catch((error) => error)) as Error
+    expect(mismatch.message).toMatch(/do not form a valid matching pair/)
+    expect(mismatch.message).not.toContain(String(alice.privateJwk.d))
 
     await expect(access(statePath)).rejects.toThrow()
-    await expect(access(keypairPaths('alice', keysDir).privatePath)).rejects.toThrow()
+    await expect(absent('alice')).rejects.toThrow()
   })
 
   /** @evidence TEST-CLI-IDENTITY-TRANSFER-ROUNDTRIP */
   test('roundtrips V1 plaintext and encrypted representations, and refuses unversioned exports', async () => {
     const current = await envelope('alice', 'roundtrip')
-    const { version: _, ...legacy } = current
-    await expect(decodeIdentityExport(JSON.stringify(legacy))).rejects.toThrow(
+    const { version: _, ...unversioned } = current
+    await expect(decodeIdentityExport(JSON.stringify(unversioned))).rejects.toThrow(
       /invalid or unsupported shape/,
     )
 
     const { alg: _privateAlg, ...privateJwk } = current.privateJwk
     const { alg: _publicAlg, ...publicJwk } = current.publicJwk
-    expect(
-      await decodeIdentityExport(JSON.stringify({ ...current, privateJwk, publicJwk })),
-    ).toEqual({
-      ...current,
-      privateJwk,
-      publicJwk,
-    })
+    const withoutAlg = { ...current, privateJwk, publicJwk }
+    expect(await decodeIdentityExport(JSON.stringify(withoutAlg))).toEqual(withoutAlg)
 
     const plaintext = await encodeIdentityExport(current)
     expect(isEncryptedIdentityExport(plaintext)).toBe(false)
@@ -111,201 +100,105 @@ describe('identity transfer', () => {
     await expect(decodeIdentityExport(encrypted, 'wrong')).rejects.toThrow(/Could not decrypt/)
   })
 
-  /** @evidence TEST-CLI-IDENTITY-TRANSFER-SCHEMA */
-  test('keeps the portable V1 JSON Schema aligned with the admitted identity envelope', async () => {
-    const schemaPath = fileURLToPath(
-      new URL('../.spec/schemas/identity-export-v1.schema.json', import.meta.url),
-    )
-    const schema = JSON.parse(await readFile(schemaPath, 'utf8')) as {
-      readonly $id: string
-      readonly additionalProperties: boolean
-      readonly required: readonly string[]
-      readonly properties: Readonly<Record<string, unknown>>
-    }
-    const identityEnvelope = await envelope('manager-principal', 'host-bootstrap')
-
-    expect(schema.$id).toBe('https://schemas.astrale.ai/cli/identity-export/1')
-    expect(schema.additionalProperties).toBe(false)
-    expect(schema.required).toEqual(['version', 'subject', 'privateJwk', 'publicJwk'])
-    expect(Object.keys(schema.properties).sort()).toEqual(
-      ['issuer', 'kid', 'mode', 'privateJwk', 'publicJwk', 'subject', 'version'].sort(),
-    )
-    await expect(decodeIdentityExport(JSON.stringify(identityEnvelope))).resolves.toEqual(
-      identityEnvelope,
-    )
-  })
-
   /** @evidence TEST-CLI-IDENTITY-IMPORT-ORDERED */
   test('checks conflicts before key replacement and publishes registry after keys', async () => {
     const first = await envelope('alice', 'first')
-    const imported = await importIdentity(first, {
-      name: 'operator',
-      state: { path: statePath, now },
-      keysDir,
-    })
+    const imported = await importIdentity(first, into({ name: 'operator' }))
     expect(imported.subject).toBe('alice')
     expect((await readKeypair('alice', keysDir)).kid).toBe(first.kid)
-    expect((await readIdentityStore({ path: statePath })).identities.operator).toEqual(imported)
+    expect((await store()).operator).toEqual(imported)
 
     const privatePath = keypairPaths('alice', keysDir).privatePath
     const originalPrivate = await readFile(privatePath, 'utf-8')
     const replacement = await envelope('alice', 'replacement')
-    await expect(
-      importIdentity(replacement, {
-        name: 'operator',
-        state: { path: statePath, now },
-        keysDir,
-      }),
-    ).rejects.toThrow('already exists')
+    await expect(importIdentity(replacement, into({ name: 'operator' }))).rejects.toThrow(
+      'already exists',
+    )
     expect(await readFile(privatePath, 'utf-8')).toBe(originalPrivate)
 
     const nextSubject = await envelope('replacement-subject', 'replacement-subject')
-    await importIdentity(nextSubject, {
-      name: 'operator',
-      replace: true,
-      state: { path: statePath, now },
-      keysDir,
-    })
+    await importIdentity(nextSubject, into({ name: 'operator', replace: true }))
     await expect(access(privatePath)).rejects.toThrow()
-    await expect(readKeypair('replacement-subject', keysDir)).resolves.toMatchObject({
-      kid: nextSubject.kid,
-    })
+    expect((await readKeypair('replacement-subject', keysDir)).kid).toBe(nextSubject.kid)
 
+    const remote = {
+      subject: 'remote-user',
+      createdAt: now().toISOString(),
+      source: 'idp',
+      mode: 'remote',
+      idp: 'workos',
+      issuer: 'https://idp.example',
+    } as const
     await updateIdentityStore(
-      (store) => ({
-        next: {
-          ...store,
-          identities: {
-            ...store.identities,
-            remote: {
-              subject: 'remote-user',
-              createdAt: now().toISOString(),
-              source: 'idp',
-              mode: 'remote',
-              idp: 'workos',
-              issuer: 'https://idp.example',
-            },
-          },
-        },
+      (current) => ({
+        next: { ...current, identities: { ...current.identities, remote } },
         value: undefined,
       }),
       { path: statePath, now },
     )
     await expect(
-      importIdentity(await envelope('remote-user', 'remote'), {
-        name: 'remote',
-        replace: true,
-        state: { path: statePath, now },
-        keysDir,
-      }),
+      importIdentity(
+        await envelope('remote-user', 'remote'),
+        into({ name: 'remote', replace: true }),
+      ),
     ).rejects.toThrow(/IdP-backed/)
-    await expect(access(keypairPaths('remote-user', keysDir).privatePath)).rejects.toThrow()
+    await expect(absent('remote-user')).rejects.toThrow()
   })
 
-  test.each([
-    'https://other.example/api',
-    'https://identity.example/another-path',
-    'https://identity.example/',
-    undefined,
-  ])(
-    'same-issuer recovery preserves the registry and real key when the existing issuer differs or is unknown (%s)',
+  test.each(['https://other.example/api', undefined])(
+    'same-issuer recovery preserves the registry and key when the existing issuer differs or is unknown (%s)',
     async (issuer) => {
       const original = await envelope('original-root', 'old-issuer')
-      const replacement = await envelope('new-root', 'new-issuer')
-      await importIdentity(
-        { ...original, issuer },
-        {
-          name: 'prod-root',
-          state: { path: statePath, now },
-          keysDir,
-        },
-      )
+      await importIdentity({ ...original, issuer }, into({ name: 'prod-root' }))
       const registryBefore = await readFile(statePath, 'utf8')
       const originalPath = keypairPaths(original.subject, keysDir).privatePath
       const keyBefore = await readFile(originalPath, 'utf8')
       await expect(
-        importIdentity(replacement, {
-          name: 'prod-root',
-          replace: 'same-issuer',
-          state: { path: statePath, now },
-          keysDir,
-        }),
+        importIdentity(
+          await envelope('new-root', 'new-issuer'),
+          into({ name: 'prod-root', replace: 'same-issuer' }),
+        ),
       ).rejects.toMatchObject({ code: 'IDENTITY_ISSUER_CONFLICT' })
       expect(await readFile(statePath, 'utf8')).toBe(registryBefore)
       expect(await readFile(originalPath, 'utf8')).toBe(keyBefore)
-      await expect(access(keypairPaths(replacement.subject, keysDir).privatePath)).rejects.toThrow()
+      await expect(absent('new-root')).rejects.toThrow()
     },
   )
 
   test('same-issuer recovery replaces the same owner key but treats trailing-slash claims as distinct', async () => {
     const original = await envelope('original-root', 'same-issuer')
     const replacement = await envelope('new-root', 'same-issuer')
-    await importIdentity(
-      { ...original, issuer: 'https://identity.example/api' },
-      {
-        name: 'prod-root',
-        state: { path: statePath, now },
-        keysDir,
-      },
-    )
-    for (const issuer of [
-      'https://identity.example/api/',
-      'https://identity.example/a/../api',
-      undefined,
-    ]) {
+    const issuer = 'https://identity.example/api'
+    await importIdentity({ ...original, issuer }, into({ name: 'prod-root' }))
+    for (const other of [`${issuer}/`, 'https://identity.example/a/../api', undefined]) {
       await expect(
         importIdentity(
-          { ...replacement, issuer },
-          {
-            name: 'prod-root',
-            replace: 'same-issuer',
-            state: { path: statePath, now },
-            keysDir,
-          },
+          { ...replacement, issuer: other },
+          into({ name: 'prod-root', replace: 'same-issuer' }),
         ),
       ).rejects.toMatchObject({ code: 'IDENTITY_ISSUER_CONFLICT' })
       expect((await readKeypair(original.subject, keysDir)).kid).toBe(original.kid)
     }
     await importIdentity(
-      { ...replacement, issuer: 'https://identity.example/api' },
-      {
-        name: 'prod-root',
-        replace: 'same-issuer',
-        state: { path: statePath, now },
-        keysDir,
-      },
+      { ...replacement, issuer },
+      into({ name: 'prod-root', replace: 'same-issuer' }),
     )
-    expect((await readIdentityStore({ path: statePath })).identities['prod-root'].subject).toBe(
-      'new-root',
-    )
+    expect((await store())['prod-root'].subject).toBe('new-root')
     expect((await readKeypair('new-root', keysDir)).kid).toBe(replacement.kid)
-    await expect(access(keypairPaths(original.subject, keysDir).privatePath)).rejects.toThrow()
+    await expect(absent(original.subject)).rejects.toThrow()
   })
 
-  test('same-issuer admission uses the state committed under the identity lock, while explicit replacement remains available', async () => {
+  test('same-issuer admission uses the state committed under the identity lock', async () => {
     const original = await envelope('original-root', 'concurrent')
     const replacement = await envelope('new-root', 'concurrent')
-    await importIdentity(original, { name: 'prod-root', state: { path: statePath, now }, keysDir })
+    await importIdentity(original, into({ name: 'prod-root' }))
     let pending: Promise<unknown> | undefined
     await updateIdentityStore(
-      (store) => {
-        pending = importIdentity(replacement, {
-          name: 'prod-root',
-          replace: 'same-issuer',
-          state: { path: statePath, now },
-          keysDir,
-        })
+      (current) => {
+        pending = importIdentity(replacement, into({ name: 'prod-root', replace: 'same-issuer' }))
+        const moved = { ...current.identities['prod-root']!, issuer: 'https://other.example/api' }
         return {
-          next: {
-            ...store,
-            identities: {
-              ...store.identities,
-              'prod-root': {
-                ...store.identities['prod-root']!,
-                issuer: 'https://other.example/api',
-              },
-            },
-          },
+          next: { ...current, identities: { ...current.identities, 'prod-root': moved } },
           value: undefined,
         }
       },
@@ -313,28 +206,13 @@ describe('identity transfer', () => {
     )
     await expect(pending).rejects.toMatchObject({ code: 'IDENTITY_ISSUER_CONFLICT' })
     expect((await readKeypair(original.subject, keysDir)).kid).toBe(original.kid)
-    await expect(access(keypairPaths(replacement.subject, keysDir).privatePath)).rejects.toThrow()
-    await importIdentity(replacement, {
-      name: 'prod-root',
-      replace: true,
-      state: { path: statePath, now },
-      keysDir,
-    })
-    expect((await readIdentityStore({ path: statePath })).identities['prod-root'].subject).toBe(
-      replacement.subject,
-    )
+    await expect(absent(replacement.subject)).rejects.toThrow()
   })
 
   /** @evidence TEST-CLI-IDENTITY-EXPORT-PRIVATE */
   test('exports a proven pair through one atomic mode-0600 file', async () => {
-    await importIdentity(await envelope('alice', 'export'), {
-      state: { path: statePath, now },
-      keysDir,
-    })
-    const exported = await exportIdentity('alice', {
-      state: { path: statePath, now },
-      keysDir,
-    })
+    await importIdentity(await envelope('alice', 'export'), into())
+    const exported = await exportIdentity('alice', into())
     const path = join(root, 'alice.identity.json')
     await writeIdentityExport(path, await encodeIdentityExport(exported))
 

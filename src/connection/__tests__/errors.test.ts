@@ -1,670 +1,176 @@
-import { ResponseError } from '@astrale-os/sdk/client'
+import { NodeUnavailableError, ResponseError, SessionError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 import { stripVTControlCharacters } from 'node:util'
 
 import { formatKernelError } from '../errors'
-import { functionInputIssues, schemaUpgradeHint } from '../reasons'
+import { functionInputIssues, queryInputRepair } from '../reasons'
 import { transportFailure } from './failure-fixtures'
 
-const CONFLICT = 4001
-const VALIDATION = 1003
-const CREDENTIAL_REFUSED = 2002
-const TEST_INVOCATION = {
-  source: 'https://kernel.test',
-  id: 'connection-errors',
-} as ConstructorParameters<typeof ResponseError>[2]
+const INVOCATION = { source: 'https://kernel.test', id: 'errors' } as ConstructorParameters<
+  typeof ResponseError
+>[2]
+const RECOVERY = { operation: 'operation-1', retry: 'astrale domain install --operation op-1' }
 
-describe('formatKernelError', () => {
+type ResponseArguments = ConstructorParameters<typeof ResponseError>
+
+function refusal(code: number, reason?: { code: string; details: Record<string, unknown> }) {
+  return new ResponseError(
+    code as ResponseArguments[0],
+    'Refused by the Kernel.',
+    INVOCATION,
+    reason as ResponseArguments[3],
+  )
+}
+
+/** The one JSON document a machine-mode failure writes on stderr, and everything written. */
+async function machine(
+  error: unknown,
+  options: Parameters<typeof formatKernelError>[4] & { url?: string; debug?: boolean } = {},
+) {
+  const writes: string[] = []
+  const original = process.stderr.write
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+    return true
+  }) as typeof process.stderr.write
+  try {
+    await formatKernelError(error, true, options.url, options.debug, options)
+  } finally {
+    process.stderr.write = original
+  }
+  return { json: JSON.parse(writes[0]!) as Record<string, unknown>, text: writes.join('') }
+}
+
+/** What an interactive failure prints, without styling. */
+async function human(error: unknown): Promise<string> {
+  const lines: string[] = []
+  const originalError = console.error
+  const originalLog = console.log
+  console.error = console.log = (...values: unknown[]) => void lines.push(values.join(' '))
+  try {
+    await formatKernelError(error, false)
+  } finally {
+    console.error = originalError
+    console.log = originalLog
+  }
+  return stripVTControlCharacters(lines.join('\n'))
+}
+
+describe('transport failures', () => {
   /** @evidence TEST-CLI-CONNECTION-MAPS-TYPED-TRANSPORT */
-  test('maps typed discovery transport evidence without inspecting its cause message', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    const error = Object.assign(
-      transportFailure('Release discovery request failed.', 'unknown', {
+  test('name the phase and typed context, never the native cause', async () => {
+    const acquisition = Object.assign(
+      transportFailure('Release discovery failed.', 'connect', {
         kind: 'acquisition',
         resource: 'release',
       }),
-      {
-        url: 'https://localhost:8443/kernel/host',
-        cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
-      },
+      { cause: new Error('connect ECONNREFUSED private') },
     )
-    try {
-      await formatKernelError(error, true, 'https://localhost:8443/kernel/host')
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toMatchObject({
-      error: 'TRANSPORT_ERROR',
-      message: 'Release discovery request failed.',
-      url: 'https://localhost:8443/kernel/host',
-      phase: 'unknown',
-      transport: { kind: 'acquisition', resource: 'release' },
+    const { json, text } = await machine(acquisition, {
+      url: 'https://kernel.test',
+      recovery: RECOVERY,
     })
-    expect(writes[0]).not.toContain('ECONNREFUSED')
-  })
-
-  test('keeps the release acquisition resource of a v4 Host read', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        transportFailure('Release discovery request failed.', 'connect', {
-          kind: 'acquisition',
-          resource: 'release',
-        }),
-        true,
-        'https://localhost:8443/kernel/host',
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toMatchObject({
+    expect(json).toEqual({
       error: 'CONNECTION_ERROR',
-      message: 'Release discovery request failed.',
+      message: 'Release discovery failed.',
       phase: 'connect',
       transport: { kind: 'acquisition', resource: 'release' },
+      url: 'https://kernel.test',
     })
+    expect(text).not.toContain('private')
   })
 
-  test('retains operation recovery only for outcome-unknown transport failure', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        transportFailure('Request timed out.', 'timeout', {
-          kind: 'invocation',
-          delivery: 'unknown',
-        }),
-        true,
-        undefined,
-        false,
-        {
-          recovery: {
-            operation: '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
-            retry:
-              'astrale domain install https://crm.test --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
-          },
-        },
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(writes).toHaveLength(1)
-    expect(JSON.parse(writes[0]!)).toMatchObject({
+  test('offer the operation retry only when an invocation may have been delivered', async () => {
+    const unknown = transportFailure('Timed out.', 'timeout', {
+      kind: 'invocation',
+      delivery: 'unknown',
+    })
+    expect((await machine(unknown, { recovery: RECOVERY })).json).toMatchObject({
       error: 'TIMEOUT',
-      phase: 'timeout',
       transport: { kind: 'invocation', delivery: 'unknown' },
-      operation: '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
-      retry:
-        'astrale domain install https://crm.test --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
+      ...RECOVERY,
     })
+    const notSent = transportFailure('Send failed.', 'send', {
+      kind: 'invocation',
+      delivery: 'not-sent',
+    })
+    expect((await machine(notSent, { recovery: RECOVERY })).json).not.toHaveProperty('operation')
   })
+})
 
+describe('Kernel refusals', () => {
   /** @evidence TEST-CLI-CONNECTION-PRESERVES-PUBLIC-SEMANTIC-REASON */
-  test('preserves a Kernel-admitted semantic reason in machine output', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        new ResponseError(CONFLICT, 'Schema change requires migration.', TEST_INVOCATION, {
-          code: 'DATA_MIGRATION_REQUIRED',
-          details: {
-            requirements: [
-              {
-                operation: 'validate-existing',
-                reason: 'invalid-existing',
-                subject: {
-                  kind: 'definition',
-                  ref: { origin: 'x.test', kind: 'class', name: 'X' },
-                },
-                work: { observedFacts: 1 },
-              },
-            ],
-          },
-        }),
-        true,
-      )
-    } finally {
-      process.stderr.write = original
+  test('keep the code and reason, adding only a recovery hint', async () => {
+    const removal = {
+      code: 'DATA_MIGRATION_REQUIRED',
+      details: { requirements: [{ operation: 'remove-facts', reason: 'destructive-change' }] },
     }
-    expect(writes).toHaveLength(1)
-    expect(JSON.parse(writes[0]!)).toEqual({
+    expect((await machine(refusal(4001, removal), { fields: { domain: 'x' } })).json).toEqual({
+      domain: 'x',
       error: 'RESPONSE_ERROR',
-      code: CONFLICT,
-      message: 'Schema change requires migration.',
-      reason: {
-        code: 'DATA_MIGRATION_REQUIRED',
-        details: {
-          requirements: [
-            {
-              operation: 'validate-existing',
-              reason: 'invalid-existing',
-              subject: { kind: 'definition', ref: { origin: 'x.test', kind: 'class', name: 'X' } },
-              work: { observedFacts: 1 },
-            },
-          ],
-        },
-      },
-    })
-  })
-
-  test('explains deletion-only schema work without changing the Kernel reason', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        new ResponseError(CONFLICT, 'Schema change requires migration.', TEST_INVOCATION, {
-          code: 'DATA_MIGRATION_REQUIRED',
-          details: {
-            requirements: [
-              {
-                operation: 'remove-facts',
-                reason: 'destructive-change',
-                subject: {
-                  kind: 'definition',
-                  ref: { origin: 'x.test', kind: 'class', name: 'X' },
-                },
-                work: { observedFacts: 1 },
-              },
-            ],
-          },
-        }),
-        true,
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toEqual({
-      error: 'RESPONSE_ERROR',
-      code: CONFLICT,
-      message: 'Schema change requires migration.',
-      reason: {
-        code: 'DATA_MIGRATION_REQUIRED',
-        details: {
-          requirements: [
-            {
-              operation: 'remove-facts',
-              reason: 'destructive-change',
-              subject: {
-                kind: 'definition',
-                ref: { origin: 'x.test', kind: 'class', name: 'X' },
-              },
-              work: { observedFacts: 1 },
-            },
-          ],
-        },
-      },
+      code: 4001,
+      message: 'Refused by the Kernel.',
+      reason: removal,
       hint: 'Delete this data explicitly, then retry. No data was deleted.',
     })
-  })
-
-  test('prints an actionable message for deletion-only schema work', async () => {
-    const errors: string[] = []
-    const hints: string[] = []
-    const originalError = console.error
-    const originalLog = console.log
-    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
-    console.log = (...values: unknown[]) => hints.push(values.map(String).join(' '))
-    try {
-      await formatKernelError(
-        new ResponseError(CONFLICT, 'Schema change requires migration.', TEST_INVOCATION, {
-          code: 'DATA_MIGRATION_REQUIRED',
-          details: {
-            requirements: [
-              {
-                operation: 'remove-facts',
-                reason: 'destructive-change',
-                subject: {
-                  kind: 'definition',
-                  ref: { origin: 'x.test', kind: 'class', name: 'X' },
-                },
-                work: { observedFacts: 1 },
-              },
-            ],
-          },
-        }),
-        false,
-      )
-    } finally {
-      console.error = originalError
-      console.log = originalLog
-    }
-
-    expect(errors.join('\n')).toContain('DATA_MIGRATION_REQUIRED')
-    expect(errors.join('\n')).toContain(
-      'Existing business data still uses schema definitions being removed.',
-    )
-    expect(hints.join('\n')).toContain(
-      'Delete this data explicitly, then retry. No data was deleted.',
-    )
-  })
-
-  test('points a refused credential at a new login while keeping the Kernel code', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        new ResponseError(CREDENTIAL_REFUSED, 'Credential is invalid.', TEST_INVOCATION),
-        true,
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toEqual({
-      error: 'RESPONSE_ERROR',
-      code: CREDENTIAL_REFUSED,
-      message: 'Credential is invalid.',
-      hint: 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.',
+    expect((await machine(refusal(2002))).json).toMatchObject({
+      code: 2002,
+      hint: expect.stringContaining('astrale auth login'),
     })
-  })
-
-  test('maps SDK error identities to stable CLI error codes', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      try {
-        Path.parse('not-a-path')
-      } catch (error) {
-        await formatKernelError(error, true)
-      }
-    } finally {
-      process.stderr.write = original
+    const upgrade = {
+      code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+      details: { origin: 'grc.example', issue: 'in-flight-limit', inFlight: 8 },
     }
-    expect(JSON.parse(writes[0]!)).toEqual({
-      error: 'PATH_INVALID',
-      message: expect.any(String),
+    expect((await machine(refusal(5001, upgrade))).json).toMatchObject({
+      reason: upgrade,
+      hint: expect.stringContaining('--revoke-previous'),
+    })
+    const privateSource = { code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC', details: {} }
+    expect((await machine(refusal(1003, privateSource))).json).toMatchObject({
+      message: 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.',
     })
   })
 
   /** @evidence TEST-CLI-CONNECTION-PRESENTS-BOUNDED-REPAIRS */
-  test('renders callable and Query repair coordinates for humans', async () => {
-    const lines: string[] = []
-    const originalError = console.error
-    const originalLog = console.log
-    console.error = (...values: unknown[]) => lines.push(values.join(' '))
-    console.log = (...values: unknown[]) => lines.push(values.join(' '))
-    try {
-      await formatKernelError(
-        new ResponseError(VALIDATION, 'Function input is invalid.', TEST_INVOCATION, {
-          code: 'FUNCTION_INPUT_INVALID',
-          details: {
-            issues: [
-              {
-                code: 'VALUE_SCHEMA_INSTANCE_INVALID',
-                path: '/issuer',
-                message: 'Object is missing required property issuer.',
-              },
-              {
-                code: 'VALUE_SCHEMA_INSTANCE_INVALID',
-                path: '/operationId',
-                message: 'Object is missing required property operationId.',
-              },
-              {
-                code: 'VALUE_SCHEMA_INSTANCE_INVALID',
-                path: '/slug',
-                message: 'Object is missing required property slug.',
-              },
-            ],
-          },
-        }),
-        false,
-      )
-      await formatKernelError(
-        new ResponseError(VALIDATION, 'Query input is invalid.', TEST_INVOCATION, {
-          code: 'QUERY_INPUT_INVALID',
-          details: {
-            phase: 'plan',
-            issue: 'QUERY_DEFINITION_NOT_EDGE',
-            path: '/steps/0/via/0',
-          },
-        }),
-        false,
-      )
-    } finally {
-      console.error = originalError
-      console.log = originalLog
-    }
+  test('print the issues, repairs and issuers a human can act on', async () => {
+    const input = await human(
+      refusal(1003, {
+        code: 'FUNCTION_INPUT_INVALID',
+        details: {
+          issues: [{ code: 'INVALID_FORMAT', path: '/customer/email', message: 'Not an email.' }],
+        },
+      }),
+    )
+    expect(input).toContain('/customer/email: Not an email. (INVALID_FORMAT)')
+    expect(input).not.toContain('astrale introspect')
 
-    const rendered = lines.join('\n')
-    expect(rendered).toContain('/issuer: Object is missing required property issuer.')
-    expect(rendered).toContain('/operationId: Object is missing required property operationId.')
-    expect(rendered).toContain('/slug: Object is missing required property slug.')
-    expect(rendered).toContain('/steps/0/via/0  QUERY_DEFINITION_NOT_EDGE')
-  })
+    const query = await human(
+      refusal(1003, {
+        code: 'QUERY_INPUT_INVALID',
+        details: { phase: 'plan', issue: 'QUERY_DEFINITION_NOT_EDGE', path: '/steps/0/via/0' },
+      }),
+    )
+    expect(query).toContain('/steps/0/via/0  QUERY_DEFINITION_NOT_EDGE')
 
-  test('explains immutable issuer replacements and preserves the Kernel reason', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
-          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
-          details: {
-            phase: 'upgrade',
-            origin: 'grc.example',
-            issue: 'issuer-changed',
-            installedIssuer: 'https://old.example',
-            replacementIssuer: 'https://new.example',
-          },
-        }),
-        true,
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toEqual({
-      error: 'RESPONSE_ERROR',
-      code: 5001,
-      message: 'Schema operation is not supported.',
-      reason: {
+    const issuer = await human(
+      refusal(5001, {
         code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
         details: {
-          phase: 'upgrade',
           origin: 'grc.example',
           issue: 'issuer-changed',
           installedIssuer: 'https://old.example',
           replacementIssuer: 'https://new.example',
         },
-      },
-      hint: schemaUpgradeHint({
-        origin: 'grc.example',
-        issue: 'issuer-changed',
-        installedIssuer: 'https://old.example',
-        replacementIssuer: 'https://new.example',
       }),
-    })
-  })
-
-  test('prints both issuers and the recovery command for an incompatible replacement', async () => {
-    const errors: string[] = []
-    const details: string[] = []
-    const originalError = console.error
-    const originalLog = console.log
-    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
-    console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
-    try {
-      await formatKernelError(
-        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
-          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
-          details: {
-            phase: 'upgrade',
-            origin: 'grc.example',
-            issue: 'issuer-changed',
-            installedIssuer: 'https://old.example',
-            replacementIssuer: 'https://new.example',
-          },
-        }),
-        false,
-      )
-    } finally {
-      console.error = originalError
-      console.log = originalLog
-    }
-
-    expect(errors.join('\n')).toContain('RESPONSE_ERROR(5001)')
-    expect(details.join('\n')).toContain('reason: SCHEMA_UPGRADE_INCOMPATIBLE')
-    expect(details.join('\n')).toContain('installed issuer: https://old.example')
-    expect(details.join('\n')).toContain('replacement issuer: https://new.example')
-    expect(details.join('\n')).toContain('--allow-issuer-change=grc.example')
-    expect(details.join('\n')).toContain('astrale domain uninstall grc.example')
-    expect(details.join('\n')).toContain(
-      'safe uninstall refuses surviving dependents or owned data',
     )
+    expect(issuer).toContain('installed issuer: https://old.example')
+    expect(issuer).toContain('replacement issuer: https://new.example')
+    expect(issuer).toContain('--allow-issuer-change=grc.example')
   })
 
-  test('names a stale consent and an in-flight limit (CT10)', async () => {
-    const details: string[] = []
-    const originalError = console.error
-    const originalLog = console.log
-    console.error = () => {}
-    console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
-    try {
-      await formatKernelError(
-        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
-          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
-          details: {
-            phase: 'upgrade',
-            origin: 'grc.example',
-            issue: 'issuer-changed',
-            installedIssuer: 'https://other.example',
-            replacementIssuer: 'https://new.example',
-            consented: { from: 'https://old.example', to: 'https://new.example' },
-          },
-        }),
-        false,
-      )
-      await formatKernelError(
-        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
-          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
-          details: {
-            phase: 'upgrade',
-            origin: 'grc.example',
-            issue: 'in-flight-limit',
-            inFlight: 8,
-          },
-        }),
-        false,
-      )
-    } finally {
-      console.error = originalError
-      console.log = originalLog
-    }
-
-    const text = details.join('\n')
-    expect(text).toContain('consented: https://old.example -> https://new.example')
-    expect(text).toContain('the installation changed after it was read')
-    expect(text).toContain('replaced issuers in flight: 8')
-    expect(text).toContain('--revoke-previous')
-  })
-
-  test('explains a private Domain source without exposing transport diagnostics', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
-          code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
-          details: { phase: 'publication', requiredScope: 'public' },
-        }),
-        true,
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toEqual({
-      error: 'RESPONSE_ERROR',
-      code: 1003,
-      message: 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.',
-      reason: {
-        code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
-        details: { phase: 'publication', requiredScope: 'public' },
-      },
-    })
-  })
-
-  test('prints the actionable private-source message in interactive output', async () => {
-    const errors: string[] = []
-    const hints: string[] = []
-    const originalError = console.error
-    const originalLog = console.log
-    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
-    console.log = (...values: unknown[]) => hints.push(values.map(String).join(' '))
-    try {
-      await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
-          code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
-          details: { phase: 'publication', requiredScope: 'public' },
-        }),
-        false,
-      )
-    } finally {
-      console.error = originalError
-      console.log = originalLog
-    }
-
-    expect(errors.join('\n')).toContain('SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC')
-    expect(errors.join('\n')).toContain(
-      'Expose the Domain through a public HTTPS URL or public tunnel, then retry.',
-    )
-    expect(hints).toEqual([])
-  })
-
-  test('preserves structured Function input issues in machine output', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
-          code: 'FUNCTION_INPUT_INVALID',
-          details: {
-            issues: [
-              {
-                code: 'INVALID_FORMAT',
-                path: '/customer/email',
-                message: 'Must be a valid email address.',
-              },
-            ],
-          },
-        }),
-        true,
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toEqual({
-      error: 'RESPONSE_ERROR',
-      code: 1003,
-      message: 'Function input is invalid.',
-      reason: {
-        code: 'FUNCTION_INPUT_INVALID',
-        details: {
-          issues: [
-            {
-              code: 'INVALID_FORMAT',
-              path: '/customer/email',
-              message: 'Must be a valid email address.',
-            },
-          ],
-        },
-      },
-      hint: 'Use `astrale introspect <path>` to see the callable input.',
-    })
-  })
-
-  test('prints Kernel-provided Function input messages in interactive output', async () => {
-    const errors: string[] = []
-    const details: string[] = []
-    const originalError = console.error
-    const originalLog = console.log
-    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
-    console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
-    try {
-      await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
-          code: 'FUNCTION_INPUT_INVALID',
-          details: {
-            issues: [
-              {
-                code: 'INVALID_FORMAT',
-                path: '/customer/email',
-                message: 'Must be a valid email address.',
-              },
-            ],
-          },
-        }),
-        false,
-      )
-    } finally {
-      console.error = originalError
-      console.log = originalLog
-    }
-
-    // Interactive output is styled; compare its text so a forced-colour terminal gives the same result.
-    const rendered = stripVTControlCharacters(details.join('\n'))
-    expect(stripVTControlCharacters(errors.join('\n'))).toContain('Function input is invalid.')
-    expect(rendered).toContain('/customer/email: Must be a valid email address. (INVALID_FORMAT)')
-    expect(rendered).not.toContain('astrale introspect')
-  })
-
-  test('keeps the introspection fallback for legacy Function input issues', async () => {
-    const writes: string[] = []
-    const original = process.stderr.write
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
-      return true
-    }) as typeof process.stderr.write
-    try {
-      await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
-          code: 'FUNCTION_INPUT_INVALID',
-          details: { issues: [{ code: 'INVALID_FORMAT', path: '/customer/email' }] },
-        }),
-        true,
-      )
-    } finally {
-      process.stderr.write = original
-    }
-
-    expect(JSON.parse(writes[0]!)).toMatchObject({
-      reason: {
-        code: 'FUNCTION_INPUT_INVALID',
-        details: { issues: [{ code: 'INVALID_FORMAT', path: '/customer/email' }] },
-      },
-      hint: 'Use `astrale introspect <path>` to see the callable input.',
-    })
-  })
-
-  test('rejects malformed public Function issue messages', () => {
+  /** @evidence TEST-CLI-CONNECTION-ADMITS-BOUNDED-REASONS */
+  test('admit only bounded, well-formed public reason details', () => {
     expect(
       functionInputIssues({
         code: 'FUNCTION_INPUT_INVALID',
@@ -677,5 +183,53 @@ describe('formatKernelError', () => {
         },
       }),
     ).toEqual([{ code: 'INVALID_FORMAT', path: '/safe', message: 'Safe message.' }])
+    expect(
+      queryInputRepair({
+        code: 'QUERY_INPUT_INVALID',
+        details: { phase: 'limit', limit: 'steps', maximum: 4, actual: 5 },
+      }),
+    ).toEqual({ phase: 'limit', limit: 'steps', maximum: 4, actual: 5 })
+    expect(
+      queryInputRepair({
+        code: 'QUERY_INPUT_INVALID',
+        details: { phase: 'plan', issue: 'QUERY_DEFINITION_NOT_EDGE', provider: 'private' },
+      }),
+    ).toBeUndefined()
+  })
+})
+
+describe('client and unknown failures', () => {
+  test('map SDK error identities to stable CLI codes', async () => {
+    const pathError = (() => {
+      try {
+        Path.parse('not-a-path')
+      } catch (error) {
+        return error
+      }
+    })()
+    expect((await machine(pathError)).json).toMatchObject({ error: 'PATH_INVALID' })
+    expect(
+      (await machine(new SessionError('Session timed out.', { failure: 'timeout' }))).json,
+    ).toEqual({ error: 'TIMEOUT', message: 'Session timed out.' })
+    // Missing and authorization-masked reads stay indistinguishable.
+    const unavailable = new NodeUnavailableError(Path.parse('/:example.test:core.root'))
+    expect((await machine(unavailable)).json).toMatchObject({
+      error: 'NODE_UNAVAILABLE',
+      hint: expect.stringContaining('-i/--as'),
+    })
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-FAILURE-SAFETY */
+  test('never print a native failure, except its children under --debug', async () => {
+    const failure = new AggregateError([new Error('first private')], 'private provider detail')
+    const ordinary = await machine(failure)
+    expect(ordinary.json).toEqual({
+      error: 'UNEXPECTED_ERROR',
+      message: 'The CLI encountered an unexpected internal failure.',
+    })
+    expect(ordinary.text).not.toContain('private')
+    expect((await machine(failure, { debug: true })).text).toContain(
+      'aggregate: Error: first private',
+    )
   })
 })

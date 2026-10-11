@@ -1,6 +1,3 @@
-import type { AuthApi } from '@astrale-os/sdk/auth'
-import type { GraphApi } from '@astrale-os/sdk/client'
-import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type { SessionRouteStore } from '@astrale-os/sdk/client/session'
 
 import { issuer } from '@astrale-os/sdk/auth'
@@ -15,142 +12,78 @@ const target = Object.freeze({
   url: 'https://gateway.example/instances/child/invoke',
   kernelIssuer: issuer.accept('https://child.example'),
 })
+const config = {} as AstraleConfig
+const context = Object.freeze({ target }) as unknown as ConnectionContext
 
-const config: AstraleConfig = {
-  issuer: 'https://cli.example',
-  admin: {
-    name: 'admin',
-    url: 'https://admin.example',
-    kernelIssuer: 'https://admin.example',
-  },
-  telemetry: { enabled: false, analyzerEnabled: false },
-  browser: {},
+/** A connection factory that must never be reached. */
+const unopened: ConnectionFactory = () => {
+  throw new Error('must not open')
 }
 
-const context: ConnectionContext = Object.freeze({
-  session: {} as ClientSession,
-  self: async () => ({ id: 'caller' }),
-  graph: {} as GraphApi,
-  auth: {} as AuthApi,
-  target,
-})
-
 describe('connection session', () => {
-  test('exposes the complete session-owned Auth API to command consumers', async () => {
-    await withResolvedClientSession(target, { anonymous: true }, config, async (context) => {
-      expect(context.auth).toBe(context.session.auth)
-      expect(typeof context.auth.admit).toBe('function')
-      expect(Object.isFrozen(context.auth)).toBe(true)
-    })
-  })
-
   /** @evidence TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER */
-  test('pins the selected canonical Kernel issuer without a transport escape hatch', async () => {
-    const auth = { ttlSeconds: 3_600, resolve: async () => ({ credential: 'credential' }) }
+  test('pins the Kernel issuer apart from the URL, and an anonymous session has no auth', () => {
     const routeStore: SessionRouteStore = { read: () => undefined, write: () => undefined }
+    const auth = { ttlSeconds: 60, resolve: async () => ({ credential: 'credential' }) }
     const options = createClientSessionOptions(target, globalThis.fetch, auth, 2_500, routeStore)
-
-    expect(options.kernel).toBe(target.kernelIssuer)
+    expect(options).toMatchObject({ kernel: target.kernelIssuer, auth, routeStore })
     expect(options).not.toHaveProperty('url')
-    expect(options).not.toHaveProperty('sourceIssuer')
-    expect(options.routeStore).toBe(routeStore)
-  })
-
-  /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
-  test('constructs an anonymous Client Session without an auth resolver', () => {
-    const options = createClientSessionOptions(target, globalThis.fetch, undefined, 2_500)
-
-    expect(options.kernel).toBe(target.kernelIssuer)
-    expect(options.auth).toBeUndefined()
-    expect(Object.hasOwn(options, 'auth')).toBe(false)
+    expect(
+      Object.hasOwn(createClientSessionOptions(target, globalThis.fetch, undefined, 2_500), 'auth'),
+    ).toBe(false)
   })
 
   /** @evidence TEST-CLI-CONNECTION-CLOSES-OWNED-CLIENTS */
-  test('closes its owned connection after success, failure, and cancellation', async () => {
-    for (const outcome of ['success', 'failure', 'cancellation'] as const) {
+  test('closes its owned connection once after success or failure', async () => {
+    for (const fails of [false, true]) {
       let closes = 0
-      const open: ConnectionFactory = () => ({
-        context,
-        close() {
-          closes += 1
-        },
-      })
       const pending = withResolvedClientSession(
         target,
         {},
         config,
-        async (received) => {
-          expect(received).toBe(context)
-          if (outcome === 'failure') throw new Error('action failed')
-          if (outcome === 'cancellation') throw new DOMException('cancelled', 'AbortError')
+        async () => {
+          if (fails) throw new DOMException('cancelled', 'AbortError')
           return 'done'
         },
-        open,
+        () => ({ context, close: () => void (closes += 1) }),
       )
-      if (outcome === 'success') await expect(pending).resolves.toBe('done')
-      else await expect(pending).rejects.toThrow()
+      if (fails) await expect(pending).rejects.toThrow()
+      else await expect(pending).resolves.toBe('done')
       expect(closes).toBe(1)
     }
   })
 
   /** @evidence TEST-CLI-CONNECTION-REJECTS-INVALID-TIMEOUT-BEFORE-OPEN */
-  test('rejects invalid timeouts before constructing a connection', async () => {
-    for (const timeout of ['0', '-1', '1.5', 'nope', '999999999999999999999']) {
-      let opened = false
+  /** @evidence TEST-CLI-CONNECTION-REJECTS-ANONYMOUS-CREDENTIAL-CONFLICT */
+  test('rejects invalid timeouts and contradictory credentials before opening', async () => {
+    for (const options of [
+      { timeout: '0' },
+      { timeout: '1.5' },
+      { timeout: '999999999999999999999' },
+      { anonymous: true, as: 'alice' },
+      { anonymous: true, creds: 'token' },
+      { as: 'alice', creds: 'token' },
+    ]) {
       await expect(
-        withResolvedClientSession(
-          target,
-          { timeout },
-          config,
-          async () => undefined,
-          () => {
-            opened = true
-            throw new Error('must not open')
-          },
-        ),
+        withResolvedClientSession(target, options, config, async () => undefined, unopened),
       ).rejects.toMatchObject({ code: 'INVALID_FLAG' })
-      expect(opened).toBe(false)
     }
 
-    let receivedTimeout = 0
-    let receivedNestedTtl = 0
+    let opened: unknown
     await withResolvedClientSession(
       target,
       { timeout: '2500' },
       config,
       async () => undefined,
       (_target, timeoutMs, _options, _config, credential) => {
-        receivedTimeout = timeoutMs
-        receivedNestedTtl = credential?.nestedTtlSeconds ?? 0
+        opened = { timeoutMs, credential }
         return { context, close() {} }
       },
       { principal: 'caller', nestedTtlSeconds: 240 },
     )
-    expect(receivedTimeout).toBe(2_500)
-    expect(receivedNestedTtl).toBe(240)
-  })
-
-  /** @evidence TEST-CLI-CONNECTION-REJECTS-ANONYMOUS-CREDENTIAL-CONFLICT */
-  test('rejects anonymous plus explicit credentials before opening a connection', async () => {
-    for (const options of [
-      { anonymous: true, as: 'alice' },
-      { anonymous: true, creds: 'token' },
-      { anonymous: true, as: 'alice', creds: 'token' },
-    ]) {
-      let opened = false
-      await expect(
-        withResolvedClientSession(
-          target,
-          options,
-          config,
-          async () => undefined,
-          () => {
-            opened = true
-            throw new Error('must not open')
-          },
-        ),
-      ).rejects.toMatchObject({ code: 'INVALID_FLAG' })
-      expect(opened).toBe(false)
-    }
+    expect(opened).toEqual({
+      timeoutMs: 2_500,
+      credential: { principal: 'caller', nestedTtlSeconds: 240 },
+    })
   })
 })

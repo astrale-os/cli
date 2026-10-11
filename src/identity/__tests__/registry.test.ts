@@ -31,43 +31,33 @@ describe('identity registry journey', () => {
     ])
     expect(exitCode, stderr).toBe(0)
 
-    const result = JSON.parse(stdout) as {
+    const result = JSON.parse(stdout)
+    expect(result).toMatchObject({
       store: {
-        default: string
-        identities: Record<
-          string,
-          {
-            source?: string
-            mode?: string
-            registrations?: Record<string, { iss: string; sub: string; registeredAt: string }>
-          }
-        >
-      }
-      selected: { name: string; subject: string }
-      selectedDeletion: string
-      aliceKey: boolean
-      bobKey: boolean
-      routeCache: boolean
-      exchangeCache: unknown
-    }
-    expect(result.store.default).toBe('alice')
-    expect(Object.keys(result.store.identities).sort()).toEqual(['alice', 'workos'])
-    expect(result.store.identities.alice.registrations?.production).toEqual({
-      iss: 'https://kernel.example',
-      sub: 'node-alice',
-      registeredAt: '2026-08-11T12:00:00.000Z',
+        default: 'alice',
+        identities: {
+          alice: {
+            registrations: {
+              production: {
+                iss: 'https://kernel.example',
+                sub: 'node-alice',
+                registeredAt: '2026-08-11T12:00:00.000Z',
+              },
+            },
+          },
+          workos: { source: 'idp', mode: 'remote' },
+        },
+      },
+      selected: { name: 'alice', subject: 'alice' },
+      aliceKey: true,
+      bobKey: false,
+      routeCache: false,
     })
-    expect(result.store.identities.workos).toMatchObject({ source: 'idp', mode: 'remote' })
-    expect(result.selected).toMatchObject({ name: 'alice', subject: 'alice' })
+    expect(Object.keys(result.store.identities).sort()).toEqual(['alice', 'workos'])
     expect(result.selectedDeletion).toContain('Cannot delete the default identity')
-    expect(result.aliceKey).toBe(true)
-    expect(result.bobKey).toBe(false)
-    expect(result.routeCache).toBe(false)
     expect(result.exchangeCache).toEqual({ version: 2, entries: {} })
 
-    const persisted = JSON.parse(await readFile(join(root, 'identities.json'), 'utf-8')) as {
-      version?: unknown
-    }
+    const persisted = JSON.parse(await readFile(join(root, 'identities.json'), 'utf-8'))
     expect(persisted.version).toBe(1)
     expect(stdout).not.toContain('"d":')
   })
