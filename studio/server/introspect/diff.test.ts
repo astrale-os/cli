@@ -40,23 +40,15 @@ describe('canonical standalone Function diffs', () => {
     expect(structuralStatusOf(removed)).toBe('changed')
   })
 
-  test('detects a standalone Function signature change', () => {
-    expect(
-      diffSchemas(schema({ inspect: callable() }), schema({ inspect: callable('number') })),
-    ).toEqual([{ kind: 'function-signature-changed', target: 'inspect' }])
-  })
-
-  test('detects auth and output-mode changes in callable contracts', () => {
-    const before = callable()
-    const after: IrFunction = {
-      ...before,
-      auth: 'authorized',
-      output: { mode: 'stream', item: { type: 'string' } },
-    }
-
-    expect(diffSchemas(schema({ inspect: before }), schema({ inspect: after }))).toEqual([
-      { kind: 'function-signature-changed', target: 'inspect' },
+  test('a changed return type, auth or output mode changes the signature', () => {
+    for (const after of [
+      callable('number'),
+      { ...callable(), auth: 'authorized' as const },
+      { ...callable(), output: { mode: 'stream' as const, item: { type: 'string' } } },
     ])
+      expect(diffSchemas(schema({ inspect: callable() }), schema({ inspect: after }))).toEqual([
+        { kind: 'function-signature-changed', target: 'inspect' },
+      ])
   })
 
   test('uses canonical required membership and compares complete value schemas', () => {

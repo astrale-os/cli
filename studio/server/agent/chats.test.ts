@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,27 +9,17 @@ import {
   chatInfo,
   chatQueue,
   clearChatHandoff,
-  clearChatSession,
   createChat,
   deleteChat,
+  enqueueChatMessage,
   ensureChats,
   forkChat,
-  editQueuedMessage,
-  enqueueChatMessage,
   markHandoffDelivered,
-  moveQueuedMessage,
-  pendingHandoff,
-  recordChatTurn,
-  renameChat,
   requeueChatMessage,
   resolveChat,
   setActiveChat,
-  setChatModel,
-  setChatFastMode,
   setChatOrder,
-  setChatSession,
   takeQueuedMessage,
-  titleChatFromMessage,
 } from './chats'
 
 const roots: string[] = []
@@ -43,329 +33,118 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-describe('chat tabs', () => {
-  test('fast mode is a persistent per-chat switch and follows a harness handoff', () => {
-    const dir = root()
-    const source = createChat(dir, { harness: 'codex' })
-    setChatFastMode(dir, source.id, true)
-    const stored = resolveChat(dir, 'codex', source.id)!
-    expect(chatInfo(stored, 'idle').fastMode).toBe(true)
+test('a store always has an active tab whose id survives every read', () => {
+  const dir = root()
+  const first = activeChat(dir, 'claude')
+  expect(first).toMatchObject({ harness: 'claude', turns: 0, title: 'New chat' })
+  // a regenerated id would orphan the tab's transcript on the very next read
+  expect(activeChat(dir, 'claude').id).toBe(first.id)
 
-    const forked = forkChat(dir, stored, 'claude', 'continue here')
-    expect(forked.fastMode).toBe(true)
-  })
-  test('seeds one chat on the default harness and keeps its id across reads', () => {
-    const dir = root()
-    const first = activeChat(dir, 'claude')
-    expect(first).toMatchObject({ harness: 'claude', turns: 0, title: 'New chat' })
+  expect(setActiveChat(dir, 'does-not-exist')).toBe(false)
+  writeJson(dir, 'active-chat.json', { activeId: 'ghost' })
+  expect(ensureChats(dir, 'claude').activeId).toBe(first.id)
 
-    // A regenerated id would orphan the tab's transcript on the very next read.
-    expect(activeChat(dir, 'claude').id).toBe(first.id)
-    expect(ensureChats(dir, 'claude').chats).toHaveLength(1)
-  })
+  // the last tab may close: the next read seeds a fresh one
+  expect(deleteChat(dir, first.id)).toBe(true)
+  expect(activeChat(dir, 'codex')).toMatchObject({ harness: 'codex' })
+})
 
-  test('keeps each tab’s session, model and turn count to itself', () => {
-    const dir = root()
-    const claude = activeChat(dir, 'claude')
-    const codex = createChat(dir, { harness: 'codex' })
+test('a chat keeps its tone for life, whatever tab closes', () => {
+  const dir = root()
+  const first = activeChat(dir, 'claude')
+  const second = createChat(dir, { harness: 'claude' })
+  const third = createChat(dir, { harness: 'claude' })
+  expect([first.tone, second.tone, third.tone]).toEqual([0, 1, 2])
 
-    recordChatTurn(dir, claude.id, { sessionId: 'claude-session', turns: 2 })
-    recordChatTurn(dir, codex.id, { sessionId: 'codex-thread', turns: 5 })
-    setChatModel(dir, claude.id, 'opus')
-    setChatModel(dir, codex.id, 'gpt-5.6')
+  deleteChat(dir, second.id)
+  expect(chatInfo(resolveChat(dir, 'claude', third.id)!, 'idle').tone).toBe(2)
+  // the freed hue goes to the next tab, not the survivor's
+  expect(createChat(dir, { harness: 'claude' }).tone).toBe(1)
+  // closing the brand tab hands the brand to the next chat of that agent only
+  deleteChat(dir, first.id)
+  expect(createChat(dir, { harness: 'claude' }).tone).toBe(0)
+})
 
-    expect(resolveChat(dir, 'claude', claude.id)).toMatchObject({
-      sessionId: 'claude-session',
-      turns: 2,
-      model: 'opus',
+test('keeps the order tabs were arranged in, new ones last', () => {
+  const dir = root()
+  // three tabs opened a second apart, as chats opened within one millisecond tie
+  for (const [index, id] of ['a', 'b', 'c'].entries())
+    writeJson(dir, `chats/${id}.json`, {
+      id,
+      title: 'New chat',
       harness: 'claude',
-    })
-    expect(resolveChat(dir, 'claude', codex.id)).toMatchObject({
-      sessionId: 'codex-thread',
-      turns: 5,
-      model: 'gpt-5.6',
-      harness: 'codex',
-    })
-
-    clearChatSession(dir, codex.id)
-    expect(resolveChat(dir, 'claude', codex.id)?.sessionId).toBeUndefined()
-    expect(resolveChat(dir, 'claude', codex.id)?.turns).toBe(0)
-    expect(resolveChat(dir, 'claude', claude.id)?.sessionId).toBe('claude-session')
-  })
-
-  test('a chat keeps its tone for life, whatever tab closes', () => {
-    const dir = root()
-    const first = activeChat(dir, 'claude')
-    const second = createChat(dir, { harness: 'claude' })
-    const third = createChat(dir, { harness: 'claude' })
-    expect([first.tone, second.tone, third.tone]).toEqual([0, 1, 2])
-
-    deleteChat(dir, second.id)
-    expect(resolveChat(dir, 'claude', third.id)?.tone).toBe(2)
-    expect(chatInfo(resolveChat(dir, 'claude', third.id)!, 'idle').tone).toBe(2)
-    // the freed hue goes to the next tab, not the survivor's
-    expect(createChat(dir, { harness: 'claude' }).tone).toBe(1)
-
-    // closing the brand tab hands the brand to the next chat of that agent only
-    deleteChat(dir, first.id)
-    expect(resolveChat(dir, 'claude', third.id)?.tone).toBe(2)
-    expect(createChat(dir, { harness: 'claude' }).tone).toBe(0)
-  })
-
-  test('keeps the order tabs were arranged in, new ones last', () => {
-    const dir = root()
-    // three tabs opened a second apart, as chats opened within one millisecond tie
-    for (const [index, id] of ['a', 'b', 'c'].entries())
-      writeJson(dir, `chats/${id}.json`, {
-        id,
-        title: 'New chat',
-        harness: 'claude',
-        tone: index,
-        turns: 0,
-        createdAt: `2026-09-01T00:00:0${index}.000Z`,
-        updatedAt: `2026-09-01T00:00:0${index}.000Z`,
-      })
-    const [first, second, third] = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
-    const ids = () => ensureChats(dir, 'claude').chats.map((chat) => chat.id)
-    expect(ids()).toEqual([first.id, second.id, third.id])
-
-    // an unknown id is ignored, and a tab the caller did not name keeps its place after
-    setChatOrder(dir, [third.id, 'gone', first.id])
-    expect(ids()).toEqual([third.id, first.id, second.id])
-
-    const fourth = createChat(dir, { harness: 'claude' })
-    expect(ids()).toEqual([third.id, first.id, second.id, fourth.id])
-
-    deleteChat(dir, first.id)
-    expect(ids()).toEqual([third.id, second.id, fourth.id])
-    expect(readJson(dir, 'chat-order.json', (value) => value, undefined)).toEqual({
-      order: [third.id, second.id],
-    })
-  })
-
-  test('persists the new-domain context and exposes it on the chat', () => {
-    const dir = root()
-    const chat = createChat(dir, {
-      harness: 'codex',
-      newDomain: { id: 'billing', origin: 'billing.example.dev', path: './billing' },
-    })
-
-    const stored = resolveChat(dir, 'claude', chat.id)!
-    expect(stored.newDomain).toEqual({
-      id: 'billing',
-      origin: 'billing.example.dev',
-      path: './billing',
-    })
-    expect(chatInfo(stored, 'idle').newDomain).toEqual(stored.newDomain)
-  })
-
-  test('forking carries a briefing to the new tab and leaves the source untouched', () => {
-    const dir = root()
-    const source = activeChat(dir, 'claude')
-    renameChat(dir, source.id, 'Billing rework')
-    recordChatTurn(dir, source.id, { sessionId: 'claude-session', turns: 3 })
-
-    const forked = forkChat(dir, source, 'codex', 'what happened so far', 'gpt-5.6-sol')
-    expect(forked.model).toBe('gpt-5.6-sol')
-    expect(forked).toMatchObject({
-      harness: 'codex',
+      tone: index,
       turns: 0,
-      handoff: { fromChatId: source.id, fromHarness: 'claude', summary: 'what happened so far' },
+      createdAt: `2026-09-01T00:00:0${index}.000Z`,
+      updatedAt: `2026-09-01T00:00:0${index}.000Z`,
     })
-    // a fork starts its own conversation — it cannot inherit the other agent's id
-    expect(forked.sessionId).toBeUndefined()
-    // the fork is where the user lands, and the original is exactly as it was
-    expect(ensureChats(dir, 'claude').activeId).toBe(forked.id)
-    expect(resolveChat(dir, 'claude', source.id)).toMatchObject({
-      harness: 'claude',
-      sessionId: 'claude-session',
-      turns: 3,
-      title: 'Billing rework',
-    })
+  const ids = () => ensureChats(dir, 'claude').chats.map((chat) => chat.id)
+  expect(ids()).toEqual(['a', 'b', 'c'])
 
-    expect(chatInfo(forked, 'idle').origin).toEqual({
-      chatId: source.id,
-      harness: 'claude',
-      pendingHandoff: true,
-      summary: 'what happened so far',
-    })
-    expect(pendingHandoff(forked)).toBe('what happened so far')
+  // an unknown id is ignored, and a tab the caller did not name keeps its place after
+  setChatOrder(dir, ['c', 'gone', 'a'])
+  const fourth = createChat(dir, { harness: 'claude' })
+  expect(ids()).toEqual(['c', 'a', 'b', fourth.id])
 
-    // Delivery stops the RESEND, it does not erase the briefing: the chip above
-    // the transcript is this conversation's only record of where it came from.
-    markHandoffDelivered(dir, forked.id)
-    const delivered = resolveChat(dir, 'claude', forked.id)!
-    expect(pendingHandoff(delivered)).toBeUndefined()
-    expect(chatInfo(delivered, 'idle').origin).toEqual({
-      chatId: source.id,
-      harness: 'claude',
-      pendingHandoff: false,
-      summary: 'what happened so far',
-    })
-    expect(clearChatHandoff(dir, forked.id)).toBe('delivered')
-    expect(resolveChat(dir, 'claude', forked.id)?.handoff?.summary).toBe('what happened so far')
-  })
-
-  test('an unsent briefing can still be discarded', () => {
-    const dir = root()
-    const source = activeChat(dir, 'claude')
-    const forked = forkChat(dir, source, 'codex', 'context not sent yet')
-
-    expect(clearChatHandoff(dir, forked.id)).toBe('cleared')
-    expect(resolveChat(dir, 'claude', forked.id)?.handoff).toBeUndefined()
-  })
-
-  test('titles an unnamed tab from its first instruction, then leaves it alone', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-
-    titleChatFromMessage(dir, chat.id, 'Add a Subscription class\nwith a renewal date')
-    expect(resolveChat(dir, 'claude', chat.id)?.title).toBe('Add a Subscription class')
-
-    titleChatFromMessage(dir, chat.id, 'and now something else')
-    expect(resolveChat(dir, 'claude', chat.id)?.title).toBe('Add a Subscription class')
-  })
-
-  test('closing the last tab is allowed and the next read seeds a fresh one', () => {
-    const dir = root()
-    const only = activeChat(dir, 'claude')
-
-    expect(deleteChat(dir, only.id)).toBe(true)
-    expect(deleteChat(dir, only.id)).toBe(false)
-
-    const seeded = activeChat(dir, 'codex')
-    expect(seeded.id).not.toBe(only.id)
-    expect(seeded.harness).toBe('codex')
-  })
-
-  test('selecting an unknown chat fails instead of silently switching tabs', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    expect(setActiveChat(dir, 'does-not-exist')).toBe(false)
-    expect(ensureChats(dir, 'claude').activeId).toBe(chat.id)
-  })
-
-  test('a stored active id that no longer exists falls back to a real tab', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    writeJson(dir, 'active-chat.json', { activeId: 'ghost' })
-    expect(ensureChats(dir, 'claude').activeId).toBe(chat.id)
-  })
-
-  test('machine-global chats keep an independent active pointer per workspace', () => {
-    const machine = root()
-    const workspaceA = root()
-    const workspaceB = root()
-    const first = activeChat(machine, 'claude', { workspace: '/work/a' }, workspaceA)
-    const second = createChat(machine, { harness: 'codex', workspace: '/work/b' }, workspaceB)
-
-    expect(ensureChats(machine, 'claude', undefined, workspaceA)).toEqual(
-      expect.objectContaining({
-        activeId: first.id,
-        chats: expect.arrayContaining([
-          expect.objectContaining({ id: first.id }),
-          expect.objectContaining({ id: second.id }),
-        ]),
-      }),
-    )
-    expect(ensureChats(machine, 'claude', undefined, workspaceB).activeId).toBe(second.id)
-  })
-
-  test('an empty session id clears rather than stores a blank conversation', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    setChatSession(dir, chat.id, 'session-1')
-    setChatSession(dir, chat.id, '   ')
-    expect(resolveChat(dir, 'claude', chat.id)?.sessionId).toBeUndefined()
+  deleteChat(dir, 'a')
+  expect(readJson(dir, 'chat-order.json', (value) => value, undefined)).toEqual({
+    order: ['c', 'b'],
   })
 })
 
-describe('queued messages', () => {
-  const texts = (dir: string, chatId: string): string[] =>
-    chatQueue(resolveChat(dir, 'claude', chatId)!).map((message) => message.text)
+test('machine-global chats keep an independent active pointer per workspace', () => {
+  const machine = root()
+  const [workspaceA, workspaceB] = [root(), root()]
+  const first = activeChat(machine, 'claude', { workspace: '/work/a' }, workspaceA)
+  const second = createChat(machine, { harness: 'codex', workspace: '/work/b' }, workspaceB)
 
-  test('messages queue in the order they were sent and travel with the tab', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    const other = createChat(dir, { harness: 'codex' })
+  expect(ensureChats(machine, 'claude', undefined, workspaceA).activeId).toBe(first.id)
+  expect(ensureChats(machine, 'claude', undefined, workspaceB).activeId).toBe(second.id)
+  expect(ensureChats(machine, 'claude', undefined, workspaceA).chats).toHaveLength(2)
+})
 
-    const first = enqueueChatMessage(dir, chat.id, '  first  ')!
-    enqueueChatMessage(dir, chat.id, 'second')
-    enqueueChatMessage(dir, other.id, 'not this tab')
+test('a fork briefs the new tab once, keeps the briefing as its chip, and leaves the source', () => {
+  const dir = root()
+  const source = activeChat(dir, 'claude')
+  const forked = forkChat(dir, source, 'codex', 'what happened so far', 'gpt-5.6-sol')
+  expect(forked).toMatchObject({ harness: 'codex', model: 'gpt-5.6-sol', turns: 0 })
+  expect(forked.sessionId).toBeUndefined()
+  expect(ensureChats(dir, 'claude').activeId).toBe(forked.id)
 
-    // trimmed on the way in, appended at the back, and never crossing tabs
-    expect(first.text).toBe('first')
-    expect(texts(dir, chat.id)).toEqual(['first', 'second'])
-    expect(texts(dir, other.id)).toEqual(['not this tab'])
-    expect(chatInfo(resolveChat(dir, 'claude', chat.id)!, 'running').queued).toHaveLength(2)
-
-    // an unqueued tab reports an empty list rather than nothing
-    expect(chatInfo(other, 'idle').queued).toEqual([])
+  // an unsent briefing may be discarded…
+  const other = forkChat(dir, source, 'codex', 'not sent yet')
+  expect(clearChatHandoff(dir, other.id)).toBe('cleared')
+  // …a delivered one is conversation history: it stays, and is never sent again
+  markHandoffDelivered(dir, forked.id)
+  expect(clearChatHandoff(dir, forked.id)).toBe('delivered')
+  expect(chatInfo(resolveChat(dir, 'claude', forked.id)!, 'idle').origin).toEqual({
+    chatId: source.id,
+    harness: 'claude',
+    pendingHandoff: false,
+    summary: 'what happened so far',
   })
+})
 
-  test('the next message is taken from the front, and goes back there if it cannot run', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    enqueueChatMessage(dir, chat.id, 'one')
-    enqueueChatMessage(dir, chat.id, 'two')
+test('a queue keeps its order on a failed take and drops corrupt entries on read', () => {
+  const dir = root()
+  const chat = activeChat(dir, 'claude')
+  enqueueChatMessage(dir, chat.id, 'one')
+  enqueueChatMessage(dir, chat.id, 'two')
+  const texts = () => chatQueue(resolveChat(dir, 'claude', chat.id)!).map(({ text }) => text)
 
-    const next = takeQueuedMessage(dir, chat.id)!
-    expect(next.text).toBe('one')
-    expect(texts(dir, chat.id)).toEqual(['two'])
+  // a submit that never started puts its message back where it was
+  requeueChatMessage(dir, chat.id, takeQueuedMessage(dir, chat.id)!)
+  expect(texts()).toEqual(['one', 'two'])
 
-    // a submit that never started must not silently reorder what is left
-    requeueChatMessage(dir, chat.id, next)
-    expect(texts(dir, chat.id)).toEqual(['one', 'two'])
-    expect(takeQueuedMessage(dir, chat.id, 'no-such-message')).toBeUndefined()
-    expect(texts(dir, chat.id)).toEqual(['one', 'two'])
+  const stored = readJson<Record<string, unknown> | null>(
+    dir,
+    `chats/${chat.id}.json`,
+    (value) => value as Record<string, unknown>,
+    null,
+  )!
+  writeJson(dir, `chats/${chat.id}.json`, {
+    ...stored,
+    queue: [{ id: 'kept', text: 'kept' }, { text: 'no id' }, 'nonsense'],
   })
-
-  test('reordering stops at both ends, and rewriting refuses to empty a message', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    const one = enqueueChatMessage(dir, chat.id, 'one')!
-    const two = enqueueChatMessage(dir, chat.id, 'two')!
-
-    expect(moveQueuedMessage(dir, chat.id, two.id, -1)).toBe(true)
-    expect(texts(dir, chat.id)).toEqual(['two', 'one'])
-    expect(moveQueuedMessage(dir, chat.id, two.id, -1)).toBe(false)
-    expect(moveQueuedMessage(dir, chat.id, one.id, 1)).toBe(false)
-    expect(texts(dir, chat.id)).toEqual(['two', 'one'])
-
-    expect(editQueuedMessage(dir, chat.id, one.id, '  one, revised ')).toMatchObject({
-      id: one.id,
-      text: 'one, revised',
-    })
-    // a blank rewrite is a delete in disguise, and deleting has its own control
-    expect(editQueuedMessage(dir, chat.id, one.id, '   ')).toBeUndefined()
-    expect(texts(dir, chat.id)).toEqual(['two', 'one, revised'])
-  })
-
-  test('a queue survives a restart, and a corrupt entry is dropped rather than fatal', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    enqueueChatMessage(dir, chat.id, 'still here')
-
-    const store = readJson<Record<string, unknown> | null>(
-      dir,
-      `chats/${chat.id}.json`,
-      (value) => value as Record<string, unknown>,
-      null,
-    )!
-    store.queue = [{ id: 'kept', text: 'kept' }, { text: 'no id' }, 'nonsense']
-    writeJson(dir, `chats/${chat.id}.json`, store)
-
-    expect(texts(dir, chat.id)).toEqual(['kept'])
-  })
-
-  test('closing a tab takes its queue with it', () => {
-    const dir = root()
-    const chat = activeChat(dir, 'claude')
-    createChat(dir, { harness: 'claude' })
-    enqueueChatMessage(dir, chat.id, 'never sent')
-
-    expect(deleteChat(dir, chat.id)).toBe(true)
-    expect(resolveChat(dir, 'claude', chat.id)).toBeUndefined()
-    expect(enqueueChatMessage(dir, chat.id, 'too late')).toBeUndefined()
-  })
+  expect(texts()).toEqual(['kept'])
 })

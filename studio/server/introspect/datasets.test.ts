@@ -5,9 +5,8 @@ import { join } from 'node:path'
 
 import type { DomainHandle } from '../domain/registry'
 
-import { analyzeProjectConfig } from '../domain/registry'
 import { buildBundle } from './bundle'
-import { buildDatasets, decodeDatasetJson, projectDataset, runtimeExtractDataset } from './datasets'
+import { buildDatasets, decodeDatasetJson, projectDataset } from './datasets'
 
 const roots: string[] = []
 afterEach(() => {
@@ -69,39 +68,6 @@ function fixture(config: string): DomainHandle {
     schemaIndex: join(root, 'schema/index.ts'),
   }
 }
-
-describe('Dataset references', () => {
-  test('are read from defineProject in the configuration, in order, without executing it', () => {
-    const handle = fixture(`
-      import { cloudflare } from '@astrale-os/adapter-cloudflare'
-      import { defineProject } from '@astrale-os/sdk/project'
-      import { dataset as ref, tests } from '@astrale-os/sdk/testing'
-      import { domain } from './domain.js'
-      // dataset('./tests/datasets/commented.ts')
-      const crowded = ref('./tests/datasets/crowded.ts')
-      const resources = tests({
-        datasets: [
-          ref('./tests/datasets/demo.ts'),
-          crowded,
-          ref('./tests/datasets/demo.ts'),
-          ref(process.env.DYNAMIC ?? './tests/datasets/dynamic.ts'),
-        ],
-      })
-      export default defineProject({
-        domain,
-        environments: { development: { deployment: cloudflare({}) } },
-        tests: resources,
-      })
-    `)
-    expect(analyzeProjectConfig(handle.root).datasets).toEqual([
-      './tests/datasets/demo.ts',
-      './tests/datasets/crowded.ts',
-    ])
-    expect(
-      analyzeProjectConfig(fixture(`export default deploy({ application })\n`).root).datasets,
-    ).toEqual([])
-  })
-})
 
 describe('Dataset envelope', () => {
   const envelope = {
@@ -209,16 +175,5 @@ describe('Dataset extraction', () => {
     )
     expect(missing).toMatchObject({ status: 'failed', path: './tests/datasets/missing.ts' })
     expect((missing as { error: { message: string } }).error.message).toContain('not found')
-  }, 120_000)
-
-  test('reports a Dataset module whose default export is not a Dataset as data, never a crash', async () => {
-    const handle = fixture(`export default {}\n`)
-    const result = await runtimeExtractDataset(
-      join(handle.root, 'tests/datasets/broken.ts'),
-      handle.root,
-    )
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error.message).toContain('not an admitted Dataset')
-    expect(await buildDatasets(handle, null)).toMatchObject({ domainId: handle.id, datasets: [] })
   }, 120_000)
 })

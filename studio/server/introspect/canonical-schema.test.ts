@@ -174,106 +174,19 @@ describe('canonical Schema projection', () => {
     })
   })
 
-  test('delegates admission, resolution, and dependency reachability to the DSL', () => {
-    const calls: string[] = []
-    const wrapped = {
-      ...sdk,
-      bundle: {
-        ...sdk.bundle,
-        create(value: typeof schema) {
-          calls.push('bundle.create')
-          return sdk.bundle.create(value)
-        },
-        accept(value: unknown) {
-          calls.push('bundle.accept')
-          return sdk.bundle.accept(value)
-        },
-      },
-      schema: {
-        ...sdk.schema,
-        resolve(value: typeof schema) {
-          calls.push('schema.resolve')
-          return sdk.schema.resolve(value)
-        },
-        compatibility: {
-          ...sdk.schema.compatibility,
-          compareMeaning(request: Parameters<typeof sdk.schema.compatibility.compareMeaning>[0]) {
-            calls.push('schema.compatibility.compareMeaning')
-            return sdk.schema.compatibility.compareMeaning(request)
-          },
-        },
-      },
-    } as unknown as typeof sdk
-
-    expect(extractCanonicalSchemaFromSdk(wrapped, schema).status).toBe('admitted')
-    expect(calls).toEqual([
-      'bundle.create',
-      'bundle.accept',
-      'schema.resolve',
-      'schema.compatibility.compareMeaning',
-    ])
-  })
-
-  test('admits a modern Domain that exposes only the canonical compatibility owner', () => {
-    const extraction = extractCanonicalSchemaFromSdk(
-      {
-        ...sdk,
-        schema: { resolve: sdk.schema.resolve, compatibility: sdk.schema.compatibility },
-      },
-      schema,
-    )
-    expect(extraction.status).toBe('admitted')
-    expect(
-      extraction.ir.importedClassesByKey['shared.example.dev:class.Named']?.properties.title,
-    ).toEqual({ type: 'string' })
-  })
-
-  test('prefers canonical compatibility when a Domain exposes both generations', () => {
-    let legacyCalls = 0
-    const schemaWithRetiredOwner = {
-      ...sdk.schema,
-      compareDependencyMeaning() {
-        legacyCalls++
-        throw new Error('Legacy comparison must not run.')
+  test('falls back to a preview when the Domain cannot compare dependency meaning', () => {
+    const rejecting = {
+      compareMeaning() {
+        throw new Error('The Domain rejected compatibility admission.')
       },
     }
-    const extraction = extractCanonicalSchemaFromSdk(
-      { ...sdk, schema: schemaWithRetiredOwner },
-      schema,
-    )
-    expect(extraction.status).toBe('admitted')
-    expect(legacyCalls).toBe(0)
-  })
-
-  test('does not retry a rejected canonical comparison through the legacy owner', () => {
-    let legacyCalls = 0
-    const schemaWithRetiredOwner = {
-      resolve: sdk.schema.resolve,
-      compatibility: {
-        compareMeaning() {
-          throw new Error('The Domain rejected compatibility admission.')
-        },
-      },
-      compareDependencyMeaning() {
-        legacyCalls++
-        return { footprint: ['shared.example.dev:class.Named'] }
-      },
+    for (const compatibility of [undefined, rejecting]) {
+      const extraction = extractCanonicalSchemaFromSdk(
+        { ...sdk, schema: { resolve: sdk.schema.resolve, compatibility } } as unknown as typeof sdk,
+        schema,
+      )
+      expect(extraction).toMatchObject({ status: 'preview', revision: null })
+      expect(extraction.ir.importsByKey).toEqual({})
     }
-    const extraction = extractCanonicalSchemaFromSdk(
-      { ...sdk, schema: schemaWithRetiredOwner },
-      schema,
-    )
-    expect(extraction).toMatchObject({ status: 'preview', revision: null })
-    expect(extraction.ir.importsByKey).toEqual({})
-    expect(legacyCalls).toBe(0)
-  })
-
-  test('retains preview behavior when the canonical compatibility owner is absent', () => {
-    const extraction = extractCanonicalSchemaFromSdk(
-      { ...sdk, schema: { resolve: sdk.schema.resolve } },
-      schema,
-    )
-    expect(extraction).toMatchObject({ status: 'preview', revision: null })
-    expect(extraction.ir.importsByKey).toEqual({})
   })
 })

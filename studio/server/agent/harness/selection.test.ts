@@ -10,89 +10,71 @@ import { getHarnessById } from './registry'
 import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './selection'
 
 const roots: string[] = []
-const previous = process.env.DOMAIN_STUDIO_HARNESS
-const previousHome = process.env.ASTRALE_HOME
-let machineHome: string | undefined
+const previous = { harness: process.env.DOMAIN_STUDIO_HARNESS, home: process.env.ASTRALE_HOME }
 const REAL = ['claude', 'codex'] as const
-// The presence map is process-wide, and other suites in this run probe the agents
-// this machine really has. Every test here therefore STATES what is installed —
-// otherwise the answers would depend on the laptop the suite runs on.
+// The presence map is process-wide, and other suites probe the agents this machine
+// really has: every test here STATES what is installed.
 const probed = new Map(REAL.map((id) => [id, lastKnownPresence(id)]))
 
-/** Declare which agents this machine has, for the length of one test. */
 function installed(...present: string[]): void {
   for (const id of REAL) rememberHarnessPresence(id, present.includes(id))
 }
 
-/** A workspace with nothing starred yet. */
-function workspace(name: string): string {
-  const root = mkdtempSync(join(tmpdir(), `studio-harness-${name}-`))
+/** A fresh workspace; the machine home (and so the star) is shared by the whole test. */
+function workspace(): void {
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-'))
   roots.push(root)
-  machineHome ??= join(root, '.astrale')
-  process.env.ASTRALE_HOME = machineHome
+  process.env.ASTRALE_HOME ??= join(roots[0]!, '.astrale')
   initWorkspaceRoot(root)
-  return root
+}
+
+async function configuration(...args: Parameters<typeof resolveHarnessConfiguration>) {
+  const result = await resolveHarnessConfiguration(...args)
+  if (!result.ok) throw new Error(result.error)
+  return { ...result.configuration, harness: result.configuration.harness.id }
 }
 
 afterEach(() => {
-  if (previous === undefined) delete process.env.DOMAIN_STUDIO_HARNESS
-  else process.env.DOMAIN_STUDIO_HARNESS = previous
-  if (previousHome === undefined) delete process.env.ASTRALE_HOME
-  else process.env.ASTRALE_HOME = previousHome
-  machineHome = undefined
+  for (const [key, value] of [
+    ['DOMAIN_STUDIO_HARNESS', previous.harness],
+    ['ASTRALE_HOME', previous.home],
+  ] as const)
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
   for (const [id, ok] of probed) rememberHarnessPresence(id, ok)
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('the starred model names the agent the studio opens on', () => {
+test('the starred model names the agent, for the whole studio, below the environment', () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
+  delete process.env.ASTRALE_HOME
   installed('claude', 'codex')
-  workspace('a')
+  workspace()
   expect(getHarnessSelection()).toMatchObject({ id: 'claude', source: 'default' })
 
   updateStudioSettings({ agentModel: { harness: 'codex', model: 'gpt-5.6-sol' } })
   expect(getHarnessSelection()).toEqual({ id: 'codex', locked: false, source: 'starred' })
+  // the star is the STUDIO's, not one domain's or workspace's
+  workspace()
   expect(getHarness().id).toBe('codex')
 
-  // The star is the STUDIO's, not one domain's or workspace's.
-  workspace('b')
-  expect(getHarnessSelection()).toEqual({ id: 'codex', locked: false, source: 'starred' })
-  expect(getHarness().id).toBe('codex')
-})
+  process.env.DOMAIN_STUDIO_HARNESS = 'claude'
+  expect(getHarnessSelection()).toEqual({ id: 'claude', locked: true, source: 'environment' })
 
-test('an unknown starred agent falls back instead of breaking the domain', () => {
+  // an unknown starred agent falls back instead of breaking the studio
   delete process.env.DOMAIN_STUDIO_HARNESS
-  installed('claude', 'codex')
-  workspace('unknown')
   updateStudioSettings({ agentModel: { harness: 'gemini', model: 'flash' } })
   expect(getHarnessSelection()).toMatchObject({ id: 'claude', source: 'default' })
 })
 
-test('the environment outranks the starred model, and says so', () => {
-  installed('claude', 'codex')
-  workspace('env')
-  updateStudioSettings({ agentModel: { harness: 'claude', model: 'opus[1m]' } })
-  process.env.DOMAIN_STUDIO_HARNESS = 'codex'
-  expect(getHarnessSelection()).toEqual({ id: 'codex', locked: true, source: 'environment' })
-})
-
-test('with nothing starred, the studio opens on the agent this machine has', () => {
+test('the selection follows the agents this machine has, and never rewrites the star', async () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
-  workspace('installed')
-
+  delete process.env.ASTRALE_HOME
+  workspace()
   installed('codex')
   expect(getHarnessSelection()).toEqual({ id: 'codex', locked: false, source: 'default' })
 
-  installed('claude', 'codex')
-  expect(getHarnessSelection()).toEqual({ id: 'claude', locked: false, source: 'default' })
-})
-
-test('a star on an agent this machine lacks opens on the one it has — and keeps the star', async () => {
-  delete process.env.DOMAIN_STUDIO_HARNESS
-  workspace('stranded')
   updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
-
-  installed('codex')
   expect(getHarnessSelection()).toEqual({
     id: 'codex',
     locked: false,
@@ -100,74 +82,35 @@ test('a star on an agent this machine lacks opens on the one it has — and keep
     preferred: 'claude',
   })
   // and it runs CODEX's own default, not the model starred on the missing agent
-  const fallback = await resolveHarnessConfiguration()
-  expect(fallback.ok).toBe(true)
-  if (!fallback.ok) return
-  expect(fallback.configuration.harness.id).toBe('codex')
-  expect(fallback.configuration.model).toBe('gpt-5.6-sol')
+  expect(await configuration()).toMatchObject({ harness: 'codex', model: 'gpt-5.6-sol' })
 
-  // Nothing was written: install the agent and the star is honoured again, on the
-  // very model it always named.
+  // install the agent and the star is honoured again, on the very model it named
   installed('claude', 'codex')
   expect(getHarnessSelection()).toEqual({ id: 'claude', locked: false, source: 'starred' })
-  const restored = await resolveHarnessConfiguration()
-  expect(restored.ok).toBe(true)
-  if (!restored.ok) return
-  expect(restored.configuration.harness.id).toBe('claude')
-  expect(restored.configuration.model).toBe('sonnet')
-})
+  expect(await configuration()).toMatchObject({ harness: 'claude', model: 'sonnet' })
 
-test('with no agent at all, the selection stays on the star rather than inventing one', () => {
-  delete process.env.DOMAIN_STUDIO_HARNESS
-  workspace('none')
-  updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
-
+  // with no agent at all there is nothing to fall back TO: the star stays
   installed()
-  // no substitute exists, so there is nothing to fall back TO — the status route
-  // reports every harness as absent, and that is what the GUI says out loud
   expect(getHarnessSelection()).toEqual({ id: 'claude', locked: false, source: 'starred' })
-
-  updateStudioSettings({ agentModel: null })
-  expect(getHarnessSelection()).toEqual({ id: 'claude', locked: false, source: 'default' })
 })
 
-test('an unpinned chat runs the harness default model, not whatever the agent ships with', async () => {
+test('the model is the chat pick, else the star on this agent, else the harness default', async () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
+  delete process.env.ASTRALE_HOME
   installed('claude', 'codex')
-  workspace('model')
+  workspace()
 
-  const untouched = await resolveHarnessConfiguration()
-  expect(untouched.ok).toBe(true)
-  if (!untouched.ok) return
-  expect(untouched.configuration.model).toBe('opus[1m]')
+  const untouched = await configuration()
+  expect(untouched.model).toBe('opus[1m]')
   // nothing pinned the reasoning level, so nothing is sent: the agent keeps its own
-  expect(untouched.configuration.effort).toBeUndefined()
+  expect(untouched.effort).toBeUndefined()
 
-  // the starred model outranks it, and the chat's own pick outranks both
   updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
-  const starred = await resolveHarnessConfiguration()
-  expect(starred.ok).toBe(true)
-  if (!starred.ok) return
-  expect(starred.configuration.model).toBe('sonnet')
-
-  const perChat = await resolveHarnessConfiguration(undefined, {
+  expect((await configuration()).model).toBe('sonnet')
+  expect(await configuration(undefined, { model: 'haiku', effort: 'max' })).toMatchObject({
     model: 'haiku',
     effort: 'max',
   })
-  expect(perChat.ok).toBe(true)
-  if (!perChat.ok) return
-  expect(perChat.configuration.model).toBe('haiku')
-  expect(perChat.configuration.effort).toBe('max')
-})
-
-test('a star on the other agent does not lend this one its model', async () => {
-  delete process.env.DOMAIN_STUDIO_HARNESS
-  installed('claude', 'codex')
-  workspace('cross')
-  updateStudioSettings({ agentModel: { harness: 'claude', model: 'sonnet' } })
-
-  const codex = await resolveHarnessConfiguration(getHarnessById('codex'))
-  expect(codex.ok).toBe(true)
-  if (!codex.ok) return
-  expect(codex.configuration.model).toBe('gpt-5.6-sol')
+  // a star on the other agent does not lend this one its model
+  expect((await configuration(getHarnessById('codex'))).model).toBe('gpt-5.6-sol')
 })

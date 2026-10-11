@@ -91,113 +91,55 @@ export const schema = defineSchema('example.dev', { name: 'Test Domain',
     expect(spans['view.overview']?.file).toBe('schema/index.ts')
     expect(spans['policy.guard']).toBeUndefined()
   })
-  test('links modular Action and Workflow declarations to exact callables', () => {
-    const root = mkdtempSync(join(tmpdir(), 'studio-runtime-overlay-'))
-    roots.push(root)
-    mkdirSync(join(root, 'functions'))
-    writeFileSync(
-      join(root, 'functions/rename.ts'),
-      `
-        import { defineAction } from '@astrale-os/sdk/action'
-        export const rename = defineAction()('Issue.rename', async ({ input }) => graph.update(input))
-      `,
-    )
-    writeFileSync(
-      join(root, 'functions/create.ts'),
-      `
-        import { defineWorkflow } from '@astrale-os/sdk/workflow'
-        export const create = defineWorkflow()('createIssue', async ({ input }) => graph.create(input))
-      `,
-    )
-
-    expect(
-      buildHandlerLinks({ ir, domainRoot: root }).map((link) => ({
-        owner: link.owner,
-        ownerKind: link.ownerKind,
-        kind: link.kind,
-        method: link.method,
-        handlerFile: link.handlerFile,
-        kernelCalls: link.kernelCalls,
-      })),
-    ).toEqual([
-      {
-        owner: 'Issue',
-        ownerKind: 'class',
-        kind: 'action',
-        method: 'rename',
-        handlerFile: 'functions/rename.ts',
-        kernelCalls: ['graph.update'],
-      },
-      {
-        owner: 'issues.example',
-        ownerKind: 'function',
-        kind: 'workflow',
-        method: 'createIssue',
-        handlerFile: 'functions/create.ts',
-        kernelCalls: ['graph.create'],
-      },
-    ])
-  })
-
-  test('scans a shared handler module once per link without double-counting token prefixes', () => {
-    const root = mkdtempSync(join(tmpdir(), 'studio-shared-handler-'))
+  test('links each Action and Workflow, in any module, to its wiring, its handler and its calls', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-handler-links-'))
     roots.push(root)
     mkdirSync(join(root, 'functions'))
     writeFileSync(
       join(root, 'functions/impl.ts'),
-      `export const shared = async ({ input }) => graph.createEdge(input)\n`,
-    )
-    writeFileSync(
-      join(root, 'functions/index.ts'),
-      `
-        import { defineAction } from '@astrale-os/sdk/action'
-        import { defineWorkflow } from '@astrale-os/sdk/workflow'
-        import { shared } from './impl.ts'
-        export const rename = defineAction()('Issue.rename', shared)
-        export const create = defineWorkflow()('createIssue', shared)
-      `,
-    )
-
-    const links = buildHandlerLinks({ ir, domainRoot: root })
-    expect(links.map((link) => [link.method, link.handlerFile, link.kernelCalls])).toEqual([
-      ['rename', 'functions/impl.ts', ['graph.createEdge']],
-      ['createIssue', 'functions/impl.ts', ['graph.createEdge']],
-    ])
-  })
-
-  test('points the wiring at the declaration and the handler at its implementation', () => {
-    const root = mkdtempSync(join(tmpdir(), 'studio-handler-wiring-'))
-    roots.push(root)
-    mkdirSync(join(root, 'functions'))
-    writeFileSync(
-      join(root, 'functions/impl.ts'),
-      `\n\nexport const settle = async ({ input }) => graph.update(input)\n`,
+      `\n\nexport const settle = async ({ input }) => graph.createEdge(input)\n`,
     )
     writeFileSync(
       join(root, 'functions/index.ts'),
       `import { defineAction } from '@astrale-os/sdk/action'
-import { defineWorkflow } from '@astrale-os/sdk/workflow'
 import { settle } from './impl.ts'
 
 export const rename = defineAction()('Issue.rename', settle)
+`,
+    )
+    writeFileSync(
+      join(root, 'functions/create.ts'),
+      `import { defineWorkflow } from '@astrale-os/sdk/workflow'
 export const create = defineWorkflow()('createIssue', async ({ input }) => graph.create(input))
 `,
     )
 
-    const links = buildHandlerLinks({ ir, domainRoot: root })
-    expect(
-      links.map((link) => [
-        link.method,
-        link.wiringFile,
-        link.wiringLine,
-        link.handlerFile,
-        link.handlerLine,
-      ]),
-    ).toEqual([
-      // the handler is imported: the declaration and the implementation live apart
-      ['rename', 'functions/index.ts', 5, 'functions/impl.ts', 3],
-      // the handler is inline: both sit in the declaring module
-      ['createIssue', 'functions/index.ts', 6, 'functions/index.ts', 6],
+    expect(buildHandlerLinks({ ir, domainRoot: root })).toEqual([
+      expect.objectContaining({
+        owner: 'Issue',
+        ownerKind: 'class',
+        kind: 'action',
+        method: 'rename',
+        // the handler is imported: the declaration and the implementation live apart
+        wiringFile: 'functions/index.ts',
+        wiringLine: 4,
+        handlerFile: 'functions/impl.ts',
+        handlerLine: 3,
+        // `graph.createEdge` is not also counted as `graph.create`
+        kernelCalls: ['graph.createEdge'],
+      }),
+      expect.objectContaining({
+        owner: 'issues.example',
+        ownerKind: 'function',
+        kind: 'workflow',
+        method: 'createIssue',
+        // the handler is inline: both sit in the declaring module
+        wiringFile: 'functions/create.ts',
+        wiringLine: 2,
+        handlerFile: 'functions/create.ts',
+        handlerLine: 2,
+        kernelCalls: ['graph.create'],
+      }),
     ])
   })
 
@@ -218,7 +160,6 @@ export const create = defineWorkflow()('createIssue', async ({ input }) => graph
           target: { as: 'owner', accepts: [Issue] },
           properties: { note: property(z.string()) },
         })
-        export const createIssue = fn({ input, output })
         /** Close one issue. */
         export const closeIssue = func({ input, output })
       `,
@@ -226,22 +167,23 @@ export const create = defineWorkflow()('createIssue', async ({ input }) => graph
     writeFileSync(
       join(schemaDir, 'index.ts'),
       `
-        import { Issue, assigned_to, closeIssue, createIssue } from './members.js'
+        import { Issue, assigned_to, closeIssue } from './members.js'
         export const Schema = defineSchema('issues.example', { name: 'Test Domain',
           classes: { Issue, assigned_to },
-          functions: { createIssue, closeIssue },
+          functions: { closeIssue },
         })
       `,
     )
     const spans = buildSourceSpans({ ir, domainRoot: root, schemaDir })
-    expect(spans['class.Issue.property.title']?.file).toBe('domain/model/members.ts')
-    expect(spans['class.Issue.method.rename']?.file).toBe('domain/model/members.ts')
-    expect(spans['edge.assigned_to.endpoint.issue']?.file).toBe('domain/model/members.ts')
-    expect(spans['edge.assigned_to.endpoint.owner']?.file).toBe('domain/model/members.ts')
-    expect(spans['edge.assigned_to.property.note']?.file).toBe('domain/model/members.ts')
-    expect(spans['function.createIssue']?.file).toBe('domain/model/members.ts')
-    // `func` is the current DSL helper; its Function needs the same span and doc.
-    expect(spans['function.closeIssue']?.file).toBe('domain/model/members.ts')
+    for (const key of [
+      'class.Issue.property.title',
+      'class.Issue.method.rename',
+      'edge.assigned_to.endpoint.issue',
+      'edge.assigned_to.endpoint.owner',
+      'edge.assigned_to.property.note',
+      'function.closeIssue',
+    ])
+      expect(spans[key]?.file).toBe('domain/model/members.ts')
     expect(spans['function.closeIssue']?.doc).toBe('Close one issue.')
   })
 })

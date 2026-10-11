@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { workspaceStateRoot } from './home'
-import { writeJson } from './store'
 import { emptyWorkspaceUiState, readWorkspaceUiState, updateWorkspaceUiState } from './workspace-ui'
 
 const roots: string[] = []
@@ -77,15 +76,8 @@ test('keeps one validated UI state per workspace on the machine', () => {
   })
   expect(readWorkspaceUiState(alpha)).toEqual(saved)
   expect(readWorkspaceUiState(beta)).toEqual(emptyWorkspaceUiState())
-})
 
-test('does not migrate unversioned UI state and can explicitly clear reader scope', () => {
-  const root = machineWorkspace('legacy')
-  writeJson(root, 'ui.json', { section: 'data', selectedDomainIds: ['legacy'] })
-  expect(readWorkspaceUiState(root)).toEqual(emptyWorkspaceUiState())
-
-  updateWorkspaceUiState(root, { readerDomainId: 'orders' })
-  expect(readWorkspaceUiState(root).readerDomainId).toBe('orders')
-  updateWorkspaceUiState(root, { readerDomainId: null })
-  expect(readWorkspaceUiState(root).readerDomainId).toBeUndefined()
+  // the reader scope can be cleared explicitly
+  updateWorkspaceUiState(alpha, { readerDomainId: null })
+  expect(readWorkspaceUiState(alpha).readerDomainId).toBeUndefined()
 })

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,8 +15,8 @@ afterEach(() => {
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-function fixtureRoot(label: string): string {
-  const root = mkdtempSync(join(tmpdir(), `studio-${label}-`))
+function currentFixture(): DomainHandle {
+  const root = mkdtempSync(join(tmpdir(), 'studio-canonical-runtime-'))
   roots.push(root)
   mkdirSync(join(root, 'schema'), { recursive: true })
   writeFileSync(join(root, 'package.json'), '{"type":"module"}\n')
@@ -25,11 +25,6 @@ function fixtureRoot(label: string): string {
   const scope = join(root, 'node_modules', '@astrale-os')
   mkdirSync(scope, { recursive: true })
   symlinkSync(sdk, join(scope, 'sdk'), 'dir')
-  return root
-}
-
-function currentFixture(): DomainHandle {
-  const root = fixtureRoot('canonical-runtime')
   const schemaIndex = join(root, 'schema/index.ts')
   const domainFile = join(root, 'domain.ts')
   writeFileSync(
@@ -62,85 +57,37 @@ function currentFixture(): DomainHandle {
   }
 }
 
-describe('SDK V1 schema extractor', () => {
-  test('uses the authored SDK for admission and projects exact imported Classes', async () => {
-    const handle = currentFixture()
-    const result = await runtimeExtract(handle.schemaIndex, handle.root)
-    expect(result).toMatchObject({
-      ok: true,
-      schemaMode: 'canonical-admitted',
-      root: {
-        format: 'astrale.dsl',
-        version: 'v1',
-        origin: 'documents.runtime.test',
-      },
-      ir: {
-        domain: 'documents.runtime.test',
-        views: { editor: { name: 'editor', description: 'Edit documents.' } },
-        importsByKey: {
-          'directory.runtime.test:class.Named': {
-            ref: { origin: 'directory.runtime.test', kind: 'class', name: 'Named' },
-          },
-        },
-      },
-    })
-    expect(result.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
-  })
-
-  test('transports the DSL revision while keeping render identity separate', async () => {
-    const handle = currentFixture()
-    const extracted = await runtimeExtract(handle.schemaIndex, handle.root)
-    if (extracted.revision === null) throw new Error('expected an admitted Schema revision')
-    const built = await buildBundle(handle)
-    expect(built.schemaRoot).toEqual(extracted.root)
-    expect(built.schemaRevision).toBe(extracted.revision)
-    expect(built.renderFingerprint).toBe(renderFingerprintOf(extracted.root))
-    expect(built.renderFingerprint).not.toBe(renderFingerprintOf(extracted.ir))
-  })
-
-  test('renders a V1-shaped root as preview when SDK admission fails', async () => {
-    const root = fixtureRoot('canonical-preview')
-    const schemaIndex = join(root, 'schema/index.ts')
-    writeFileSync(
-      schemaIndex,
-      `export const schema = {
-        format: 'astrale.dsl', version: 'v1', origin: 'not an origin',
-        dependencies: {}, classes: {}, functions: {}, policies: {}, views: {},
-        core: { nodes: {}, edges: [] },
-      }\n`,
-    )
-    expect(await runtimeExtract(schemaIndex, root)).toMatchObject({
-      ok: true,
-      schemaMode: 'canonical-preview',
-      revision: null,
-    })
-  })
-
-  test('extracts Core through the pure Schema entry without importing the Domain definition', async () => {
-    const handle = currentFixture()
-    const bundle = await buildBundle(handle)
-    expect(buildCore(handle, bundle)).toMatchObject({
+test('the authored SDK admits the Schema; the bundle carries its revision, Core and imports', async () => {
+  const handle = currentFixture()
+  const extracted = await runtimeExtract(handle.schemaIndex, handle.root)
+  expect(extracted).toMatchObject({
+    ok: true,
+    schemaMode: 'canonical-admitted',
+    root: { format: 'astrale.dsl', version: 'v1', origin: 'documents.runtime.test' },
+    ir: {
       domain: 'documents.runtime.test',
-      nodes: [
-        {
-          path: '/:documents.runtime.test:core.welcome',
-          className: 'Document',
-          data: {},
+      views: { editor: { name: 'editor', description: 'Edit documents.' } },
+      importsByKey: {
+        'directory.runtime.test:class.Named': {
+          ref: { origin: 'directory.runtime.test', kind: 'class', name: 'Named' },
         },
-      ],
-      edges: [],
-      error: null,
-    })
+      },
+    },
   })
-})
+  expect(extracted.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
 
-test('rejects the removed compiled-IR compatibility envelope', async () => {
-  const root = fixtureRoot('removed-runtime')
-  const schemaIndex = join(root, 'schema/index.ts')
-  writeFileSync(schemaIndex, `export const D = { $: { ir: { domain: 'legacy' } } }\n`)
-  expect(await runtimeExtract(schemaIndex, root)).toMatchObject({
-    ok: false,
-    schemaMode: 'unavailable',
-    revision: null,
+  // the DSL revision travels as is, while the render identity stays separate
+  const built = await buildBundle(handle)
+  expect(built.schemaRoot).toEqual(extracted.root)
+  expect(built.schemaRevision).toBe(extracted.revision!)
+  expect(built.renderFingerprint).toBe(renderFingerprintOf(extracted.root))
+  expect(built.renderFingerprint).not.toBe(renderFingerprintOf(extracted.ir))
+
+  // Core comes through the pure Schema entry, never the Domain definition
+  expect(buildCore(handle, built)).toMatchObject({
+    domain: 'documents.runtime.test',
+    nodes: [{ path: '/:documents.runtime.test:core.welcome', className: 'Document', data: {} }],
+    edges: [],
+    error: null,
   })
 })

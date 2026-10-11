@@ -1,80 +1,24 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
-import type { AgentWorkspace } from './workspace'
-
-import { registerDomain, unregisterDomain } from '../domain/registry'
 import { updateStudioSettings } from '../state/settings'
-import { initWorkspaceRoot } from '../workspace/root'
+import { disposeTestDomains, testDomain } from '../test-domain'
 import { runAsk } from './ask'
 import { activeChat, createChat, recordChatTurn, setActiveChat } from './chats'
+import { agentWorkspace } from './workspace'
 
-const roots: string[] = []
-const domainIds: string[] = []
-const envBefore = {
-  harness: process.env.DOMAIN_STUDIO_HARNESS,
-  model: process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL,
-  session: process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION,
-  astraleHome: process.env.ASTRALE_HOME,
-}
-
-function restore(name: keyof typeof envBefore, variable: string): void {
-  const value = envBefore[name]
-  if (value === undefined) delete process.env[variable]
-  else process.env[variable] = value
-}
-
-afterEach(() => {
-  restore('harness', 'DOMAIN_STUDIO_HARNESS')
-  restore('model', 'DOMAIN_STUDIO_MOCK_EXPECT_MODEL')
-  restore('session', 'DOMAIN_STUDIO_MOCK_EXPECT_SESSION')
-  restore('astraleHome', 'ASTRALE_HOME')
-  while (domainIds.length) unregisterDomain(domainIds.pop()!)
-  while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
-})
+afterEach(disposeTestDomains)
 
 test('Ask uses the active chat model and forks the session of that chat alone', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-ask-model-'))
-  roots.push(root)
-  mkdirSync(join(root, 'schema'))
-  writeFileSync(
-    join(root, 'astrale.config.ts'),
-    `import { defineProject } from '@astrale-os/sdk/project'
-import { cloudflare } from '@astrale-os/adapter-cloudflare'
-import domain from './domain.js'
-export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
-`,
-  )
-  writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
-  writeFileSync(
-    join(root, 'domain.ts'),
-    `import { defineDomain } from '@astrale-os/sdk/domain'
-import { Test } from './schema/index.js'
-export default defineDomain({ schema: Test, runtime: {} as never })
-`,
-  )
-  const handle = registerDomain(root)!
-  domainIds.push(handle.id)
-  // Studio settings are global; point that global at this test's root.
-  initWorkspaceRoot(root)
-  process.env.ASTRALE_HOME = join(root, '.astrale')
-  const workspace: AgentWorkspace = {
-    root,
-    stateRoot: join(root, '.machine-agent'),
-    uiRoot: join(root, '.machine-ui'),
-    key: 'ask-workspace',
-    domains: [handle],
-  }
-
+  const handle = testDomain()
+  const workspace = agentWorkspace()
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  // the mock refuses any other model or parent session than these
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-selected-model'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION = 'mock-parent-session'
   updateStudioSettings({ agentModel: { harness: 'mock', model: 'mock-selected-model' } })
   const chat = activeChat(workspace.stateRoot, 'mock', undefined, workspace.uiRoot)
   recordChatTurn(workspace.stateRoot, chat.id, { sessionId: 'mock-parent-session', turns: 2 })
-  // A second tab on another agent must not lend Ask its session id.
+  // a second tab on another agent must not lend Ask its session id
   const other = createChat(workspace.stateRoot, { harness: 'claude' })
   recordChatTurn(workspace.stateRoot, other.id, { sessionId: 'claude-other-session', turns: 4 })
   setActiveChat(workspace.stateRoot, chat.id, workspace.uiRoot)

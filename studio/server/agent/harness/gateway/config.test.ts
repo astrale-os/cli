@@ -61,36 +61,23 @@ test('owns normalized machine gateway configuration and child environment', asyn
   expect(getHarnessGatewayState()).toEqual({ config: null, effective: null, source: 'none' })
 })
 
-test('rejects enabled gateway configurations that cannot authenticate safely', () => {
+test('an enabled gateway that cannot authenticate safely is refused, and fails closed from disk', async () => {
   machine('invalid')
+  for (const [config, error] of [
+    [{ baseUrl: '', auth: { mode: 'mint' } }, 'gateway base URL is required'],
+    [{ baseUrl: 'file:///tmp/gateway', auth: { mode: 'mint' } }, 'must use http:// or https://'],
+    [
+      { baseUrl: 'https://gateway.example', auth: { mode: 'token', token: ' ' } },
+      'static token is required',
+    ],
+  ] as const)
+    expect(() => setHarnessGateway({ enabled: true, ...config })).toThrow(error)
 
-  expect(() => setHarnessGateway({ enabled: true, baseUrl: '', auth: { mode: 'mint' } })).toThrow(
-    'gateway base URL is required',
-  )
-  expect(() =>
-    setHarnessGateway({
-      enabled: true,
-      baseUrl: 'file:///tmp/gateway',
-      auth: { mode: 'mint' },
-    }),
-  ).toThrow('must use http:// or https://')
-  expect(() =>
-    setHarnessGateway({
-      enabled: true,
-      baseUrl: 'https://gateway.example',
-      auth: { mode: 'token', token: ' ' },
-    }),
-  ).toThrow('static token is required')
-})
-
-test('fails closed for invalid enabled configuration already present on disk', async () => {
-  machine('stored-invalid')
   writeJson(studioHome(), 'harness-gateway.json', {
     enabled: true,
     baseUrl: '',
     auth: { mode: 'mint' },
   })
-
   expect(await resolveHarnessEnv()).toEqual({
     ok: false,
     error: 'gateway base URL is required while enabled',

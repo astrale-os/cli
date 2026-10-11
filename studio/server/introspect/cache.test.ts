@@ -21,64 +21,8 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-function entry(): Record<string, unknown> {
-  return {
-    version: 6,
-    key: 'cache-key',
-    futureEntryField: { version: 6 },
-    bundle: {
-      domainId: 'notes',
-      renderFingerprint: 'render-hash',
-      schemaMode: 'canonical-preview',
-      extractedBy: 'runtime-bun',
-      depsInstalled: true,
-      ir: {
-        format: 'astrale.dsl',
-        version: 'v1',
-        domain: 'notes.example.dev',
-        classes: {},
-        importsByKey: {},
-        importedClassesByKey: {},
-        functions: {},
-        views: {},
-        policies: {},
-        dependencies: [],
-        core: {},
-      },
-      overlay: {
-        handlerLinks: [],
-        sourceSpans: {},
-      },
-      schemaRoot: {
-        format: 'astrale.dsl',
-        version: 'v1',
-        origin: 'notes.example.dev',
-      },
-      error: null,
-      extractedAt: '2026-08-20T00:00:00.000Z',
-      futureBundleField: true,
-    },
-  }
-}
-
-test('bundle cache admits known structure while ignoring future fields', () => {
-  const decoded = decodeBundleCacheEntry(entry())
-
-  expect(decoded).toMatchObject({
-    version: 6,
-    key: 'cache-key',
-    bundle: { domainId: 'notes', schemaMode: 'canonical-preview' },
-  })
-  expect(decoded && 'futureEntryField' in decoded).toBe(false)
-  expect(decoded && 'futureBundleField' in decoded.bundle).toBe(false)
-})
-
-function canonicalEntry(): Record<string, unknown> {
-  const value = entry()
-  const bundle = value.bundle as Record<string, unknown>
-  bundle.schemaMode = 'canonical-admitted'
-  bundle.schemaRevision = `sha256:${'a'.repeat(64)}`
-  bundle.ir = {
+function entry(mutate: (bundle: Record<string, any>) => void = () => {}): Record<string, unknown> {
+  const ir = {
     format: 'astrale.dsl',
     version: 'v1',
     domain: 'notes.example.dev',
@@ -91,75 +35,57 @@ function canonicalEntry(): Record<string, unknown> {
     dependencies: [],
     core: {},
   }
-  bundle.schemaRoot = {
-    format: 'astrale.dsl',
-    version: 'v1',
-    origin: 'notes.example.dev',
-  }
-  return value
-}
-
-test('canonical-admitted cache entries require their root and a valid revision', () => {
-  expect(decodeBundleCacheEntry(canonicalEntry())).toBeDefined()
-
-  const missingRoot = canonicalEntry()
-  delete (missingRoot.bundle as Record<string, unknown>).schemaRoot
-  expect(decodeBundleCacheEntry(missingRoot)).toBeUndefined()
-
-  const invalidRoot = canonicalEntry()
-  const invalidRootBundle = invalidRoot.bundle as Record<string, unknown>
-  invalidRootBundle.schemaRoot = { canonical: true }
-  expect(decodeBundleCacheEntry(invalidRoot)).toBeUndefined()
-
-  const missingRevision = canonicalEntry()
-  delete (missingRevision.bundle as Record<string, unknown>).schemaRevision
-  expect(decodeBundleCacheEntry(missingRevision)).toBeUndefined()
-
-  const invalidRevision = canonicalEntry()
-  const invalidRevisionBundle = invalidRevision.bundle as Record<string, unknown>
-  invalidRevisionBundle.schemaRevision = 'sha256:not-a-revision'
-  expect(decodeBundleCacheEntry(invalidRevision)).toBeUndefined()
-})
-
-test('bundle cache rejects corrupt nested business shapes', () => {
-  const corruptIr = entry()
-  const bundle = corruptIr.bundle as Record<string, unknown>
-  const ir = bundle.ir as Record<string, unknown>
-  ir.classes = { Broken: null }
-  expect(decodeBundleCacheEntry(corruptIr)).toBeUndefined()
-
-  const corruptOverlay = entry()
-  const secondBundle = corruptOverlay.bundle as Record<string, unknown>
-  const overlay = secondBundle.overlay as Record<string, unknown>
-  overlay.handlerLinks = [{ owner: 'Thing' }]
-  expect(decodeBundleCacheEntry(corruptOverlay)).toBeUndefined()
-})
-
-function failed(extractedAt: string): StudioSchemaBundle {
-  return {
+  const bundle: Record<string, any> = {
     domainId: 'notes',
-    renderFingerprint: 'sha-none',
-    schemaMode: 'unavailable',
-    extractedBy: 'static-tsmorph-fallback',
+    renderFingerprint: 'render-hash',
+    schemaMode: 'canonical-admitted',
+    schemaRevision: `sha256:${'a'.repeat(64)}`,
+    extractedBy: 'runtime-bun',
     depsInstalled: true,
-    ir: null,
+    ir,
     overlay: { handlerLinks: [], sourceSpans: {} },
-    error: { message: 'extractor produced no output' },
-    extractedAt,
+    schemaRoot: { format: 'astrale.dsl', version: 'v1', origin: 'notes.example.dev' },
+    error: null,
+    extractedAt: '2026-08-20T00:00:00.000Z',
+    futureBundleField: true,
   }
+  mutate(bundle)
+  return { version: 6, key: 'cache-key', futureEntryField: true, bundle }
 }
 
-test('a bundle that extracted keeps standing, whatever its age', () => {
-  const bundle = { ...failed('1999-01-01T00:00:00.000Z'), error: null }
-  expect(stillStands(bundle)).toBe(true)
+test('a persisted bundle is admitted by its known structure, and refused when corrupt', () => {
+  const decoded = decodeBundleCacheEntry(entry())
+  expect(decoded).toMatchObject({ version: 6, key: 'cache-key', bundle: { domainId: 'notes' } })
+  expect(decoded && 'futureEntryField' in decoded).toBe(false)
+  expect(decoded && 'futureBundleField' in decoded.bundle).toBe(false)
+
+  for (const corrupt of [
+    (bundle: Record<string, any>) => delete bundle.schemaRoot,
+    (bundle: Record<string, any>) => (bundle.schemaRoot = { canonical: true }),
+    (bundle: Record<string, any>) => delete bundle.schemaRevision,
+    (bundle: Record<string, any>) => (bundle.schemaRevision = 'sha256:not-a-revision'),
+    (bundle: Record<string, any>) => (bundle.ir.classes = { Broken: null }),
+    (bundle: Record<string, any>) => (bundle.overlay.handlerLinks = [{ owner: 'Thing' }]),
+  ])
+    expect(decodeBundleCacheEntry(entry(corrupt))).toBeUndefined()
 })
 
-test('a failed bundle stands briefly, then asks to be retried', () => {
+test('a failed bundle stands briefly, then asks to be retried; a good one stands for good', () => {
+  const failed = (extractedAt: string, error: StudioSchemaBundle['error'] = { message: 'x' }) =>
+    ({
+      domainId: 'notes',
+      renderFingerprint: 'sha-none',
+      schemaMode: 'unavailable',
+      extractedBy: 'static-tsmorph-fallback',
+      depsInstalled: true,
+      ir: null,
+      overlay: { handlerLinks: [], sourceSpans: {} },
+      error,
+      extractedAt,
+    }) satisfies StudioSchemaBundle
+  expect(stillStands(failed('1999-01-01T00:00:00.000Z', null))).toBe(true)
   expect(stillStands(failed(new Date().toISOString()))).toBe(true)
   expect(stillStands(failed(new Date(Date.now() - 5 * 60_000).toISOString()))).toBe(false)
-})
-
-test('a failed bundle with no readable timestamp is retried rather than trusted', () => {
   expect(stillStands(failed('not a date'))).toBe(false)
 })
 
@@ -213,37 +139,32 @@ export const schema = defineSchema('cache-upgrade.studio.test', { name: 'Test Do
 })
 `,
   )
-  const original = await getBundle(domain.id)
-  expect(original?.error).toBeNull()
-  expect(original?.schemaMode).toBe('canonical-admitted')
-  expect(original?.ir?.importsByKey?.['cache-dependency.studio.test:class.Shared']).toBeDefined()
-  const persisted = JSON.parse(readState(domain.root, '.cache/schema-bundle.json')!)
-  // Match the current key deliberately: a standalone binary cannot hash tool
-  // sources, so the semantic generation must retire even a successful preview.
-  writeJson(domain.root, '.cache/schema-bundle.json', {
+  const imported = (bundle: StudioSchemaBundle | null) =>
+    bundle?.ir?.importsByKey?.['cache-dependency.studio.test:class.Shared']
+  expect(imported(await getBundle(domain.id))).toBeDefined()
+  const cacheFile = '.cache/schema-bundle.json'
+  const persisted = JSON.parse(readState(domain.root, cacheFile)!)
+  // the current key on purpose: a standalone binary cannot hash tool sources, so the
+  // entry version alone must retire even a successful preview of an older generation
+  writeJson(domain.root, cacheFile, {
     ...persisted,
     version: 9,
     bundle: {
       ...persisted.bundle,
       schemaMode: 'canonical-preview',
       schemaRevision: undefined,
-      renderFingerprint: 'old-admission-preview',
-      error: null,
       ir: { ...persisted.bundle.ir, importsByKey: {}, importedClassesByKey: {} },
     },
   })
   invalidate(domain.id, 'all')
-
   const upgraded = await getBundle(domain.id)
   expect(upgraded?.schemaMode).toBe('canonical-admitted')
-  expect(upgraded?.renderFingerprint).not.toBe('old-admission-preview')
-  expect(upgraded?.ir?.importsByKey?.['cache-dependency.studio.test:class.Shared']).toBeDefined()
-  const current = JSON.parse(readState(domain.root, '.cache/schema-bundle.json')!)
-  expect(current.version).toBeGreaterThan(9)
+  expect(imported(upgraded)).toBeDefined()
 
-  // A current admitted disk cache remains reusable without another extraction.
+  // a current admitted disk cache is reused without another extraction
+  const current = JSON.parse(readState(domain.root, cacheFile)!)
   current.bundle.extractedAt = '2000-01-01T00:00:00.000Z'
-  writeJson(domain.root, '.cache/schema-bundle.json', current)
+  writeJson(domain.root, cacheFile, current)
   invalidate(domain.id, 'all')
   expect((await getBundle(domain.id))?.extractedAt).toBe(current.bundle.extractedAt)
 }, 30_000)

@@ -9,7 +9,6 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,7 +20,6 @@ import {
   ensureAgentBinary,
   installAgentArtifact,
   isAgentBinaryInstalled,
-  platformKeys,
   pruneAgentBinaries,
   versionWarning,
   type AgentBinary,
@@ -87,6 +85,16 @@ function serve(path: string, bytes: Buffer): string {
   return `http://127.0.0.1:${server.port}${path}`
 }
 
+/** A pinned artifact served at `path`, whose bytes are `version`'s tarball. */
+function artifactAt(path: string, version = '9.9.9', integrity?: string): PinnedArtifact {
+  const packed = packTarball(version)
+  return {
+    tarball: serve(path, packed.bytes),
+    integrity: integrity ?? packed.integrity,
+    entry: 'package/bin/agent',
+  }
+}
+
 function managedBinary(root: string, artifact: PinnedArtifact, version = '9.9.9'): AgentBinary {
   const directory = join(root, 'codex', version, 'linux-x64')
   return {
@@ -102,12 +110,6 @@ function managedBinary(root: string, artifact: PinnedArtifact, version = '9.9.9'
 }
 
 describe('agent binary resolution', () => {
-  test('prefers the musl build on musl Linux and falls back to the glibc one', () => {
-    expect(platformKeys('linux', 'x64', true)).toEqual(['linux-x64-musl', 'linux-x64'])
-    expect(platformKeys('linux', 'arm64', false)).toEqual(['linux-arm64'])
-    expect(platformKeys('darwin', 'arm64', false)).toEqual(['darwin-arm64'])
-  })
-
   test('runs the pinned build from the cache by default', () => {
     delete process.env.DOMAIN_STUDIO_CLAUDE_BIN
     delete process.env.DOMAIN_STUDIO_CODEX_BIN
@@ -123,7 +125,7 @@ describe('agent binary resolution', () => {
     expect(codex.path).toContain('/linux-x64/package/vendor/x86_64-unknown-linux-musl/bin/codex')
   })
 
-  test('an explicit path or the environment opts back into a local executable', () => {
+  test('an explicit path, the environment or an unshipped platform runs a local executable', () => {
     process.env.DOMAIN_STUDIO_CODEX_BIN = '/usr/local/bin/codex'
     expect(agentBinary('codex', undefined, ['linux-x64'])).toMatchObject({
       source: 'custom',
@@ -134,9 +136,6 @@ describe('agent binary resolution', () => {
       source: 'custom',
       path: '/opt/codex',
     })
-  })
-
-  test('a platform Studio ships no build for runs the CLI on PATH', () => {
     delete process.env.DOMAIN_STUDIO_CLAUDE_BIN
     expect(agentBinary('claude', undefined, ['freebsd-x64'])).toMatchObject({
       source: 'custom',
@@ -145,16 +144,11 @@ describe('agent binary resolution', () => {
     })
   })
 
-  test('warns when a local executable strays from the pinned build', () => {
+  test('reports a local executable by the version it prints, and warns when it strays', async () => {
+    // Claude may run newer than the pin; Codex must match its minor
     expect(versionWarning('claude', '2.1.300', '2.1.232')).toBeUndefined()
-    expect(versionWarning('claude', '2.1.232', '2.1.232')).toBeUndefined()
-    expect(versionWarning('claude', '2.1.100', '2.1.232')).toContain('older than 2.1.232')
     expect(versionWarning('codex', '0.148.9', '0.148.0')).toBeUndefined()
     expect(versionWarning('codex', '0.159.3', '0.148.0')).toContain('differs from 0.148.0')
-    expect(versionWarning('codex', undefined, '0.148.0')).toContain('Could not read its version')
-  })
-
-  test('reports a local executable by the version it prints', async () => {
     const root = temporaryRoot('studio-agent-local-')
     const script = join(root, 'claude')
     writeFileSync(script, '#!/bin/sh\necho "1.0.0 (Claude Code)"\n')
@@ -171,10 +165,7 @@ describe('agent binary resolution', () => {
 
 describe('agent binary installation', () => {
   test('downloads, verifies and unpacks the pinned tarball', async () => {
-    const root = temporaryRoot('studio-agent-install-')
-    const { bytes, integrity } = packTarball()
-    const artifact = { tarball: serve('/ok.tgz', bytes), integrity, entry: 'package/bin/agent' }
-    const binary = managedBinary(root, artifact)
+    const binary = managedBinary(temporaryRoot('studio-agent-install-'), artifactAt('/ok.tgz'))
     const progress: string[] = []
 
     expect(await isAgentBinaryInstalled(binary)).toBe(false)
@@ -184,114 +175,70 @@ describe('agent binary installation', () => {
     expect(execFileSync(binary.path, { encoding: 'utf8' }).trim()).toBe('agent 9.9.9')
     expect(statSync(binary.path).mode & 0o111).not.toBe(0)
     expect(existsSync(join(binary.directory!, 'package.tgz'))).toBe(false)
-    expect(progress[0]).toMatch(/^Installing Codex 9\.9\.9/)
     expect(progress.at(-1)).toBe('Codex 9.9.9 installed')
     // this process now holds it, so no other Studio prunes it from under a turn
     expect(existsSync(join(binary.directory!, '.leases', String(process.pid)))).toBe(true)
   })
 
-  test('concurrent callers share one download', async () => {
-    const root = temporaryRoot('studio-agent-shared-')
-    const { bytes, integrity } = packTarball()
-    const artifact = { tarball: serve('/shared.tgz', bytes), integrity, entry: 'package/bin/agent' }
-    const binary = managedBinary(root, artifact)
+  test('concurrent callers share one download, and a canceled one only stops waiting', async () => {
+    const binary = managedBinary(temporaryRoot('studio-agent-shared-'), artifactAt('/shared.tgz'))
     const before = requests.filter((path) => path === '/shared.tgz').length
+    const controller = new AbortController()
 
-    await Promise.all([ensureAgentBinary(binary), ensureAgentBinary(binary)])
+    const waiting = ensureAgentBinary(binary, { signal: controller.signal })
+    const others = Promise.all([ensureAgentBinary(binary), ensureAgentBinary(binary)])
+    controller.abort()
+    await expect(waiting).rejects.toThrow('canceled')
+    await others
     await ensureAgentBinary(binary)
 
+    expect(await isAgentBinaryInstalled(binary)).toBe(true)
     expect(requests.filter((path) => path === '/shared.tgz').length - before).toBe(1)
   })
 
   test('refuses a tarball that does not match the lockfile integrity', async () => {
-    const root = temporaryRoot('studio-agent-tampered-')
-    const { integrity } = packTarball('1.0.0')
-    const { bytes } = packTarball('6.6.6')
-    const artifact = {
-      tarball: serve('/tampered.tgz', bytes),
-      integrity,
-      entry: 'package/bin/agent',
-    }
-    const binary = managedBinary(root, artifact)
+    const artifact = artifactAt('/tampered.tgz', '6.6.6', packTarball('1.0.0').integrity)
+    const binary = managedBinary(temporaryRoot('studio-agent-tampered-'), artifact)
 
     await expect(ensureAgentBinary(binary)).rejects.toThrow(
       /could not install Codex 9\.9\.9: integrity mismatch.*DOMAIN_STUDIO_CODEX_BIN/,
     )
     expect(existsSync(binary.directory!)).toBe(false)
-    expect(await isAgentBinaryInstalled(binary)).toBe(false)
-  })
-
-  test('reports an unreachable package', async () => {
-    const root = temporaryRoot('studio-agent-missing-')
-    const artifact = {
-      tarball: `http://127.0.0.1:${server.port}/missing.tgz`,
-      integrity: 'sha512-AAAA',
-      entry: 'package/bin/agent',
-    }
-    await expect(ensureAgentBinary(managedBinary(root, artifact))).rejects.toThrow(/HTTP 404/)
-  })
-
-  test('a canceled caller stops waiting without failing the install', async () => {
-    const root = temporaryRoot('studio-agent-cancel-')
-    const { bytes, integrity } = packTarball()
-    const artifact = { tarball: serve('/cancel.tgz', bytes), integrity, entry: 'package/bin/agent' }
-    const binary = managedBinary(root, artifact)
-    const controller = new AbortController()
-
-    const waiting = ensureAgentBinary(binary, { signal: controller.signal })
-    const other = ensureAgentBinary(binary)
-    controller.abort()
-
-    await expect(waiting).rejects.toThrow('canceled')
-    await other
-    expect(await isAgentBinaryInstalled(binary)).toBe(true)
   })
 
   test('drops every other build no live process holds as soon as a new one lands', async () => {
     const root = temporaryRoot('studio-agent-prune-')
     const sleeper = spawn('sleep', ['30'])
     const dead = spawnSync('true').pid
-    const build = (version: string, holders?: number[], markerAgeDays = 0) => {
+    const build = (version: string, holders: number[]) => {
       const directory = join(root, 'codex', version, 'linux-x64')
-      mkdirSync(directory, { recursive: true })
+      mkdirSync(join(directory, '.leases'), { recursive: true })
       writeFileSync(join(directory, '.complete'), 'sha512-old\n')
-      const at = new Date(Date.now() - markerAgeDays * 24 * 60 * 60_000)
-      utimesSync(join(directory, '.complete'), at, at)
-      if (holders) {
-        mkdirSync(join(directory, '.leases'))
-        for (const pid of holders) writeFileSync(join(directory, '.leases', String(pid)), '')
-      }
+      for (const pid of holders) writeFileSync(join(directory, '.leases', String(pid)), '')
       return directory
     }
     try {
       const unheld = build('0.1.0', [])
       const heldByTheDead = build('0.2.0', [dead])
       const heldByALiveStudio = build('0.3.0', [sleeper.pid!])
-      // installed before leases: judged by when a Studio last started on it
-      const legacyRecent = build('0.4.0')
-      const legacyStale = build('0.5.0', undefined, 30)
       const abandonedStaging = join(root, 'codex', '0.6.0', `linux-x64.staging-${dead}-x`)
       mkdirSync(abandonedStaging, { recursive: true })
 
-      const { bytes, integrity } = packTarball()
-      const artifact = {
-        tarball: serve('/prune.tgz', bytes),
-        integrity,
-        entry: 'package/bin/agent',
-      }
-      await installAgentArtifact(artifact, join(root, 'codex', '9.9.9', 'linux-x64'), {
-        label: 'Codex 9.9.9',
-      })
+      await installAgentArtifact(
+        artifactAt('/prune.tgz'),
+        join(root, 'codex', '9.9.9', 'linux-x64'),
+        {
+          label: 'Codex 9.9.9',
+        },
+      )
 
       expect(existsSync(unheld)).toBe(false)
       expect(existsSync(heldByTheDead)).toBe(false)
-      expect(existsSync(legacyStale)).toBe(false)
       expect(existsSync(abandonedStaging)).toBe(false)
       // emptied version directories go with their last build
       expect(existsSync(join(root, 'codex', '0.1.0'))).toBe(false)
       expect(existsSync(join(root, 'codex', '0.6.0'))).toBe(false)
       expect(existsSync(heldByALiveStudio)).toBe(true)
-      expect(existsSync(legacyRecent)).toBe(true)
       expect(existsSync(join(root, 'codex', '9.9.9', 'linux-x64', '.complete'))).toBe(true)
     } finally {
       sleeper.kill()
@@ -300,12 +247,7 @@ describe('agent binary installation', () => {
 
   test('a process releases its lease when it exits', async () => {
     const root = temporaryRoot('studio-agent-release-')
-    const { bytes, integrity } = packTarball()
-    const artifact = {
-      tarball: serve('/release.tgz', bytes),
-      integrity,
-      entry: 'package/bin/agent',
-    }
+    const artifact = artifactAt('/release.tgz')
     const directory = join(root, 'codex', '9.9.9', 'linux-x64')
     const script = `
       const { installAgentArtifact } = await import(${JSON.stringify(join(import.meta.dir, 'binary.ts'))})

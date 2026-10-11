@@ -32,12 +32,7 @@ export default defineProject({ domain, environments: { development: { deployment
   return { root, schemaDirName: nested ? 'domain/schema' : 'schema' }
 }
 
-test('overview anchors a root Domain definition', () => {
-  const input = project(false)
-  expect(buildAnatomy(input).overview.domainFile).toBe('domain.ts')
-})
-
-test('overview preserves the config-imported nested Domain definition path', () => {
-  const input = project(true)
-  expect(buildAnatomy(input).overview.domainFile).toBe('domain/domain.ts')
+test('the overview names the Domain definition the configuration imports', () => {
+  expect(buildAnatomy(project(false)).overview.domainFile).toBe('domain.ts')
+  expect(buildAnatomy(project(true)).overview.domainFile).toBe('domain/domain.ts')
 })

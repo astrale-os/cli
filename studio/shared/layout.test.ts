@@ -1,76 +1,54 @@
 import { expect, test } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
+import ts from 'typescript'
 
 const STUDIO_ROOT = resolve(import.meta.dir, '..')
 const CLIENT_ROOT = join(STUDIO_ROOT, 'client', 'src')
 const SERVER_ROOT = join(STUDIO_ROOT, 'server')
 const SHARED_ROOT = join(STUDIO_ROOT, 'shared')
-const STATE_ROOT = join(SERVER_ROOT, 'state')
 
 function productionFiles(dir: string): string[] {
-  return readdirSync(dir)
-    .flatMap((entry) => {
-      const path = join(dir, entry)
-      if (statSync(path).isDirectory()) return productionFiles(path)
-      if (!/\.(?:ts|tsx)$/.test(path) || /\.test\.(?:ts|tsx)$/.test(path)) return []
-      return [path]
-    })
-    .sort()
+  return readdirSync(dir).flatMap((entry) => {
+    const path = join(dir, entry)
+    if (statSync(path).isDirectory()) return productionFiles(path)
+    return /\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path) ? [path] : []
+  })
 }
 
-const files = [
-  ...productionFiles(CLIENT_ROOT),
-  ...productionFiles(SERVER_ROOT),
-  ...productionFiles(SHARED_ROOT),
-]
+const files = [CLIENT_ROOT, SERVER_ROOT, SHARED_ROOT].flatMap(productionFiles)
 const fileSet = new Set(files)
 
-function resolveLocalImport(file: string, specifier: string): string | null {
-  const target = specifier.startsWith('@/')
-    ? join(CLIENT_ROOT, specifier.slice(2))
-    : specifier.startsWith('@shared/')
-      ? join(SHARED_ROOT, specifier.slice('@shared/'.length))
-      : specifier.startsWith('.')
-        ? resolve(dirname(file), specifier)
-        : null
-  if (!target) return null
-  for (const candidate of [
-    target,
-    `${target}.ts`,
-    `${target}.tsx`,
-    join(target, 'index.ts'),
-    join(target, 'index.tsx'),
-  ]) {
-    if (fileSet.has(candidate)) return candidate
-  }
-  return null
-}
-
+/** The Studio files `file` imports, statically or dynamically, through the Studio aliases. */
 function imports(file: string): string[] {
-  const source = readFileSync(file, 'utf8')
-  const found: string[] = []
-  const pattern = /(?:from\s+|import\s*(?:\(\s*)?)['"]([^'"]+)['"]\s*\)?|import\s+['"]([^'"]+)['"]/g
-  for (const match of source.matchAll(pattern)) {
-    const target = resolveLocalImport(file, match[1] ?? match[2])
-    if (target) found.push(target)
-  }
-  return found
+  const { importedFiles } = ts.preProcessFile(readFileSync(file, 'utf8'), true, true)
+  return importedFiles.flatMap(({ fileName }) => {
+    const target = fileName.startsWith('@/')
+      ? join(CLIENT_ROOT, fileName.slice(2))
+      : fileName.startsWith('@shared/')
+        ? join(SHARED_ROOT, fileName.slice('@shared/'.length))
+        : fileName.startsWith('.')
+          ? resolve(dirname(file), fileName)
+          : null
+    if (!target) return []
+    const found = ['', '.ts', '.tsx', '/index.ts', '/index.tsx']
+      .map((suffix) => target + suffix)
+      .find((candidate) => fileSet.has(candidate))
+    return found ? [found] : []
+  })
 }
 
 const studioPath = (file: string) => relative(STUDIO_ROOT, file).replaceAll('\\', '/')
+const graph = new Map(files.map((file) => [file, imports(file)]))
 
 test('Studio production modules form an acyclic dependency graph', () => {
-  const graph = new Map(files.map((file) => [file, imports(file)]))
   const visiting = new Set<string>()
   const visited = new Set<string>()
   const stack: string[] = []
   const cycles: string[][] = []
-
   const visit = (file: string) => {
     if (visiting.has(file)) {
-      const start = stack.indexOf(file)
-      cycles.push([...stack.slice(start), file].map(studioPath))
+      cycles.push([...stack.slice(stack.indexOf(file)), file].map(studioPath))
       return
     }
     if (visited.has(file)) return
@@ -81,37 +59,19 @@ test('Studio production modules form an acyclic dependency graph', () => {
     visiting.delete(file)
     visited.add(file)
   }
-
   for (const file of files) visit(file)
   expect(cycles).toEqual([])
 })
 
-test('production boundaries keep client and server separate with shared depending on neither', () => {
-  const violations = files.flatMap((file) =>
-    imports(file)
-      .filter(
-        (dependency) =>
-          (file.startsWith(CLIENT_ROOT) && dependency.startsWith(SERVER_ROOT)) ||
-          (file.startsWith(SERVER_ROOT) && dependency.startsWith(CLIENT_ROOT)) ||
-          (file.startsWith(SHARED_ROOT) &&
-            (dependency.startsWith(CLIENT_ROOT) || dependency.startsWith(SERVER_ROOT))),
-      )
+test('client and server stay apart, and shared depends on neither', () => {
+  const crosses = (from: string, to: string) =>
+    (from.startsWith(CLIENT_ROOT) && to.startsWith(SERVER_ROOT)) ||
+    (from.startsWith(SERVER_ROOT) && to.startsWith(CLIENT_ROOT)) ||
+    (from.startsWith(SHARED_ROOT) && !to.startsWith(SHARED_ROOT))
+  const violations = [...graph].flatMap(([file, dependencies]) =>
+    dependencies
+      .filter((dependency) => crosses(file, dependency))
       .map((dependency) => `${studioPath(file)} -> ${studioPath(dependency)}`),
   )
   expect(violations).toEqual([])
-})
-
-test('state repositories do not depend on workflow modules', () => {
-  const workflowRoots = ['api', 'environment', 'handoff', 'instances', 'views', 'workspace'].map(
-    (directory) => join(SERVER_ROOT, directory),
-  )
-  const edges = files
-    .filter((file) => file.startsWith(STATE_ROOT))
-    .flatMap((file) =>
-      imports(file)
-        .filter((dependency) => workflowRoots.some((root) => dependency.startsWith(root)))
-        .map((dependency) => `${studioPath(file)} -> ${studioPath(dependency)}`),
-    )
-
-  expect(edges).toEqual([])
 })

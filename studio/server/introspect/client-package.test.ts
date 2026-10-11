@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { invalidateClientPackage, resolveClientPackage } from './client-package'
 
 const roots: string[] = []
+const PREVIEW = { scripts: { 'dev:hmr': 'vite' } }
 
 function fixture(rootPackage: Record<string, unknown> = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'studio-client-package-'))
@@ -26,122 +27,66 @@ afterEach(() => {
   }
 })
 
-describe('client package discovery', () => {
-  test('discovers the sole workspace preview package without executing domain config', async () => {
-    const root = fixture({ workspaces: ['frontend', 'schema'] })
-    const frontend = join(root, 'frontend')
-    writePackage(frontend, { scripts: { 'dev:hmr': 'vite' } })
-    writePackage(join(root, 'schema'), {})
-    writeFileSync(join(root, 'astrale.config.ts'), 'throw new Error("must not execute")\n')
-
-    const first = await resolveClientPackage(root)
-    const second = await resolveClientPackage(root)
-
-    expect(first).toEqual({
-      status: 'available',
-      packageDir: frontend,
-      sourceDir: frontend,
-      packageFile: join(frontend, 'package.json'),
-      devScript: 'vite',
-      source: 'workspace',
-    })
-    expect(second).toEqual(first)
+test('discovers the sole preview package without executing domain config', async () => {
+  const root = fixture({ workspaces: ['frontend', 'schema'] })
+  const frontend = join(root, 'frontend')
+  writePackage(frontend, PREVIEW)
+  writePackage(join(root, 'schema'), {})
+  writeFileSync(join(root, 'astrale.config.ts'), 'throw new Error("must not execute")\n')
+  expect(await resolveClientPackage(root)).toEqual({
+    status: 'available',
+    packageDir: frontend,
+    sourceDir: frontend,
+    packageFile: join(frontend, 'package.json'),
+    devScript: 'vite',
+    source: 'workspace',
   })
 
-  test('discovers a conventional direct child without workspace metadata', async () => {
-    const root = fixture()
-    const client = join(root, 'client')
-    writePackage(client, { scripts: { 'dev:hmr': 'vite' } })
+  // a conventional direct child, or a pnpm workspace, needs no `workspaces` field
+  const child = fixture()
+  writePackage(join(child, 'client'), PREVIEW)
+  expect(await resolveClientPackage(child)).toMatchObject({ packageDir: join(child, 'client') })
+  const pnpm = fixture()
+  writeFileSync(join(pnpm, 'pnpm-workspace.yaml'), "packages:\n  - 'apps/*'\n")
+  writePackage(join(pnpm, 'apps/web'), PREVIEW)
+  expect(await resolveClientPackage(pnpm)).toMatchObject({ packageDir: join(pnpm, 'apps/web') })
+})
 
-    expect(await resolveClientPackage(root)).toMatchObject({
-      status: 'available',
-      packageDir: client,
-      sourceDir: client,
-      source: 'workspace',
-    })
+test('several preview packages need a root script to choose; it never guesses', async () => {
+  const root = fixture({ workspaces: ['apps/*'] })
+  writePackage(join(root, 'apps/admin'), PREVIEW)
+  writePackage(join(root, 'apps/web'), PREVIEW)
+  expect(await resolveClientPackage(root)).toEqual({
+    status: 'unavailable',
+    reason:
+      'Multiple packages define dev:hmr (apps/admin, apps/web). Add a dev:hmr script to the domain root to choose one.',
   })
 
-  test('discovers nested packages from pnpm-workspace.yaml', async () => {
-    const root = fixture()
-    const web = join(root, 'apps', 'web')
-    writeFileSync(join(root, 'pnpm-workspace.yaml'), "packages:\n  - 'apps/*'\n")
-    writePackage(web, { scripts: { 'dev:hmr': 'vite' } })
+  const chosen = fixture({
+    workspaces: ['apps/*'],
+    scripts: { 'dev:hmr': 'pnpm --dir apps/web dev:hmr' },
+  })
+  writePackage(join(chosen, 'apps/admin'), PREVIEW)
+  writePackage(join(chosen, 'apps/web'), PREVIEW)
+  expect(await resolveClientPackage(chosen)).toMatchObject({
+    packageDir: chosen,
+    devScript: 'pnpm --dir apps/web dev:hmr',
+    source: 'root',
+  })
+})
 
-    expect(await resolveClientPackage(root)).toMatchObject({
-      status: 'available',
-      packageDir: web,
-      sourceDir: web,
-      source: 'workspace',
-    })
+test('a cached answer follows an edited package and a newly added one', async () => {
+  const root = fixture({ workspaces: ['frontend', 'apps/*'] })
+  writePackage(join(root, 'frontend'), {})
+  mkdirSync(join(root, 'apps'))
+  expect(await resolveClientPackage(root)).toEqual({
+    status: 'unavailable',
+    reason: 'This domain has no package that defines a dev:hmr script.',
   })
 
-  test('uses an explicit root script to disambiguate multiple preview packages', async () => {
-    const root = fixture({
-      workspaces: ['apps/*'],
-      scripts: { 'dev:hmr': 'pnpm --dir apps/web dev:hmr' },
-    })
-    writePackage(join(root, 'apps', 'admin'), { scripts: { 'dev:hmr': 'vite' } })
-    writePackage(join(root, 'apps', 'web'), { scripts: { 'dev:hmr': 'vite' } })
-
-    expect(await resolveClientPackage(root)).toEqual({
-      status: 'available',
-      packageDir: root,
-      sourceDir: root,
-      packageFile: join(root, 'package.json'),
-      devScript: 'pnpm --dir apps/web dev:hmr',
-      source: 'root',
-    })
-  })
-
-  test('rejects ambiguous preview packages without guessing', async () => {
-    const root = fixture({ workspaces: ['apps/*'] })
-    writePackage(join(root, 'apps', 'admin'), { scripts: { 'dev:hmr': 'vite' } })
-    writePackage(join(root, 'apps', 'web'), { scripts: { 'dev:hmr': 'vite' } })
-
-    expect(await resolveClientPackage(root)).toEqual({
-      status: 'unavailable',
-      reason:
-        'Multiple packages define dev:hmr (apps/admin, apps/web). Add a dev:hmr script to the domain root to choose one.',
-    })
-  })
-
-  test('reports a domain with no preview package', async () => {
-    const root = fixture({ workspaces: ['frontend', 'schema'] })
-    writePackage(join(root, 'frontend'), {})
-    writePackage(join(root, 'schema'), {})
-
-    expect(await resolveClientPackage(root)).toEqual({
-      status: 'unavailable',
-      reason: 'This domain has no package that defines a dev:hmr script.',
-    })
-  })
-
-  test('invalidates cached discovery when an inspected package changes', async () => {
-    const root = fixture({ workspaces: ['frontend'] })
-    const frontend = join(root, 'frontend')
-    writePackage(frontend, {})
-    expect((await resolveClientPackage(root)).status).toBe('unavailable')
-
-    writePackage(frontend, { scripts: { 'dev:hmr': 'vite' } })
-
-    expect(await resolveClientPackage(root)).toMatchObject({
-      status: 'available',
-      packageDir: frontend,
-    })
-  })
-
-  test('invalidates cached discovery when a nested workspace package is added', async () => {
-    const root = fixture({ workspaces: ['apps/*'] })
-    const apps = join(root, 'apps')
-    mkdirSync(apps)
-    expect((await resolveClientPackage(root)).status).toBe('unavailable')
-
-    const web = join(apps, 'web')
-    writePackage(web, { scripts: { 'dev:hmr': 'vite' } })
-
-    expect(await resolveClientPackage(root)).toMatchObject({
-      status: 'available',
-      packageDir: web,
-    })
-  })
+  writePackage(join(root, 'apps/web'), PREVIEW)
+  expect(await resolveClientPackage(root)).toMatchObject({ packageDir: join(root, 'apps/web') })
+  writePackage(join(root, 'apps/web'), {})
+  writePackage(join(root, 'frontend'), PREVIEW)
+  expect(await resolveClientPackage(root)).toMatchObject({ packageDir: join(root, 'frontend') })
 })

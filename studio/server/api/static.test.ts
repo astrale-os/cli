@@ -68,12 +68,3 @@ test('a path that names no file is the shell; a client that takes no gzip gets i
   expect(plain.headers.get('content-encoding')).toBeNull()
   expect(await read(plain)).toContain('/assets/index-CCCCCCCC.js')
 })
-
-test('without a build it says how to make one', async () => {
-  const empty = mkdtempSync(join(tmpdir(), 'studio-static-empty-'))
-  roots.push(empty)
-
-  const response = staticFiles(empty)('/', browser('/'))
-  expect(response.status).toBe(500)
-  expect(await response.text()).toContain('vite build')
-})

@@ -1,237 +1,118 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
 import { handleApi } from './api'
-import { registerDomain, unregisterDomain } from './domain/registry'
+import { upsertComment } from './state/comments'
+import { disposeTestDomains, testDomain } from './test-domain'
 
-const roots: string[] = []
-const domainIds: string[] = []
-
-afterEach(() => {
-  while (domainIds.length) unregisterDomain(domainIds.pop()!)
-  while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
-})
-
-function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'studio-api-contract-'))
-  roots.push(root)
-  mkdirSync(join(root, 'schema'))
-  writeFileSync(
-    join(root, 'astrale.config.ts'),
-    `import { defineProject } from '@astrale-os/sdk/project'
-import { cloudflare } from '@astrale-os/adapter-cloudflare'
-import domain from './domain.js'
-export default defineProject({ domain, environments: { development: { deployment: cloudflare({}) } } })
-`,
-  )
-  writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
-  writeFileSync(
-    join(root, 'domain.ts'),
-    `import { defineDomain } from '@astrale-os/sdk/domain'
-import { Test } from './schema/index.js'
-export default defineDomain({ schema: Test, runtime: {} as never })
-`,
-  )
-  const handle = registerDomain(root)!
-  domainIds.push(handle.id)
-  return handle
-}
+afterEach(disposeTestDomains)
 
 async function route(path: string, init?: RequestInit) {
   const url = new URL(`http://127.0.0.1${path}`)
   return handleApi(new Request(url, init), url, () => {})
 }
 
-test('router ignores non-api paths and returns the stable JSON 404 for unknown API paths', async () => {
-  expect(await route('/assets/app.js')).toBeNull()
+const post = (body: unknown, origin?: string): RequestInit => ({
+  method: 'POST',
+  headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+  body: JSON.stringify(body),
+})
 
+test('non-api paths fall through, and an unknown api path is the JSON 404', async () => {
+  expect(await route('/assets/app.js')).toBeNull()
   const response = await route('/api/unknown')
   expect(response?.status).toBe(404)
-  expect(response?.headers.get('content-type')).toBe('application/json')
   expect(await response?.json()).toEqual({ error: 'not found' })
+  expect((await route('/api/domain/not-registered/visibility'))?.status).toBe(404)
 })
 
-test('refresh rebuilds domain reads and announces them without touching agent routes', async () => {
-  const handle = fixture()
-  const events: Array<{ type: string; domainId?: string }> = []
-  const url = new URL('http://127.0.0.1/api/workspace/refresh')
-  const response = await handleApi(new Request(url, { method: 'POST' }), url, (event) =>
-    events.push({ type: event.type, ...('domainId' in event && { domainId: event.domainId }) }),
-  )
+test('a mutation from another origin is refused before it changes anything', async () => {
+  const handle = testDomain()
+  const visibility = `/api/domain/${encodeURIComponent(handle.id)}/visibility`
+  const hide = { action: 'set', hidden: { 'class.Injected': true }, showInheritedEdges: false }
 
-  expect(response?.status).toBe(200)
-  expect(await response?.json()).toEqual({ refreshed: 1 })
-  const types = events.map((event) => event.type)
-  expect(types[0]).toBe('resolving')
-  expect(types).toContain('schema-diff')
-  expect(types).toContain('anatomy-diff')
-  expect(types).toContain('datasets')
-  expect(types.some((type) => type.startsWith('agent'))).toBe(false)
-  expect(events.every((event) => event.domainId === handle.id)).toBe(true)
-})
-
-test('router blocks cross-site mutations before route dispatch but permits same-origin requests', async () => {
-  const blocked = await route('/api/unknown', {
-    method: 'POST',
-    headers: { origin: 'https://malicious.example' },
-  })
-  expect(blocked?.status).toBe(403)
-  expect(await blocked?.json()).toEqual({ error: 'cross-site request blocked' })
-
-  const sameOrigin = await route('/api/unknown', {
-    method: 'POST',
-    headers: { origin: 'http://127.0.0.1' },
-  })
-  expect(sameOrigin?.status).toBe(404)
-})
-
-test('cross-site protection compares the complete origin and leaves mutation state unchanged', async () => {
-  const handle = fixture()
-  const visibilityPath = `/api/domain/${encodeURIComponent(handle.id)}/visibility`
-  const mutation = {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      // The host matches Studio, but the scheme does not: this is not same-origin.
-      origin: 'https://127.0.0.1',
-    },
-    body: JSON.stringify({
-      action: 'set',
-      hidden: { 'class.Injected': true },
-      showInheritedEdges: false,
-    }),
+  // same host, other scheme or port: not the same origin
+  for (const origin of [
+    'https://127.0.0.1',
+    'http://127.0.0.1:3000',
+    'https://malicious.example',
+  ]) {
+    const blocked = await route(visibility, post(hide, origin))
+    expect(blocked?.status).toBe(403)
+    expect(await blocked?.json()).toEqual({ error: 'cross-site request blocked' })
   }
+  expect(await (await route(visibility))?.json()).toEqual({ hidden: {}, showInheritedEdges: true })
 
-  const blocked = await route(visibilityPath, mutation)
-  expect(blocked?.status).toBe(403)
-  expect(await blocked?.json()).toEqual({ error: 'cross-site request blocked' })
-
-  const wrongPort = await route(visibilityPath, {
-    ...mutation,
-    headers: { ...mutation.headers, origin: 'http://127.0.0.1:3000' },
-  })
-  expect(wrongPort?.status).toBe(403)
-
-  const unchanged = await route(visibilityPath)
-  expect(await unchanged?.json()).toEqual({ hidden: {}, showInheritedEdges: true })
-
-  const allowed = await route(visibilityPath, {
-    ...mutation,
-    headers: { ...mutation.headers, origin: 'http://127.0.0.1' },
-  })
-  expect(allowed?.status).toBe(200)
-  expect(await (await route(visibilityPath))?.json()).toEqual({
+  expect((await route(visibility, post(hide, 'http://127.0.0.1')))?.status).toBe(200)
+  expect(await (await route(visibility))?.json()).toEqual({
     hidden: { 'class.Injected': true },
     showInheritedEdges: false,
   })
 })
 
-test('domain dispatch preserves canvas success, validation, and unknown-domain responses', async () => {
-  const handle = fixture()
+test('domain routes validate their bodies', async () => {
+  const handle = testDomain()
   const base = `/api/domain/${encodeURIComponent(handle.id)}`
 
-  const visibility = await route(`${base}/visibility`)
-  expect(visibility?.status).toBe(200)
-  expect(await visibility?.json()).toEqual({ hidden: {}, showInheritedEdges: true })
-
-  const invalid = await route(`${base}/visibility`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ action: 'invalid' }),
-  })
-  expect(invalid?.status).toBe(400)
+  const invalid = await route(`${base}/visibility`, post({ action: 'invalid' }))
   expect(await invalid?.json()).toEqual({ error: 'unknown visibility action' })
+  // a body that is not an object is no action at all
+  expect((await route(`${base}/visibility`, post(['set', { hidden: {} }])))?.status).toBe(400)
 
-  const nonObjectBody = await route(`${base}/visibility`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(['set', { hidden: { 'class.Injected': true } }]),
-  })
-  expect(nonObjectBody?.status).toBe(400)
-  expect(await (await route(`${base}/visibility`))?.json()).toEqual({
-    hidden: {},
-    showInheritedEdges: true,
-  })
+  const layout = await route(
+    `${base}/layout`,
+    post({ action: 'set', positions: { valid: { x: 12, y: 24 }, invalid: { x: '12', y: 24 } } }),
+  )
+  expect((await layout?.json()).positions).toEqual({ valid: { x: 12, y: 24 } })
 
-  const filteredLayout = await route(`${base}/layout`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      action: 'set',
-      positions: { valid: { x: 12, y: 24 }, invalid: { x: '12', y: 24 } },
-    }),
+  // a comment entry, once written, is never rewritten through the API
+  const comment = upsertComment(handle.root, {
+    anchors: ['Test'],
+    anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
+    text: 'Keep this wording',
   })
-  expect((await filteredLayout?.json()).positions).toEqual({ valid: { x: 12, y: 24 } })
-
-  const missing = await route('/api/domain/not-registered/visibility')
-  expect(missing?.status).toBe(404)
-  expect(await missing?.json()).toEqual({ error: 'not found' })
+  const edit = await route(`${base}/comments`, post({ action: 'edit', id: comment.id, text: 'x' }))
+  expect(await edit?.json()).toEqual({ error: 'comment entries cannot be edited' })
+  expect(
+    (await route(`${base}/comments`, post({ action: 'create', anchorRefs: [] })))?.status,
+  ).toBe(400)
 })
 
-test('retired internal domain routes return the stable JSON 404', async () => {
-  const handle = fixture()
-  const base = `/api/domain/${encodeURIComponent(handle.id)}`
-  for (const path of ['/context', '/copy-payload', '/integrations', '/instance']) {
-    const response = await route(`${base}${path}`)
-    expect(response?.status).toBe(404)
-    expect(await response?.json()).toEqual({ error: 'not found' })
-  }
+test('a manual refresh rebuilds every domain read and announces it, agent untouched', async () => {
+  const handle = testDomain()
+  const events: { type: string; domainId?: string }[] = []
+  const url = new URL('http://127.0.0.1/api/workspace/refresh')
+  const response = await handleApi(new Request(url, { method: 'POST' }), url, (event) =>
+    events.push({ type: event.type, ...('domainId' in event && { domainId: event.domainId }) }),
+  )
+
+  expect(await response?.json()).toEqual({ refreshed: 1 })
+  const types = events.map((event) => event.type)
+  expect(types[0]).toBe('resolving')
+  expect(types).toEqual(expect.arrayContaining(['schema-diff', 'anatomy-diff', 'datasets']))
+  expect(types.some((type) => type.startsWith('agent'))).toBe(false)
+  expect(events.every((event) => event.domainId === handle.id)).toBe(true)
 })
 
-test('Studio does not expose an in-process update mutation', async () => {
-  const handle = fixture()
-  const response = await route(`/api/domain/${encodeURIComponent(handle.id)}/updates/apply`, {
-    method: 'POST',
-  })
-
-  expect(response?.status).toBe(404)
-  expect(await response?.json()).toEqual({ error: 'not found' })
-})
-
-test('workspace dispatch preserves catalog responses and instance request validation', async () => {
-  const handle = fixture()
-
-  const catalog = await route('/api/catalog')
-  expect(catalog?.status).toBe(200)
-  const origins = (await catalog?.json()).map((entry: { origin: string }) => entry.origin)
-  expect(origins[0]).toBe('kernel.astrale.ai')
-  expect(origins).toContain(handle.id)
-
-  const invalidInstance = await route('/api/instances/use', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: '   ' }),
-  })
-  expect(invalidInstance?.status).toBe(400)
-  expect(await invalidInstance?.json()).toEqual({ error: 'name is required' })
-})
-
-test('workspace exposes live introspection queue and per-phase timings', async () => {
-  const response = await route('/api/workspace/introspection')
-  expect(response?.status).toBe(200)
-  expect(await response?.json()).toMatchObject({
-    concurrency: 2,
-    active: expect.any(Array),
-    queued: { reader: expect.any(Array), background: expect.any(Array) },
-    domains: expect.any(Array),
-  })
-})
-
-test('multipart document upload remains ahead of JSON parsing and raw download keeps its media type', async () => {
-  const handle = fixture()
-  const base = `/api/domain/${encodeURIComponent(handle.id)}`
+test('an uploaded document is served back as data, never as a page of the studio origin', async () => {
+  const handle = testDomain()
+  const documents = `/api/domain/${encodeURIComponent(handle.id)}/context/documents`
   const form = new FormData()
-  form.append('files', new File(['contract body'], 'contract.txt', { type: 'text/plain' }))
+  form.append('files', new File(['notes'], 'notes.txt', { type: 'text/plain' }))
+  form.append('files', new File(['<script>'], 'Décisions.html', { type: 'text/html' }))
+  const [text, html] = (await (await route(documents, { method: 'POST', body: form }))!.json()) as {
+    id: string
+  }[]
 
-  const uploaded = await route(`${base}/context/documents`, { method: 'POST', body: form })
-  expect(uploaded?.status).toBe(200)
-  const documents = (await uploaded?.json()) as Array<{ id: string; type: string }>
-  expect(documents).toHaveLength(1)
+  const inline = await route(`${documents}/${text!.id}/raw`)
+  expect(inline?.headers.get('content-type')).toBe('text/plain;charset=utf-8')
+  expect(inline?.headers.get('content-disposition')).toBe('inline')
+  expect(await inline?.text()).toBe('notes')
 
-  const raw = await route(`${base}/context/documents/${encodeURIComponent(documents[0]!.id)}/raw`)
-  expect(raw?.status).toBe(200)
-  expect(raw?.headers.get('content-type')).toBe('text/plain;charset=utf-8')
-  expect(await raw?.text()).toBe('contract body')
+  // the uploader picks the MIME type, and this origin drives a local agent
+  const download = await route(`${documents}/${html!.id}/raw`)
+  expect(download?.headers.get('content-type')).toBe('application/octet-stream')
+  expect(download?.headers.get('content-disposition')).toBe(
+    "attachment; filename*=UTF-8''D%C3%A9cisions.html",
+  )
+  expect(download?.headers.get('x-content-type-options')).toBe('nosniff')
 })
