@@ -8,8 +8,6 @@ interface ReadAllNodesOptions {
   readonly label: string
   readonly maximum: number
   readonly maximumPages: number
-  /** Stop before one suffix boundary guaranteed by the Query's explicit total order. */
-  readonly orderedBoundary?: (node: Node) => boolean
 }
 
 /** Collect one explicitly bounded Node-value projection without hiding cursors. */
@@ -23,7 +21,6 @@ export async function readAllNodes(
   const cursors = new Set<string>()
   let cursor: string | undefined
   let pages = 0
-  let terminal = false
   const pageSize = Math.min(options.maximum, 256)
   do {
     pages += 1
@@ -41,10 +38,6 @@ export async function readAllNodes(
         throw new TypeError(`${options.label} omitted requested Node values.`)
       }
       const node = projection.value
-      if (options.orderedBoundary?.(node) === true) {
-        terminal = true
-        break
-      }
       if (ids.has(String(node.id))) throw new TypeError(`${options.label} repeated a Node.`)
       ids.add(String(node.id))
       nodes.push(node)
@@ -52,7 +45,7 @@ export async function readAllNodes(
     if (nodes.length > options.maximum) {
       throw new TypeError(`${options.label} exceeded its Node bound.`)
     }
-    cursor = terminal ? undefined : response.page.next
+    cursor = response.page.next
     if (cursor !== undefined && cursors.has(cursor)) {
       throw new TypeError(`${options.label} repeated a cursor.`)
     }

@@ -9,11 +9,15 @@ import { mapBounded } from '../lib/concurrency'
 import { AdminContract } from './contract'
 import { readAllNodes, type AdminGraphQueryApi } from './graph'
 
-/** Selection is advisory; each Admin callable still admits the live caller through its policy. */
-export async function resolveAdminFleet(
-  context: { fleet?: string; session: ClientSession; graph: AdminGraphQueryApi },
-  creation = false,
-): Promise<Path> {
+/**
+ * The Fleet an Instance is created in: the explicit one, else the caller's sole usable Fleet.
+ * Selection is advisory; each Admin callable still admits the live caller through its policy.
+ */
+export async function resolveAdminFleet(context: {
+  fleet?: string
+  session: ClientSession
+  graph: AdminGraphQueryApi
+}): Promise<Path> {
   if (context.fleet !== undefined) return Path.parse(context.fleet)
   const nodes = await readAllNodes(
     context.graph,
@@ -40,8 +44,7 @@ export async function resolveAdminFleet(
       }),
     }
   })
-  const usable = fleets.filter((fleet) => fleet.usable)
-  const candidates = !creation && usable.length === 0 ? fleets : usable
+  const candidates = fleets.filter((fleet) => fleet.usable)
   const selected = candidates.length === 1 ? candidates[0] : undefined
   if (selected !== undefined) return Path.id(selected.id)
   throw new AstraleError(

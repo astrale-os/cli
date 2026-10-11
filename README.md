@@ -365,13 +365,15 @@ list` lists the selected instance's readable installed releases, using the activ
 
 ## Fleet selection
 
-An explicit `--fleet <path>` keeps that exact target; authorization failure never falls back.
-Without it, the CLI reads the visible Fleet graph and checks the native `UseFleet` policy:
-it selects the sole usable Fleet. With multiple usable Fleets, it requires `--fleet` and lists
-the available choices; with none, it asks you to request access. No Fleet name or slug has priority,
-and no access is granted implicitly.
-Instance-only users retain read-only inventory through their visible Fleet when they have no
-usable Fleet. This does not authorize creation.
+`instance list` shows the instances you own or reach through your organization memberships, in
+every Fleet, including an instance shared with you from a Fleet you cannot see. `--fleet` narrows
+the list to one Fleet; its administrators then see the Fleet's whole inventory.
+
+`instance create` needs one Fleet. An explicit `--fleet <path>` keeps that exact target;
+authorization failure never falls back. Without it, the CLI reads the visible Fleet graph and
+checks the native `UseFleet` policy: it selects the sole usable Fleet. With multiple usable Fleets,
+it requires `--fleet` and lists the available choices; with none, it asks you to request access.
+No Fleet name or slug has priority, and no access is granted implicitly.
 
 The option accepts a Kernel path, not a slug, and remains limited to `instance create`,
 `instance list`. Creation pins the resolved Fleet before
