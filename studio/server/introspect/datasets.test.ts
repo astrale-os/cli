@@ -20,10 +20,11 @@ function fixture(): DomainHandle {
     'package.json': '{"type":"module"}\n',
     'schema/index.ts': `
       import { classIcon, defineSchema, edgeClass, nodeClass } from '@astrale-os/sdk/schema'
-      export const Item = nodeClass({ icon: classIcon.neutral, properties: {} })
+      export const Item = nodeClass({ icon: classIcon.neutral, policies: { read: true }, properties: {} })
       export const contains = edgeClass.directed({
         source: { as: 'parent', accepts: [Item], outgoing: '0..*' },
         target: { as: 'child', accepts: [Item], incoming: '0..1' },
+        policies: { read: true },
       })
       export const schema = defineSchema('datasets.studio.test', { name: 'Test Domain', classes: { Item, contains } })
     `,

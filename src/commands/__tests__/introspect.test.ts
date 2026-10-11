@@ -30,6 +30,7 @@ const source = defineSchema('host.astrale.ai', {
   classes: {
     Manager: nodeClass({
       icon: classIcon.neutral,
+      policies: { read: true },
       methods: {
         createInstance: method({
           auth: 'authenticated',
@@ -48,6 +49,7 @@ const source = defineSchema('host.astrale.ai', {
     }),
     Instance: nodeClass({
       icon: classIcon.neutral,
+      policies: { read: true },
       methods: {
         inspectInstance: method({ auth: 'authenticated', input: object, output: object }),
         edit: edit('body'),
@@ -163,7 +165,13 @@ describe('describeCallableFromBundle', () => {
     const other = bundle.create(
       defineSchema('other.astrale.ai', {
         name: 'Test Domain',
-        classes: { Manager: nodeClass({ icon: classIcon.neutral, methods: { edit: edit('x') } }) },
+        classes: {
+          Manager: nodeClass({
+            icon: classIcon.neutral,
+            policies: { read: true },
+            methods: { edit: edit('x') },
+          }),
+        },
       }),
     )
     expect(

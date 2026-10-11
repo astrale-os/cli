@@ -85,25 +85,27 @@ globalThis.fetch = (async (input, init) => {
     } else {
       const target =
         typeof body.call.target === 'string' ? body.call.target : body.call.target.callable
-      const result = target.endsWith(':delegate')
-        ? token({
-            iss: kernel,
-            sub: 'alice',
-            aud: remote,
-            exp: Math.floor(Date.now() / 1000) + 600,
-          })
-        : target.endsWith('function.durable')
-          ? { id: 'execution-1' }
-          : target.endsWith('.status')
-            ? { state: 'completed' }
-            : target.endsWith('.result')
-              ? { kind: 'completed', value: 42 }
-              : { id: 'alice' }
+      const answer = target.endsWith('function.durable')
+        ? { execution: 'execution-1' }
+        : {
+            result: target.endsWith(':delegate')
+              ? token({
+                  iss: kernel,
+                  sub: 'alice',
+                  aud: remote,
+                  exp: Math.floor(Date.now() / 1000) + 600,
+                })
+              : target.endsWith('.status')
+                ? { state: 'completed' }
+                : target.endsWith('.result')
+                  ? { kind: 'completed', value: 42 }
+                  : { id: 'alice' },
+          }
       response = new Response(
         JSON.stringify({
           requestId: body.requestId,
           invocation: { source: kernel, id: 'invoke-1' },
-          result,
+          ...answer,
         }),
         {
           headers: {
@@ -183,7 +185,7 @@ if (process.argv[2] === 'probe-stale') {
   )
   console.log(JSON.stringify(result))
 } else {
-  if (process.argv[3] === 'start')
+  if (process.argv[2] === 'call')
     await cache.set(kernel, 'jobs.example', { issuer: mode === 'caller' ? null : remote })
   const { buildProgram } = await import('../../../program/index')
   await (await buildProgram()).parseAsync(['node', 'astrale', ...process.argv.slice(2)])

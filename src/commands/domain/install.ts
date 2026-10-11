@@ -8,6 +8,22 @@ export default {
   description: 'Install one or more domains on an instance in one atomic Kernel operation',
   afterHelpText: `
 Behavior:
+  Installation is durable. The CLI waits within --timeout in online mode and
+  reports success only after completion. A failure or an unfinished execution
+  exits nonzero; --json retains its execution ID and exact status. Retry with
+  the printed operation ID and the same intent to observe that installation,
+  never a new operation. --no-wait returns without waiting.
+  After an issuer transition, original consent may no longer be reconstructible.
+  An input conflict is recovered only if exact release/build pins, URL and issuer
+  are already installed. The report marks recovered.refusal and changed:false;
+  it does not claim that the original Execution succeeded.
+
+  --mode maintenance opens a Root-only repair session; other callers are
+  blocked while it is open. It waits for explicit Execution signals, not for
+  this CLI process. Retain its execution ID, inspect its status and repair the
+  data before applying the target with domain installation apply. Never delete or force-cancel it as a normal
+  recovery step: those actions can leave the source schema uncertified.
+
   URL references (https://, or http:// for a local Host) go straight to the
   instance Kernel through the public install syscall, on any instance you can
   authenticate to (managed, bookmarked, or local), with your own authority.
@@ -62,6 +78,9 @@ Behavior:
   deployment claims the origin, unverified.
 
 Examples:
+  $ astrale domain installation status <execution-id> -i staging --as root --json
+  $ astrale domain installation apply <execution-id> --command 1 -i staging --as root --json
+  $ astrale domain installation result <execution-id> --wait-ms 10000 -i staging --as root --json
   $ astrale domain install issues.astrale.ai@1.5 -i acme-prod            # highest stable 1.5.x
   $ astrale domain install crm.acme.dev@1.5.0 https://employees.example -i staging  # mixed, atomic
   $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel
@@ -80,6 +99,25 @@ Examples:
   ],
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    {
+      flags: '--mode <mode>',
+      description: 'Online install (default), or a Root-only maintenance repair session',
+      choices: ['online', 'maintenance'],
+    },
+    {
+      flags: '--validation-scope <scope>',
+      description: 'Validate incrementally (default) or revalidate all retained data',
+      choices: ['incremental', 'full'],
+    },
+    {
+      flags: '--validation-counts <counts>',
+      description: 'Sample failures (default) or count all validation failures',
+      choices: ['sample', 'exact'],
+    },
+    {
+      flags: '--no-wait',
+      description: 'Return the durable execution state without waiting for completion',
+    },
     {
       flags: '--token <token>',
       description: 'Bearer token for a private domain delivery endpoint (one URL reference only)',

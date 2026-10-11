@@ -51,8 +51,9 @@ const INVOCATION = {
 } as ConstructorParameters<typeof ResponseError>[2]
 
 const icon = classIcon.neutral
-const Member = nodeClass({ icon })
-const Badge = nodeClass({ icon })
+const policies = { read: true } as const
+const Member = nodeClass({ icon, policies })
+const Badge = nodeClass({ icon, policies })
 /** Shell R1 declares Member; R2 drops it for Badge (breaking); R1b adds Badge beside it. */
 const ShellR1 = defineSchema(SHELL, { name: 'Test Domain', classes: { Member } })
 const ShellR2 = defineSchema(SHELL, { name: 'Test Domain', classes: { Badge } })
@@ -61,24 +62,24 @@ const ShellR1b = defineSchema(SHELL, { name: 'Test Domain', classes: { Member, B
 const CrmR1 = defineSchema(CRM, {
   name: 'Test Domain',
   dependencies: { shell: ShellR1 },
-  classes: { Profile: nodeClass({ extends: [Member], icon }) },
+  classes: { Profile: nodeClass({ extends: [Member], icon, policies }) },
 })
 const CrmR2 = defineSchema(CRM, {
   name: 'Test Domain',
   dependencies: { shell: ShellR2 },
-  classes: { Card: nodeClass({ extends: [Badge], icon }) },
+  classes: { Card: nodeClass({ extends: [Badge], icon, policies }) },
 })
 /** Notes depends on Shell R1 and uses nothing in it: every Shell revision holds for it. */
 const NotesR1 = defineSchema(NOTES, {
   name: 'Test Domain',
   dependencies: { shell: ShellR1 },
-  classes: { Note: nodeClass({ icon }) },
+  classes: { Note: nodeClass({ icon, policies }) },
 })
 /** Tasks uses nothing of Shell structurally but declares Member as a capability. */
 const TasksR1 = defineSchema(TASKS, {
   name: 'Test Domain',
   dependencies: { shell: ShellR1 },
-  classes: { Task: nodeClass({ icon }) },
+  classes: { Task: nodeClass({ icon, policies }) },
 })
 
 /** Ledger depends on CRM only; its Entry extends CRM's Profile, so it reaches Shell's Member through CRM. */
@@ -86,7 +87,7 @@ const LEDGER = 'ledger.example.test'
 const LedgerR1 = defineSchema(LEDGER, {
   name: 'Test Domain',
   dependencies: { crm: CrmR1 },
-  classes: { Entry: nodeClass({ extends: [CrmR1.classes.Profile!.ref], icon }) },
+  classes: { Entry: nodeClass({ extends: [CrmR1.classes.Profile!.ref], icon, policies }) },
 })
 
 const R = {
@@ -475,7 +476,9 @@ function install(options: {
           ...listing.filter((entry) => !origins.has(entry.origin)),
           ...pinned.map(installedFrom),
         ]
-        return result
+        // The install the call waited for completed with this result.
+        const outcome = { kind: 'completed', value: result } as const
+        return { execution: 'execution-1', status: { state: 'completed', outcome }, result }
       },
     },
   }

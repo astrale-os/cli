@@ -1,12 +1,16 @@
-import { Path } from '@astrale-os/sdk/graph/path'
-import { K } from '@astrale-os/sdk/schema'
+import type { Uninstallation } from '@astrale-os/sdk/client/schema'
+import type { OperationId, UninstallReceipt, UninstallRequest } from '@astrale-os/sdk/client/schema'
+
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { createPathCall, runKernelCommand } from '../../connection'
+import { runKernelCommand } from '../../connection'
+import { installationResult } from '../../connection/installation-result'
+import { resolveTimeoutMs } from '../../connection/session'
 import { AstraleError } from '../../errors'
+import { shellCommand } from '../../lib/shell-command'
 import { canPrompt } from '../../lib/terminal/interactive'
 import { fatal, log } from '../../lib/terminal/log'
 import { output } from '../../lib/terminal/output'
@@ -20,25 +24,14 @@ type UninstallOpts = KernelCommandOpts & {
   readonly operation?: string
 }
 
-type UninstallResult = {
-  readonly operation: string
-  readonly transitions: readonly {
-    readonly intent: {
-      readonly origin: string
-    }
-  }[]
-}
+type UninstallResult = UninstallReceipt & Pick<Uninstallation, 'execution' | 'status'>
 
 /** Public Kernel uninstall syscall input for one canonical non-empty Domain set. */
 export function uninstallCallInput(
   origins: readonly [string, ...string[]],
   mode: 'safe' | 'destructive' = 'safe',
-  operation: string = crypto.randomUUID(),
-): Readonly<{
-  operation: string
-  domains: readonly [string, ...string[]]
-  data: Readonly<{ mode: 'safe' | 'destructive' }>
-}> {
+  operation: OperationId = createDomainOperationId('uninstall'),
+): UninstallRequest {
   return Object.freeze({
     operation,
     domains: canonicalOrigins(origins),
@@ -97,7 +90,7 @@ Examples:
   ],
   action: async (origins: [string, ...string[]], opts: UninstallOpts) => {
     const selected = canonicalOrigins(origins)
-    let operation: string
+    let operation: OperationId
     try {
       operation =
         opts.operation === undefined
@@ -115,7 +108,7 @@ Examples:
 export function uninstallKernelCommand(
   selected: readonly [string, ...string[]],
   opts: UninstallOpts,
-  operation: string = opts.operation === undefined
+  operation: OperationId = opts.operation === undefined
     ? createDomainOperationId('uninstall')
     : acceptDomainOperationId(opts.operation, 'uninstall'),
 ): Parameters<typeof runKernelCommand<UninstallResult>>[0] {
@@ -124,13 +117,21 @@ export function uninstallKernelCommand(
     label: `Uninstalling ${selected.length === 1 ? 'domain' : 'domains'} ${selected.join(', ')} (operation ${operation})`,
     recovery: { operation, retry: uninstallRetry(selected, operation, opts) },
     credential: { principal: 'caller' as const },
-    fn: async ({ session }) =>
-      (await session.call(
-        createPathCall(
-          Path.project(K.functions.uninstall.ref).raw,
-          uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe', operation),
-        ),
-      )) as UninstallResult,
+    fn: async ({ session }) => {
+      const installation = await session.schema.uninstall(
+        uninstallCallInput(
+          selected,
+          opts.destructive ? 'destructive' : 'safe',
+          operation,
+        ) as Parameters<typeof session.schema.uninstall>[0],
+        opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
+      )
+      return {
+        ...installationResult(installation, 'uninstall'),
+        execution: installation.execution,
+        status: installation.status,
+      }
+    },
     format: (result, formatOpts, machine) => {
       if (machine) {
         output(result, formatOpts)
@@ -150,11 +151,22 @@ function uninstallRetry(
   operation: string,
   opts: UninstallOpts,
 ): string {
-  const destructive = opts.destructive ? ' --destructive' : ''
-  const url = opts.url === undefined ? '' : ` --url ${opts.url}`
-  const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
-  const identity = opts.as === undefined ? '' : ` --as ${opts.as}`
-  return `astrale domain uninstall ${origins.join(' ')}${destructive} --operation ${operation} --yes${url}${instance}${identity}`
+  const flag = (name: string, value: string | undefined) =>
+    value === undefined ? [] : [name, value]
+  return shellCommand([
+    'astrale',
+    'domain',
+    'uninstall',
+    ...origins,
+    ...(opts.destructive ? ['--destructive'] : []),
+    '--operation',
+    operation,
+    '--yes',
+    ...flag('--url', opts.url),
+    ...flag('-i', opts.instance),
+    ...flag('--as', opts.as),
+    ...flag('--timeout', opts.timeout),
+  ])
 }
 
 async function confirmUninstall(

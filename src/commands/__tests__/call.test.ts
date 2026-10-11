@@ -125,3 +125,51 @@ describe('call command result lifetime', () => {
     expect(Object.isFrozen(materialized.value)).toBe(true)
   })
 })
+
+describe('call command durable answer', () => {
+  const invocation = { source: 'https://kernel.example', id: 'call-1' }
+
+  /** The outcome `call` hands to presentation for one Kernel answer. */
+  async function outcome(answer: unknown) {
+    const context = {
+      target: { kernelIssuer: 'https://kernel.example' },
+      credentialPrincipal: () => 'domain',
+      session: { dispatch: async () => answer },
+    } as unknown as ConnectionContext
+    let result: unknown
+    await callCommand(
+      '/:jobs.example:function.hold',
+      ['invoice=inv-1'],
+      { json: true },
+      {
+        async runKernelCommand(input) {
+          result = await input.fn(context)
+        },
+        output: () => {},
+      },
+    )
+    return result
+  }
+
+  test('prints the receipt of the Execution a durable callable started', async () => {
+    expect(await outcome({ kind: 'execution', invocation, execution: 'run-1' })).toEqual({
+      kind: 'execution',
+      receipt: {
+        kind: 'astrale.execution',
+        version: 2,
+        id: 'run-1',
+        kernel: 'https://kernel.example',
+        origin: 'jobs.example',
+        principal: 'domain',
+      },
+    })
+  })
+
+  test('keeps an id-shaped value a value', async () => {
+    expect(await outcome({ kind: 'value', invocation, value: { id: 'run-1' } })).toEqual({
+      kind: 'value',
+      invocation,
+      value: { id: 'run-1' },
+    })
+  })
+})

@@ -212,8 +212,8 @@ re-resolves the same View in its Domain and mints a fresh credential before relo
 (unsaved changes are lost). Failure leaves the previous session usable. This does not change CLI
 defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
 
-Durable calls can retain their observation context with `astrale execution start`, then
-`execution status` or `execution result` using the saved nonsecret receipt. See
+A durable callable answers `astrale call` with a nonsecret receipt for the Execution it started;
+follow it with `execution status` or `execution result`. See
 [durable executions](docs/executions.md) for examples and the versioned receipt contract.
 
 ## Path Syntax

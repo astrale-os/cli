@@ -58,9 +58,8 @@ export async function buildProgram(): Promise<Command> {
   const executions = await import('../commands/execution')
   registerGroup(program, {
     name: 'execution',
-    description: 'Start and observe durable executions with portable receipts',
+    description: 'Observe durable executions from the receipts astrale call prints',
     commands: [
-      withKernelOptions(executions.start),
       withKernelOptions(executions.observationCommand('status')),
       withKernelOptions(executions.observationCommand('result')),
     ],
@@ -149,6 +148,15 @@ export async function buildProgram(): Promise<Command> {
       withKernelOptions((await import('../commands/domain/versions')).default),
       withKernelOptions((await import('../commands/domain/install')).default),
       withKernelOptions((await import('../commands/domain/uninstall')).default),
+    ],
+    subgroups: [
+      {
+        name: 'installation',
+        description: 'Observe durable installations and operate Root repair sessions',
+        commands: (await import('../commands/domain/installation')).installationCommands.map(
+          withKernelOptions,
+        ),
+      },
     ],
   })
 

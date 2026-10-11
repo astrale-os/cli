@@ -34,9 +34,14 @@ const rename = method({
   }),
   output: boolean,
   auth: 'authorized',
+  policy: true,
 })
 
-const Named = nodeClass({ icon: classIcon.neutral, properties: { title: string } })
+const Named = nodeClass({
+  icon: classIcon.neutral,
+  policies: { read: true },
+  properties: { title: string },
+})
 const dependency = defineSchema('shared.example.dev', { name: 'Test Domain', classes: { Named } })
 const documentIcon = classIcon.svg(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 2h12l4 4v16H4z"/></svg>',
@@ -44,6 +49,7 @@ const documentIcon = classIcon.svg(
 const Document = nodeClass({
   description: 'A document.',
   icon: documentIcon,
+  policies: { read: true },
   extends: [Named],
   properties: { slug: property(string, { description: 'Stable slug.' }) },
   methods: { rename },
@@ -51,6 +57,7 @@ const Document = nodeClass({
 const links = edgeClass.directed({
   source: { as: 'source', accepts: [Document], outgoing: '1' },
   target: { as: 'target', accepts: [Named], incoming: '0..*' },
+  policies: { read: true },
 })
 const primary = core.node(Document, { slug: 'primary', title: 'Primary' })
 const primaryLink = core.edge(primary, links, primary, {})

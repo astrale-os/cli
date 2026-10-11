@@ -9,14 +9,11 @@ import { withResolvedClientSession } from '../../session'
 
 const receipt = parseExecutionReceipt(await readFile(process.argv[2]!, 'utf8'))
 const open: ConnectionFactory = (target, _timeout, _options, _config, intent) => {
-  const auth = { whoami: async () => ({ id: receipt.caller }) }
   return {
     context: {
       target,
-      auth,
       graph: {},
       session: {
-        auth,
         schema: {
           inspect: async () => ({ release: { identity: { issuer: 'https://rotated.example' } } }),
         },

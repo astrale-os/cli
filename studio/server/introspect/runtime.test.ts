@@ -31,11 +31,11 @@ function currentFixture(): DomainHandle {
     schemaIndex,
     `
       import { classIcon, core, defineSchema, nodeClass, view } from '@astrale-os/sdk/schema'
-      const Named = nodeClass({ icon: classIcon.neutral, properties: {} })
+      const Named = nodeClass({ icon: classIcon.neutral, policies: { read: true }, properties: {} })
       export const DirectorySchema = defineSchema('directory.runtime.test', { name: 'Test Domain',
         classes: { Named },
       })
-      const Document = nodeClass({ extends: [Named], icon: classIcon.neutral, properties: {} })
+      const Document = nodeClass({ extends: [Named], icon: classIcon.neutral, policies: { read: true }, properties: {} })
       const welcome = core.node(Document, {})
       export const schema = defineSchema('documents.runtime.test', { name: 'Test Domain',
         dependencies: { directory: DirectorySchema },
@@ -91,3 +91,20 @@ test('the authored SDK admits the Schema; the bundle carries its revision, Core 
     error: null,
   })
 })
+
+for (const [fixture, origin] of [
+  ['fixture', 'crm.studio-demo.astrale.ai'],
+  ['fixture/peer', 'ops.studio-demo.astrale.ai'],
+] as const) {
+  test(`the browser ${fixture} is admitted by its actual installed SDK before serving Studio`, async () => {
+    const root = join(import.meta.dir, '../../e2e', fixture)
+    const extracted = await runtimeExtract(join(root, 'schema/index.ts'), root)
+    expect(extracted).toMatchObject({
+      ok: true,
+      schemaMode: 'canonical-admitted',
+      root: { format: 'astrale.dsl', version: 'v1', origin },
+      ir: { domain: origin },
+    })
+    expect(extracted.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
+  })
+}

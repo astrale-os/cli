@@ -4,6 +4,7 @@ import { icons } from './icons.js'
 import { string } from './values.js'
 
 export const PaymentProcessor = nodeClass({
+  policies: { read: true },
   description: 'An external provider that processes customer payments.',
   icon: icons.payment,
   properties: { name: string },
