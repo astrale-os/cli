@@ -23,3 +23,23 @@ test('implicit managed target discovery keeps target credentials out of the Admi
   await lookupManagedInstance('owned', target, openAdmin, connect)
   expect(opened).toEqual([{ timeout: '45000' }])
 })
+
+test('refuses a slug held in two Fleets instead of connecting to either', async () => {
+  const instance = (id: string, fleetId: string) => ({
+    id,
+    fleetId,
+    slug: 'shared-name',
+    url: `https://${id}.eu.astrale.ai`,
+    state: 'ready',
+  })
+  const openAdmin = async <Value>(
+    _options: AdminConnectionOptions,
+    action: (context: ConnectionContext) => Promise<Value>,
+  ): Promise<Value> => action({} as ConnectionContext)
+  const connect = async () =>
+    ({ list: async () => [instance('@a', '@fleet-a'), instance('@b', '@fleet-b')] }) as never
+
+  await expect(lookupManagedInstance('shared-name', {}, openAdmin, connect)).rejects.toThrow(
+    'Instance slug is ambiguous.',
+  )
+})

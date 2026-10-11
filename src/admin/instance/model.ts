@@ -79,17 +79,22 @@ export class AdminInstanceNotFoundError extends AstraleError {
   }
 }
 
-/** Match an owner-scoped Instance by slug, canonical Node Path, or bare Node id. */
+/**
+ * Match an owner-scoped Instance by slug, canonical Node Path, or bare Node id. The list spans
+ * every Fleet: a slug held twice is refused rather than resolved to either.
+ */
 export function findOwnedInstance(
   instances: readonly InstanceInfo[],
   identifier: string,
 ): InstanceInfo | undefined {
-  return instances.find(
+  const matches = instances.filter(
     (instance) =>
       instance.slug === identifier ||
       instance.id === identifier ||
       (instance.id.startsWith('@') && instance.id.slice(1) === identifier),
   )
+  if (matches.length > 1) throw new Error('Instance slug is ambiguous.')
+  return matches[0]
 }
 
 /** Human-readable non-ready lifecycle state for one Instance. */
