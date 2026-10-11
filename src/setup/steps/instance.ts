@@ -14,7 +14,7 @@ import { provisionInstance, type ProvisionResult } from '../../lib/instance/prov
 import { readLocalStatus } from '../../lib/local-status'
 import { log, withSpinner } from '../../lib/terminal/log'
 import { renderInstanceHero } from '../../lib/terminal/panel'
-import { confirmDefaultYes, promptText, selectFrom } from '../../lib/terminal/prompt'
+import { confirmDefaultYes, promptSelect, promptText } from '../../lib/terminal/prompt'
 import { guiOrigin, slugError } from '../util'
 
 export type InstanceSetupDependencies = {
@@ -73,14 +73,14 @@ function defaultDependencies(ctx: SetupContext): InstanceSetupDependencies {
         listOwnedInstancesWithIdentity(setupCtx.opts),
       ),
     adopt: adoptOwnedInstance,
-    selectReady: (instances) =>
-      selectFrom(
+    selectReady: async (instances) =>
+      (await promptSelect(
         'No active instance. Pick one:',
         instances.map((info) => ({
-          label: `${info.slug}  ${chalk.dim(guiOrigin(info.url))}`,
+          name: `${info.slug}  ${chalk.dim(guiOrigin(info.url))}`,
           value: info,
         })),
-      ),
+      )) ?? null,
     confirmCreate: () => confirmDefaultYes('No instances yet. Provision your first one now?'),
     promptSlug: () =>
       ctx.slug

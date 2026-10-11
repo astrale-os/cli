@@ -15,11 +15,7 @@ import { isMachine, outputForMachine } from '../../../lib/terminal/output'
 import { dangerPanel } from '../../../lib/terminal/panel'
 import { confirmWithInput } from '../../../lib/terminal/prompt'
 
-type ImportRootOpts = KernelCommandOpts &
-  AdminTargetCommandOpts & {
-    readonly yes?: boolean
-    readonly ci?: boolean
-  }
+type ImportRootOpts = KernelCommandOpts & AdminTargetCommandOpts & { readonly yes?: boolean }
 
 export default {
   name: 'import',

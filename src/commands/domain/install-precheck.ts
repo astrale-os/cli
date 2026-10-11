@@ -1,4 +1,4 @@
-import type { DomainBundle, InstalledRelease } from '@astrale-os/sdk/client/schema'
+import type { InstalledRelease } from '@astrale-os/sdk/client/schema'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type { DomainRelease } from '@astrale-os/sdk/release'
 
@@ -167,12 +167,6 @@ export type PrecheckKernel = Pick<ClientSession['schema'], 'bundle' | 'dependenc
  */
 const INTROSPECTION_READS_AT_ONCE = 6
 
-/** The schema of one origin the install leaves active, and its revision. */
-interface ActiveSchema {
-  readonly revision: string
-  readonly schema: schema.DomainSchema
-}
-
 /**
  * Evaluate both directions with the engine the Kernel uses, from what the caller can read:
  * the installed listing taken before the install, the Kernel's introspection of the installed
@@ -184,16 +178,13 @@ export async function precheckInstall(
   installed: readonly InstalledRelease[],
   kernel: PrecheckKernel,
 ): Promise<PrecheckVerdict> {
-  const reads = new KernelReads(kernel)
+  const reads = kernelReads(kernel)
   const listed = new Map(installed.map((entry) => [entry.origin, entry] as const))
-  const requested = new Map<string, PrecheckRoot>()
-  for (const root of roots) {
-    if (root.origin !== undefined) requested.set(root.origin, root)
-  }
+  const requested = new Map(
+    roots.flatMap((root) => (root.origin === undefined ? [] : [[root.origin, root] as const])),
+  )
   const skipped = roots.flatMap((root) =>
-    root.kind === 'skipped'
-      ? [Object.freeze({ reference: root.reference, reason: root.reason })]
-      : [],
+    root.kind === 'skipped' ? [{ reference: root.reference, reason: root.reason }] : [],
   )
   let compared = 0
   const dependencies: BrokenDependency[] = []
@@ -214,7 +205,9 @@ export async function precheckInstall(
     return installedRevision(origin)
   }
   /** The schema of `origin` the install leaves active. */
-  const activeSchemaAfter = async (origin: string): Promise<ActiveSchema | undefined> => {
+  const activeSchemaAfter = async (
+    origin: string,
+  ): Promise<{ revision: string; schema: schema.DomainSchema } | undefined> => {
     const root = requested.get(origin)
     if (root !== undefined) {
       return root.kind === 'release'
@@ -232,12 +225,26 @@ export async function precheckInstall(
     if (root.kind !== 'release') continue
     const declared = declaredBy(root, listed, reads, installedRevision)
     const direct = Object.values(root.bundle.root.dependencies).sort(byOrigin)
-    for (const dependency of direct) {
-      const actual = await activeRevisionAfter(dependency.origin)
-      if (actual === undefined || actual === dependency.revision) continue
-      const active = await activeSchemaAfter(dependency.origin)
+    // A capability of an origin reached only through the exact closure is judged like a direct
+    // one; such an origin is compared only for the capabilities the root declares on it.
+    const bindings = [
+      ...direct.map(({ origin, revision }) => ({ origin, revision, direct: true })),
+      ...root.bundle.closure
+        .filter(({ origin }) => origin !== root.origin && !direct.some((d) => d.origin === origin))
+        .map((entry) => ({
+          origin: entry.origin,
+          revision: schema.revision(entry),
+          direct: false,
+        })),
+    ]
+    for (const binding of bindings) {
+      const actual = await activeRevisionAfter(binding.origin)
+      if (actual === undefined || actual === binding.revision) continue
+      const closure = binding.direct ? undefined : await declared(binding.origin, actual)
+      if (closure?.length === 0) continue
+      const active = await activeSchemaAfter(binding.origin)
       if (active === undefined) continue
-      const capabilities = await declared(dependency.origin, active.revision)
+      const capabilities = closure ?? (await declared(binding.origin, active.revision))
       const changes = compareDependency(root.bundle.root, active.schema, capabilities, false)
       if (changes === undefined) {
         reads.unevaluated.add(root.origin)
@@ -245,30 +252,13 @@ export async function precheckInstall(
       }
       compared += 1
       if (changes.length > 0) {
-        dependencies.push(broken(root.origin, dependency, active.revision, changes))
-      }
-    }
-    // A capability of an origin reached only through the exact closure is judged like a direct one.
-    const directOrigins = new Set(direct.map(({ origin }) => origin))
-    for (const entry of root.bundle.closure) {
-      const revision = schema.revision(entry)
-      if (entry.origin === root.origin || directOrigins.has(entry.origin)) continue
-      const actual = await activeRevisionAfter(entry.origin)
-      if (actual === undefined || actual === revision) continue
-      const capabilities = await declared(entry.origin, actual)
-      if (capabilities.length === 0) continue
-      const active = await activeSchemaAfter(entry.origin)
-      if (active === undefined) continue
-      const changes = compareDependency(root.bundle.root, active.schema, capabilities, false)
-      if (changes === undefined) {
-        reads.unevaluated.add(root.origin)
-        continue
-      }
-      compared += 1
-      if (changes.length > 0) {
-        dependencies.push(
-          broken(root.origin, { origin: entry.origin, revision }, active.revision, changes),
-        )
+        dependencies.push({
+          origin: root.origin,
+          dependency: binding.origin,
+          expected: binding.revision,
+          actual: active.revision,
+          changes,
+        })
       }
     }
   }
@@ -307,15 +297,13 @@ export async function precheckInstall(
         }
         compared += 1
         if (changes.length === 0) continue
-        dependents.push(
-          Object.freeze({
-            domain: Object.freeze({ origin: entry.origin, revision: dependent.domain.revision }),
-            dependency: binding.origin,
-            expected: binding.pinned,
-            actual: root.release.schema.revision,
-            changes,
-          }),
-        )
+        dependents.push({
+          domain: { origin: entry.origin, revision: dependent.domain.revision },
+          dependency: binding.origin,
+          expected: binding.pinned,
+          actual: root.release.schema.revision,
+          changes,
+        })
         const direct = Object.values(dependent.bundle.root.dependencies).some(
           ({ origin }) => origin === binding.origin,
         )
@@ -325,14 +313,14 @@ export async function precheckInstall(
     }
   }
 
-  return Object.freeze({
+  return {
     compared,
-    dependencies: Object.freeze(dependencies),
-    dependents: Object.freeze(dependents),
-    skipped: Object.freeze(skipped),
-    unevaluated: Object.freeze([...reads.unevaluated].sort(compareText)),
+    dependencies,
+    dependents,
+    skipped,
+    unevaluated: [...reads.unevaluated].sort(compareText),
     indirect,
-  })
+  }
 }
 
 /**
@@ -394,90 +382,50 @@ function compareDependency(
     })
   } catch (cause) {
     if (!(cause instanceof schema.Error)) throw cause
-    const key = invalidCapability(cause)
+    const key = cause.diagnostics.find(({ code }) => code === 'DM_CAPABILITY_INVALID')?.ref
     // Any other refusal of the engine (a binding its retained context does not hold) is not a
     // verdict: the caller reports the Domain unevaluated.
     if (key === undefined) return undefined
-    return Object.freeze([Object.freeze({ key, kind: 'missing' as const })])
+    return [{ key, kind: 'missing' }]
   }
-  if (comparison.compatible) return Object.freeze([])
-  return Object.freeze(
-    comparison.assessments
-      .filter((assessment) => !assessment.satisfied)
-      .map(({ subject, observation }) =>
-        Object.freeze({
-          key: subject.key as string,
-          kind: observation.state as PrecheckChange['kind'],
-        }),
-      ),
-  )
-}
-
-function invalidCapability(cause: schema.Error): string | undefined {
-  return cause.diagnostics.find(({ code }) => code === 'DM_CAPABILITY_INVALID')?.ref
-}
-
-function broken(
-  origin: string,
-  dependency: { readonly origin: string; readonly revision: string },
-  actual: string,
-  changes: readonly PrecheckChange[],
-): BrokenDependency {
-  return Object.freeze({
-    origin,
-    dependency: dependency.origin,
-    expected: dependency.revision,
-    actual,
-    changes,
-  })
+  if (comparison.compatible) return []
+  return comparison.assessments
+    .filter((assessment) => !assessment.satisfied)
+    .map(({ subject, observation }) => ({
+      key: subject.key as string,
+      kind: observation.state as PrecheckChange['kind'],
+    }))
 }
 
 /**
  * The Kernel's introspection of the installed Domains, one read per origin and kind. A refused or
  * failed read marks the origin unevaluated instead of failing the pre-check.
  */
-class KernelReads {
-  readonly unevaluated = new Set<string>()
-  private readonly bundles = new Map<string, Promise<DomainBundle | undefined>>()
-  private readonly infos = new Map<
-    string,
-    Promise<Awaited<ReturnType<PrecheckKernel['inspect']>> | undefined>
-  >()
-  private readonly bindings = new Map<
-    string,
-    Promise<Awaited<ReturnType<PrecheckKernel['dependencies']>> | undefined>
-  >()
-
-  constructor(private readonly kernel: PrecheckKernel) {}
-
-  bundle(origin: string): Promise<DomainBundle | undefined> {
-    return this.read(this.bundles, origin, () => this.kernel.bundle(origin as Key.Origin))
-  }
-
-  inspect(origin: string) {
-    return this.read(this.infos, origin, () => this.kernel.inspect(origin as Key.Origin))
-  }
-
-  dependencies(origin: string) {
-    return this.read(this.bindings, origin, () => this.kernel.dependencies(origin as Key.Origin))
-  }
-
-  private read<Value>(
-    cache: Map<string, Promise<Value | undefined>>,
-    origin: string,
-    load: () => Promise<Value>,
-  ): Promise<Value | undefined> {
-    let read = cache.get(origin)
-    if (read === undefined) {
-      read = load().catch(() => {
-        this.unevaluated.add(origin)
-        return undefined
-      })
-      cache.set(origin, read)
+function kernelReads(kernel: PrecheckKernel) {
+  const unevaluated = new Set<string>()
+  const once = <Value>(load: (origin: Key.Origin) => Promise<Value>) => {
+    const reads = new Map<string, Promise<Value | undefined>>()
+    return (origin: string): Promise<Value | undefined> => {
+      let read = reads.get(origin)
+      if (read === undefined) {
+        read = load(origin as Key.Origin).catch(() => {
+          unevaluated.add(origin)
+          return undefined
+        })
+        reads.set(origin, read)
+      }
+      return read
     }
-    return read
+  }
+  return {
+    unevaluated,
+    bundle: once((origin) => kernel.bundle(origin)),
+    inspect: once((origin) => kernel.inspect(origin)),
+    dependencies: once((origin) => kernel.dependencies(origin)),
   }
 }
+
+type KernelReads = ReturnType<typeof kernelReads>
 
 /**
  * For each broken dependent, read its Publications in the registry and pick the highest stable
@@ -501,61 +449,47 @@ export async function proposeDependentVersions(
     }
     targets.set(dependent.domain.origin, list)
   }
-  return Object.freeze(
-    await Promise.all(
-      [...targets].map(async ([origin, upgraded]): Promise<DependentProposal> => {
-        let publications
+  return Promise.all(
+    [...targets].map(async ([origin, upgraded]): Promise<DependentProposal> => {
+      let publications
+      try {
+        publications = (await registry.index(origin)).publications
+      } catch (error) {
+        const { code } = registryFailure(error, 'read')
+        return code === 'REGISTRY_DOMAIN_NOT_FOUND'
+          ? { origin, kind: 'none' }
+          : { origin, kind: 'unread', code }
+      }
+      const candidates = publications.flatMap((entry) => {
         try {
-          publications = (await registry.index(origin)).publications
-        } catch (error) {
-          const { code } = registryFailure(error, 'read')
-          return code === 'REGISTRY_DOMAIN_NOT_FOUND'
-            ? Object.freeze({ origin, kind: 'none' as const })
-            : Object.freeze({ origin, kind: 'unread' as const, code })
+          // The registry names revisions as text; the selection compares them exactly.
+          const dependencies = entry.dependencies as readonly {
+            readonly origin: string
+            readonly revision: Revision
+          }[]
+          return [{ ...entry, version: acceptVersion(entry.version), dependencies }]
+        } catch {
+          return []
         }
-        const candidates = publications.flatMap((entry) => {
-          try {
-            return [
-              {
-                version: acceptVersion(entry.version),
-                yanked: entry.yanked,
-                url: entry.url,
-                // The registry names revisions as text; the selection compares them exactly.
-                dependencies: entry.dependencies as readonly {
-                  readonly origin: string
-                  readonly revision: Revision
-                }[],
-              },
-            ]
-          } catch {
-            return []
-          }
-        })
-        const [first, ...rest] = upgraded
-        const holding = candidates.filter((candidate) =>
-          rest.every((target) =>
-            candidate.dependencies.some(
-              (dependency) =>
-                dependency.origin === target.origin && dependency.revision === target.revision,
-            ),
+      })
+      const [first, ...rest] = upgraded
+      const holding = candidates.filter((candidate) =>
+        rest.every((target) =>
+          candidate.dependencies.some(
+            (dependency) =>
+              dependency.origin === target.origin && dependency.revision === target.revision,
           ),
-        )
-        // Every dependent listed here has at least one upgraded dependency.
-        const version = compatibleDependentVersion(holding, first!)
-        if (version === undefined) return Object.freeze({ origin, kind: 'none' as const })
-        const chosen = holding.find((candidate) => candidate.version === version)
-        const issuer = issuerChange(
-          installed.find((entry) => entry.origin === origin),
-          chosen?.url,
-        )
-        return Object.freeze({
-          origin,
-          kind: 'version' as const,
-          version,
-          ...(issuer === undefined ? {} : { issuer }),
-        })
-      }),
-    ),
+        ),
+      )
+      // Every dependent listed here has at least one upgraded dependency.
+      const version = compatibleDependentVersion(holding, first!)
+      if (version === undefined) return { origin, kind: 'none' }
+      const issuer = issuerChange(
+        installed.find((entry) => entry.origin === origin),
+        holding.find((candidate) => candidate.version === version)?.url,
+      )
+      return { origin, kind: 'version', version, ...(issuer === undefined ? {} : { issuer }) }
+    }),
   )
 }
 
@@ -570,7 +504,7 @@ function issuerChange(
   if (current === undefined || url === undefined) return undefined
   const to = urlOrigin(url)
   if (to === undefined || to === urlOrigin(current.issuer)) return undefined
-  return Object.freeze({ from: current.issuer, to })
+  return { from: current.issuer, to }
 }
 
 function urlOrigin(input: string): string | undefined {

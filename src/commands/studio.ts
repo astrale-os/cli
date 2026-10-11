@@ -8,7 +8,7 @@ import type { CommandDefinition } from '../program/index'
 import { AstraleError } from '../errors'
 import { materializeEmbeddedAssets } from '../lib/embedded-assets'
 import { findFreePort, portFree } from '../lib/port'
-import { run, spawnHandle } from '../lib/proc'
+import { openUrl, run, spawnHandle } from '../lib/proc'
 import { selfInvocation } from '../lib/self-invocation'
 import { fatal, log } from '../lib/terminal/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/terminal/output'
@@ -168,22 +168,6 @@ export async function awaitStudioReadiness(
     ])
   } finally {
     stop.abort()
-  }
-}
-
-function openBrowser(url: string): void {
-  // win32: `start` is a cmd.exe builtin, not a PATH executable — must go through
-  // `cmd /c start "" <url>` (the empty "" is the title arg `start` consumes).
-  const [cmd, args] =
-    process.platform === 'darwin'
-      ? ['open', [url]]
-      : process.platform === 'win32'
-        ? ['cmd', ['/c', 'start', '', url]]
-        : ['xdg-open', [url]]
-  try {
-    spawnHandle(cmd, args as string[], { stdio: 'ignore' }).unref()
-  } catch {
-    /* best-effort; headless ok */
   }
 }
 
@@ -379,6 +363,13 @@ Examples:
       }
       process.on('SIGINT', killAll)
       process.on('SIGTERM', killAll)
+      const serverEnv = {
+        ...process.env,
+        PORT: String(studioPort),
+        DOMAIN_STUDIO_HOST: '127.0.0.1',
+        [STUDIO_CLI_DESCRIPTOR_ENV]: cliDescriptor,
+        ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
+      }
 
       let serverChild: ChildProcess
       if (dev && viteBin) {
@@ -415,13 +406,9 @@ Examples:
               cwd: studioDir,
               detached: true,
               env: {
-                ...process.env,
+                ...serverEnv,
                 DOMAIN_STUDIO_DEV: '1',
                 VITE_URL: `http://127.0.0.1:${vitePort}`,
-                PORT: String(studioPort),
-                DOMAIN_STUDIO_HOST: '127.0.0.1',
-                [STUDIO_CLI_DESCRIPTOR_ENV]: cliDescriptor,
-                ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
               },
             },
           ),
@@ -440,14 +427,7 @@ Examples:
           spawnHandle(invocation.file, invocation.args, {
             cwd: workspaceDirectory,
             detached: true,
-            env: {
-              ...process.env,
-              DOMAIN_STUDIO_DIST: dist,
-              PORT: String(studioPort),
-              DOMAIN_STUDIO_HOST: '127.0.0.1',
-              [STUDIO_CLI_DESCRIPTOR_ENV]: cliDescriptor,
-              ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
-            },
+            env: { ...serverEnv, DOMAIN_STUDIO_DIST: dist },
           }),
           'server',
         )
@@ -497,7 +477,7 @@ Examples:
         log.dim(`  ${workspace}`)
         log.dim(`  → ${displayUrl}`)
       }
-      if (ready && opts.open === true) openBrowser(displayUrl)
+      if (ready && opts.open === true) openUrl(displayUrl)
 
       // Stay attached until the studio server ends; surface a non-zero code when a
       // child FAILURE (not a user Ctrl-C) drove the teardown.

@@ -17,16 +17,15 @@ import { validateName, validateUrl } from '../validation'
  * an instance whose audience equals `actual`, or reconfigure the IdP/bookmark.
  */
 export class IdpAudienceMismatchError extends Error {
-  readonly requested: string
-  readonly actual: string | undefined
+  override readonly name = 'IdpAudienceMismatchError'
 
-  constructor(requested: string, actual: string | undefined) {
+  constructor(
+    readonly requested: string,
+    readonly actual: string | undefined,
+  ) {
     super(
       `IdP minted an access token for audience ${actual ?? '(none)'} but ${requested} was required`,
     )
-    this.name = 'IdpAudienceMismatchError'
-    this.requested = requested
-    this.actual = actual
   }
 }
 
@@ -37,6 +36,7 @@ export class IdpAudienceMismatchError extends Error {
  * transient outage — the message string alone cannot.
  */
 export class OAuthTokenError extends Error {
+  override readonly name = 'OAuthTokenError'
   /** OAuth `error` code, e.g. `invalid_grant`. */
   readonly code?: string
   /** OAuth `error_description`. */
@@ -48,10 +48,7 @@ export class OAuthTokenError extends Error {
     super(
       `OAuth token request failed: ${args.description ?? args.code ?? `HTTP ${args.status ?? '?'}`}`,
     )
-    this.name = 'OAuthTokenError'
-    this.code = args.code
-    this.description = args.description
-    this.status = args.status
+    Object.assign(this, args)
   }
 }
 
@@ -194,18 +191,7 @@ export type TokenResponse = {
   [key: string]: unknown
 }
 
-type DeviceAuthorizationResponse = {
-  device_code: string
-  user_code?: string
-  verification_uri?: string
-  verification_uri_complete?: string
-  expires_in: number
-  interval?: number
-  message?: string
-  [key: string]: unknown
-}
-
-type IdpConfig = {
+export type IdpConfig = {
   name: string
   entry: IdpIndexEntry
   metadata: OidcMetadata
@@ -277,31 +263,22 @@ export async function readIdpConfigOrBuiltin(
   validateName(name, 'IdP')
   const store = await readIdpStore()
   if (store.idps[name]) return readIdpConfig(name)
-
-  const builtin = builtinIdpConfig(name, opts.clientId)
-  if (!builtin) {
+  if (name !== BUILTIN_WORKOS_IDP_NAME) {
     throw new Error(`IdP "${name}" not found. Run: astrale idp add ${name} --issuer <url>`)
   }
-  if (!opts.persist) return builtin
-  return upsertIdpConfig({
-    name: builtin.name,
-    metadata: builtin.metadata,
-    client: builtin.client,
-    builtIn: true,
-  })
+  const builtin = builtinWorkosConfig(opts.clientId)
+  return opts.persist ? upsertIdpConfig({ ...builtin, builtIn: true }) : builtin
 }
 
 export async function listIdpConfigs(): Promise<IdpConfig[]> {
   const store = await readIdpStore()
-  const entries = await Promise.all(
+  const configs = await Promise.all(
     Object.keys(store.idps).map((name) => readIdpConfig(name).catch(() => undefined)),
   )
-  const configs = entries.filter((entry): entry is IdpConfig => !!entry)
-  if (!store.idps[BUILTIN_WORKOS_IDP_NAME]) {
-    const workos = builtinIdpConfig(BUILTIN_WORKOS_IDP_NAME)
-    if (workos) configs.push(workos)
-  }
-  return configs
+  return [
+    ...configs.filter((config): config is IdpConfig => config !== undefined),
+    ...(store.idps[BUILTIN_WORKOS_IDP_NAME] ? [] : [builtinWorkosConfig()]),
+  ]
 }
 
 export async function upsertIdpConfig(args: {
@@ -363,11 +340,11 @@ export async function fetchOidcMetadata(issuer: string): Promise<OidcMetadata> {
 }
 
 export function workosAuthKitMetadata(
-  apiHost = 'https://api.workos.com',
+  apiHost = DEFAULT_WORKOS_API_HOST,
   clientId?: string,
 ): OidcMetadata {
   validateUrl(apiHost)
-  const base = apiHost.replace(/\/+$/, '')
+  const base = normalizeIssuer(apiHost)
   return OidcMetadataSchema.parse({
     issuer: base,
     authorization_endpoint: `${base}/user_management/authorize`,
@@ -379,19 +356,19 @@ export function workosAuthKitMetadata(
   })
 }
 
-function builtinIdpConfig(name: string, clientIdOverride?: string): IdpConfig | null {
-  if (name !== BUILTIN_WORKOS_IDP_NAME) return null
-  const clientId = clientIdOverride ?? workosClientIdFromEnv()
+/** The built-in WorkOS IdP, its client id from the override, the environment or the public CLI client. */
+function builtinWorkosConfig(clientIdOverride?: string): IdpConfig {
+  const clientId =
+    clientIdOverride ??
+    WORKOS_CLIENT_ID_ENV_NAMES.map((name) => process.env[name]?.trim()).find(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    ) ??
+    DEFAULT_WORKOS_CLIENT_ID
   const apiHost = process.env.WORKOS_API_HOSTNAME ?? DEFAULT_WORKOS_API_HOST
   const now = new Date().toISOString()
   return {
     name: BUILTIN_WORKOS_IDP_NAME,
-    entry: {
-      issuer: apiHost.replace(/\/+$/, ''),
-      builtIn: true,
-      createdAt: now,
-      updatedAt: now,
-    },
+    entry: { issuer: normalizeIssuer(apiHost), builtIn: true, createdAt: now, updatedAt: now },
     metadata: workosAuthKitMetadata(apiHost, clientId),
     client: {
       client_id: clientId,
@@ -400,15 +377,6 @@ function builtinIdpConfig(name: string, clientIdOverride?: string): IdpConfig | 
       token_request_format: 'json',
     },
   }
-}
-
-/** The WorkOS client id: WORKOS_CLIENT_ID, then VITE_WORKOS_CLIENT_ID, then the public CLI client. */
-function workosClientIdFromEnv(): string {
-  return (
-    WORKOS_CLIENT_ID_ENV_NAMES.map((name) => process.env[name]?.trim()).find(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    ) ?? DEFAULT_WORKOS_CLIENT_ID
-  )
 }
 
 async function fetchOAuthAuthorizationServerMetadata(
@@ -425,7 +393,7 @@ async function fetchOAuthAuthorizationServerMetadata(
 }
 
 /** A POST of `params` as a form, or as JSON for an IdP client that declares JSON token requests. */
-function post(params: URLSearchParams, idp?: IdpConfig): RequestInit {
+export function post(params: URLSearchParams, idp?: IdpConfig): RequestInit {
   return idp?.client.token_request_format === 'json'
     ? {
         method: 'POST',
@@ -497,18 +465,6 @@ function tokenExpiresAtFromJwt(token: string | undefined): string | undefined {
   return typeof claims?.exp === 'number' ? new Date(claims.exp * 1000).toISOString() : undefined
 }
 
-export function subjectFromToken(token: TokenResponse, fallback: string): string {
-  const claims = decodeTokenClaims(token.id_token ?? token.access_token)
-  const sub = claims?.sub
-  return typeof sub === 'string' && sub ? sub : (token.user?.id ?? fallback)
-}
-
-export function issuerFromToken(token: TokenResponse, fallback: string): string {
-  const claims = decodeTokenClaims(token.id_token ?? token.access_token)
-  const iss = claims?.iss
-  return typeof iss === 'string' && iss ? iss : fallback
-}
-
 export function normalizeTokenResponse(token: TokenResponse): TokenResponse {
   return {
     ...token,
@@ -550,19 +506,13 @@ export async function deleteIdpSession(identityName: string): Promise<void> {
 }
 
 export async function listIdpSessions(): Promise<IdpSession[]> {
-  const out: IdpSession[] = []
-  let entries: string[] = []
-  try {
-    entries = (await readdir(IDP_SESSIONS_DIR)).filter((entry) => entry.endsWith('.json'))
-  } catch {
-    return out
-  }
-  for (const entry of entries) {
-    const name = entry.replace(/\.json$/, '')
-    const session = await readIdpSession(name).catch(() => null)
-    if (session) out.push(session)
-  }
-  return out
+  const entries = await readdir(IDP_SESSIONS_DIR).catch(() => [] as string[])
+  const sessions = await Promise.all(
+    entries
+      .filter((entry) => entry.endsWith('.json'))
+      .map((entry) => readIdpSession(entry.slice(0, -'.json'.length)).catch(() => null)),
+  )
+  return sessions.filter((session): session is IdpSession => session !== null)
 }
 
 export function isSessionExpired(
@@ -640,7 +590,7 @@ export function requireClientId(idp: IdpConfig, override?: string): string {
   return clientId
 }
 
-function resolveClientSecret(idp: IdpConfig, overrideEnv?: string): string | undefined {
+export function resolveClientSecret(idp: IdpConfig, overrideEnv?: string): string | undefined {
   const envName = overrideEnv ?? idp.client.client_secret_env
   if (!envName) return undefined
   const secret = process.env[envName]
@@ -703,113 +653,6 @@ export async function refreshSession(
     )
   }
   return next
-}
-
-export async function requestClientCredentials(args: {
-  idp: IdpConfig
-  clientId?: string
-  clientSecretEnv?: string
-  scope?: string
-  audience?: string
-}): Promise<TokenResponse> {
-  const clientId = requireClientId(args.idp, args.clientId)
-  const secret = resolveClientSecret(args.idp, args.clientSecretEnv)
-  if (!secret) throw new Error('Client credentials flow requires a client secret env var')
-  const params = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: clientId,
-    client_secret: secret,
-  })
-  if (args.scope) params.set('scope', args.scope)
-  if (args.audience) params.set('audience', args.audience)
-  return postForm(args.idp.metadata.token_endpoint, params)
-}
-
-export async function requestDeviceAuthorization(args: {
-  idp: IdpConfig
-  clientId?: string
-  scope?: string
-  audience?: string
-}): Promise<DeviceAuthorizationResponse> {
-  const endpoint = args.idp.metadata.device_authorization_endpoint
-  if (!endpoint)
-    throw new Error(`IdP "${args.idp.name}" does not advertise device_authorization_endpoint`)
-  const params = new URLSearchParams({
-    client_id: requireClientId(args.idp, args.clientId),
-  })
-  if (args.scope) params.set('scope', args.scope)
-  if (args.audience) params.set('audience', args.audience)
-  const response = await fetch(endpoint, post(params, args.idp))
-  const body = (await response.json()) as DeviceAuthorizationResponse & {
-    error?: string
-    error_description?: string
-  }
-  if (!response.ok || body.error) {
-    throw new Error(
-      body.error_description ??
-        body.error ??
-        `Device authorization failed: HTTP ${response.status}`,
-    )
-  }
-  return body
-}
-
-export async function pollDeviceToken(args: {
-  idp: IdpConfig
-  deviceCode: string
-  clientId?: string
-  clientSecretEnv?: string
-  intervalSec?: number
-  expiresInSec: number
-}): Promise<TokenResponse> {
-  const clientId = requireClientId(args.idp, args.clientId)
-  const secret = resolveClientSecret(args.idp, args.clientSecretEnv)
-  let intervalMs = Math.max(args.intervalSec ?? 5, 1) * 1000
-  const deadline = Date.now() + args.expiresInSec * 1000
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, intervalMs))
-    const params = new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      device_code: args.deviceCode,
-      client_id: clientId,
-    })
-    if (secret) params.set('client_secret', secret)
-    const response = await fetch(args.idp.metadata.token_endpoint, post(params, args.idp))
-    const body = (await response.json()) as TokenResponse
-    const token = normalizeTokenResponse(body)
-    if (response.ok && token.access_token) return token
-    if (body.error === 'authorization_pending') continue
-    if (body.error === 'slow_down') {
-      intervalMs += 5_000
-      continue
-    }
-    throw new Error(
-      body.error_description ??
-        body.error ??
-        `Device token request failed: HTTP ${response.status}`,
-    )
-  }
-  throw new Error('Device authorization expired before completion')
-}
-
-export async function exchangeAuthorizationCode(args: {
-  idp: IdpConfig
-  code: string
-  redirectUri: string
-  codeVerifier?: string
-  clientId?: string
-  clientSecretEnv?: string
-}): Promise<TokenResponse> {
-  const params = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code: args.code,
-    redirect_uri: args.redirectUri,
-    client_id: requireClientId(args.idp, args.clientId),
-  })
-  if (args.codeVerifier) params.set('code_verifier', args.codeVerifier)
-  const secret = resolveClientSecret(args.idp, args.clientSecretEnv)
-  if (secret) params.set('client_secret', secret)
-  return postForm(args.idp.metadata.token_endpoint, params)
 }
 
 type WorkosApplication = {

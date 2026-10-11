@@ -25,7 +25,7 @@ import { checkIssuerReachability } from '../../lib/meta'
 import { canPrompt, type PromptGate } from '../../lib/terminal/interactive'
 import { fatal, log, withSpinner } from '../../lib/terminal/log'
 import { isMachine } from '../../lib/terminal/output'
-import { confirmDefaultYes, selectFrom } from '../../lib/terminal/prompt'
+import { confirmDefaultYes, promptSelect } from '../../lib/terminal/prompt'
 import { validateSlug } from '../../lib/validation'
 
 type UseOpts = {
@@ -212,16 +212,16 @@ function assertManagedReady(info: InstanceInfo): void {
   )
 }
 
-/** Returns null when the terminal cannot be asked — the caller then errors out. */
+/** Returns undefined when the terminal cannot be asked — the caller then errors out. */
 async function pickCandidate(
   name: string,
   candidates: InstanceCandidate[],
   gate: PromptGate,
-): Promise<InstanceCandidate | null> {
-  return selectFrom(
+): Promise<InstanceCandidate | undefined> {
+  return promptSelect(
     `Multiple instances match "${name}":`,
     candidates.map((candidate) => ({
-      label: describeInstanceCandidate(candidate),
+      name: describeInstanceCandidate(candidate),
       value: candidate,
     })),
     gate,

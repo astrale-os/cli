@@ -125,7 +125,9 @@ export async function promptText(
 
 /**
  * Single-choice selector (arrow-key `@inquirer/prompts` select). Returns the
- * chosen value, or `undefined` when not interactive.
+ * chosen value, or `undefined` when not interactive. In a terminal the user
+ * always picks one (Ctrl-C aborts the command), so `undefined` only ever
+ * signals "nobody to ask".
  */
 export async function promptSelect<T>(
   message: string,
@@ -148,26 +150,6 @@ export async function promptMultiSelect<T>(
 ): Promise<T[] | undefined> {
   if (!canPrompt(gate)) return undefined
   return ask(() => checkbox({ message, choices }, promptContext()))
-}
-
-/**
- * Single-choice selector over labeled values. Returns the chosen value, or
- * `null` when not interactive (callers decide how to fail). In a terminal the
- * user always picks one (Enter selects the highlighted option; Ctrl-C aborts
- * the command), so `null` only ever signals "nobody to ask".
- */
-export async function selectFrom<T>(
-  message: string,
-  choices: Array<{ label: string; value: T }>,
-  gate: PromptGate = {},
-): Promise<T | null> {
-  if (!canPrompt(gate)) return null
-  return ask(() =>
-    select(
-      { message, choices: choices.map((c) => ({ name: c.label, value: c.value })) },
-      promptContext(),
-    ),
-  )
 }
 
 /**

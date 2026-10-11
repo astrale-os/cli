@@ -126,6 +126,11 @@ describe('resolveInstanceTarget', () => {
       new AstraleError('TOKEN_EXCHANGE_SOURCE_INVALID', 'No valid expiration.'),
       'INSTANCE_NOT_FOUND',
     ],
+    [
+      'an unavailable Admin inventory',
+      new AstraleError('ADMIN_INVENTORY_UNAVAILABLE', 'No Admin.'),
+      'INSTANCE_NOT_FOUND',
+    ],
     ['any other failure', new AstraleError('PERMISSION_DENIED', 'Denied.'), 'PERMISSION_DENIED'],
   ])('a managed lookup answering %s reads as %s', async (_name, failure, code) => {
     const lookup = async (): Promise<never> => {

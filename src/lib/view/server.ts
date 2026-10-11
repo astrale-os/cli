@@ -1,5 +1,3 @@
-import type { AuthApi } from '@astrale-os/sdk/auth'
-import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { Credentials, SessionCredential } from '@astrale-os/sdk/client/session'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
@@ -106,28 +104,29 @@ export function startViewServer(
   let shutdownTask: Promise<void> | undefined
   const exit = dependencies.exit ?? ((code: number) => process.exit(code))
 
-  async function switchIdentity(identity: string): Promise<void> {
-    const kernel = { ...config.kernel, as: identity, creds: undefined }
-    const candidate = { ...config, kernel }
-    const view = await refreshViewPlacement(candidate, dependencies.connect)
-    const nextGrant = view.route.handshake === 'shell' ? await mintGrant(kernel, view) : null
-    await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, identity, view })
+  /**
+   * Re-resolve the View, as `identity` when one is given, and start a new revision. New providers
+   * are how the previous grants are invalidated: a mint still in flight for them can only ever
+   * settle into the provider that started it.
+   */
+  async function renew(identity?: string): Promise<void> {
+    const kernel =
+      identity === undefined ? config.kernel : { ...config.kernel, as: identity, creds: undefined }
+    const view = await refreshViewPlacement({ ...config, kernel }, dependencies.connect)
+    const grant =
+      identity !== undefined && view.route.handshake === 'shell'
+        ? await mintGrant(kernel, view)
+        : undefined
+    await (dependencies.persist ?? saveRecord)({
+      ...session,
+      pid: process.pid,
+      ...(identity === undefined ? {} : { identity }),
+      view,
+    })
     config.kernel = kernel
-    session.identity = identity
+    if (identity !== undefined) session.identity = identity
     session.view = view
-    // A new provider is how the previous identity's grant is invalidated: a mint still in flight
-    // for it can only ever settle into the provider that started it.
-    grants = createGrantProvider(nextGrant ?? undefined)
-    kernelGrants = createGrantProvider(undefined, false)
-    revision += 1
-    status = { state: 'waiting', at: new Date().toISOString() }
-  }
-
-  async function refresh(): Promise<void> {
-    const view = await refreshViewPlacement(config, dependencies.connect)
-    await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, view })
-    session.view = view
-    grants = createGrantProvider()
+    grants = createGrantProvider(grant)
     kernelGrants = createGrantProvider(undefined, false)
     revision += 1
     status = { state: 'waiting', at: new Date().toISOString() }
@@ -188,12 +187,12 @@ export function startViewServer(
           )
           return { ...exchanged, kind: 'exchanged' as const }
         }
-        const token = await mintViewCredential(auth, target.kernelIssuer)
-        return {
-          token,
-          expiresAt: mintedExpiry(token),
-          kind: 'minted' as const,
-        }
+        // A short-lived credential from the selected CLI identity proof.
+        const token = await auth.mint({
+          audience: target.kernelIssuer,
+          ttlSeconds: VIEW_TOKEN_TTL_SECONDS,
+        })
+        return { token, expiresAt: mintedExpiry(token), kind: 'minted' as const }
       },
       {
         principal: 'caller',
@@ -326,7 +325,7 @@ export function startViewServer(
       }
       switching = true
       try {
-        await switchIdentity(identity)
+        await renew(identity)
         json(res, 200, { revision })
       } finally {
         switching = false
@@ -367,7 +366,7 @@ export function startViewServer(
         return
       }
       // Concurrent requests share one resolution; a failed resolution retains the last good View.
-      refreshing ??= refresh().finally(() => {
+      refreshing ??= renew().finally(() => {
         refreshing = undefined
       })
       await refreshing
@@ -474,7 +473,7 @@ export function startViewServer(
       departure = undefined
     }
     process.off('SIGTERM', terminate)
-    process.off('SIGINT', interrupt)
+    process.off('SIGINT', terminate)
   }
   // Stop owning background work as soon as close is requested, even if an in-flight HTTP request
   // must finish before the close event. Closing a library-created server never exits its caller.
@@ -496,23 +495,11 @@ export function startViewServer(
     return shutdownTask
   }
   const terminate = () => void shutdown(0)
-  const interrupt = () => void shutdown(0)
   process.on('SIGTERM', terminate)
-  process.on('SIGINT', interrupt)
+  process.on('SIGINT', terminate)
 
   server.listen(session.port, '127.0.0.1')
   return server
-}
-
-/** Mint a short-lived credential from the selected CLI identity proof. */
-async function mintViewCredential(
-  auth: Pick<AuthApi, 'mint'>,
-  audience: IssuerId,
-): Promise<string> {
-  return auth.mint({
-    audience,
-    ttlSeconds: VIEW_TOKEN_TTL_SECONDS,
-  })
 }
 
 /**

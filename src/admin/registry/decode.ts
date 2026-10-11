@@ -38,22 +38,10 @@ const RETENTIONS: ReadonlySet<unknown> = new Set(['marked', 'failed', 'not-appli
 
 /** A Publication Node value read from Admin's graph. */
 export function observedPublication(node: Node): ObservedPublication {
-  const keys = AdminContract.properties.publication
   const props = node.props as Readonly<Record<string, unknown>>
   return Object.freeze({
     node: String(node.id),
-    summary: summary({
-      version: props[keys.version],
-      url: props[keys.deploymentUrl],
-      releaseDigest: props[keys.releaseDigest],
-      buildDigest: props[keys.buildDigest],
-      schemaRevision: props[keys.schemaRevision],
-      dependencies: props[keys.dependencies],
-      commit: props[keys.commit],
-      dirty: props[keys.dirty],
-      yankedAt: props[keys.yankedAt],
-      createdAt: props[keys.createdAt],
-    }),
+    summary: summary((field) => props[AdminContract.properties.publication[field]]),
   })
 }
 
@@ -69,21 +57,7 @@ export function publicationFromAdmin(input: unknown): ObservedPublication {
   } catch {
     throw invalid('Admin Publication id')
   }
-  return Object.freeze({
-    node,
-    summary: summary({
-      version: value.version,
-      url: value.deploymentUrl,
-      releaseDigest: value.releaseDigest,
-      buildDigest: value.buildDigest,
-      schemaRevision: value.schemaRevision,
-      dependencies: value.dependencies,
-      commit: value.commit,
-      dirty: value.dirty,
-      yankedAt: value.yankedAt,
-      createdAt: value.createdAt,
-    }),
-  })
+  return Object.freeze({ node, summary: summary((field) => value[field]) })
 }
 
 /** The published-and-verified state Admin answers `publish` with. */
@@ -200,43 +174,34 @@ function publicationVersion(input: unknown): string {
   }
 }
 
-function summary(input: {
-  readonly version: unknown
-  readonly url: unknown
-  readonly releaseDigest: unknown
-  readonly buildDigest: unknown
-  readonly schemaRevision: unknown
-  readonly dependencies: unknown
-  readonly commit: unknown
-  readonly dirty: unknown
-  readonly yankedAt: unknown
-  readonly createdAt: unknown
-}): PublicationSummaryV1 {
+/** A Publication summary from its fields, which Admin's graph and Methods name alike. */
+function summary(
+  read: (field: keyof typeof AdminContract.properties.publication) => unknown,
+): PublicationSummaryV1 {
   let version: string
   try {
-    version = acceptVersion(input.version)
+    version = acceptVersion(read('version'))
   } catch {
     throw invalid('Admin Publication version')
   }
-  if (
-    input.commit !== undefined &&
-    (typeof input.commit !== 'string' || !COMMIT.test(input.commit))
-  )
+  const commit = read('commit')
+  if (commit !== undefined && (typeof commit !== 'string' || !COMMIT.test(commit)))
     throw invalid('Admin Publication commit')
-  if (input.dirty !== undefined && input.dirty !== true)
-    throw invalid('Admin Publication dirty flag')
-  if (input.yankedAt !== undefined) string(input.yankedAt, 'Admin Publication yank time')
+  const dirty = read('dirty')
+  if (dirty !== undefined && dirty !== true) throw invalid('Admin Publication dirty flag')
+  const yankedAt = read('yankedAt')
+  if (yankedAt !== undefined) string(yankedAt, 'Admin Publication yank time')
   return Object.freeze({
     version,
-    url: string(input.url, 'Admin Publication deployment URL'),
-    releaseDigest: digest(input.releaseDigest, 'Admin Publication release digest'),
-    buildDigest: digest(input.buildDigest, 'Admin Publication build digest'),
-    schemaRevision: string(input.schemaRevision, 'Admin Publication schema revision'),
-    dependencies: dependencies(input.dependencies),
-    ...(input.commit === undefined ? {} : { commit: input.commit as string }),
-    dirty: input.dirty === true,
-    yanked: input.yankedAt !== undefined,
-    publishedAt: string(input.createdAt, 'Admin Publication creation time'),
+    url: string(read('deploymentUrl'), 'Admin Publication deployment URL'),
+    releaseDigest: digest(read('releaseDigest'), 'Admin Publication release digest'),
+    buildDigest: digest(read('buildDigest'), 'Admin Publication build digest'),
+    schemaRevision: string(read('schemaRevision'), 'Admin Publication schema revision'),
+    dependencies: dependencies(read('dependencies')),
+    ...(commit === undefined ? {} : { commit: commit as string }),
+    dirty: dirty === true,
+    yanked: yankedAt !== undefined,
+    publishedAt: string(read('createdAt'), 'Admin Publication creation time'),
   })
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -88,6 +88,42 @@ describe('auth token command', () => {
     } finally {
       await server.stop()
     }
+  })
+})
+
+describe('IdP configurations and sessions', () => {
+  test('a login persists the built-in WorkOS IdP, listed once beside configured IdPs', async () => {
+    const login = await runCli(tmp, [
+      'auth',
+      'login',
+      '--idp',
+      'workos',
+      '--client-credentials',
+      '--client-secret-env',
+      'UNSET_TEST_SECRET',
+      '--raw',
+    ])
+    expect(login.stderr).toContain('Client secret env var UNSET_TEST_SECRET is not set')
+    const index = JSON.parse(await readFile(join(tmp, 'idps', 'index.json'), 'utf8'))
+    expect(index.idps.workos).toMatchObject({ builtIn: true })
+    const listed = async () =>
+      JSON.parse((await runCli(tmp, ['idp', 'list', '--json'])).stdout).map(
+        ({ name }: { name: string }) => name,
+      )
+    expect(await listed()).toEqual(['workos'])
+    await writeIdp(tmp, 'https://idp.test')
+    expect(await listed()).toEqual(['test', 'workos'])
+
+    const unknown = await runCli(tmp, ['auth', 'login', '--idp', 'nowhere', '--raw'])
+    expect(unknown.exitCode).not.toBe(0)
+    expect(unknown.stderr).toContain('IdP "nowhere" not found')
+    const status = await runCli(tmp, ['auth', 'status', '--json'])
+    expect(JSON.parse(status.stdout)).toEqual([
+      expect.objectContaining({
+        name: 'alice',
+        session: expect.objectContaining({ cached: true }),
+      }),
+    ])
   })
 })
 

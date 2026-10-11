@@ -14,6 +14,7 @@ import {
   type AdminTargetCommandOpts,
 } from '../../lib/admin/target'
 import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance/bookmarks'
+import { ADMIN_UNREACHABLE_CODES } from '../../lib/instance/target'
 import { fatal, log, withSpinner } from '../../lib/terminal/log'
 import { isMachine, output, type RawOutputOpts } from '../../lib/terminal/output'
 import { renderTable } from '../../lib/terminal/table'
@@ -189,16 +190,6 @@ function formatBookmarkConnection(bookmark: Bookmark): string {
     .join(' · ')
 }
 
-const ADMIN_INVENTORY_CODES = new Set([
-  'TOKEN_EXCHANGE_SOURCE_INVALID',
-  'TOKEN_EXCHANGE_SOURCE_EXPIRED',
-  'TOKEN_EXCHANGE_UNSUPPORTED',
-  'TOKEN_EXCHANGE_DISCOVERY_FAILED',
-  'TOKEN_EXCHANGE_PROTOCOL_ERROR',
-  'TOKEN_EXCHANGE_INSECURE',
-  'ADMIN_DOMAIN_ISSUER_MISSING',
-])
-
 const BACKEND_UNAVAILABLE = 5001
 const ADMIN_INVENTORY_RETRY_DELAYS_MS = Object.freeze([100, 300, 900, 1_700])
 
@@ -239,7 +230,7 @@ function wait(milliseconds: number): Promise<void> {
 /** Explain why Admin inventory failed without confusing backend faults with absent deployment. */
 export function classifyAdminInventoryError(cause: unknown): AstraleError {
   const code = cause instanceof AstraleError ? cause.code : undefined
-  if (code !== undefined && ADMIN_INVENTORY_CODES.has(code)) {
+  if (code !== undefined && ADMIN_UNREACHABLE_CODES.has(code)) {
     return new AstraleError(
       'ADMIN_INVENTORY_UNAVAILABLE',
       'Managed instance listing needs the Admin Domain and an IdP-backed identity. Admin is not deployed in this environment.',

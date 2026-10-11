@@ -48,8 +48,10 @@ describe('instance creation catalogue ownership', () => {
     const { after, target, result, events } = await journey('existing-target')
     expect(after.active).toBe('dev')
     expect(target.url).toBe('https://dev.example.test/api')
+    // A managed bookmark names its Kernel URL as its issuer.
     expect(after.instances.prod).toMatchObject({
       url: 'https://prod.example.test/api',
+      issuer: 'https://prod.example.test/api',
       organizationId: 'org_fixture',
     })
     expect(result.access.status).toBe('completed')

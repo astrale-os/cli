@@ -8,7 +8,6 @@ import {
   promptText,
   promptYesNo,
   readPassphrase,
-  selectFrom,
 } from '../terminal/prompt'
 
 // The non-interactive branch IS the LLM / CI / piped case: every helper must resolve to its
@@ -27,7 +26,6 @@ test('a closed terminal never blocks: every prompt resolves to its default or no
   expect(await confirmWithInput('DANGER', 'crm.acme.dev', closed)).toBe(false)
   expect(await promptSelect('Pick', [{ name: 'a', value: 'a' }], closed)).toBeUndefined()
   expect(await promptMultiSelect('Pick', [{ name: 'a', value: 'a' }], closed)).toBeUndefined()
-  expect(await selectFrom('Pick', [{ label: 'a', value: 'a' }], closed)).toBeNull()
 })
 
 test('a passphrase comes from the environment, else refuses without a usable terminal', async () => {
