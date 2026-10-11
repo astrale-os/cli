@@ -29,59 +29,76 @@ type LogsOpts = KernelCommandOpts & {
   follow?: boolean
 }
 
-interface JournalRecord {
-  readonly sequence: number
-  readonly topic: string
-  readonly payload: unknown
-  readonly occurredAt: string
-  readonly committedAt?: string
-  /** Executor that authenticated the recorded operation (a Domain acting for a user included). */
-  readonly principal?: string
-  /**
-   * Identity whose authority the operation exercised, recorded only when it differs from the
-   * principal; absent on direct calls.
-   */
-  readonly caller?: string
-  readonly correlation?: JournalCorrelation
-}
-
-interface JournalCorrelation {
-  readonly operationId?: string
-  readonly parentOperationId?: string
-  readonly invocationId?: string
-  readonly rootInvocationId?: string
-  readonly parentInvocationId?: string
-  readonly traceId?: string
-  readonly spanId?: string
-}
+const text = z.string({ error: 'must be text' })
+const identifier = text.refine(
+  (value) => value.trim() !== '' && new TextEncoder().encode(value).byteLength <= 256,
+  { error: 'must be non-empty and at most 256 UTF-8 bytes' },
+)
 
 /** Journal generation and positions at the time of the read. `id` changes when the journal is recreated. */
-interface JournalFrontier {
-  readonly id: string
-  readonly first?: number
-  readonly committed: number
-  readonly durable: number
-}
+const JournalFrontierSchema = z.object({
+  id: z.string().refine((id) => id.trim() !== ''),
+  first: z.int().min(1).optional(),
+  committed: z.int().min(0),
+  durable: z.int().min(0),
+})
 
-/** Records the reader can no longer receive, or a cursor the Kernel refused. Never an ordinary empty page. */
-type JournalGap =
-  | { readonly kind: 'retention'; readonly frontier: JournalFrontier }
-  | {
-      readonly kind: 'recovery'
-      readonly from: number
-      readonly through: number
-      readonly frontier: JournalFrontier
-    }
-  | { readonly kind: 'generation'; readonly frontier: JournalFrontier }
-  | { readonly kind: 'cursor'; readonly reason: 'stale' | 'selection' | 'visibility' }
+/**
+ * The record fields the CLI presentation consumes. `principal` executed the recorded operation (a
+ * Domain acting for a user included); `caller`, whose authority it exercised, is recorded only when
+ * it differs from the principal and is absent on direct calls.
+ */
+const JournalRecordSchema = z.object({
+  sequence: z.int({ error: 'invalid' }),
+  occurredAt: z.string({
+    error: (issue) => (issue.input === undefined ? 'missing' : 'must be text'),
+  }),
+  topic: z.string({ error: 'invalid' }),
+  payload: z.unknown().optional(),
+  committedAt: text.optional(),
+  principal: text.optional(),
+  caller: text.optional(),
+  correlation: z
+    .strictObject(
+      {
+        operationId: identifier.optional(),
+        parentOperationId: identifier.optional(),
+        invocationId: identifier.optional(),
+        rootInvocationId: identifier.optional(),
+        parentInvocationId: identifier.optional(),
+        traceId: identifier.optional(),
+        spanId: identifier.optional(),
+      },
+      { error: 'must be an object' },
+    )
+    .optional(),
+})
 
 /** A page without a cursor reached the end of the selection. */
-interface JournalPage {
-  readonly records: readonly JournalRecord[]
-  readonly cursor?: string
-  readonly frontier?: JournalFrontier
-  readonly gap?: JournalGap
-}
+const JournalPageSchema = z.object({
+  records: z.array(JournalRecordSchema),
+  cursor: z.string().optional(),
+  frontier: JournalFrontierSchema.optional(),
+  /** Records the reader can no longer receive, or a cursor the Kernel refused. Never an ordinary empty page. */
+  gap: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal(['retention', 'generation']), frontier: JournalFrontierSchema }),
+      z
+        .object({
+          kind: z.literal('recovery'),
+          from: z.int().min(1),
+          through: z.int().min(1),
+          frontier: JournalFrontierSchema,
+        })
+        .refine((gap) => gap.through >= gap.from),
+      z.object({ kind: z.literal('cursor'), reason: z.enum(['stale', 'selection', 'visibility']) }),
+    ])
+    .optional(),
+})
+
+type JournalRecord = z.infer<typeof JournalRecordSchema>
+type JournalPage = z.infer<typeof JournalPageSchema>
+type JournalGap = NonNullable<JournalPage['gap']>
 
 interface JournalInput {
   readonly topics?: { readonly exact?: readonly string[]; readonly prefixes?: readonly string[] }
@@ -144,21 +161,25 @@ function cursorFlag(raw: string): string {
 
 /** Validate the record fields the CLI presentation consumes and retain the cursor, frontier and gap. */
 export function acceptJournalPage(input: unknown): JournalPage {
-  if (!isRecord(input) || !Array.isArray(input.records)) {
-    throw new TypeError('Kernel journal response must contain a records array')
+  const page = JournalPageSchema.safeParse(input)
+  if (page.success) return page.data
+  const [issue] = page.error.issues
+  const [section, index, ...field] = issue!.path
+  if (section !== 'records' || typeof index !== 'number') {
+    throw new TypeError(
+      section === undefined || section === 'records'
+        ? 'Kernel journal response must contain a records array'
+        : `Kernel journal ${String(section)} ${section === 'cursor' ? 'must be text' : 'is invalid'}`,
+    )
   }
-  const records = input.records.map((record, index) => acceptRecord(record, index))
-  if (input.cursor !== undefined && typeof input.cursor !== 'string') {
-    throw new TypeError('Kernel journal cursor must be text')
+  const record = `Kernel journal record ${index}`
+  if (issue!.code === 'unrecognized_keys') {
+    throw new TypeError(`${record}.${[...field, issue!.keys[0]].join('.')} is unsupported`)
   }
-  return Object.freeze({
-    records: Object.freeze(records),
-    ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-    ...(input.frontier === undefined
-      ? {}
-      : { frontier: acceptFrontier(input.frontier, 'frontier') }),
-    ...(input.gap === undefined ? {} : { gap: acceptGap(input.gap) }),
-  })
+  if (field.length === 0 || issue!.message === 'invalid')
+    throw new TypeError(`${record} is invalid`)
+  if (issue!.message === 'missing') throw new TypeError(`${record} is missing ${field.join('.')}`)
+  throw new TypeError(`${record}.${field.join('.')} ${issue!.message}`)
 }
 
 /** One sentence naming what the reader lost or why its cursor was refused. */
@@ -196,10 +217,7 @@ function effectiveCaller(record: JournalRecord): string | undefined {
 export function selectCallerRecords(page: JournalPage, caller: string | undefined): JournalPage {
   const wanted = nonEmpty(caller)
   if (wanted === undefined) return page
-  return Object.freeze({
-    ...page,
-    records: Object.freeze(page.records.filter((record) => effectiveCaller(record) === wanted)),
-  })
+  return { ...page, records: page.records.filter((record) => effectiveCaller(record) === wanted) }
 }
 
 async function fetchPage(context: ConnectionContext, opts: LogsOpts): Promise<JournalPage> {
@@ -319,18 +337,14 @@ function journalProjection(records: JournalRecord[]): ListProjection {
 }
 
 function printRecord(record: JournalRecord, opts: LogsOpts): void {
+  // Machine follow is an NDJSON stream: one complete admitted record per line.
   if (isMachine(opts) || opts.format === 'json') {
-    process.stdout.write(formatFollowRecord(record))
+    process.stdout.write(`${JSON.stringify(record)}\n`)
     return
   }
   process.stdout.write(
     `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.occurredAt)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')} ${chalk.dim(effectiveCaller(record) ?? '')}\n`,
   )
-}
-
-/** Machine follow is an NDJSON stream: one complete admitted record per line. */
-function formatFollowRecord(record: JournalRecord): string {
-  return `${JSON.stringify(record)}\n`
 }
 
 function validateLogsOpts(opts: LogsOpts): void {
@@ -340,144 +354,9 @@ function validateLogsOpts(opts: LogsOpts): void {
   }
 }
 
-function acceptRecord(input: unknown, index: number): JournalRecord {
-  if (
-    !isRecord(input) ||
-    !Number.isSafeInteger(input.sequence) ||
-    typeof input.topic !== 'string'
-  ) {
-    throw new TypeError(`Kernel journal record ${index} is invalid`)
-  }
-  const occurredAt = optionalText(input.occurredAt, index, 'occurredAt')
-  if (occurredAt === undefined) {
-    throw new TypeError(`Kernel journal record ${index} is missing occurredAt`)
-  }
-  const correlation = acceptCorrelation(input.correlation, index)
-  const principal = optionalText(input.principal, index, 'principal')
-  const caller = optionalText(input.caller, index, 'caller')
-  return Object.freeze({
-    sequence: input.sequence as number,
-    occurredAt,
-    topic: input.topic,
-    payload: input.payload,
-    ...(optionalText(input.committedAt, index, 'committedAt') === undefined
-      ? {}
-      : { committedAt: input.committedAt as string }),
-    ...(principal === undefined ? {} : { principal }),
-    ...(caller === undefined ? {} : { caller }),
-    ...(correlation === undefined ? {} : { correlation }),
-  })
-}
-
-const correlationFields = [
-  'operationId',
-  'parentOperationId',
-  'invocationId',
-  'rootInvocationId',
-  'parentInvocationId',
-  'traceId',
-  'spanId',
-] as const
-
-function acceptCorrelation(input: unknown, index: number): JournalCorrelation | undefined {
-  if (input === undefined) return undefined
-  if (!isRecord(input)) {
-    throw new TypeError(`Kernel journal record ${index}.correlation must be an object`)
-  }
-  const unknown = Object.keys(input).find(
-    (field) => !correlationFields.includes(field as (typeof correlationFields)[number]),
-  )
-  if (unknown !== undefined) {
-    throw new TypeError(`Kernel journal record ${index}.correlation.${unknown} is unsupported`)
-  }
-  return Object.freeze(
-    Object.fromEntries(
-      correlationFields.flatMap((field) => {
-        const value = optionalIdentifier(input[field], index, `correlation.${field}`)
-        return value === undefined ? [] : [[field, value]]
-      }),
-    ),
-  )
-}
-
-function acceptFrontier(input: unknown, field: string): JournalFrontier {
-  if (
-    !isRecord(input) ||
-    typeof input.id !== 'string' ||
-    input.id.trim() === '' ||
-    !isPosition(input.committed) ||
-    !isPosition(input.durable) ||
-    (input.first !== undefined && !isSequence(input.first))
-  ) {
-    throw new TypeError(`Kernel journal ${field} is invalid`)
-  }
-  return Object.freeze({
-    id: input.id,
-    ...(input.first === undefined ? {} : { first: input.first as number }),
-    committed: input.committed as number,
-    durable: input.durable as number,
-  })
-}
-
-const cursorGapReasons = ['stale', 'selection', 'visibility'] as const
-
-function acceptGap(input: unknown): JournalGap {
-  if (isRecord(input)) {
-    const reason = cursorGapReasons.find((candidate) => candidate === input.reason)
-    if (input.kind === 'cursor' && reason !== undefined) {
-      return Object.freeze({ kind: 'cursor', reason })
-    }
-    if (input.kind === 'retention' || input.kind === 'generation') {
-      return Object.freeze({ kind: input.kind, frontier: acceptFrontier(input.frontier, 'gap') })
-    }
-    if (
-      input.kind === 'recovery' &&
-      isSequence(input.from) &&
-      isSequence(input.through) &&
-      input.through >= input.from
-    ) {
-      return Object.freeze({
-        kind: 'recovery',
-        from: input.from,
-        through: input.through,
-        frontier: acceptFrontier(input.frontier, 'gap'),
-      })
-    }
-  }
-  throw new TypeError('Kernel journal gap is invalid')
-}
-
-function isPosition(input: unknown): input is number {
-  return Number.isSafeInteger(input) && (input as number) >= 0
-}
-
-function isSequence(input: unknown): input is number {
-  return Number.isSafeInteger(input) && (input as number) >= 1
-}
-
-function optionalIdentifier(input: unknown, index: number, field: string): string | undefined {
-  const value = optionalText(input, index, field)
-  if (value === undefined) return undefined
-  if (value.trim() === '' || new TextEncoder().encode(value).byteLength > 256) {
-    throw new TypeError(
-      `Kernel journal record ${index}.${field} must be non-empty and at most 256 UTF-8 bytes`,
-    )
-  }
-  return value
-}
-
-function optionalText(input: unknown, index: number, field: string): string | undefined {
-  if (input === undefined) return undefined
-  if (typeof input !== 'string') {
-    throw new TypeError(`Kernel journal record ${index}.${field} must be text`)
-  }
-  return input
-}
-
 function positiveInteger(flag: string, raw: string): number {
-  if (!/^\d+$/.test(raw)) throw new TypeError(`${flag} must be a positive integer`)
   const value = Number.parseInt(raw, 10)
-  if (!Number.isSafeInteger(value) || value <= 0) {
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value <= 0) {
     throw new TypeError(`${flag} must be a positive integer`)
   }
   return value
@@ -499,10 +378,6 @@ async function resolveLogsOpts(opts: LogsOpts, context: ConnectionContext): Prom
 function nonEmpty(input: string | undefined): string | undefined {
   const value = input?.trim()
   return value ? value : undefined
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return input !== null && typeof input === 'object' && !Array.isArray(input)
 }
 
 export default {
