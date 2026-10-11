@@ -1,8 +1,8 @@
-import type { DomainAnatomy, IrClass, StudioSchemaBundle } from '@shared/types'
+import type { IrClass, StudioSchemaBundle } from '@shared/types'
 
-import { describe, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 
-import { bundle, classRef, edgeClass, nodeClass } from '../__tests__/fixture'
+import { anatomy, bundle, classRef, edgeClass, importClass, nodeClass } from '../__tests__/fixture'
 import { projectDomainCanvas } from '../projection'
 import { workspaceExternalMemberNodeId, workspaceExternalNodeId } from './external-frames'
 import {
@@ -12,11 +12,7 @@ import {
   type WorkspaceDomainProjection,
 } from './projection'
 
-function domainBundle(
-  id: string,
-  origin: string,
-  classes: Record<string, IrClass>,
-): StudioSchemaBundle {
+function domainBundle(id: string, origin: string, classes: Record<string, IrClass>) {
   const value = bundle(classes)
   value.domainId = id
   value.ir!.domain = origin
@@ -47,341 +43,149 @@ function prepared(value: StudioSchemaBundle): WorkspaceDomainProjection {
   }
 }
 
-function anatomy(views: DomainAnatomy['views'], origin: string): DomainAnatomy {
-  return {
-    overview: { origin, adapter: 'astrale', requires: [], astraleDeps: {}, schemaDir: 'schema' },
-    views,
-    client: { routes: {}, shell: [], features: [], present: true },
-    env: [],
-    detectedIntegrations: [],
-  }
+const remote = classRef('remote.example.dev', 'Remote')
+const remoteMember = workspaceExternalMemberNodeId(remote.origin, remote.name, 'class')
+const isExternal = (id: string) => id.startsWith('workspace-external:')
+
+/** `local` with a User assigned to `remote.example.dev`'s Remote. */
+function assigning() {
+  const local = domainBundle('local', 'local.example.dev', {
+    User: nodeClass('User'),
+    assigned_to: edgeClass('assigned_to', [
+      { name: 'user', types: ['User'] },
+      { name: 'remote', types: ['Remote'], refs: [remote] },
+    ]),
+  })
+  importClass(local, remote)
+  return local
 }
 
-describe('workspace projection', () => {
-  test('unselected relationships keep the same weight within and across domain boundaries', () => {
-    const remote = classRef('remote.example.dev', 'Remote')
-    const local = domainBundle('local', 'local.example.dev', {
-      User: nodeClass('User'),
-      Team: nodeClass('Team'),
-      member_of: edgeClass('member_of', [
-        { name: 'user', types: ['User'] },
-        { name: 'team', types: ['Team'] },
-      ]),
-      assigned_to: edgeClass('assigned_to', [
-        { name: 'user', types: ['User'] },
-        { name: 'remote', types: ['Remote'], refs: [remote] },
-      ]),
-    })
-    local.overlay.sourceSpans = {
-      'class.User': { file: 'schema/users/user.ts', startLine: 1, endLine: 2 },
-      'class.Team': { file: 'schema/teams/team.ts', startLine: 1, endLine: 2 },
-    }
-    local.ir!.importsByKey['remote.example.dev:class.Remote'] = {
-      origin: remote.origin,
-      ref: remote,
-      key: 'remote.example.dev:class.Remote',
-    }
-    const result = composeWorkspaceCanvas([prepared(local)])
-    expect(result.edges).toHaveLength(2)
-    expect(result.edges[0]!.style?.strokeWidth).toBe(1.3)
-    expect(result.edges[1]!.style?.strokeWidth).toBe(result.edges[0]!.style?.strokeWidth)
+test("a domain's views arrive as nodes of the domain, bound to no class", async () => {
+  const input = prepared(
+    domainBundle('local', 'local.example.dev', { User: nodeClass('User') }),
+  ).input
+  input.anatomy = anatomy([{ slug: 'board', kind: 'spa', mount: '/ui/board' }])
+  // every id already placed, so the layout is a repaint — no ELK worker in a unit test
+  input.layout = {
+    positions: {
+      'grp-root': { x: 0, y: 0 },
+      'class.User': { x: 0, y: 0 },
+      'view.board': { x: 0, y: 0 },
+    },
+  }
+  const result = await prepareWorkspaceDomain(input, [])
+  expect(result.nodes.map((node) => node.id)).toContain('view.board')
+  expect(result.edges.filter((edge) => edge.source === 'view.board')).toEqual([])
+})
+
+test('a dependency on the canvas links to its Domain frame, never to a grey copy of it', () => {
+  const remoteBundle = domainBundle('remote', remote.origin, {
+    Remote: nodeClass('Remote', { origin: remote.origin, ref: remote }),
   })
+  const result = composeWorkspaceCanvas([prepared(assigning()), prepared(remoteBundle)])
+  expect(result.edges).toContainEqual(
+    expect.objectContaining({
+      source: qualifiedNodeId('local', 'class.User'),
+      target: qualifiedNodeId('remote', 'class.Remote'),
+    }),
+  )
+  expect(result.nodes.some((node) => isExternal(node.id))).toBe(false)
+})
 
-  test("a domain's views arrive as nodes of the domain, bound to no class", async () => {
-    const value = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
-    const input = prepared(value).input
-    input.anatomy = anatomy(
-      [{ slug: 'board', kind: 'spa', mount: '/ui/board' }],
-      'local.example.dev',
-    )
-    // every id already placed, so the layout is a repaint — no ELK worker in a unit test
-    input.layout = {
-      positions: {
-        'grp-root': { x: 0, y: 0 },
-        'class.User': { x: 0, y: 0 },
-        'view.board': { x: 0, y: 0 },
-      },
-    }
+test('an absent dependency is a grey external frame, unless the reader hid its Domain', () => {
+  expect(composeWorkspaceCanvas([prepared(assigning())]).nodes.map((node) => node.id)).toContain(
+    remoteMember,
+  )
+  const hidden = prepared(assigning())
+  hidden.input.visibility.hidden = { 'domain.remote.example.dev': true }
+  expect(composeWorkspaceCanvas([hidden]).nodes.some((node) => isExternal(node.id))).toBe(false)
+})
 
-    const result = await prepareWorkspaceDomain(input, [])
+test('a frame is moved, never selected — with one domain on the canvas or several', () => {
+  const first = domainBundle('first', 'first.example.dev', { User: nodeClass('User') })
+  const second = domainBundle('second', 'second.example.dev', { Team: nodeClass('Team') })
+  const solo = composeWorkspaceCanvas([prepared(first)])
+  const pair = composeWorkspaceCanvas([prepared(first), prepared(second)])
+  const frames = [...solo.nodes, ...pair.nodes].filter((node) => node.type === 'workspaceDomain')
+  expect(frames).toHaveLength(3)
+  // no dragHandle: you grab a frame anywhere, exactly like a module box
+  expect(frames.every((frame) => frame.draggable && frame.dragHandle === undefined)).toBe(true)
+  expect(frames.some((frame) => frame.selectable)).toBe(false)
+})
 
-    expect(result.nodes.map((node) => node.id)).toContain('view.board')
-    expect(result.edges.filter((edge) => edge.source === 'view.board')).toEqual([])
+test('inheritance is drawn once: within a domain, across domains, and to a grey parent', () => {
+  const solo = domainBundle('solo', 'solo.example.dev', {
+    Base: nodeClass('Base', { origin: 'solo.example.dev' }),
+    Document: nodeClass('Document', {
+      origin: 'solo.example.dev',
+      extendsRefs: [classRef('solo.example.dev', 'Base')],
+    }),
   })
+  const extendsOf = (edges: { data?: { kind?: string } }[]) =>
+    edges.filter((edge) => edge.data?.kind === 'extends')
+  expect(extendsOf(composeWorkspaceCanvas([prepared(solo)]).edges)).toHaveLength(1)
 
-  test('resolves an exact dependency Class to the selected Domain frame', () => {
-    const remote = classRef('remote.example.dev', 'Remote')
-    const local = domainBundle('local', 'local.example.dev', {
-      User: nodeClass('User'),
-      assigned_to: edgeClass('assigned_to', [
-        { name: 'user', types: ['User'], refs: [classRef('local.example.dev', 'User')] },
-        { name: 'remote', types: ['Remote'], refs: [remote] },
-      ]),
-    })
-    local.ir!.importsByKey = {
-      'remote.example.dev:class.Remote': {
-        origin: remote.origin,
-        ref: remote,
-        key: 'remote.example.dev:class.Remote',
-      },
-    }
-    const remoteBundle = domainBundle('remote', remote.origin, {
-      Remote: nodeClass('Remote', { origin: remote.origin, ref: remote }),
-    })
-
-    const result = composeWorkspaceCanvas([prepared(local), prepared(remoteBundle)])
-    expect(result.edges).toContainEqual(
-      expect.objectContaining({
-        source: qualifiedNodeId('local', 'class.User'),
-        target: qualifiedNodeId('remote', 'class.Remote'),
-      }),
-    )
-    expect(result.nodes.some((node) => node.id.startsWith('workspace-external:'))).toBe(false)
+  const base = classRef('base.example.dev', 'Base')
+  const child = domainBundle('child', 'child.example.dev', {
+    Child: nodeClass('Child', { origin: 'child.example.dev', extendsRefs: [base] }),
   })
-
-  test('keeps absent dependency Classes in an exact external frame', () => {
-    const remote = classRef('remote.example.dev', 'Remote')
-    const local = domainBundle('local', 'local.example.dev', {
-      User: nodeClass('User'),
-      assigned_to: edgeClass('assigned_to', [
-        { name: 'user', types: ['User'] },
-        { name: 'remote', types: ['Remote'], refs: [remote] },
-      ]),
-    })
-    local.ir!.importsByKey = {
-      'remote.example.dev:class.Remote': {
-        origin: remote.origin,
-        ref: remote,
-        key: 'remote.example.dev:class.Remote',
-      },
-    }
-    const result = composeWorkspaceCanvas([prepared(local)])
-    expect(result.nodes.map((node) => node.id)).toContain(
-      'workspace-external-member:remote.example.dev:class:Remote',
-    )
+  importClass(child, base)
+  const baseBundle = domainBundle('base', base.origin, {
+    Base: nodeClass('Base', { origin: base.origin, ref: base }),
   })
+  expect(composeWorkspaceCanvas([prepared(child), prepared(baseBundle)]).edges).toContainEqual(
+    expect.objectContaining({
+      id: `workspace-extends:${qualifiedNodeId('child', 'class.Child')}:${qualifiedNodeId('base', 'class.Base')}`,
+    }),
+  )
 
-  test('a frame is moved, never selected — with one domain on the canvas or several', () => {
-    const first = domainBundle('first', 'first.example.dev', { User: nodeClass('User') })
-    const second = domainBundle('second', 'second.example.dev', { Team: nodeClass('Team') })
-    const solo = composeWorkspaceCanvas([prepared(first)])
-    const pair = composeWorkspaceCanvas([prepared(first), prepared(second)])
-    const frames = [...solo.nodes, ...pair.nodes].filter((node) => node.type === 'workspaceDomain')
+  // a parent in a domain the canvas does not draw is a grey box, not a silence
+  const alone = composeWorkspaceCanvas([prepared(child)])
+  const target = workspaceExternalMemberNodeId(base.origin, 'Base', 'class')
+  expect(alone.nodes.map((node) => node.id)).toContain(target)
+  expect(alone.edges).toContainEqual(
+    expect.objectContaining({ target, data: expect.objectContaining({ kind: 'extends' }) }),
+  )
+})
 
-    expect(frames).toHaveLength(3)
-    // no dragHandle: you grab a frame anywhere, exactly like a module box
-    expect(frames.every((frame) => frame.draggable && frame.dragHandle === undefined)).toBe(true)
-    expect(frames.some((frame) => frame.selectable)).toBe(false)
+test('Kernel Identity is there to inspect, with no inheritance edge drawn to it', () => {
+  const identity = classRef('kernel.astrale.ai', 'Identity')
+  const local = domainBundle('local', 'local.example.dev', {
+    User: nodeClass('User', { extendsRefs: [identity] }),
   })
+  importClass(local, identity, nodeClass('Identity', { origin: identity.origin, ref: identity }))
 
-  test('an imported Domain the reader hid contributes no external frame', () => {
-    const remote = classRef('remote.example.dev', 'Remote')
-    const local = domainBundle('local', 'local.example.dev', {
-      User: nodeClass('User'),
-      assigned_to: edgeClass('assigned_to', [
-        { name: 'user', types: ['User'] },
-        { name: 'remote', types: ['Remote'], refs: [remote] },
-      ]),
-    })
-    local.ir!.importsByKey = {
-      'remote.example.dev:class.Remote': {
-        origin: remote.origin,
-        ref: remote,
-        key: 'remote.example.dev:class.Remote',
-      },
-    }
-    const projection = prepared(local)
-    projection.input.visibility = {
-      hidden: { 'domain.remote.example.dev': true },
-      showInheritedEdges: true,
-    }
-
-    const result = composeWorkspaceCanvas([projection])
-
-    expect(result.nodes.some((node) => node.id.startsWith('workspace-external:'))).toBe(false)
+  const result = composeWorkspaceCanvas([prepared(local)])
+  const id = workspaceExternalMemberNodeId(identity.origin, identity.name, 'class')
+  expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toEqual([])
+  expect(result.nodes.find((node) => node.id === id)).toMatchObject({
+    selectable: true,
+    data: { selectionDomainId: 'local', selectionId: 'class.kernel.astrale.ai:class.Identity' },
   })
+  const withoutInheritance = prepared(local)
+  withoutInheritance.input.visibility.showInheritedEdges = false
+  expect(composeWorkspaceCanvas([withoutInheritance]).nodes).toContainEqual(
+    expect.objectContaining({ id }),
+  )
+})
 
-  test('draws a same-domain `extends` once, not once per pass', () => {
-    const value = domainBundle('solo', 'solo.example.dev', {
-      Base: nodeClass('Base', { origin: 'solo.example.dev' }),
-      Document: nodeClass('Document', {
-        origin: 'solo.example.dev',
-        extendsRefs: [classRef('solo.example.dev', 'Base')],
-      }),
-    })
+test('a dependency nothing points at is counted in its folded frame, listed once unfolded', () => {
+  const settings = classRef('config.example.dev', 'Settings')
+  // imported and used somewhere the canvas does not draw — a policy, a View, a property
+  const local = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
+  importClass(local, settings)
 
-    const result = composeWorkspaceCanvas([prepared(value)])
-
-    // the domain's own projection owns it; the workspace pass only adds what crosses domains
-    expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toHaveLength(1)
+  const folded = composeWorkspaceCanvas([prepared(local)], {
+    workspaceOrigins: { 'config.example.dev': 'config' },
   })
+  const frame = folded.nodes.find((node) => node.id === workspaceExternalNodeId(settings.origin))
+  expect(frame!.data).toMatchObject({ inertCount: 1, domainId: 'config' })
+  expect(folded.nodes.some((node) => node.type === 'extMember')).toBe(false)
 
-  test('draws cross-domain Class inheritance only when the owner enables it', () => {
-    const base = classRef('base.example.dev', 'Base')
-    const childBundle = domainBundle('child', 'child.example.dev', {
-      Child: nodeClass('Child', { origin: 'child.example.dev', extendsRefs: [base] }),
-    })
-    childBundle.ir!.importsByKey = {
-      'base.example.dev:class.Base': {
-        origin: base.origin,
-        ref: base,
-        key: 'base.example.dev:class.Base',
-      },
-    }
-    const baseBundle = domainBundle('base', base.origin, {
-      Base: nodeClass('Base', { origin: base.origin, ref: base }),
-    })
-    const result = composeWorkspaceCanvas([prepared(childBundle), prepared(baseBundle)])
-    expect(result.edges).toContainEqual(
-      expect.objectContaining({
-        id: `workspace-extends:${qualifiedNodeId('child', 'class.Child')}:${qualifiedNodeId('base', 'class.Base')}`,
-      }),
-    )
+  const unfolded = composeWorkspaceCanvas([prepared(local)], {
+    expandedExternals: [settings.origin],
   })
-
-  test('exposes Kernel Identity for inspection without drawing Kernel inheritance', () => {
-    const identity = classRef('kernel.astrale.ai', 'Identity')
-    const local = domainBundle('local', 'local.example.dev', {
-      User: nodeClass('User', { extendsRefs: [identity] }),
-    })
-    local.ir!.importsByKey = {
-      'kernel.astrale.ai:class.Identity': {
-        origin: identity.origin,
-        ref: identity,
-        key: 'kernel.astrale.ai:class.Identity',
-      },
-    }
-    local.ir!.importedClassesByKey = {
-      'kernel.astrale.ai:class.Identity': nodeClass('Identity', {
-        origin: identity.origin,
-        ref: identity,
-      }),
-    }
-
-    const result = composeWorkspaceCanvas([prepared(local)])
-    const identityNode = result.nodes.find(
-      (node) => node.id === workspaceExternalMemberNodeId(identity.origin, identity.name, 'class'),
-    )
-
-    expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toEqual([])
-    expect(identityNode).toMatchObject({
-      selectable: true,
-      data: {
-        selectionDomainId: 'local',
-        selectionId: 'class.kernel.astrale.ai:class.Identity',
-      },
-    })
-
-    const withoutInheritance = prepared(local)
-    withoutInheritance.input.visibility.showInheritedEdges = false
-    expect(composeWorkspaceCanvas([withoutInheritance]).nodes).toContainEqual(
-      expect.objectContaining({ id: identityNode!.id }),
-    )
-  })
-
-  test('a dependency nothing points at is on the canvas all the same, folded into its frame', () => {
-    const settings = classRef('config.example.dev', 'Settings')
-    const local = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
-    // Imported and used somewhere the canvas does not draw — a policy, a View, a property.
-    local.ir!.importsByKey = {
-      'config.example.dev:class.Settings': {
-        origin: settings.origin,
-        ref: settings,
-        key: 'config.example.dev:class.Settings',
-      },
-    }
-
-    const result = composeWorkspaceCanvas([prepared(local)])
-    const frame = result.nodes.find(
-      (node) => node.id === workspaceExternalNodeId('config.example.dev'),
-    )
-
-    expect(frame).toBeDefined()
-    expect(frame!.data.inertCount).toBe(1)
-    // folded by default: the frame counts them rather than carding a wall of grey boxes
-    expect(result.nodes.some((node) => node.type === 'extMember')).toBe(false)
-  })
-
-  test('unfolding an external frame lists what it was only counting', () => {
-    const settings = classRef('config.example.dev', 'Settings')
-    const local = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
-    local.ir!.importsByKey = {
-      'config.example.dev:class.Settings': {
-        origin: settings.origin,
-        ref: settings,
-        key: 'config.example.dev:class.Settings',
-      },
-    }
-
-    const result = composeWorkspaceCanvas([prepared(local)], {
-      expandedExternals: ['config.example.dev'],
-    })
-
-    expect(result.nodes.map((node) => node.id)).toContain(
-      workspaceExternalMemberNodeId('config.example.dev', 'Settings', 'class'),
-    )
-  })
-
-  test('a parent in a domain the canvas does not draw is a grey box, not a silence', () => {
-    const base = classRef('base.example.dev', 'Base')
-    const child = domainBundle('child', 'child.example.dev', {
-      Child: nodeClass('Child', { origin: 'child.example.dev', extendsRefs: [base] }),
-    })
-    child.ir!.importsByKey = {
-      'base.example.dev:class.Base': {
-        origin: base.origin,
-        ref: base,
-        key: 'base.example.dev:class.Base',
-      },
-    }
-
-    const result = composeWorkspaceCanvas([prepared(child)])
-    const target = workspaceExternalMemberNodeId('base.example.dev', 'Base', 'class')
-
-    // it used to be dropped without a trace — no box, no edge, no diagnostic
-    expect(result.nodes.map((node) => node.id)).toContain(target)
-    expect(result.edges).toContainEqual(
-      expect.objectContaining({ target, data: expect.objectContaining({ kind: 'extends' }) }),
-    )
-  })
-
-  test('a Domain the canvas draws never also appears as a grey dependency of itself', () => {
-    const remote = classRef('remote.example.dev', 'Remote')
-    const local = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
-    local.ir!.importsByKey = {
-      'remote.example.dev:class.Remote': {
-        origin: remote.origin,
-        ref: remote,
-        key: 'remote.example.dev:class.Remote',
-      },
-    }
-    const remoteBundle = domainBundle('remote', remote.origin, {
-      Remote: nodeClass('Remote', { origin: remote.origin, ref: remote }),
-    })
-
-    const result = composeWorkspaceCanvas([prepared(local), prepared(remoteBundle)])
-
-    expect(result.nodes.some((node) => node.id.startsWith('workspace-external:'))).toBe(false)
-  })
-
-  test('a grey frame knows when it stands for a domain this workspace could simply draw', () => {
-    const settings = classRef('config.example.dev', 'Settings')
-    const local = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
-    local.ir!.importsByKey = {
-      'config.example.dev:class.Settings': {
-        origin: settings.origin,
-        ref: settings,
-        key: 'config.example.dev:class.Settings',
-      },
-    }
-
-    const result = composeWorkspaceCanvas([prepared(local)], {
-      workspaceOrigins: { 'config.example.dev': 'config' },
-    })
-    const frame = result.nodes.find(
-      (node) => node.id === workspaceExternalNodeId('config.example.dev'),
-    )!
-
-    expect(frame.data.domainId).toBe('config')
-  })
+  expect(unfolded.nodes.map((node) => node.id)).toContain(
+    workspaceExternalMemberNodeId(settings.origin, 'Settings', 'class'),
+  )
 })

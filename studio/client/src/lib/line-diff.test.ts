@@ -7,24 +7,18 @@ const signs = (before: string | undefined, after: string) =>
     (line) => `${{ same: ' ', removed: '-', added: '+' }[line.kind]}${line.text}`,
   )
 
-test('an edit keeps its context and marks only what changed', () => {
+test('a diff keeps the context and marks only what was added or removed', () => {
   expect(
     signs(
       'props: {\n  name: z.string(),\n}',
       'props: {\n  name: z.string(),\n  email: z.string(),\n}',
     ),
   ).toEqual([' props: {', '   name: z.string(),', '+  email: z.string(),', ' }'])
-})
-
-test('a replaced line reads as removed, then added', () => {
+  // a replaced line reads as removed, then added
   expect(signs('a\nold\nc', 'a\nnew\nc')).toEqual([' a', '-old', '+new', ' c'])
-})
-
-test('lines that moved around a change are still found in common', () => {
+  // lines that moved around a change are still found in common
   expect(signs('x\na\nb\ny', 'x\nb\na\nb\ny')).toEqual([' x', '+b', ' a', ' b', ' y'])
-})
-
-test('a new file is every line added; an emptied one every line removed', () => {
+  // a new file is every line added; an emptied one every line removed
   expect(signs(undefined, 'one\ntwo')).toEqual(['+one', '+two'])
   expect(signs('one\ntwo', '')).toEqual(['-one', '-two'])
 })

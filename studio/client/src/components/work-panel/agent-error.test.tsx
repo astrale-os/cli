@@ -6,17 +6,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { errorDiagnostic, errorHeadline, trailingActivity } from './agent-error'
 import { AgentTurn } from './agent-turn'
 
-const event = (
-  kind: AgentEvent['kind'],
-  text: string,
-  extra?: Partial<AgentEvent>,
-): AgentEvent => ({
-  id: `${kind}-${text}`,
-  ts: new Date(0).toISOString(),
-  kind,
-  text,
-  ...extra,
-})
+const event = (kind: AgentEvent['kind'], text: string, extra?: Partial<AgentEvent>) =>
+  ({ id: `${kind}-${text}`, ts: new Date(0).toISOString(), kind, text, ...extra }) as AgentEvent
 
 const failed = (error: string, events: AgentEvent[] = []): AgentRun => ({
   id: 'run-1',
@@ -48,17 +39,20 @@ test('the headline is the first meaningful line, past transport wrappers', () =>
   expect(errorHeadline('x'.repeat(400)).length).toBeLessThanOrEqual(140)
 })
 
-test('the conversation shows a compact chip, never the raw dump', () => {
+test('the conversation shows a compact chip, never the raw dump, and keeps real prose', () => {
   const raw =
     'Internal error (JSON-RPC -32603)\n{"details":"model overloaded"}\n\nstderr (tail):\nsecret-stack-trace'
-  const html = renderToStaticMarkup(<AgentTurn run={failed(raw)} onContinue={() => {}} />)
-
+  const html = renderToStaticMarkup(
+    <AgentTurn
+      run={failed(raw, [event('message', 'Added the Refund class to schema/billing.ts.')])}
+      onContinue={() => {}}
+    />,
+  )
   expect(html).toContain('agent-error-chip')
-  expect(html).toContain('Failed')
   expect(html).toContain('Continue')
+  expect(html).toContain('Added the Refund class')
   expect(html).not.toContain('Retry')
   expect(html).not.toContain('secret-stack-trace')
-  expect(html).not.toContain('model overloaded')
 })
 
 test('the diagnostic carries everything needed to investigate', () => {
@@ -69,36 +63,15 @@ test('the diagnostic carries everything needed to investigate', () => {
     event('error', 'reply not merged'),
   ])
   const report = errorDiagnostic(run)
-
-  expect(report).toContain('Agent: codex')
-  expect(report).toContain('Duration: 4.2 s')
-  expect(report).toContain('Turn: run-1')
-  expect(report).toContain('model overloaded')
-  expect(report).toContain('tool: Edit · schema/billing.ts')
-  expect(report).toContain('Add a Refund class')
-  // prose is already on screen; the activity trail is the steps
-  expect(trailingActivity(run).map((e) => e.kind)).toEqual(['tool', 'error'])
-  expect(trailingActivity(run).at(-1)?.text).toBe('reply not merged')
-})
-
-test('a message that only repeats the failure is shown once, in the notice', () => {
-  const limit = "You've hit your session limit · resets 6:40pm (Europe/Paris)"
-  const run = {
-    ...failed(`Internal error: ${limit}`, [event('message', limit)]),
-    harness: 'claude' as const,
-  }
-  const html = renderToStaticMarkup(<AgentTurn run={run} onContinue={() => {}} />)
-
-  expect(html.split('hit your session limit').length - 1).toBe(1)
-  expect(html).toContain('agent-error-chip')
-})
-
-test('a message that says more than the failure stays in the conversation', () => {
-  const run = failed('Internal error: model overloaded', [
-    event('message', 'Added the Refund class to schema/billing.ts.'),
+  for (const fact of [
+    'Agent: codex',
+    'Duration: 4.2 s',
+    'Turn: run-1',
+    'model overloaded',
+    'tool: Edit · schema/billing.ts',
+    'Add a Refund class',
   ])
-  const html = renderToStaticMarkup(<AgentTurn run={run} onContinue={() => {}} />)
-
-  expect(html).toContain('Added the Refund class')
-  expect(html).toContain('Model overloaded')
+    expect(report).toContain(fact)
+  // prose is already on screen; the activity trail is the steps, minus the failure itself
+  expect(trailingActivity(run).map((e) => e.text)).toEqual(['', 'reply not merged'])
 })

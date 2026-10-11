@@ -4,31 +4,25 @@ import { expect, test } from 'bun:test'
 
 import { relationshipEdgeIds, selectedRelationshipContext } from './structure'
 
-const memberEdges: Edge[] = [
-  {
-    id: 'edge-member-a',
-    source: 'class.Team',
-    target: 'class.Alice',
-    data: { edgeClass: 'Member', ownerDomainId: 'crm' },
-  },
-  {
-    id: 'edge-member-b',
-    source: 'class.Team',
-    target: 'class.Bob',
-    data: { edgeClass: 'Member', ownerDomainId: 'crm' },
-  },
-  {
-    id: 'edge-member-elsewhere',
-    source: 'class.Squad',
-    target: 'class.Carol',
-    data: { edgeClass: 'Member', ownerDomainId: 'ops' },
-  },
-  {
-    id: 'edge-owns',
-    source: 'class.Team',
-    target: 'class.Asset',
-    data: { edgeClass: 'Owns', ownerDomainId: 'crm' },
-  },
+const edge = (
+  id: string,
+  source: string,
+  target: string,
+  edgeClass: string,
+  ownerDomainId = 'crm',
+) =>
+  ({
+    id,
+    source: `class.${source}`,
+    target: `class.${target}`,
+    data: { edgeClass, ownerDomainId },
+  }) as Edge
+
+const memberEdges = [
+  edge('edge-member-a', 'Team', 'Alice', 'Member'),
+  edge('edge-member-b', 'Team', 'Bob', 'Member'),
+  edge('edge-member-elsewhere', 'Squad', 'Carol', 'Member', 'ops'),
+  edge('edge-owns', 'Team', 'Asset', 'Owns'),
 ]
 
 test('a clicked physical edge promotes exactly its own two endpoints', () => {

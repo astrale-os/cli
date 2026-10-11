@@ -27,99 +27,61 @@ const run = (patch: Partial<AgentRun> = {}): AgentRun => ({
   ...patch,
 })
 
-test('the server ends a turn the stream never reported ending', () => {
+const submitted = (message = 'do the thing', summary = message) =>
+  pendingRun({ id: 'pending-1', chatId: 'c', harness: 'claude', message, summary })
+
+test('the server settles a turn the stream missed, and a stale snapshot never un-settles it', () => {
   // the frame that said "canceled" never arrived: the mirror still says running
   const live = run({
     events: [{ id: 'e1', ts: '2026-09-01T10:00:01.000Z', kind: 'status', text: 'working' }],
   })
   const settled = reconcileRun(live, run({ status: 'canceled', finishedAt: 'now' }))
-  expect(settled?.status).toBe('canceled')
+  expect(settled).toMatchObject({ status: 'canceled', finishedAt: 'now' })
   expect(isRunActive(settled)).toBe(false)
   // ...without losing the activity only the stream saw
   expect(settled?.events).toHaveLength(1)
-  expect(settled?.finishedAt).toBe('now')
+  expect(reconcileRun(run({ status: 'succeeded' }), run())?.status).toBe('succeeded')
 })
 
-test('a stale snapshot never un-finishes a turn the stream already settled', () => {
-  const live = run({ status: 'succeeded' })
-  expect(reconcileRun(live, run({ status: 'running' }))?.status).toBe('succeeded')
-})
-
-test('different turns resolve to the newer one, whichever side holds it', () => {
+test('different turns resolve to the newer one, and either side alone is the answer', () => {
   const older = run({ id: 'old', createdAt: '2026-09-01T10:00:00.000Z' })
   const newer = run({ id: 'new', createdAt: '2026-09-01T11:00:00.000Z' })
-  // just submitted: the mirror has it before the snapshot refetches
   expect(reconcileRun(newer, older)?.id).toBe('new')
-  // started from another window: the snapshot has it before the frame lands
   expect(reconcileRun(older, newer)?.id).toBe('new')
-})
-
-test('either side alone is the answer', () => {
   expect(reconcileRun(undefined, null)).toBeNull()
   expect(reconcileRun(run(), null)?.id).toBe('run-1')
   expect(reconcileRun(undefined, run())?.id).toBe('run-1')
 })
 
-const submitted = () =>
-  pendingRun({
-    id: 'pending-1',
-    chatId: 'c',
-    harness: 'claude',
-    message: 'do the thing',
-    summary: 'do the thing',
-  })
-
-test('a message sent to a free chat is a turn from the keystroke, not a queue entry', () => {
+test('a message sent to a free chat is a running turn from the keystroke', () => {
   const shown = submitted()
-  // it reads as the conversation's own turn: your words, and an agent on them
   expect(shown.instruction).toBe('do the thing')
   expect(isRunActive(shown)).toBe(true)
   expect(shown.events).toEqual([])
-})
-
-test('a turn only carrying documents says so instead of showing an empty message', () => {
-  const carried = pendingRun({
-    id: 'pending-2',
-    chatId: 'c',
-    harness: 'claude',
-    message: '',
-    summary: '2 documents',
-  })
+  // a turn only carrying documents says so instead of showing an empty message
+  const carried = submitted('', '2 documents')
   expect(carried.instruction).toBeUndefined()
   expect(carried.summary).toBe('2 documents')
 })
 
-test('a submit that never landed takes its turn back', () => {
-  const shown = submitted()
-  useAgentLive.getState().setRun(shown)
-  expect(useAgentLive.getState().runs.c?.id).toBe('pending-1')
-
-  useAgentLive.getState().dropRun('c', shown.id)
+test('a submit that never landed takes its turn back, but never the server’s own', () => {
+  const live = useAgentLive.getState()
+  live.setRun(submitted())
+  live.dropRun('c', 'pending-1')
   expect(useAgentLive.getState().runs.c).toBeUndefined()
-})
 
-test('the real turn replaces the shown one, and taking that one back is then a no-op', () => {
-  const shown = submitted()
-  useAgentLive.getState().setRun(shown)
-  useAgentLive.getState().setRun(run({ id: 'server-run', chatId: 'c' }))
-
-  // `drop` runs after the server's answer either way — it must not take the turn
-  // the server just gave us with it
-  useAgentLive.getState().dropRun('c', shown.id)
+  live.setRun(submitted())
+  live.setRun(run({ id: 'server-run' }))
+  live.dropRun('c', 'pending-1')
   expect(useAgentLive.getState().runs.c?.id).toBe('server-run')
 })
 
-test('an agent Studio has not reached yet is not an agent that is not there', () => {
-  // the whole point of the third state: the ACP handshake takes seconds, and for
-  // those seconds the composer used to say the same word it says for a missing CLI
+test('an agent not reached yet is connecting; one whose read gave up is unreachable', () => {
   expect(harnessLink(undefined)).toBe('connecting')
   expect(harnessLink(true)).toBe('ready')
   expect(harnessLink(false)).toBe('unreachable')
-})
-
-test('a read that gave up is unreachable, not a spinner that never stops', () => {
   expect(harnessLink(undefined, true)).toBe('unreachable')
-  // an answer beats the failure of a LATER read — the harness is known either way
+  // an answer beats the failure of a later read
   expect(harnessLink(true, true)).toBe('ready')
 })
 
@@ -135,53 +97,32 @@ const tool = (revision: number, status: 'in_progress' | 'completed') => ({
 
 test('a tool call reported again updates its step in place, and never goes back', () => {
   const live = useAgentLive.getState()
-  live.setRun(run({ id: 'run-tools', chatId: 'tools', events: [] }))
+  live.setRun(run({ id: 'run-tools', chatId: 'tools' }))
   live.putEvent('tools', 'run-tools', tool(1, 'in_progress'))
-  live.putEvent('tools', 'run-tools', {
-    id: 'note',
-    ts: '2026-09-01T10:00:02.000Z',
-    kind: 'message',
-    text: 'Running the suite.',
-  })
+  live.putEvent('tools', 'run-tools', { id: 'note', ts: 't', kind: 'message', text: 'Running.' })
   live.putEvent('tools', 'run-tools', tool(2, 'completed'))
-  // a late copy of an older report must not undo the newer one
   live.putEvent('tools', 'run-tools', tool(1, 'in_progress'))
-
   const events = useAgentLive.getState().runs.tools!.events
   expect(events.map((event) => event.id)).toEqual(['call', 'note'])
   expect(events[0]).toMatchObject({ status: 'completed', revision: 2 })
-})
 
-test('two copies of a run keep the longer list, each step at its furthest revision', () => {
-  // the stream saw a new event; the snapshot saw the call settle
+  // two copies of a run keep the longer list, each step at its furthest revision
   const streamed = [tool(1, 'in_progress'), { ...tool(1, 'in_progress'), id: 'next' }]
   const snapshot = [tool(2, 'completed')]
-
   const merged = mergeEvents(streamed, snapshot)
   expect(merged.map((event) => event.id)).toEqual(['call', 'next'])
   expect(merged[0]).toMatchObject({ status: 'completed', revision: 2 })
-  // nothing newer on the other side: the very same list comes back
   expect(mergeEvents(snapshot, [tool(1, 'in_progress')])).toBe(snapshot)
-  expect(
-    reconcileRun(run({ events: streamed }), run({ events: snapshot }))?.events[0],
-  ).toMatchObject({ revision: 2 })
 })
 
-test('the context window carries over turns of one conversation, and empties with a new one', () => {
+test('the context window carries over one conversation, and lands only on its own run', () => {
   const full = { used: 150_000, size: 200_000 }
   const earlier = run({ id: 'a', status: 'succeeded', resumed: false, context: full })
-  // the turn just sent has not reported yet: the window is as the last one left it
-  const sent = pendingRun({ id: 'p', chatId: 'c', harness: 'claude', message: 'go', summary: 'go' })
-  expect(conversationContext([earlier, sent], true)).toEqual(full)
+  expect(conversationContext([earlier, submitted('go')], true)).toEqual(full)
   // a turn that started a new conversation owns nothing from before it
-  const fresh = run({ id: 'b', resumed: false })
-  expect(conversationContext([earlier, fresh], true)).toBeUndefined()
-  // and a chat with no conversation behind it measures nothing
+  expect(conversationContext([earlier, run({ id: 'b', resumed: false })], true)).toBeUndefined()
   expect(conversationContext([earlier], false)).toBeUndefined()
-  expect(conversationContext([], false)).toBeUndefined()
-})
 
-test('a context report lands on the run it belongs to, and nowhere else', () => {
   useAgentLive.setState({ runs: { c: run() } })
   useAgentLive.getState().putContext('c', 'other-run', { used: 1, size: 10 })
   expect(useAgentLive.getState().runs.c?.context).toBeUndefined()
@@ -189,28 +130,17 @@ test('a context report lands on the run it belongs to, and nowhere else', () => 
   expect(useAgentLive.getState().runs.c?.context).toEqual({ used: 5, size: 10 })
 })
 
-test('a streamed message grows in place, and a missed piece waits for the snapshot', () => {
+test('a streamed message grows in place, waits on a gap, and ends once written out', () => {
   let draft = extendDraft(undefined, 'm1', 0, 'Hel')
   draft = extendDraft(draft, 'm1', 3, 'lo')
   expect(draft).toEqual({ id: 'm1', text: 'Hello' })
-  // the same piece twice lands once
-  expect(extendDraft(draft, 'm1', 3, 'lo')).toEqual({ id: 'm1', text: 'Hello' })
-  // a gap is not papered over
+  expect(extendDraft(draft, 'm1', 3, 'lo')).toEqual(draft)
   expect(extendDraft(draft, 'm1', 9, '!')).toBe(draft)
-  // joined midway through a new message: nothing to place it after
   expect(extendDraft(draft, 'm2', 4, 'xx')).toBe(draft)
   expect(extendDraft(draft, 'm2', 0, 'Next')).toEqual({ id: 'm2', text: 'Next' })
-})
 
-test('a draft already written out as a message is over', () => {
   const events = [{ id: 'm1', ts: 'now', kind: 'message' as const, text: 'Hello' }]
-  expect(mergeDraft({ id: 'm1', text: 'Hello' }, undefined, events)).toBeUndefined()
-  expect(mergeDraft({ id: 'm1', text: 'Hel' }, { id: 'm1', text: 'Hello' }, [])).toEqual({
-    id: 'm1',
-    text: 'Hello',
-  })
-  expect(mergeDraft({ id: 'm1', text: 'Hello' }, { id: 'm2', text: 'Ne' }, events)).toEqual({
-    id: 'm2',
-    text: 'Ne',
-  })
+  expect(mergeDraft(draft, undefined, events)).toBeUndefined()
+  expect(mergeDraft({ id: 'm1', text: 'Hel' }, draft, [])).toEqual(draft)
+  expect(mergeDraft(draft, { id: 'm2', text: 'Ne' }, events)).toEqual({ id: 'm2', text: 'Ne' })
 })

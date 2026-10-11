@@ -20,12 +20,8 @@ function fixture() {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      values.set(key, value)
-    },
-    removeItem: (key: string) => {
-      values.delete(key)
-    },
+    setItem: (key: string, value: string) => void values.set(key, value),
+    removeItem: (key: string) => void values.delete(key),
   }
   return { store: createAgentUnreadStore(storage), storage }
 }

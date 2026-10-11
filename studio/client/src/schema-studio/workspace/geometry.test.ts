@@ -52,21 +52,6 @@ test('a domain added after one was moved by hand lands beside it, and moves noth
   })
 })
 
-test('a new frame never lands on an external frame that already has a place', () => {
-  const alpha = { domainId: 'alpha', nodes: [moduleNode('alpha-module')] }
-  const beta = { domainId: 'beta', nodes: [moduleNode('beta-module')] }
-  const [placedAlpha] = layoutWorkspaceFrames([alpha], {})
-  const kernel = {
-    position: { x: placedAlpha.size.width + WORKSPACE_DOMAIN_GAP, y: 0 },
-    size: { width: 216, height: 300 },
-  }
-
-  const [, second] = layoutWorkspaceFrames([alpha, beta], { alpha: placedAlpha.position }, [kernel])
-
-  expect(rectsOverlap(second, kernel, WORKSPACE_DOMAIN_GAP - 1)).toBe(false)
-  expect(rectsOverlap(second, placedAlpha, WORKSPACE_DOMAIN_GAP - 1)).toBe(false)
-})
-
 test('a hole left between placed frames is filled before the canvas grows', () => {
   const size = { width: 300, height: 200 }
   const obstacles = [

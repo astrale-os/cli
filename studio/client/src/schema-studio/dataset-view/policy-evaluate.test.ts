@@ -10,6 +10,27 @@ import { buildDataGraph } from './policy-graph'
 const ORIGIN = 'org.example.dev'
 const KERNEL = 'kernel.astrale.ai'
 const ref = (kind: 'class' | 'policy', name: string, origin = ORIGIN) => ({ origin, kind, name })
+/** A path term: `group` is the one Group variable an `exists` binds, anything else a role. */
+const term = (kind: string) => (kind === 'group' ? { kind: 'variable', id: 0 } : { kind })
+const step = (source: string, edge: string, target: string, extra = {}) => ({
+  source: term(source),
+  class: ref('class', edge),
+  target: term(target),
+  ...extra,
+})
+/** Some Group the subject owns, which the object reaches over `edge`. */
+const viaGroup = (edge: string, extra = {}) => ({
+  match: {
+    exists: {
+      nodes: [{ variable: term('group'), class: ref('class', 'Group') }],
+      where: { allOf: [step('subject', 'owns', 'group'), step('object', edge, 'group', extra)] },
+    },
+  },
+})
+const node = (name: string, extendsRefs: unknown[] = []) =>
+  ({ name, type: 'node', extendsRefs, methods: {}, properties: {} }) as const
+const edge = (name: string, orientation = 'directed') =>
+  ({ name, type: 'edge', orientation, methods: {}, properties: {} }) as const
 
 // ── schema: User ⊂ Identity, Group, Record; owns (User→Group), belongs (Record→Group),
 //    parent (Group→Group), linked (undirected Record—Record)
@@ -18,131 +39,28 @@ const bundle = {
   ir: {
     domain: ORIGIN,
     classes: {
-      User: {
-        name: 'User',
-        type: 'node',
-        extendsRefs: [ref('class', 'Identity', KERNEL)],
-        methods: {},
-        properties: {},
-      },
-      Group: { name: 'Group', type: 'node', extendsRefs: [], methods: {}, properties: {} },
-      Record: { name: 'Record', type: 'node', extendsRefs: [], methods: {}, properties: {} },
-      owns: { name: 'owns', type: 'edge', orientation: 'directed', methods: {}, properties: {} },
-      belongs: {
-        name: 'belongs',
-        type: 'edge',
-        orientation: 'directed',
-        methods: {},
-        properties: {},
-        policies: { traverse: ref('policy', 'TraverseMembership') },
-      },
-      parent: {
-        name: 'parent',
-        type: 'edge',
-        orientation: 'directed',
-        methods: {},
-        properties: {},
-      },
-      linked: {
-        name: 'linked',
-        type: 'edge',
-        orientation: 'undirected',
-        methods: {},
-        properties: {},
-      },
+      User: node('User', [ref('class', 'Identity', KERNEL)]),
+      Group: node('Group'),
+      Record: node('Record'),
+      owns: edge('owns'),
+      belongs: { ...edge('belongs'), policies: { traverse: ref('policy', 'TraverseMembership') } },
+      parent: edge('parent'),
+      linked: edge('linked', 'undirected'),
     },
     importedClassesByKey: {},
     importsByKey: {},
     functions: {},
     views: {},
     policies: {
-      ObserveGroup: {
-        ref: ref('policy', 'ObserveGroup'),
-        expression: {
-          match: {
-            source: { kind: 'subject' },
-            class: ref('class', 'owns'),
-            target: { kind: 'object' },
-          },
-        },
-      },
-      ObserveRecord: {
-        ref: ref('policy', 'ObserveRecord'),
-        expression: {
-          match: {
-            exists: {
-              nodes: [{ variable: { kind: 'variable', id: 0 }, class: ref('class', 'Group') }],
-              where: {
-                allOf: [
-                  {
-                    source: { kind: 'subject' },
-                    class: ref('class', 'owns'),
-                    target: { kind: 'variable', id: 0 },
-                  },
-                  {
-                    source: { kind: 'object' },
-                    class: ref('class', 'belongs'),
-                    target: { kind: 'variable', id: 0 },
-                  },
-                ],
-              },
-            },
-          },
-        },
-      },
-      TraverseMembership: {
-        ref: ref('policy', 'TraverseMembership'),
-        expression: {
-          match: {
-            source: { kind: 'subject' },
-            class: ref('class', 'owns'),
-            target: { kind: 'target' },
-          },
-        },
-      },
+      ObserveGroup: { expression: { match: step('subject', 'owns', 'object') } },
+      ObserveRecord: { expression: viaGroup('belongs') },
+      TraverseMembership: { expression: { match: step('subject', 'owns', 'target') } },
       ObserveAny: {
-        ref: ref('policy', 'ObserveAny'),
         expression: { anyOf: [ref('policy', 'ObserveGroup'), ref('policy', 'ObserveRecord')] },
       },
-      ObserveTree: {
-        ref: ref('policy', 'ObserveTree'),
-        expression: {
-          match: {
-            exists: {
-              nodes: [{ variable: { kind: 'variable', id: 0 }, class: ref('class', 'Group') }],
-              where: {
-                allOf: [
-                  {
-                    source: { kind: 'subject' },
-                    class: ref('class', 'owns'),
-                    target: { kind: 'variable', id: 0 },
-                  },
-                  {
-                    source: { kind: 'object' },
-                    class: ref('class', 'parent'),
-                    target: { kind: 'variable', id: 0 },
-                    repeat: { min: 0, max: 2 },
-                  },
-                ],
-              },
-            },
-          },
-        },
-      },
-      Sibling: {
-        ref: ref('policy', 'Sibling'),
-        expression: {
-          match: {
-            source: { kind: 'object' },
-            class: ref('class', 'linked'),
-            target: { kind: 'subject' },
-          },
-        },
-      },
-      Dangling: {
-        ref: ref('policy', 'Dangling'),
-        expression: { allOf: [ref('policy', 'Missing')] },
-      },
+      ObserveTree: { expression: viaGroup('parent', { repeat: { min: 0, max: 2 } }) },
+      Sibling: { expression: { match: step('object', 'linked', 'subject') } },
+      Dangling: { expression: { allOf: [ref('policy', 'Missing')] } },
     },
     dependencies: [],
     core: null,
@@ -177,6 +95,8 @@ const core: StudioCore = {
 const graph = buildDataGraph(core, bundle)
 const index = indexPolicies(bundle.ir!)
 const policy = (name: string) => index.byKey.get(`${ORIGIN}:policy.${name}`)!
+const evaluate = (name: string, input: Partial<Parameters<typeof evaluatePolicy>[0]> = {}) =>
+  evaluatePolicy({ policy: policy(name), index, graph, ...input })
 const pairs = (proofs: { subject: string | null; object: unknown }[]) =>
   proofs.map((proof) => `${proof.subject}→${JSON.stringify(proof.object)}`).sort()
 
@@ -190,7 +110,7 @@ test('the data graph knows classes, principals and orientations', () => {
 })
 
 test('enumerates every proof of a one-step policy', () => {
-  const result = evaluatePolicy({ policy: policy('ObserveGroup'), index, graph })
+  const result = evaluate('ObserveGroup')
   expect(result.status).toBe('ok')
   if (result.status !== 'ok') return
   expect(pairs(result.proofs)).toEqual([
@@ -202,10 +122,7 @@ test('enumerates every proof of a one-step policy', () => {
 })
 
 test('decides a picked subject and object, and lights only their proof', () => {
-  const yes = evaluatePolicy({
-    policy: policy('ObserveRecord'),
-    index,
-    graph,
+  const yes = evaluate('ObserveRecord', {
     probe: { subject: 'ada', object: { kind: 'node', id: 'r1' } },
   })
   expect(yes.status === 'ok' && yes.proofs.length).toBe(1)
@@ -213,60 +130,34 @@ test('decides a picked subject and object, and lights only their proof', () => {
     expect(yes.proofs[0].edges).toEqual([0, 4])
     expect(yes.proofs[0].nodes.sort()).toEqual(['ada', 'g1', 'r1'])
   }
-  const no = evaluatePolicy({
-    policy: policy('ObserveRecord'),
-    index,
-    graph,
+  const no = evaluate('ObserveRecord', {
     probe: { subject: 'ada', object: { kind: 'node', id: 'r2' } },
   })
   expect(no.status === 'ok' && no.proofs).toEqual([])
 })
 
 test('lists who can, given only the object', () => {
-  const result = evaluatePolicy({
-    policy: policy('ObserveAny'),
-    index,
-    graph,
-    probe: { object: { kind: 'node', id: 'r2' } },
-  })
+  const result = evaluate('ObserveAny', { probe: { object: { kind: 'node', id: 'r2' } } })
   expect(result.status === 'ok' && pairs(result.proofs)).toEqual(['bob→{"kind":"node","id":"r2"}'])
 })
 
 test('an edge policy binds the protected edge endpoints and includes that edge in the proof', () => {
-  const all = evaluatePolicy({
-    policy: policy('TraverseMembership'),
-    index,
-    graph,
-    guardedEdges: ['belongs'],
-  })
+  const all = evaluate('TraverseMembership', { guardedEdges: ['belongs'] })
   expect(all.status === 'ok' && pairs(all.proofs)).toEqual([
     'ada→{"kind":"edge","index":4}',
     'bob→{"kind":"edge","index":5}',
   ])
   if (all.status === 'ok') expect(all.proofs[0].edges).toEqual([0, 4])
-  const one = evaluatePolicy({
-    policy: policy('TraverseMembership'),
-    index,
-    graph,
+  const one = evaluate('TraverseMembership', {
     probe: { subject: 'ada', object: { kind: 'edge', index: 5 } },
   })
   expect(one.status === 'ok' && one.proofs).toEqual([])
-  const wrong = evaluatePolicy({
-    policy: policy('TraverseMembership'),
-    index,
-    graph,
-    probe: { object: { kind: 'node', id: 'g1' } },
-  })
+  const wrong = evaluate('TraverseMembership', { probe: { object: { kind: 'node', id: 'g1' } } })
   expect(wrong.status).toBe('unsupported')
 })
 
 test('bounded repeats climb the tree, zero hops included', () => {
-  const result = evaluatePolicy({
-    policy: policy('ObserveTree'),
-    index,
-    graph,
-    probe: { subject: 'ada' },
-  })
+  const result = evaluate('ObserveTree', { probe: { subject: 'ada' } })
   expect(result.status === 'ok' && pairs(result.proofs)).toEqual([
     'ada→{"kind":"node","id":"g1"}',
     'ada→{"kind":"node","id":"g2"}',
@@ -281,12 +172,12 @@ test('bounded repeats climb the tree, zero hops included', () => {
 })
 
 test('undirected edges prove in either direction', () => {
-  const result = evaluatePolicy({ policy: policy('Sibling'), index, graph })
+  const result = evaluate('Sibling')
   expect(result.status === 'ok' && pairs(result.proofs)).toEqual(['bob→{"kind":"node","id":"r1"}'])
 })
 
 test('a reference to an undeclared policy is reported, not thrown', () => {
-  const result = evaluatePolicy({ policy: policy('Dangling'), index, graph })
+  const result = evaluate('Dangling')
   expect(result).toEqual({
     status: 'unsupported',
     reason: 'references a policy this domain does not declare: Missing',
@@ -294,7 +185,7 @@ test('a reference to an undeclared policy is reported, not thrown', () => {
 })
 
 test('groups proofs per subject and object', () => {
-  const result = evaluatePolicy({ policy: policy('ObserveTree'), index, graph })
+  const result = evaluate('ObserveTree')
   if (result.status !== 'ok') throw new Error(result.reason)
   const matches = groupProofs(result.proofs)
   const g2 = matches.find(
