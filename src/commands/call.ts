@@ -264,7 +264,7 @@ async function readStdin(): Promise<string> {
 // inside nested objects, never as top-level CLI params).
 const PARAM_KEY_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/
 
-export function parseKeyValue(pairs: string[]): Record<string, unknown> {
+function parseKeyValue(pairs: string[]): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const pair of pairs) {
     const eqIdx = pair.indexOf('=')
@@ -284,7 +284,7 @@ export function parseKeyValue(pairs: string[]): Record<string, unknown> {
   return result
 }
 
-export function coerceValue(raw: string): unknown {
+function coerceValue(raw: string): unknown {
   if ((raw.startsWith('{') && raw.endsWith('}')) || (raw.startsWith('[') && raw.endsWith(']'))) {
     try {
       return JSON.parse(raw)

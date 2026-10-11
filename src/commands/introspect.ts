@@ -57,22 +57,22 @@ export async function introspectCommand(
   })
 }
 
-export function readInstalledDomain(
+function readInstalledDomain(
   schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
   origin: string,
   includeBundle: true,
 ): Promise<DomainBundle>
-export function readInstalledDomain(
+function readInstalledDomain(
   schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
   origin: string,
   includeBundle: false,
 ): Promise<DomainInfo>
-export function readInstalledDomain(
+function readInstalledDomain(
   schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
   origin: string,
   includeBundle: boolean,
 ): Promise<DomainInfo | DomainBundle>
-export async function readInstalledDomain(
+async function readInstalledDomain(
   schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
   origin: string,
   includeBundle: boolean,

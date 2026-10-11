@@ -4,7 +4,7 @@ import { visibleWidth } from './format'
 
 const BOX = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' } as const
 
-export type PanelOpts = {
+type PanelOpts = {
   /** Colorize the box border (default: cyan). */
   borderColor?: (s: string) => string
   /** Horizontal padding inside the box (default: 3). */

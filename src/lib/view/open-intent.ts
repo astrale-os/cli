@@ -1,7 +1,7 @@
 import type { IntentMessage, MountedWindow, OpenViewResult, Shell } from '@astrale-os/shell'
 
 /** The Kernel path of a View declaration: `/:<origin>:view.<name>`. */
-export type ViewPath = string
+type ViewPath = string
 
 export interface ViewOpenHost {
   current(): MountedWindow | null

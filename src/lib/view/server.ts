@@ -20,8 +20,6 @@ import { exchangeViewCredential } from './exchange-credential'
 import { refreshViewPlacement } from './refresh'
 import { removeSessionFiles, saveRecord } from './session'
 
-export { ensureViewerAssets, viewerDistDir } from './assets'
-
 /**
  * The view-session server: serves the host page, hands it config and fresh
  * credentials, receives its lifecycle reports, and proxies the view's kernel
@@ -60,12 +58,12 @@ const RELEASE_GRACE_MS = 10_000
  */
 const HOST_ONLY_ROUTES = ['/config.json', '/identity', '/release', '/token', '/kernel-token']
 
-export type PageStatus = { state: string; error?: string; at: string }
+type PageStatus = { state: string; error?: string; at: string }
 
 type GrantKind = 'minted' | 'exchanged'
 type TokenGrant = { token: string; expiresAt: number; kind: GrantKind }
 
-export interface ViewServerDependencies {
+interface ViewServerDependencies {
   readonly connect: typeof withClientSession
   readonly exchange?: typeof exchangeViewCredential
   readonly persist?: typeof saveRecord

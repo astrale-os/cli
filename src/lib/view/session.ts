@@ -67,7 +67,7 @@ export const configPath = (id: string, directory = VIEW_DIR): string =>
   join(directory, `${id}.config.json`)
 
 /** Create or repair the credential-bearing session directory as owner-only. */
-export async function ensureViewDirectory(directory = VIEW_DIR): Promise<void> {
+async function ensureViewDirectory(directory = VIEW_DIR): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   await chmod(directory, 0o700)
 }
@@ -115,7 +115,7 @@ function isProcessMissing(error: unknown): boolean {
 }
 
 /** Only ESRCH proves the process is gone; a denied or uncertain probe keeps its record. */
-export function isAlive(pid: number): boolean {
+function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true

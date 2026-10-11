@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { paths } from '../state/index'
@@ -19,7 +19,7 @@ import { run } from './proc'
  */
 
 export const BROWSER_DIR = join(paths.home, 'browser')
-export const BROWSER_SESSION_PATH = join(paths.home, 'browser.json')
+const BROWSER_SESSION_PATH = join(paths.home, 'browser.json')
 export const AGENT_BROWSER_REPO = 'vercel-labs/agent-browser'
 
 /** Per-instance persistent profile dir handed to `agent-browser --profile`. */
@@ -38,14 +38,6 @@ export type BrowserSession = {
   cdp: string | null
   email?: string
   updatedAt: string
-}
-
-export async function readSession(): Promise<BrowserSession | null> {
-  try {
-    return JSON.parse(await readFile(BROWSER_SESSION_PATH, 'utf8')) as BrowserSession
-  } catch {
-    return null
-  }
 }
 
 export async function saveSession(session: BrowserSession): Promise<void> {
@@ -77,7 +69,7 @@ export type AbResult = {
  * Connection target for an agent-browser invocation: either a persistent
  * profile dir or a CDP endpoint (mutually exclusive).
  */
-export type AbTarget = { profile?: string; cdp?: string }
+type AbTarget = { profile?: string; cdp?: string }
 
 /**
  * Run an `agent-browser` command with `--json` and parse its envelope
@@ -118,7 +110,7 @@ const AUTH_EVAL =
   '.then(j=>({authed:!!j.authenticated,email:j.user&&j.user.email}))' +
   '.catch(()=>({authed:false}))'
 
-export type AuthState = { authed: boolean; email?: string }
+type AuthState = { authed: boolean; email?: string }
 
 function readAuthResult(res: AbResult): AuthState {
   const result = (res.data as { result?: unknown } | null)?.result

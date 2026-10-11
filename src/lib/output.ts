@@ -4,8 +4,6 @@ import { stringify as yamlStringify } from 'yaml'
 import { invocationWantsMachine } from './invocation'
 import { renderTable, type Column } from './table'
 
-export type { Column } from './table'
-
 export type OutputOpts = {
   raw?: boolean
   json?: boolean
@@ -32,15 +30,6 @@ export function isMachine(opts?: MachineOpts): boolean {
     invocationWantsMachine() ||
     !(process.stdout.isTTY ?? false)
   )
-}
-
-/**
- * `--raw` = the *unwrapped* value (bare scalar, raw bytes). The raw-vs-json
- * distinction only manifests for scalars and binary; objects/arrays fall back
- * to JSON under either flag.
- */
-export function isUnwrapped(opts?: RawOutputOpts): boolean {
-  return !!opts?.raw
 }
 
 /**
@@ -123,7 +112,7 @@ function highlightJson(data: unknown): string {
 
 // ── present: shape-aware rendering ──────────────────────────
 
-export type PresentOpts = OutputOpts & { denoise?: boolean }
+type PresentOpts = OutputOpts & { denoise?: boolean }
 
 /** One display row per item plus the columns and (optional) `-q` paths. */
 export type ListProjection = {

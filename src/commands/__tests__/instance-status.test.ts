@@ -82,7 +82,7 @@ describe('instance status', () => {
       kind: 'bookmark',
       state: 'ready',
     })
-    expect(resolveInstance).toHaveBeenCalledWith('local', undefined, { persist: false })
+    expect(resolveInstance).toHaveBeenCalledWith('local')
     expect(probeBookmark).toHaveBeenCalledWith(bookmark)
     expect(statusOwnedInstance).not.toHaveBeenCalled()
 

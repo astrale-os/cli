@@ -14,7 +14,7 @@ import {
   type InstalledListV1,
 } from './installed-list'
 
-export type ListOpts = KernelCommandOpts &
+type ListOpts = KernelCommandOpts &
   AdminTargetCommandOpts &
   RawOutputOpts & {
     format?: 'yaml' | 'json'
@@ -25,7 +25,7 @@ export type ListOpts = KernelCommandOpts &
  * InstalledListV1). A person gets the [.79737] table on a TTY; --json, --ci or a pipe print the
  * document. A refusal exits 1, with its details in machine mode.
  */
-export async function runInstalledList(
+async function runInstalledList(
   opts: ListOpts,
   dependencies: Partial<InstalledListDependencies> = {},
 ): Promise<void> {

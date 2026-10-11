@@ -12,7 +12,7 @@ import { ensureFreshSession } from './idp-session'
  * `ready`: nothing is left to complete on Admin; it grants nothing and does not prove registration.
  * `rejected`: Admin refused this login itself. `denied`: Admin refused the pending admission.
  */
-export type AccountActivation = 'ready' | 'pending' | 'rejected' | 'denied' | 'unavailable'
+type AccountActivation = 'ready' | 'pending' | 'rejected' | 'denied' | 'unavailable'
 
 /** What a user should do when a login could not complete prepared access. */
 export const ACCOUNT_ACTIVATION_WARNINGS = {
@@ -45,7 +45,7 @@ export async function activateLoggedInAccount(
 }
 
 /** Resume what an administrator prepared for this WorkOS account on Admin, such as a Fleet invitation. */
-export async function activateAccount(
+async function activateAccount(
   identityName: string,
   target: Pick<AdminTargetCommandOpts, 'admin' | 'adminUrl' | 'domainIssuer'> = {},
 ): Promise<AccountActivation> {

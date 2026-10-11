@@ -13,7 +13,7 @@ import { output } from '../lib/output'
  * `astrale token` — mint a fresh audience-bound token for the active instance
  * and selected identity through the bound AuthApi.
  */
-export type TokenOpts = KernelCommandOpts & {
+type TokenOpts = KernelCommandOpts & {
   audience?: string
   ttl?: string
   // `--for <identity>` is an alias of `--as` (reads better at mint-time).
@@ -23,7 +23,7 @@ export type TokenOpts = KernelCommandOpts & {
 
 const DEFAULT_TOKEN_TTL_SECONDS = 4 * 60
 
-export interface TokenCommandDependencies {
+interface TokenCommandDependencies {
   readonly runKernelCommand: typeof runKernelCommand
 }
 

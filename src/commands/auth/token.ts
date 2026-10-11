@@ -89,7 +89,7 @@ Examples:
   },
 } satisfies CommandDefinition
 
-export async function resolveAuthToken(opts: AuthTokenOpts): Promise<AuthTokenResult> {
+async function resolveAuthToken(opts: AuthTokenOpts): Promise<AuthTokenResult> {
   const identityName = await resolveIdentityName(opts)
   const session = await readIdpSession(identityName)
   if (!session) {

@@ -11,13 +11,13 @@ import { cancel } from './deployment-document'
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 /** The reserved path a deployment's dispatcher answers with its record (CT38). */
-export const DEPLOYMENT_RECORD_PATH = '/.well-known/astrale/deployment.json'
+const DEPLOYMENT_RECORD_PATH = '/.well-known/astrale/deployment.json'
 export const DEPLOYMENT_RECORD_MEDIA_TYPE = 'application/vnd.astrale.deployment-record+json;v=1'
 
 /** A record is a few hundred bytes; anything above this is not one. */
 const MAXIMUM_RECORD_BYTES = 16 * 1_024
 /** One record read; a deployment that does not answer in time is listed without its record. */
-export const DEPLOYMENT_RECORD_TIMEOUT_MS = 5_000
+const DEPLOYMENT_RECORD_TIMEOUT_MS = 5_000
 
 /** The installation a record is read for: its origin, deployment URL and release pin. */
 export interface RecordedInstallation {

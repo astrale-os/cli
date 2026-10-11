@@ -19,7 +19,7 @@ import {
 } from './instance'
 import { validateSlug } from './validation'
 
-export type InstanceTargetRequest =
+type InstanceTargetRequest =
   | { source: 'active' }
   | { source: 'name'; name: string }
   | { source: 'admin' }
@@ -41,7 +41,7 @@ export type ResolvedInstanceTarget = {
   caFile?: string
 }
 
-export type ResolveInstanceTargetOpts = {
+type ResolveInstanceTargetOpts = {
   config: AstraleConfig
   instances?: InstanceStore
   admin?: AdminTargetCommandOpts
@@ -54,7 +54,7 @@ export async function resolveInstanceTarget(
 ): Promise<ResolvedInstanceTarget> {
   switch (request.source) {
     case 'active': {
-      const active = opts.instances ? activeFromStore(opts.instances) : await getActive(opts.config)
+      const active = opts.instances ? activeFromStore(opts.instances) : await getActive()
       return resolveNamedInstanceTarget(active.name, opts)
     }
     case 'name':
@@ -137,7 +137,7 @@ async function resolveBookmarkedInstanceTarget(
     }
   }
 
-  const resolved = await resolveInstance(identifier, opts.config)
+  const resolved = await resolveInstance(identifier)
   return {
     name: resolved.name,
     source: 'bookmark',
@@ -172,7 +172,7 @@ export function couldBeConfiguredAdminInstance(identifier: string, config: Astra
   return identifier === (admin.name ?? DEFAULT_ADMIN_TARGET_NAME)
 }
 
-export function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInstanceTarget {
+function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInstanceTarget {
   return {
     name: target.registrationSlug,
     source: 'admin',
@@ -196,7 +196,7 @@ const ADMIN_DISCOVERY_CODES = new Set([
 ])
 
 /** Admin lookup failed before it could say whether the slug exists. */
-export function isAdminDiscoveryFailure(error: unknown): boolean {
+function isAdminDiscoveryFailure(error: unknown): boolean {
   return error instanceof AstraleError && ADMIN_DISCOVERY_CODES.has(error.code)
 }
 

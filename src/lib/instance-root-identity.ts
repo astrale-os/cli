@@ -23,7 +23,7 @@ import { retrieveOwnedInstanceRootIdentity } from './admin-instance'
 import { upsertManagedBookmark } from './instance'
 import { checkIssuerReachability } from './meta'
 
-export type RootIdentityVerification = 'live-jwks' | 'host-sealed'
+type RootIdentityVerification = 'live-jwks' | 'host-sealed'
 
 export interface ImportedInstanceRootIdentity {
   readonly instance: OwnedInstanceInfo
@@ -34,7 +34,7 @@ export interface ImportedInstanceRootIdentity {
   readonly bookmarkError?: unknown
 }
 
-export interface ImportInstanceRootIdentityOptions {
+interface ImportInstanceRootIdentityOptions {
   readonly bookmark?: boolean
   readonly replace?: IdentityImportOptions['replace']
 }

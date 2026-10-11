@@ -25,7 +25,7 @@ export type InstanceSetupDependencies = {
   provision: (slug: string) => Promise<ProvisionResult>
 }
 
-export type OwnedInstanceAdoptionDependencies = {
+type OwnedInstanceAdoptionDependencies = {
   upsert: typeof upsertManagedBookmark
   activate: (slug: string) => Promise<unknown>
 }

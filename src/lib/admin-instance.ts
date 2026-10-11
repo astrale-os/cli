@@ -37,11 +37,6 @@ export function listOwnedInstancesWithIdentity(options: AdminConnectionOptions) 
   )
 }
 
-/** Reuse an already-open Admin session for a caller-visible Instance inventory. */
-export async function listOwnedInstancesInContext(context: ConnectionContext, fleet?: string) {
-  return (await connectAdminInstances({ ...context, fleet: fleet })).list()
-}
-
 /** Create or resume one managed Instance from its durable Admin receipt. */
 export function createOwnedInstance(
   options: AdminConnectionOptions,
@@ -173,10 +168,7 @@ export function resolveOwnedInstance(options: AdminConnectionOptions, identifier
 }
 
 /** Resolve a known Instance independently of default placement. */
-export async function resolveOwnedInstanceInContext(
-  context: ConnectionContext,
-  identifier: string,
-) {
+async function resolveOwnedInstanceInContext(context: ConnectionContext, identifier: string) {
   try {
     return await (await connectAdminInstances(context)).require(identifier)
   } catch (cause) {

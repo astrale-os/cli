@@ -9,8 +9,6 @@ import { promptMultiSelect } from '../lib/prompt'
 import { type Detected, phaseHeader, renderFinale, renderIntro, renderPlan } from './render'
 import { ALL_STEPS, CONNECT_STEPS, EQUIP_STEPS } from './steps'
 
-export type { SetupOpts } from './types'
-
 /**
  * Run the setup reconciler. Two modes, one set of steps:
  *  - interactive (TTY): hand-hold each Connect step, then offer the unsatisfied

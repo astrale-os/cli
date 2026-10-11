@@ -15,7 +15,7 @@ import { log } from '../../lib/log'
 export type RegistryCommandOpts = KernelCommandOpts & AdminTargetCommandOpts
 
 /** The CT29 error document every registry command prints on stdout in machine mode. */
-export interface RegistryErrorDocument {
+interface RegistryErrorDocument {
   readonly error: {
     readonly code: string
     readonly message: string
@@ -74,7 +74,7 @@ function registryDocument(value: unknown, notation: 'json' | 'yaml' = 'json'): s
   return `${JSON.stringify(value, null, 2)}\n`
 }
 
-export function registryErrorDocument(error: AstraleError): RegistryErrorDocument {
+function registryErrorDocument(error: AstraleError): RegistryErrorDocument {
   const details =
     error instanceof RegistryError
       ? error.details

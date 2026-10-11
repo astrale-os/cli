@@ -17,7 +17,7 @@ import { confirmWithInput } from '../../lib/prompt'
  * installed issuer belongs to, under the same routing domain; any other change, the move from a
  * legacy issuer to a first v4 deployment included, is `cross`-line (AM-19).
  */
-export type IssuerChangeLine = 'same' | 'cross'
+type IssuerChangeLine = 'same' | 'cross'
 
 /** The issuer-change consent an install command was given. */
 export interface IssuerChangeConsent {
@@ -28,12 +28,6 @@ export interface IssuerChangeConsent {
   /** `--revoke-previous`: cut the replaced issuer at the activation instead of draining it. */
   readonly revokePrevious: boolean
 }
-
-export const NO_ISSUER_CHANGE_CONSENT: IssuerChangeConsent = Object.freeze({
-  sameLine: false,
-  origins: Object.freeze([]),
-  revokePrevious: false,
-})
 
 /**
  * The consent of the `--allow-issuer-change` occurrences (`''` for one written without an origin)
@@ -68,7 +62,7 @@ export function issuerChangeConsent(
 }
 
 /** The deployment line an address belongs to: its scheme, its routing domain and its line. */
-export interface DeploymentLineAddress {
+interface DeploymentLineAddress {
   readonly scheme: string
   readonly routingDomain: string
   readonly line: string
@@ -171,7 +165,7 @@ export function consentedByFlags(change: IssuerChange, consent: IssuerChangeCons
 }
 
 /** One change ISSUER_CHANGE_NOT_CONSENTED names (CT24): the installed and the replacement issuer. */
-export interface UnconsentedIssuerChange {
+interface UnconsentedIssuerChange {
   readonly origin: string
   readonly installed: string
   readonly replacement: string

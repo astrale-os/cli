@@ -6,7 +6,7 @@ import { bundle, schema } from '@astrale-os/sdk/schema'
 
 import { AstraleError } from '../errors'
 
-export interface CallableDescription {
+interface CallableDescription {
   readonly path: string
   readonly origin: string
   readonly method?: string

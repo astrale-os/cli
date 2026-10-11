@@ -6,7 +6,7 @@ import { closeSession, listSessions } from './session'
 
 const RELEASE_TIMEOUT_MS = 2_000
 
-export interface OpenStudioViewSessionInput {
+interface OpenStudioViewSessionInput {
   viewPath: string
   instance: string
   timeoutMs: number

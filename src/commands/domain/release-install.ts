@@ -81,7 +81,7 @@ export type ReferenceInstallOpts = KernelCommandOpts &
   }
 
 /** The pin, revision and issuer of one installation, as the installed listing reports them. */
-export interface InstalledState {
+interface InstalledState {
   readonly revision: string
   readonly pin: InstalledPin
   readonly issuer: string
@@ -92,7 +92,7 @@ export interface InstalledState {
  * issuer that replaced it, and what happens to the replaced one (the Kernel default, `drain`, or
  * `revoke` with --revoke-previous).
  */
-export interface ReferenceConsent {
+interface ReferenceConsent {
   readonly from: string
   readonly to: string
   readonly previous: 'drain' | 'revoke'
@@ -108,7 +108,7 @@ export interface ReferenceConsent {
  * the version it resolved to, and carries `yanked: true` when that version is yanked, which only an
  * exact reference installs ([.79339]); a URL reference carries neither.
  */
-export interface InstallReference {
+interface InstallReference {
   readonly reference: string
   readonly origin: string | null
   readonly url: string
@@ -121,7 +121,7 @@ export interface InstallReference {
 }
 
 /** A Kernel refusal of a request whose install had already committed (AM-81). */
-export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
+type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION_CONFLICT'
 
 /**
  * `--json` of an install: the Kernel result, unchanged, plus one entry per reference. When the
@@ -129,7 +129,7 @@ export type CommittedInstallRefusal = 'SCHEMA_INPUT_INVALID' | 'SCHEMA_OPERATION
  * result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
  * refusal, so a consumer can tell it from a Kernel replay.
  */
-export type InstallReport = InstallResult & {
+type InstallReport = InstallResult & {
   readonly references: readonly InstallReference[]
   readonly recovered?: { readonly refusal: CommittedInstallRefusal }
   /** The advisory pre-check this install ran before it was sent ([.78239] [.69634]). */
@@ -173,7 +173,7 @@ const defaultDependencies: ReferenceInstallDependencies = Object.freeze({
  * the host serving it. A version reference also carries the Publication it resolved to, whose
  * release the Kernel must find at that URL.
  */
-export interface ReleaseSource extends UrlSource {
+interface ReleaseSource extends UrlSource {
   readonly reference: string
   readonly publication?: ResolvedVersion
 }
@@ -338,7 +338,7 @@ export function installedReleases(session: ClientSession): Promise<readonly Inst
  * One `release` source per reference, guarded by the release digest the reference must serve when
  * one is expected, and carrying the issuer consent of a root whose issuer the install changes.
  */
-export function releaseInstallInput(
+function releaseInstallInput(
   urls: readonly [string, ...string[]],
   expected: readonly (InstalledPin | null)[],
   operation: string,
@@ -390,7 +390,7 @@ function plannedRoots(
 }
 
 /** Join what each root expected with the installed listings read before and after. */
-export function installReferences(
+function installReferences(
   roots: readonly PlannedRoot[],
   before: readonly InstalledRelease[],
   after: readonly InstalledRelease[] | undefined,
@@ -439,7 +439,7 @@ export function installReferences(
  * References whose installation does not pin what the install expected: another document, or the
  * same origin installed from another deployment.
  */
-export function pinMismatches(
+function pinMismatches(
   references: readonly InstallReference[],
   after: readonly InstalledRelease[] | undefined,
 ): readonly InstallReference[] {
@@ -1160,7 +1160,7 @@ function pinMismatchError(mismatched: readonly InstallReference[]): AstraleError
 }
 
 /** What the install did to one root, as the Kernel's result says. */
-export type RootStatus = 'installed' | 'replaced' | 'unchanged' | 'unknown'
+type RootStatus = 'installed' | 'replaced' | 'unchanged' | 'unknown'
 
 /**
  * The status of the root installed from `origin`, read from the Kernel's result alone: a committed
@@ -1232,7 +1232,7 @@ function isAbsentDomain(error: unknown): boolean {
 }
 
 /** The host name a URL reference is served from; any http(s) URL, as before installs were grouped. */
-export function validateInstallUrl(value: string): string {
+function validateInstallUrl(value: string): string {
   let url: URL
   try {
     url = new URL(value)

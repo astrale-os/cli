@@ -80,7 +80,7 @@ export async function resolveStatus(
       'Remove --bookmarked to inspect managed lifecycle, or remove the Admin options to probe a local bookmark.',
     )
   }
-  const bookmark = await dependencies.resolveInstance(id, undefined, { persist: false })
+  const bookmark = await dependencies.resolveInstance(id)
   await dependencies.probeBookmark(bookmark)
   return Object.freeze({
     slug: bookmark.name,

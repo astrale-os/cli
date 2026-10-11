@@ -1,8 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 
-import type { AstraleConfig } from './config'
-
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
 import { atomicWrite, withFileLock } from '../state/files'
 import { ExchangeCredentialCache, INSTANCES_PATH, InstallationCache } from '../state/index'
@@ -15,10 +13,10 @@ import {
   type RegistryMode,
 } from './validation'
 
-export const InstanceKindSchema = z.enum(['bookmark'])
-export type InstanceKind = z.infer<typeof InstanceKindSchema>
+const InstanceKindSchema = z.enum(['bookmark'])
+type InstanceKind = z.infer<typeof InstanceKindSchema>
 
-export const InstanceEntrySchema = z.object({
+const InstanceEntrySchema = z.object({
   url: z.string().optional(),
   issuer: z.string().optional(),
   domainIssuer: z.string().optional(),
@@ -37,7 +35,7 @@ export const InstanceEntrySchema = z.object({
 /**
  * The sole admitted on-disk bookmark registry format.
  */
-export const INSTANCE_STORE_VERSION = 1 as const
+const INSTANCE_STORE_VERSION = 1 as const
 
 export const InstanceStoreSchema = z.object({
   version: z.literal(INSTANCE_STORE_VERSION),
@@ -51,7 +49,7 @@ export interface InstanceStore {
   instances: Record<string, InstanceEntry>
 }
 
-export type AddInstanceOpts = {
+type AddInstanceOpts = {
   url?: string
   slug?: string
   name?: string
@@ -80,7 +78,7 @@ export type ResolvedInstance = {
   status?: string
 }
 
-export type BookmarkTrustConflict = {
+type BookmarkTrustConflict = {
   readonly name: string
   readonly caFile: string | null
 }
@@ -141,10 +139,7 @@ export function resetInstancesMemo(): void {
   instancesMemo = null
 }
 
-export async function readInstances(
-  _config?: AstraleConfig,
-  _opts: { persist?: boolean } = {},
-): Promise<InstanceStore> {
+export async function readInstances(): Promise<InstanceStore> {
   if (instancesMemo) return instancesMemo
   let raw: string
   try {
@@ -275,35 +270,6 @@ export function findBookmarkTrustConflicts(
       return []
     }
     return [{ name: candidateName, caFile: entry.caFile ?? null }]
-  })
-}
-
-export async function addInstance(key: string, opts: AddInstanceOpts = {}): Promise<InstanceEntry> {
-  validateName(key, 'Instance')
-  if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
-  if (!opts.url) throw new Error('Instance bookmarks require --url <url>')
-  const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
-  validateUrl(normalizedUrl)
-
-  return mutateInstances((store) => {
-    if (store.instances[key]) {
-      throw new Error(
-        `Instance "${key}" already exists. Remove it first with: astrale instance forget ${key}`,
-      )
-    }
-    assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[])
-
-    const entry: InstanceEntry = {
-      ...opts,
-      url: normalizedUrl,
-      issuer: opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : opts.issuer,
-      domainIssuer: opts.domainIssuer ? normalizeIssuerUrl(opts.domainIssuer) : opts.domainIssuer,
-      kind: 'bookmark',
-      createdAt: new Date().toISOString(),
-    }
-    store.instances[key] = entry
-    if (!store.active) store.active = key
-    return entry
   })
 }
 
@@ -447,7 +413,7 @@ export async function upsertManagedBookmark(
 }
 
 /** Origin of the Shell Domain, the same on every Astrale-managed Instance. */
-export const SHELL_ORIGIN = 'shell.astrale.ai'
+const SHELL_ORIGIN = 'shell.astrale.ai'
 
 /**
  * The Domain an Astrale-managed public Instance route exchanges its users through: the installed
@@ -554,8 +520,8 @@ export async function setActive(identifier: string): Promise<string> {
   })
 }
 
-export async function getActive(config?: AstraleConfig): Promise<InstanceEntry & { name: string }> {
-  const store = await readInstances(config)
+export async function getActive(): Promise<InstanceEntry & { name: string }> {
+  const store = await readInstances()
   if (!store.active) {
     throw new AstraleError(
       'INSTANCE_NOT_FOUND',
@@ -566,12 +532,8 @@ export async function getActive(config?: AstraleConfig): Promise<InstanceEntry &
   return { ...entry, name: store.active }
 }
 
-export async function resolveInstance(
-  identifier: string,
-  config?: AstraleConfig,
-  opts: { persist?: boolean } = {},
-): Promise<ResolvedInstance> {
-  const store = await readInstances(config, opts)
+export async function resolveInstance(identifier: string): Promise<ResolvedInstance> {
+  const store = await readInstances()
   const key = resolveInstanceKey(store, identifier)
   const entry = key ? store.instances[key] : undefined
   if (!key || !entry?.url) {
@@ -594,15 +556,6 @@ export async function resolveInstance(
     caFile: entry.caFile,
     mode: entry.mode,
   }
-}
-
-export async function resolveKernelUrl(
-  opts: { url?: string; instance?: string },
-  config: AstraleConfig,
-): Promise<string> {
-  if (opts.url) return opts.url
-  const identifier = opts.instance ?? (await getActive(config)).name
-  return (await resolveInstance(identifier, config)).url
 }
 
 /**
@@ -641,7 +594,7 @@ export function normalizeInstanceKernelUrl(url: string): string {
   return parsed.toString().replace(/\/$/, '')
 }
 
-export function normalizeIssuerUrl(url: string): string {
+function normalizeIssuerUrl(url: string): string {
   try {
     const parsed = new URL(url)
     if (parsed.username || parsed.password || parsed.search || parsed.hash) return url

@@ -145,7 +145,7 @@ function delay(ms: number, abort?: AbortSignal): Promise<void> {
   })
 }
 
-export type StudioReadiness = 'ready' | 'exited' | 'timeout'
+type StudioReadiness = 'ready' | 'exited' | 'timeout'
 
 /**
  * Wait for the studio to answer, but stop the moment the server process ends.

@@ -3,7 +3,7 @@ import type { InstanceStore } from './instance'
 
 import { resolveInstanceKey } from './instance'
 
-export type UseTarget =
+type UseTarget =
   | { kind: 'identity'; name: string }
   | { kind: 'instance'; name: string }
   | { kind: 'ambiguous'; name: string }

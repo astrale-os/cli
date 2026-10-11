@@ -35,7 +35,7 @@ export interface InstalledListV1 {
   readonly domains: readonly InstalledDomainV1[]
 }
 
-export interface InstalledDomainV1 {
+interface InstalledDomainV1 {
   readonly origin: string
   readonly revision: string
   readonly issuer: string
@@ -58,7 +58,7 @@ export interface InstalledDomainV1 {
 }
 
 /** The name of a release pin that neither a Publication nor a record names. */
-export const UNKNOWN_NAME = 'unknown'
+const UNKNOWN_NAME = 'unknown'
 
 /** Deployment records read at once; each is one GET to the deployment's dispatcher. */
 const RECORD_READS = 6

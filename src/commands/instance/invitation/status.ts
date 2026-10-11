@@ -9,7 +9,7 @@ import { isMachine, output } from '../../../lib/output'
 
 type StatusOpts = KernelCommandOpts & AdminTargetCommandOpts
 
-export interface InvitationStatusDependencies {
+interface InvitationStatusDependencies {
   readonly statusManagedInvitation: typeof statusManagedInvitation
 }
 

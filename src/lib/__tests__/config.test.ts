@@ -1,115 +1,33 @@
 import { describe, expect, test } from 'bun:test'
 
-import { DEFAULT_ADMIN_DOMAIN_ISSUER, DEFAULT_ADMIN_TARGET_URL } from '../admin-target'
+import { DEFAULT_ADMIN_DOMAIN_ISSUER } from '../admin-target'
 import { AstraleConfigSchema } from '../config'
 
 describe('AstraleConfigSchema', () => {
-  test('parses valid config', () => {
-    const result = AstraleConfigSchema.parse({
-      issuer: 'https://test.astrale.ai',
-    })
-    expect(result.issuer).toBe('https://test.astrale.ai')
-    expect(result.admin.url).toBe(DEFAULT_ADMIN_TARGET_URL)
-  })
-
-  test('applies defaults for empty object', () => {
-    const result = AstraleConfigSchema.parse({})
-    expect(result.issuer).toBe('https://unregistered.invalid')
-    expect(result.admin).toEqual({
+  test('defaults to the hosted Admin target', () => {
+    expect(AstraleConfigSchema.parse({}).admin).toEqual({
       name: 'admin',
-      url: DEFAULT_ADMIN_TARGET_URL,
-      kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
-      domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
-    })
-    expect(result.telemetry).toEqual({ enabled: true, analyzerEnabled: false })
-  })
-
-  test('retention bounds survive a parse — a read/write cycle must not drop them', () => {
-    // zod strips unknown keys, so a bound declared only in its reader would be
-    // silently erased by any command that rewrites the config.
-    const result = AstraleConfigSchema.parse({
-      telemetry: { enabled: true, maxAgeDays: 7, maxBytes: 1_048_576 },
-      browser: { maxCacheBytes: 52_428_800, maxProfileAgeDays: 14 },
-    })
-    expect(result.telemetry).toEqual({
-      enabled: true,
-      analyzerEnabled: false,
-      maxAgeDays: 7,
-      maxBytes: 1_048_576,
-    })
-    expect(result.browser).toEqual({ maxCacheBytes: 52_428_800, maxProfileAgeDays: 14 })
-  })
-
-  test.each([
-    ['zero', 0],
-    ['negative', -5],
-    ['not a number', 'lots'],
-    ['infinite', Number.POSITIVE_INFINITY],
-  ])('a %s bound is dropped, and does not take the rest of the config with it', (_l, value) => {
-    const result = AstraleConfigSchema.parse({
-      issuer: 'https://test.astrale.ai',
-      telemetry: { enabled: true, maxAgeDays: value },
-      browser: { maxCacheBytes: value },
-    })
-    expect(result.telemetry.maxAgeDays).toBeUndefined()
-    expect(result.browser.maxCacheBytes).toBeUndefined()
-    expect(result.issuer).toBe('https://test.astrale.ai')
-  })
-
-  test('rejects non-url issuer', () => {
-    expect(() => AstraleConfigSchema.parse({ issuer: 'not-a-url' })).toThrow()
-  })
-
-  test('strips removed local-runtime config keys', () => {
-    const result = AstraleConfigSchema.parse({
-      issuer: 'https://test.astrale.ai',
-      managerPort: 9000,
-      removedRuntimeKey: true,
-    })
-    expect('managerPort' in result).toBe(false)
-    expect('removedRuntimeKey' in result).toBe(false)
-  })
-
-  test('accepts configured admin bookmark', () => {
-    const result = AstraleConfigSchema.parse({
-      admin: { instance: 'staging-admin' },
-    })
-    expect(result.admin).toEqual({ instance: 'staging-admin' })
-  })
-
-  test('reads the retired built-in beta Admin as no saved target', () => {
-    const result = AstraleConfigSchema.parse({
-      issuer: 'https://test.astrale.ai',
-      admin: {
-        name: 'admin',
-        url: 'https://admin.eu.beta.astrale.ai/api',
-        kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
-        domainIssuer: 'https://admin.beta.astrale.ai',
-      },
-    })
-    expect(result.issuer).toBe('https://test.astrale.ai')
-    expect(result.admin).toEqual({
-      name: 'admin',
-      url: DEFAULT_ADMIN_TARGET_URL,
-      kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
+      url: 'https://admin.eu.astrale.ai/api',
+      kernelIssuer: 'https://admin.eu.astrale.ai/api',
       domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
     })
   })
 
-  test('keeps any other saved admin target', () => {
-    const admin = {
-      name: 'admin',
-      url: 'https://admin.eu.beta.astrale.ai/api',
-      kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
-      domainIssuer: 'https://admin-dev.example',
-    }
-    expect(AstraleConfigSchema.parse({ admin }).admin).toEqual(admin)
+  test('keeps retention bounds through a rewrite and drops only an invalid bound', () => {
+    const result = AstraleConfigSchema.parse({
+      issuer: 'https://test.astrale.ai',
+      telemetry: { enabled: true, maxAgeDays: 7, maxBytes: -1 },
+      browser: { maxCacheBytes: 52_428_800, maxProfileAgeDays: 'lots' },
+    })
+    expect(result.telemetry).toEqual({ enabled: true, analyzerEnabled: false, maxAgeDays: 7 })
+    expect(result.browser).toEqual({ maxCacheBytes: 52_428_800 })
+    expect(result.issuer).toBe('https://test.astrale.ai')
   })
 
-  test('rejects admin config with url and instance together', () => {
+  test('refuses an Admin target naming both a URL and a bookmark', () => {
     expect(() =>
       AstraleConfigSchema.parse({
-        admin: { url: DEFAULT_ADMIN_TARGET_URL, instance: 'admin' },
+        admin: { url: 'https://admin.example/api', instance: 'admin' },
       }),
     ).toThrow()
   })

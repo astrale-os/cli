@@ -50,7 +50,7 @@ export type SetupContext = {
   slug?: string
 }
 
-export type StepGroup = 'connect' | 'equip'
+type StepGroup = 'connect' | 'equip'
 
 export type SetupStep = {
   id: string

@@ -35,7 +35,7 @@ import { mapBounded } from '../../lib/concurrency'
  */
 
 /** One meaning change the engine found, as the Kernel lists it in `changes`. */
-export interface PrecheckChange {
+interface PrecheckChange {
   readonly key: string
   readonly kind: 'missing' | 'changed' | 'added'
 }
@@ -44,7 +44,7 @@ export interface PrecheckChange {
  * A root whose dependency, at the revision the install leaves active, no longer holds the meaning
  * the root was built against: the details of the Kernel's SCHEMA_DEPENDENCY_INCOMPATIBLE.
  */
-export interface BrokenDependency {
+interface BrokenDependency {
   readonly origin: string
   readonly dependency: string
   /** The revision of `dependency` the root was built against. */
@@ -58,7 +58,7 @@ export interface BrokenDependency {
  * An installed Domain the install does not name, whose dependency the install upgrades to a
  * revision that changes what it uses: one entry of the Kernel's SCHEMA_DEPENDENTS_INCOMPATIBLE.
  */
-export interface BrokenDependent {
+interface BrokenDependent {
   readonly domain: { readonly origin: string; readonly revision: string }
   readonly dependency: string
   /** The revision of `dependency` the installed Domain was built against. */
@@ -98,7 +98,7 @@ export type DependentProposal =
   | { readonly origin: string; readonly kind: 'unread'; readonly code: string }
 
 /** Why one root of the install was not compared. */
-export type SkippedReason =
+type SkippedReason =
   /** The CLI could not read what the reference's deployment serves. */
   | 'release-unread'
   /** The release's Schema Bundle could not be read, or is not the one the release names. */

@@ -75,12 +75,7 @@ function optionalInteger(
   return input === undefined ? undefined : requiredInteger(input, minimum, maximum, flag)
 }
 
-export function requiredInteger(
-  input: string,
-  minimum: number,
-  maximum: number,
-  flag: string,
-): number {
+function requiredInteger(input: string, minimum: number, maximum: number, flag: string): number {
   if (!/^(?:0|[1-9][0-9]*)$/u.test(input)) {
     throw new TypeError(`${flag} must be an integer from ${minimum} to ${maximum}.`)
   }

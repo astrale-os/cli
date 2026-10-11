@@ -22,7 +22,7 @@ import { AstraleError } from '../../errors'
  */
 
 /** A reference the registry resolves: an exact version or a minor line of one origin. */
-export type VersionSelector = Exclude<Reference, { readonly kind: 'url' }>
+type VersionSelector = Exclude<Reference, { readonly kind: 'url' }>
 
 /** One version reference as the operator wrote it. */
 export interface VersionReference {
@@ -43,7 +43,7 @@ export interface ResolvedVersion {
   readonly pin: Extract<InstalledPin, { readonly kind: 'release' }>
 }
 
-export type VersionUnresolvedReason = 'unknown-version' | 'no-stable-match' | 'yanked-only'
+type VersionUnresolvedReason = 'unknown-version' | 'no-stable-match' | 'yanked-only'
 
 /**
  * Whether a reference names a version rather than a deployment ([.78896], the syntax decides):
@@ -120,7 +120,7 @@ export function exactReference(resolved: ResolvedVersion): string {
 }
 
 /** A version reference that names no published version readable by the caller. */
-export class VersionUnresolvedError extends AstraleError {
+class VersionUnresolvedError extends AstraleError {
   constructor(reference: VersionReference, reason: VersionUnresolvedReason) {
     const { origin } = reference.selector
     super(

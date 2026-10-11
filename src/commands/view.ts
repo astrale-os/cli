@@ -19,6 +19,7 @@ import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
 import { promptSelect } from '../lib/prompt'
+import { ensureViewerAssets } from '../lib/view/assets'
 import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
@@ -31,7 +32,6 @@ import {
   selectedView,
   type ViewCandidate,
 } from '../lib/view/resolve'
-import { ensureViewerAssets } from '../lib/view/server'
 import {
   closeSession,
   configPath,
@@ -166,7 +166,7 @@ export async function resolveServeRuntime(
 }
 
 /** Reinvoke a compiled executable without its virtual Bun filesystem entry. */
-export function directServeRuntime(
+function directServeRuntime(
   executable: string,
   entry: string | undefined,
   entryExists = entry !== undefined && existsSync(entry),

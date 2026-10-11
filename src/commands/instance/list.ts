@@ -2,7 +2,7 @@ import { ResponseError } from '@astrale-os/sdk/client'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
-import type { Column } from '../../lib/output'
+import type { Column } from '../../lib/table'
 import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'

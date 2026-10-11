@@ -54,7 +54,7 @@ export type BrowserRetentionBudget = {
   maxProfileAgeMs: number
 }
 
-export type BrowserSweepResult = {
+type BrowserSweepResult = {
   /** Profiles deleted outright (dormant past the age bound). */
   removed: string[]
   /** Profiles kept, cache emptied (over the size bound). */

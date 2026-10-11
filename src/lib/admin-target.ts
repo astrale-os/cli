@@ -67,7 +67,7 @@ export const AdminTargetConfigSchema = z
     }
   })
 
-export type AdminTargetConfig = z.infer<typeof AdminTargetConfigSchema>
+type AdminTargetConfig = z.infer<typeof AdminTargetConfigSchema>
 
 export type AdminTargetCommandOpts = {
   fleet?: string
@@ -78,7 +78,7 @@ export type AdminTargetCommandOpts = {
   url?: string
 }
 
-export type AdminTargetSource = 'admin-url' | 'admin' | 'config-instance' | 'config-url' | 'default'
+type AdminTargetSource = 'admin-url' | 'admin' | 'config-instance' | 'config-url' | 'default'
 
 export type ResolvedAdminTarget = {
   name: string

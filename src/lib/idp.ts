@@ -55,7 +55,7 @@ export class OAuthTokenError extends Error {
   }
 }
 
-export type RefreshFailureKind = 'session-ended' | 'org-rejected' | 'transient' | 'unknown'
+type RefreshFailureKind = 'session-ended' | 'org-rejected' | 'transient' | 'unknown'
 
 /**
  * Classify a `refreshSession` failure so callers only demand a re-login when
@@ -108,7 +108,7 @@ export const OidcMetadataSchema = z
   })
   .passthrough()
 
-export type OidcMetadata = z.infer<typeof OidcMetadataSchema>
+type OidcMetadata = z.infer<typeof OidcMetadataSchema>
 
 export const IdpClientConfigSchema = z
   .object({
@@ -126,19 +126,19 @@ export const IdpClientConfigSchema = z
 
 export type IdpClientConfig = z.infer<typeof IdpClientConfigSchema>
 
-export const IdpIndexEntrySchema = z.object({
+const IdpIndexEntrySchema = z.object({
   issuer: z.string().url(),
   builtIn: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
 
-export const IdpStoreSchema = z.object({
+const IdpStoreSchema = z.object({
   idps: z.record(z.string(), IdpIndexEntrySchema),
 })
 
-export type IdpStore = z.infer<typeof IdpStoreSchema>
-export type IdpIndexEntry = z.infer<typeof IdpIndexEntrySchema>
+type IdpStore = z.infer<typeof IdpStoreSchema>
+type IdpIndexEntry = z.infer<typeof IdpIndexEntrySchema>
 
 export const IdpSessionSchema = z
   .object({
@@ -195,7 +195,7 @@ export type TokenResponse = {
   [key: string]: unknown
 }
 
-export type DeviceAuthorizationResponse = {
+type DeviceAuthorizationResponse = {
   device_code: string
   user_code?: string
   verification_uri?: string
@@ -206,7 +206,7 @@ export type DeviceAuthorizationResponse = {
   [key: string]: unknown
 }
 
-export type IdpConfig = {
+type IdpConfig = {
   name: string
   entry: IdpIndexEntry
   metadata: OidcMetadata
@@ -218,15 +218,15 @@ const DEFAULT_WORKOS_API_HOST = 'https://api.workos.com'
 const DEFAULT_WORKOS_CLIENT_ID = 'client_01KC29HET5F3QAQ8GNTPZ7F320'
 const WORKOS_CLIENT_ID_ENV_NAMES = ['WORKOS_CLIENT_ID', 'VITE_WORKOS_CLIENT_ID'] as const
 
-export function idpDir(name: string): string {
+function idpDir(name: string): string {
   return paths.idpDir(name)
 }
 
-export function idpMetadataPath(name: string): string {
+function idpMetadataPath(name: string): string {
   return join(idpDir(name), 'metadata.json')
 }
 
-export function idpClientPath(name: string): string {
+function idpClientPath(name: string): string {
   return join(idpDir(name), 'client.json')
 }
 
@@ -249,12 +249,12 @@ export async function readIdpStore(): Promise<IdpStore> {
   }
 }
 
-export async function writeIdpStore(store: IdpStore): Promise<void> {
+async function writeIdpStore(store: IdpStore): Promise<void> {
   await mkdir(dirname(IDPS_PATH), { recursive: true })
   await atomicWrite(IDPS_PATH, JSON.stringify(store, null, 2) + '\n')
 }
 
-export async function readIdpConfig(name: string): Promise<IdpConfig> {
+async function readIdpConfig(name: string): Promise<IdpConfig> {
   validateName(name, 'IdP')
   const store = await readIdpStore()
   const entry = store.idps[name]
@@ -442,10 +442,7 @@ export async function postForm(url: string, params: URLSearchParams): Promise<To
   return tokenResponseFrom(response)
 }
 
-export async function postJson(
-  url: string,
-  bodyInput: Record<string, string>,
-): Promise<TokenResponse> {
+async function postJson(url: string, bodyInput: Record<string, string>): Promise<TokenResponse> {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -651,7 +648,7 @@ export function requireClientId(idp: IdpConfig, override?: string): string {
   return clientId
 }
 
-export function resolveClientSecret(idp: IdpConfig, overrideEnv?: string): string | undefined {
+function resolveClientSecret(idp: IdpConfig, overrideEnv?: string): string | undefined {
   const envName = overrideEnv ?? idp.client.client_secret_env
   if (!envName) return undefined
   const secret = process.env[envName]
@@ -856,7 +853,7 @@ export async function exchangeAuthorizationCode(args: {
   return postForm(args.idp.metadata.token_endpoint, params)
 }
 
-export type WorkosApplication = {
+type WorkosApplication = {
   id: string
   client_id?: string
   name?: string

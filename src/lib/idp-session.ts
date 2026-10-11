@@ -34,7 +34,7 @@ export class IdpSessionNoRefreshTokenError extends Error {
   }
 }
 
-export type EnsureFreshSessionOptions = {
+type EnsureFreshSessionOptions = {
   audience?: string
   organizationId?: string
   /** Minimum source-token lifetime required before the caller starts its operation. */
@@ -46,7 +46,7 @@ export type EnsureFreshSessionOptions = {
   resolveOrganizationId?: (audience: string) => Promise<string | undefined>
 }
 
-export function idpSessionLockPath(identityName: string): string {
+function idpSessionLockPath(identityName: string): string {
   // Lives next to the session file; listIdpSessions only picks up *.json.
   return `${idpSessionPath(identityName)}.lock`
 }
