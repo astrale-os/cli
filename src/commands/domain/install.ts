@@ -11,8 +11,11 @@ Behavior:
   Installation is durable. The CLI waits within --timeout in online mode and
   reports success only after completion. An installation that ended failed
   exits 2, one refused as an operation conflict or while another schema change
-  is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure or an unfinished
-  execution exits 1. --json retains its execution ID and exact status.
+  is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure exits 1. One
+  still running when the CLI stops waiting (--timeout, or --no-wait) is no
+  failure: the CLI prints its execution and the commands that follow it and
+  exits 0 (--json on stdout: no "changed", "follow" waits for it). --json
+  retains its execution ID and exact status.
   An operation names one request and its outcome is final. Follow an
   installation by its execution ("observe": installation status, "follow":
   installation result --wait-ms); once it ended (failed or cancelled), try

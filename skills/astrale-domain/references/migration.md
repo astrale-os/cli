@@ -92,8 +92,8 @@ breaking experiments; preserve a recovery plan for real data.
 1. Retain the source revisions, exact target releases, representative node IDs/properties and Edge
    endpoints. Decide how to repair toward both target and source before entering maintenance.
 2. Start the target install with `--mode maintenance --no-wait` and a retained operation ID. Keep
-   the returned Execution even when the CLI exits nonzero because the installation is unfinished.
-   Without `--no-wait`, the CLI itself watches the session until it awaits its first command.
+   the returned Execution: an unfinished installation exits 0 with no `changed`. Without
+   `--no-wait`, the CLI itself watches the session until it awaits its first command.
 3. Read its status until `detail.phase` is `awaiting`; stop and inspect a terminal failure or
    cancellation instead of waiting indefinitely. A maintenance request with no schema change is
    refused with `SCHEMA_INPUT_INVALID`. Repair data with Root raw graph mutations using the

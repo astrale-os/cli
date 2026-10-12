@@ -43,6 +43,8 @@ export async function runInstallCall<Result>(
     readonly label: string
     readonly recovery: OperationRecovery
     readonly call: (started: (execution: InstallExecutionId) => void) => Promise<Result>
+    /** Whether the answer is an Execution still running: the wait ended without its outcome. */
+    readonly running?: (result: Result) => boolean
     readonly format: (
       result: Result,
       machine: boolean,
@@ -73,7 +75,10 @@ export async function runInstallCall<Result>(
         execution = answered
       })
       .finally(() => process.off('SIGINT', interrupted))
-    spin?.succeed(`${step.label} ${chalk.dim(formatElapsed(performance.now() - startTime))}`)
+    const elapsed = chalk.dim(formatElapsed(performance.now() - startTime))
+    // A wait that ended before the Execution did is no failure: a neutral mark, not a cross.
+    if (step.running?.(result) === true) spin?.info(`${step.label} still running ${elapsed}`)
+    else spin?.succeed(`${step.label} ${elapsed}`)
     if (!machine) console.log('')
     await step.format(result, machine, context())
     return undefined

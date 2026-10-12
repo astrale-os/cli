@@ -4,7 +4,7 @@ import type { OperationId, UninstallReceipt, UninstallRequest } from '@astrale-o
 import chalk from 'chalk'
 
 import type { KernelCommandOpts, OperationRecovery } from '../../connection'
-import type { Lifecycle } from '../../connection/installation-result'
+import type { Lifecycle, LifecycleContext } from '../../connection/installation-result'
 import type { CommandDefinition } from '../../program/index'
 import type { InstallFailure } from './install-call'
 
@@ -13,6 +13,9 @@ import {
   announcingLifecycle,
   conflictFailure,
   installationResult,
+  renderRunning,
+  runningReport,
+  stillRunning,
 } from '../../connection/installation-result'
 import { resolveTimeoutMs } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
@@ -32,7 +35,10 @@ type UninstallOpts = KernelCommandOpts & {
   readonly operation?: string
 }
 
-type UninstallResult = UninstallReceipt & Pick<Uninstallation, 'execution' | 'status'>
+/** A completed uninstall's receipt with its Execution, or its Execution still running. */
+type UninstallResult =
+  | (UninstallReceipt & Pick<Uninstallation, 'execution' | 'status'>)
+  | { readonly running: Uninstallation }
 
 /** Public Kernel uninstall syscall input for one canonical non-empty Domain set. */
 export function uninstallCallInput(
@@ -74,7 +80,8 @@ Behavior:
   --operation is for automation: a reused id replays only the exact same
   uninstall. Any other request under that id is
   refused as an operation conflict: nothing runs, and the CLI names the
-  execution the id belongs to.
+  execution the id belongs to. An uninstall still running at --timeout is no
+  failure: the CLI prints its execution and how to follow it, and exits 0.
   Ctrl-C stops waiting, never the uninstall: the CLI names its execution and
   exits 130.
 
@@ -137,7 +144,8 @@ Examples:
             command.fn(announcingLifecycle(session, started)).catch(async (error: unknown) => {
               throw await conflictFailure(error, session.schema)
             }),
-          format: (result, machine) => command.format(result, opts, machine),
+          running: (result) => 'running' in result,
+          format: (result, machine, context) => command.format(result, opts, machine, context),
         }),
       command.credential,
     ).catch((error: unknown): InstallFailure => ({ error, render: 'kernel' }))
@@ -172,13 +180,24 @@ export function uninstallKernelCommand(
         ) as Parameters<Lifecycle['uninstall']>[0],
         opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
       )
+      if (stillRunning(installation.status)) return { running: installation }
       return {
         ...installationResult(installation, 'uninstall'),
         execution: installation.execution,
         status: installation.status,
       }
     },
-    format: (result: UninstallResult, formatOpts: KernelCommandOpts, machine: boolean) => {
+    format: (
+      result: UninstallResult,
+      formatOpts: KernelCommandOpts,
+      machine: boolean,
+      context: LifecycleContext,
+    ) => {
+      if ('running' in result) {
+        if (machine) output(runningReport(result.running, context), formatOpts)
+        else renderRunning(result.running, context, true)
+        return
+      }
       if (machine) {
         output(result, formatOpts)
         return

@@ -28,7 +28,10 @@ import {
   installationResult,
   openSessionReport,
   renderOpenSession,
+  renderRunning,
+  runningReport,
   conflictFailure,
+  stillRunning,
   type Lifecycle,
 } from '../../connection/installation-result'
 import { reasonCode } from '../../connection/reasons'
@@ -297,8 +300,14 @@ interface InstallOutcome {
   readonly after: readonly InstalledRelease[] | undefined
 }
 
-/** What an install answers: its outcome, or the maintenance session it opened, awaiting Root. */
-type InstallAnswer = InstallOutcome | { readonly session: Installation }
+/**
+ * What an install answers: its outcome, the maintenance session it opened, awaiting Root, or its
+ * Execution still running when the command stopped waiting.
+ */
+type InstallAnswer =
+  | InstallOutcome
+  | { readonly session: Installation }
+  | { readonly running: Installation }
 
 /** Each step of a session watch: a bounded wait for the outcome, then a status read. */
 const WATCH_WAIT_MS = 1_000
@@ -418,10 +427,17 @@ async function installReleases(
         }
         if (installation.status.detail?.phase === 'awaiting') return { session: installation }
       }
+      if (stillRunning(installation.status)) return { running: installation }
       const result = installationResult(installation)
       return { installation, result, after: await installedAfter(session, machine) }
     },
+    running: (answer) => 'running' in answer,
     format: (answer, raw, context) => {
+      if ('running' in answer) {
+        if (raw) output({ ...runningReport(answer.running, context), precheck }, opts)
+        else renderRunning(answer.running, context, opts.wait !== false)
+        return
+      }
       if ('session' in answer) {
         if (raw) output({ ...openSessionReport(answer.session, context), precheck }, opts)
         else renderOpenSession(answer.session, context)

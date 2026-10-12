@@ -244,10 +244,12 @@ deploy and with which secrets; they name no instance and do not use the CLI's ac
 
 Installation and uninstallation are durable Kernel executions. The CLI waits
 within the request timeout and reports completion only from a completed outcome.
-`--json` adds `execution` and `status` to the committed result. A failed
-install/uninstall exits 2, an unfinished or cancelled one exits 1, retaining
-those fields on stderr with the exact operation ID and `observe` (the `domain
-installation status` command). An
+`--json` adds `execution` and `status` to the committed result. One still
+running when the CLI stops waiting (`--timeout`, or `--no-wait`) exits 0 with
+`execution`, `status`, `observe` (the `domain installation status` command) and
+`follow` (`domain installation result --wait-ms`) on stdout and no `changed`: it
+is not installed yet. A failed install/uninstall exits 2, a cancelled or paused
+one exits 1, retaining those fields on stderr with the exact operation ID. An
 operation names one request and its outcome is final: follow a run by its
 execution (`observe`, `follow`), and once it ended (failed or cancelled), use
 `fresh` (the same command without `--operation`). A refusal before any

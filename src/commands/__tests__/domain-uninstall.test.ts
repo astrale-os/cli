@@ -78,16 +78,28 @@ test('requires --yes outside a TTY before connecting to a Kernel', async () => {
   })
 })
 
-for (const state of ['pending', 'failed', 'cancelled'] as const) {
+for (const state of ['paused', 'failed', 'cancelled'] as const) {
   test(`uninstall ${state} never presents an Execution reference as a receipt`, async () => {
     const command = uninstallKernelCommand(['app.example'], { yes: true })
+    const outcome = state === 'paused' ? {} : { outcome: { kind: state, error: {} } }
     await expect(
       command.fn({
-        uninstall: async () => ({ execution: 'uninstall-execution', status: { state } }),
+        uninstall: async () => ({
+          execution: 'uninstall-execution',
+          status: { state, ...outcome },
+        }),
       } as never),
     ).rejects.toThrow(`Installation uninstall-execution is ${state}.`)
   })
 }
+
+test('an uninstall still running when the wait ended answers its Execution, never a receipt', async () => {
+  const command = uninstallKernelCommand(['app.example'], { yes: true })
+  const running = { execution: 'uninstall-execution', status: { state: 'running' } }
+  expect(await command.fn({ uninstall: async () => running } as never)).toEqual({
+    running,
+  } as never)
+})
 
 test('published SDK decoder resolves durable uninstall before CLI reports a receipt', async () => {
   const operation = '139137b5-af47-47ce-92b2-b64a2b0c63d7'

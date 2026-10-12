@@ -295,16 +295,8 @@ describe('install by URL', () => {
         unsettled('failed', { kind: 'failed', error: refusal }),
         { error: refusal.code, message: refusal.message },
       ],
-      [
-        unsettled('running'),
-        {
-          error: 'INSTALLATION_PENDING',
-          message: `Installation ${EXECUTION} is running.`,
-          execution: EXECUTION,
-          status: { state: 'running' },
-        },
-      ],
       [unsettled('cancelled', { kind: 'cancelled' }), { error: 'INSTALLATION_CANCELLED' }],
+      [unsettled('paused'), { error: 'INSTALLATION_PENDING', status: { state: 'paused' } }],
     ] as const) {
       const run = harness({
         served: { [A]: served(AGENCIES, A, '1') },
@@ -972,19 +964,27 @@ describe('durable installations', () => {
         },
         installation: { execution: 'install-execution' as never, status },
       })
-      const failure = await refused(
-        [A],
-        {
-          ...JSON_OUTPUT,
-          operation: RETRY,
-          mode: 'maintenance',
-          validationScope: 'full',
-          validationCounts: 'exact',
-          wait: false,
-        },
-        run,
-      )
-      expect(io.stdout).toBe('')
+      const opts = {
+        ...JSON_OUTPUT,
+        operation: RETRY,
+        mode: 'maintenance' as const,
+        validationScope: 'full' as const,
+        validationCounts: 'exact' as const,
+        wait: false,
+      }
+      // Still running when --no-wait returned: what the command asked for, never a success claim.
+      const failure =
+        state === 'pending' || state === 'running'
+          ? await installByReference([A], opts, run.deps).then(() => {
+              const report = JSON.parse(io.stdout)
+              expect(report).not.toHaveProperty('changed')
+              expect(report).not.toHaveProperty('error')
+              return { ...report, error: 'INSTALLATION_PENDING' }
+            })
+          : await refused([A], opts, run).then((refusal) => {
+              expect(io.stdout).toBe('')
+              return refusal
+            })
       expect(failure).toMatchObject({
         execution: 'install-execution',
         status: { state },
@@ -1081,6 +1081,38 @@ describe('durable installations', () => {
       execution: EXECUTION,
       status: { state: 'waiting' },
     })
+  })
+
+  test('a wait that ended before the install did is no failure: a neutral mark, exit 0', async () => {
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: {
+        ...unsettled('running'),
+        status: { ...unsettled('running').status, detail: { phase: 'validating' } },
+      } as never,
+    })
+    await installByReference([A], { ...JSON_OUTPUT, timeout: '150', instance: 'staging' }, run.deps)
+    expect(JSON.parse(io.stdout)).toEqual({
+      execution: EXECUTION,
+      lifecycle: 'install',
+      status: { id: EXECUTION, state: 'running', detail: { phase: 'validating' } },
+      operation: GENERATED,
+      observe: `astrale domain installation status ${EXECUTION} -i staging`,
+      follow: `astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+      precheck: expect.anything(),
+    })
+
+    const shown = await human(() =>
+      installByReference([A], { timeout: '150', instance: 'staging' }, run.deps),
+    )
+    expect(shown.all).toContain(
+      `Installation ${EXECUTION} still runs on the Kernel: this command's wait (--timeout) ended first.`,
+    )
+    expect(shown.all).toContain(
+      `Wait for it: astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+    )
+    expect(shown.all).not.toContain('✖')
+    expect(shown.all).not.toContain('installed (operation')
   })
 
   test('a failed install used its operation: it names the fresh command that tries again', async () => {

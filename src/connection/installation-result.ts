@@ -246,6 +246,60 @@ export function renderOpenSession(installation: Installation, context: Lifecycle
   log.dim(`  Cancel:   ${cancel} (attempts to return to the source schema)`)
 }
 
+/**
+ * Whether an Execution still runs as it should: not ended, not paused after its retries. The
+ * command stopped waiting for it (`--no-wait`, or its deadline), which is not a failure.
+ */
+export function stillRunning(status: Installation['status'] | Uninstallation['status']): boolean {
+  return status.outcome === undefined && status.state !== 'paused' && status.state !== 'deleted'
+}
+
+/**
+ * The `--json` answer of an install or uninstall still running when the command stopped waiting:
+ * its Execution and status, the operation, and the commands that follow it. No `changed`: nothing
+ * is installed yet.
+ */
+export function runningReport(
+  installation: Installation | Uninstallation,
+  context: LifecycleContext,
+): Readonly<Record<string, unknown>> {
+  const { lifecycle, recovery } = context
+  const { execution, status } = installation
+  return {
+    execution,
+    lifecycle,
+    status,
+    operation: recovery.operation,
+    observe: installationStatusCommand(execution, lifecycle, recovery.target),
+    follow: installationResultCommand(execution, lifecycle, recovery.target),
+  }
+}
+
+/**
+ * Present an install or uninstall still running when the command stopped waiting, `--no-wait` or
+ * its deadline: it continues on the Kernel, and the commands that follow it.
+ */
+export function renderRunning(
+  installation: Installation | Uninstallation,
+  context: LifecycleContext,
+  waited: boolean,
+): void {
+  const { lifecycle, recovery } = context
+  const { execution, status } = installation
+  const name = lifecycle === 'install' ? 'Installation' : 'Uninstallation'
+  log.info(
+    waited
+      ? `${name} ${execution} still runs on the Kernel: this command's wait (--timeout) ended first.`
+      : `${name} ${execution} runs on the Kernel: --no-wait returned without waiting.`,
+  )
+  log.dim(
+    `  execution: ${execution} (${status.state}${status.detail === undefined ? '' : `; ${status.detail.phase}`})`,
+  )
+  log.dim(`  operation: ${recovery.operation}`)
+  log.dim(`  Wait for it: ${installationResultCommand(execution, lifecycle, recovery.target)}`)
+  log.dim(`  Read this run: ${installationStatusCommand(execution, lifecycle, recovery.target)}`)
+}
+
 const DONE = { install: 'installed', uninstall: 'uninstalled' } as const
 
 /**
