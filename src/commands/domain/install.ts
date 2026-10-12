@@ -12,9 +12,15 @@ Behavior:
   reports success only after completion. An installation that ended failed
   exits 2, one refused while another schema change
   is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure or an unfinished
-  execution exits 1. --json retains its execution ID and exact status. Retry with
-  the printed operation ID and the same intent to observe that installation,
-  never a new operation. --no-wait returns without waiting.
+  execution exits 1. --json retains its execution ID and exact status.
+  An operation names one request and its outcome is final. Follow an
+  installation by its execution ("observe": installation status, "follow":
+  installation result --wait-ms); once it ended (failed or cancelled), try
+  again without --operation ("fresh"). A refusal before any execution exists
+  (--json: "execution": null) leaves the operation unused. --no-wait returns
+  without waiting.
+  --operation is for automation: a reused id replays only the exact same
+  request.
   After an issuer transition, original consent may no longer be reconstructible.
   An input conflict is recovered only if exact release/build pins, URL and issuer
   are already installed. The report marks recovered.refusal and changed:false;
@@ -126,7 +132,7 @@ Examples:
     },
     {
       flags: '--operation <uuid>',
-      description: 'Reuse an exact install operation id for explicit retry/recovery',
+      description: 'Operation id for automation; a reused id replays only the same request',
     },
     {
       flags: '--allow-issuer-change [origin]',

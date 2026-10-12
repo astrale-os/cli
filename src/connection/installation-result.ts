@@ -1,14 +1,19 @@
 import type {
+  InstallExecutionId,
   Installation,
   InstallResult,
+  SchemaApi,
   Uninstallation,
   UninstallReceipt,
 } from '@astrale-os/sdk/client/schema'
+import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import { ResponseError } from '@astrale-os/sdk/client'
+import { createSchema, DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS } from '@astrale-os/sdk/client/schema'
 
 import type { OperationRecovery } from './command'
 
+import { shellCommand } from '../lib/shell-command'
 import { log } from '../lib/terminal/log'
 import { reasonCode } from './reasons'
 
@@ -53,11 +58,97 @@ export function installationResult(
   return installation.result
 }
 
-/** Preserve the admitted Execution status, including migration details and repair progress. */
+/** The install and uninstall syscalls, as `announcingLifecycle` binds them. */
+export type Lifecycle = Pick<SchemaApi, 'install' | 'uninstall'>
+
+/**
+ * The install and uninstall syscalls of one Session, which tell `started` the Execution the Kernel
+ * answered as soon as it answers, before the Client waits for its outcome. A command interrupted
+ * while it waits, or that cannot read the outcome, still knows which Execution runs; a refusal
+ * before any answer created none.
+ */
+export function announcingLifecycle(
+  session: Pick<ClientSession, 'dispatch'>,
+  started: (execution: InstallExecutionId) => void,
+): Lifecycle {
+  const schema = createSchema(
+    async (call, options) => {
+      const result = await session.dispatch(call, options)
+      if (result.kind === 'execution') started(result.execution)
+      return result
+    },
+    // Only the lifecycle syscalls are exposed: the introspection limits bound nothing here.
+    {
+      maximumReleaseBytes: 1,
+      maximumBundleBytes: 1,
+      lifecycleTimeoutMs: DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS,
+    },
+  )
+  return Object.freeze({
+    install: (request, options) => schema.install(request, options),
+    uninstall: (request, options) => schema.uninstall(request, options),
+  })
+}
+
+/** What an install or uninstall command knows of its operation beside how it ended. */
+export interface LifecycleContext {
+  readonly lifecycle: 'install' | 'uninstall'
+  readonly recovery: OperationRecovery
+  /** The Execution the Kernel answered for the operation; absent when it never answered one. */
+  readonly started?: InstallExecutionId
+}
+
+/** The command that reads one install or uninstall Execution, on the same Instance and identity. */
+export function installationStatusCommand(
+  execution: string,
+  lifecycle: 'install' | 'uninstall',
+  target: readonly string[] = [],
+): string {
+  return shellCommand([
+    'astrale',
+    'domain',
+    'installation',
+    'status',
+    execution,
+    ...(lifecycle === 'uninstall' ? ['--uninstall'] : []),
+    ...target,
+  ])
+}
+
+/** How long the printed follow-up waits for the outcome: within the default request timeout. */
+const FOLLOW_WAIT_MS = 20_000
+
+/** The command that waits for one install or uninstall Execution's outcome. */
+export function installationResultCommand(
+  execution: string,
+  lifecycle: 'install' | 'uninstall',
+  target: readonly string[] = [],
+): string {
+  return shellCommand([
+    'astrale',
+    'domain',
+    'installation',
+    'result',
+    execution,
+    ...(lifecycle === 'uninstall' ? ['--uninstall'] : []),
+    '--wait-ms',
+    String(FOLLOW_WAIT_MS),
+    ...target,
+  ])
+}
+
+const DONE = { install: 'installed', uninstall: 'uninstalled' } as const
+
+/**
+ * Present an install or uninstall that ended without a result, from its admitted Execution status:
+ * what happened, whether its operation is used, and what to run next. An Execution that ended
+ * (failed or cancelled) used its operation for good, so a new attempt needs a fresh operation.
+ * `--json` keeps the status and the operation, and adds `observe`, and `fresh` once it ended.
+ */
 export function renderIncompleteInstallation(
   error: IncompleteInstallation,
   machine: boolean,
-  recovery?: OperationRecovery,
+  context?: LifecycleContext,
   fields: Readonly<Record<string, unknown>> = {},
 ): void {
   const { execution, status } = error.installation
@@ -67,6 +158,10 @@ export function renderIncompleteInstallation(
     failure?.code ??
     (outcome?.kind === 'cancelled' ? 'INSTALLATION_CANCELLED' : 'INSTALLATION_PENDING')
   const message = failure?.message ?? error.message
+  const recovery = context?.recovery
+  const observe = installationStatusCommand(execution, error.kind, recovery?.target)
+  const ended = outcome !== undefined
+  const fresh = ended ? recovery?.fresh : undefined
   if (machine) {
     process.stderr.write(
       `${JSON.stringify({
@@ -76,12 +171,18 @@ export function renderIncompleteInstallation(
         execution,
         lifecycle: error.kind,
         status,
-        ...recovery,
+        ...(recovery === undefined ? {} : { operation: recovery.operation, observe }),
+        ...(fresh === undefined ? {} : { fresh }),
       })}\n`,
     )
     return
   }
   log.error(`${code}: ${message}`)
+  if (outcome?.kind === 'failed') {
+    log.dim(`  The ${error.kind} ran and was refused: nothing was ${DONE[error.kind]}.`)
+  } else if (outcome?.kind === 'cancelled') {
+    log.dim(`  The ${error.kind} was cancelled: nothing was ${DONE[error.kind]}.`)
+  }
   log.dim(
     `  execution: ${execution} (${status.state}${status.detail === undefined ? '' : `; ${status.detail.phase}`})`,
   )
@@ -90,11 +191,56 @@ export function renderIncompleteInstallation(
       `  Repair session is waiting for command:${status.detail.command}. Read its status before applying or cancelling.`,
     )
   }
-  log.dim(
-    `  Read the existing run: astrale domain installation status ${execution}${error.kind === 'uninstall' ? ' --uninstall' : ''} (with the same Instance and identity)`,
-  )
   if (recovery !== undefined) {
-    log.dim(`  operation: ${recovery.operation}`)
-    log.dim(`  Observe the same installation with its exact intent: ${recovery.retry}`)
+    log.dim(
+      ended
+        ? `  operation: ${recovery.operation} is used: this ${outcome.kind === 'failed' ? 'failure' : 'cancellation'} is its final outcome.`
+        : `  operation: ${recovery.operation}`,
+    )
+  }
+  log.dim(`  Read this run: ${observe}`)
+  if (fresh !== undefined) log.dim(`  Try again with a fresh operation: ${fresh}`)
+}
+
+/**
+ * The lines a human reads, and the members `--json` adds, after an install or uninstall failed
+ * other than by its Execution's outcome: refused before any Execution existed (nothing started, the
+ * operation unused), or started and then unreadable (it continues on the Kernel).
+ */
+export function lifecycleFailureNotes(
+  context: LifecycleContext,
+  refusedAtDispatch: boolean,
+): {
+  readonly hint?: string
+  readonly fields: Readonly<Record<string, unknown>>
+  readonly lines: readonly string[]
+} {
+  const { lifecycle, recovery, started } = context
+  if (started !== undefined) {
+    const observe = installationStatusCommand(started, lifecycle, recovery.target)
+    const follow = installationResultCommand(started, lifecycle, recovery.target)
+    return {
+      fields: {
+        execution: started,
+        lifecycle,
+        operation: recovery.operation,
+        observe,
+        follow,
+      },
+      lines: [
+        `The ${lifecycle} started as ${started} and continues on the Kernel; this command could not read how it ends.`,
+        `operation: ${recovery.operation}`,
+        `Wait for it: ${follow}`,
+        `Read this run: ${observe}`,
+      ],
+    }
+  }
+  if (!refusedAtDispatch) return { fields: {}, lines: [] }
+  return {
+    fields: { execution: null, lifecycle, operation: recovery.operation, fresh: recovery.fresh },
+    lines: [
+      `Not started: the Kernel refused this ${lifecycle} before creating an Execution, so operation ${recovery.operation} was not used.`,
+      `Run it again once that is resolved: ${recovery.fresh}`,
+    ],
   }
 }

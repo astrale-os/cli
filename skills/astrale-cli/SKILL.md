@@ -246,11 +246,14 @@ Installation and uninstallation are durable Kernel executions. The CLI waits
 within the request timeout and reports completion only from a completed outcome.
 `--json` adds `execution` and `status` to the committed result. A failed
 install/uninstall exits 2, an unfinished or cancelled one exits 1, retaining
-those fields on stderr
-with the exact operation ID and retry command. Keep them: retrying an exact
-operation observes the same run; generating another operation starts another
-intent. One refused `SCHEMA_CHANGE_ACTIVE` (another schema change holds the
-Instance) exits 5. Only a completed install normally reads back and verifies the installed pins.
+those fields on stderr with the exact operation ID and `observe` (the `domain
+installation status` command). An
+operation names one request and its outcome is final: follow a run by its
+execution (`observe`, `follow`), and once it ended (failed or cancelled), use
+`fresh` (the same command without `--operation`). A refusal before any
+execution exists carries `execution: null`: the operation is unused; one
+refused `SCHEMA_CHANGE_ACTIVE` (another schema change holds the Instance) exits
+5. Only a completed install normally reads back and verifies the installed pins.
 A replay after an issuer transition can recompute different consent: the CLI does
 not store or reconstruct the original request. If that exact replay is refused
 with `IDEMPOTENCY_KEY_CONFLICT`, it checks every requested release/build pin,
@@ -260,6 +263,9 @@ exact match is reported as `changed:false` with
 postcondition, not evidence that the original Execution succeeded; no execution
 ID or status is invented and no new operation is started. A mismatch or an
 unreadable postcondition preserves the conflict.
+
+`--operation` is for automation. A reused id replays only the exact same
+request.
 
 `--mode maintenance` starts a Root repair session and returns without waiting.
 The Instance excludes other callers during this session. Read its `status`,

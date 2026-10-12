@@ -200,6 +200,15 @@ export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   )
 }
 
+/**
+ * A refusal of an operation id another request already used: `SCHEMA_OPERATION_CONFLICT` for an
+ * install or uninstall (`IDEMPOTENCY_KEY_CONFLICT` on 1.0.0-beta.5 and beta.6 Kernels).
+ */
+export function operationConflict(reason: unknown): boolean {
+  const code = reasonCode(reason)
+  return code === 'SCHEMA_OPERATION_CONFLICT' || code === 'IDEMPOTENCY_KEY_CONFLICT'
+}
+
 export function schemaDataRemovalHint(reason: unknown): string | undefined {
   if (!reasonWithCode(reason, 'DATA_MIGRATION_REQUIRED')) return undefined
   const requirements = reason.details.requirements

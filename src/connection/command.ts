@@ -22,7 +22,10 @@ export interface KernelCommandOpts extends ConnectionOptions {
 
 export interface OperationRecovery {
   readonly operation: string
-  readonly retry: string
+  /** The same command without `--operation`: a fresh operation, a new attempt. */
+  readonly fresh: string
+  /** The flags that select the same Instance and identity, for the commands that follow an Execution. */
+  readonly target?: readonly string[]
 }
 
 /**
@@ -38,7 +41,6 @@ export async function runKernelCommand<T>(input: {
   readonly label: string
   /** Run on the Admin kernel, selected like `domain` Admin commands select it, not -i/--url/active. */
   readonly admin?: AdminTargetSelection
-  readonly recovery?: OperationRecovery
   readonly credential?: CredentialIntent
   readonly fn: (context: ConnectionContext) => Promise<T>
   readonly format?: (
@@ -77,9 +79,7 @@ export async function runKernelCommand<T>(input: {
     }
   } catch (error) {
     if (!isRaw && spin) spin.fail(`${label} failed`)
-    await formatKernelError(error, isRaw, undefined, opts.debug, {
-      recovery: input.recovery,
-    })
+    await formatKernelError(error, isRaw, undefined, opts.debug)
     process.exit(failureExitCode(error))
   }
 }

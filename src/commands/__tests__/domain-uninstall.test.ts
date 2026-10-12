@@ -41,10 +41,11 @@ test('uses one explicit operation for submission and recovery', async () => {
 
   expect(command.recovery).toEqual({
     operation,
-    retry:
+    // A new attempt once this operation's Execution ended: the same uninstall, a fresh operation.
+    fresh:
       `astrale domain uninstall app.example shared.example --destructive ` +
-      `--operation ${operation} --yes --url https://kernel.example.test/api ` +
-      `-i staging --as operator`,
+      `--yes --url https://kernel.example.test/api -i staging --as operator`,
+    target: ['--url', 'https://kernel.example.test/api', '-i', 'staging', '--as', 'operator'],
   })
   const receipt = { operation, transitions: [{ intent: { origin: 'app.example' } }] }
   const answer = {
@@ -56,7 +57,7 @@ test('uses one explicit operation for submission and recovery', async () => {
     request.push(input)
     return answer
   }
-  expect(await command.fn({ session: { schema: { uninstall } } } as never)).toMatchObject({
+  expect(await command.fn({ uninstall } as never)).toMatchObject({
     ...receipt,
     execution: 'execution-1',
     status: { state: 'completed' },
@@ -82,11 +83,7 @@ for (const state of ['pending', 'failed', 'cancelled'] as const) {
     const command = uninstallKernelCommand(['app.example'], { yes: true })
     await expect(
       command.fn({
-        session: {
-          schema: {
-            uninstall: async () => ({ execution: 'uninstall-execution', status: { state } }),
-          },
-        },
+        uninstall: async () => ({ execution: 'uninstall-execution', status: { state } }),
       } as never),
     ).rejects.toThrow(`Installation uninstall-execution is ${state}.`)
   })
@@ -137,7 +134,7 @@ test('published SDK decoder resolves durable uninstall before CLI reports a rece
     { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
   )
   const command = uninstallKernelCommand(['app.example'], { operation, yes: true })
-  const received = await command.fn({ session: { schema } } as never)
+  const received = await command.fn(schema)
   expect(received).toMatchObject({
     ...result,
     execution: 'uninstall-execution',
@@ -147,15 +144,15 @@ test('published SDK decoder resolves durable uninstall before CLI reports a rece
   expect(calls[0]).toContain('function.uninstall')
 })
 
-test('uninstall retry quotes identity and target arguments literally', () => {
+test('the fresh uninstall quotes identity and target arguments literally', () => {
   const command = uninstallKernelCommand(['app.example'], {
     as: "O'Brien $USER",
     instance: 'qa staging',
     url: 'https://example.test/api?a=1&b=2',
     yes: true,
   })
-  expect(command.recovery!.retry).toContain("-i 'qa staging'")
-  expect(command.recovery!.retry).toContain("--url 'https://example.test/api?a=1&b=2'")
+  expect(command.recovery.fresh).toContain("-i 'qa staging'")
+  expect(command.recovery.fresh).toContain("--url 'https://example.test/api?a=1&b=2'")
   if (process.platform !== 'win32')
-    expect(command.recovery!.retry).toContain(`--as 'O'"'"'Brien $USER'`)
+    expect(command.recovery.fresh).toContain(`--as 'O'"'"'Brien $USER'`)
 })

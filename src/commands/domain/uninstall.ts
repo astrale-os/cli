@@ -3,12 +3,15 @@ import type { OperationId, UninstallReceipt, UninstallRequest } from '@astrale-o
 
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../../connection'
+import type { KernelCommandOpts, OperationRecovery } from '../../connection'
+import type { Lifecycle } from '../../connection/installation-result'
 import type { CommandDefinition } from '../../program/index'
+import type { InstallFailure } from './install-call'
 
-import { runKernelCommand } from '../../connection'
-import { installationResult } from '../../connection/installation-result'
+import { withClientSession } from '../../connection'
+import { announcingLifecycle, installationResult } from '../../connection/installation-result'
 import { resolveTimeoutMs } from '../../connection/session'
+import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import { shellCommand } from '../../lib/shell-command'
 import { canPrompt } from '../../lib/terminal/interactive'
@@ -16,6 +19,7 @@ import { fatal, log } from '../../lib/terminal/log'
 import { output } from '../../lib/terminal/output'
 import { dangerPanel } from '../../lib/terminal/panel'
 import { confirmWithInput } from '../../lib/terminal/prompt'
+import { exitWithInstallFailure, runInstallCall } from './install-call'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
 type UninstallOpts = KernelCommandOpts & {
@@ -53,8 +57,14 @@ Behavior:
   Edge that references a selected Node blocks the whole operation.
 
   Type the exact canonical Domain list to confirm, or pass --yes in automation.
-  A fresh operation id is generated automatically. Use --operation only to
-  retry or recover this exact uninstall after an outcome-unknown failure.
+  A fresh operation id is generated automatically; its outcome is final. An
+  uninstall that ended (failed or cancelled) used its operation: try again
+  without --operation ("fresh"). A failure exits 2 when the uninstall ended
+  failed, 5 when it was refused while another
+  schema change is active (SCHEMA_CHANGE_ACTIVE), else 1; --json
+  carries the execution, "observe" and, once the operation is used, "fresh".
+  --operation is for automation: a reused id replays only the exact same
+  uninstall.
 
   Use this before reinstalling only when an immutable Domain property (such as
   its issuer) intentionally changed. Ordinary compatible upgrades should use
@@ -85,7 +95,7 @@ Examples:
     },
     {
       flags: '--operation <uuid>',
-      description: 'Reuse an exact uninstall operation id for explicit retry/recovery',
+      description: 'Operation id for automation; a reused id replays only the same request',
     },
   ],
   action: async (origins: [string, ...string[]], opts: UninstallOpts) => {
@@ -101,29 +111,48 @@ Examples:
       fatal(error, opts)
     }
 
-    await runKernelCommand<UninstallResult>(uninstallKernelCommand(selected, opts, operation))
+    const command = uninstallKernelCommand(selected, opts, operation)
+    const failure = await withClientSession(
+      opts,
+      async ({ session }) =>
+        runInstallCall(opts, {
+          lifecycle: 'uninstall',
+          label: command.label,
+          recovery: command.recovery,
+          call: (started) => command.fn(announcingLifecycle(session, started)),
+          format: (result, machine) => command.format(result, opts, machine),
+        }),
+      command.credential,
+    ).catch((error: unknown): InstallFailure => ({ error, render: 'kernel' }))
+    if (failure !== undefined) await exitWithInstallFailure(failure, opts)
   },
 } satisfies CommandDefinition
 
+/** One uninstall: its label, its operation recovery, and the call over the uninstall syscall. */
 export function uninstallKernelCommand(
   selected: readonly [string, ...string[]],
   opts: UninstallOpts,
   operation: OperationId = opts.operation === undefined
     ? createDomainOperationId('uninstall')
     : acceptDomainOperationId(opts.operation, 'uninstall'),
-): Parameters<typeof runKernelCommand<UninstallResult>>[0] {
+) {
+  const recovery: OperationRecovery = {
+    operation,
+    fresh: uninstallCommand(selected, opts),
+    target: targetFlags(opts),
+  }
   return {
     opts,
     label: `Uninstalling ${selected.length === 1 ? 'domain' : 'domains'} ${selected.join(', ')} (operation ${operation})`,
-    recovery: { operation, retry: uninstallRetry(selected, operation, opts) },
+    recovery,
     credential: { principal: 'caller' as const },
-    fn: async ({ session }) => {
-      const installation = await session.schema.uninstall(
+    fn: async (lifecycle: Pick<Lifecycle, 'uninstall'>): Promise<UninstallResult> => {
+      const installation = await lifecycle.uninstall(
         uninstallCallInput(
           selected,
           opts.destructive ? 'destructive' : 'safe',
           operation,
-        ) as Parameters<typeof session.schema.uninstall>[0],
+        ) as Parameters<Lifecycle['uninstall']>[0],
         opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
       )
       return {
@@ -132,7 +161,7 @@ export function uninstallKernelCommand(
         status: installation.status,
       }
     },
-    format: (result, formatOpts, machine) => {
+    format: (result: UninstallResult, formatOpts: KernelCommandOpts, machine: boolean) => {
       if (machine) {
         output(result, formatOpts)
         return
@@ -146,26 +175,17 @@ export function uninstallKernelCommand(
   }
 }
 
-function uninstallRetry(
-  origins: readonly [string, ...string[]],
-  operation: string,
-  opts: UninstallOpts,
-): string {
-  const flag = (name: string, value: string | undefined) =>
-    value === undefined ? [] : [name, value]
+/** This uninstall as a command line, with a fresh operation. */
+function uninstallCommand(origins: readonly [string, ...string[]], opts: UninstallOpts): string {
   return shellCommand([
     'astrale',
     'domain',
     'uninstall',
     ...origins,
     ...(opts.destructive ? ['--destructive'] : []),
-    '--operation',
-    operation,
     '--yes',
-    ...flag('--url', opts.url),
-    ...flag('-i', opts.instance),
-    ...flag('--as', opts.as),
-    ...flag('--timeout', opts.timeout),
+    ...targetFlags(opts),
+    ...(opts.timeout === undefined ? [] : ['--timeout', opts.timeout]),
   ])
 }
 

@@ -1,5 +1,6 @@
 import type {
   Installation,
+  InstallExecutionId,
   InstalledPin,
   InstalledRelease,
   InstallRequest,
@@ -20,9 +21,15 @@ import type { ResolvedVersion, VersionReference } from './version-reference'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
 import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
-import { IncompleteInstallation, installationResult } from '../../connection/installation-result'
+import {
+  announcingLifecycle,
+  IncompleteInstallation,
+  installationResult,
+  type Lifecycle,
+} from '../../connection/installation-result'
 import { reasonCode } from '../../connection/reasons'
 import { resolveTimeoutMs } from '../../connection/session'
+import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import {
   DeploymentReadError,
@@ -123,6 +130,11 @@ type InstallReport = InstallResult & {
 export interface ReferenceInstallDependencies {
   readonly createOperationId: () => string
   readonly withClientSession: typeof withClientSession
+  /** The install syscall of a session, telling `started` the Execution the Kernel answered. */
+  readonly lifecycle: (
+    session: ClientSession,
+    started: (execution: InstallExecutionId) => void,
+  ) => Lifecycle
   /**
    * Opens the Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
    * configuration) with the caller's own identity ([.79495]): never the install target that
@@ -142,6 +154,7 @@ export interface ReferenceInstallDependencies {
 const defaultDependencies: ReferenceInstallDependencies = {
   createOperationId: () => createDomainOperationId('install'),
   withClientSession,
+  lifecycle: announcingLifecycle,
   openRegistry: (opts, work) =>
     withAdminClientSession(adminSessionOptions(opts), async (context) =>
       work(connectAdminRegistry(context)),
@@ -371,31 +384,34 @@ async function installReleases(
       }
     }),
   } as unknown as InstallRequest
+  const timeout =
+    opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) }
   let mismatched: readonly InstallReference[] = []
+  // The resend names every version by the exact version it resolved to: a line could resolve to
+  // a newer version meanwhile.
+  const recovery = {
+    operation,
+    fresh: installCommand(sources.map(namedAgain), opts, changes),
+    target: targetFlags(opts),
+  }
   const failure = await runInstallCall<InstallOutcome>(opts, {
+    lifecycle: 'install',
     label:
       sources.length === 1
         ? `Installing domain from ${sources[0]!.reference} (operation ${operation})`
         : `Installing ${sources.length} domains (operation ${operation})`,
-    // The resend names every version by the exact version it resolved to: a line could resolve to
-    // a newer version meanwhile.
-    recovery: {
-      operation,
-      retry: installCommand(sources.map(namedAgain), opts, changes, operation),
-    },
-    call: async () => {
+    recovery,
+    call: async (started) => {
+      let installation: Installation
       try {
-        const installation = await session.schema.install(
-          request,
-          opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
-        )
-        const result = installationResult(installation)
-        return { installation, result, after: await installedAfter(session, machine) }
+        installation = await run.deps.lifecycle(session, started).install(request, timeout)
       } catch (error) {
         const recovered = await recoverCommittedInstall(error, session, roots)
         if (recovered !== undefined) return recovered
         throw error
       }
+      const result = installationResult(installation)
+      return { installation, result, after: await installedAfter(session, machine) }
     },
     format: ({ installation, result, after, recovered }, raw) => {
       const report = installReferences(roots, before, after, recovered ? [] : changes, consent)
@@ -447,7 +463,7 @@ async function installReleases(
   })
   if (failure !== undefined) {
     // Only a refusal the pre-check predicts is shown beside it. A transport failure or an unknown
-    // outcome is resent with its own operation id, never replaced by the proposed install.
+    // outcome is never replaced by the proposed install.
     const predicted = ['SCHEMA_DEPENDENCY_INCOMPATIBLE', 'SCHEMA_DEPENDENTS_INCOMPATIBLE'].includes(
       failure.error instanceof IncompleteInstallation &&
         failure.error.installation.status.outcome?.kind === 'failed'
@@ -945,16 +961,14 @@ function namedAgain(source: ReleaseSource): string {
 }
 
 /**
- * One `astrale domain install` command line for `references`, with the target, identity and
- * consents of this install (each change by its origin, never a prompt), the Admin target when a
- * version reference needs the registry, and the operation id only when the command resends this
- * very install.
+ * One `astrale domain install` command line for `references`, with a fresh operation, the target,
+ * identity and consents of this install (each change by its origin, never a prompt), and the Admin
+ * target when a version reference needs the registry.
  */
 function installCommand(
   references: readonly string[],
   opts: ReferenceInstallOpts,
   changes: readonly (IssuerChange | undefined)[],
-  operation?: string,
 ): string {
   const flag = (name: string, value: string | undefined) =>
     value === undefined ? [] : [name, value]
@@ -970,7 +984,6 @@ function installCommand(
     'domain',
     'install',
     ...references,
-    ...flag('--operation', operation),
     ...flag('--mode', opts.mode),
     ...flag('--validation-scope', opts.validationScope),
     ...flag('--validation-counts', opts.validationCounts),
@@ -979,9 +992,7 @@ function installCommand(
       change === undefined ? [] : [`--allow-issuer-change=${change.origin}`],
     ),
     ...(opts.revokePrevious === true ? ['--revoke-previous'] : []),
-    ...flag('--url', opts.url),
-    ...flag('-i', opts.instance),
-    ...flag('--as', opts.as),
+    ...targetFlags(opts),
     ...flag('--timeout', opts.timeout),
     ...admin,
   ])

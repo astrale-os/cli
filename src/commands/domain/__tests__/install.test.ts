@@ -211,6 +211,14 @@ function harness(
       run.credentials.push(credential)
       return action({ session } as never)
     }) as unknown as ReferenceInstallDependencies['withClientSession'],
+    // The fake Kernel answers the whole install at once: the Execution it names was started.
+    lifecycle: ((fake: typeof session, started: (execution: string) => void) => ({
+      install: async (request: InstallRequest) => {
+        const answer = await fake.schema.install(request)
+        started(answer.execution)
+        return answer
+      },
+    })) as unknown as ReferenceInstallDependencies['lifecycle'],
     openRegistry: async (_opts, work) => {
       run.registries += 1
       if (options.registry === 'down') {
@@ -626,7 +634,7 @@ describe('install by version', () => {
     expect(run.requests).toEqual([])
   })
 
-  test('an unknown outcome keeps the operation and names the exact version, consents and targets', async () => {
+  test('an unknown outcome names the operation, and a fresh run of the exact version, consents and targets', async () => {
     const run = harness({
       served: everyRelease,
       listing: async () => [installedFrom(servedRelease(releases.v150))],
@@ -653,10 +661,11 @@ describe('install by version', () => {
     expect(String(run.requests[0]!.operation)).toBe(RETRY)
     expect(failure).toMatchObject({
       operation: RETRY,
-      retry:
-        `astrale domain install ${AGENCIES}@1.5.1 --operation ${RETRY} ` +
+      fresh:
+        `astrale domain install ${AGENCIES}@1.5.1 ` +
         `--allow-issuer-change=${AGENCIES} --revoke-previous -i acme-prod --admin-url https://admin.test/api`,
     })
+    expect(failure).not.toHaveProperty('replay')
   })
 })
 
@@ -994,10 +1003,15 @@ describe('durable installations', () => {
               ? 'INSTALLATION_CANCELLED'
               : 'INSTALLATION_PENDING',
       })
-      expect(failure.retry).toContain(`--operation ${RETRY}`)
-      expect(failure.retry).toContain(
-        '--mode maintenance --validation-scope full --validation-counts exact --no-wait',
-      )
+      // Followed by its Execution; once it ended, tried again with a fresh operation.
+      expect(failure).not.toHaveProperty('replay')
+      expect(String(failure.observe)).toContain('installation status install-execution')
+      if (state === 'failed' || state === 'cancelled') {
+        expect(failure.fresh).toContain(
+          '--mode maintenance --validation-scope full --validation-counts exact --no-wait',
+        )
+        expect(failure.fresh).not.toContain('--operation')
+      }
       expect(run.requests).toHaveLength(1)
       expect(run.requests[0]).toMatchObject({
         operation: RETRY,
@@ -1008,6 +1022,50 @@ describe('durable installations', () => {
       expect(listings).toBe(1)
     })
   }
+
+  test('a failed install used its operation: it names the fresh command that tries again', async () => {
+    const status = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      state: 'failed' as const,
+      outcome: {
+        kind: 'failed' as const,
+        error: { code: 'DATA_MIGRATION_REQUIRED', message: 'Repair stored data.' },
+      },
+    }
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: { execution: 'install-execution' as never, status },
+    })
+    const failure = await refused(
+      [A],
+      { ...JSON_OUTPUT, operation: RETRY, instance: 'staging' },
+      run,
+    )
+    expect(failure).toMatchObject({
+      execution: 'install-execution',
+      operation: RETRY,
+      fresh: `astrale domain install ${A} -i staging`,
+      observe: 'astrale domain installation status install-execution -i staging',
+    })
+  })
+
+  test('a refusal before any Execution leaves the operation unused: run it again fresh', async () => {
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      install: async () => {
+        throw new ResponseError(4001 as never, 'A session is changing the schema.', INVOCATION, {
+          code: 'SCHEMA_CHANGE_ACTIVE',
+          details: {},
+        })
+      },
+    })
+    expect(await refused([A], JSON_OUTPUT, run)).toMatchObject({
+      reason: { code: 'SCHEMA_CHANGE_ACTIVE' },
+      execution: null,
+      operation: GENERATED,
+      fresh: `astrale domain install ${A}`,
+    })
+  })
 
   test('a human sees the failed execution, never already current', async () => {
     const status = {

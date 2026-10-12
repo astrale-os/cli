@@ -16,10 +16,16 @@ import type { OperationRecovery } from './command'
 
 import { AstraleError } from '../errors'
 import { log, printFailureDebug } from '../lib/terminal/log'
-import { IncompleteInstallation, renderIncompleteInstallation } from './installation-result'
+import {
+  IncompleteInstallation,
+  lifecycleFailureNotes,
+  renderIncompleteInstallation,
+  type LifecycleContext,
+} from './installation-result'
 import {
   CREDENTIAL_REFUSED,
   functionInputIssues,
+  operationConflict,
   queryInputRepair,
   reasonCode,
   schemaDataRemovalHint,
@@ -34,16 +40,32 @@ export async function formatKernelError(
   urlArg = '',
   debug = false,
   options: {
-    recovery?: OperationRecovery
     /** Members the command adds beside a Kernel refusal's `--json` document, never over its own. */
     fields?: Readonly<Record<string, unknown>>
+    /** An install or uninstall: its operation, and the Execution the Kernel answered, if any. */
+    lifecycle?: LifecycleContext
   } = {},
 ): Promise<void> {
+  const { lifecycle } = options
   if (error instanceof IncompleteInstallation) {
-    renderIncompleteInstallation(error, machine, options.recovery, options.fields)
+    renderIncompleteInstallation(error, machine, lifecycle, options.fields)
     return
   }
-  renderFailure(classifyFailure(error), machine, urlArg, options.recovery, options.fields)
+  const failure = classifyFailure(error)
+  // An install or uninstall says whether its operation started an Execution: a Kernel refusal
+  // before any Execution answered left the operation unused, except a conflict over the operation.
+  const notes =
+    lifecycle === undefined
+      ? undefined
+      : lifecycleFailureNotes(
+          lifecycle,
+          failure.kind === 'response' && !operationConflict(failure.reason),
+        )
+  renderFailure(failure, machine, urlArg, lifecycle?.recovery, {
+    ...options.fields,
+    ...notes?.fields,
+  })
+  if (!machine) for (const line of notes?.lines ?? []) log.dim(`  ${line}`)
   if (debug) printFailureDebug(error, urlArg)
 }
 
@@ -126,10 +148,15 @@ function renderFailure(
   recovery: OperationRecovery | undefined,
   fields: Readonly<Record<string, unknown>> = {},
 ): void {
-  if (failure.kind === 'transport') return renderTransport(failure, machine, url, recovery)
+  if (failure.kind === 'transport') return renderTransport(failure, machine, url, recovery, fields)
   if (failure.kind === 'response') return renderResponse(failure, machine, fields)
   if (machine)
-    return writeRaw({ error: failure.code, message: failure.message, hint: failure.hint })
+    return writeRaw({
+      ...fields,
+      error: failure.code,
+      message: failure.message,
+      hint: failure.hint,
+    })
   log.error(`${chalk.bold(failure.code)}: ${failure.message}`)
   if (failure.hint) log.dim(`  ${failure.hint}`)
 }
@@ -139,16 +166,22 @@ function renderTransport(
   machine: boolean,
   url: string,
   recovery: OperationRecovery | undefined,
+  fields: Readonly<Record<string, unknown>>,
 ): void {
   const invocation = failure.context.kind === 'invocation' ? failure.context : undefined
+  // Once an Execution answered, its operation is known to have reached the Kernel.
+  const unknown = invocation?.delivery === 'unknown' && typeof fields.execution !== 'string'
   if (machine) {
     writeRaw({
+      ...fields,
       error: failure.code,
       message: failure.message,
       phase: failure.phase,
       transport: failure.context,
       ...(url === '' ? {} : { url }),
-      ...(invocation?.delivery === 'unknown' && recovery !== undefined ? recovery : {}),
+      ...(unknown && recovery !== undefined
+        ? { operation: recovery.operation, fresh: recovery.fresh }
+        : {}),
     })
     return
   }
@@ -157,7 +190,7 @@ function renderTransport(
   log.dim(`  phase: ${failure.phase}`)
   if (failure.phase === 'connect') log.dim('  Check the target and run `astrale status`.')
   else if (failure.phase === 'timeout') log.dim('  Try increasing `--timeout`.')
-  else if (invocation?.delivery === 'unknown') renderRecovery(recovery)
+  else if (unknown) renderRecovery(recovery)
 }
 
 function renderResponse(
@@ -226,9 +259,12 @@ function renderResponse(
 function renderRecovery(recovery: OperationRecovery | undefined): void {
   if (!recovery)
     return log.dim('  Delivery is unknown; do not automatically retry a mutating call.')
-  log.dim('  Delivery is unknown; retry with the same operation id:')
-  log.dim(`  operation: ${recovery.operation}`)
-  log.dim(`  ${recovery.retry}`)
+  log.dim(
+    `  Delivery is unknown: it may have reached the Kernel under operation ${recovery.operation}.`,
+  )
+  log.dim(
+    `  Run it again with a fresh operation (the Kernel refuses it while that one runs): ${recovery.fresh}`,
+  )
 }
 
 const writeRaw = (payload: Record<string, unknown>): void =>

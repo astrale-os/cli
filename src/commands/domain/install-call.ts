@@ -1,6 +1,9 @@
+import type { InstallExecutionId } from '@astrale-os/sdk/client/schema'
+
 import chalk from 'chalk'
 
 import type { KernelCommandOpts, OperationRecovery } from '../../connection'
+import type { LifecycleContext } from '../../connection/installation-result'
 import type { InstallPrecheck } from './install-precheck'
 
 import { formatKernelError } from '../../connection/errors'
@@ -10,14 +13,15 @@ import { fatal, log, spinner } from '../../lib/terminal/log'
 import { isMachine } from '../../lib/terminal/output'
 
 /**
- * Why a URL install stopped, rendered once its Kernel session is closed: `input` failures (an
- * invalid reference, a refused consent) as command errors, `kernel` failures as Kernel command
- * failures with their operation recovery, exactly as `runKernelCommand` renders them.
+ * Why an install or uninstall stopped, rendered once its Kernel session is closed: `input` failures
+ * (an invalid reference, a refused consent) as command errors, `kernel` failures as Kernel command
+ * failures with what the command knows of its operation.
  */
 export interface InstallFailure {
   readonly error: unknown
   readonly render: 'input' | 'kernel'
-  readonly recovery?: OperationRecovery
+  /** The operation the failed call sent, and the Execution the Kernel answered for it, if any. */
+  readonly lifecycle?: LifecycleContext
   /**
    * The pre-check of an install the Kernel refused for dependency or dependent compatibility:
    * `--json` carries it beside the error, and a human sees its proposed grouped install again
@@ -27,37 +31,47 @@ export interface InstallFailure {
 }
 
 /**
- * Run one Kernel install call behind the command spinner and present its result, the
+ * Run one Kernel install or uninstall call behind the command spinner and present its result, the
  * `runKernelCommand` lifecycle inside an already open session: the checks that precede the call
- * (Kernel probe, deployment reads, consent prompts) run before the spinner starts.
+ * (Kernel probe, deployment reads, consent prompts) run before the spinner starts. The call learns
+ * the Execution the Kernel answered through `started`, so a failure says whether one exists.
  */
 export async function runInstallCall<Result>(
   opts: KernelCommandOpts,
   step: {
+    readonly lifecycle: 'install' | 'uninstall'
     readonly label: string
     readonly recovery: OperationRecovery
-    readonly call: () => Promise<Result>
+    readonly call: (started: (execution: InstallExecutionId) => void) => Promise<Result>
     readonly format: (result: Result, machine: boolean) => void | Promise<void>
   },
 ): Promise<InstallFailure | undefined> {
   const machine = isMachine(opts)
+  let execution: InstallExecutionId | undefined
+  const context = (): LifecycleContext => ({
+    lifecycle: step.lifecycle,
+    recovery: step.recovery,
+    ...(execution === undefined ? {} : { started: execution }),
+  })
   const spin = machine ? null : spinner(`${step.label}...`)
   const startTime = performance.now()
   try {
-    const result = await step.call()
+    const result = await step.call((answered) => {
+      execution = answered
+    })
     spin?.succeed(`${step.label} ${chalk.dim(formatElapsed(performance.now() - startTime))}`)
     if (!machine) console.log('')
     await step.format(result, machine)
     return undefined
   } catch (error) {
     if (!machine && spin) spin.fail(`${step.label} failed`)
-    return { error, render: 'kernel', recovery: step.recovery }
+    return { error, render: 'kernel', lifecycle: context() }
   }
 }
 
 /**
- * Render one install failure and exit: 2 for an install that ended `failed`, 5 while another schema
- * change is active, else 1.
+ * Render one install or uninstall failure and exit: 2 for an Execution that ended `failed`, 5 while
+ * another schema change is active, else 1.
  */
 export async function exitWithInstallFailure(
   failure: InstallFailure,
@@ -66,7 +80,7 @@ export async function exitWithInstallFailure(
   if (failure.render === 'input') fatal(failure.error, opts)
   const machine = isMachine(opts)
   await formatKernelError(failure.error, machine, undefined, opts.debug, {
-    recovery: failure.recovery,
+    ...(failure.lifecycle === undefined ? {} : { lifecycle: failure.lifecycle }),
     ...(failure.precheck === undefined ? {} : { fields: { precheck: failure.precheck } }),
   })
   if (!machine && failure.precheck?.command !== undefined) {

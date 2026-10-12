@@ -49,9 +49,9 @@ Grant issuer-change consent only after checking the intended issuer change. Grou
 activation is atomic across its roots; the installation Execution and manual data repairs have their
 own lifecycle. A transport failure or timeout can occur after admission. Keep the returned Execution
 ID and observe it with `domain installation status/result`; do not submit a new operation to discover
-whether the previous one worked. If no ID was received, retain the exact original operation and
-request, and follow the CLI recovery instructions. A verified already-current postcondition is not
-proof that a particular earlier Execution completed.
+whether the previous one worked. If no ID was received, follow the CLI's instructions: a fresh
+operation is refused while the first one still changes the schema, and that refusal names it. A
+verified already-current postcondition is not proof that a particular earlier Execution completed.
 
 ## Breaking evolution
 
