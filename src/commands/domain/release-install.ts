@@ -25,6 +25,7 @@ import {
   announcingLifecycle,
   IncompleteInstallation,
   installationResult,
+  conflictFailure,
   type Lifecycle,
 } from '../../connection/installation-result'
 import { reasonCode } from '../../connection/reasons'
@@ -106,23 +107,14 @@ interface InstallReference {
   readonly consent?: { readonly from: string; readonly to: string; previous: 'drain' | 'revoke' }
 }
 
-/** A Kernel refusal of a request whose install had already committed (AM-81). */
-type CommittedInstallRefusal =
-  | 'SCHEMA_INPUT_INVALID'
-  | 'SCHEMA_OPERATION_CONFLICT'
-  | 'IDEMPOTENCY_KEY_CONFLICT'
-
 /**
- * `--json` of an install: the Kernel result, unchanged, plus one entry per reference. When the
- * Kernel refused the request but every reference is already installed as requested (AM-81), the
- * result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
- * refusal, so a consumer can tell it from a Kernel replay.
+ * `--json` of an install: the Kernel result, unchanged, its Execution and status, and one entry per
+ * reference.
  */
 type InstallReport = InstallResult & {
-  readonly execution?: Installation['execution']
-  readonly status?: Installation['status']
+  readonly execution: Installation['execution']
+  readonly status: Installation['status']
   readonly references: readonly InstallReference[]
-  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
   /** The advisory pre-check this install ran before it was sent ([.78239] [.69634]). */
   readonly precheck: InstallPrecheck
 }
@@ -297,10 +289,9 @@ interface InstallRun {
 
 /** What the install call gives the presentation: the Kernel result and the listing read after it. */
 interface InstallOutcome {
-  readonly installation?: Installation
+  readonly installation: Installation
   readonly result: InstallResult
   readonly after: readonly InstalledRelease[] | undefined
-  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
 }
 
 async function installReleases(
@@ -406,15 +397,15 @@ async function installReleases(
       try {
         installation = await run.deps.lifecycle(session, started).install(request, timeout)
       } catch (error) {
-        const recovered = await recoverCommittedInstall(error, session, roots)
-        if (recovered !== undefined) return recovered
-        throw error
+        // A conflict over the operation refuses this install: the request it names is read only
+        // to say which one it is.
+        throw await conflictFailure(error, session.schema)
       }
       const result = installationResult(installation)
       return { installation, result, after: await installedAfter(session, machine) }
     },
-    format: ({ installation, result, after, recovered }, raw) => {
-      const report = installReferences(roots, before, after, recovered ? [] : changes, consent)
+    format: ({ installation, result, after }, raw) => {
+      const report = installReferences(roots, before, after, changes, consent)
       mismatched = report.filter((reference) => {
         const installed = after?.find((entry) => entry.origin === reference.origin)
         return (
@@ -427,11 +418,9 @@ async function installReleases(
         output(
           {
             ...result,
-            ...(installation === undefined
-              ? {}
-              : { execution: installation.execution, status: installation.status }),
+            execution: installation.execution,
+            status: installation.status,
             references: report,
-            ...(recovered === undefined ? {} : { recovered }),
             precheck,
           } satisfies InstallReport,
           opts,
@@ -439,11 +428,6 @@ async function installReleases(
         return
       }
       presentReferences(report, operation, result)
-      if (recovered !== undefined) {
-        log.dim(
-          `  The Kernel refused this install (${recovered.refusal}), but every Domain is installed as requested: an earlier install already committed it.`,
-        )
-      }
       for (const [index, { origin, consent: change }] of report.entries()) {
         if (change === undefined) continue
         log.dim(
@@ -847,60 +831,6 @@ function warnUnreadableConsentOrigins(
       `--allow-issuer-change=${origin}: ${origin} is not among the installations this identity can read, so no consent is sent. ` +
         'If it is installed, consenting to its issuer change needs read access to its installation.',
     )
-  }
-}
-
-/**
- * AM-81: an issuer consent sent after its install committed is refused, under a new operation id as
- * SCHEMA_INPUT_INVALID at `/domains/<i>/consent` (the Domain no longer changes issuer), under the
- * same id as SCHEMA_OPERATION_CONFLICT (a retry planned from the moved listing carries no consent).
- * Before such a refusal is reported, the installations are read back: when every reference is
- * installed from its URL with the pin the install expected, the install asked for holds, and the
- * command reports it as already current with the installed Domains as the Kernel describes them,
- * marked `recovered` with the Kernel refusal it recovered from.
- */
-async function recoverCommittedInstall(
-  error: unknown,
-  session: ClientSession,
-  roots: readonly PlannedRoot[],
-): Promise<InstallOutcome | undefined> {
-  if (!(error instanceof ResponseError)) return undefined
-  const refusal = reasonCode(error.reason)
-  const path = (error.reason as { readonly details?: { readonly path?: unknown } }).details?.path
-  if (
-    !(
-      refusal === 'SCHEMA_OPERATION_CONFLICT' ||
-      refusal === 'IDEMPOTENCY_KEY_CONFLICT' ||
-      (refusal === 'SCHEMA_INPUT_INVALID' &&
-        typeof path === 'string' &&
-        /^\/domains\/\d+\/consent$/u.test(path))
-    )
-  ) {
-    return undefined
-  }
-  try {
-    const after = await session.schema.installed()
-    for (const { source, origin, expected } of roots) {
-      const installed = after.find((entry) => entry.origin === origin)
-      if (
-        origin === undefined ||
-        expected === null ||
-        installed === undefined ||
-        !installedAsExpected(installed, expected, source.url)
-      ) {
-        return undefined
-      }
-    }
-    const domains = await Promise.all(
-      roots.map(({ origin }) => session.schema.inspect(origin as never)),
-    )
-    return {
-      result: { changed: false, domains } as unknown as InstallResult,
-      after,
-      recovered: { refusal },
-    }
-  } catch {
-    return undefined
   }
 }
 

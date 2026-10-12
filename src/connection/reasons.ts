@@ -209,6 +209,22 @@ export function operationConflict(reason: unknown): boolean {
   return code === 'SCHEMA_OPERATION_CONFLICT' || code === 'IDEMPOTENCY_KEY_CONFLICT'
 }
 
+/**
+ * What an operation conflict names of the request the operation already belongs to: its Execution
+ * and, for an install, the mode it was requested in, when the Kernel names them.
+ */
+export function conflictDetails(reason: unknown): {
+  readonly execution?: string
+  readonly mode?: string
+} {
+  if (!operationConflict(reason) || !record(reason) || !record(reason.details)) return {}
+  const { execution, mode } = reason.details
+  return {
+    ...(typeof execution === 'string' && execution.length > 0 ? { execution } : {}),
+    ...(typeof mode === 'string' && mode.length > 0 ? { mode } : {}),
+  }
+}
+
 export function schemaDataRemovalHint(reason: unknown): string | undefined {
   if (!reasonWithCode(reason, 'DATA_MIGRATION_REQUIRED')) return undefined
   const requirements = reason.details.requirements

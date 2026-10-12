@@ -253,19 +253,16 @@ execution (`observe`, `follow`), and once it ended (failed or cancelled), use
 `fresh` (the same command without `--operation`). A refusal before any
 execution exists carries `execution: null`: the operation is unused; one
 refused `SCHEMA_CHANGE_ACTIVE` (another schema change holds the Instance) exits
-5. Only a completed install normally reads back and verifies the installed pins.
-A replay after an issuer transition can recompute different consent: the CLI does
-not store or reconstruct the original request. If that exact replay is refused
-with `IDEMPOTENCY_KEY_CONFLICT`, it checks every requested release/build pin,
-URL and issuer against the installed state and reads each generation. Only an
-exact match is reported as `changed:false` with
-`recovered.refusal:"IDEMPOTENCY_KEY_CONFLICT"`. This is an observed already-current
-postcondition, not evidence that the original Execution succeeded; no execution
-ID or status is invented and no new operation is started. A mismatch or an
-unreadable postcondition preserves the conflict.
+5. Only a completed install reads back and verifies the installed pins.
 
 `--operation` is for automation. A reused id replays only the exact same
-request.
+request. Any other request under a used id is
+refused `SCHEMA_OPERATION_CONFLICT` (older Hosts: `IDEMPOTENCY_KEY_CONFLICT`):
+nothing runs, the command exits 5, and `--json` names the request the id
+belongs to as `conflict` (`execution`, and `mode`/`state` when known) with
+`observe` and `fresh`. Re-running the same command with the same id can
+conflict too, since it is planned again from the current state (consent,
+guards): follow the Execution by its id instead.
 
 `--mode maintenance` starts a Root repair session and returns without waiting.
 The Instance excludes other callers during this session. Read its `status`,

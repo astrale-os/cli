@@ -9,7 +9,11 @@ import type { CommandDefinition } from '../../program/index'
 import type { InstallFailure } from './install-call'
 
 import { withClientSession } from '../../connection'
-import { announcingLifecycle, installationResult } from '../../connection/installation-result'
+import {
+  announcingLifecycle,
+  conflictFailure,
+  installationResult,
+} from '../../connection/installation-result'
 import { resolveTimeoutMs } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
@@ -60,11 +64,13 @@ Behavior:
   A fresh operation id is generated automatically; its outcome is final. An
   uninstall that ended (failed or cancelled) used its operation: try again
   without --operation ("fresh"). A failure exits 2 when the uninstall ended
-  failed, 5 when it was refused while another
+  failed, 5 when it was refused as an operation conflict or while another
   schema change is active (SCHEMA_CHANGE_ACTIVE), else 1; --json
   carries the execution, "observe" and, once the operation is used, "fresh".
   --operation is for automation: a reused id replays only the exact same
-  uninstall.
+  uninstall. Any other request under that id is
+  refused as an operation conflict: nothing runs, and the CLI names the
+  execution the id belongs to.
 
   Use this before reinstalling only when an immutable Domain property (such as
   its issuer) intentionally changed. Ordinary compatible upgrades should use
@@ -119,7 +125,12 @@ Examples:
           lifecycle: 'uninstall',
           label: command.label,
           recovery: command.recovery,
-          call: (started) => command.fn(announcingLifecycle(session, started)),
+          // A conflict over the operation refuses this uninstall: the request it names is read
+          // only to say which one it is.
+          call: (started) =>
+            command.fn(announcingLifecycle(session, started)).catch(async (error: unknown) => {
+              throw await conflictFailure(error, session.schema)
+            }),
           format: (result, machine) => command.format(result, opts, machine),
         }),
       command.credential,

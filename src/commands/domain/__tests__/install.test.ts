@@ -165,6 +165,8 @@ function harness(
     readonly listing?: (call: number) => Promise<readonly InstalledRelease[]>
     readonly lifecycle?: (request: InstallRequest) => Promise<Installation>
     readonly installation?: Installation
+    /** What `installation.status` answers for each Execution id. */
+    readonly executions?: Readonly<Record<string, unknown>>
     readonly install?: (request: InstallRequest) => Promise<InstallResult>
     readonly inspect?: (origin: string) => Promise<unknown>
     readonly now?: () => number
@@ -199,6 +201,14 @@ function harness(
       },
       inspect: async (origin: string) =>
         options.inspect?.(origin) ?? { origin, revision: REVISION, generation: digest('e') },
+      installation: {
+        status: async (execution: string) => {
+          run.reads.push(`status ${execution}`)
+          const status = options.executions?.[execution]
+          if (status === undefined) throw new Error(`No Execution ${execution}`)
+          return status
+        },
+      },
     },
   }
   run.deps = {
@@ -788,48 +798,25 @@ describe('issuer changes need consent, planned from readable installations', () 
     expect(run.requests).toEqual([])
   })
 
-  test('a consent refused because its install already committed reads back as already current', async () => {
+  test('a refusal stays a refusal, even when the installed state already matches', async () => {
     const a2 = served(AGENCIES, A2, '2')
-    const refusing = (code: string, path: string, committed = true) =>
-      harness({
-        served: { [A2]: a2 },
-        // The listing read before the install is stale: another run committed the move since.
-        listing: async (call) =>
-          call === 0 || !committed
-            ? [installedFrom(served(AGENCIES, A1, '1'))]
-            : [installedFrom(a2)],
-        install: async () => {
-          throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
-            code,
-            details: { phase: 'input', path, issue: 'invalid' },
-          })
-        },
-      })
-    const consent = { ...JSON_OUTPUT, allowIssuerChange: [''] }
-    for (const code of [
-      'SCHEMA_INPUT_INVALID',
-      'SCHEMA_OPERATION_CONFLICT',
-      'IDEMPOTENCY_KEY_CONFLICT',
-    ]) {
-      io.stdout = ''
-      await installByReference([A2], consent, refusing(code, '/domains/0/consent').deps)
-      expect(JSON.parse(io.stdout)).toMatchObject({
-        changed: false,
-        domains: [{ origin: AGENCIES }],
-        references: [{ origin: AGENCIES, installed: { issuer: A2, pin: a2.pin } }],
-        recovered: { refusal: code },
-      })
-    }
-    // Not committed, or refused at another member than the consent: the refusal stands.
-    for (const run of [
-      refusing('SCHEMA_INPUT_INVALID', '/domains/0/consent', false),
-      refusing('SCHEMA_INPUT_INVALID', '/domains/0/release'),
-    ]) {
-      expect(await refused([A2], consent, run)).toMatchObject({
-        error: 'RESPONSE_ERROR',
-        reason: { code: 'SCHEMA_INPUT_INVALID' },
-      })
-    }
+    const run = harness({
+      served: { [A2]: a2 },
+      // The listing read before the install is stale: another run committed the move since.
+      listing: async (call) =>
+        call === 0 ? [installedFrom(served(AGENCIES, A1, '1'))] : [installedFrom(a2)],
+      install: async () => {
+        throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
+          code: 'SCHEMA_INPUT_INVALID',
+          details: { phase: 'input', path: '/domains/0/consent', issue: 'invalid' },
+        })
+      },
+    })
+    expect(await refused([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run)).toMatchObject({
+      error: 'RESPONSE_ERROR',
+      reason: { code: 'SCHEMA_INPUT_INVALID' },
+    })
+    expect(io.stdout).toBe('')
   })
 })
 
@@ -1191,43 +1178,90 @@ test('durable dependency refusal retains its advisory precheck and exact Kernel 
   })
 })
 
-for (const exact of [true, false]) {
-  test(`durable replay after issuer change needs exact installed pin evidence (${exact})`, async () => {
-    const a2 = served(AGENCIES, A2, '2')
-    const api = createSchema(
-      async () => {
-        throw new ResponseError(1003, 'Operation input conflicts.', INVOCATION, {
-          code: 'IDEMPOTENCY_KEY_CONFLICT',
-          details: {},
-        })
-      },
-      { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
-    )
-    const run = harness({
-      served: { [A2]: a2 },
-      listing: async () => [installedFrom(exact ? a2 : served(AGENCIES, A2, '9'))],
-      lifecycle: (request) => api.install(request),
+describe('an operation conflict refuses this install: nothing ran for it', () => {
+  const conflict = (details: Record<string, string>, code = 'SCHEMA_OPERATION_CONFLICT') =>
+    new ResponseError(4001 as never, 'The operation id was already used.', INVOCATION, {
+      code,
+      details,
     })
-    if (exact) {
-      await installByReference(
-        [A2],
-        { ...JSON_OUTPUT, operation: RETRY, allowIssuerChange: [''] },
-        run.deps,
-      )
-      expect(JSON.parse(io.stdout)).toMatchObject({
-        changed: false,
-        recovered: { refusal: 'IDEMPOTENCY_KEY_CONFLICT' },
-        references: [{ installed: { issuer: A2, pin: a2.pin } }],
-      })
-      expect(JSON.parse(io.stdout)).not.toHaveProperty('execution')
-    } else {
-      expect(
-        await refused([A2], { ...JSON_OUTPUT, operation: RETRY, allowIssuerChange: [''] }, run),
-      ).toMatchObject({ error: 'RESPONSE_ERROR', reason: { code: 'IDEMPOTENCY_KEY_CONFLICT' } })
-      expect(io.stdout).toBe('')
+  /** The online install the operation already names, completed: A1 replaced by A2. */
+  const online = {
+    ...completedInstallation(committed([AGENCIES], [AGENCIES], RETRY)).status,
+    id: EXECUTION,
+  }
+  const usedBy = (mode?: string) =>
+    harness({
+      served: { [A]: served(AGENCIES, A, '1'), [A2]: served(AGENCIES, A2, '2') },
+      listing: async () => [installedFrom(served(AGENCIES, A2, '2'))],
+      install: async () => {
+        throw conflict({ operation: RETRY, execution: EXECUTION, ...(mode ? { mode } : {}) })
+      },
+      executions: { [EXECUTION]: online },
+    })
+  const message =
+    `Operation ${RETRY} already names another request: ${EXECUTION} (online install, completed). ` +
+    'Nothing ran for this command.'
+
+  test('a maintenance install under the operation of a completed online install', async () => {
+    const run = usedBy('online')
+    const opts = { operation: RETRY, mode: 'maintenance' as const, instance: 'staging' }
+    await expect(installByReference([A2], { ...JSON_OUTPUT, ...opts }, run.deps)).rejects.toEqual(
+      new ExitError(5),
+    )
+    expect(io.stdout).toBe('')
+    expect(io.failure()).toMatchObject({
+      reason: { code: 'SCHEMA_OPERATION_CONFLICT' },
+      hint: message,
+      operation: RETRY,
+      conflict: { execution: EXECUTION, lifecycle: 'install', mode: 'online', state: 'completed' },
+      observe: `astrale domain installation status ${EXECUTION} -i staging`,
+      fresh: `astrale domain install ${A2} --mode maintenance -i staging`,
+    })
+    const shown = await human(async () => {
+      await expect(installByReference([A2], opts, run.deps)).rejects.toEqual(new ExitError(5))
+    })
+    expect(shown.all).toContain(`SCHEMA_OPERATION_CONFLICT: ${message}`)
+    expect(shown.all).toContain(
+      `Read that request's run: astrale domain installation status ${EXECUTION} -i staging`,
+    )
+    expect(shown.all).toContain(
+      `Run this install with a fresh operation: astrale domain install ${A2} --mode maintenance -i staging`,
+    )
+    // Never that request's outcome as this command's answer.
+    for (const claim of ['Domain installed', 'Maintenance session', 'already ran']) {
+      expect(shown.all).not.toContain(claim)
     }
-    expect(run.requests).toHaveLength(1)
-    expect(String(run.requests[0]!.operation)).toBe(RETRY)
-    expect(run.requests[0]!.domains[0]).not.toHaveProperty('consent')
   })
-}
+
+  test('another release under a used operation is refused, never compared with the other result', async () => {
+    const run = usedBy('online')
+    const shown = await human(async () => {
+      await expect(
+        installByReference([A], { operation: RETRY, allowIssuerChange: [AGENCIES] }, run.deps),
+      ).rejects.toEqual(new ExitError(5))
+    })
+    expect(shown.all).toContain(`SCHEMA_OPERATION_CONFLICT: ${message}`)
+    expect(shown.all).not.toContain('INSTALLED_PIN_MISMATCH')
+    expect(shown.all).not.toContain('installed (operation')
+    expect(run.requests).toHaveLength(1)
+  })
+
+  test('a conflict naming no Execution: nothing ran, and the fresh command', async () => {
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      install: async () => {
+        throw conflict({}, 'IDEMPOTENCY_KEY_CONFLICT')
+      },
+    })
+    await expect(
+      installByReference([A], { ...JSON_OUTPUT, operation: RETRY }, run.deps),
+    ).rejects.toEqual(new ExitError(5))
+    const failure = io.failure()
+    expect(failure).toMatchObject({
+      hint: `Operation ${RETRY} already names another request. Nothing ran for this command.`,
+      fresh: `astrale domain install ${A}`,
+    })
+    expect(failure).not.toHaveProperty('conflict')
+    expect(io.stdout).toBe('')
+  })
+})

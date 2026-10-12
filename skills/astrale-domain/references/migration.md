@@ -50,8 +50,9 @@ activation is atomic across its roots; the installation Execution and manual dat
 own lifecycle. A transport failure or timeout can occur after admission. Keep the returned Execution
 ID and observe it with `domain installation status/result`; do not submit a new operation to discover
 whether the previous one worked. If no ID was received, follow the CLI's instructions: a fresh
-operation is refused while the first one still changes the schema, and that refusal names it. A
-verified already-current postcondition is not proof that a particular earlier Execution completed.
+operation is refused while the first one still changes the schema, and that refusal names it. An
+operation id names one request: reusing it for anything but that exact request is refused as an
+operation conflict.
 
 ## Breaking evolution
 

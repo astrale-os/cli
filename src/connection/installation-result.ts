@@ -15,7 +15,7 @@ import type { OperationRecovery } from './command'
 
 import { shellCommand } from '../lib/shell-command'
 import { log } from '../lib/terminal/log'
-import { reasonCode } from './reasons'
+import { conflictDetails, operationConflict, reasonCode } from './reasons'
 
 /** A successful call can still describe an unfinished or rejected installation. */
 export class IncompleteInstallation extends Error {
@@ -30,11 +30,14 @@ export class IncompleteInstallation extends Error {
 /**
  * Exit status of a Kernel command that failed: 2 when its durable install or uninstall Execution
  * ended `failed` (the Kernel refused it inside its run, and its error and report say why), 5 when
- * the Kernel refused it while another schema change holds the Instance (the client spec's
- * conflict code), else 1.
+ * the Kernel refused it as a conflict over its operation or while another schema change holds the
+ * Instance (the client spec's conflict code), else 1.
  */
 export function failureExitCode(error: unknown): 1 | 2 | 5 {
-  if (error instanceof ResponseError && reasonCode(error.reason) === 'SCHEMA_CHANGE_ACTIVE') {
+  if (
+    error instanceof OperationConflict ||
+    (error instanceof ResponseError && reasonCode(error.reason) === 'SCHEMA_CHANGE_ACTIVE')
+  ) {
     return 5
   }
   return error instanceof IncompleteInstallation &&
@@ -200,6 +203,116 @@ export function renderIncompleteInstallation(
   }
   log.dim(`  Read this run: ${observe}`)
   if (fresh !== undefined) log.dim(`  Try again with a fresh operation: ${fresh}`)
+}
+
+/** The request an operation conflict names, as far as this command could read its Execution. */
+export interface ConflictingRequest {
+  readonly execution: string
+  readonly lifecycle?: 'install' | 'uninstall'
+  /** The mode an install was requested in. */
+  readonly mode?: string
+  readonly state?: string
+}
+
+/**
+ * An install or uninstall the Kernel refused because its operation id already names another
+ * request of its principal: a refusal of this command, which ran nothing. `other` is that request,
+ * when the Kernel named its Execution.
+ */
+export class OperationConflict extends Error {
+  constructor(
+    readonly refusal: ResponseError,
+    readonly other?: ConflictingRequest,
+  ) {
+    super(refusal.message)
+  }
+}
+
+/**
+ * The failure an install or uninstall call ended with, an operation conflict made an
+ * {@link OperationConflict} that reads the Execution it names: an install names its mode, an
+ * uninstall none, unless its node was deleted. Any other failure is returned as it is.
+ */
+export async function conflictFailure(
+  error: unknown,
+  schema: Pick<SchemaApi, 'installation' | 'uninstallation'>,
+): Promise<unknown> {
+  if (!(error instanceof ResponseError) || !operationConflict(error.reason)) return error
+  const named = conflictDetails(error.reason)
+  if (named.execution === undefined) return new OperationConflict(error)
+  const execution = named.execution as InstallExecutionId
+  const read = async (reads: {
+    readonly status: (execution: InstallExecutionId) => Promise<{ readonly state: string }>
+  }) => {
+    try {
+      return (await reads.status(execution)).state
+    } catch {
+      return undefined
+    }
+  }
+  if (named.mode !== undefined) {
+    const state = await read(schema.installation)
+    return new OperationConflict(error, {
+      execution,
+      lifecycle: 'install',
+      mode: named.mode,
+      ...(state === undefined ? {} : { state }),
+    })
+  }
+  const state = (await read(schema.uninstallation)) ?? (await read(schema.installation))
+  return new OperationConflict(error, {
+    execution,
+    ...(state === undefined || state === 'deleted' ? {} : { lifecycle: 'uninstall' as const }),
+    ...(state === undefined ? {} : { state }),
+  })
+}
+
+/** One request an operation names: its Execution, then what it is and how it stands, when known. */
+function requestLabel({ execution, lifecycle, mode, state }: ConflictingRequest): string {
+  const kind = mode === undefined ? lifecycle : `${mode} install`
+  const known = [kind, state].filter((part) => part !== undefined)
+  return known.length === 0 ? execution : `${execution} (${known.join(', ')})`
+}
+
+/**
+ * Present an operation conflict as the refusal of this command: which request the operation
+ * already names and how it stands, that nothing ran, and the two ways on: read that request's run,
+ * or run this command with a fresh operation. `--json` keeps the Kernel refusal and adds
+ * `conflict`, `observe` and `fresh`.
+ */
+export function renderOperationConflict(
+  error: OperationConflict,
+  machine: boolean,
+  context: LifecycleContext,
+): void {
+  const { lifecycle, recovery } = context
+  const { other, refusal } = error
+  const code = reasonCode(refusal.reason) ?? 'SCHEMA_OPERATION_CONFLICT'
+  const named = other === undefined ? '' : `: ${requestLabel(other)}`
+  const message = `Operation ${recovery.operation} already names another request${named}. Nothing ran for this command.`
+  const observe =
+    other === undefined
+      ? undefined
+      : installationStatusCommand(other.execution, other.lifecycle ?? 'install', recovery.target)
+  if (machine) {
+    process.stderr.write(
+      `${JSON.stringify({
+        error: 'RESPONSE_ERROR',
+        code: refusal.code,
+        message: refusal.message,
+        reason: refusal.reason,
+        hint: message,
+        lifecycle,
+        operation: recovery.operation,
+        ...(other === undefined ? {} : { conflict: other, observe }),
+        fresh: recovery.fresh,
+      })}\n`,
+    )
+    return
+  }
+  log.error(`${code}: ${message}`)
+  if (observe !== undefined) log.dim(`  Read that request's run: ${observe}`)
+  log.dim(`  Run this ${lifecycle} with a fresh operation: ${recovery.fresh}`)
 }
 
 /**

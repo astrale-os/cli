@@ -70,8 +70,8 @@ export async function runInstallCall<Result>(
 }
 
 /**
- * Render one install or uninstall failure and exit: 2 for an Execution that ended `failed`, 5 while
- * another schema change is active, else 1.
+ * Render one install or uninstall failure and exit: 2 for an Execution that ended `failed`, 5 for a
+ * conflict over its operation or while another schema change is active, else 1.
  */
 export async function exitWithInstallFailure(
   failure: InstallFailure,

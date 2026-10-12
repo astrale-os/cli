@@ -7,8 +7,10 @@ import type { LifecycleContext } from '../installation-result'
 import { formatKernelError } from '../errors'
 import {
   announcingLifecycle,
+  conflictFailure,
   failureExitCode,
   IncompleteInstallation,
+  OperationConflict,
   renderIncompleteInstallation,
 } from '../installation-result'
 import { transportFailure } from './failure-fixtures'
@@ -185,6 +187,7 @@ describe('a failure before any outcome says whether an Execution exists', () => 
       formatKernelError(conflict, machine, undefined, false, { lifecycle: CONTEXT }),
     )
     expect(text).not.toContain('not used')
+    expect(text).toContain('Nothing ran for this command.')
     expect(json).not.toHaveProperty('execution')
   })
 
@@ -212,5 +215,85 @@ describe('a failure before any outcome says whether an Execution exists', () => 
       observe: 'astrale domain installation status execution-1 -i app',
       follow: 'astrale domain installation result execution-1 --wait-ms 20000 -i app',
     })
+  })
+})
+
+describe('a conflict says what to do next', () => {
+  const refusal = (code: string, details: Record<string, string> = {}) =>
+    new ResponseError(
+      4001 as never,
+      'Function execution conflicts with current state.',
+      { source: 'https://kernel.test', id: 'conflict' } as never,
+      { code, details } as never,
+    )
+  const uninstall = { ...CONTEXT, lifecycle: 'uninstall' as const }
+
+  test('a conflict refuses this command: the request the operation names, and fresh', async () => {
+    const conflict = new OperationConflict(
+      refusal('SCHEMA_OPERATION_CONFLICT', {
+        operation: CONTEXT.recovery.operation,
+        execution: 'execution-9',
+        mode: 'online',
+      }),
+      { execution: 'execution-9', lifecycle: 'install', mode: 'online', state: 'completed' },
+    )
+    const { text, json } = await shown((machine) =>
+      formatKernelError(conflict, machine, undefined, false, { lifecycle: CONTEXT }),
+    )
+    const message =
+      `Operation ${CONTEXT.recovery.operation} already names another request: ` +
+      'execution-9 (online install, completed). Nothing ran for this command.'
+    expect(text).toContain(`SCHEMA_OPERATION_CONFLICT: ${message}`)
+    expect(text).toContain(
+      "Read that request's run: astrale domain installation status execution-9 -i app",
+    )
+    expect(text).toContain(`Run this install with a fresh operation: ${CONTEXT.recovery.fresh}`)
+    // Never that request's outcome, never the same operation again.
+    expect(text).not.toContain('already ran')
+    expect(text).not.toContain('--operation')
+    expect(json).toMatchObject({
+      reason: { code: 'SCHEMA_OPERATION_CONFLICT' },
+      hint: message,
+      operation: CONTEXT.recovery.operation,
+      conflict: { execution: 'execution-9', mode: 'online', state: 'completed' },
+      observe: 'astrale domain installation status execution-9 -i app',
+      fresh: CONTEXT.recovery.fresh,
+    })
+    expect(json).not.toHaveProperty('execution')
+    expect(failureExitCode(conflict)).toBe(5)
+  })
+
+  test('a conflict reads the request it names: an install by its mode, else an uninstall', async () => {
+    const statuses: Record<string, string> = { 'execution-9': 'running' }
+    const reads = (accept: 'install' | 'uninstall') => ({
+      status: async (execution: string) => {
+        if (accept === 'uninstall' && execution === 'execution-install') throw new TypeError()
+        return { state: statuses[execution] ?? 'completed' }
+      },
+    })
+    const schema = { installation: reads('install'), uninstallation: reads('uninstall') } as never
+    const named = (details: Record<string, string>) =>
+      conflictFailure(refusal('SCHEMA_OPERATION_CONFLICT', details), schema)
+    expect(await named({ execution: 'execution-9', mode: 'maintenance' })).toMatchObject({
+      other: {
+        execution: 'execution-9',
+        lifecycle: 'install',
+        mode: 'maintenance',
+        state: 'running',
+      },
+    })
+    expect(await named({ execution: 'execution-u' })).toMatchObject({
+      other: { execution: 'execution-u', lifecycle: 'uninstall', state: 'completed' },
+    })
+    expect(((await named({})) as OperationConflict).other).toBeUndefined()
+    const other = refusal('SCHEMA_CHANGE_ACTIVE')
+    expect(await conflictFailure(other, schema)).toBe(other)
+  })
+
+  test('outside install and uninstall, a key conflict gets no operation advice', async () => {
+    const { json } = await shown((machine) =>
+      formatKernelError(refusal('IDEMPOTENCY_KEY_CONFLICT'), machine),
+    )
+    expect(json).not.toHaveProperty('hint')
   })
 })

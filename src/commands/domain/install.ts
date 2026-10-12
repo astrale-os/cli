@@ -10,7 +10,7 @@ export default {
 Behavior:
   Installation is durable. The CLI waits within --timeout in online mode and
   reports success only after completion. An installation that ended failed
-  exits 2, one refused while another schema change
+  exits 2, one refused as an operation conflict or while another schema change
   is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure or an unfinished
   execution exits 1. --json retains its execution ID and exact status.
   An operation names one request and its outcome is final. Follow an
@@ -20,11 +20,10 @@ Behavior:
   (--json: "execution": null) leaves the operation unused. --no-wait returns
   without waiting.
   --operation is for automation: a reused id replays only the exact same
-  request.
-  After an issuer transition, original consent may no longer be reconstructible.
-  An input conflict is recovered only if exact release/build pins, URL and issuer
-  are already installed. The report marks recovered.refusal and changed:false;
-  it does not claim that the original Execution succeeded.
+  request. Any other request under that id is
+  refused as an operation conflict: nothing runs, the CLI names the execution
+  the id belongs to and how it stands, and exits 5. The same command can
+  conflict too, when it is planned again from a state its first run moved.
 
   --mode maintenance opens a Root-only repair session; other callers are
   blocked while it is open. It waits for explicit Execution signals, not for

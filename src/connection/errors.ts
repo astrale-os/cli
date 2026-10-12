@@ -19,7 +19,9 @@ import { log, printFailureDebug } from '../lib/terminal/log'
 import {
   IncompleteInstallation,
   lifecycleFailureNotes,
+  OperationConflict,
   renderIncompleteInstallation,
+  renderOperationConflict,
   type LifecycleContext,
 } from './installation-result'
 import {
@@ -51,16 +53,25 @@ export async function formatKernelError(
     renderIncompleteInstallation(error, machine, lifecycle, options.fields)
     return
   }
-  const failure = classifyFailure(error)
+  // A conflict over the operation is this command's refusal: it ran nothing.
+  const conflict =
+    error instanceof OperationConflict
+      ? error
+      : error instanceof ResponseError && operationConflict(error.reason)
+        ? new OperationConflict(error)
+        : undefined
+  if (conflict !== undefined && lifecycle !== undefined) {
+    renderOperationConflict(conflict, machine, lifecycle)
+    if (debug) printFailureDebug(conflict.refusal, urlArg)
+    return
+  }
+  const failure = classifyFailure(error instanceof OperationConflict ? error.refusal : error)
   // An install or uninstall says whether its operation started an Execution: a Kernel refusal
-  // before any Execution answered left the operation unused, except a conflict over the operation.
+  // before any Execution answered left the operation unused.
   const notes =
     lifecycle === undefined
       ? undefined
-      : lifecycleFailureNotes(
-          lifecycle,
-          failure.kind === 'response' && !operationConflict(failure.reason),
-        )
+      : lifecycleFailureNotes(lifecycle, failure.kind === 'response')
   renderFailure(failure, machine, urlArg, lifecycle?.recovery, {
     ...options.fields,
     ...notes?.fields,
