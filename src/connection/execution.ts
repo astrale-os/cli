@@ -3,6 +3,8 @@ import { isNodeId, NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { z } from 'zod'
 
+import { shellCommand } from '../lib/shell-command'
+
 /** Public, nonsecret receipt. It describes observation context; it grants no authority. */
 export interface ExecutionReceipt {
   readonly kind: 'astrale.execution'
@@ -47,4 +49,25 @@ export function parseExecutionReceipt(text: string): ExecutionReceipt {
     throw new TypeError('The execution receipt file must contain valid JSON.')
   }
   return acceptExecutionReceipt(value)
+}
+
+/** How long the printed follow-up waits for the outcome: within the default request timeout. */
+export const FOLLOW_WAIT_MS = 20_000
+
+/** The command that reads one Execution, by its ID or its receipt file, on the same target. */
+export function executionStatusCommand(execution: string, target: readonly string[] = []): string {
+  return shellCommand(['astrale', 'execution', 'status', execution, ...target])
+}
+
+/** The command that waits for one Execution's outcome, by its ID or its receipt file. */
+export function executionResultCommand(execution: string, target: readonly string[] = []): string {
+  return shellCommand([
+    'astrale',
+    'execution',
+    'result',
+    execution,
+    '--wait-ms',
+    String(FOLLOW_WAIT_MS),
+    ...target,
+  ])
 }

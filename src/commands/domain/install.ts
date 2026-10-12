@@ -21,8 +21,8 @@ Behavior:
   exits 0 (--json on stdout: no "changed", "follow" waits for it). --json
   retains its execution ID and exact status.
   An operation names one request and its outcome is final. Follow an
-  installation by its execution ("observe": installation status, "follow":
-  installation result --wait-ms); once it ended (failed or cancelled), try
+  installation by its execution ("observe": execution status, "follow":
+  execution result --wait-ms); once it ended (failed or cancelled), try
   again without --operation ("fresh"). A refusal before any execution exists
   (--json: "execution": null) leaves the operation unused. --no-wait returns
   without waiting. Ctrl-C stops waiting, never the installation: the CLI names
@@ -41,8 +41,9 @@ Behavior:
   commands it accepts and exits 0 (--no-wait: no watch). It waits for explicit
   Execution signals, not for this CLI process. Retain its execution ID,
   inspect its status and repair the data before applying the target with
-  domain installation apply. Never delete or force-cancel it as a normal
-  recovery step: those actions can leave the source schema uncertified.
+  domain installation apply; execution cancel returns to the source schema.
+  Never delete or force-cancel it as a normal recovery step: those actions
+  can leave the source schema uncertified.
 
   URL references (https://, or http:// for a local Host) go straight to the
   instance Kernel through the public install syscall, on any instance you can
@@ -98,9 +99,9 @@ Behavior:
   deployment claims the origin, unverified.
 
 Examples:
-  $ astrale domain installation status <execution-id> -i staging --as root --json
-  $ astrale domain installation apply <execution-id> --command 1 -i staging --as root --json
-  $ astrale domain installation result <execution-id> --wait-ms 10000 -i staging --as root --json
+  $ astrale execution status <execution-id> -i staging --as root --json
+  $ astrale domain installation apply <execution-id> -i staging --as root --json
+  $ astrale execution result <execution-id> --wait-ms 10000 -i staging --as root --json
   $ astrale domain install issues.astrale.ai@1.5 -i acme-prod            # highest stable 1.5.x
   $ astrale domain install crm.acme.dev@1.5.0 https://employees.example -i staging  # mixed, atomic
   $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel
