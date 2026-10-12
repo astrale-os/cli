@@ -85,8 +85,10 @@ Behavior:
   only as it sends it); the CLI then says once that the operation already ran
   and this is its recorded outcome. Any other request under that id is
   refused as an operation conflict: nothing runs, and the CLI names the
-  execution the id belongs to. An uninstall still running at --timeout is no
-  failure: the CLI prints its execution and how to follow it, and exits 0.
+  execution the id belongs to. The CLI waits for the outcome up to --timeout
+  (110000 ms without it), counted from the Kernel's answer naming the
+  execution; no wait under 1 s is started. An uninstall still running then is
+  no failure: the CLI prints its execution and how to follow it, and exits 0.
   Ctrl-C stops waiting, never the uninstall: the CLI names its execution and
   exits 130.
 

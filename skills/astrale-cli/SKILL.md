@@ -243,7 +243,9 @@ deploy and with which secrets; they name no instance and do not use the CLI's ac
 `astrale domain install` changes what an instance runs.
 
 Installation and uninstallation are durable Kernel executions. The CLI waits
-within the request timeout and reports completion only from a completed outcome.
+for the outcome up to `--timeout` (110 s without it), counted from the Kernel's
+answer naming the execution, so reads and pre-checks before it do not count; no
+wait under 1 s is started. It reports completion only from a completed outcome.
 `--json` adds `execution` and `status` to the committed result. One still
 running when the CLI stops waiting (`--timeout`, or `--no-wait`) exits 0 with
 `execution`, `status`, `observe` (the `domain installation status` command) and

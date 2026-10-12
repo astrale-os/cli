@@ -8,7 +8,11 @@ export default {
   description: 'Install one or more domains on an instance in one atomic Kernel operation',
   afterHelpText: `
 Behavior:
-  Installation is durable. The CLI waits within --timeout in online mode and
+  Installation is durable. In online mode the CLI waits for its outcome up to
+  --timeout (110000 ms without it), counted from the Kernel's answer naming
+  the execution: the reads and the pre-check before it do not count. No wait
+  under 1 s is started, so a --timeout below 1000 returns at once with the
+  execution still running. --timeout also bounds each request. The CLI
   reports success only after completion. An installation that ended failed
   exits 2, one refused as an operation conflict or while another schema change
   is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure exits 1. One
