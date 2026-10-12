@@ -154,9 +154,12 @@ export interface PendingFollowUp {
   readonly waited: boolean
 }
 
-/** The flags that select the same Instance and identity, for a command that follows this one. */
+/**
+ * The flags that select the same Instance and identity, for a command that follows this one. An
+ * explicit credential is never printed: its flag names a placeholder the caller supplies again.
+ */
 export function targetFlags(
-  opts: Pick<ConnectionOptions, 'url' | 'instance' | 'as'>,
+  opts: Pick<ConnectionOptions, 'url' | 'instance' | 'as' | 'creds' | 'anonymous'>,
 ): readonly string[]
 
 /** Run one command through the canonical progress, connection, presentation, and error boundary. */

@@ -48,14 +48,19 @@ interface TargetDependencies {
   readonly managed?: (slug: string) => Promise<InstanceInfo>
 }
 
-/** The flags that select the same Instance and identity, for a command that follows this one. */
+/**
+ * The flags that select the same Instance and identity, for a command that follows this one. An
+ * explicit credential is never printed: its flag names a placeholder the caller supplies again.
+ */
 export function targetFlags(
-  opts: Pick<ConnectionOptions, 'url' | 'instance' | 'as'>,
+  opts: Pick<ConnectionOptions, 'url' | 'instance' | 'as' | 'creds' | 'anonymous'>,
 ): readonly string[] {
   return [
     ...(opts.url === undefined ? [] : ['--url', opts.url]),
     ...(opts.instance === undefined ? [] : ['-i', opts.instance]),
     ...(opts.as === undefined ? [] : ['--as', opts.as]),
+    ...(opts.creds === undefined ? [] : ['--creds', '<credential>']),
+    ...(opts.anonymous === true ? ['--anonymous'] : []),
   ]
 }
 

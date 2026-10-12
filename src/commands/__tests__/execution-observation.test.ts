@@ -147,6 +147,17 @@ test('a result read names the commands that follow its Execution while it still 
     observe: 'astrale execution status execution-1 -i app',
     waited: true,
   })
+  // The follow-ups keep the authentication mode; an explicit credential is never printed.
+  expect(
+    (await executionCommand('result', 'execution-1', { instance: 'app', creds: 'secret-token' }))
+      .pending,
+  ).toMatchObject({
+    follow: "astrale execution result execution-1 --wait-ms 20000 -i app --creds '<credential>'",
+    observe: "astrale execution status execution-1 -i app --creds '<credential>'",
+  })
+  expect(
+    (await executionCommand('result', 'execution-1', { instance: 'app', anonymous: true })).pending,
+  ).toMatchObject({ observe: 'astrale execution status execution-1 -i app --anonymous' })
   for (const method of ['status', 'cancel', 'resume'] as const) {
     expect(await executionCommand(method, file, { instance: 'app' })).not.toHaveProperty('pending')
   }
