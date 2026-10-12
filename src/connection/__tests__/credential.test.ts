@@ -28,33 +28,30 @@ const config: AstraleConfig = {
 describe('connection credential', () => {
   /** @evidence TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH */
   test('selects the named, bookmark or default identity and its exact persisted exchange', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'astrale-connection-exchange-'))
-    try {
-      const fixture = join(import.meta.dir, 'fixtures', 'exchange-cache-cli-process.ts')
-      const child = Bun.spawn([process.execPath, fixture], {
-        env: { ...process.env, ASTRALE_HOME: directory },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-      ])
-
-      expect(exitCode, stderr).toBe(0)
-      expect(JSON.parse(stdout)).toEqual({
-        explicit: true,
-        active: true,
-        foreign: false,
-        fetches: 0,
-        registered: { iss: 'https://kernel.example/iss/registered', sub: 'registered-node' },
-        root: { iss: 'https://kernel.example', sub: 'system' },
-      })
-    } finally {
-      await rm(directory, { recursive: true, force: true })
-    }
+    expect(await runFixture('exchange-cache-cli-process.ts')).toEqual({
+      explicit: true,
+      active: true,
+      foreign: false,
+      fetches: 0,
+      registered: { iss: 'https://kernel.example/iss/registered', sub: 'registered-node' },
+      root: { iss: 'https://kernel.example', sub: 'system' },
+    })
   })
+
+  test.each(['EACCES', 'EPERM', 'EROFS'])(
+    'reports a session lock the filesystem refuses (%s) as that file, never as an ended session',
+    async (code) => {
+      const failure = await runFixture('session-file-refused.ts', code)
+      const lockPath = String(failure.lockPath)
+
+      expect(failure).toMatchObject({
+        code: 'AUTH_ERROR',
+        message: `Could not refresh the IdP session for "alice": access to ${lockPath} was refused (${code}).`,
+        hint: expect.stringContaining(`can read and write ${lockPath} and its directory`),
+      })
+      expect(`${failure.message} ${failure.hint}`).not.toMatch(/auth login|expired|ended/)
+    },
+  )
 
   test('pins the bookmark identity while leaving explicit credentials unnamed', async () => {
     const target = { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, defaultIdentity: 'owner' }
@@ -224,6 +221,27 @@ describe('connection credential', () => {
     await expect(auth.resolve(TARGET_CALL, controller.signal)).rejects.toBe(reason)
   })
 })
+
+/** Run a `fixtures/` process under its own ASTRALE_HOME and parse the JSON it prints. */
+async function runFixture(name: string, ...args: string[]): Promise<Record<string, unknown>> {
+  const directory = await mkdtemp(join(tmpdir(), 'astrale-connection-fixture-'))
+  try {
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, 'fixtures', name), ...args], {
+      env: { ...process.env, ASTRALE_HOME: directory },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect(exitCode, stderr).toBe(0)
+    return JSON.parse(stdout) as Record<string, unknown>
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}
 
 /** A Fetch that a credential resolved without network I/O never calls. */
 const untouched = async (): Promise<Response> => {
