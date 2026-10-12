@@ -13,6 +13,8 @@ import {
   OperationConflict,
   renderIncompleteInstallation,
   renderInterruptedWait,
+  renderRunning,
+  runningReport,
 } from '../installation-result'
 import { transportFailure } from './failure-fixtures'
 
@@ -107,6 +109,25 @@ test('the lifecycle names the Execution the Kernel answered before the Client wa
   expect(started).toEqual(['execution-1'])
   finish(REFUSED)
   expect((await answer).status).toMatchObject({ state: 'failed' })
+})
+
+test("the lifecycle passes on the Kernel's replay marker only when it sends one", async () => {
+  const markers: unknown[] = []
+  for (const marker of [{ replayed: true }, { replayed: false }, {}, { replayed: 'yes' }]) {
+    const lifecycle = announcingLifecycle(
+      {
+        dispatch: async (call: { readonly target: unknown }) =>
+          String(call.target).includes('function.install')
+            ? { kind: 'execution', execution: 'execution-1', ...marker }
+            : { kind: 'value', value: { kind: 'failed', error: REFUSED.error } },
+      } as never,
+      (_execution, replayed) => markers.push(replayed),
+    )
+    await lifecycle
+      .install({ operation: CONTEXT.recovery.operation, domains: [], wait: false } as never)
+      .catch(() => undefined)
+  }
+  expect(markers).toEqual([true, false, undefined, undefined])
 })
 
 describe('an Execution that ended used its operation', () => {
@@ -313,6 +334,152 @@ describe('an uninstall refused for its remaining data says so in uninstall terms
       renderIncompleteInstallation(error, machine, uninstall),
     )
     expect(text).toContain('Item (qa.test): at least 40 facts (at least 10000001 bytes) remain.')
+  })
+})
+
+describe('a replayed end is the recorded one, said once and in the past tense', () => {
+  const replayed: LifecycleContext = {
+    ...CONTEXT,
+    started: 'execution-1' as never,
+    replayed: true,
+  }
+
+  test('a replayed failure: its recorded outcome, nothing ran again, and the marker in --json', async () => {
+    const error = new IncompleteInstallation(installation('failed', REFUSED))
+    const { text, json } = await shown((machine) =>
+      renderIncompleteInstallation(error, machine, replayed),
+    )
+    expect(text).toContain(
+      `Operation ${CONTEXT.recovery.operation} already ran as execution-1: this is its recorded outcome; nothing ran again.`,
+    )
+    // The replay line already says the operation is used.
+    expect(text).not.toContain('is used: running it again')
+    expect(text).toContain(
+      'Try again with a fresh operation: astrale domain install https://a.test -i app',
+    )
+    expect(json).toMatchObject({ execution: 'execution-1', replayed: true })
+  })
+
+  test('a replay whose Execution was deleted says so: its recorded outcome all the same', async () => {
+    const deleted = installation('deleted', {
+      kind: 'failed',
+      error: { code: 'SCHEMA_INPUT_INVALID', message: 'Refused.' },
+    })
+    const { text } = await shown((machine) =>
+      renderIncompleteInstallation(new IncompleteInstallation(deleted), machine, replayed),
+    )
+    expect(text).toContain(
+      `Operation ${CONTEXT.recovery.operation} already ran as execution-1: its Execution was deleted; this is its recorded outcome; nothing ran again.`,
+    )
+  })
+
+  test('a fresh run the Kernel marks so never says it ran before', async () => {
+    const error = new IncompleteInstallation(installation('failed', REFUSED))
+    const fresh = { ...replayed, replayed: false }
+    const { text, json } = await shown((machine) =>
+      renderIncompleteInstallation(error, machine, fresh),
+    )
+    expect(text).not.toContain('already ran')
+    expect(json.replayed).toBe(false)
+  })
+
+  test('recorded offenders and remaining data are told as they were when it ran', async () => {
+    const install = new IncompleteInstallation(
+      installation('failed', {
+        kind: 'failed',
+        error: {
+          code: 'DATA_MIGRATION_REQUIRED',
+          message: 'Existing data requires an explicit migration before schema activation.',
+          details: {
+            report: {
+              rules: [
+                {
+                  class: { kind: 'class', name: 'Item', origin: 'qa.test' },
+                  property: 'qa.test:class.Item.property.category',
+                  family: 'required',
+                  verdict: 'refuted',
+                  count: { bound: 'exact', unit: 'facts', value: 2 },
+                  offenders: [],
+                  truncated: false,
+                },
+                {
+                  class: { kind: 'class', name: 'Item', origin: 'qa.test' },
+                  property: 'qa.test:class.Item.property.label',
+                  family: 'value',
+                  verdict: 'refuted',
+                  count: { bound: 'exact', unit: 'values', value: 1 },
+                  offenders: [{ observed: 'too long' }],
+                  truncated: false,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    )
+    const { text } = await shown((machine) =>
+      renderIncompleteInstallation(install, machine, replayed),
+    )
+    expect(text).toContain(
+      'DATA_MIGRATION_REQUIRED: When it ran, the stored data broke 2 rules of the new schema:',
+    )
+    expect(text).toContain('Item.category (qa.test): required, was missing on 2 facts')
+    expect(text).toContain('Item.label (qa.test): 1 value was not allowed: "too long"')
+    expect(text).toContain(
+      'Repair what still breaks them, then install again with a fresh operation.',
+    )
+
+    const uninstall = new IncompleteInstallation(
+      installation('failed', {
+        kind: 'failed',
+        error: {
+          code: 'DATA_MIGRATION_REQUIRED',
+          message: 'Uninstall refused.',
+          details: {
+            requirements: [
+              {
+                operation: 'remove-facts',
+                reason: 'destructive-change',
+                subject: {
+                  kind: 'definition',
+                  ref: { kind: 'class', name: 'Item', origin: 'qa.test' },
+                },
+                work: { observedFacts: 3 },
+              },
+            ],
+          },
+        },
+      }),
+      'uninstall',
+    )
+    const removal = await shown((machine) =>
+      renderIncompleteInstallation(uninstall, machine, { ...replayed, lifecycle: 'uninstall' }),
+    )
+    expect(removal.text).toContain(
+      'DATA_MIGRATION_REQUIRED: When it ran, data of the Domains to uninstall remained.',
+    )
+    expect(removal.text).toContain('Item (qa.test): 3 facts remained.')
+  })
+
+  test('a replayed Execution still running: it already runs, nothing started again', async () => {
+    const running = installation('running')
+    const lines: string[] = []
+    const original = console.log
+    console.log = (...values: unknown[]) => void lines.push(values.join(' '))
+    try {
+      renderRunning(running, replayed, true)
+    } finally {
+      console.log = original
+    }
+    expect(stripVTControlCharacters(lines.join('\n'))).toContain(
+      `Operation ${CONTEXT.recovery.operation} already runs as execution-1: nothing started again.`,
+    )
+    expect(runningReport(running, replayed)).toMatchObject({
+      replayed: true,
+      follow: 'astrale domain installation result execution-1 --wait-ms 20000 -i app',
+    })
+    expect(runningReport(running, replayed)).not.toHaveProperty('replay')
+    expect(runningReport(running, CONTEXT)).not.toHaveProperty('replayed')
   })
 })
 

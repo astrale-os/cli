@@ -258,7 +258,10 @@ refused `SCHEMA_CHANGE_ACTIVE` (another schema change holds the Instance) exits
 5. Only a completed install reads back and verifies the installed pins.
 
 `--operation` is for automation. A reused id replays only the exact same
-request. Any other request under a used id is
+request: the Kernel marks that answer a replay, `--json` carries `replayed`
+(`true`, or `false` for a new run; absent when the Kernel sends no marker) and
+a human reads once that the operation already ran and this is its recorded
+outcome. Only that marker makes a replay. Any other request under a used id is
 refused `SCHEMA_OPERATION_CONFLICT` (older Hosts: `IDEMPOTENCY_KEY_CONFLICT`):
 nothing runs, the command exits 5, and `--json` names the request the id
 belongs to as `conflict` (`execution`, and `mode`/`state` when known) with

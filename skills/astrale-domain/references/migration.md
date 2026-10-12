@@ -52,7 +52,7 @@ ID and observe it with `domain installation status/result`; do not submit a new 
 whether the previous one worked. If no ID was received, follow the CLI's instructions: a fresh
 operation is refused while the first one still changes the schema, and that refusal names it. An
 operation id names one request: reusing it for anything but that exact request is refused as an
-operation conflict.
+operation conflict, and only the Kernel's `replayed` marker says an answer is a replay.
 
 ## Breaking evolution
 

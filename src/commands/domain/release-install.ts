@@ -32,6 +32,8 @@ import {
   renderRunning,
   runningReport,
   conflictFailure,
+  replayedMember,
+  replayLine,
   stillRunning,
   type Lifecycle,
 } from '../../connection/installation-result'
@@ -122,6 +124,8 @@ type InstallReport = InstallResult & {
   readonly execution: Installation['execution']
   readonly status: Installation['status']
   readonly references: readonly InstallReference[]
+  /** The Kernel's marker: whether its answer replayed the operation's recorded Execution. */
+  readonly replayed?: boolean
   /** The advisory pre-check this install ran before it was sent ([.78239] [.69634]). */
   readonly precheck: InstallPrecheck
 }
@@ -129,10 +133,13 @@ type InstallReport = InstallResult & {
 export interface ReferenceInstallDependencies {
   readonly createOperationId: () => string
   readonly withClientSession: typeof withClientSession
-  /** The install syscall of a session, telling `started` the Execution the Kernel answered. */
+  /**
+   * The install syscall of a session, telling `started` the Execution the Kernel answered and its
+   * replay marker.
+   */
   readonly lifecycle: (
     session: ClientSession,
-    started: (execution: InstallExecutionId) => void,
+    started: (execution: InstallExecutionId, replayed?: boolean) => void,
   ) => Lifecycle
   /**
    * Opens the Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
@@ -460,6 +467,7 @@ async function installReleases(
             ...result,
             execution: installation.execution,
             status: installation.status,
+            ...replayedMember(context),
             references: report,
             precheck,
           } satisfies InstallReport,
@@ -469,6 +477,8 @@ async function installReleases(
       }
       presentReferences(report, operation, result)
       log.dim(`  ${completedExecutionLine(installation)}`)
+      const replayed = replayLine(context, installation.status)
+      if (replayed !== undefined) log.dim(`  ${replayed}`)
       for (const [index, { origin, consent: change }] of report.entries()) {
         if (change === undefined) continue
         log.dim(
@@ -1060,8 +1070,11 @@ function presentReferences(
         ? ''
         : `${chalk.bold(reference.version)}${reference.yanked === true ? chalk.yellow(' (yanked)') : ''} `
     // The listings only detail a replacement: the Kernel's result alone decides the status.
+    // A replay reads the listing after its install already moved it: no earlier pin to show.
     const was =
-      status === 'replaced' && reference.previous !== null
+      status === 'replaced' &&
+      reference.previous !== null &&
+      (pin === null || !samePin(reference.previous.pin, pin))
         ? chalk.dim(` (was ${pinLabel(reference.previous.pin)})`)
         : ''
     console.log(

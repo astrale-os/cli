@@ -24,7 +24,9 @@ Behavior:
   without waiting. Ctrl-C stops waiting, never the installation: the CLI names
   the execution that continues and exits 130.
   --operation is for automation: a reused id replays only the exact same
-  request. Any other request under that id is
+  request, and the Kernel marks that answer a replay (--json: "replayed",
+  only as it sends it); the CLI then says once that the operation already ran
+  and this is its recorded outcome. Any other request under that id is
   refused as an operation conflict: nothing runs, the CLI names the execution
   the id belongs to and how it stands, and exits 5. The same command can
   conflict too, when it is planned again from a state its first run moved.

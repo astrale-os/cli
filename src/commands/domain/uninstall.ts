@@ -15,6 +15,8 @@ import {
   conflictFailure,
   installationResult,
   renderRunning,
+  replayedMember,
+  replayLine,
   runningReport,
   stillRunning,
 } from '../../connection/installation-result'
@@ -79,7 +81,9 @@ Behavior:
   schema change is active (SCHEMA_CHANGE_ACTIVE), else 1; --json
   carries the execution, "observe" and, once the operation is used, "fresh".
   --operation is for automation: a reused id replays only the exact same
-  uninstall. Any other request under that id is
+  uninstall, and the Kernel marks that answer a replay (--json: "replayed",
+  only as it sends it); the CLI then says once that the operation already ran
+  and this is its recorded outcome. Any other request under that id is
   refused as an operation conflict: nothing runs, and the CLI names the
   execution the id belongs to. An uninstall still running at --timeout is no
   failure: the CLI prints its execution and how to follow it, and exits 0.
@@ -200,7 +204,7 @@ export function uninstallKernelCommand(
         return
       }
       if (machine) {
-        output(result, formatOpts)
+        output({ ...result, ...replayedMember(context) }, formatOpts)
         return
       }
       const removed = result.transitions.map(({ intent }) => intent.origin)
@@ -209,6 +213,8 @@ export function uninstallKernelCommand(
       )
       log.dim(`  operation: ${result.operation}`)
       log.dim(`  ${completedExecutionLine(result)}`)
+      const replayed = replayLine(context, result.status)
+      if (replayed !== undefined) log.dim(`  ${replayed}`)
     },
   }
 }

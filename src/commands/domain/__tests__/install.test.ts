@@ -173,6 +173,8 @@ function harness(
     readonly caller?: string
     readonly registry?: 'down'
     readonly domain?: FakeDomain
+    /** The Kernel's `replayed` marker on its Execution answer; absent: it sends none. */
+    readonly replayed?: boolean
   } = {},
 ) {
   const admin = fakeAdmin({
@@ -231,10 +233,13 @@ function harness(
       return action({ session } as never)
     }) as unknown as ReferenceInstallDependencies['withClientSession'],
     // The fake Kernel answers the whole install at once: the Execution it names was started.
-    lifecycle: ((fake: typeof session, started: (execution: string) => void) => ({
+    lifecycle: ((
+      fake: typeof session,
+      started: (execution: string, replayed?: boolean) => void,
+    ) => ({
       install: async (request: InstallRequest) => {
         const answer = await fake.schema.install(request)
-        started(answer.execution)
+        started(answer.execution, options.replayed)
         return answer
       },
     })) as unknown as ReferenceInstallDependencies['lifecycle'],
@@ -1466,5 +1471,33 @@ describe('an operation conflict refuses this install: nothing ran for it', () =>
     })
     expect(failure).not.toHaveProperty('conflict')
     expect(io.stdout).toBe('')
+  })
+})
+
+describe('the Kernel says whether its answer replays the operation', () => {
+  test('a replay marked by the Kernel says so once, and --json carries its marker', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') }, replayed: true })
+    await installByReference([A], { ...JSON_OUTPUT, operation: RETRY }, run.deps)
+    expect(JSON.parse(io.stdout)).toMatchObject({ execution: 'install-execution', replayed: true })
+    const shown = await human(() => installByReference([A], { operation: RETRY }, run.deps))
+    expect(shown.lines).toContain(
+      `Operation ${RETRY} already ran as install-execution: this is its recorded outcome; nothing ran again.`,
+    )
+  })
+
+  test('an answer the Kernel marks new, or does not mark, never says it ran before', async () => {
+    for (const replayed of [false, undefined]) {
+      const run = harness({
+        served: { [A]: served(AGENCIES, A, '1') },
+        ...(replayed === undefined ? {} : { replayed }),
+      })
+      io.stdout = ''
+      await installByReference([A], { ...JSON_OUTPUT, operation: RETRY }, run.deps)
+      const report = JSON.parse(io.stdout)
+      if (replayed === undefined) expect(report).not.toHaveProperty('replayed')
+      else expect(report.replayed).toBe(false)
+      const shown = await human(() => installByReference([A], { operation: RETRY }, run.deps))
+      expect(shown.lines).not.toContain('already ran')
+    }
   })
 })

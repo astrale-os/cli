@@ -183,4 +183,30 @@ test('a completed uninstall names its operation and its Execution', async () => 
   expect(shown.lines).toContain('Domain uninstalled: app.example')
   expect(shown.lines).toContain(`operation: ${operation}`)
   expect(shown.lines).toContain('execution: uninstall-execution')
+  expect(shown.lines).not.toContain('already ran')
+
+  // The Kernel marked its answer a replay: one line says so, and --json carries its marker.
+  const replayed = {
+    ...context,
+    started: 'uninstall-execution' as never,
+    replayed: true,
+  }
+  const again = await human(async () => command.format(result, {}, false, replayed))
+  expect(again.lines).toContain(
+    `Operation ${operation} already ran as uninstall-execution: this is its recorded outcome; nothing ran again.`,
+  )
+  const printed: string[] = []
+  const write = process.stdout.write
+  process.stdout.write = ((chunk: string) => printed.push(chunk) > 0) as typeof write
+  try {
+    command.format(result, { json: true }, true, replayed)
+    command.format(result, { json: true }, true, context)
+  } finally {
+    process.stdout.write = write
+  }
+  expect(JSON.parse(printed[0]!)).toMatchObject({
+    execution: 'uninstall-execution',
+    replayed: true,
+  })
+  expect(JSON.parse(printed[1]!)).not.toHaveProperty('replayed')
 })

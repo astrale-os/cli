@@ -74,19 +74,29 @@ export function installationResult(
 export type Lifecycle = Pick<SchemaApi, 'install' | 'uninstall'>
 
 /**
+ * The Kernel's `replayed` marker on one Execution answer, when it sends one: true when the
+ * operation already named this Execution, so the call replayed it and nothing ran again. Only this
+ * marker makes an answer a replay.
+ */
+export function replayMarker(answer: object): boolean | undefined {
+  const { replayed } = answer as { readonly replayed?: unknown }
+  return typeof replayed === 'boolean' ? replayed : undefined
+}
+
+/**
  * The install and uninstall syscalls of one Session, which tell `started` the Execution the Kernel
- * answered as soon as it answers, before the Client waits for its outcome. A command interrupted
- * while it waits, or that cannot read the outcome, still knows which Execution runs; a refusal
- * before any answer created none.
+ * answered as soon as it answers, with its replay marker, before the Client waits for its outcome.
+ * A command interrupted while it waits, or that cannot read the outcome, still knows which
+ * Execution runs; a refusal before any answer created none.
  */
 export function announcingLifecycle(
   session: Pick<ClientSession, 'dispatch'>,
-  started: (execution: InstallExecutionId) => void,
+  started: (execution: InstallExecutionId, replayed?: boolean) => void,
 ): Lifecycle {
   const schema = createSchema(
     async (call, options) => {
       const result = await session.dispatch(call, options)
-      if (result.kind === 'execution') started(result.execution)
+      if (result.kind === 'execution') started(result.execution, replayMarker(result))
       return result
     },
     // Only the lifecycle syscalls are exposed: the introspection limits bound nothing here.
@@ -108,6 +118,36 @@ export interface LifecycleContext {
   readonly recovery: OperationRecovery
   /** The Execution the Kernel answered for the operation; absent when it never answered one. */
   readonly started?: InstallExecutionId
+  /** The Kernel's `replayed` marker on that answer, as it sent it; absent when it sent none. */
+  readonly replayed?: boolean
+}
+
+/**
+ * The one line that says the operation's answer is the Execution it already ran, only when the
+ * Kernel marked it `replayed`: its recorded outcome once `status` ended, even when its Execution
+ * node was deleted since.
+ */
+export function replayLine(
+  context: LifecycleContext,
+  status?: { readonly state: string; readonly outcome?: unknown },
+): string | undefined {
+  const { replayed, started, recovery } = context
+  if (started === undefined || replayed !== true) return undefined
+  const ran = `Operation ${recovery.operation} already ran as ${started}`
+  if (status?.state === 'deleted') {
+    return `${ran}: its Execution was deleted; this is its recorded outcome; nothing ran again.`
+  }
+  const ended =
+    status?.outcome !== undefined ||
+    ['completed', 'failed', 'cancelled'].includes(status?.state ?? '')
+  return ended
+    ? `${ran}: this is its recorded outcome; nothing ran again.`
+    : `Operation ${recovery.operation} already runs as ${started}: nothing started again.`
+}
+
+/** `--json`'s `replayed`: the Kernel's marker as it sent it, never inferred. */
+export function replayedMember(context: LifecycleContext): { readonly replayed?: boolean } {
+  return context.replayed === undefined ? {} : { replayed: context.replayed }
 }
 
 /** The command that reads one install or uninstall Execution, on the same Instance and identity. */
@@ -166,6 +206,7 @@ export function renderInterruptedWait(context: LifecycleContext, machine: boolea
             ? `Interrupted before the Kernel answered the ${lifecycle}.`
             : `Stopped waiting; the ${lifecycle} continues on the Kernel.`,
         ...(started === undefined ? {} : { execution: started }),
+        ...replayedMember(context),
         lifecycle,
         operation: recovery.operation,
         ...(started === undefined
@@ -188,6 +229,8 @@ export function renderInterruptedWait(context: LifecycleContext, machine: boolea
     return
   }
   log.warn(`Stopped waiting: the ${lifecycle} continues on the Kernel as ${started}.`)
+  const replayed = replayLine(context)
+  if (replayed !== undefined) log.dim(`  ${replayed}`)
   log.dim(`  operation: ${recovery.operation}`)
   log.dim(`  Wait for it: ${installationResultCommand(started, lifecycle, recovery.target)}`)
   log.dim(`  Read this run: ${installationStatusCommand(started, lifecycle, recovery.target)}`)
@@ -220,6 +263,7 @@ export function openSessionReport(
     execution: installation.execution,
     lifecycle: 'install',
     status: installation.status,
+    ...replayedMember(context),
     operation: recovery.operation,
     ...sessionCommands(installation, recovery),
   }
@@ -237,6 +281,8 @@ export function renderOpenSession(installation: Installation, context: Lifecycle
   log.success(
     `Maintenance session ${installation.execution} awaits ${command === undefined ? 'Root' : `command ${command}`} (operation ${recovery.operation})`,
   )
+  const replayed = replayLine(context, installation.status)
+  if (replayed !== undefined) log.dim(`  ${replayed}`)
   log.dim(
     '  The Instance is closed to other callers until the session applies its target or cancels.',
   )
@@ -269,6 +315,7 @@ export function runningReport(
     execution,
     lifecycle,
     status,
+    ...replayedMember(context),
     operation: recovery.operation,
     observe: installationStatusCommand(execution, lifecycle, recovery.target),
     follow: installationResultCommand(execution, lifecycle, recovery.target),
@@ -295,6 +342,8 @@ export function renderRunning(
   log.dim(
     `  execution: ${execution} (${status.state}${status.detail === undefined ? '' : `; ${status.detail.phase}`})`,
   )
+  const replayed = replayLine(context, status)
+  if (replayed !== undefined) log.dim(`  ${replayed}`)
   log.dim(`  operation: ${recovery.operation}`)
   log.dim(`  Wait for it: ${installationResultCommand(execution, lifecycle, recovery.target)}`)
   log.dim(`  Read this run: ${installationStatusCommand(execution, lifecycle, recovery.target)}`)
@@ -348,6 +397,7 @@ export function renderIncompleteInstallation(
   const observe = installationStatusCommand(execution, error.kind, recovery?.target)
   const ended = outcome !== undefined
   const fresh = ended ? recovery?.fresh : undefined
+  const replayed = context === undefined ? undefined : replayLine(context, status)
   if (machine) {
     process.stderr.write(
       `${JSON.stringify({
@@ -357,16 +407,21 @@ export function renderIncompleteInstallation(
         execution,
         lifecycle: error.kind,
         status,
+        ...(context === undefined ? {} : replayedMember(context)),
         ...(recovery === undefined ? {} : { operation: recovery.operation, observe }),
         ...(fresh === undefined ? {} : { fresh }),
       })}\n`,
     )
     return
   }
+  // A replayed end is the one recorded when the operation ran: the data may have changed since.
   const explained =
-    failure === undefined ? undefined : explainFailure(error.kind, failure, recovery?.fresh)
+    failure === undefined
+      ? undefined
+      : explainFailure(error.kind, failure, recovery?.fresh, replayed !== undefined)
   log.error(`${code}: ${explained?.message ?? message}`)
   for (const line of explained?.lines ?? []) log.dim(`  ${line}`)
+  if (replayed !== undefined) log.dim(`  ${replayed}`)
   if (outcome?.kind === 'failed') {
     log.dim(`  The ${error.kind} ran and was refused: nothing was ${DONE[error.kind]}.`)
   } else if (outcome?.kind === 'cancelled') {
@@ -380,7 +435,7 @@ export function renderIncompleteInstallation(
       `  Repair session is waiting for command:${status.detail.command}. Read its status before applying or cancelling.`,
     )
   }
-  if (recovery !== undefined) {
+  if (recovery !== undefined && replayed === undefined) {
     log.dim(
       ended
         ? `  operation: ${recovery.operation} is used: this ${outcome.kind === 'failed' ? 'failure' : 'cancellation'} is its final outcome.`
@@ -522,6 +577,7 @@ export function lifecycleFailureNotes(
       fields: {
         execution: started,
         lifecycle,
+        ...replayedMember(context),
         operation: recovery.operation,
         observe,
         follow,
@@ -550,16 +606,21 @@ interface ExplainedFailure {
   readonly lines: readonly string[]
 }
 
+/**
+ * A failure in the reader's terms. A `recorded` one is a replayed end: it tells, in the past
+ * tense, what the data was when the operation ran.
+ */
 function explainFailure(
   lifecycle: 'install' | 'uninstall',
   failure: { readonly code: string; readonly details?: unknown },
   fresh: string | undefined,
+  recorded: boolean,
 ): ExplainedFailure | undefined {
   if (failure.code !== 'DATA_MIGRATION_REQUIRED') return undefined
   const requirements = migrationRequirements(failure.details)
   return lifecycle === 'uninstall'
-    ? uninstallDataRemains(requirements)
-    : installDataInvalid(migrationRules(failure.details), requirements, fresh)
+    ? uninstallDataRemains(requirements, recorded)
+    : installDataInvalid(migrationRules(failure.details), requirements, fresh, recorded)
 }
 
 /** Rules, and offenders of each, a human reads before the status shows them all. */
@@ -576,19 +637,24 @@ function installDataInvalid(
   { rules, truncated }: MigrationRules,
   requirements: readonly MigrationRequirement[],
   fresh: string | undefined,
+  recorded: boolean,
 ): ExplainedFailure | undefined {
   let message: string
   const lines: string[] = []
   if (rules.length > 0) {
     const count = `${rules.length}${truncated ? ' or more' : ''}`
     const noun = rules.length === 1 && !truncated ? 'rule' : 'rules'
-    message = `The stored data breaks ${count} ${noun} of the new schema:`
-    for (const rule of rules.slice(0, SHOWN_RULES)) lines.push(`  ${ruleLine(rule)}`)
+    message = recorded
+      ? `When it ran, the stored data broke ${count} ${noun} of the new schema:`
+      : `The stored data breaks ${count} ${noun} of the new schema:`
+    for (const rule of rules.slice(0, SHOWN_RULES)) lines.push(`  ${ruleLine(rule, recorded)}`)
     if (rules.length > SHOWN_RULES || truncated) {
       lines.push('  and more: the status of the run below lists every rule.')
     }
   } else if (requirements.length > 0) {
-    message = 'The stored data must be migrated before the new schema activates:'
+    message = recorded
+      ? 'When it ran, the stored data had to be migrated before the new schema could activate:'
+      : 'The stored data must be migrated before the new schema activates:'
     for (const requirement of requirements) {
       lines.push(
         `  ${requirement.subject}: ${requirement.operation} (${requirement.reason})` +
@@ -600,7 +666,11 @@ function installDataInvalid(
   } else {
     return undefined
   }
-  lines.push('Repair that data, then install again with a fresh operation.')
+  lines.push(
+    recorded
+      ? 'Repair what still breaks them, then install again with a fresh operation.'
+      : 'Repair that data, then install again with a fresh operation.',
+  )
   if (fresh !== undefined && !fresh.includes('--mode')) {
     lines.push(
       `Or repair it in a Root maintenance session, the Instance closed meanwhile: ${fresh} --mode maintenance`,
@@ -609,10 +679,14 @@ function installDataInvalid(
   return { message, lines }
 }
 
-/** One rule: what it requires, how much data breaks it, and the first offenders. */
-function ruleLine(rule: MigrationRule): string {
+/**
+ * One rule: what it requires, how much data breaks it, and the first offenders; as `recorded`
+ * when the operation ran, in the past tense.
+ */
+function ruleLine(rule: MigrationRule, recorded: boolean): string {
+  const was = recorded ? 'was ' : ''
   if (rule.verdict === 'undecided') {
-    return `${rule.rule}: ${rule.family} rule not decided${rule.undecided === undefined ? '' : ` (${rule.undecided})`}`
+    return `${rule.rule}: ${rule.family} rule ${was}not decided${rule.undecided === undefined ? '' : ` (${rule.undecided})`}`
   }
   const count =
     rule.count === undefined
@@ -626,12 +700,13 @@ function ruleLine(rule: MigrationRule): string {
               ? 'value'
               : 'values'
         }`
+  const were = recorded ? (rule.count?.value === 1 ? 'was ' : 'were ') : ''
   const broken =
     rule.family === 'required'
-      ? `required, missing on ${count ?? 'some facts'}`
+      ? `required, ${was}missing on ${count ?? 'some facts'}`
       : rule.family === 'value'
-        ? `${count ?? 'some values'} not allowed`
-        : `${rule.family} rule broken by ${count ?? 'some facts'}`
+        ? `${count ?? 'some values'} ${were}not allowed`
+        : `${rule.family} rule ${was}broken by ${count ?? 'some facts'}`
   const shown = rule.offenders.slice(0, SHOWN_OFFENDERS)
   const more =
     rule.count?.bound === 'exact' && rule.count.value > shown.length
@@ -650,12 +725,17 @@ function ruleLine(rule: MigrationRule): string {
  */
 function uninstallDataRemains(
   requirements: readonly MigrationRequirement[],
+  recorded: boolean,
 ): ExplainedFailure | undefined {
   const removals = requirements.filter(({ operation }) => operation === 'remove-facts')
   if (removals.length === 0) return undefined
-  const lines = removals.map((requirement) => `${requirement.subject}: ${remaining(requirement)}`)
+  const lines = removals.map(
+    (requirement) => `${requirement.subject}: ${remaining(requirement, recorded)}`,
+  )
   const references = removals.some(({ reason }) => reason === 'foreign-reference')
-    ? ['Data of other Domains references it: delete those references first.']
+    ? [
+        `Data of other Domains ${recorded ? 'referenced' : 'references'} it: delete those references first.`,
+      ]
     : []
   const limit = removals
     .filter(({ reason }) => reason !== 'foreign-reference')
@@ -663,7 +743,9 @@ function uninstallDataRemains(
     .find((value) => value !== undefined)
   if (limit !== undefined) {
     return {
-      message: 'More data of the Domains to uninstall remains than one uninstall deletes.',
+      message: recorded
+        ? 'When it ran, more data of the Domains to uninstall remained than one uninstall deletes.'
+        : 'More data of the Domains to uninstall remains than one uninstall deletes.',
       lines: [
         ...lines,
         ...references,
@@ -672,7 +754,9 @@ function uninstallDataRemains(
     }
   }
   return {
-    message: 'Data of the Domains to uninstall remains.',
+    message: recorded
+      ? 'When it ran, data of the Domains to uninstall remained.'
+      : 'Data of the Domains to uninstall remains.',
     lines: [
       ...lines,
       ...references,
@@ -701,8 +785,11 @@ function facts(count: number): string {
   return `${count} ${count === 1 ? 'fact' : 'facts'}`
 }
 
-/** How much of one subject remains: "at least" once the Kernel stopped counting at the bound. */
-function remaining({ reason, work }: MigrationRequirement): string {
+/**
+ * How much of one subject remains, or remained when the operation ran (`recorded`): "at least"
+ * once the Kernel stopped counting at the bound.
+ */
+function remaining({ reason, work }: MigrationRequirement, recorded: boolean): string {
   const above = bound(work) !== undefined
   const bytes =
     above &&
@@ -717,5 +804,5 @@ function remaining({ reason, work }: MigrationRequirement): string {
       : `${above ? 'at least ' : ''}${facts(work.observedFacts)}${bytes}`
   if (reason === 'foreign-reference') return `${count} referenced by data of other Domains.`
   const one = work.observedFacts === undefined || work.observedFacts === 1
-  return `${count} ${one ? 'remains' : 'remain'}.`
+  return `${count} ${recorded ? 'remained' : one ? 'remains' : 'remain'}.`
 }

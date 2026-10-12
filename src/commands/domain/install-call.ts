@@ -34,7 +34,8 @@ export interface InstallFailure {
  * Run one Kernel install or uninstall call behind the command spinner and present its result, the
  * `runKernelCommand` lifecycle inside an already open session: the checks that precede the call
  * (Kernel probe, deployment reads, consent prompts) run before the spinner starts. The call learns
- * the Execution the Kernel answered through `started`, so a failure says whether one exists.
+ * the Execution the Kernel answered through `started`, with the Kernel's `replayed` marker, so a
+ * failure says whether one exists and the presentation whether the operation ran before.
  */
 export async function runInstallCall<Result>(
   opts: KernelCommandOpts,
@@ -42,7 +43,9 @@ export async function runInstallCall<Result>(
     readonly lifecycle: 'install' | 'uninstall'
     readonly label: string
     readonly recovery: OperationRecovery
-    readonly call: (started: (execution: InstallExecutionId) => void) => Promise<Result>
+    readonly call: (
+      started: (execution: InstallExecutionId, replayed?: boolean) => void,
+    ) => Promise<Result>
     /** Whether the answer is an Execution still running: the wait ended without its outcome. */
     readonly running?: (result: Result) => boolean
     readonly format: (
@@ -54,10 +57,12 @@ export async function runInstallCall<Result>(
 ): Promise<InstallFailure | undefined> {
   const machine = isMachine(opts)
   let execution: InstallExecutionId | undefined
+  let replayed: boolean | undefined
   const context = (): LifecycleContext => ({
     lifecycle: step.lifecycle,
     recovery: step.recovery,
     ...(execution === undefined ? {} : { started: execution }),
+    ...(replayed === undefined ? {} : { replayed }),
   })
   const spin = machine ? null : spinner(`${step.label}...`, { interruptible: true })
   // Ctrl-C (SIGINT) stops waiting, never the Execution: say where it continues, and exit 130, the
@@ -71,8 +76,9 @@ export async function runInstallCall<Result>(
   const startTime = performance.now()
   try {
     const result = await step
-      .call((answered) => {
+      .call((answered, marker) => {
         execution = answered
+        replayed = marker
       })
       .finally(() => process.off('SIGINT', interrupted))
     const elapsed = chalk.dim(formatElapsed(performance.now() - startTime))
