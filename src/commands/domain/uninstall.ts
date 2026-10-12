@@ -14,13 +14,13 @@ import {
   completedExecutionLine,
   conflictFailure,
   installationResult,
+  lifecycleWaitMs,
   renderRunning,
   replayedMember,
   replayLine,
   runningReport,
   stillRunning,
 } from '../../connection/installation-result'
-import { resolveTimeoutMs } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import { shellCommand } from '../../lib/shell-command'
@@ -179,14 +179,10 @@ export function uninstallKernelCommand(
     recovery,
     credential: { principal: 'caller' as const },
     fn: async (lifecycle: Pick<Lifecycle, 'uninstall'>): Promise<UninstallResult> => {
-      const installation = await lifecycle.uninstall(
-        uninstallCallInput(
-          selected,
-          opts.destructive ? 'destructive' : 'safe',
-          operation,
-        ) as Parameters<Lifecycle['uninstall']>[0],
-        opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
-      )
+      const installation = await lifecycle.uninstall({
+        ...uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe', operation),
+        waitMs: lifecycleWaitMs(opts),
+      })
       if (stillRunning(installation.status)) return { running: installation }
       return {
         ...installationResult(installation, 'uninstall'),

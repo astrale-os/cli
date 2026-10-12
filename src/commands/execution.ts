@@ -1,7 +1,6 @@
 import type { NodeId } from '@astrale-os/sdk/graph/node'
 import type { Path } from '@astrale-os/sdk/graph/path'
 
-import { execution } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'
@@ -52,7 +51,7 @@ export function executionReceipt(ctx: ConnectionContext, path: Path, id: NodeId)
   }
 }
 
-/** Command action seam: real receipt-file admission and SDK reference wiring. */
+/** Command action seam: real receipt-file admission and the session's Execution Methods. */
 export async function observeExecution(
   operation: 'status' | 'result',
   file: string,
@@ -86,8 +85,8 @@ export async function observeExecution(
       : {}),
     fn: async ({ session }) =>
       operation === 'status'
-        ? session.invoke(execution.status(receipt.id), {})
-        : session.invoke(execution.result(receipt.id), waitMs === undefined ? {} : { waitMs }),
+        ? session.execution.status(receipt.id)
+        : session.execution.result(receipt.id, waitMs === undefined ? {} : { waitMs }),
   })
 }
 

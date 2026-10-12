@@ -40,18 +40,14 @@ test('observes or signals the exact existing Execution once, using caller author
     if (method === 'apply' || method === 'abort')
       expect(result).toMatchObject({ execution: 'existing-execution', accepted: true })
   }
+  // --timeout bounds each request through the session, so no call carries its own deadline.
   expect(calls).toEqual([
-    ['status', 'existing-execution', { timeoutMs: 5000 }],
-    ['result', 'existing-execution', { waitMs: 100 }, { timeoutMs: 5000 }],
-    [
-      'apply',
-      'existing-execution',
-      { index: 3, validation: { scope: 'full', counts: 'exact' } },
-      { timeoutMs: 5000 },
-    ],
-    ['abort', 'existing-execution', 2, { timeoutMs: 5000 }],
-    ['cancel', 'existing-execution', {}, { timeoutMs: 5000 }],
-    ['resume', 'existing-execution', { timeoutMs: 5000 }],
+    ['status', 'existing-execution'],
+    ['result', 'existing-execution', { waitMs: 100 }],
+    ['apply', 'existing-execution', { index: 3, validation: { scope: 'full', counts: 'exact' } }],
+    ['abort', 'existing-execution', 2],
+    ['cancel', 'existing-execution', {}],
+    ['resume', 'existing-execution'],
   ])
 })
 

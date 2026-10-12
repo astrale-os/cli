@@ -1,5 +1,4 @@
 import type {
-  InstallExecutionId,
   Installation,
   InstallResult,
   SchemaApi,
@@ -7,9 +6,10 @@ import type {
   UninstallReceipt,
 } from '@astrale-os/sdk/client/schema'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 
 import { ResponseError } from '@astrale-os/sdk/client'
-import { createSchema, DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS } from '@astrale-os/sdk/client/schema'
+import { createSchema } from '@astrale-os/sdk/client/schema'
 
 import type { OperationRecovery } from './command'
 
@@ -25,6 +25,7 @@ import {
   type MigrationRule,
   type MigrationRules,
 } from './reasons'
+import { resolveTimeoutMs } from './session'
 
 /** A successful call can still describe an unfinished or rejected installation. */
 export class IncompleteInstallation extends Error {
@@ -73,14 +74,20 @@ export function installationResult(
 /** The install and uninstall syscalls, as `announcingLifecycle` binds them. */
 export type Lifecycle = Pick<SchemaApi, 'install' | 'uninstall'>
 
+/** How long install and uninstall wait for their outcome without --timeout. */
+export const LIFECYCLE_WAIT_MS = 110_000
+
 /**
- * The Kernel's `replayed` marker on one Execution answer, when it sends one: true when the
- * operation already named this Execution, so the call replayed it and nothing ran again. Only this
- * marker makes an answer a replay.
+ * How long an install or uninstall command waits for its outcome, counted from the Kernel's answer
+ * naming its Execution: not at all with --no-wait, else --timeout, else {@link LIFECYCLE_WAIT_MS}.
+ * Each request keeps the session's --timeout.
  */
-export function replayMarker(answer: object): boolean | undefined {
-  const { replayed } = answer as { readonly replayed?: unknown }
-  return typeof replayed === 'boolean' ? replayed : undefined
+export function lifecycleWaitMs(opts: {
+  readonly timeout?: string
+  readonly wait?: boolean
+}): number {
+  if (opts.wait === false) return 0
+  return opts.timeout === undefined ? LIFECYCLE_WAIT_MS : resolveTimeoutMs(opts.timeout)
 }
 
 /**
@@ -91,20 +98,16 @@ export function replayMarker(answer: object): boolean | undefined {
  */
 export function announcingLifecycle(
   session: Pick<ClientSession, 'dispatch'>,
-  started: (execution: InstallExecutionId, replayed?: boolean) => void,
+  started: (execution: NodeId, replayed?: boolean) => void,
 ): Lifecycle {
   const schema = createSchema(
     async (call, options) => {
       const result = await session.dispatch(call, options)
-      if (result.kind === 'execution') started(result.execution, replayMarker(result))
+      if (result.kind === 'execution') started(result.execution, result.replayed)
       return result
     },
     // Only the lifecycle syscalls are exposed: the introspection limits bound nothing here.
-    {
-      maximumReleaseBytes: 1,
-      maximumBundleBytes: 1,
-      lifecycleTimeoutMs: DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS,
-    },
+    { maximumReleaseBytes: 1, maximumBundleBytes: 1 },
   )
   return Object.freeze({
     install: (request, options) => schema.install(request, options),
@@ -117,7 +120,7 @@ export interface LifecycleContext {
   readonly lifecycle: 'install' | 'uninstall'
   readonly recovery: OperationRecovery
   /** The Execution the Kernel answered for the operation; absent when it never answered one. */
-  readonly started?: InstallExecutionId
+  readonly started?: NodeId
   /** The Kernel's `replayed` marker on that answer, as it sent it; absent when it sent none. */
   readonly replayed?: boolean
 }
@@ -481,9 +484,9 @@ export async function conflictFailure(
   if (!(error instanceof ResponseError) || !operationConflict(error.reason)) return error
   const named = conflictDetails(error.reason)
   if (named.execution === undefined) return new OperationConflict(error)
-  const execution = named.execution as InstallExecutionId
+  const execution = named.execution as NodeId
   const read = async (reads: {
-    readonly status: (execution: InstallExecutionId) => Promise<{ readonly state: string }>
+    readonly status: (execution: NodeId) => Promise<{ readonly state: string }>
   }) => {
     try {
       return (await reads.status(execution)).state

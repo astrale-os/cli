@@ -113,7 +113,7 @@ test('the lifecycle names the Execution the Kernel answered before the Client wa
 
 test("the lifecycle passes on the Kernel's replay marker only when it sends one", async () => {
   const markers: unknown[] = []
-  for (const marker of [{ replayed: true }, { replayed: false }, {}, { replayed: 'yes' }]) {
+  for (const marker of [{ replayed: true }, { replayed: false }, {}]) {
     const lifecycle = announcingLifecycle(
       {
         dispatch: async (call: { readonly target: unknown }) =>
@@ -124,10 +124,10 @@ test("the lifecycle passes on the Kernel's replay marker only when it sends one"
       (_execution, replayed) => markers.push(replayed),
     )
     await lifecycle
-      .install({ operation: CONTEXT.recovery.operation, domains: [], wait: false } as never)
+      .install({ operation: CONTEXT.recovery.operation, domains: [], waitMs: 0 } as never)
       .catch(() => undefined)
   }
-  expect(markers).toEqual([true, false, undefined, undefined])
+  expect(markers).toEqual([true, false, undefined])
 })
 
 describe('an Execution that ended used its operation', () => {

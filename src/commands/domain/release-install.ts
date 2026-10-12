@@ -1,15 +1,14 @@
 import type {
   Installation,
-  InstallExecutionId,
   InstalledPin,
   InstalledRelease,
   InstallRequest,
   InstallResult,
 } from '@astrale-os/sdk/client/schema'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 
 import { ResponseError } from '@astrale-os/sdk/client'
-import { DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS } from '@astrale-os/sdk/client/schema'
 import { parseReference } from '@astrale-os/sdk/versioning'
 import chalk from 'chalk'
 
@@ -27,6 +26,7 @@ import {
   completedExecutionLine,
   IncompleteInstallation,
   installationResult,
+  lifecycleWaitMs,
   openSessionReport,
   renderOpenSession,
   renderRunning,
@@ -38,7 +38,6 @@ import {
   type Lifecycle,
 } from '../../connection/installation-result'
 import { reasonCode } from '../../connection/reasons'
-import { resolveTimeoutMs } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import {
@@ -139,7 +138,7 @@ export interface ReferenceInstallDependencies {
    */
   readonly lifecycle: (
     session: ClientSession,
-    started: (execution: InstallExecutionId, replayed?: boolean) => void,
+    started: (execution: NodeId, replayed?: boolean) => void,
   ) => Lifecycle
   /**
    * Opens the Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
@@ -377,10 +376,11 @@ async function installReleases(
     }
   }
 
+  const waitMs = lifecycleWaitMs(opts)
   const request = {
     operation,
     ...(opts.mode === undefined ? {} : { mode: opts.mode }),
-    ...(opts.wait === undefined ? {} : { wait: opts.wait }),
+    waitMs,
     ...(opts.validationScope === undefined && opts.validationCounts === undefined
       ? {}
       : {
@@ -401,8 +401,6 @@ async function installReleases(
       }
     }),
   } as unknown as InstallRequest
-  const timeout =
-    opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) }
   let mismatched: readonly InstallReference[] = []
   // The resend names every version by the exact version it resolved to: a line could resolve to
   // a newer version meanwhile.
@@ -419,10 +417,10 @@ async function installReleases(
         : `Installing ${sources.length} domains (operation ${operation})`,
     recovery,
     call: async (started) => {
-      const deadline = run.deps.now() + (timeout?.timeoutMs ?? DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS)
+      const deadline = run.deps.now() + waitMs
       let installation: Installation
       try {
-        installation = await run.deps.lifecycle(session, started).install(request, timeout)
+        installation = await run.deps.lifecycle(session, started).install(request)
       } catch (error) {
         // A conflict over the operation refuses this install: the request it names is read only
         // to say which one it is.

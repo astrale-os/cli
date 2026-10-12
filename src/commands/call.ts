@@ -7,7 +7,6 @@ import type { ExecutionReceipt } from '../connection/execution'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
-import { replayMarker } from '../connection/installation-result'
 import { containsSelfRef } from '../lib/self'
 import { presentBinary, readBinaryBody } from '../lib/terminal/binary'
 import { failInput, log } from '../lib/terminal/log'
@@ -103,7 +102,7 @@ export async function callCommand(
         return {
           kind: 'execution',
           receipt: executionReceipt(ctx, Path.parse(expanded.path), id),
-          replayed: replayMarker(result) === true,
+          replayed: result.replayed === true,
         }
       }, expanded.meta)
     },

@@ -324,9 +324,11 @@ describe('install by URL', () => {
     await installByReference([B, A], JSON_OUTPUT, run.deps)
 
     expect(run.credentials).toEqual([{ principal: 'caller' }])
+    // Without --timeout the install waits the Kernel client's 110 s for its outcome.
     expect(run.requests).toEqual([
       {
         operation: GENERATED,
+        waitMs: 110_000,
         domains: [
           { release: { url: B, digest: digest('2') } },
           { release: { url: A, digest: digest('1') } },
@@ -443,7 +445,11 @@ describe('install by URL', () => {
 
     expect(run.sleeps).toEqual([2_000, 2_000])
     expect(run.requests).toEqual([
-      { operation: GENERATED, domains: [{ release: { url: A, digest: digest('1') } }] } as never,
+      {
+        operation: GENERATED,
+        waitMs: 110_000,
+        domains: [{ release: { url: A, digest: digest('1') } }],
+      } as never,
     ])
   })
 
@@ -1015,7 +1021,7 @@ describe('durable installations', () => {
         operation: RETRY,
         mode: 'maintenance',
         validation: { scope: 'full', counts: 'exact' },
-        wait: false,
+        waitMs: 0,
       })
       expect(listings).toBe(1)
     })
@@ -1317,7 +1323,7 @@ describe('published SDK durable decoder through the install command', () => {
           if (calls.at(-1)!.endsWith('.result')) return { kind: 'value', value: outcome } as never
           return { kind: 'value', value: status } as never
         },
-        { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
+        { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576 },
       )
       let listings = 0
       const run = harness({

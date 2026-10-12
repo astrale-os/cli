@@ -29,7 +29,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-test('status/result actions read the file, retain default identity selection, and send real SDK execution references', async () => {
+test('status/result actions read the file, retain default identity selection, and send the Execution Methods', async () => {
   const wire: { target: unknown; input: unknown }[] = []
   const results: unknown[] = []
   const session = new ClientSession({
@@ -41,11 +41,23 @@ test('status/result actions read the file, retain default identity selection, an
       expect(String(url)).toBe(`${kernel}/invoke`)
       const body = JSON.parse(await new Response(init?.body).text())
       wire.push(body.call)
+      const target =
+        typeof body.call.target === 'string' ? body.call.target : body.call.target.callable
+      const result = target.endsWith('.status')
+        ? {
+            id: 'execution-1',
+            function: 'function-1',
+            version: `sha256:${'e'.repeat(64)}`,
+            state: 'completed',
+            createdAt: '2026-10-12T00:00:00Z',
+            outcome: { kind: 'completed', value: 42 },
+          }
+        : { kind: 'completed', value: 42 }
       const response = new Response(
         JSON.stringify({
           requestId: body.requestId,
           invocation: { source: kernel, id: 'read-1' },
-          result: { kind: 'completed', value: 42 },
+          result,
         }),
         {
           headers: {
@@ -72,35 +84,27 @@ test('status/result actions read the file, retain default identity selection, an
     await observeExecution('result', file, { url: kernel, json: true, waitMs: '1000' }, run)
     expect(wire).toEqual([
       {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.status',
-          instance: '@execution-1',
-        },
+        target: '@execution-1::kernel.astrale.ai:class.Execution.method.status',
         input: {},
       },
+      // Without --wait-ms a result read answers at once: a wait of 0.
       {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.result',
-          instance: '@execution-1',
-        },
-        input: {},
-      },
-      {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.result',
-          instance: '@execution-1',
-        },
+        target: '@execution-1::kernel.astrale.ai:class.Execution.method.result',
         input: { waitMs: 0 },
       },
       {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.result',
-          instance: '@execution-1',
-        },
-        input: { waitMs: 1000 },
+        target: '@execution-1::kernel.astrale.ai:class.Execution.method.result',
+        input: { waitMs: 0 },
+      },
+      {
+        target: '@execution-1::kernel.astrale.ai:class.Execution.method.result',
+        // The time left of the 1000 ms wait when the request is sent.
+        input: { waitMs: expect.any(Number) },
       },
     ])
-    expect(results).toEqual(Array(4).fill({ kind: 'completed', value: 42 }))
+    expect((wire[3] as { input: { waitMs: number } }).input.waitMs).toBeLessThanOrEqual(1000)
+    expect(results[0]).toMatchObject({ id: 'execution-1', state: 'completed' })
+    expect(results.slice(1)).toEqual(Array(3).fill({ kind: 'completed', value: 42 }))
   } finally {
     session.close()
   }
@@ -184,8 +188,10 @@ test.each(['caller', 'domain'])(
       .map((line) => JSON.parse(line))
     expect(startEvents.some((event) => event.kind === 'exchange')).toBe(mode === 'domain')
     await writeFile(observed, '')
-    expect(JSON.parse(await invoke(['execution', 'status', file, ...flags]))).toEqual({
+    expect(JSON.parse(await invoke(['execution', 'status', file, ...flags]))).toMatchObject({
+      id: 'execution-1',
       state: 'completed',
+      outcome: { kind: 'completed', value: 42 },
     })
     expect(
       JSON.parse(await invoke(['execution', 'result', file, '--wait-ms', '0', ...flags])),
@@ -195,8 +201,7 @@ test.each(['caller', 'domain'])(
       .split('\n')
       .map((line) => JSON.parse(line))
     const observations = events.filter(
-      (event) =>
-        typeof event.target === 'object' && event.target.callable?.includes('class.Execution'),
+      (event) => typeof event.target === 'string' && event.target.includes('class.Execution'),
     )
     expect(observations.map((event) => event.principal)).toEqual([mode, mode])
     if (mode === 'caller') {

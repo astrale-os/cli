@@ -8,7 +8,6 @@ import {
   installationResultCommand,
   installationStatusCommand,
 } from '../../connection/installation-result'
-import { resolveTimeoutMs } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
 import { failInput } from '../../lib/terminal/log'
 
@@ -34,13 +33,14 @@ function integer(value: string | undefined, flag: string, minimum: number): numb
   return Number(value)
 }
 
-/** Explicit, single commands against the existing Execution; never start another install. */
+/**
+ * Explicit, single commands against the existing Execution; never start another install. Each
+ * request keeps the session's --timeout; `result` waits up to --wait-ms across requests.
+ */
 export function installationCommand(operation: Operation, rawId: string, opts: Options) {
   if (!isNodeId(rawId)) throw new TypeError('Expected an installation Execution ID.')
   if (opts.uninstall && (operation === 'apply' || operation === 'abort'))
     throw new TypeError('An uninstall has no repair session signals.')
-  const request =
-    opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) }
   const id = NodeId(rawId)
   const index = operation === 'apply' ? integer(opts.command, '--command', 1) : undefined
   const attempt = operation === 'abort' ? integer(opts.attempt, '--attempt', 1) : undefined
@@ -65,29 +65,25 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
       const reads = opts.uninstall ? session.schema.uninstallation : api
       switch (operation) {
         case 'status':
-          return reads.status(id, request)
+          return reads.status(id)
         case 'result':
-          return reads.result(id, waitMs === undefined ? {} : { waitMs }, request)
+          return reads.result(id, waitMs === undefined ? {} : { waitMs })
         case 'apply':
-          await api.apply(
-            id,
-            {
-              index: index!,
-              validation: {
-                ...(opts.validationScope === undefined ? {} : { scope: opts.validationScope }),
-                ...(opts.validationCounts === undefined ? {} : { counts: opts.validationCounts }),
-              },
+          await api.apply(id, {
+            index: index!,
+            validation: {
+              ...(opts.validationScope === undefined ? {} : { scope: opts.validationScope }),
+              ...(opts.validationCounts === undefined ? {} : { counts: opts.validationCounts }),
             },
-            request,
-          )
+          })
           return { execution: id, signal: `command:${index}`, accepted: true }
         case 'abort':
-          await api.abort(id, attempt!, request)
+          await api.abort(id, attempt!)
           return { execution: id, signal: `abort:${attempt}`, accepted: true }
         case 'cancel':
-          return reads.cancel(id, {}, request)
+          return reads.cancel(id, {})
         case 'resume':
-          return reads.resume(id, request)
+          return reads.resume(id)
       }
     },
   }
