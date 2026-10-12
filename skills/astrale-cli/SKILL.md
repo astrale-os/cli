@@ -479,9 +479,10 @@ started: `call` prints that Execution's receipt instead of a value. Save it
 with `--json > receipt.json` and follow the run with
 `astrale execution status|result receipt.json` as the same identity; never
 repeat the call to learn its outcome. `astrale execution` takes an Execution
-ID or a receipt file and also sends `cancel`, `resume` and
-`signal <name> --value <json>` (one durable promise the run awaits, resolved
-once; the Kernel checks neither name nor value).
+ID or a receipt file and also sends a cooperative `cancel` (open to whoever
+started it), and `resume` and `signal <name> --value <json>` (Root only: one
+durable promise the run awaits, resolved once; the Kernel checks neither name
+nor value).
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10

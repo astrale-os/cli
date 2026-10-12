@@ -151,8 +151,9 @@ astrale domain installation apply "$EXECUTION" -i qa-migration --as qa-root \
 astrale execution result "$EXECUTION" -i qa-migration --as qa-root --json
 ```
 
-`domain installation abort` stops the validation attempt the session runs and returns it to
-repair; it does not undo committed repair mutations. `astrale execution cancel` attempts to validate
+`domain installation abort` stops the validation attempt the session runs toward its target and
+returns it to repair; it does not undo committed repair mutations, and an attempt back to the source
+cannot be aborted. `astrale execution cancel` attempts to validate
 and reactivate the source schema, so it can also require data repair. `astrale execution resume`
 resumes a paused Execution; it is not a command to reopen the Instance. A live session has no forced exit: it ends by `apply`,
 a cooperative `cancel` or its idle expiry; a forced cancel or a delete is refused

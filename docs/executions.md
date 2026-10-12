@@ -22,8 +22,8 @@ unknown outcome; do not repeat the call automatically.
 
 ```sh
 astrale execution cancel receipt.json --url https://example/api --as alice
-astrale execution resume receipt.json --url https://example/api --as alice
-astrale execution signal receipt.json approval --value '{"by":"billing"}' --url https://example/api --as alice
+astrale execution resume "$EXECUTION" --url https://example/api --as root
+astrale execution signal "$EXECUTION" approval --value '{"by":"billing"}' --url https://example/api --as root
 ```
 
 Each command sends one `K.Execution` Method once and never starts the Execution again. `cancel` is
@@ -31,8 +31,13 @@ cooperative: the Execution sees it at its next wait and may compensate; no force
 is offered. `resume` continues a paused Execution. `signal` resolves the durable promise it names
 with `--value` (JSON, `null` without it), once: a second signal is refused. The Kernel checks
 neither the name nor the value: a signal sent before its wait is kept until the Execution reaches
-it, and a name it never waits for is never read. The Kernel decides who may operate an Execution:
-signals and `resume` are the owner Domain's (Root's for an install).
+it, and a name it never waits for is never read. Drive a repair session with
+`domain installation apply|abort`, never with a hand-sent `command:<n>` or `abort:<n>`.
+
+The Kernel decides who may do what. `status`, `result` and a cooperative `cancel` are open to the
+identity that started the Execution. `resume` and `signal` are open only to Root and to the owning
+Domain acting as itself, never to the caller who started it, so a requester cannot approve their own
+request: from the CLI, that means Root.
 
 ## Execution ID or receipt
 
