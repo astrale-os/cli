@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.144](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.143...cli/v1.0.0-beta.144) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** consume published Shell beta.5 in CLI and Studio ([#683](https://github.com/astrale-os/cli/issues/683)) ([cf910f8](https://github.com/astrale-os/cli/commit/cf910f8699879eaf300ed85bdb6c10d264ce02d0))
+
 ## [1.0.0-beta.143](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.142...cli/v1.0.0-beta.143) (2026-10-12)
 
 
