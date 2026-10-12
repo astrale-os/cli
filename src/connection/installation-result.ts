@@ -18,9 +18,12 @@ import { log } from '../lib/terminal/log'
 import {
   conflictDetails,
   migrationRequirements,
+  migrationRules,
   operationConflict,
   reasonCode,
   type MigrationRequirement,
+  type MigrationRule,
+  type MigrationRules,
 } from './reasons'
 
 /** A successful call can still describe an unfinished or rejected installation. */
@@ -186,7 +189,8 @@ export function renderIncompleteInstallation(
     )
     return
   }
-  const explained = failure === undefined ? undefined : explainFailure(error.kind, failure)
+  const explained =
+    failure === undefined ? undefined : explainFailure(error.kind, failure, recovery?.fresh)
   log.error(`${code}: ${explained?.message ?? message}`)
   for (const line of explained?.lines ?? []) log.dim(`  ${line}`)
   if (outcome?.kind === 'failed') {
@@ -375,10 +379,93 @@ interface ExplainedFailure {
 function explainFailure(
   lifecycle: 'install' | 'uninstall',
   failure: { readonly code: string; readonly details?: unknown },
+  fresh: string | undefined,
 ): ExplainedFailure | undefined {
   if (failure.code !== 'DATA_MIGRATION_REQUIRED') return undefined
   const requirements = migrationRequirements(failure.details)
-  return lifecycle === 'uninstall' ? uninstallDataRemains(requirements) : undefined
+  return lifecycle === 'uninstall'
+    ? uninstallDataRemains(requirements)
+    : installDataInvalid(migrationRules(failure.details), requirements, fresh)
+}
+
+/** Rules, and offenders of each, a human reads before the status shows them all. */
+const SHOWN_RULES = 5
+const SHOWN_OFFENDERS = 3
+
+/**
+ * An install refused because the stored data breaks rules of its target schema: which rules, how
+ * many facts or values break each, the first of them, and the two ways forward: repair the data
+ * and install again, or repair it in a Root maintenance session. Its headline replaces the
+ * Kernel's message, which says the same less precisely; `--json` keeps that message.
+ */
+function installDataInvalid(
+  { rules, truncated }: MigrationRules,
+  requirements: readonly MigrationRequirement[],
+  fresh: string | undefined,
+): ExplainedFailure | undefined {
+  let message: string
+  const lines: string[] = []
+  if (rules.length > 0) {
+    const count = `${rules.length}${truncated ? ' or more' : ''}`
+    const noun = rules.length === 1 && !truncated ? 'rule' : 'rules'
+    message = `The stored data breaks ${count} ${noun} of the new schema:`
+    for (const rule of rules.slice(0, SHOWN_RULES)) lines.push(`  ${ruleLine(rule)}`)
+    if (rules.length > SHOWN_RULES || truncated) {
+      lines.push('  and more: the status of the run below lists every rule.')
+    }
+  } else if (requirements.length > 0) {
+    message = 'The stored data must be migrated before the new schema activates:'
+    for (const requirement of requirements) {
+      lines.push(
+        `  ${requirement.subject}: ${requirement.operation} (${requirement.reason})` +
+          (requirement.work.observedFacts === undefined
+            ? ''
+            : `, ${requirement.work.observedFacts} ${requirement.work.observedFacts === 1 ? 'fact' : 'facts'}`),
+      )
+    }
+  } else {
+    return undefined
+  }
+  lines.push('Repair that data, then install again with a fresh operation.')
+  if (fresh !== undefined && !fresh.includes('--mode')) {
+    lines.push(
+      `Or repair it in a Root maintenance session, the Instance closed meanwhile: ${fresh} --mode maintenance`,
+    )
+  }
+  return { message, lines }
+}
+
+/** One rule: what it requires, how much data breaks it, and the first offenders. */
+function ruleLine(rule: MigrationRule): string {
+  if (rule.verdict === 'undecided') {
+    return `${rule.rule}: ${rule.family} rule not decided${rule.undecided === undefined ? '' : ` (${rule.undecided})`}`
+  }
+  const count =
+    rule.count === undefined
+      ? undefined
+      : `${rule.count.bound === 'atLeast' ? 'at least ' : ''}${rule.count.value} ${
+          rule.count.unit === 'facts'
+            ? rule.count.value === 1
+              ? 'fact'
+              : 'facts'
+            : rule.count.value === 1
+              ? 'value'
+              : 'values'
+        }`
+  const broken =
+    rule.family === 'required'
+      ? `required, missing on ${count ?? 'some facts'}`
+      : rule.family === 'value'
+        ? `${count ?? 'some values'} not allowed`
+        : `${rule.family} rule broken by ${count ?? 'some facts'}`
+  const shown = rule.offenders.slice(0, SHOWN_OFFENDERS)
+  const more =
+    rule.count?.bound === 'exact' && rule.count.value > shown.length
+      ? ` and ${rule.count.value - shown.length} more`
+      : rule.truncated || rule.offenders.length > shown.length
+        ? ' and more'
+        : ''
+  return `${rule.rule}: ${broken}${shown.length === 0 ? '' : `: ${shown.join(', ')}${more}`}`
 }
 
 /**

@@ -256,6 +256,102 @@ function migrationSubject(subject: unknown): string | undefined {
   return definitionLabel(subject.ref)
 }
 
+/** One rule of the target schema the stored data does not hold, from a migration report. */
+export interface MigrationRule {
+  /** The Property it checks as `Class.property (origin)`, else its Class as `Class (origin)`. */
+  readonly rule: string
+  /** What it checks: `required`, `value`, `declared`, `endpoints`, … */
+  readonly family: string
+  readonly verdict: 'refuted' | 'undecided'
+  /** Why an undecided rule has no verdict: `budget`, `timeout` or `cancelled`. */
+  readonly undecided?: string
+  readonly count?: {
+    readonly unit: 'facts' | 'values'
+    readonly value: number
+    readonly bound: 'exact' | 'atLeast'
+  }
+  /** The first refuting facts by id, or rejected values as JSON. */
+  readonly offenders: readonly string[]
+  /** Whether more refute it than `count` and `offenders` show. */
+  readonly truncated: boolean
+}
+
+/** The rules a migration report lists, and whether it lists every rule that does not hold. */
+export interface MigrationRules {
+  readonly rules: readonly MigrationRule[]
+  readonly truncated: boolean
+}
+
+const MAXIMUM_OBSERVED_LENGTH = 60
+
+/**
+ * The rules the `report` of a `DATA_MIGRATION_REQUIRED` failure's details lists, bounded; a rule
+ * whose shape is not the published one is left out.
+ */
+export function migrationRules(details: unknown): MigrationRules {
+  const report = record(details) && record(details.report) ? details.report : undefined
+  const listed = Array.isArray(report?.rules) ? report.rules : []
+  const rules = listed.slice(0, MAXIMUM_REQUIREMENTS).flatMap((item): MigrationRule[] => {
+    if (
+      !record(item) ||
+      typeof item.family !== 'string' ||
+      (item.verdict !== 'refuted' && item.verdict !== 'undecided')
+    ) {
+      return []
+    }
+    const owner = definitionLabel(item.class)
+    if (owner === undefined) return []
+    const property = typeof item.property === 'string' ? propertyName(item.property) : undefined
+    const name = record(item.class) && typeof item.class.name === 'string' ? item.class.name : owner
+    const rule = property === undefined ? owner : owner.replace(name, `${name}.${property}`)
+    const count = record(item.count) ? item.count : undefined
+    const offenders = Array.isArray(item.offenders) ? item.offenders : []
+    return [
+      Object.freeze({
+        rule,
+        family: item.family,
+        verdict: item.verdict,
+        ...(typeof item.undecided === 'string' ? { undecided: item.undecided } : {}),
+        ...(count !== undefined &&
+        (count.unit === 'facts' || count.unit === 'values') &&
+        Number.isSafeInteger(count.value) &&
+        (count.bound === 'exact' || count.bound === 'atLeast')
+          ? {
+              count: {
+                unit: count.unit as 'facts' | 'values',
+                value: count.value as number,
+                bound: count.bound as 'exact' | 'atLeast',
+              },
+            }
+          : {}),
+        offenders: Object.freeze(offenders.flatMap(offenderLabel)),
+        truncated: item.truncated === true,
+      }),
+    ]
+  })
+  return Object.freeze({ rules: Object.freeze(rules), truncated: report?.truncated === true })
+}
+
+/** `category` from `<origin>:class.Item.property.category`; any other key as it is. */
+function propertyName(key: string): string {
+  const marker = '.property.'
+  const at = key.lastIndexOf(marker)
+  return at < 0 ? key : key.slice(at + marker.length)
+}
+
+/** A refuting fact by its id, or a rejected value as JSON, shortened. */
+function offenderLabel(offender: unknown): string[] {
+  if (!record(offender)) return []
+  if (record(offender.fact) && typeof offender.fact.id === 'string') return [offender.fact.id]
+  if (offender.observed === undefined) return []
+  const observed = JSON.stringify(offender.observed)
+  return [
+    observed.length > MAXIMUM_OBSERVED_LENGTH
+      ? `${observed.slice(0, MAXIMUM_OBSERVED_LENGTH - 1)}…`
+      : observed,
+  ]
+}
+
 /** A Class or other definition reference as `<name> (<origin>)`. */
 export function definitionLabel(ref: unknown): string | undefined {
   if (!record(ref) || typeof ref.name !== 'string') return undefined

@@ -315,6 +315,102 @@ describe('an uninstall refused for its remaining data says so in uninstall terms
   })
 })
 
+describe('an install refused for its stored data summarizes the migration report', () => {
+  const owner = (name: string) => ({ kind: 'class', name, origin: 'qa.test' })
+  const facts = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      fact: { id: `0000000${index}-0000-4000-8000-000000000000`, kind: 'node' },
+      property: 'qa.test:class.Item.property.category',
+    }))
+  const refused = new IncompleteInstallation(
+    installation('failed', {
+      kind: 'failed',
+      error: {
+        code: 'DATA_MIGRATION_REQUIRED',
+        message: 'Existing data requires an explicit migration before schema activation.',
+        details: {
+          requirements: [
+            {
+              operation: 'populate-required',
+              reason: 'invalid-existing',
+              subject: { kind: 'property', key: 'qa.test:class.Item.property.category' },
+              work: { observedFacts: 4 },
+            },
+          ],
+          report: {
+            complete: true,
+            planned: 3,
+            held: 1,
+            truncated: false,
+            rules: [
+              {
+                class: owner('Item'),
+                property: 'qa.test:class.Item.property.category',
+                family: 'required',
+                reason: 'narrowed',
+                verdict: 'refuted',
+                count: { bound: 'exact', unit: 'facts', value: 4 },
+                offenders: facts(4),
+                truncated: false,
+              },
+              {
+                class: owner('Item'),
+                property: 'qa.test:class.Item.property.label',
+                family: 'value',
+                reason: 'narrowed',
+                verdict: 'refuted',
+                count: { bound: 'atLeast', unit: 'values', value: 2 },
+                offenders: [{ observed: 'a label that is far too long' }, { observed: 'durable' }],
+                truncated: true,
+              },
+            ],
+          },
+        },
+      },
+    }),
+  )
+
+  test('which rules break, how much data breaks each, the first offenders, and --mode maintenance', async () => {
+    const { text, json } = await shown((machine) =>
+      renderIncompleteInstallation(refused, machine, CONTEXT),
+    )
+    // The summary is the headline: the Kernel's message says the same, so a human reads it once.
+    expect(text).toContain(
+      'DATA_MIGRATION_REQUIRED: The stored data breaks 2 rules of the new schema:',
+    )
+    expect(text).not.toContain('schema activation')
+    expect(text).toContain(
+      'Item.category (qa.test): required, missing on 4 facts: 00000000-0000-4000-8000-000000000000, ' +
+        '00000001-0000-4000-8000-000000000000, 00000002-0000-4000-8000-000000000000 and 1 more',
+    )
+    expect(text).toContain(
+      'Item.label (qa.test): at least 2 values not allowed: "a label that is far too long", "durable" and more',
+    )
+    expect(text).toContain('Repair that data, then install again with a fresh operation.')
+    expect(text).toContain(
+      'Or repair it in a Root maintenance session, the Instance closed meanwhile: astrale domain install https://a.test -i app --mode maintenance',
+    )
+    // The machine document keeps the Kernel's message and the whole report in the status.
+    expect(json.message).toBe(
+      'Existing data requires an explicit migration before schema activation.',
+    )
+    expect(json.status).toMatchObject({
+      outcome: { error: { details: { report: { planned: 3 } } } },
+    })
+  })
+
+  test('a maintenance install is never told to open a maintenance session', async () => {
+    const maintenance = {
+      ...CONTEXT,
+      recovery: { ...CONTEXT.recovery, fresh: `${CONTEXT.recovery.fresh} --mode maintenance` },
+    }
+    const { text } = await shown((machine) =>
+      renderIncompleteInstallation(refused, machine, maintenance),
+    )
+    expect(text).not.toContain('Or repair it in a Root maintenance session')
+  })
+})
+
 describe('a conflict says what to do next', () => {
   const refusal = (code: string, details: Record<string, string> = {}) =>
     new ResponseError(
