@@ -164,6 +164,10 @@ test('invalid waits, values, addresses, files and receipt credential overrides f
   await expect(executionCommand('status', join(directory, 'absent'), {})).rejects.toThrow(
     'Expected an Execution ID or the file of an execution receipt.',
   )
+  // `receipt.json` is a valid Node ID: a missing receipt is still a missing file.
+  await expect(executionCommand('status', 'receipt.json', {})).rejects.toThrow(
+    'No receipt file at receipt.json.',
+  )
   await writeFile(file, 'private malformed value')
   await expect(executionCommand('status', file, {})).rejects.toThrow(
     'The execution receipt file must contain valid JSON.',

@@ -41,7 +41,7 @@ Behavior:
   commands it accepts and exits 0 (--no-wait: no watch). It waits for explicit
   Execution signals, not for this CLI process. Retain its execution ID,
   inspect its status and repair the data before applying the target with
-  domain installation apply; execution cancel returns to the source schema.
+  domain installation apply; execution cancel attempts the source schema.
   Never delete or force-cancel it as a normal recovery step: those actions
   can leave the source schema uncertified.
 

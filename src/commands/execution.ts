@@ -70,6 +70,8 @@ async function addressed(
     if (!isNodeId(argument)) {
       throw new TypeError('Expected an Execution ID or the file of an execution receipt.')
     }
+    // A receipt name is a valid Node ID too: a missing one is a missing file, not an Execution.
+    if (/\.json$/i.test(argument)) throw new TypeError(`No receipt file at ${argument}.`)
     return { id: NodeId(argument), credential: { principal: 'caller' } }
   }
   requireIdentity(opts)
@@ -141,13 +143,15 @@ export async function executionCommand(
 
 const ADDRESS_HELP = `
 <execution> is an Execution ID, or the file holding the receipt astrale call
-printed. An ID is reached as yourself: the installs and uninstalls you
-started, a durable call you made as yourself, or any Execution as Root. A
-receipt is reached in the context it records: select its exact Kernel with -i
-or --url and the initiating identity with --as (or its configured default);
---creds and --anonymous are refused. Domain receipts resolve the current
-installed issuer for their origin; files supply no exchange URL or
-credential. The Kernel remains the authority for every access.`
+printed. An ID is sent as the selected identity itself: Root, or whoever
+started an install, an uninstall or a call as themselves. A receipt is sent
+in the context it records: select its exact Kernel with -i or --url and the
+initiating identity with --as (or its configured default); --creds and
+--anonymous are refused. Domain receipts resolve the current installed issuer
+for their origin; files supply no exchange URL or credential. The Kernel
+decides every access: status, result and a cooperative cancel are open to
+whoever started the Execution; resume and signal only to Root, or to the
+owning Domain acting as itself, never to the caller who started it.`
 
 const descriptions: Record<Method, { readonly summary: string; readonly help: string }> = {
   status: {
@@ -177,17 +181,20 @@ source schema. Read its status afterwards. No forced cancel is offered.`,
   resume: {
     summary: 'Resume a paused Execution',
     help: `
-A paused Execution continues; a running one is unchanged.`,
+A paused Execution continues; a running one is unchanged. Root only from the
+CLI: the Kernel refuses it to the caller who started the Execution.`,
   },
   signal: {
     summary: 'Resolve a durable promise the Execution awaits, once',
     help: `
 Resolves the durable promise <name> with --value (JSON; null without it). A
-promise resolves once: a second signal is refused. The Kernel checks neither
-the name nor the value: a signal sent before its wait is kept until the
-Execution reaches it, and a name it never waits for is never read. Drive a
-repair session with domain installation apply|abort, which send the index it
-announces.`,
+promise resolves once: a second signal is refused. Root only from the CLI: the
+Kernel refuses it to the caller who started the Execution, so a requester
+cannot approve their own request. The Kernel checks neither the name nor the
+value: a signal sent before its wait is kept until the Execution reaches it,
+and a name it never waits for is never read. Never signal a repair session's
+command:<n> or abort:<n> by hand: a value it cannot read is skipped while its
+status keeps announcing that index. Use domain installation apply|abort.`,
   },
 }
 

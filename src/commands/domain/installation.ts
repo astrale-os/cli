@@ -39,7 +39,7 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
           throw new AstraleError(
             'SESSION_NOT_AWAITING',
             `Execution ${id} awaits no command (${phase}); nothing was sent.`,
-            `Read it with ${observe}, and apply once its phase is awaiting.`,
+            `Read it with ${observe}: only a maintenance session whose phase is awaiting accepts apply.`,
           )
         }
         await api.apply(id, {
@@ -51,12 +51,13 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
         })
         return { execution: id, signal: `command:${index}`, accepted: true }
       }
-      const attempt = detail?.attempt?.number
+      // Only an attempt toward the target reads its abort signal; a return to the source runs on.
+      const attempt = detail?.attempt?.destination === 'target' ? detail.attempt.number : undefined
       if (attempt === undefined) {
         throw new AstraleError(
           'SESSION_NO_ATTEMPT',
-          `Execution ${id} runs no attempt (${phase}); nothing was sent.`,
-          `Read it with ${observe}.`,
+          `Execution ${id} runs no attempt toward its target (${phase}); nothing was sent.`,
+          `Read it with ${observe}: an attempt back to the source cannot be aborted.`,
         )
       }
       await api.abort(id, attempt)
@@ -67,7 +68,7 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
 
 const descriptions: Record<Operation, string> = {
   apply: 'Apply the target of a Root repair session at the command it awaits',
-  abort: 'Stop the attempt a Root repair session runs; the session waits again',
+  abort: 'Stop the attempt a Root repair session runs toward its target; it waits again',
 }
 
 export const installationCommands: CommandDefinition[] = (
@@ -95,7 +96,8 @@ export const installationCommands: CommandDefinition[] = (
 Root only, on the same Instance as the install. Each command reads the
 session's status, then sends one signal at the index it announces: apply the
 command it awaits (refused SESSION_NOT_AWAITING while it drains or attempts),
-abort the attempt it runs (refused SESSION_NO_ATTEMPT when none runs). Signals
+abort the attempt it runs toward the target (refused SESSION_NO_ATTEMPT when
+none runs; an attempt back to the source cannot be aborted). Signals
 are never retried. An accepted signal is not a completed installation: follow
 it with astrale execution status|result <execution>. To return to the source
 schema instead, use astrale execution cancel <execution>.

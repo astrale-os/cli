@@ -65,6 +65,8 @@ test('a session that announces no index is refused before any signal is sent', a
     ['apply', { phase: 'draining' }],
     ['apply', undefined],
     ['abort', { phase: 'awaiting', command: 2 }],
+    // An attempt back to the source never reads its abort signal.
+    ['abort', { phase: 'attempting', attempt: { number: 3, destination: 'previous' } }],
   ] as const
   for (const [operation, detail] of cases) {
     const { calls, ctx } = repairSession(detail)
