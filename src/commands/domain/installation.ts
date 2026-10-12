@@ -4,7 +4,12 @@ import type { ConnectionContext, KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program'
 
 import { runKernelCommand } from '../../connection'
+import {
+  installationResultCommand,
+  installationStatusCommand,
+} from '../../connection/installation-result'
 import { resolveTimeoutMs } from '../../connection/session'
+import { targetFlags } from '../../connection/target'
 import { failInput } from '../../lib/terminal/log'
 
 type Operation = 'status' | 'result' | 'apply' | 'abort' | 'cancel' | 'resume'
@@ -40,10 +45,21 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
   const index = operation === 'apply' ? integer(opts.command, '--command', 1) : undefined
   const attempt = operation === 'abort' ? integer(opts.attempt, '--attempt', 1) : undefined
   const waitMs = opts.waitMs === undefined ? undefined : integer(opts.waitMs, '--wait-ms', 0)
+  const lifecycle = opts.uninstall ? 'uninstall' : 'install'
   return {
     opts,
     label: `Installation ${operation}: ${id}`,
     credential: { principal: 'caller' as const },
+    ...(operation === 'result'
+      ? {
+          pending: {
+            execution: id,
+            follow: installationResultCommand(id, lifecycle, targetFlags(opts)),
+            observe: installationStatusCommand(id, lifecycle, targetFlags(opts)),
+            waited: waitMs !== undefined && waitMs > 0,
+          },
+        }
+      : {}),
     fn: async ({ session }: ConnectionContext) => {
       const api = session.schema.installation
       const reads = opts.uninstall ? session.schema.uninstallation : api
@@ -137,8 +153,11 @@ export const installationCommands: CommandDefinition[] = (
   afterHelpText: `
 Use the same Instance and initiating identity (or Root) as the install.
 Status and result are reads: their JSON reports the Kernel state/outcome,
-including a failed or cancelled outcome. An unfinished result preserves
-EXECUTION_PENDING. No command restarts the install or generates an operation ID.
+including a failed or cancelled outcome. A result whose installation has not
+ended is no failure: the CLI says it is still running, prints the commands
+that wait for it and read its status, and exits 75 (try again later); --json
+keeps EXECUTION_PENDING on stderr with "execution", "follow" and "observe".
+No command restarts the install or generates an operation ID.
 Apply, abort and resume require Root. Read status before sending the exact
 command or attempt index it names. Signals are never automatically retried.
 An accepted signal is not a completed installation: read status/result next.

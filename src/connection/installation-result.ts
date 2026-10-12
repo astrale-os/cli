@@ -168,7 +168,7 @@ export function installationStatusCommand(
 }
 
 /** How long the printed follow-up waits for the outcome: within the default request timeout. */
-const FOLLOW_WAIT_MS = 20_000
+export const FOLLOW_WAIT_MS = 20_000
 
 /** The command that waits for one install or uninstall Execution's outcome. */
 export function installationResultCommand(

@@ -290,8 +290,10 @@ astrale domain installation resume <execution-id> -i staging --as root --json
 
 Use the same Instance and initiating identity (or Root) for observation; apply,
 abort and resume require Root. Status/result are reads and report the exact
-state/outcome, including failed outcomes; an unfinished result preserves
-`EXECUTION_PENDING`. An accepted apply/abort signal is not completion: observe
+state/outcome, including failed outcomes. A result that has not ended yet is
+no failure: it exits 75 (try again later) with `execution`, `follow` (waits for
+the outcome) and `observe` beside `EXECUTION_PENDING`; `execution result` does
+the same for a durable call. An accepted apply/abort signal is not completion: observe
 again. Signals are not retried automatically. Cooperative cancel attempts to
 restore the source schema; inspect the resulting status. These commands offer
 neither forced cancellation nor Execution deletion. Use `--uninstall` with

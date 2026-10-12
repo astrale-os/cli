@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from 'node:util'
 
 import type { LifecycleContext } from '../installation-result'
 
-import { formatKernelError } from '../errors'
+import { executionPending, formatKernelError, renderPendingResult } from '../errors'
 import {
   announcingLifecycle,
   conflictFailure,
@@ -603,7 +603,7 @@ test('an interrupted wait tells a human the Execution continues and how to follo
   expect(text).not.toContain('--operation')
 })
 
-describe('a conflict says what to do next', () => {
+describe('a conflict or a pending result says what to do next', () => {
   const refusal = (code: string, details: Record<string, string> = {}) =>
     new ResponseError(
       4001 as never,
@@ -673,6 +673,44 @@ describe('a conflict says what to do next', () => {
     expect(((await named({})) as OperationConflict).other).toBeUndefined()
     const other = refusal('SCHEMA_CHANGE_ACTIVE')
     expect(await conflictFailure(other, schema)).toBe(other)
+  })
+
+  test('a result read before the Execution ended says to wait for it', async () => {
+    const { text, json } = await shown((machine) =>
+      formatKernelError(refusal('EXECUTION_PENDING'), machine),
+    )
+    const hint =
+      'The Execution has not ended yet: wait for it with --wait-ms <milliseconds> ' +
+      '(for example --wait-ms 20000, within --timeout), or read its status.'
+    expect(text).toContain(hint)
+    expect(json).toMatchObject({ reason: { code: 'EXECUTION_PENDING' }, hint })
+  })
+
+  test('a pending result is still running, not failed: what follows it', async () => {
+    const pending = {
+      execution: 'execution-1',
+      follow: 'astrale execution result r.json --wait-ms 20000 -i app',
+      observe: 'astrale execution status r.json -i app',
+      waited: true,
+    }
+    expect(executionPending(refusal('EXECUTION_PENDING'))).toBe(true)
+    expect(executionPending(refusal('SCHEMA_CHANGE_ACTIVE'))).toBe(false)
+    const { text, json } = await shown((machine) =>
+      renderPendingResult(refusal('EXECUTION_PENDING'), pending, machine),
+    )
+    expect(text).toContain(
+      'Execution execution-1 is still running: its outcome did not come within --wait-ms.',
+    )
+    expect(text).toContain(`Wait for it: ${pending.follow}`)
+    expect(text).toContain(`Read its status: ${pending.observe}`)
+    expect(text).not.toContain('RESPONSE_ERROR')
+    // The machine document keeps the Kernel refusal and adds what follows the Execution.
+    expect(json).toMatchObject({
+      reason: { code: 'EXECUTION_PENDING' },
+      execution: 'execution-1',
+      follow: pending.follow,
+      observe: pending.observe,
+    })
   })
 
   test('outside install and uninstall, a key conflict gets no operation advice', async () => {

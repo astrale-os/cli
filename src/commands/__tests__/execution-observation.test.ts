@@ -106,6 +106,20 @@ test('status/result actions read the file, retain default identity selection, an
   }
 })
 
+test('a result read names the commands that follow its Execution while it still runs', async () => {
+  const inputs: { readonly pending?: unknown }[] = []
+  const run: typeof runKernelCommand = async (input) => void inputs.push(input)
+  await observeExecution('result', file, { instance: 'app', waitMs: '0' }, run)
+  await observeExecution('status', file, { instance: 'app' }, run)
+  expect(inputs[0]!.pending).toEqual({
+    execution: 'execution-1',
+    follow: `astrale execution result ${file} --wait-ms 20000 -i app`,
+    observe: `astrale execution status ${file} -i app`,
+    waited: false,
+  })
+  expect(inputs[1]).not.toHaveProperty('pending')
+})
+
 test('invalid waits, absent/malformed files and explicit credential overrides fail before connection', async () => {
   let connections = 0
   const run: typeof runKernelCommand = async () => {
@@ -193,6 +207,48 @@ test.each(['caller', 'domain'])(
     }
   },
 )
+
+test('a result read before the Execution ended is still running: exit 75 and what follows it', async () => {
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      join(import.meta.dir, 'fixtures/execution-cli.ts'),
+      'execution',
+      'result',
+      file,
+      '--wait-ms',
+      '0',
+      '--url',
+      kernel,
+      '--as',
+      'alice',
+    ],
+    {
+      env: {
+        ...process.env,
+        ASTRALE_HOME: directory,
+        EXECUTION_FIXTURE_MODE: 'domain',
+        EXECUTION_FIXTURE_PENDING: '1',
+        EXECUTION_FIXTURE_OBSERVED: join(directory, 'observed.jsonl'),
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  const [code, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ])
+  // A redirected stdout is machine output: one JSON document on stderr.
+  expect(code, stderr + stdout).toBe(75)
+  expect(JSON.parse(stderr)).toMatchObject({
+    execution: 'execution-1',
+    follow: `astrale execution result ${file} --wait-ms 20000 --url ${kernel} --as alice`,
+    observe: `astrale execution status ${file} --url ${kernel} --as alice`,
+    reason: { code: 'EXECUTION_PENDING' },
+  })
+})
 
 test('production openConnection accessor follows stale remote issuer recovery to caller', async () => {
   const observed = join(directory, 'observed.jsonl')

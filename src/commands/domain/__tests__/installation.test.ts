@@ -55,6 +55,28 @@ test('observes or signals the exact existing Execution once, using caller author
   ])
 })
 
+test('a result read names the commands that follow its Execution while it still runs', () => {
+  const target = { instance: 'app', as: 'root' }
+  expect(installationCommand('result', 'existing-execution', target).pending).toEqual<unknown>({
+    execution: 'existing-execution',
+    follow:
+      'astrale domain installation result existing-execution --wait-ms 20000 -i app --as root',
+    observe: 'astrale domain installation status existing-execution -i app --as root',
+    waited: false,
+  })
+  expect(
+    installationCommand('result', 'existing-execution', {
+      ...target,
+      uninstall: true,
+      waitMs: '50',
+    }).pending,
+  ).toMatchObject({
+    observe: 'astrale domain installation status existing-execution --uninstall -i app --as root',
+    waited: true,
+  })
+  expect(installationCommand('status', 'existing-execution', target)).not.toHaveProperty('pending')
+})
+
 test('admission rejects invalid IDs and missing, zero, fractional or unsafe signal indexes before connecting', () => {
   expect(() => installationCommand('status', '@not-an-id', {})).toThrow('Execution ID')
   for (const value of [undefined, '0', '-1', '1.5', '1e2', '9007199254740992']) {

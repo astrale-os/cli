@@ -12,7 +12,7 @@ import {
 import { PathError } from '@astrale-os/sdk/graph/path'
 import chalk from 'chalk'
 
-import type { OperationRecovery } from './command'
+import type { OperationRecovery, PendingFollowUp } from './command'
 
 import { AstraleError } from '../errors'
 import { log, printFailureDebug } from '../lib/terminal/log'
@@ -78,6 +78,40 @@ export async function formatKernelError(
   })
   if (!machine) for (const line of notes?.lines ?? []) log.dim(`  ${line}`)
   if (debug) printFailureDebug(error, urlArg)
+}
+
+/** Whether a read failed only because its Execution has not ended: there is no outcome yet. */
+export function executionPending(error: unknown): boolean {
+  return error instanceof ResponseError && reasonCode(error.reason) === 'EXECUTION_PENDING'
+}
+
+/**
+ * Present a result read whose Execution has not ended: a neutral note, not a failure, and the
+ * commands that wait for its outcome and read its status. `--json` keeps the Kernel's refusal on
+ * stderr and adds `execution`, `follow` and `observe`.
+ */
+export async function renderPendingResult(
+  error: unknown,
+  pending: PendingFollowUp,
+  machine: boolean,
+  debug = false,
+): Promise<void> {
+  const { execution, follow, observe, waited } = pending
+  if (machine) {
+    await formatKernelError(error, true, undefined, debug, {
+      fields: { execution, follow, observe },
+    })
+    return
+  }
+  log.info(
+    `Execution ${execution} is still running: ${
+      waited
+        ? 'its outcome did not come within --wait-ms.'
+        : 'it has no outcome yet, and this read did not wait (--wait-ms).'
+    }`,
+  )
+  log.dim(`  Wait for it: ${follow}`)
+  log.dim(`  Read its status: ${observe}`)
 }
 
 type FailureDiagnostic =
@@ -227,7 +261,9 @@ function renderResponse(
           ? schemaUpgradeHint(upgrade)
           : failure.code === CREDENTIAL_REFUSED
             ? 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.'
-            : undefined))
+            : code === 'EXECUTION_PENDING'
+              ? 'The Execution has not ended yet: wait for it with --wait-ms <milliseconds> (for example --wait-ms 20000, within --timeout), or read its status.'
+              : undefined))
   if (machine) {
     writeRaw({
       ...fields,
