@@ -149,6 +149,50 @@ export function installationResultCommand(
   ])
 }
 
+/**
+ * Present an install or uninstall the operator interrupted while the command waited: the durable
+ * Execution continues on the Kernel without this process. Once the Kernel answered, the output names
+ * the Execution and the commands that wait for it and read it; before, only its operation is known,
+ * and a fresh operation is the way to try again: the Kernel refuses it while that install runs.
+ */
+export function renderInterruptedWait(context: LifecycleContext, machine: boolean): void {
+  const { lifecycle, recovery, started } = context
+  if (machine) {
+    process.stderr.write(
+      `${JSON.stringify({
+        error: 'INTERRUPTED',
+        message:
+          started === undefined
+            ? `Interrupted before the Kernel answered the ${lifecycle}.`
+            : `Stopped waiting; the ${lifecycle} continues on the Kernel.`,
+        ...(started === undefined ? {} : { execution: started }),
+        lifecycle,
+        operation: recovery.operation,
+        ...(started === undefined
+          ? { fresh: recovery.fresh }
+          : {
+              observe: installationStatusCommand(started, lifecycle, recovery.target),
+              follow: installationResultCommand(started, lifecycle, recovery.target),
+            }),
+      })}\n`,
+    )
+    return
+  }
+  if (started === undefined) {
+    log.warn(
+      `Interrupted before the Kernel answered: if the ${lifecycle} reached it, it runs under operation ${recovery.operation}.`,
+    )
+    log.dim(
+      `  Run it again with a fresh operation (refused while that ${lifecycle} runs): ${recovery.fresh}`,
+    )
+    return
+  }
+  log.warn(`Stopped waiting: the ${lifecycle} continues on the Kernel as ${started}.`)
+  log.dim(`  operation: ${recovery.operation}`)
+  log.dim(`  Wait for it: ${installationResultCommand(started, lifecycle, recovery.target)}`)
+  log.dim(`  Read this run: ${installationStatusCommand(started, lifecycle, recovery.target)}`)
+}
+
 const DONE = { install: 'installed', uninstall: 'uninstalled' } as const
 
 /**

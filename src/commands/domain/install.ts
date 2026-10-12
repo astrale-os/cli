@@ -18,7 +18,8 @@ Behavior:
   installation result --wait-ms); once it ended (failed or cancelled), try
   again without --operation ("fresh"). A refusal before any execution exists
   (--json: "execution": null) leaves the operation unused. --no-wait returns
-  without waiting.
+  without waiting. Ctrl-C stops waiting, never the installation: the CLI names
+  the execution that continues and exits 130.
   --operation is for automation: a reused id replays only the exact same
   request. Any other request under that id is
   refused as an operation conflict: nothing runs, the CLI names the execution

@@ -75,6 +75,8 @@ Behavior:
   uninstall. Any other request under that id is
   refused as an operation conflict: nothing runs, and the CLI names the
   execution the id belongs to.
+  Ctrl-C stops waiting, never the uninstall: the CLI names its execution and
+  exits 130.
 
   Use this before reinstalling only when an immutable Domain property (such as
   its issuer) intentionally changed. Ordinary compatible upgrades should use

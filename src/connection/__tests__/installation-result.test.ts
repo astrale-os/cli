@@ -12,6 +12,7 @@ import {
   IncompleteInstallation,
   OperationConflict,
   renderIncompleteInstallation,
+  renderInterruptedWait,
 } from '../installation-result'
 import { transportFailure } from './failure-fixtures'
 
@@ -409,6 +410,30 @@ describe('an install refused for its stored data summarizes the migration report
     )
     expect(text).not.toContain('Or repair it in a Root maintenance session')
   })
+})
+
+test('an interrupted wait tells a human the Execution continues and how to follow it', async () => {
+  const lines: string[] = []
+  const original = { log: console.log, error: console.error }
+  console.log = console.error = (...values: unknown[]) => void lines.push(values.join(' '))
+  try {
+    renderInterruptedWait({ ...CONTEXT, started: 'execution-1' as never }, false)
+    renderInterruptedWait({ ...CONTEXT, lifecycle: 'uninstall' }, false)
+  } finally {
+    Object.assign(console, original)
+  }
+  const text = stripVTControlCharacters(lines.join('\n'))
+  expect(text).toContain('Stopped waiting: the install continues on the Kernel as execution-1.')
+  expect(text).toContain(
+    'Wait for it: astrale domain installation result execution-1 --wait-ms 20000 -i app',
+  )
+  expect(text).toContain(
+    `Interrupted before the Kernel answered: if the uninstall reached it, it runs under operation ${CONTEXT.recovery.operation}.`,
+  )
+  expect(text).toContain(
+    `Run it again with a fresh operation (refused while that uninstall runs): ${CONTEXT.recovery.fresh}`,
+  )
+  expect(text).not.toContain('--operation')
 })
 
 describe('a conflict says what to do next', () => {

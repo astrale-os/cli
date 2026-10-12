@@ -7,7 +7,7 @@ import type { LifecycleContext } from '../../connection/installation-result'
 import type { InstallPrecheck } from './install-precheck'
 
 import { formatKernelError } from '../../connection/errors'
-import { failureExitCode } from '../../connection/installation-result'
+import { failureExitCode, renderInterruptedWait } from '../../connection/installation-result'
 import { formatElapsed } from '../../lib/terminal/format'
 import { fatal, log, spinner } from '../../lib/terminal/log'
 import { isMachine } from '../../lib/terminal/output'
@@ -53,12 +53,22 @@ export async function runInstallCall<Result>(
     recovery: step.recovery,
     ...(execution === undefined ? {} : { started: execution }),
   })
-  const spin = machine ? null : spinner(`${step.label}...`)
+  const spin = machine ? null : spinner(`${step.label}...`, { interruptible: true })
+  // Ctrl-C (SIGINT) stops waiting, never the Execution: say where it continues, and exit 130, the
+  // shell's convention for an interrupt.
+  const interrupted = () => {
+    spin?.stop()
+    renderInterruptedWait(context(), machine)
+    process.exit(130)
+  }
+  process.once('SIGINT', interrupted)
   const startTime = performance.now()
   try {
-    const result = await step.call((answered) => {
-      execution = answered
-    })
+    const result = await step
+      .call((answered) => {
+        execution = answered
+      })
+      .finally(() => process.off('SIGINT', interrupted))
     spin?.succeed(`${step.label} ${chalk.dim(formatElapsed(performance.now() - startTime))}`)
     if (!machine) console.log('')
     await step.format(result, machine)

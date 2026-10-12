@@ -1076,6 +1076,70 @@ describe('durable installations', () => {
   })
 })
 
+describe('an interrupted wait leaves the durable Execution running', () => {
+  /** A Kernel that answers the Execution (or not) and never ends it: the CLI waits until SIGINT. */
+  function waiting(answer: boolean) {
+    let sent = false
+    const lifecycle = ((_session: unknown, started: (execution: string) => void) => ({
+      install: async () => {
+        if (answer) started(EXECUTION)
+        sent = true
+        return new Promise(() => {})
+      },
+    })) as unknown as ReferenceInstallDependencies['lifecycle']
+    return { lifecycle, sent: () => sent }
+  }
+
+  test('Ctrl-C stops waiting, names the Execution and how to follow it, and exits 130', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+    const kernel = waiting(true)
+    const listeners = process.listenerCount('SIGINT')
+    void installByReference(
+      [A],
+      { ...JSON_OUTPUT, instance: 'staging' },
+      {
+        ...run.deps,
+        lifecycle: kernel.lifecycle,
+      },
+    )
+    while (!kernel.sent()) await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(() => process.emit('SIGINT')).toThrow(new ExitError(130))
+    expect(io.failure()).toEqual({
+      error: 'INTERRUPTED',
+      message: 'Stopped waiting; the install continues on the Kernel.',
+      execution: EXECUTION,
+      lifecycle: 'install',
+      operation: GENERATED,
+      observe: `astrale domain installation status ${EXECUTION} -i staging`,
+      follow: `astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+    })
+    expect(process.listenerCount('SIGINT')).toBe(listeners)
+  })
+
+  test('interrupted before the Kernel answered, it names the operation and a fresh run', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+    const kernel = waiting(false)
+    void installByReference([A], JSON_OUTPUT, { ...run.deps, lifecycle: kernel.lifecycle })
+    while (!kernel.sent()) await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(() => process.emit('SIGINT')).toThrow(new ExitError(130))
+    const failure = io.failure()
+    expect(failure).toMatchObject({
+      error: 'INTERRUPTED',
+      message: 'Interrupted before the Kernel answered the install.',
+      operation: GENERATED,
+      fresh: `astrale domain install ${A}`,
+    })
+    expect(failure).not.toHaveProperty('execution')
+  })
+
+  test('a wait that ends stops listening for Ctrl-C', async () => {
+    const listeners = process.listenerCount('SIGINT')
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+    await installByReference([A], JSON_OUTPUT, run.deps)
+    expect(process.listenerCount('SIGINT')).toBe(listeners)
+  })
+})
+
 describe('published SDK durable decoder through the install command', () => {
   for (const state of ['completed', 'failed', 'waiting'] as const) {
     test(`${state}: consumes the reference and exact Execution reads before presenting`, async () => {
