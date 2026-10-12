@@ -62,8 +62,14 @@ test('uses one explicit operation for submission and recovery', async () => {
     execution: 'execution-1',
     status: { state: 'completed' },
   })
+  // Without --timeout the uninstall waits the Kernel client's 110 s for its outcome.
   expect(request).toEqual([
-    { operation, domains: ['app.example', 'shared.example'], data: { mode: 'destructive' } },
+    {
+      operation,
+      domains: ['app.example', 'shared.example'],
+      data: { mode: 'destructive' },
+      waitMs: 110_000,
+    },
   ])
 })
 
@@ -143,7 +149,7 @@ test('published SDK decoder resolves durable uninstall before CLI reports a rece
         },
       } as never
     },
-    { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
+    { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576 },
   )
   const command = uninstallKernelCommand(['app.example'], { operation, yes: true })
   const received = await command.fn(schema)

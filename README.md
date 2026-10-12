@@ -224,7 +224,8 @@ re-resolves the same View in its Domain and mints a fresh credential before relo
 defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
 
 A durable callable answers `astrale call` with a nonsecret receipt for the Execution it started;
-follow it with `execution status` or `execution result`. See
+follow it with `execution status` or `execution result`, and operate it with `execution cancel`,
+`resume` or `signal`. Installs and uninstalls are Executions too, addressed by their ID. See
 [durable executions](docs/executions.md) for examples and the versioned receipt contract.
 
 ## Path Syntax

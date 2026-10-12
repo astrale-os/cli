@@ -15,9 +15,37 @@ printed as a value and is never a receipt. The receipt survives CLI restarts. `s
 current state; `result` returns the terminal outcome (`completed`, `failed`, or `cancelled`). A
 result that has not ended yet is no failure: the CLI says so, prints the commands that wait for it
 and read its status (`--json`: `execution`, `follow`, `observe` beside `EXECUTION_PENDING`), and
-exits 75. `--timeout` bounds the request, so give it more than `--wait-ms`. These commands never
-restart, cancel, resume, or delete a workflow. A lost call response has an unknown outcome; do not
-repeat the call automatically.
+exits 75. `--wait-ms` waits for the outcome in total, across requests. A lost call response has an
+unknown outcome; do not repeat the call automatically.
+
+## Operating an Execution
+
+```sh
+astrale execution cancel receipt.json --url https://example/api --as alice
+astrale execution resume "$EXECUTION" --url https://example/api --as root
+astrale execution signal "$EXECUTION" approval --value '{"by":"billing"}' --url https://example/api --as root
+```
+
+Each command sends one `K.Execution` Method once and never starts the Execution again. `cancel` is
+cooperative: the Execution sees it at its next wait and may compensate; no forced cancel or delete
+is offered. `resume` continues a paused Execution. `signal` resolves the durable promise it names
+with `--value` (JSON, `null` without it), once: a second signal is refused. The Kernel checks
+neither the name nor the value: a signal sent before its wait is kept until the Execution reaches
+it, and a name it never waits for is never read. Drive a repair session with
+`domain installation apply|abort`, never with a hand-sent `command:<n>` or `abort:<n>`.
+
+The Kernel decides who may do what. `status`, `result` and a cooperative `cancel` are open to the
+identity that started the Execution. `resume` and `signal` are open only to Root and to the owning
+Domain acting as itself, never to the caller who started it, so a requester cannot approve their own
+request: from the CLI, that means Root.
+
+## Execution ID or receipt
+
+Every `astrale execution` command takes an Execution ID or a receipt file. An existing file is read
+as a receipt; anything else must be an Execution ID, which the CLI sends as the selected identity
+itself, with no Domain exchange. Use the ID for installs and uninstalls (`domain install` prints
+it), for a durable call made as yourself, and as Root. Use the receipt for a call made through a
+Domain: only the receipt records the Domain principal the Kernel expects.
 
 ## Receipt version 2
 

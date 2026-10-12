@@ -70,8 +70,8 @@ session (below), or, for facts that should go, delete them. Do not treat this re
 ## Following an install
 
 Keep the Execution an install prints, even when the CLI stops waiting before the outcome (exit 0
-with no `changed`). Follow it with `astrale domain installation status|result <execution>` as the
-same identity or Root; never submit the install again to discover whether it worked. A transport
+with no `changed`). Follow it with `astrale execution status|result <execution>` as the same
+identity or Root; never submit the install again to discover whether it worked. A transport
 failure can happen after the Kernel accepted it: install again with a fresh operation, and while the
 first one still changes the schema it is refused `SCHEMA_CHANGE_ACTIVE` naming that Execution.
 
@@ -129,12 +129,13 @@ breaking experiments; preserve a recovery plan for real data.
    refused with `SCHEMA_INPUT_INVALID`. Repair data with Root raw graph mutations using the
    session's source/target vocabulary; application Actions remain closed even to Root. Record
    each committed batch; several mutations are not one atomic migration.
-4. Read the current `detail.command`, then send `domain installation apply` with that index.
-   `apply` validates, activates the target and reopens the Instance on success; it is not a dry-run
-   validation. `--validation-scope full --validation-counts exact` requests broader validation and
+4. Send `domain installation apply`. It reads the command the session awaits (`detail.command`)
+   and sends exactly that one; while the session drains or attempts it sends nothing and is refused
+   `SESSION_NOT_AWAITING`. `apply` validates, activates the target and reopens the Instance on
+   success; it is not a dry-run validation. `--validation-scope full --validation-counts exact` requests broader validation and
    failure counts when needed. An accepted signal only acknowledges the command.
 5. Observe status/result. A refused validation leaves its report and returns the same session to
-   repair; fix the reported data and use the next announced command index. Reconnect to the same
+   repair; fix the reported data and apply again. Reconnect to the same
    Execution after a client restart rather than starting another install.
 6. Require a completed outcome and result, then verify active revisions, retained data and normal
    non-Root reads/writes. An Execution ID, a successful status read or an accepted signal is not
@@ -143,17 +144,18 @@ breaking experiments; preserve a recovery plan for real data.
 ```sh
 astrale domain install "$TARGET_URL" -i qa-migration --as qa-root \
   --operation "$OPERATION" --mode maintenance --no-wait --json
-astrale domain installation status "$EXECUTION" -i qa-migration --as qa-root --json
-# Apply deliberate repair mutations, then read status for its current command index.
+astrale execution status "$EXECUTION" -i qa-migration --as qa-root --json
+# Apply deliberate repair mutations, then apply the target at the command the session awaits.
 astrale domain installation apply "$EXECUTION" -i qa-migration --as qa-root \
-  --command "$COMMAND_INDEX" --validation-scope full --validation-counts exact --json
-astrale domain installation result "$EXECUTION" -i qa-migration --as qa-root --json
+  --validation-scope full --validation-counts exact --json
+astrale execution result "$EXECUTION" -i qa-migration --as qa-root --json
 ```
 
-`abort --attempt <number>` stops the named running validation attempt and returns the session to
-repair; it does not undo committed repair mutations. Cooperative `cancel` attempts to validate and
-reactivate the source schema, so it can also require data repair. `resume` resumes a paused Execution;
-it is not a command to reopen the Instance. A live session has no forced exit: it ends by `apply`,
+`domain installation abort` stops the validation attempt the session runs toward its target and
+returns it to repair; it does not undo committed repair mutations, and an attempt back to the source
+cannot be aborted. `astrale execution cancel` attempts to validate
+and reactivate the source schema, so it can also require data repair. `astrale execution resume`
+resumes a paused Execution; it is not a command to reopen the Instance. A live session has no forced exit: it ends by `apply`,
 a cooperative `cancel` or its idle expiry; a forced cancel or a delete is refused
 `EXECUTION_EXIT_REFUSED`. Only the Host operator can release a stuck session.
 

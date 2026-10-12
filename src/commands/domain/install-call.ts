@@ -1,4 +1,4 @@
-import type { InstallExecutionId } from '@astrale-os/sdk/client/schema'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 
 import chalk from 'chalk'
 
@@ -43,9 +43,7 @@ export async function runInstallCall<Result>(
     readonly lifecycle: 'install' | 'uninstall'
     readonly label: string
     readonly recovery: OperationRecovery
-    readonly call: (
-      started: (execution: InstallExecutionId, replayed?: boolean) => void,
-    ) => Promise<Result>
+    readonly call: (started: (execution: NodeId, replayed?: boolean) => void) => Promise<Result>
     /** Whether the answer is an Execution still running: the wait ended without its outcome. */
     readonly running?: (result: Result) => boolean
     readonly format: (
@@ -56,7 +54,7 @@ export async function runInstallCall<Result>(
   },
 ): Promise<InstallFailure | undefined> {
   const machine = isMachine(opts)
-  let execution: InstallExecutionId | undefined
+  let execution: NodeId | undefined
   let replayed: boolean | undefined
   const context = (): LifecycleContext => ({
     lifecycle: step.lifecycle,
