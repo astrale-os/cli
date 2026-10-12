@@ -165,12 +165,16 @@ function harness(
     readonly listing?: (call: number) => Promise<readonly InstalledRelease[]>
     readonly lifecycle?: (request: InstallRequest) => Promise<Installation>
     readonly installation?: Installation
+    /** What `installation.status` answers for each Execution id; a list answers in turn. */
+    readonly executions?: Readonly<Record<string, unknown>>
     readonly install?: (request: InstallRequest) => Promise<InstallResult>
     readonly inspect?: (origin: string) => Promise<unknown>
     readonly now?: () => number
     readonly caller?: string
     readonly registry?: 'down'
     readonly domain?: FakeDomain
+    /** The Kernel's `replayed` marker on its Execution answer; absent: it sends none. */
+    readonly replayed?: boolean
   } = {},
 ) {
   const admin = fakeAdmin({
@@ -199,6 +203,23 @@ function harness(
       },
       inspect: async (origin: string) =>
         options.inspect?.(origin) ?? { origin, revision: REVISION, generation: digest('e') },
+      installation: {
+        status: async (execution: string) => {
+          run.reads.push(`status ${execution}`)
+          const answers = options.executions?.[execution]
+          if (answers === undefined) throw new Error(`No Execution ${execution}`)
+          if (!Array.isArray(answers)) return answers
+          const reads = run.reads.filter((read) => read === `status ${execution}`).length
+          return answers[Math.min(reads, answers.length) - 1]
+        },
+        result: async (execution: string) => {
+          run.reads.push(`result ${execution}`)
+          throw new ResponseError(4001 as never, 'Pending.', INVOCATION, {
+            code: 'EXECUTION_PENDING',
+            details: {},
+          })
+        },
+      },
     },
   }
   run.deps = {
@@ -211,6 +232,17 @@ function harness(
       run.credentials.push(credential)
       return action({ session } as never)
     }) as unknown as ReferenceInstallDependencies['withClientSession'],
+    // The fake Kernel answers the whole install at once: the Execution it names was started.
+    lifecycle: ((
+      fake: typeof session,
+      started: (execution: string, replayed?: boolean) => void,
+    ) => ({
+      install: async (request: InstallRequest) => {
+        const answer = await fake.schema.install(request)
+        started(answer.execution, options.replayed)
+        return answer
+      },
+    })) as unknown as ReferenceInstallDependencies['lifecycle'],
     openRegistry: async (_opts, work) => {
       run.registries += 1
       if (options.registry === 'down') {
@@ -268,16 +300,8 @@ describe('install by URL', () => {
         unsettled('failed', { kind: 'failed', error: refusal }),
         { error: refusal.code, message: refusal.message },
       ],
-      [
-        unsettled('running'),
-        {
-          error: 'INSTALLATION_PENDING',
-          message: `Installation ${EXECUTION} is running.`,
-          execution: EXECUTION,
-          status: { state: 'running' },
-        },
-      ],
       [unsettled('cancelled', { kind: 'cancelled' }), { error: 'INSTALLATION_CANCELLED' }],
+      [unsettled('paused'), { error: 'INSTALLATION_PENDING', status: { state: 'paused' } }],
     ] as const) {
       const run = harness({
         served: { [A]: served(AGENCIES, A, '1') },
@@ -626,7 +650,7 @@ describe('install by version', () => {
     expect(run.requests).toEqual([])
   })
 
-  test('an unknown outcome keeps the operation and names the exact version, consents and targets', async () => {
+  test('an unknown outcome names the operation, and a fresh run of the exact version, consents and targets', async () => {
     const run = harness({
       served: everyRelease,
       listing: async () => [installedFrom(servedRelease(releases.v150))],
@@ -653,10 +677,11 @@ describe('install by version', () => {
     expect(String(run.requests[0]!.operation)).toBe(RETRY)
     expect(failure).toMatchObject({
       operation: RETRY,
-      retry:
-        `astrale domain install ${AGENCIES}@1.5.1 --operation ${RETRY} ` +
+      fresh:
+        `astrale domain install ${AGENCIES}@1.5.1 ` +
         `--allow-issuer-change=${AGENCIES} --revoke-previous -i acme-prod --admin-url https://admin.test/api`,
     })
+    expect(failure).not.toHaveProperty('replay')
   })
 })
 
@@ -779,48 +804,25 @@ describe('issuer changes need consent, planned from readable installations', () 
     expect(run.requests).toEqual([])
   })
 
-  test('a consent refused because its install already committed reads back as already current', async () => {
+  test('a refusal stays a refusal, even when the installed state already matches', async () => {
     const a2 = served(AGENCIES, A2, '2')
-    const refusing = (code: string, path: string, committed = true) =>
-      harness({
-        served: { [A2]: a2 },
-        // The listing read before the install is stale: another run committed the move since.
-        listing: async (call) =>
-          call === 0 || !committed
-            ? [installedFrom(served(AGENCIES, A1, '1'))]
-            : [installedFrom(a2)],
-        install: async () => {
-          throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
-            code,
-            details: { phase: 'input', path, issue: 'invalid' },
-          })
-        },
-      })
-    const consent = { ...JSON_OUTPUT, allowIssuerChange: [''] }
-    for (const code of [
-      'SCHEMA_INPUT_INVALID',
-      'SCHEMA_OPERATION_CONFLICT',
-      'IDEMPOTENCY_KEY_CONFLICT',
-    ]) {
-      io.stdout = ''
-      await installByReference([A2], consent, refusing(code, '/domains/0/consent').deps)
-      expect(JSON.parse(io.stdout)).toMatchObject({
-        changed: false,
-        domains: [{ origin: AGENCIES }],
-        references: [{ origin: AGENCIES, installed: { issuer: A2, pin: a2.pin } }],
-        recovered: { refusal: code },
-      })
-    }
-    // Not committed, or refused at another member than the consent: the refusal stands.
-    for (const run of [
-      refusing('SCHEMA_INPUT_INVALID', '/domains/0/consent', false),
-      refusing('SCHEMA_INPUT_INVALID', '/domains/0/release'),
-    ]) {
-      expect(await refused([A2], consent, run)).toMatchObject({
-        error: 'RESPONSE_ERROR',
-        reason: { code: 'SCHEMA_INPUT_INVALID' },
-      })
-    }
+    const run = harness({
+      served: { [A2]: a2 },
+      // The listing read before the install is stale: another run committed the move since.
+      listing: async (call) =>
+        call === 0 ? [installedFrom(served(AGENCIES, A1, '1'))] : [installedFrom(a2)],
+      install: async () => {
+        throw new ResponseError(1003, 'Function input is invalid.', INVOCATION, {
+          code: 'SCHEMA_INPUT_INVALID',
+          details: { phase: 'input', path: '/domains/0/consent', issue: 'invalid' },
+        })
+      },
+    })
+    expect(await refused([A2], { ...JSON_OUTPUT, allowIssuerChange: [''] }, run)).toMatchObject({
+      error: 'RESPONSE_ERROR',
+      reason: { code: 'SCHEMA_INPUT_INVALID' },
+    })
+    expect(io.stdout).toBe('')
   })
 })
 
@@ -939,7 +941,7 @@ describe('durable installations', () => {
     })
   })
 
-  for (const state of ['pending', 'running', 'waiting', 'paused', 'failed', 'cancelled'] as const) {
+  for (const state of ['pending', 'running', 'paused', 'failed', 'cancelled'] as const) {
     test(`${state} never claims success or reads installed pins after the call`, async () => {
       let listings = 0
       const status = {
@@ -958,9 +960,6 @@ describe('durable installations', () => {
             : state === 'cancelled'
               ? { kind: 'cancelled' as const }
               : undefined,
-        ...(state === 'waiting'
-          ? { detail: { phase: 'awaiting' as const, command: 1, mode: 'maintenance' as const } }
-          : {}),
       }
       const run = harness({
         served: { [A]: served(AGENCIES, A, '1') },
@@ -970,19 +969,27 @@ describe('durable installations', () => {
         },
         installation: { execution: 'install-execution' as never, status },
       })
-      const failure = await refused(
-        [A],
-        {
-          ...JSON_OUTPUT,
-          operation: RETRY,
-          mode: 'maintenance',
-          validationScope: 'full',
-          validationCounts: 'exact',
-          wait: false,
-        },
-        run,
-      )
-      expect(io.stdout).toBe('')
+      const opts = {
+        ...JSON_OUTPUT,
+        operation: RETRY,
+        mode: 'maintenance' as const,
+        validationScope: 'full' as const,
+        validationCounts: 'exact' as const,
+        wait: false,
+      }
+      // Still running when --no-wait returned: what the command asked for, never a success claim.
+      const failure =
+        state === 'pending' || state === 'running'
+          ? await installByReference([A], opts, run.deps).then(() => {
+              const report = JSON.parse(io.stdout)
+              expect(report).not.toHaveProperty('changed')
+              expect(report).not.toHaveProperty('error')
+              return { ...report, error: 'INSTALLATION_PENDING' }
+            })
+          : await refused([A], opts, run).then((refusal) => {
+              expect(io.stdout).toBe('')
+              return refusal
+            })
       expect(failure).toMatchObject({
         execution: 'install-execution',
         status: { state },
@@ -994,10 +1001,15 @@ describe('durable installations', () => {
               ? 'INSTALLATION_CANCELLED'
               : 'INSTALLATION_PENDING',
       })
-      expect(failure.retry).toContain(`--operation ${RETRY}`)
-      expect(failure.retry).toContain(
-        '--mode maintenance --validation-scope full --validation-counts exact --no-wait',
-      )
+      // Followed by its Execution; once it ended, tried again with a fresh operation.
+      expect(failure).not.toHaveProperty('replay')
+      expect(String(failure.observe)).toContain('installation status install-execution')
+      if (state === 'failed' || state === 'cancelled') {
+        expect(failure.fresh).toContain(
+          '--mode maintenance --validation-scope full --validation-counts exact --no-wait',
+        )
+        expect(failure.fresh).not.toContain('--operation')
+      }
       expect(run.requests).toHaveLength(1)
       expect(run.requests[0]).toMatchObject({
         operation: RETRY,
@@ -1008,6 +1020,179 @@ describe('durable installations', () => {
       expect(listings).toBe(1)
     })
   }
+
+  test('--mode maintenance watches the session until it awaits Root, then shows its commands', async () => {
+    const draining = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      id: EXECUTION,
+      state: 'running' as const,
+      outcome: undefined,
+      detail: { phase: 'draining' as const, mode: 'maintenance' as const },
+    }
+    const awaiting = {
+      ...draining,
+      state: 'waiting' as const,
+      detail: { phase: 'awaiting' as const, mode: 'maintenance' as const, command: 1 },
+    }
+    let listings = 0
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      listing: async () => {
+        listings++
+        return []
+      },
+      installation: { execution: EXECUTION as never, status: draining as never },
+      executions: { [EXECUTION]: [draining, awaiting] },
+    })
+    await installByReference(
+      [A],
+      { ...JSON_OUTPUT, mode: 'maintenance', instance: 'staging', as: 'root' },
+      run.deps,
+    )
+    expect(run.reads.filter((read) => read.startsWith('status'))).toHaveLength(2)
+    expect(JSON.parse(io.stdout)).toMatchObject({
+      execution: EXECUTION,
+      status: { state: 'waiting', detail: { phase: 'awaiting', command: 1 } },
+      operation: GENERATED,
+      apply: `astrale domain installation apply ${EXECUTION} --command 1 -i staging --as root`,
+      cancel: `astrale domain installation cancel ${EXECUTION} -i staging --as root`,
+    })
+    // An open session installed nothing: no pins are read back.
+    expect(listings).toBe(1)
+
+    const shown = await human(() =>
+      installByReference([A], { mode: 'maintenance', instance: 'staging' }, run.deps),
+    )
+    expect(shown.lines).toContain(
+      `Maintenance session ${EXECUTION} awaits command 1 (operation ${GENERATED})`,
+    )
+    expect(shown.lines).toContain('The Instance is closed to other callers')
+  })
+
+  test('--no-wait does not watch the session: an awaiting one is shown, any other is not', async () => {
+    const awaiting = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      state: 'waiting' as const,
+      outcome: undefined,
+      detail: { phase: 'awaiting' as const, mode: 'maintenance' as const, command: 1 },
+    }
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: { execution: EXECUTION as never, status: awaiting as never },
+    })
+    await installByReference([A], { ...JSON_OUTPUT, mode: 'maintenance', wait: false }, run.deps)
+    expect(run.reads.filter((read) => read.startsWith('status'))).toEqual([])
+    expect(JSON.parse(io.stdout)).toMatchObject({
+      execution: EXECUTION,
+      status: { state: 'waiting' },
+    })
+  })
+
+  test('a completed install names its Execution and what its class did to the data', async () => {
+    for (const [detail, line] of [
+      [
+        { phase: 'completed', class: 'revalidate', progress: { pages: 12, interruptions: 0 } },
+        'execution: install-execution (revalidate: the data was revalidated before the activation, 12 pages)',
+      ],
+      [
+        { phase: 'completed', class: 'immediate' },
+        'execution: install-execution (immediate: applied at once, without reading the data)',
+      ],
+      [
+        { phase: 'completed', class: 'noop' },
+        'execution: install-execution (noop: nothing to change)',
+      ],
+      [undefined, 'execution: install-execution'],
+    ] as const) {
+      const installation = completedInstallation(committed([AGENCIES]))
+      const run = harness({
+        served: { [A]: served(AGENCIES, A, '1') },
+        installation: {
+          ...installation,
+          status: { ...installation.status, ...(detail === undefined ? {} : { detail }) },
+        } as never,
+      })
+      const shown = await human(() => installByReference([A], {}, run.deps))
+      expect(shown.lines).toContain(`Domain installed (operation ${GENERATED})`)
+      expect(shown.lines).toContain(`  ${line}\n`.trimEnd())
+    }
+  })
+
+  test('a wait that ended before the install did is no failure: a neutral mark, exit 0', async () => {
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: {
+        ...unsettled('running'),
+        status: { ...unsettled('running').status, detail: { phase: 'validating' } },
+      } as never,
+    })
+    await installByReference([A], { ...JSON_OUTPUT, timeout: '150', instance: 'staging' }, run.deps)
+    expect(JSON.parse(io.stdout)).toEqual({
+      execution: EXECUTION,
+      lifecycle: 'install',
+      status: { id: EXECUTION, state: 'running', detail: { phase: 'validating' } },
+      operation: GENERATED,
+      observe: `astrale domain installation status ${EXECUTION} -i staging`,
+      follow: `astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+      precheck: expect.anything(),
+    })
+
+    const shown = await human(() =>
+      installByReference([A], { timeout: '150', instance: 'staging' }, run.deps),
+    )
+    expect(shown.all).toContain(
+      `Installation ${EXECUTION} still runs on the Kernel: this command's wait (--timeout) ended first.`,
+    )
+    expect(shown.all).toContain(
+      `Wait for it: astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+    )
+    expect(shown.all).not.toContain('✖')
+    expect(shown.all).not.toContain('installed (operation')
+  })
+
+  test('a failed install used its operation: it names the fresh command that tries again', async () => {
+    const status = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      state: 'failed' as const,
+      outcome: {
+        kind: 'failed' as const,
+        error: { code: 'DATA_MIGRATION_REQUIRED', message: 'Repair stored data.' },
+      },
+    }
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: { execution: 'install-execution' as never, status },
+    })
+    const failure = await refused(
+      [A],
+      { ...JSON_OUTPUT, operation: RETRY, instance: 'staging' },
+      run,
+    )
+    expect(failure).toMatchObject({
+      execution: 'install-execution',
+      operation: RETRY,
+      fresh: `astrale domain install ${A} -i staging`,
+      observe: 'astrale domain installation status install-execution -i staging',
+    })
+  })
+
+  test('a refusal before any Execution leaves the operation unused: run it again fresh', async () => {
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      install: async () => {
+        throw new ResponseError(4001 as never, 'A session is changing the schema.', INVOCATION, {
+          code: 'SCHEMA_CHANGE_ACTIVE',
+          details: {},
+        })
+      },
+    })
+    expect(await refused([A], JSON_OUTPUT, run)).toMatchObject({
+      reason: { code: 'SCHEMA_CHANGE_ACTIVE' },
+      execution: null,
+      operation: GENERATED,
+      fresh: `astrale domain install ${A}`,
+    })
+  })
 
   test('a human sees the failed execution, never already current', async () => {
     const status = {
@@ -1028,6 +1213,70 @@ describe('durable installations', () => {
     expect(shown.all).toContain('DATA_MIGRATION_REQUIRED')
     expect(shown.all).toContain('install-execution')
     expect(shown.all).not.toContain('already current')
+  })
+})
+
+describe('an interrupted wait leaves the durable Execution running', () => {
+  /** A Kernel that answers the Execution (or not) and never ends it: the CLI waits until SIGINT. */
+  function waiting(answer: boolean) {
+    let sent = false
+    const lifecycle = ((_session: unknown, started: (execution: string) => void) => ({
+      install: async () => {
+        if (answer) started(EXECUTION)
+        sent = true
+        return new Promise(() => {})
+      },
+    })) as unknown as ReferenceInstallDependencies['lifecycle']
+    return { lifecycle, sent: () => sent }
+  }
+
+  test('Ctrl-C stops waiting, names the Execution and how to follow it, and exits 130', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+    const kernel = waiting(true)
+    const listeners = process.listenerCount('SIGINT')
+    void installByReference(
+      [A],
+      { ...JSON_OUTPUT, instance: 'staging' },
+      {
+        ...run.deps,
+        lifecycle: kernel.lifecycle,
+      },
+    )
+    while (!kernel.sent()) await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(() => process.emit('SIGINT')).toThrow(new ExitError(130))
+    expect(io.failure()).toEqual({
+      error: 'INTERRUPTED',
+      message: 'Stopped waiting; the install continues on the Kernel.',
+      execution: EXECUTION,
+      lifecycle: 'install',
+      operation: GENERATED,
+      observe: `astrale domain installation status ${EXECUTION} -i staging`,
+      follow: `astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+    })
+    expect(process.listenerCount('SIGINT')).toBe(listeners)
+  })
+
+  test('interrupted before the Kernel answered, it names the operation and a fresh run', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+    const kernel = waiting(false)
+    void installByReference([A], JSON_OUTPUT, { ...run.deps, lifecycle: kernel.lifecycle })
+    while (!kernel.sent()) await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(() => process.emit('SIGINT')).toThrow(new ExitError(130))
+    const failure = io.failure()
+    expect(failure).toMatchObject({
+      error: 'INTERRUPTED',
+      message: 'Interrupted before the Kernel answered the install.',
+      operation: GENERATED,
+      fresh: `astrale domain install ${A}`,
+    })
+    expect(failure).not.toHaveProperty('execution')
+  })
+
+  test('a wait that ends stops listening for Ctrl-C', async () => {
+    const listeners = process.listenerCount('SIGINT')
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') } })
+    await installByReference([A], JSON_OUTPUT, run.deps)
+    expect(process.listenerCount('SIGINT')).toBe(listeners)
   })
 })
 
@@ -1087,16 +1336,20 @@ describe('published SDK durable decoder through the install command', () => {
           status: { state },
         })
         expect(listings).toBe(2)
+      } else if (state === 'waiting') {
+        // A maintenance session that awaits Root is what `--mode maintenance` asked for.
+        await installByReference([A], { ...JSON_OUTPUT, mode: 'maintenance' }, run.deps)
+        expect(JSON.parse(io.stdout)).toMatchObject({
+          execution: 'install-execution',
+          status: { state, detail: { phase: 'awaiting', command: 1 } },
+        })
+        expect(listings).toBe(1)
       } else {
-        const failure = await refused(
-          [A],
-          { ...JSON_OUTPUT, ...(state === 'waiting' ? { mode: 'maintenance' as const } : {}) },
-          run,
-        )
+        const failure = await refused([A], JSON_OUTPUT, run)
         expect(failure).toMatchObject({
           execution: 'install-execution',
           status: { state },
-          error: state === 'failed' ? 'DATA_MIGRATION_REQUIRED' : 'INSTALLATION_PENDING',
+          error: 'DATA_MIGRATION_REQUIRED',
         })
         expect(listings).toBe(1)
       }
@@ -1133,43 +1386,118 @@ test('durable dependency refusal retains its advisory precheck and exact Kernel 
   })
 })
 
-for (const exact of [true, false]) {
-  test(`durable replay after issuer change needs exact installed pin evidence (${exact})`, async () => {
-    const a2 = served(AGENCIES, A2, '2')
-    const api = createSchema(
-      async () => {
-        throw new ResponseError(1003, 'Operation input conflicts.', INVOCATION, {
-          code: 'IDEMPOTENCY_KEY_CONFLICT',
-          details: {},
-        })
-      },
-      { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
-    )
-    const run = harness({
-      served: { [A2]: a2 },
-      listing: async () => [installedFrom(exact ? a2 : served(AGENCIES, A2, '9'))],
-      lifecycle: (request) => api.install(request),
+describe('an operation conflict refuses this install: nothing ran for it', () => {
+  const conflict = (details: Record<string, string>, code = 'SCHEMA_OPERATION_CONFLICT') =>
+    new ResponseError(4001 as never, 'The operation id was already used.', INVOCATION, {
+      code,
+      details,
     })
-    if (exact) {
-      await installByReference(
-        [A2],
-        { ...JSON_OUTPUT, operation: RETRY, allowIssuerChange: [''] },
-        run.deps,
-      )
-      expect(JSON.parse(io.stdout)).toMatchObject({
-        changed: false,
-        recovered: { refusal: 'IDEMPOTENCY_KEY_CONFLICT' },
-        references: [{ installed: { issuer: A2, pin: a2.pin } }],
-      })
-      expect(JSON.parse(io.stdout)).not.toHaveProperty('execution')
-    } else {
-      expect(
-        await refused([A2], { ...JSON_OUTPUT, operation: RETRY, allowIssuerChange: [''] }, run),
-      ).toMatchObject({ error: 'RESPONSE_ERROR', reason: { code: 'IDEMPOTENCY_KEY_CONFLICT' } })
-      expect(io.stdout).toBe('')
+  /** The online install the operation already names, completed: A1 replaced by A2. */
+  const online = {
+    ...completedInstallation(committed([AGENCIES], [AGENCIES], RETRY)).status,
+    id: EXECUTION,
+  }
+  const usedBy = (mode?: string) =>
+    harness({
+      served: { [A]: served(AGENCIES, A, '1'), [A2]: served(AGENCIES, A2, '2') },
+      listing: async () => [installedFrom(served(AGENCIES, A2, '2'))],
+      install: async () => {
+        throw conflict({ operation: RETRY, execution: EXECUTION, ...(mode ? { mode } : {}) })
+      },
+      executions: { [EXECUTION]: online },
+    })
+  const message =
+    `Operation ${RETRY} already names another request: ${EXECUTION} (online install, completed). ` +
+    'Nothing ran for this command.'
+
+  test('a maintenance install under the operation of a completed online install', async () => {
+    const run = usedBy('online')
+    const opts = { operation: RETRY, mode: 'maintenance' as const, instance: 'staging' }
+    await expect(installByReference([A2], { ...JSON_OUTPUT, ...opts }, run.deps)).rejects.toEqual(
+      new ExitError(5),
+    )
+    expect(io.stdout).toBe('')
+    expect(io.failure()).toMatchObject({
+      reason: { code: 'SCHEMA_OPERATION_CONFLICT' },
+      hint: message,
+      operation: RETRY,
+      conflict: { execution: EXECUTION, lifecycle: 'install', mode: 'online', state: 'completed' },
+      observe: `astrale domain installation status ${EXECUTION} -i staging`,
+      fresh: `astrale domain install ${A2} --mode maintenance -i staging`,
+    })
+    const shown = await human(async () => {
+      await expect(installByReference([A2], opts, run.deps)).rejects.toEqual(new ExitError(5))
+    })
+    expect(shown.all).toContain(`SCHEMA_OPERATION_CONFLICT: ${message}`)
+    expect(shown.all).toContain(
+      `Read that request's run: astrale domain installation status ${EXECUTION} -i staging`,
+    )
+    expect(shown.all).toContain(
+      `Run this install with a fresh operation: astrale domain install ${A2} --mode maintenance -i staging`,
+    )
+    // Never that request's outcome as this command's answer.
+    for (const claim of ['Domain installed', 'Maintenance session', 'already ran']) {
+      expect(shown.all).not.toContain(claim)
     }
-    expect(run.requests).toHaveLength(1)
-    expect(String(run.requests[0]!.operation)).toBe(RETRY)
-    expect(run.requests[0]!.domains[0]).not.toHaveProperty('consent')
   })
-}
+
+  test('another release under a used operation is refused, never compared with the other result', async () => {
+    const run = usedBy('online')
+    const shown = await human(async () => {
+      await expect(
+        installByReference([A], { operation: RETRY, allowIssuerChange: [AGENCIES] }, run.deps),
+      ).rejects.toEqual(new ExitError(5))
+    })
+    expect(shown.all).toContain(`SCHEMA_OPERATION_CONFLICT: ${message}`)
+    expect(shown.all).not.toContain('INSTALLED_PIN_MISMATCH')
+    expect(shown.all).not.toContain('installed (operation')
+    expect(run.requests).toHaveLength(1)
+  })
+
+  test('a conflict naming no Execution: nothing ran, and the fresh command', async () => {
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      install: async () => {
+        throw conflict({}, 'IDEMPOTENCY_KEY_CONFLICT')
+      },
+    })
+    await expect(
+      installByReference([A], { ...JSON_OUTPUT, operation: RETRY }, run.deps),
+    ).rejects.toEqual(new ExitError(5))
+    const failure = io.failure()
+    expect(failure).toMatchObject({
+      hint: `Operation ${RETRY} already names another request. Nothing ran for this command.`,
+      fresh: `astrale domain install ${A}`,
+    })
+    expect(failure).not.toHaveProperty('conflict')
+    expect(io.stdout).toBe('')
+  })
+})
+
+describe('the Kernel says whether its answer replays the operation', () => {
+  test('a replay marked by the Kernel says so once, and --json carries its marker', async () => {
+    const run = harness({ served: { [A]: served(AGENCIES, A, '1') }, replayed: true })
+    await installByReference([A], { ...JSON_OUTPUT, operation: RETRY }, run.deps)
+    expect(JSON.parse(io.stdout)).toMatchObject({ execution: 'install-execution', replayed: true })
+    const shown = await human(() => installByReference([A], { operation: RETRY }, run.deps))
+    expect(shown.lines).toContain(
+      `Operation ${RETRY} already ran as install-execution: this is its recorded outcome; nothing ran again.`,
+    )
+  })
+
+  test('an answer the Kernel marks new, or does not mark, never says it ran before', async () => {
+    for (const replayed of [false, undefined]) {
+      const run = harness({
+        served: { [A]: served(AGENCIES, A, '1') },
+        ...(replayed === undefined ? {} : { replayed }),
+      })
+      io.stdout = ''
+      await installByReference([A], { ...JSON_OUTPUT, operation: RETRY }, run.deps)
+      const report = JSON.parse(io.stdout)
+      if (replayed === undefined) expect(report).not.toHaveProperty('replayed')
+      else expect(report.replayed).toBe(false)
+      const shown = await human(() => installByReference([A], { operation: RETRY }, run.deps))
+      expect(shown.lines).not.toContain('already ran')
+    }
+  })
+})

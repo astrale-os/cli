@@ -13,6 +13,8 @@ import { InstallationCache } from '../../../state/installations'
 const kernel = issuer.accept('https://kernel.example')
 const remote = issuer.accept('https://jobs.example')
 const mode = process.env.EXECUTION_FIXTURE_MODE ?? 'caller'
+/** Answer every result read as the Kernel does before the Execution ended. */
+const pending = process.env.EXECUTION_FIXTURE_PENDING === '1'
 const observed = process.env.EXECUTION_FIXTURE_OBSERVED!
 const installed = bundle.create(
   defineSchema('jobs.example', {
@@ -87,20 +89,28 @@ globalThis.fetch = (async (input, init) => {
         typeof body.call.target === 'string' ? body.call.target : body.call.target.callable
       const answer = target.endsWith('function.durable')
         ? { execution: 'execution-1' }
-        : {
-            result: target.endsWith(':delegate')
-              ? token({
-                  iss: kernel,
-                  sub: 'alice',
-                  aud: remote,
-                  exp: Math.floor(Date.now() / 1000) + 600,
-                })
-              : target.endsWith('.status')
-                ? { state: 'completed' }
-                : target.endsWith('.result')
-                  ? { kind: 'completed', value: 42 }
-                  : { id: 'alice' },
-          }
+        : pending && target.endsWith('.result')
+          ? {
+              error: {
+                code: 4001,
+                message: 'Function execution conflicts with current state.',
+                data: { code: 'EXECUTION_PENDING', details: {} },
+              },
+            }
+          : {
+              result: target.endsWith(':delegate')
+                ? token({
+                    iss: kernel,
+                    sub: 'alice',
+                    aud: remote,
+                    exp: Math.floor(Date.now() / 1000) + 600,
+                  })
+                : target.endsWith('.status')
+                  ? { state: 'completed' }
+                  : target.endsWith('.result')
+                    ? { kind: 'completed', value: 42 }
+                    : { id: 'alice' },
+            }
       response = new Response(
         JSON.stringify({
           requestId: body.requestId,

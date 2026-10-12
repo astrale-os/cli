@@ -486,6 +486,8 @@ function install(options: {
     createOperationId: () => GENERATED,
     withClientSession: (async (_opts: unknown, action: (context: never) => Promise<unknown>) =>
       action({ session } as never)) as unknown as ReferenceInstallDependencies['withClientSession'],
+    // The fake Kernel answers the whole install at once.
+    lifecycle: (() => session.schema) as unknown as ReferenceInstallDependencies['lifecycle'],
     openRegistry: async (_opts, work) => {
       registries += 1
       if (options.registry === 'down') throw new TypeError('Admin answered nonsense.')

@@ -200,6 +200,189 @@ export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   )
 }
 
+/** One data migration a schema change requires, as `DATA_MIGRATION_REQUIRED` names it. */
+export interface MigrationRequirement {
+  /** What must happen to the data: `remove-facts`, `populate-required`, `rewrite-values`, … */
+  readonly operation: string
+  /** Why: `destructive-change`, `budget-exceeded`, `invalid-existing`, `foreign-reference`, … */
+  readonly reason: string
+  /** The Class, Property or Domain it concerns, as a reader names it. */
+  readonly subject: string
+  readonly work: {
+    readonly observedFacts?: number
+    readonly maximumFacts?: number
+    readonly observedBytes?: number
+    readonly maximumBytes?: number
+  }
+}
+
+const MAXIMUM_REQUIREMENTS = 32
+
+/**
+ * The requirements of a `DATA_MIGRATION_REQUIRED` failure's details, bounded; a requirement whose
+ * shape is not the published one is left out, so only what the Kernel stated is shown.
+ */
+export function migrationRequirements(details: unknown): readonly MigrationRequirement[] {
+  if (!record(details) || !Array.isArray(details.requirements)) return Object.freeze([])
+  return Object.freeze(
+    details.requirements.slice(0, MAXIMUM_REQUIREMENTS).flatMap((item): MigrationRequirement[] => {
+      if (
+        !record(item) ||
+        typeof item.operation !== 'string' ||
+        typeof item.reason !== 'string' ||
+        !record(item.work)
+      ) {
+        return []
+      }
+      const subject = migrationSubject(item.subject)
+      if (subject === undefined) return []
+      const measured = item.work
+      const work = Object.fromEntries(
+        ['observedFacts', 'maximumFacts', 'observedBytes', 'maximumBytes'].flatMap((key) =>
+          Number.isSafeInteger(measured[key]) ? [[key, measured[key] as number]] : [],
+        ),
+      )
+      return [Object.freeze({ operation: item.operation, reason: item.reason, subject, work })]
+    }),
+  )
+}
+
+/** A Class as `Item (crm.acme.dev)`, a Property by its key, a Domain by its origin. */
+function migrationSubject(subject: unknown): string | undefined {
+  if (!record(subject)) return undefined
+  if (subject.kind === 'domain' && typeof subject.origin === 'string') return subject.origin
+  if (subject.kind === 'property' && typeof subject.key === 'string') return subject.key
+  if (subject.kind !== 'definition' || !record(subject.ref)) return undefined
+  return definitionLabel(subject.ref)
+}
+
+/** One rule of the target schema the stored data does not hold, from a migration report. */
+export interface MigrationRule {
+  /** The Property it checks as `Class.property (origin)`, else its Class as `Class (origin)`. */
+  readonly rule: string
+  /** What it checks: `required`, `value`, `declared`, `endpoints`, … */
+  readonly family: string
+  readonly verdict: 'refuted' | 'undecided'
+  /** Why an undecided rule has no verdict: `budget`, `timeout` or `cancelled`. */
+  readonly undecided?: string
+  readonly count?: {
+    readonly unit: 'facts' | 'values'
+    readonly value: number
+    readonly bound: 'exact' | 'atLeast'
+  }
+  /** The first refuting facts by id, or rejected values as JSON. */
+  readonly offenders: readonly string[]
+  /** Whether more refute it than `count` and `offenders` show. */
+  readonly truncated: boolean
+}
+
+/** The rules a migration report lists, and whether it lists every rule that does not hold. */
+export interface MigrationRules {
+  readonly rules: readonly MigrationRule[]
+  readonly truncated: boolean
+}
+
+const MAXIMUM_OBSERVED_LENGTH = 60
+
+/**
+ * The rules the `report` of a `DATA_MIGRATION_REQUIRED` failure's details lists, bounded; a rule
+ * whose shape is not the published one is left out.
+ */
+export function migrationRules(details: unknown): MigrationRules {
+  const report = record(details) && record(details.report) ? details.report : undefined
+  const listed = Array.isArray(report?.rules) ? report.rules : []
+  const rules = listed.slice(0, MAXIMUM_REQUIREMENTS).flatMap((item): MigrationRule[] => {
+    if (
+      !record(item) ||
+      typeof item.family !== 'string' ||
+      (item.verdict !== 'refuted' && item.verdict !== 'undecided')
+    ) {
+      return []
+    }
+    const owner = definitionLabel(item.class)
+    if (owner === undefined) return []
+    const property = typeof item.property === 'string' ? propertyName(item.property) : undefined
+    const name = record(item.class) && typeof item.class.name === 'string' ? item.class.name : owner
+    const rule = property === undefined ? owner : owner.replace(name, `${name}.${property}`)
+    const count = record(item.count) ? item.count : undefined
+    const offenders = Array.isArray(item.offenders) ? item.offenders : []
+    return [
+      Object.freeze({
+        rule,
+        family: item.family,
+        verdict: item.verdict,
+        ...(typeof item.undecided === 'string' ? { undecided: item.undecided } : {}),
+        ...(count !== undefined &&
+        (count.unit === 'facts' || count.unit === 'values') &&
+        Number.isSafeInteger(count.value) &&
+        (count.bound === 'exact' || count.bound === 'atLeast')
+          ? {
+              count: {
+                unit: count.unit as 'facts' | 'values',
+                value: count.value as number,
+                bound: count.bound as 'exact' | 'atLeast',
+              },
+            }
+          : {}),
+        offenders: Object.freeze(offenders.flatMap(offenderLabel)),
+        truncated: item.truncated === true,
+      }),
+    ]
+  })
+  return Object.freeze({ rules: Object.freeze(rules), truncated: report?.truncated === true })
+}
+
+/** `category` from `<origin>:class.Item.property.category`; any other key as it is. */
+function propertyName(key: string): string {
+  const marker = '.property.'
+  const at = key.lastIndexOf(marker)
+  return at < 0 ? key : key.slice(at + marker.length)
+}
+
+/** A refuting fact by its id, or a rejected value as JSON, shortened. */
+function offenderLabel(offender: unknown): string[] {
+  if (!record(offender)) return []
+  if (record(offender.fact) && typeof offender.fact.id === 'string') return [offender.fact.id]
+  if (offender.observed === undefined) return []
+  const observed = JSON.stringify(offender.observed)
+  return [
+    observed.length > MAXIMUM_OBSERVED_LENGTH
+      ? `${observed.slice(0, MAXIMUM_OBSERVED_LENGTH - 1)}…`
+      : observed,
+  ]
+}
+
+/** A Class or other definition reference as `<name> (<origin>)`. */
+export function definitionLabel(ref: unknown): string | undefined {
+  if (!record(ref) || typeof ref.name !== 'string') return undefined
+  return typeof ref.origin === 'string' ? `${ref.name} (${ref.origin})` : ref.name
+}
+
+/**
+ * A refusal of an operation id another request already used: `SCHEMA_OPERATION_CONFLICT` for an
+ * install or uninstall (`IDEMPOTENCY_KEY_CONFLICT` on 1.0.0-beta.5 and beta.6 Kernels).
+ */
+export function operationConflict(reason: unknown): boolean {
+  const code = reasonCode(reason)
+  return code === 'SCHEMA_OPERATION_CONFLICT' || code === 'IDEMPOTENCY_KEY_CONFLICT'
+}
+
+/**
+ * What an operation conflict names of the request the operation already belongs to: its Execution
+ * and, for an install, the mode it was requested in, when the Kernel names them.
+ */
+export function conflictDetails(reason: unknown): {
+  readonly execution?: string
+  readonly mode?: string
+} {
+  if (!operationConflict(reason) || !record(reason) || !record(reason.details)) return {}
+  const { execution, mode } = reason.details
+  return {
+    ...(typeof execution === 'string' && execution.length > 0 ? { execution } : {}),
+    ...(typeof mode === 'string' && mode.length > 0 ? { mode } : {}),
+  }
+}
+
 export function schemaDataRemovalHint(reason: unknown): string | undefined {
   if (!reasonWithCode(reason, 'DATA_MIGRATION_REQUIRED')) return undefined
   const requirements = reason.details.requirements

@@ -66,6 +66,12 @@ const IS_CI = !!(process.env.CI || process.env.CONTINUOUS_INTEGRATION || process
 type SpinnerOptions = {
   readonly longRunningText?: string
   readonly safetyMs?: number
+  /**
+   * Leave the terminal's input as it is, so Ctrl-C raises SIGINT for the command to handle. By
+   * default ora reads input in raw mode to discard it and re-raises Ctrl-C itself; under Bun that
+   * re-raise did not happen, and Ctrl-C was swallowed while the spinner ran.
+   */
+  readonly interruptible?: boolean
 }
 
 type WithSpinnerOptions<T> = SpinnerOptions & {
@@ -132,7 +138,12 @@ export function spinner(text: string, opts: SpinnerOptions = {}): Ora {
   // interleave external writes, so any wrapper here must survive that
   // mutation (a get-only Proxy recurses infinitely and kills the spinner).
   // Backpressure is ora's job now — it pauses rendering until 'drain'.
-  const spin = ora({ text, color: 'cyan', stream: target }).start()
+  const spin = ora({
+    text,
+    color: 'cyan',
+    stream: target,
+    ...(opts.interruptible === true ? { discardStdin: false } : {}),
+  }).start()
 
   const safety = setTimeout(() => {
     if (!spin.isSpinning) return

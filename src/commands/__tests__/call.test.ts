@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ConnectionContext } from '../../connection'
 
 import { callCommand, materializeCallResult } from '../call'
+import { human } from './fixtures/process'
 
 describe('call command target and dry run', () => {
   /** Run `call` with a dry-run connection that resolves @self to alice and never dispatches. */
@@ -162,7 +163,36 @@ describe('call command durable answer', () => {
         origin: 'jobs.example',
         principal: 'domain',
       },
+      replayed: false,
     })
+  })
+
+  test('a durable answer the Kernel marks a replay says so once; the receipt is unchanged', async () => {
+    const answer = { kind: 'execution', invocation, execution: 'run-1', replayed: true }
+    const replayed = (await outcome(answer)) as { readonly receipt: unknown }
+    expect(replayed).toMatchObject({ replayed: true })
+    expect(replayed.receipt).not.toHaveProperty('replayed')
+    const context = {
+      target: { kernelIssuer: 'https://kernel.example' },
+      credentialPrincipal: () => 'domain',
+      session: { dispatch: async () => answer },
+    } as unknown as ConnectionContext
+    const shown = await human(() =>
+      callCommand(
+        '/:jobs.example:function.hold',
+        ['invoice=inv-1'],
+        {},
+        {
+          async runKernelCommand(input) {
+            await input.format!(await input.fn(context), {}, false)
+          },
+          output: () => {},
+        },
+      ),
+    )
+    expect(shown.lines).toContain(
+      'This call already ran as run-1: the receipt names its recorded Execution; nothing ran again.',
+    )
   })
 
   test('keeps an id-shaped value a value', async () => {

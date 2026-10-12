@@ -131,11 +131,33 @@ export function withSelfHint<Value>(
   meta: SelfExpansionMeta | undefined,
 ): Promise<Value>
 
-/** The idempotent operation a failed command may have applied, and the command that replays it. */
+/** The operation a failed command may have applied, and the same command with a fresh one. */
 export interface OperationRecovery {
   readonly operation: string
-  readonly retry: string
+  /** The same command without `--operation`: a fresh operation, a new attempt. */
+  readonly fresh: string
+  /** The flags that select the same Instance and identity, for the commands that follow an Execution. */
+  readonly target?: readonly string[]
 }
+
+/** Exit status of a result read whose Execution is still running: try again later (EX_TEMPFAIL). */
+export const TRY_LATER_EXIT: 75
+
+/** The Execution a result read is for, and the commands that follow it once it is still running. */
+export interface PendingFollowUp {
+  readonly execution: string
+  /** The command that waits for its outcome. */
+  readonly follow: string
+  /** The command that reads its status. */
+  readonly observe: string
+  /** Whether this read waited (`--wait-ms`) before the Kernel answered that it has not ended. */
+  readonly waited: boolean
+}
+
+/** The flags that select the same Instance and identity, for a command that follows this one. */
+export function targetFlags(
+  opts: Pick<ConnectionOptions, 'url' | 'instance' | 'as'>,
+): readonly string[]
 
 /** Run one command through the canonical progress, connection, presentation, and error boundary. */
 export function runKernelCommand<Value>(input: {
@@ -143,8 +165,12 @@ export function runKernelCommand<Value>(input: {
   readonly label: string
   /** Run on the Admin kernel, selected like `domain` Admin commands select it, not -i/--url/active. */
   readonly admin?: AdminTargetSelection
-  readonly recovery?: OperationRecovery
   readonly credential?: CredentialIntent
+  /**
+   * A result read: an Execution that has not ended is no failure but a neutral "still running",
+   * the commands that follow it, and exit {@link TRY_LATER_EXIT}.
+   */
+  readonly pending?: PendingFollowUp
   readonly fn: (context: ConnectionContext) => Promise<Value>
   readonly format?: (
     result: Value,

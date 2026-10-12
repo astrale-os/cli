@@ -1,5 +1,6 @@
 import type {
   Installation,
+  InstallExecutionId,
   InstalledPin,
   InstalledRelease,
   InstallRequest,
@@ -8,6 +9,7 @@ import type {
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import { ResponseError } from '@astrale-os/sdk/client'
+import { DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS } from '@astrale-os/sdk/client/schema'
 import { parseReference } from '@astrale-os/sdk/versioning'
 import chalk from 'chalk'
 
@@ -20,9 +22,24 @@ import type { ResolvedVersion, VersionReference } from './version-reference'
 
 import { connectAdminRegistry, RegistryError, registryFailure } from '../../admin/registry'
 import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
-import { IncompleteInstallation, installationResult } from '../../connection/installation-result'
+import {
+  announcingLifecycle,
+  completedExecutionLine,
+  IncompleteInstallation,
+  installationResult,
+  openSessionReport,
+  renderOpenSession,
+  renderRunning,
+  runningReport,
+  conflictFailure,
+  replayedMember,
+  replayLine,
+  stillRunning,
+  type Lifecycle,
+} from '../../connection/installation-result'
 import { reasonCode } from '../../connection/reasons'
 import { resolveTimeoutMs } from '../../connection/session'
+import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import {
   DeploymentReadError,
@@ -99,23 +116,16 @@ interface InstallReference {
   readonly consent?: { readonly from: string; readonly to: string; previous: 'drain' | 'revoke' }
 }
 
-/** A Kernel refusal of a request whose install had already committed (AM-81). */
-type CommittedInstallRefusal =
-  | 'SCHEMA_INPUT_INVALID'
-  | 'SCHEMA_OPERATION_CONFLICT'
-  | 'IDEMPOTENCY_KEY_CONFLICT'
-
 /**
- * `--json` of an install: the Kernel result, unchanged, plus one entry per reference. When the
- * Kernel refused the request but every reference is already installed as requested (AM-81), the
- * result is `{ changed: false, domains }` read back from the Kernel and `recovered` names the
- * refusal, so a consumer can tell it from a Kernel replay.
+ * `--json` of an install: the Kernel result, unchanged, its Execution and status, and one entry per
+ * reference.
  */
 type InstallReport = InstallResult & {
-  readonly execution?: Installation['execution']
-  readonly status?: Installation['status']
+  readonly execution: Installation['execution']
+  readonly status: Installation['status']
   readonly references: readonly InstallReference[]
-  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
+  /** The Kernel's marker: whether its answer replayed the operation's recorded Execution. */
+  readonly replayed?: boolean
   /** The advisory pre-check this install ran before it was sent ([.78239] [.69634]). */
   readonly precheck: InstallPrecheck
 }
@@ -123,6 +133,14 @@ type InstallReport = InstallResult & {
 export interface ReferenceInstallDependencies {
   readonly createOperationId: () => string
   readonly withClientSession: typeof withClientSession
+  /**
+   * The install syscall of a session, telling `started` the Execution the Kernel answered and its
+   * replay marker.
+   */
+  readonly lifecycle: (
+    session: ClientSession,
+    started: (execution: InstallExecutionId, replayed?: boolean) => void,
+  ) => Lifecycle
   /**
    * Opens the Admin registry of the configured Admin target (`--admin`, `--admin-url`, or the CLI
    * configuration) with the caller's own identity ([.79495]): never the install target that
@@ -142,6 +160,7 @@ export interface ReferenceInstallDependencies {
 const defaultDependencies: ReferenceInstallDependencies = {
   createOperationId: () => createDomainOperationId('install'),
   withClientSession,
+  lifecycle: announcingLifecycle,
   openRegistry: (opts, work) =>
     withAdminClientSession(adminSessionOptions(opts), async (context) =>
       work(connectAdminRegistry(context)),
@@ -284,11 +303,22 @@ interface InstallRun {
 
 /** What the install call gives the presentation: the Kernel result and the listing read after it. */
 interface InstallOutcome {
-  readonly installation?: Installation
+  readonly installation: Installation
   readonly result: InstallResult
   readonly after: readonly InstalledRelease[] | undefined
-  readonly recovered?: { readonly refusal: CommittedInstallRefusal }
 }
+
+/**
+ * What an install answers: its outcome, the maintenance session it opened, awaiting Root, or its
+ * Execution still running when the command stopped waiting.
+ */
+type InstallAnswer =
+  | InstallOutcome
+  | { readonly session: Installation }
+  | { readonly running: Installation }
+
+/** Each step of a session watch: a bounded wait for the outcome, then a status read. */
+const WATCH_WAIT_MS = 1_000
 
 async function installReleases(
   session: ClientSession,
@@ -371,34 +401,58 @@ async function installReleases(
       }
     }),
   } as unknown as InstallRequest
+  const timeout =
+    opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) }
   let mismatched: readonly InstallReference[] = []
-  const failure = await runInstallCall<InstallOutcome>(opts, {
+  // The resend names every version by the exact version it resolved to: a line could resolve to
+  // a newer version meanwhile.
+  const recovery = {
+    operation,
+    fresh: installCommand(sources.map(namedAgain), opts, changes),
+    target: targetFlags(opts),
+  }
+  const failure = await runInstallCall<InstallAnswer>(opts, {
+    lifecycle: 'install',
     label:
       sources.length === 1
         ? `Installing domain from ${sources[0]!.reference} (operation ${operation})`
         : `Installing ${sources.length} domains (operation ${operation})`,
-    // The resend names every version by the exact version it resolved to: a line could resolve to
-    // a newer version meanwhile.
-    recovery: {
-      operation,
-      retry: installCommand(sources.map(namedAgain), opts, changes, operation),
-    },
-    call: async () => {
+    recovery,
+    call: async (started) => {
+      const deadline = run.deps.now() + (timeout?.timeoutMs ?? DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS)
+      let installation: Installation
       try {
-        const installation = await session.schema.install(
-          request,
-          opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
-        )
-        const result = installationResult(installation)
-        return { installation, result, after: await installedAfter(session, machine) }
+        installation = await run.deps.lifecycle(session, started).install(request, timeout)
       } catch (error) {
-        const recovered = await recoverCommittedInstall(error, session, roots)
-        if (recovered !== undefined) return recovered
-        throw error
+        // A conflict over the operation refuses this install: the request it names is read only
+        // to say which one it is.
+        throw await conflictFailure(error, session.schema)
       }
+      // A maintenance session drains the Instance, then awaits Root's command: what it asked for.
+      if (opts.mode === 'maintenance') {
+        if (opts.wait !== false) {
+          installation = await watchSession(session, installation, deadline, run.deps)
+        }
+        if (installation.status.detail?.phase === 'awaiting') return { session: installation }
+      }
+      if (stillRunning(installation.status)) return { running: installation }
+      const result = installationResult(installation)
+      return { installation, result, after: await installedAfter(session, machine) }
     },
-    format: ({ installation, result, after, recovered }, raw) => {
-      const report = installReferences(roots, before, after, recovered ? [] : changes, consent)
+    running: (answer) => 'running' in answer,
+    format: (answer, raw, context) => {
+      if ('running' in answer) {
+        if (raw) output({ ...runningReport(answer.running, context), precheck }, opts)
+        else renderRunning(answer.running, context, opts.wait !== false)
+        return
+      }
+      if ('session' in answer) {
+        if (raw) output({ ...openSessionReport(answer.session, context), precheck }, opts)
+        else renderOpenSession(answer.session, context)
+        return
+      }
+      const { installation, result, after } = answer
+      const report = installReferences(roots, before, after, changes, consent)
       mismatched = report.filter((reference) => {
         const installed = after?.find((entry) => entry.origin === reference.origin)
         return (
@@ -411,11 +465,10 @@ async function installReleases(
         output(
           {
             ...result,
-            ...(installation === undefined
-              ? {}
-              : { execution: installation.execution, status: installation.status }),
+            execution: installation.execution,
+            status: installation.status,
+            ...replayedMember(context),
             references: report,
-            ...(recovered === undefined ? {} : { recovered }),
             precheck,
           } satisfies InstallReport,
           opts,
@@ -423,11 +476,9 @@ async function installReleases(
         return
       }
       presentReferences(report, operation, result)
-      if (recovered !== undefined) {
-        log.dim(
-          `  The Kernel refused this install (${recovered.refusal}), but every Domain is installed as requested: an earlier install already committed it.`,
-        )
-      }
+      log.dim(`  ${completedExecutionLine(installation)}`)
+      const replayed = replayLine(context, installation.status)
+      if (replayed !== undefined) log.dim(`  ${replayed}`)
       for (const [index, { origin, consent: change }] of report.entries()) {
         if (change === undefined) continue
         log.dim(
@@ -447,7 +498,7 @@ async function installReleases(
   })
   if (failure !== undefined) {
     // Only a refusal the pre-check predicts is shown beside it. A transport failure or an unknown
-    // outcome is resent with its own operation id, never replaced by the proposed install.
+    // outcome is never replaced by the proposed install.
     const predicted = ['SCHEMA_DEPENDENCY_INCOMPATIBLE', 'SCHEMA_DEPENDENTS_INCOMPATIBLE'].includes(
       failure.error instanceof IncompleteInstallation &&
         failure.error.installation.status.outcome?.kind === 'failed'
@@ -835,57 +886,38 @@ function warnUnreadableConsentOrigins(
 }
 
 /**
- * AM-81: an issuer consent sent after its install committed is refused, under a new operation id as
- * SCHEMA_INPUT_INVALID at `/domains/<i>/consent` (the Domain no longer changes issuer), under the
- * same id as SCHEMA_OPERATION_CONFLICT (a retry planned from the moved listing carries no consent).
- * Before such a refusal is reported, the installations are read back: when every reference is
- * installed from its URL with the pin the install expected, the install asked for holds, and the
- * command reports it as already current with the installed Domains as the Kernel describes them,
- * marked `recovered` with the Kernel refusal it recovered from.
+ * Follow a maintenance session until it awaits Root's command, ends or pauses, within `deadline`,
+ * as the Kernel client's canonical watch does: a bounded wait for the outcome, which holds nothing
+ * the session's drain needs, then a status read. A session first drains the Instance's open work.
  */
-async function recoverCommittedInstall(
-  error: unknown,
+async function watchSession(
   session: ClientSession,
-  roots: readonly PlannedRoot[],
-): Promise<InstallOutcome | undefined> {
-  if (!(error instanceof ResponseError)) return undefined
-  const refusal = reasonCode(error.reason)
-  const path = (error.reason as { readonly details?: { readonly path?: unknown } }).details?.path
-  if (
-    !(
-      refusal === 'SCHEMA_OPERATION_CONFLICT' ||
-      refusal === 'IDEMPOTENCY_KEY_CONFLICT' ||
-      (refusal === 'SCHEMA_INPUT_INVALID' &&
-        typeof path === 'string' &&
-        /^\/domains\/\d+\/consent$/u.test(path))
-    )
+  installation: Installation,
+  deadline: number,
+  deps: Pick<ReferenceInstallDependencies, 'now' | 'sleep'>,
+): Promise<Installation> {
+  const { execution } = installation
+  let { status } = installation
+  while (
+    status.outcome === undefined &&
+    status.state !== 'paused' &&
+    status.detail?.phase !== 'awaiting'
   ) {
-    return undefined
+    const left = deadline - deps.now()
+    if (left <= 0) break
+    const step = Math.min(WATCH_WAIT_MS, left)
+    const began = deps.now()
+    await session.schema.installation
+      .result(execution, { waitMs: step }, { timeoutMs: step + WATCH_WAIT_MS })
+      .catch(() => undefined)
+    // A wait the Kernel answers at once does not pace the watch.
+    const spent = deps.now() - began
+    if (spent < step) await deps.sleep(step - spent)
+    status = await session.schema.installation.status(execution, {
+      timeoutMs: Math.max(1, deadline - deps.now()) + WATCH_WAIT_MS,
+    })
   }
-  try {
-    const after = await session.schema.installed()
-    for (const { source, origin, expected } of roots) {
-      const installed = after.find((entry) => entry.origin === origin)
-      if (
-        origin === undefined ||
-        expected === null ||
-        installed === undefined ||
-        !installedAsExpected(installed, expected, source.url)
-      ) {
-        return undefined
-      }
-    }
-    const domains = await Promise.all(
-      roots.map(({ origin }) => session.schema.inspect(origin as never)),
-    )
-    return {
-      result: { changed: false, domains } as unknown as InstallResult,
-      after,
-      recovered: { refusal },
-    }
-  } catch {
-    return undefined
-  }
+  return { ...installation, status }
 }
 
 async function installedAfter(
@@ -945,16 +977,14 @@ function namedAgain(source: ReleaseSource): string {
 }
 
 /**
- * One `astrale domain install` command line for `references`, with the target, identity and
- * consents of this install (each change by its origin, never a prompt), the Admin target when a
- * version reference needs the registry, and the operation id only when the command resends this
- * very install.
+ * One `astrale domain install` command line for `references`, with a fresh operation, the target,
+ * identity and consents of this install (each change by its origin, never a prompt), and the Admin
+ * target when a version reference needs the registry.
  */
 function installCommand(
   references: readonly string[],
   opts: ReferenceInstallOpts,
   changes: readonly (IssuerChange | undefined)[],
-  operation?: string,
 ): string {
   const flag = (name: string, value: string | undefined) =>
     value === undefined ? [] : [name, value]
@@ -970,7 +1000,6 @@ function installCommand(
     'domain',
     'install',
     ...references,
-    ...flag('--operation', operation),
     ...flag('--mode', opts.mode),
     ...flag('--validation-scope', opts.validationScope),
     ...flag('--validation-counts', opts.validationCounts),
@@ -979,9 +1008,7 @@ function installCommand(
       change === undefined ? [] : [`--allow-issuer-change=${change.origin}`],
     ),
     ...(opts.revokePrevious === true ? ['--revoke-previous'] : []),
-    ...flag('--url', opts.url),
-    ...flag('-i', opts.instance),
-    ...flag('--as', opts.as),
+    ...targetFlags(opts),
     ...flag('--timeout', opts.timeout),
     ...admin,
   ])
@@ -1043,8 +1070,11 @@ function presentReferences(
         ? ''
         : `${chalk.bold(reference.version)}${reference.yanked === true ? chalk.yellow(' (yanked)') : ''} `
     // The listings only detail a replacement: the Kernel's result alone decides the status.
+    // A replay reads the listing after its install already moved it: no earlier pin to show.
     const was =
-      status === 'replaced' && reference.previous !== null
+      status === 'replaced' &&
+      reference.previous !== null &&
+      (pin === null || !samePin(reference.previous.pin, pin))
         ? chalk.dim(` (was ${pinLabel(reference.previous.pin)})`)
         : ''
     console.log(

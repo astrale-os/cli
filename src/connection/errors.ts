@@ -12,14 +12,22 @@ import {
 import { PathError } from '@astrale-os/sdk/graph/path'
 import chalk from 'chalk'
 
-import type { OperationRecovery } from './command'
+import type { OperationRecovery, PendingFollowUp } from './command'
 
 import { AstraleError } from '../errors'
 import { log, printFailureDebug } from '../lib/terminal/log'
-import { IncompleteInstallation, renderIncompleteInstallation } from './installation-result'
+import {
+  IncompleteInstallation,
+  lifecycleFailureNotes,
+  OperationConflict,
+  renderIncompleteInstallation,
+  renderOperationConflict,
+  type LifecycleContext,
+} from './installation-result'
 import {
   CREDENTIAL_REFUSED,
   functionInputIssues,
+  operationConflict,
   queryInputRepair,
   reasonCode,
   schemaDataRemovalHint,
@@ -34,17 +42,76 @@ export async function formatKernelError(
   urlArg = '',
   debug = false,
   options: {
-    recovery?: OperationRecovery
     /** Members the command adds beside a Kernel refusal's `--json` document, never over its own. */
     fields?: Readonly<Record<string, unknown>>
+    /** An install or uninstall: its operation, and the Execution the Kernel answered, if any. */
+    lifecycle?: LifecycleContext
   } = {},
 ): Promise<void> {
+  const { lifecycle } = options
   if (error instanceof IncompleteInstallation) {
-    renderIncompleteInstallation(error, machine, options.recovery, options.fields)
+    renderIncompleteInstallation(error, machine, lifecycle, options.fields)
     return
   }
-  renderFailure(classifyFailure(error), machine, urlArg, options.recovery, options.fields)
+  // A conflict over the operation is this command's refusal: it ran nothing.
+  const conflict =
+    error instanceof OperationConflict
+      ? error
+      : error instanceof ResponseError && operationConflict(error.reason)
+        ? new OperationConflict(error)
+        : undefined
+  if (conflict !== undefined && lifecycle !== undefined) {
+    renderOperationConflict(conflict, machine, lifecycle)
+    if (debug) printFailureDebug(conflict.refusal, urlArg)
+    return
+  }
+  const failure = classifyFailure(error instanceof OperationConflict ? error.refusal : error)
+  // An install or uninstall says whether its operation started an Execution: a Kernel refusal
+  // before any Execution answered left the operation unused.
+  const notes =
+    lifecycle === undefined
+      ? undefined
+      : lifecycleFailureNotes(lifecycle, failure.kind === 'response')
+  renderFailure(failure, machine, urlArg, lifecycle?.recovery, {
+    ...options.fields,
+    ...notes?.fields,
+  })
+  if (!machine) for (const line of notes?.lines ?? []) log.dim(`  ${line}`)
   if (debug) printFailureDebug(error, urlArg)
+}
+
+/** Whether a read failed only because its Execution has not ended: there is no outcome yet. */
+export function executionPending(error: unknown): boolean {
+  return error instanceof ResponseError && reasonCode(error.reason) === 'EXECUTION_PENDING'
+}
+
+/**
+ * Present a result read whose Execution has not ended: a neutral note, not a failure, and the
+ * commands that wait for its outcome and read its status. `--json` keeps the Kernel's refusal on
+ * stderr and adds `execution`, `follow` and `observe`.
+ */
+export async function renderPendingResult(
+  error: unknown,
+  pending: PendingFollowUp,
+  machine: boolean,
+  debug = false,
+): Promise<void> {
+  const { execution, follow, observe, waited } = pending
+  if (machine) {
+    await formatKernelError(error, true, undefined, debug, {
+      fields: { execution, follow, observe },
+    })
+    return
+  }
+  log.info(
+    `Execution ${execution} is still running: ${
+      waited
+        ? 'its outcome did not come within --wait-ms.'
+        : 'it has no outcome yet, and this read did not wait (--wait-ms).'
+    }`,
+  )
+  log.dim(`  Wait for it: ${follow}`)
+  log.dim(`  Read its status: ${observe}`)
 }
 
 type FailureDiagnostic =
@@ -126,10 +193,15 @@ function renderFailure(
   recovery: OperationRecovery | undefined,
   fields: Readonly<Record<string, unknown>> = {},
 ): void {
-  if (failure.kind === 'transport') return renderTransport(failure, machine, url, recovery)
+  if (failure.kind === 'transport') return renderTransport(failure, machine, url, recovery, fields)
   if (failure.kind === 'response') return renderResponse(failure, machine, fields)
   if (machine)
-    return writeRaw({ error: failure.code, message: failure.message, hint: failure.hint })
+    return writeRaw({
+      ...fields,
+      error: failure.code,
+      message: failure.message,
+      hint: failure.hint,
+    })
   log.error(`${chalk.bold(failure.code)}: ${failure.message}`)
   if (failure.hint) log.dim(`  ${failure.hint}`)
 }
@@ -139,16 +211,22 @@ function renderTransport(
   machine: boolean,
   url: string,
   recovery: OperationRecovery | undefined,
+  fields: Readonly<Record<string, unknown>>,
 ): void {
   const invocation = failure.context.kind === 'invocation' ? failure.context : undefined
+  // Once an Execution answered, its operation is known to have reached the Kernel.
+  const unknown = invocation?.delivery === 'unknown' && typeof fields.execution !== 'string'
   if (machine) {
     writeRaw({
+      ...fields,
       error: failure.code,
       message: failure.message,
       phase: failure.phase,
       transport: failure.context,
       ...(url === '' ? {} : { url }),
-      ...(invocation?.delivery === 'unknown' && recovery !== undefined ? recovery : {}),
+      ...(unknown && recovery !== undefined
+        ? { operation: recovery.operation, fresh: recovery.fresh }
+        : {}),
     })
     return
   }
@@ -157,7 +235,7 @@ function renderTransport(
   log.dim(`  phase: ${failure.phase}`)
   if (failure.phase === 'connect') log.dim('  Check the target and run `astrale status`.')
   else if (failure.phase === 'timeout') log.dim('  Try increasing `--timeout`.')
-  else if (invocation?.delivery === 'unknown') renderRecovery(recovery)
+  else if (unknown) renderRecovery(recovery)
 }
 
 function renderResponse(
@@ -183,7 +261,9 @@ function renderResponse(
           ? schemaUpgradeHint(upgrade)
           : failure.code === CREDENTIAL_REFUSED
             ? 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.'
-            : undefined))
+            : code === 'EXECUTION_PENDING'
+              ? 'The Execution has not ended yet: wait for it with --wait-ms <milliseconds> (for example --wait-ms 20000, within --timeout), or read its status.'
+              : undefined))
   if (machine) {
     writeRaw({
       ...fields,
@@ -226,9 +306,12 @@ function renderResponse(
 function renderRecovery(recovery: OperationRecovery | undefined): void {
   if (!recovery)
     return log.dim('  Delivery is unknown; do not automatically retry a mutating call.')
-  log.dim('  Delivery is unknown; retry with the same operation id:')
-  log.dim(`  operation: ${recovery.operation}`)
-  log.dim(`  ${recovery.retry}`)
+  log.dim(
+    `  Delivery is unknown: it may have reached the Kernel under operation ${recovery.operation}.`,
+  )
+  log.dim(
+    `  Run it again with a fresh operation (the Kernel refuses it while that one runs): ${recovery.fresh}`,
+  )
 }
 
 const writeRaw = (payload: Record<string, unknown>): void =>

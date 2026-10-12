@@ -3,12 +3,25 @@ import type { OperationId, UninstallReceipt, UninstallRequest } from '@astrale-o
 
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../../connection'
+import type { KernelCommandOpts, OperationRecovery } from '../../connection'
+import type { Lifecycle, LifecycleContext } from '../../connection/installation-result'
 import type { CommandDefinition } from '../../program/index'
+import type { InstallFailure } from './install-call'
 
-import { runKernelCommand } from '../../connection'
-import { installationResult } from '../../connection/installation-result'
+import { withClientSession } from '../../connection'
+import {
+  announcingLifecycle,
+  completedExecutionLine,
+  conflictFailure,
+  installationResult,
+  renderRunning,
+  replayedMember,
+  replayLine,
+  runningReport,
+  stillRunning,
+} from '../../connection/installation-result'
 import { resolveTimeoutMs } from '../../connection/session'
+import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import { shellCommand } from '../../lib/shell-command'
 import { canPrompt } from '../../lib/terminal/interactive'
@@ -16,6 +29,7 @@ import { fatal, log } from '../../lib/terminal/log'
 import { output } from '../../lib/terminal/output'
 import { dangerPanel } from '../../lib/terminal/panel'
 import { confirmWithInput } from '../../lib/terminal/prompt'
+import { exitWithInstallFailure, runInstallCall } from './install-call'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
 type UninstallOpts = KernelCommandOpts & {
@@ -24,7 +38,10 @@ type UninstallOpts = KernelCommandOpts & {
   readonly operation?: string
 }
 
-type UninstallResult = UninstallReceipt & Pick<Uninstallation, 'execution' | 'status'>
+/** A completed uninstall's receipt with its Execution, or its Execution still running. */
+type UninstallResult =
+  | (UninstallReceipt & Pick<Uninstallation, 'execution' | 'status'>)
+  | { readonly running: Uninstallation }
 
 /** Public Kernel uninstall syscall input for one canonical non-empty Domain set. */
 export function uninstallCallInput(
@@ -50,11 +67,30 @@ Behavior:
   Safe mode is the default and never deletes application data. --destructive
   deletes every application fact whose concrete Class is owned by a selected
   Domain. It does not cascade into unselected Domains, and a surviving foreign
-  Edge that references a selected Node blocks the whole operation.
+  Edge that references a selected Node blocks the whole operation. One
+  uninstall deletes at most the Host's bound of each Class (10000 facts or
+  10000000 bytes in the production profile): above it, in either mode, the
+  uninstall is refused and the count it reports is a lower bound ("at
+  least"). Delete facts of that Class until it is under the bound first.
 
   Type the exact canonical Domain list to confirm, or pass --yes in automation.
-  A fresh operation id is generated automatically. Use --operation only to
-  retry or recover this exact uninstall after an outcome-unknown failure.
+  A fresh operation id is generated automatically; its outcome is final. An
+  uninstall that ended (failed or cancelled) used its operation: try again
+  without --operation ("fresh"). A failure exits 2 when the uninstall ended
+  failed, 5 when it was refused as an operation conflict or while another
+  schema change is active (SCHEMA_CHANGE_ACTIVE), else 1; --json
+  carries the execution, "observe" and, once the operation is used, "fresh".
+  --operation is for automation: a reused id replays only the exact same
+  uninstall, and the Kernel marks that answer a replay (--json: "replayed",
+  only as it sends it); the CLI then says once that the operation already ran
+  and this is its recorded outcome. Any other request under that id is
+  refused as an operation conflict: nothing runs, and the CLI names the
+  execution the id belongs to. The CLI waits for the outcome up to --timeout
+  (110000 ms without it), counted from the Kernel's answer naming the
+  execution; no wait under 1 s is started. An uninstall still running then is
+  no failure: the CLI prints its execution and how to follow it, and exits 0.
+  Ctrl-C stops waiting, never the uninstall: the CLI names its execution and
+  exits 130.
 
   Use this before reinstalling only when an immutable Domain property (such as
   its issuer) intentionally changed. Ordinary compatible upgrades should use
@@ -85,7 +121,7 @@ Examples:
     },
     {
       flags: '--operation <uuid>',
-      description: 'Reuse an exact uninstall operation id for explicit retry/recovery',
+      description: 'Operation id for automation; a reused id replays only the same request',
     },
   ],
   action: async (origins: [string, ...string[]], opts: UninstallOpts) => {
@@ -101,40 +137,76 @@ Examples:
       fatal(error, opts)
     }
 
-    await runKernelCommand<UninstallResult>(uninstallKernelCommand(selected, opts, operation))
+    const command = uninstallKernelCommand(selected, opts, operation)
+    const failure = await withClientSession(
+      opts,
+      async ({ session }) =>
+        runInstallCall(opts, {
+          lifecycle: 'uninstall',
+          label: command.label,
+          recovery: command.recovery,
+          // A conflict over the operation refuses this uninstall: the request it names is read
+          // only to say which one it is.
+          call: (started) =>
+            command.fn(announcingLifecycle(session, started)).catch(async (error: unknown) => {
+              throw await conflictFailure(error, session.schema)
+            }),
+          running: (result) => 'running' in result,
+          format: (result, machine, context) => command.format(result, opts, machine, context),
+        }),
+      command.credential,
+    ).catch((error: unknown): InstallFailure => ({ error, render: 'kernel' }))
+    if (failure !== undefined) await exitWithInstallFailure(failure, opts)
   },
 } satisfies CommandDefinition
 
+/** One uninstall: its label, its operation recovery, and the call over the uninstall syscall. */
 export function uninstallKernelCommand(
   selected: readonly [string, ...string[]],
   opts: UninstallOpts,
   operation: OperationId = opts.operation === undefined
     ? createDomainOperationId('uninstall')
     : acceptDomainOperationId(opts.operation, 'uninstall'),
-): Parameters<typeof runKernelCommand<UninstallResult>>[0] {
+) {
+  const recovery: OperationRecovery = {
+    operation,
+    fresh: uninstallCommand(selected, opts),
+    target: targetFlags(opts),
+  }
   return {
     opts,
     label: `Uninstalling ${selected.length === 1 ? 'domain' : 'domains'} ${selected.join(', ')} (operation ${operation})`,
-    recovery: { operation, retry: uninstallRetry(selected, operation, opts) },
+    recovery,
     credential: { principal: 'caller' as const },
-    fn: async ({ session }) => {
-      const installation = await session.schema.uninstall(
+    fn: async (lifecycle: Pick<Lifecycle, 'uninstall'>): Promise<UninstallResult> => {
+      const installation = await lifecycle.uninstall(
         uninstallCallInput(
           selected,
           opts.destructive ? 'destructive' : 'safe',
           operation,
-        ) as Parameters<typeof session.schema.uninstall>[0],
+        ) as Parameters<Lifecycle['uninstall']>[0],
         opts.timeout === undefined ? undefined : { timeoutMs: resolveTimeoutMs(opts.timeout) },
       )
+      if (stillRunning(installation.status)) return { running: installation }
       return {
         ...installationResult(installation, 'uninstall'),
         execution: installation.execution,
         status: installation.status,
       }
     },
-    format: (result, formatOpts, machine) => {
+    format: (
+      result: UninstallResult,
+      formatOpts: KernelCommandOpts,
+      machine: boolean,
+      context: LifecycleContext,
+    ) => {
+      if ('running' in result) {
+        if (machine) output(runningReport(result.running, context), formatOpts)
+        else renderRunning(result.running, context, true)
+        return
+      }
       if (machine) {
-        output(result, formatOpts)
+        output({ ...result, ...replayedMember(context) }, formatOpts)
         return
       }
       const removed = result.transitions.map(({ intent }) => intent.origin)
@@ -142,30 +214,24 @@ export function uninstallKernelCommand(
         `${removed.length === 1 ? 'Domain' : 'Domains'} uninstalled: ${removed.join(', ')}`,
       )
       log.dim(`  operation: ${result.operation}`)
+      log.dim(`  ${completedExecutionLine(result)}`)
+      const replayed = replayLine(context, result.status)
+      if (replayed !== undefined) log.dim(`  ${replayed}`)
     },
   }
 }
 
-function uninstallRetry(
-  origins: readonly [string, ...string[]],
-  operation: string,
-  opts: UninstallOpts,
-): string {
-  const flag = (name: string, value: string | undefined) =>
-    value === undefined ? [] : [name, value]
+/** This uninstall as a command line, with a fresh operation. */
+function uninstallCommand(origins: readonly [string, ...string[]], opts: UninstallOpts): string {
   return shellCommand([
     'astrale',
     'domain',
     'uninstall',
     ...origins,
     ...(opts.destructive ? ['--destructive'] : []),
-    '--operation',
-    operation,
     '--yes',
-    ...flag('--url', opts.url),
-    ...flag('-i', opts.instance),
-    ...flag('--as', opts.as),
-    ...flag('--timeout', opts.timeout),
+    ...targetFlags(opts),
+    ...(opts.timeout === undefined ? [] : ['--timeout', opts.timeout]),
   ])
 }
 

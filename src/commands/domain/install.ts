@@ -8,20 +8,40 @@ export default {
   description: 'Install one or more domains on an instance in one atomic Kernel operation',
   afterHelpText: `
 Behavior:
-  Installation is durable. The CLI waits within --timeout in online mode and
-  reports success only after completion. A failure or an unfinished execution
-  exits nonzero; --json retains its execution ID and exact status. Retry with
-  the printed operation ID and the same intent to observe that installation,
-  never a new operation. --no-wait returns without waiting.
-  After an issuer transition, original consent may no longer be reconstructible.
-  An input conflict is recovered only if exact release/build pins, URL and issuer
-  are already installed. The report marks recovered.refusal and changed:false;
-  it does not claim that the original Execution succeeded.
+  Installation is durable. In online mode the CLI waits for its outcome up to
+  --timeout (110000 ms without it), counted from the Kernel's answer naming
+  the execution: the reads and the pre-check before it do not count. No wait
+  under 1 s is started, so a --timeout below 1000 returns at once with the
+  execution still running. --timeout also bounds each request. The CLI
+  reports success only after completion. An installation that ended failed
+  exits 2, one refused as an operation conflict or while another schema change
+  is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure exits 1. One
+  still running when the CLI stops waiting (--timeout, or --no-wait) is no
+  failure: the CLI prints its execution and the commands that follow it and
+  exits 0 (--json on stdout: no "changed", "follow" waits for it). --json
+  retains its execution ID and exact status.
+  An operation names one request and its outcome is final. Follow an
+  installation by its execution ("observe": installation status, "follow":
+  installation result --wait-ms); once it ended (failed or cancelled), try
+  again without --operation ("fresh"). A refusal before any execution exists
+  (--json: "execution": null) leaves the operation unused. --no-wait returns
+  without waiting. Ctrl-C stops waiting, never the installation: the CLI names
+  the execution that continues and exits 130.
+  --operation is for automation: a reused id replays only the exact same
+  request, and the Kernel marks that answer a replay (--json: "replayed",
+  only as it sends it); the CLI then says once that the operation already ran
+  and this is its recorded outcome. Any other request under that id is
+  refused as an operation conflict: nothing runs, the CLI names the execution
+  the id belongs to and how it stands, and exits 5. The same command can
+  conflict too, when it is planned again from a state its first run moved.
 
   --mode maintenance opens a Root-only repair session; other callers are
-  blocked while it is open. It waits for explicit Execution signals, not for
-  this CLI process. Retain its execution ID, inspect its status and repair the
-  data before applying the target with domain installation apply. Never delete or force-cancel it as a normal
+  blocked while it is open. The CLI watches it within --timeout while it
+  drains the Instance, until it awaits its first command, then prints the
+  commands it accepts and exits 0 (--no-wait: no watch). It waits for explicit
+  Execution signals, not for this CLI process. Retain its execution ID,
+  inspect its status and repair the data before applying the target with
+  domain installation apply. Never delete or force-cancel it as a normal
   recovery step: those actions can leave the source schema uncertified.
 
   URL references (https://, or http:// for a local Host) go straight to the
@@ -124,7 +144,7 @@ Examples:
     },
     {
       flags: '--operation <uuid>',
-      description: 'Reuse an exact install operation id for explicit retry/recovery',
+      description: 'Operation id for automation; a reused id replays only the same request',
     },
     {
       flags: '--allow-issuer-change [origin]',

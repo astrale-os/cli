@@ -7,6 +7,7 @@ import type { ExecutionReceipt } from '../connection/execution'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
+import { replayMarker } from '../connection/installation-result'
 import { containsSelfRef } from '../lib/self'
 import { presentBinary, readBinaryBody } from '../lib/terminal/binary'
 import { failInput, log } from '../lib/terminal/log'
@@ -50,7 +51,12 @@ type MaterializedCallResult =
   | { readonly kind: 'stream'; readonly values: readonly unknown[] }
 type CallOutcome =
   | MaterializedCallResult
-  | { readonly kind: 'execution'; readonly receipt: ExecutionReceipt }
+  | {
+      readonly kind: 'execution'
+      readonly receipt: ExecutionReceipt
+      /** The Kernel marked its answer a replay of an Execution the call already started. */
+      readonly replayed: boolean
+    }
   | { readonly kind: 'dry'; readonly call: unknown }
 
 export async function callCommand(
@@ -94,7 +100,11 @@ export async function callCommand(
         const result = await ctx.session.dispatch(request)
         if (result.kind !== 'execution') return materializeCallResult(result)
         const id = result.execution
-        return { kind: 'execution', receipt: executionReceipt(ctx, Path.parse(expanded.path), id) }
+        return {
+          kind: 'execution',
+          receipt: executionReceipt(ctx, Path.parse(expanded.path), id),
+          replayed: replayMarker(result) === true,
+        }
       }, expanded.meta)
     },
     format: async (result, fmtOpts) => {
@@ -112,8 +122,14 @@ export async function callCommand(
           output(result.values, fmtOpts)
           return
         case 'execution':
+          // The receipt is a strict, portable document: the replay marker is said, never stored.
           present(result.receipt, fmtOpts)
           if (!isMachine(fmtOpts)) {
+            if (result.replayed) {
+              log.dim(
+                `This call already ran as ${result.receipt.id}: the receipt names its recorded Execution; nothing ran again.`,
+              )
+            }
             log.dim(
               'Save it with --json > receipt.json, then astrale execution result receipt.json',
             )

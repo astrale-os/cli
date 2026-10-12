@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { uninstallCallInput, uninstallKernelCommand } from '../domain/uninstall'
-import { runCli } from './fixtures/process'
+import { human, runCli } from './fixtures/process'
 
 test('sends the public Kernel uninstall request as the caller, Domains sorted and unique', () => {
   expect(
@@ -41,10 +41,11 @@ test('uses one explicit operation for submission and recovery', async () => {
 
   expect(command.recovery).toEqual({
     operation,
-    retry:
+    // A new attempt once this operation's Execution ended: the same uninstall, a fresh operation.
+    fresh:
       `astrale domain uninstall app.example shared.example --destructive ` +
-      `--operation ${operation} --yes --url https://kernel.example.test/api ` +
-      `-i staging --as operator`,
+      `--yes --url https://kernel.example.test/api -i staging --as operator`,
+    target: ['--url', 'https://kernel.example.test/api', '-i', 'staging', '--as', 'operator'],
   })
   const receipt = { operation, transitions: [{ intent: { origin: 'app.example' } }] }
   const answer = {
@@ -56,7 +57,7 @@ test('uses one explicit operation for submission and recovery', async () => {
     request.push(input)
     return answer
   }
-  expect(await command.fn({ session: { schema: { uninstall } } } as never)).toMatchObject({
+  expect(await command.fn({ uninstall } as never)).toMatchObject({
     ...receipt,
     execution: 'execution-1',
     status: { state: 'completed' },
@@ -77,20 +78,28 @@ test('requires --yes outside a TTY before connecting to a Kernel', async () => {
   })
 })
 
-for (const state of ['pending', 'failed', 'cancelled'] as const) {
+for (const state of ['paused', 'failed', 'cancelled'] as const) {
   test(`uninstall ${state} never presents an Execution reference as a receipt`, async () => {
     const command = uninstallKernelCommand(['app.example'], { yes: true })
+    const outcome = state === 'paused' ? {} : { outcome: { kind: state, error: {} } }
     await expect(
       command.fn({
-        session: {
-          schema: {
-            uninstall: async () => ({ execution: 'uninstall-execution', status: { state } }),
-          },
-        },
+        uninstall: async () => ({
+          execution: 'uninstall-execution',
+          status: { state, ...outcome },
+        }),
       } as never),
     ).rejects.toThrow(`Installation uninstall-execution is ${state}.`)
   })
 }
+
+test('an uninstall still running when the wait ended answers its Execution, never a receipt', async () => {
+  const command = uninstallKernelCommand(['app.example'], { yes: true })
+  const running = { execution: 'uninstall-execution', status: { state: 'running' } }
+  expect(await command.fn({ uninstall: async () => running } as never)).toEqual({
+    running,
+  } as never)
+})
 
 test('published SDK decoder resolves durable uninstall before CLI reports a receipt', async () => {
   const operation = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
@@ -137,7 +146,7 @@ test('published SDK decoder resolves durable uninstall before CLI reports a rece
     { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
   )
   const command = uninstallKernelCommand(['app.example'], { operation, yes: true })
-  const received = await command.fn({ session: { schema } } as never)
+  const received = await command.fn(schema)
   expect(received).toMatchObject({
     ...result,
     execution: 'uninstall-execution',
@@ -147,15 +156,57 @@ test('published SDK decoder resolves durable uninstall before CLI reports a rece
   expect(calls[0]).toContain('function.uninstall')
 })
 
-test('uninstall retry quotes identity and target arguments literally', () => {
+test('the fresh uninstall quotes identity and target arguments literally', () => {
   const command = uninstallKernelCommand(['app.example'], {
     as: "O'Brien $USER",
     instance: 'qa staging',
     url: 'https://example.test/api?a=1&b=2',
     yes: true,
   })
-  expect(command.recovery!.retry).toContain("-i 'qa staging'")
-  expect(command.recovery!.retry).toContain("--url 'https://example.test/api?a=1&b=2'")
+  expect(command.recovery.fresh).toContain("-i 'qa staging'")
+  expect(command.recovery.fresh).toContain("--url 'https://example.test/api?a=1&b=2'")
   if (process.platform !== 'win32')
-    expect(command.recovery!.retry).toContain(`--as 'O'"'"'Brien $USER'`)
+    expect(command.recovery.fresh).toContain(`--as 'O'"'"'Brien $USER'`)
+})
+
+test('a completed uninstall names its operation and its Execution', async () => {
+  const operation = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
+  const command = uninstallKernelCommand(['app.example'], { operation, yes: true })
+  const receipt = { operation, transitions: [{ intent: { origin: 'app.example' } }] }
+  const result = {
+    ...receipt,
+    execution: 'uninstall-execution',
+    status: { state: 'completed', detail: { phase: 'completed' } },
+  } as never
+  const context = { lifecycle: 'uninstall' as const, recovery: command.recovery }
+  const shown = await human(async () => command.format(result, {}, false, context))
+  expect(shown.lines).toContain('Domain uninstalled: app.example')
+  expect(shown.lines).toContain(`operation: ${operation}`)
+  expect(shown.lines).toContain('execution: uninstall-execution')
+  expect(shown.lines).not.toContain('already ran')
+
+  // The Kernel marked its answer a replay: one line says so, and --json carries its marker.
+  const replayed = {
+    ...context,
+    started: 'uninstall-execution' as never,
+    replayed: true,
+  }
+  const again = await human(async () => command.format(result, {}, false, replayed))
+  expect(again.lines).toContain(
+    `Operation ${operation} already ran as uninstall-execution: this is its recorded outcome; nothing ran again.`,
+  )
+  const printed: string[] = []
+  const write = process.stdout.write
+  process.stdout.write = ((chunk: string) => printed.push(chunk) > 0) as typeof write
+  try {
+    command.format(result, { json: true }, true, replayed)
+    command.format(result, { json: true }, true, context)
+  } finally {
+    process.stdout.write = write
+  }
+  expect(JSON.parse(printed[0]!)).toMatchObject({
+    execution: 'uninstall-execution',
+    replayed: true,
+  })
+  expect(JSON.parse(printed[1]!)).not.toHaveProperty('replayed')
 })

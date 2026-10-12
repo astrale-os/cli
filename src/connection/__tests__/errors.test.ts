@@ -10,7 +10,11 @@ import { transportFailure } from './failure-fixtures'
 const INVOCATION = { source: 'https://kernel.test', id: 'errors' } as ConstructorParameters<
   typeof ResponseError
 >[2]
-const RECOVERY = { operation: 'operation-1', retry: 'astrale domain install --operation op-1' }
+/** An install whose call failed before the Kernel answered any Execution. */
+const LIFECYCLE = {
+  lifecycle: 'install' as const,
+  recovery: { operation: 'operation-1', fresh: 'astrale domain install https://a.test' },
+}
 
 type ResponseArguments = ConstructorParameters<typeof ResponseError>
 
@@ -69,7 +73,7 @@ describe('transport failures', () => {
     )
     const { json, text } = await machine(acquisition, {
       url: 'https://kernel.test',
-      recovery: RECOVERY,
+      lifecycle: LIFECYCLE,
     })
     expect(json).toEqual({
       error: 'CONNECTION_ERROR',
@@ -81,21 +85,24 @@ describe('transport failures', () => {
     expect(text).not.toContain('private')
   })
 
-  test('offer the operation retry only when an invocation may have been delivered', async () => {
+  test('name the operation only when an invocation may have been delivered', async () => {
     const unknown = transportFailure('Timed out.', 'timeout', {
       kind: 'invocation',
       delivery: 'unknown',
     })
-    expect((await machine(unknown, { recovery: RECOVERY })).json).toMatchObject({
+    const delivered = (await machine(unknown, { lifecycle: LIFECYCLE })).json
+    expect(delivered).toMatchObject({
       error: 'TIMEOUT',
       transport: { kind: 'invocation', delivery: 'unknown' },
-      ...RECOVERY,
+      ...LIFECYCLE.recovery,
     })
+    // Never the same operation again: a rerun is planned anew and may conflict.
+    expect(delivered).not.toHaveProperty('replay')
     const notSent = transportFailure('Send failed.', 'send', {
       kind: 'invocation',
       delivery: 'not-sent',
     })
-    expect((await machine(notSent, { recovery: RECOVERY })).json).not.toHaveProperty('operation')
+    expect((await machine(notSent, { lifecycle: LIFECYCLE })).json).not.toHaveProperty('operation')
   })
 })
 

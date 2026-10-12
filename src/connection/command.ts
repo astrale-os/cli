@@ -9,7 +9,8 @@ import type { AdminTargetSelection, ConnectionOptions } from './target'
 import { formatElapsed } from '../lib/terminal/format'
 import { spinner } from '../lib/terminal/log'
 import { isMachine, present } from '../lib/terminal/output'
-import { formatKernelError } from './errors'
+import { executionPending, formatKernelError, renderPendingResult } from './errors'
+import { failureExitCode } from './installation-result'
 import { withAdminClientSession, withClientSession } from './session'
 
 export interface KernelCommandOpts extends ConnectionOptions {
@@ -21,7 +22,24 @@ export interface KernelCommandOpts extends ConnectionOptions {
 
 export interface OperationRecovery {
   readonly operation: string
-  readonly retry: string
+  /** The same command without `--operation`: a fresh operation, a new attempt. */
+  readonly fresh: string
+  /** The flags that select the same Instance and identity, for the commands that follow an Execution. */
+  readonly target?: readonly string[]
+}
+
+/** Exit status of a result read whose Execution is still running: try again later (EX_TEMPFAIL). */
+export const TRY_LATER_EXIT = 75
+
+/** The Execution a result read is for, and the commands that follow it once it is still running. */
+export interface PendingFollowUp {
+  readonly execution: string
+  /** The command that waits for its outcome. */
+  readonly follow: string
+  /** The command that reads its status. */
+  readonly observe: string
+  /** Whether this read waited (`--wait-ms`) before the Kernel answered that it has not ended. */
+  readonly waited: boolean
 }
 
 /**
@@ -37,8 +55,12 @@ export async function runKernelCommand<T>(input: {
   readonly label: string
   /** Run on the Admin kernel, selected like `domain` Admin commands select it, not -i/--url/active. */
   readonly admin?: AdminTargetSelection
-  readonly recovery?: OperationRecovery
   readonly credential?: CredentialIntent
+  /**
+   * A result read: an Execution that has not ended is no failure but a neutral "still running",
+   * the commands that follow it, and exit {@link TRY_LATER_EXIT}.
+   */
+  readonly pending?: PendingFollowUp
   readonly fn: (context: ConnectionContext) => Promise<T>
   readonly format?: (
     result: T,
@@ -75,11 +97,17 @@ export async function runKernelCommand<T>(input: {
       present(result, opts)
     }
   } catch (error) {
+    if (input.pending !== undefined && executionPending(error)) {
+      spin?.info(
+        `${label} still running ${chalk.dim(formatElapsed(performance.now() - startTime))}`,
+      )
+      if (!isRaw) console.log('')
+      await renderPendingResult(error, input.pending, isRaw, opts.debug)
+      process.exit(TRY_LATER_EXIT)
+    }
     if (!isRaw && spin) spin.fail(`${label} failed`)
-    await formatKernelError(error, isRaw, undefined, opts.debug, {
-      recovery: input.recovery,
-    })
-    process.exit(1)
+    await formatKernelError(error, isRaw, undefined, opts.debug)
+    process.exit(failureExitCode(error))
   }
 }
 
