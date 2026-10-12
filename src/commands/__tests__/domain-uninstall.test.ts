@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { uninstallCallInput, uninstallKernelCommand } from '../domain/uninstall'
-import { runCli } from './fixtures/process'
+import { human, runCli } from './fixtures/process'
 
 test('sends the public Kernel uninstall request as the caller, Domains sorted and unique', () => {
   expect(
@@ -167,4 +167,20 @@ test('the fresh uninstall quotes identity and target arguments literally', () =>
   expect(command.recovery.fresh).toContain("--url 'https://example.test/api?a=1&b=2'")
   if (process.platform !== 'win32')
     expect(command.recovery.fresh).toContain(`--as 'O'"'"'Brien $USER'`)
+})
+
+test('a completed uninstall names its operation and its Execution', async () => {
+  const operation = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
+  const command = uninstallKernelCommand(['app.example'], { operation, yes: true })
+  const receipt = { operation, transitions: [{ intent: { origin: 'app.example' } }] }
+  const result = {
+    ...receipt,
+    execution: 'uninstall-execution',
+    status: { state: 'completed', detail: { phase: 'completed' } },
+  } as never
+  const context = { lifecycle: 'uninstall' as const, recovery: command.recovery }
+  const shown = await human(async () => command.format(result, {}, false, context))
+  expect(shown.lines).toContain('Domain uninstalled: app.example')
+  expect(shown.lines).toContain(`operation: ${operation}`)
+  expect(shown.lines).toContain('execution: uninstall-execution')
 })

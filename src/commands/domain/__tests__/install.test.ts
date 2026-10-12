@@ -1083,6 +1083,36 @@ describe('durable installations', () => {
     })
   })
 
+  test('a completed install names its Execution and what its class did to the data', async () => {
+    for (const [detail, line] of [
+      [
+        { phase: 'completed', class: 'revalidate', progress: { pages: 12, interruptions: 0 } },
+        'execution: install-execution (revalidate: the data was revalidated before the activation, 12 pages)',
+      ],
+      [
+        { phase: 'completed', class: 'immediate' },
+        'execution: install-execution (immediate: applied at once, without reading the data)',
+      ],
+      [
+        { phase: 'completed', class: 'noop' },
+        'execution: install-execution (noop: nothing to change)',
+      ],
+      [undefined, 'execution: install-execution'],
+    ] as const) {
+      const installation = completedInstallation(committed([AGENCIES]))
+      const run = harness({
+        served: { [A]: served(AGENCIES, A, '1') },
+        installation: {
+          ...installation,
+          status: { ...installation.status, ...(detail === undefined ? {} : { detail }) },
+        } as never,
+      })
+      const shown = await human(() => installByReference([A], {}, run.deps))
+      expect(shown.lines).toContain(`Domain installed (operation ${GENERATED})`)
+      expect(shown.lines).toContain(`  ${line}\n`.trimEnd())
+    }
+  })
+
   test('a wait that ended before the install did is no failure: a neutral mark, exit 0', async () => {
     const run = harness({
       served: { [A]: served(AGENCIES, A, '1') },

@@ -11,6 +11,7 @@ import type { InstallFailure } from './install-call'
 import { withClientSession } from '../../connection'
 import {
   announcingLifecycle,
+  completedExecutionLine,
   conflictFailure,
   installationResult,
   renderRunning,
@@ -207,6 +208,7 @@ export function uninstallKernelCommand(
         `${removed.length === 1 ? 'Domain' : 'Domains'} uninstalled: ${removed.join(', ')}`,
       )
       log.dim(`  operation: ${result.operation}`)
+      log.dim(`  ${completedExecutionLine(result)}`)
     },
   }
 }

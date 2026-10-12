@@ -300,6 +300,29 @@ export function renderRunning(
   log.dim(`  Read this run: ${installationStatusCommand(execution, lifecycle, recovery.target)}`)
 }
 
+/** What each install class did to the stored data, as one completed install reports it. */
+const CLASSES: Readonly<Record<string, string>> = {
+  noop: 'nothing to change',
+  immediate: 'applied at once, without reading the data',
+  revalidate: 'the data was revalidated before the activation',
+}
+
+/**
+ * One line naming the Execution that completed an install or uninstall and, for an install, its
+ * class: `noop`, `immediate` or `revalidate`, with the pages a revalidation read.
+ */
+export function completedExecutionLine(installation: Installation | Uninstallation): string {
+  const detail = installation.status.detail
+  const meaning = detail?.class === undefined ? undefined : CLASSES[detail.class]
+  const pages =
+    detail?.class === 'revalidate' && detail.progress !== undefined
+      ? `, ${detail.progress.pages} ${detail.progress.pages === 1 ? 'page' : 'pages'}`
+      : ''
+  return detail?.class === undefined
+    ? `execution: ${installation.execution}`
+    : `execution: ${installation.execution} (${detail.class}: ${meaning ?? detail.class}${pages})`
+}
+
 const DONE = { install: 'installed', uninstall: 'uninstalled' } as const
 
 /**

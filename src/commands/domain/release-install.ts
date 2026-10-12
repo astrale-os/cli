@@ -24,6 +24,7 @@ import { connectAdminRegistry, RegistryError, registryFailure } from '../../admi
 import { adminSessionOptions, withAdminClientSession, withClientSession } from '../../connection'
 import {
   announcingLifecycle,
+  completedExecutionLine,
   IncompleteInstallation,
   installationResult,
   openSessionReport,
@@ -467,6 +468,7 @@ async function installReleases(
         return
       }
       presentReferences(report, operation, result)
+      log.dim(`  ${completedExecutionLine(installation)}`)
       for (const [index, { origin, consent: change }] of report.entries()) {
         if (change === undefined) continue
         log.dim(
