@@ -324,7 +324,7 @@ describe('install by URL', () => {
     await installByReference([B, A], JSON_OUTPUT, run.deps)
 
     expect(run.credentials).toEqual([{ principal: 'caller' }])
-    // Without --timeout the install waits 110 s for its outcome.
+    // Without --timeout the install waits the Kernel client's 110 s for its outcome.
     expect(run.requests).toEqual([
       {
         operation: GENERATED,
@@ -1009,7 +1009,7 @@ describe('durable installations', () => {
       })
       // Followed by its Execution; once it ended, tried again with a fresh operation.
       expect(failure).not.toHaveProperty('replay')
-      expect(String(failure.observe)).toContain('installation status install-execution')
+      expect(String(failure.observe)).toContain('execution status install-execution')
       if (state === 'failed' || state === 'cancelled') {
         expect(failure.fresh).toContain(
           '--mode maintenance --validation-scope full --validation-counts exact --no-wait',
@@ -1060,8 +1060,8 @@ describe('durable installations', () => {
       execution: EXECUTION,
       status: { state: 'waiting', detail: { phase: 'awaiting', command: 1 } },
       operation: GENERATED,
-      apply: `astrale domain installation apply ${EXECUTION} --command 1 -i staging --as root`,
-      cancel: `astrale domain installation cancel ${EXECUTION} -i staging --as root`,
+      apply: `astrale domain installation apply ${EXECUTION} -i staging --as root`,
+      cancel: `astrale execution cancel ${EXECUTION} -i staging --as root`,
     })
     // An open session installed nothing: no pins are read back.
     expect(listings).toBe(1)
@@ -1133,15 +1133,13 @@ describe('durable installations', () => {
       } as never,
     })
     await installByReference([A], { ...JSON_OUTPUT, timeout: '150', instance: 'staging' }, run.deps)
-    // --timeout bounds the install's wait.
-    expect(run.requests).toMatchObject([{ waitMs: 150 }])
     expect(JSON.parse(io.stdout)).toEqual({
       execution: EXECUTION,
       lifecycle: 'install',
       status: { id: EXECUTION, state: 'running', detail: { phase: 'validating' } },
       operation: GENERATED,
-      observe: `astrale domain installation status ${EXECUTION} -i staging`,
-      follow: `astrale domain installation result ${EXECUTION} --wait -i staging`,
+      observe: `astrale execution status ${EXECUTION} -i staging`,
+      follow: `astrale execution result ${EXECUTION} --wait -i staging`,
       precheck: expect.anything(),
     })
 
@@ -1152,7 +1150,7 @@ describe('durable installations', () => {
       `Installation ${EXECUTION} still runs on the Kernel: this command's wait (--timeout) ended first.`,
     )
     expect(shown.all).toContain(
-      `Wait for it: astrale domain installation result ${EXECUTION} --wait -i staging`,
+      `Wait for it: astrale execution result ${EXECUTION} --wait -i staging`,
     )
     expect(shown.all).not.toContain('✖')
     expect(shown.all).not.toContain('installed (operation')
@@ -1180,7 +1178,7 @@ describe('durable installations', () => {
       execution: 'install-execution',
       operation: RETRY,
       fresh: `astrale domain install ${A} -i staging`,
-      observe: 'astrale domain installation status install-execution -i staging',
+      observe: 'astrale execution status install-execution -i staging',
     })
   })
 
@@ -1258,8 +1256,8 @@ describe('an interrupted wait leaves the durable Execution running', () => {
       execution: EXECUTION,
       lifecycle: 'install',
       operation: GENERATED,
-      observe: `astrale domain installation status ${EXECUTION} -i staging`,
-      follow: `astrale domain installation result ${EXECUTION} --wait -i staging`,
+      observe: `astrale execution status ${EXECUTION} -i staging`,
+      follow: `astrale execution result ${EXECUTION} --wait -i staging`,
     })
     expect(process.listenerCount('SIGINT')).toBe(listeners)
   })
@@ -1430,7 +1428,7 @@ describe('an operation conflict refuses this install: nothing ran for it', () =>
       hint: message,
       operation: RETRY,
       conflict: { execution: EXECUTION, lifecycle: 'install', mode: 'online', state: 'completed' },
-      observe: `astrale domain installation status ${EXECUTION} -i staging`,
+      observe: `astrale execution status ${EXECUTION} -i staging`,
       fresh: `astrale domain install ${A2} --mode maintenance -i staging`,
     })
     const shown = await human(async () => {
@@ -1438,7 +1436,7 @@ describe('an operation conflict refuses this install: nothing ran for it', () =>
     })
     expect(shown.all).toContain(`SCHEMA_OPERATION_CONFLICT: ${message}`)
     expect(shown.all).toContain(
-      `Read that request's run: astrale domain installation status ${EXECUTION} -i staging`,
+      `Read that request's run: astrale execution status ${EXECUTION} -i staging`,
     )
     expect(shown.all).toContain(
       `Run this install with a fresh operation: astrale domain install ${A2} --mode maintenance -i staging`,

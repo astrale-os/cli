@@ -62,6 +62,7 @@ test('uses one explicit operation for submission and recovery', async () => {
     execution: 'execution-1',
     status: { state: 'completed' },
   })
+  // Without --timeout the uninstall waits the Kernel client's 110 s for its outcome.
   expect(request).toEqual([
     {
       operation,

@@ -278,8 +278,7 @@ astrale domain uninstall app.example shared.example --destructive --yes -i stagi
 An install or uninstall is a durable Execution. The CLI waits for its outcome up to `--timeout`
 (110 s by default; `--no-wait` returns at once) and reports success only from a completed outcome.
 Never rerun it to learn what happened: follow the Execution it printed with
-`astrale domain installation status <execution>` or `result <execution> --wait` (`--uninstall`
-for an uninstall).
+`astrale execution status <execution>` or `result <execution> --wait`.
 
 | Exit | Meaning |
 | --- | --- |
@@ -293,7 +292,7 @@ for an uninstall).
 `--operation <id>` is for automation: it replays only the exact same request (`--json`:
 `replayed: true`); any other request under a used id is refused, exit 5. Existing data the new
 schema refuses, maintenance repair sessions (`--mode maintenance`, then
-`domain installation apply|abort|cancel|resume`) and large destructive uninstalls are covered in
+`domain installation apply|abort`) and large destructive uninstalls are covered in
 [schema evolution and data migration](../astrale-domain/references/migration.md).
 
 `astrale domain versions <origin>` lists the Domain's published versions from the Admin
@@ -482,7 +481,11 @@ with `--json > receipt.json` and follow the run with
 repeat the call to learn its outcome. `call --wait` calls and waits in one
 command, up to `--timeout` (110 s by default): the value once it completed, the
 Kernel's error (exit 1) once it failed or was cancelled, or, still running, the
-receipt and exit 75.
+receipt and exit 75. `astrale execution` takes an Execution
+ID or a receipt file and also sends a cooperative `cancel` (open to whoever
+started it), and `resume` and `signal <name> --value <json>` (Root only: one
+durable promise the run awaits, resolved once; the Kernel checks neither name
+nor value).
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10

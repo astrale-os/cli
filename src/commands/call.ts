@@ -9,7 +9,6 @@ import type { CommandDefinition } from '../program/index'
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
 import { TRY_LATER_EXIT } from '../connection/command'
 import { executionPending } from '../connection/errors'
-import { replayMarker } from '../connection/installation-result'
 import { commandWait } from '../connection/session'
 import { AstraleError } from '../errors'
 import { containsSelfRef } from '../lib/self'
@@ -112,7 +111,7 @@ export async function callCommand(
         const started = {
           kind: 'execution',
           receipt: executionReceipt(ctx, Path.parse(expanded.path), id),
-          replayed: replayMarker(result) === true,
+          replayed: result.replayed === true,
         } as const
         if (opts.wait !== true) return started
         // --timeout bounds the whole call, its wait included.

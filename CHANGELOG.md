@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.0.0-beta.144](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.143...cli/v1.0.0-beta.144) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** consume published Shell beta.5 in CLI and Studio ([#683](https://github.com/astrale-os/cli/issues/683)) ([cf910f8](https://github.com/astrale-os/cli/commit/cf910f8699879eaf300ed85bdb6c10d264ce02d0))
+
+## [1.0.0-beta.143](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.142...cli/v1.0.0-beta.143) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** one astrale execution group for every Execution, on SDK 0.6.0-beta.31 and Kernel beta.8
+
+### Features
+
+* **commands:** follow, edit and archive your own issue reports ([#672](https://github.com/astrale-os/cli/issues/672)) ([ffa067f](https://github.com/astrale-os/cli/commit/ffa067fbfa41c21df62f37e69f85da13c8702135))
+* **commands:** one astrale execution group for every Execution, on SDK 0.6.0-beta.31 and Kernel beta.8 ([f290d5e](https://github.com/astrale-os/cli/commit/f290d5e285c6702f11a8f8f1c8c2d1f0c4f2e2c3))
+
+
+### Bug Fixes
+
+* **commands:** install and uninstall output that says what happened and what to do next ([#677](https://github.com/astrale-os/cli/issues/677)) ([01ade25](https://github.com/astrale-os/cli/commit/01ade259527abd265e83e2a4993f816f2affd9d7))
+
 ## [1.0.0-beta.142](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.141...cli/v1.0.0-beta.142) (2026-10-11)
 
 

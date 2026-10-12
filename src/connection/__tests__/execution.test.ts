@@ -27,8 +27,9 @@ function harness() {
   const calls: {
     principal: string | undefined
     issuer: string | undefined
-    target: string
-    input: unknown
+    method: 'status' | 'result'
+    execution: string
+    wait?: unknown
   }[] = []
   let installed = 'https://old-domain.example'
   let inspections = 0
@@ -50,21 +51,17 @@ function harness() {
         },
         // The backend result is a fixture, not a replacement implementation of Kernel access.
         execution: {
-          status: async (id: string) => {
-            calls.push({
-              principal,
-              issuer: selected.domainIssuer,
-              target: `${id}.status`,
-              input: {},
-            })
+          status: async (execution: string) => {
+            calls.push({ principal, issuer: selected.domainIssuer, method: 'status', execution })
             return { state: terminal ? 'completed' : 'pending' }
           },
-          result: async (id: string, wait: unknown) => {
+          result: async (execution: string, wait: unknown) => {
             calls.push({
               principal,
               issuer: selected.domainIssuer,
-              target: `${id}.result`,
-              input: wait,
+              method: 'result',
+              execution,
+              wait,
             })
             if (!terminal) throw new Error('EXECUTION_PENDING')
             return { kind: 'completed', value: 42 }
@@ -123,8 +120,8 @@ test('portable receipt reconstructs Domain-for-caller status and pending-to-term
   expect(h.calls.map(({ principal, issuer }) => ({ principal, issuer }))).toEqual(
     Array(3).fill({ principal: 'domain', issuer: 'https://old-domain.example' }),
   )
-  expect(h.calls[0]?.target).toBe('execution-1.status')
-  expect(h.calls[2]?.input).toEqual({ waitMs: 100 })
+  expect(h.calls[0]).toMatchObject({ method: 'status', execution: 'execution-1' })
+  expect(h.calls[2]).toMatchObject({ method: 'result', wait: { waitMs: 100 } })
   expect(h.counts()).toEqual({ inspections: 3, closes: 6 })
 })
 
@@ -190,7 +187,8 @@ test('a new CLI process reconstructs context from the receipt file without retai
     expect(stderr).toBe('')
     expect(code).toBe(0)
     expect(JSON.parse(stdout)).toEqual({
-      target: 'execution-1.status',
+      method: 'status',
+      execution: 'execution-1',
       principal: 'domain',
       issuer: 'https://rotated.example',
     })

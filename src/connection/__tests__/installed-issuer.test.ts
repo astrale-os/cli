@@ -98,7 +98,7 @@ describe('Shell exchange at the installed issuer', () => {
     expect(command.inspects()).toHaveLength(1)
   })
 
-  test('an observation refuses remote-to-caller recovery before dispatching its SDK Execution reference', async () => {
+  test('an observation refuses remote-to-caller recovery before dispatching its Execution read', async () => {
     let reads = 0
     const receipt = acceptExecutionReceipt({
       kind: 'astrale.execution',

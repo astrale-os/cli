@@ -17,8 +17,9 @@ const open: ConnectionFactory = (target, _timeout, _options, _config, intent) =>
           inspect: async () => ({ release: { identity: { issuer: 'https://rotated.example' } } }),
         },
         execution: {
-          status: async (id: string) => ({
-            target: `${id}.status`,
+          status: async (execution: string) => ({
+            method: 'status',
+            execution,
             principal: intent?.principal,
             issuer: target.domainIssuer,
           }),

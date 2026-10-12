@@ -105,18 +105,20 @@ globalThis.fetch = (async (input, init) => {
                     aud: remote,
                     exp: Math.floor(Date.now() / 1000) + 600,
                   })
-                : target.endsWith('.status')
+                : /\.(status|cancel|resume)$/.test(target)
                   ? {
                       id: 'execution-1',
                       function: 'function-1',
-                      version: `sha256:${'a'.repeat(64)}`,
+                      version: `sha256:${'e'.repeat(64)}`,
                       state: 'completed',
-                      createdAt: '2026-10-12T00:00:00.000Z',
+                      createdAt: '2026-10-12T00:00:00Z',
                       outcome: { kind: 'completed', value: 42 },
                     }
                   : target.endsWith('.result')
                     ? { kind: 'completed', value: 42 }
-                    : { id: 'alice' },
+                    : target.endsWith('.signal')
+                      ? {}
+                      : { id: 'alice' },
             }
       response = new Response(
         JSON.stringify({

@@ -113,7 +113,7 @@ test('the lifecycle names the Execution the Kernel answered before the Client wa
 
 test("the lifecycle passes on the Kernel's replay marker only when it sends one", async () => {
   const markers: unknown[] = []
-  for (const marker of [{ replayed: true }, { replayed: false }, {}, { replayed: 'yes' }]) {
+  for (const marker of [{ replayed: true }, { replayed: false }, {}]) {
     const lifecycle = announcingLifecycle(
       {
         dispatch: async (call: { readonly target: unknown }) =>
@@ -127,7 +127,7 @@ test("the lifecycle passes on the Kernel's replay marker only when it sends one"
       .install({ operation: CONTEXT.recovery.operation, domains: [], waitMs: 0 } as never)
       .catch(() => undefined)
   }
-  expect(markers).toEqual([true, false, undefined, undefined])
+  expect(markers).toEqual([true, false, undefined])
 })
 
 describe('an Execution that ended used its operation', () => {
@@ -140,7 +140,7 @@ describe('an Execution that ended used its operation', () => {
     expect(text).toContain(
       `operation: ${CONTEXT.recovery.operation} is used: this failure is its final outcome.`,
     )
-    expect(text).toContain('Read this run: astrale domain installation status execution-1 -i app')
+    expect(text).toContain('Read this run: astrale execution status execution-1 -i app')
     expect(text).toContain(
       'Try again with a fresh operation: astrale domain install https://a.test -i app',
     )
@@ -150,7 +150,7 @@ describe('an Execution that ended used its operation', () => {
       execution: 'execution-1',
       operation: CONTEXT.recovery.operation,
       fresh: CONTEXT.recovery.fresh,
-      observe: 'astrale domain installation status execution-1 -i app',
+      observe: 'astrale execution status execution-1 -i app',
     })
     expect(json).not.toHaveProperty('target')
     expect(json).not.toHaveProperty('replay')
@@ -161,9 +161,7 @@ describe('an Execution that ended used its operation', () => {
     const { text, json } = await shown((machine) =>
       renderIncompleteInstallation(error, machine, { ...CONTEXT, lifecycle: 'uninstall' }),
     )
-    expect(text).toContain(
-      'Read this run: astrale domain installation status execution-1 --uninstall -i app',
-    )
+    expect(text).toContain('Read this run: astrale execution status execution-1 -i app')
     expect(text).not.toContain('--operation')
     expect(json).not.toHaveProperty('fresh')
   })
@@ -225,17 +223,15 @@ describe('a failure before any outcome says whether an Execution exists', () => 
     expect(text).toContain(
       'The install started as execution-1 and continues on the Kernel; this command could not read how it ends.',
     )
-    expect(text).toContain('Read this run: astrale domain installation status execution-1 -i app')
-    expect(text).toContain(
-      'Wait for it: astrale domain installation result execution-1 --wait -i app',
-    )
+    expect(text).toContain('Read this run: astrale execution status execution-1 -i app')
+    expect(text).toContain('Wait for it: astrale execution result execution-1 --wait -i app')
     expect(text).not.toContain('Delivery is unknown')
     expect(json).toMatchObject({
       error: 'TIMEOUT',
       execution: 'execution-1',
       operation: CONTEXT.recovery.operation,
-      observe: 'astrale domain installation status execution-1 -i app',
-      follow: 'astrale domain installation result execution-1 --wait -i app',
+      observe: 'astrale execution status execution-1 -i app',
+      follow: 'astrale execution result execution-1 --wait -i app',
     })
   })
 })
@@ -476,7 +472,7 @@ describe('a replayed end is the recorded one, said once and in the past tense', 
     )
     expect(runningReport(running, replayed)).toMatchObject({
       replayed: true,
-      follow: 'astrale domain installation result execution-1 --wait -i app',
+      follow: 'astrale execution result execution-1 --wait -i app',
     })
     expect(runningReport(running, replayed)).not.toHaveProperty('replay')
     expect(runningReport(running, CONTEXT)).not.toHaveProperty('replayed')
@@ -591,9 +587,7 @@ test('an interrupted wait tells a human the Execution continues and how to follo
   }
   const text = stripVTControlCharacters(lines.join('\n'))
   expect(text).toContain('Stopped waiting: the install continues on the Kernel as execution-1.')
-  expect(text).toContain(
-    'Wait for it: astrale domain installation result execution-1 --wait -i app',
-  )
+  expect(text).toContain('Wait for it: astrale execution result execution-1 --wait -i app')
   expect(text).toContain(
     `Interrupted before the Kernel answered: if the uninstall reached it, it runs under operation ${CONTEXT.recovery.operation}.`,
   )
@@ -629,9 +623,7 @@ describe('a conflict or a pending result says what to do next', () => {
       `Operation ${CONTEXT.recovery.operation} already names another request: ` +
       'execution-9 (online install, completed). Nothing ran for this command.'
     expect(text).toContain(`SCHEMA_OPERATION_CONFLICT: ${message}`)
-    expect(text).toContain(
-      "Read that request's run: astrale domain installation status execution-9 -i app",
-    )
+    expect(text).toContain("Read that request's run: astrale execution status execution-9 -i app")
     expect(text).toContain(`Run this install with a fresh operation: ${CONTEXT.recovery.fresh}`)
     // Never that request's outcome, never the same operation again.
     expect(text).not.toContain('already ran')
@@ -641,7 +633,7 @@ describe('a conflict or a pending result says what to do next', () => {
       hint: message,
       operation: CONTEXT.recovery.operation,
       conflict: { execution: 'execution-9', mode: 'online', state: 'completed' },
-      observe: 'astrale domain installation status execution-9 -i app',
+      observe: 'astrale execution status execution-9 -i app',
       fresh: CONTEXT.recovery.fresh,
     })
     expect(json).not.toHaveProperty('execution')

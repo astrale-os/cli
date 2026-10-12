@@ -4,147 +4,102 @@ import { Command } from 'commander'
 import { registerCommand } from '../../../program/registry'
 import { installationCommand, installationCommands } from '../installation'
 
-test('observes or signals the exact existing Execution once, using caller authority', async () => {
-  const calls: unknown[] = []
-  const api = Object.fromEntries(
-    ['status', 'result', 'apply', 'abort', 'cancel', 'resume'].map((method) => [
-      method,
-      async (...args: unknown[]) => {
-        calls.push([method, ...args])
-        return { state: 'waiting' }
-      },
-    ]),
-  )
-  const ctx = {
-    session: {
-      schema: {
-        installation: api,
-        install: () => {
-          throw new Error('Must not start an install')
-        },
-      },
+/** A repair session whose status announces `detail`; every Method sent to it is recorded. */
+function repairSession(detail?: Readonly<Record<string, unknown>>) {
+  const calls: unknown[][] = []
+  const installation = {
+    status: async (...args: unknown[]) => {
+      calls.push(['status', ...args])
+      return {
+        id: 'existing-execution',
+        state: 'waiting',
+        ...(detail === undefined ? {} : { detail }),
+      }
     },
+    apply: async (...args: unknown[]) => void calls.push(['apply', ...args]),
+    abort: async (...args: unknown[]) => void calls.push(['abort', ...args]),
   }
-  const opts = {
-    timeout: '5000',
-    command: '3',
-    attempt: '2',
-    wait: true,
-    validationScope: 'full' as const,
-    validationCounts: 'exact' as const,
+  const install = () => {
+    throw new Error('Must not start an install')
   }
-  for (const method of ['status', 'result', 'apply', 'abort', 'cancel', 'resume'] as const) {
-    const command = installationCommand(method, 'existing-execution', opts)
-    expect(command.credential).toEqual({ principal: 'caller' })
-    const result = await command.fn(ctx as never)
-    if (method === 'apply' || method === 'abort')
-      expect(result).toMatchObject({ execution: 'existing-execution', accepted: true })
-  }
-  expect(calls).toEqual([
-    ['status', 'existing-execution', { timeoutMs: 5000 }],
-    // --timeout bounds the whole read, its wait included.
-    ['result', 'existing-execution', { waitMs: 5000 }, { timeoutMs: 5000 }],
-    [
-      'apply',
-      'existing-execution',
-      { index: 3, validation: { scope: 'full', counts: 'exact' } },
-      { timeoutMs: 5000 },
-    ],
-    ['abort', 'existing-execution', 2, { timeoutMs: 5000 }],
-    ['cancel', 'existing-execution', {}, { timeoutMs: 5000 }],
-    ['resume', 'existing-execution', { timeoutMs: 5000 }],
-  ])
-})
+  return { calls, ctx: { session: { schema: { installation, install } } } as never }
+}
 
-test('a result read names the commands that follow its Execution while it still runs', () => {
-  const target = { instance: 'app', as: 'root' }
-  expect(installationCommand('result', 'existing-execution', target).pending).toEqual<unknown>({
+test('apply sends the command the session awaits, with its validation, as the caller', async () => {
+  const { calls, ctx } = repairSession({ phase: 'awaiting', command: 3 })
+  const command = installationCommand('apply', 'existing-execution', {
+    validationScope: 'full',
+    validationCounts: 'exact',
+  })
+  expect(command.credential).toEqual({ principal: 'caller' })
+  expect(await command.fn(ctx)).toEqual<unknown>({
     execution: 'existing-execution',
-    follow: 'astrale domain installation result existing-execution --wait -i app --as root',
-    observe: 'astrale domain installation status existing-execution -i app --as root',
-    waited: false,
+    signal: 'command:3',
+    accepted: true,
   })
-  expect(
-    installationCommand('result', 'existing-execution', {
-      ...target,
-      uninstall: true,
-      wait: true,
-    }).pending,
-  ).toMatchObject({
-    observe: 'astrale domain installation status existing-execution --uninstall -i app --as root',
-    waited: true,
-  })
-  expect(installationCommand('status', 'existing-execution', target)).not.toHaveProperty('pending')
-})
-
-test('admission rejects invalid IDs and missing, zero, fractional or unsafe signal indexes before connecting', () => {
-  expect(() => installationCommand('status', '@not-an-id', {})).toThrow('Execution ID')
-  for (const value of [undefined, '0', '-1', '1.5', '1e2', '9007199254740992']) {
-    expect(() => installationCommand('apply', 'existing-execution', { command: value })).toThrow(
-      '--command',
-    )
-    expect(() => installationCommand('abort', 'existing-execution', { attempt: value })).toThrow(
-      '--attempt',
-    )
-  }
-})
-
-test('a result read waits only with --wait, 110 s without --timeout', async () => {
-  const calls: unknown[] = []
-  const result = async (...args: unknown[]) => void calls.push(args)
-  const ctx = { session: { schema: { installation: { result } } } }
-  await installationCommand('result', 'existing-execution', {}).fn(ctx as never)
-  await installationCommand('result', 'existing-execution', { wait: true }).fn(ctx as never)
   expect(calls).toEqual([
-    ['existing-execution', {}, undefined],
-    ['existing-execution', { waitMs: 110_000 }, undefined],
+    ['status', 'existing-execution'],
+    ['apply', 'existing-execution', { index: 3, validation: { scope: 'full', counts: 'exact' } }],
   ])
 })
 
-test('Root repair command flags are registered without force or delete', async () => {
+test('abort stops the attempt the session runs', async () => {
+  const { calls, ctx } = repairSession({
+    phase: 'attempting',
+    attempt: { number: 2, destination: 'target' },
+  })
+  expect(await installationCommand('abort', 'existing-execution', {}).fn(ctx)).toEqual<unknown>({
+    execution: 'existing-execution',
+    signal: 'abort:2',
+    accepted: true,
+  })
+  expect(calls).toEqual([
+    ['status', 'existing-execution'],
+    ['abort', 'existing-execution', 2],
+  ])
+})
+
+test('a session that announces no index is refused before any signal is sent', async () => {
+  const cases = [
+    ['apply', { phase: 'attempting', attempt: { number: 1, destination: 'target' } }],
+    ['apply', { phase: 'draining' }],
+    ['apply', undefined],
+    ['abort', { phase: 'awaiting', command: 2 }],
+    // An attempt back to the source never reads its abort signal.
+    ['abort', { phase: 'attempting', attempt: { number: 3, destination: 'previous' } }],
+  ] as const
+  for (const [operation, detail] of cases) {
+    const { calls, ctx } = repairSession(detail)
+    const command = installationCommand(operation, 'existing-execution', { instance: 'app' })
+    await expect(command.fn(ctx)).rejects.toMatchObject({
+      code: operation === 'apply' ? 'SESSION_NOT_AWAITING' : 'SESSION_NO_ATTEMPT',
+      hint: expect.stringContaining('astrale execution status existing-execution -i app'),
+    })
+    expect(calls).toEqual([['status', 'existing-execution']])
+  }
+})
+
+test('admission rejects an invalid Execution ID before connecting', () => {
+  expect(() => installationCommand('apply', '@not-an-id', {})).toThrow('Execution ID')
+})
+
+test('only apply and abort are registered, apply with its validation flags', async () => {
+  expect(installationCommands.map(({ name }) => name)).toEqual(['apply', 'abort'])
   const program = new Command()
   let seen: unknown
-  const apply = installationCommands.find(({ name }) => name === 'apply')!
   registerCommand(program, {
-    ...apply,
+    ...installationCommands[0]!,
     action: async (id, opts) => {
       seen = { id, opts }
     },
   })
-  await program.parseAsync(
-    ['apply', 'existing-execution', '--command', '2', '--validation-scope', 'full'],
-    { from: 'user' },
-  )
-  expect(seen).toMatchObject({
-    id: 'existing-execution',
-    opts: { command: '2', validationScope: 'full' },
+  await program.parseAsync(['apply', 'existing-execution', '--validation-scope', 'full'], {
+    from: 'user',
   })
-  expect(installationCommands.some(({ name }) => name === 'delete')).toBe(false)
+  expect(seen).toMatchObject({ id: 'existing-execution', opts: { validationScope: 'full' } })
   expect(
     installationCommands
       .flatMap(({ options }) => options ?? [])
-      .some(({ flags }) => flags.includes('--force')),
+      .some(({ flags }) => /--(command|attempt|force)\b/.test(flags)),
   ).toBe(false)
-})
-
-test('uninstall observation uses its own decoder and never the install decoder', async () => {
-  const command = installationCommand('result', 'existing-uninstall', { uninstall: true })
-  const outcome = { kind: 'cancelled' as const }
-  expect(
-    await command.fn({
-      session: {
-        schema: {
-          installation: {
-            result: () => {
-              throw Error('Wrong decoder')
-            },
-          },
-          uninstallation: { result: async () => outcome },
-        },
-      },
-    } as never),
-  ).toBe(outcome)
-  expect(() =>
-    installationCommand('apply', 'existing-uninstall', { uninstall: true, command: '1' }),
-  ).toThrow('no repair session')
 })
