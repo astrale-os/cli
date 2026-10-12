@@ -193,6 +193,59 @@ export function renderInterruptedWait(context: LifecycleContext, machine: boolea
   log.dim(`  Read this run: ${installationStatusCommand(started, lifecycle, recovery.target)}`)
 }
 
+/** The commands a Root maintenance session accepts while it awaits its next command. */
+function sessionCommands(installation: Installation, recovery: OperationRecovery) {
+  const { execution, status } = installation
+  const target = recovery.target ?? []
+  const command = status.detail?.command
+  const line = (method: string, ...args: string[]) =>
+    shellCommand(['astrale', 'domain', 'installation', method, execution, ...args, ...target])
+  return {
+    observe: installationStatusCommand(execution, 'install', target),
+    ...(command === undefined ? {} : { apply: line('apply', '--command', String(command)) }),
+    cancel: line('cancel'),
+  }
+}
+
+/**
+ * The `--json` answer of an install that opened a Root maintenance session awaiting its next
+ * command: its Execution and status, the operation, and the commands the session accepts.
+ */
+export function openSessionReport(
+  installation: Installation,
+  context: LifecycleContext,
+): Readonly<Record<string, unknown>> {
+  const { recovery } = context
+  return {
+    execution: installation.execution,
+    lifecycle: 'install',
+    status: installation.status,
+    operation: recovery.operation,
+    ...sessionCommands(installation, recovery),
+  }
+}
+
+/**
+ * Present a Root maintenance session that awaits its next command, what `install --mode
+ * maintenance` asked for: its id, the command index it awaits, that the Instance is closed to other
+ * callers meanwhile, and the commands it accepts.
+ */
+export function renderOpenSession(installation: Installation, context: LifecycleContext): void {
+  const { recovery } = context
+  const command = installation.status.detail?.command
+  const { observe, apply, cancel } = sessionCommands(installation, recovery)
+  log.success(
+    `Maintenance session ${installation.execution} awaits ${command === undefined ? 'Root' : `command ${command}`} (operation ${recovery.operation})`,
+  )
+  log.dim(
+    '  The Instance is closed to other callers until the session applies its target or cancels.',
+  )
+  log.dim('  Repair the data as Root, then:')
+  log.dim(`  Read it:  ${observe}`)
+  if (apply !== undefined) log.dim(`  Apply:    ${apply}`)
+  log.dim(`  Cancel:   ${cancel} (attempts to return to the source schema)`)
+}
+
 const DONE = { install: 'installed', uninstall: 'uninstalled' } as const
 
 /**

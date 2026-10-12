@@ -27,9 +27,12 @@ Behavior:
   conflict too, when it is planned again from a state its first run moved.
 
   --mode maintenance opens a Root-only repair session; other callers are
-  blocked while it is open. It waits for explicit Execution signals, not for
-  this CLI process. Retain its execution ID, inspect its status and repair the
-  data before applying the target with domain installation apply. Never delete or force-cancel it as a normal
+  blocked while it is open. The CLI watches it within --timeout while it
+  drains the Instance, until it awaits its first command, then prints the
+  commands it accepts and exits 0 (--no-wait: no watch). It waits for explicit
+  Execution signals, not for this CLI process. Retain its execution ID,
+  inspect its status and repair the data before applying the target with
+  domain installation apply. Never delete or force-cancel it as a normal
   recovery step: those actions can leave the source schema uncertified.
 
   URL references (https://, or http:// for a local Host) go straight to the

@@ -264,7 +264,10 @@ belongs to as `conflict` (`execution`, and `mode`/`state` when known) with
 conflict too, since it is planned again from the current state (consent,
 guards): follow the Execution by its id instead.
 
-`--mode maintenance` starts a Root repair session and returns without waiting.
+`--mode maintenance` starts a Root repair session and watches it, within
+`--timeout`, until it has drained the Instance and awaits its first command;
+then it prints the session (`--json`: `execution`, `status`, `apply`, `cancel`)
+and exits 0. `--no-wait` returns without that watch.
 The Instance excludes other callers during this session. Read its `status`,
 repair data using the Root identity, then send its exact next `detail.command`
 with `apply --command`. `--validation-scope full` and

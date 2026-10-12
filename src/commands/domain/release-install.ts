@@ -9,6 +9,7 @@ import type {
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import { ResponseError } from '@astrale-os/sdk/client'
+import { DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS } from '@astrale-os/sdk/client/schema'
 import { parseReference } from '@astrale-os/sdk/versioning'
 import chalk from 'chalk'
 
@@ -25,6 +26,8 @@ import {
   announcingLifecycle,
   IncompleteInstallation,
   installationResult,
+  openSessionReport,
+  renderOpenSession,
   conflictFailure,
   type Lifecycle,
 } from '../../connection/installation-result'
@@ -294,6 +297,12 @@ interface InstallOutcome {
   readonly after: readonly InstalledRelease[] | undefined
 }
 
+/** What an install answers: its outcome, or the maintenance session it opened, awaiting Root. */
+type InstallAnswer = InstallOutcome | { readonly session: Installation }
+
+/** Each step of a session watch: a bounded wait for the outcome, then a status read. */
+const WATCH_WAIT_MS = 1_000
+
 async function installReleases(
   session: ClientSession,
   sources: readonly ReleaseSource[],
@@ -385,7 +394,7 @@ async function installReleases(
     fresh: installCommand(sources.map(namedAgain), opts, changes),
     target: targetFlags(opts),
   }
-  const failure = await runInstallCall<InstallOutcome>(opts, {
+  const failure = await runInstallCall<InstallAnswer>(opts, {
     lifecycle: 'install',
     label:
       sources.length === 1
@@ -393,6 +402,7 @@ async function installReleases(
         : `Installing ${sources.length} domains (operation ${operation})`,
     recovery,
     call: async (started) => {
+      const deadline = run.deps.now() + (timeout?.timeoutMs ?? DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS)
       let installation: Installation
       try {
         installation = await run.deps.lifecycle(session, started).install(request, timeout)
@@ -401,10 +411,23 @@ async function installReleases(
         // to say which one it is.
         throw await conflictFailure(error, session.schema)
       }
+      // A maintenance session drains the Instance, then awaits Root's command: what it asked for.
+      if (opts.mode === 'maintenance') {
+        if (opts.wait !== false) {
+          installation = await watchSession(session, installation, deadline, run.deps)
+        }
+        if (installation.status.detail?.phase === 'awaiting') return { session: installation }
+      }
       const result = installationResult(installation)
       return { installation, result, after: await installedAfter(session, machine) }
     },
-    format: ({ installation, result, after }, raw) => {
+    format: (answer, raw, context) => {
+      if ('session' in answer) {
+        if (raw) output({ ...openSessionReport(answer.session, context), precheck }, opts)
+        else renderOpenSession(answer.session, context)
+        return
+      }
+      const { installation, result, after } = answer
       const report = installReferences(roots, before, after, changes, consent)
       mismatched = report.filter((reference) => {
         const installed = after?.find((entry) => entry.origin === reference.origin)
@@ -832,6 +855,41 @@ function warnUnreadableConsentOrigins(
         'If it is installed, consenting to its issuer change needs read access to its installation.',
     )
   }
+}
+
+/**
+ * Follow a maintenance session until it awaits Root's command, ends or pauses, within `deadline`,
+ * as the Kernel client's canonical watch does: a bounded wait for the outcome, which holds nothing
+ * the session's drain needs, then a status read. A session first drains the Instance's open work.
+ */
+async function watchSession(
+  session: ClientSession,
+  installation: Installation,
+  deadline: number,
+  deps: Pick<ReferenceInstallDependencies, 'now' | 'sleep'>,
+): Promise<Installation> {
+  const { execution } = installation
+  let { status } = installation
+  while (
+    status.outcome === undefined &&
+    status.state !== 'paused' &&
+    status.detail?.phase !== 'awaiting'
+  ) {
+    const left = deadline - deps.now()
+    if (left <= 0) break
+    const step = Math.min(WATCH_WAIT_MS, left)
+    const began = deps.now()
+    await session.schema.installation
+      .result(execution, { waitMs: step }, { timeoutMs: step + WATCH_WAIT_MS })
+      .catch(() => undefined)
+    // A wait the Kernel answers at once does not pace the watch.
+    const spent = deps.now() - began
+    if (spent < step) await deps.sleep(step - spent)
+    status = await session.schema.installation.status(execution, {
+      timeoutMs: Math.max(1, deadline - deps.now()) + WATCH_WAIT_MS,
+    })
+  }
+  return { ...installation, status }
 }
 
 async function installedAfter(

@@ -43,7 +43,11 @@ export async function runInstallCall<Result>(
     readonly label: string
     readonly recovery: OperationRecovery
     readonly call: (started: (execution: InstallExecutionId) => void) => Promise<Result>
-    readonly format: (result: Result, machine: boolean) => void | Promise<void>
+    readonly format: (
+      result: Result,
+      machine: boolean,
+      context: LifecycleContext,
+    ) => void | Promise<void>
   },
 ): Promise<InstallFailure | undefined> {
   const machine = isMachine(opts)
@@ -71,7 +75,7 @@ export async function runInstallCall<Result>(
       .finally(() => process.off('SIGINT', interrupted))
     spin?.succeed(`${step.label} ${chalk.dim(formatElapsed(performance.now() - startTime))}`)
     if (!machine) console.log('')
-    await step.format(result, machine)
+    await step.format(result, machine, context())
     return undefined
   } catch (error) {
     if (!machine && spin) spin.fail(`${step.label} failed`)

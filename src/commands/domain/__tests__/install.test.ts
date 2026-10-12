@@ -165,7 +165,7 @@ function harness(
     readonly listing?: (call: number) => Promise<readonly InstalledRelease[]>
     readonly lifecycle?: (request: InstallRequest) => Promise<Installation>
     readonly installation?: Installation
-    /** What `installation.status` answers for each Execution id. */
+    /** What `installation.status` answers for each Execution id; a list answers in turn. */
     readonly executions?: Readonly<Record<string, unknown>>
     readonly install?: (request: InstallRequest) => Promise<InstallResult>
     readonly inspect?: (origin: string) => Promise<unknown>
@@ -204,9 +204,18 @@ function harness(
       installation: {
         status: async (execution: string) => {
           run.reads.push(`status ${execution}`)
-          const status = options.executions?.[execution]
-          if (status === undefined) throw new Error(`No Execution ${execution}`)
-          return status
+          const answers = options.executions?.[execution]
+          if (answers === undefined) throw new Error(`No Execution ${execution}`)
+          if (!Array.isArray(answers)) return answers
+          const reads = run.reads.filter((read) => read === `status ${execution}`).length
+          return answers[Math.min(reads, answers.length) - 1]
+        },
+        result: async (execution: string) => {
+          run.reads.push(`result ${execution}`)
+          throw new ResponseError(4001 as never, 'Pending.', INVOCATION, {
+            code: 'EXECUTION_PENDING',
+            details: {},
+          })
         },
       },
     },
@@ -935,7 +944,7 @@ describe('durable installations', () => {
     })
   })
 
-  for (const state of ['pending', 'running', 'waiting', 'paused', 'failed', 'cancelled'] as const) {
+  for (const state of ['pending', 'running', 'paused', 'failed', 'cancelled'] as const) {
     test(`${state} never claims success or reads installed pins after the call`, async () => {
       let listings = 0
       const status = {
@@ -954,9 +963,6 @@ describe('durable installations', () => {
             : state === 'cancelled'
               ? { kind: 'cancelled' as const }
               : undefined,
-        ...(state === 'waiting'
-          ? { detail: { phase: 'awaiting' as const, command: 1, mode: 'maintenance' as const } }
-          : {}),
       }
       const run = harness({
         served: { [A]: served(AGENCIES, A, '1') },
@@ -1009,6 +1015,73 @@ describe('durable installations', () => {
       expect(listings).toBe(1)
     })
   }
+
+  test('--mode maintenance watches the session until it awaits Root, then shows its commands', async () => {
+    const draining = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      id: EXECUTION,
+      state: 'running' as const,
+      outcome: undefined,
+      detail: { phase: 'draining' as const, mode: 'maintenance' as const },
+    }
+    const awaiting = {
+      ...draining,
+      state: 'waiting' as const,
+      detail: { phase: 'awaiting' as const, mode: 'maintenance' as const, command: 1 },
+    }
+    let listings = 0
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      listing: async () => {
+        listings++
+        return []
+      },
+      installation: { execution: EXECUTION as never, status: draining as never },
+      executions: { [EXECUTION]: [draining, awaiting] },
+    })
+    await installByReference(
+      [A],
+      { ...JSON_OUTPUT, mode: 'maintenance', instance: 'staging', as: 'root' },
+      run.deps,
+    )
+    expect(run.reads.filter((read) => read.startsWith('status'))).toHaveLength(2)
+    expect(JSON.parse(io.stdout)).toMatchObject({
+      execution: EXECUTION,
+      status: { state: 'waiting', detail: { phase: 'awaiting', command: 1 } },
+      operation: GENERATED,
+      apply: `astrale domain installation apply ${EXECUTION} --command 1 -i staging --as root`,
+      cancel: `astrale domain installation cancel ${EXECUTION} -i staging --as root`,
+    })
+    // An open session installed nothing: no pins are read back.
+    expect(listings).toBe(1)
+
+    const shown = await human(() =>
+      installByReference([A], { mode: 'maintenance', instance: 'staging' }, run.deps),
+    )
+    expect(shown.lines).toContain(
+      `Maintenance session ${EXECUTION} awaits command 1 (operation ${GENERATED})`,
+    )
+    expect(shown.lines).toContain('The Instance is closed to other callers')
+  })
+
+  test('--no-wait does not watch the session: an awaiting one is shown, any other is not', async () => {
+    const awaiting = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      state: 'waiting' as const,
+      outcome: undefined,
+      detail: { phase: 'awaiting' as const, mode: 'maintenance' as const, command: 1 },
+    }
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: { execution: EXECUTION as never, status: awaiting as never },
+    })
+    await installByReference([A], { ...JSON_OUTPUT, mode: 'maintenance', wait: false }, run.deps)
+    expect(run.reads.filter((read) => read.startsWith('status'))).toEqual([])
+    expect(JSON.parse(io.stdout)).toMatchObject({
+      execution: EXECUTION,
+      status: { state: 'waiting' },
+    })
+  })
 
   test('a failed install used its operation: it names the fresh command that tries again', async () => {
     const status = {
@@ -1196,16 +1269,20 @@ describe('published SDK durable decoder through the install command', () => {
           status: { state },
         })
         expect(listings).toBe(2)
+      } else if (state === 'waiting') {
+        // A maintenance session that awaits Root is what `--mode maintenance` asked for.
+        await installByReference([A], { ...JSON_OUTPUT, mode: 'maintenance' }, run.deps)
+        expect(JSON.parse(io.stdout)).toMatchObject({
+          execution: 'install-execution',
+          status: { state, detail: { phase: 'awaiting', command: 1 } },
+        })
+        expect(listings).toBe(1)
       } else {
-        const failure = await refused(
-          [A],
-          { ...JSON_OUTPUT, ...(state === 'waiting' ? { mode: 'maintenance' as const } : {}) },
-          run,
-        )
+        const failure = await refused([A], JSON_OUTPUT, run)
         expect(failure).toMatchObject({
           execution: 'install-execution',
           status: { state },
-          error: state === 'failed' ? 'DATA_MIGRATION_REQUIRED' : 'INSTALLATION_PENDING',
+          error: 'DATA_MIGRATION_REQUIRED',
         })
         expect(listings).toBe(1)
       }
