@@ -4,6 +4,7 @@ import type { KernelCommandOpts, OperationRecovery } from '../../connection'
 import type { InstallPrecheck } from './install-precheck'
 
 import { formatKernelError } from '../../connection/errors'
+import { failureExitCode } from '../../connection/installation-result'
 import { formatElapsed } from '../../lib/terminal/format'
 import { fatal, log, spinner } from '../../lib/terminal/log'
 import { isMachine } from '../../lib/terminal/output'
@@ -54,7 +55,10 @@ export async function runInstallCall<Result>(
   }
 }
 
-/** Render one install failure and exit 1. */
+/**
+ * Render one install failure and exit: 2 for an install that ended `failed`, 5 while another schema
+ * change is active, else 1.
+ */
 export async function exitWithInstallFailure(
   failure: InstallFailure,
   opts: KernelCommandOpts,
@@ -68,5 +72,5 @@ export async function exitWithInstallFailure(
   if (!machine && failure.precheck?.command !== undefined) {
     log.dim(`  The pre-check proposes: ${failure.precheck.command}`)
   }
-  process.exit(1)
+  process.exit(failure.render === 'kernel' ? failureExitCode(failure.error) : 1)
 }

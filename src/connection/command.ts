@@ -10,6 +10,7 @@ import { formatElapsed } from '../lib/terminal/format'
 import { spinner } from '../lib/terminal/log'
 import { isMachine, present } from '../lib/terminal/output'
 import { formatKernelError } from './errors'
+import { failureExitCode } from './installation-result'
 import { withAdminClientSession, withClientSession } from './session'
 
 export interface KernelCommandOpts extends ConnectionOptions {
@@ -79,7 +80,7 @@ export async function runKernelCommand<T>(input: {
     await formatKernelError(error, isRaw, undefined, opts.debug, {
       recovery: input.recovery,
     })
-    process.exit(1)
+    process.exit(failureExitCode(error))
   }
 }
 

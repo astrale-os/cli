@@ -9,8 +9,10 @@ export default {
   afterHelpText: `
 Behavior:
   Installation is durable. The CLI waits within --timeout in online mode and
-  reports success only after completion. A failure or an unfinished execution
-  exits nonzero; --json retains its execution ID and exact status. Retry with
+  reports success only after completion. An installation that ended failed
+  exits 2, one refused while another schema change
+  is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure or an unfinished
+  execution exits 1. --json retains its execution ID and exact status. Retry with
   the printed operation ID and the same intent to observe that installation,
   never a new operation. --no-wait returns without waiting.
   After an issuer transition, original consent may no longer be reconstructible.

@@ -5,9 +5,12 @@ import type {
   UninstallReceipt,
 } from '@astrale-os/sdk/client/schema'
 
+import { ResponseError } from '@astrale-os/sdk/client'
+
 import type { OperationRecovery } from './command'
 
 import { log } from '../lib/terminal/log'
+import { reasonCode } from './reasons'
 
 /** A successful call can still describe an unfinished or rejected installation. */
 export class IncompleteInstallation extends Error {
@@ -17,6 +20,22 @@ export class IncompleteInstallation extends Error {
   ) {
     super(`Installation ${installation.execution} is ${installation.status.state}.`)
   }
+}
+
+/**
+ * Exit status of a Kernel command that failed: 2 when its durable install or uninstall Execution
+ * ended `failed` (the Kernel refused it inside its run, and its error and report say why), 5 when
+ * the Kernel refused it while another schema change holds the Instance (the client spec's
+ * conflict code), else 1.
+ */
+export function failureExitCode(error: unknown): 1 | 2 | 5 {
+  if (error instanceof ResponseError && reasonCode(error.reason) === 'SCHEMA_CHANGE_ACTIVE') {
+    return 5
+  }
+  return error instanceof IncompleteInstallation &&
+    error.installation.status.outcome?.kind === 'failed'
+    ? 2
+    : 1
 }
 
 export function installationResult(installation: Installation): InstallResult

@@ -244,11 +244,13 @@ deploy and with which secrets; they name no instance and do not use the CLI's ac
 
 Installation and uninstallation are durable Kernel executions. The CLI waits
 within the request timeout and reports completion only from a completed outcome.
-`--json` adds `execution` and `status` to the committed result. An unfinished,
-failed or cancelled install/uninstall exits 1, retaining those fields on stderr
+`--json` adds `execution` and `status` to the committed result. A failed
+install/uninstall exits 2, an unfinished or cancelled one exits 1, retaining
+those fields on stderr
 with the exact operation ID and retry command. Keep them: retrying an exact
 operation observes the same run; generating another operation starts another
-intent. Only a completed install normally reads back and verifies the installed pins.
+intent. One refused `SCHEMA_CHANGE_ACTIVE` (another schema change holds the
+Instance) exits 5. Only a completed install normally reads back and verifies the installed pins.
 A replay after an issuer transition can recompute different consent: the CLI does
 not store or reconstruct the original request. If that exact replay is refused
 with `IDEMPOTENCY_KEY_CONFLICT`, it checks every requested release/build pin,
