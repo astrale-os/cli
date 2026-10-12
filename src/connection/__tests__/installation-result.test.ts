@@ -218,6 +218,103 @@ describe('a failure before any outcome says whether an Execution exists', () => 
   })
 })
 
+describe('an uninstall refused for its remaining data says so in uninstall terms', () => {
+  /** DATA_MIGRATION_REQUIRED as a beta.6 Kernel ends a safe uninstall, with `requirements`. */
+  function refusedUninstall(requirements: readonly unknown[]) {
+    return new IncompleteInstallation(
+      installation('failed', {
+        kind: 'failed',
+        error: {
+          code: 'DATA_MIGRATION_REQUIRED',
+          message: 'Existing data requires an explicit migration before schema activation.',
+          details: { previous: 'sha256:p', target: 'sha256:t', requirements, report: {} },
+        },
+      }),
+      'uninstall',
+    )
+  }
+  const item = { kind: 'definition', ref: { kind: 'class', name: 'Item', origin: 'qa.test' } }
+  const uninstall = { ...CONTEXT, lifecycle: 'uninstall' as const }
+
+  test('data a safe uninstall would delete: how much of which Class, delete it or --destructive', async () => {
+    const error = refusedUninstall([
+      {
+        operation: 'remove-facts',
+        reason: 'destructive-change',
+        subject: item,
+        work: { observedFacts: 1 },
+      },
+    ])
+    const { text, json } = await shown((machine) =>
+      renderIncompleteInstallation(error, machine, uninstall),
+    )
+    expect(text).toContain('DATA_MIGRATION_REQUIRED: Data of the Domains to uninstall remains.')
+    expect(text).toContain('Item (qa.test): 1 fact remains.')
+    expect(text).toContain(
+      'A safe uninstall never deletes data: delete it, or uninstall with --destructive to delete it with the Domains.',
+    )
+    expect(text).toContain('nothing was uninstalled')
+    expect(text).not.toContain('schema activation')
+    // The machine document keeps the Kernel's own message and details.
+    expect(json.message).toBe(
+      'Existing data requires an explicit migration before schema activation.',
+    )
+  })
+
+  /** The work of a Class above the bound one uninstall deletes: counts stop there. */
+  const aboveBound = {
+    maximumBytes: 10_000_000,
+    maximumFacts: 10_000,
+    observedBytes: 2_039_127,
+    observedFacts: 10_001,
+  }
+  const remedy =
+    'Delete facts of each such Class until at most 10000 facts and 10000000 bytes of it remain, ' +
+    'then uninstall again (with --destructive to delete the rest with the Domains).'
+
+  test('a safe uninstall above the bound: at least that much, and only the remedy that works', async () => {
+    const error = refusedUninstall([
+      { operation: 'remove-facts', reason: 'destructive-change', subject: item, work: aboveBound },
+    ])
+    const { text } = await shown((machine) =>
+      renderIncompleteInstallation(error, machine, uninstall),
+    )
+    expect(text).toContain(
+      'DATA_MIGRATION_REQUIRED: More data of the Domains to uninstall remains than one uninstall deletes.',
+    )
+    expect(text).toContain('Item (qa.test): at least 10001 facts remain.')
+    expect(text).toContain(remedy)
+    // --destructive alone is refused above the bound: never offered as the way out.
+    expect(text).not.toContain('or uninstall with --destructive')
+  })
+
+  test('a destructive uninstall above the bound: the same count and remedy', async () => {
+    const error = refusedUninstall([
+      { operation: 'remove-facts', reason: 'budget-exceeded', subject: item, work: aboveBound },
+    ])
+    const { text } = await shown((machine) =>
+      renderIncompleteInstallation(error, machine, uninstall),
+    )
+    expect(text).toContain('Item (qa.test): at least 10001 facts remain.')
+    expect(text).toContain(remedy)
+  })
+
+  test('above the byte bound alone: at least that many bytes too', async () => {
+    const error = refusedUninstall([
+      {
+        operation: 'remove-facts',
+        reason: 'budget-exceeded',
+        subject: item,
+        work: { ...aboveBound, observedFacts: 40, observedBytes: 10_000_001 },
+      },
+    ])
+    const { text } = await shown((machine) =>
+      renderIncompleteInstallation(error, machine, uninstall),
+    )
+    expect(text).toContain('Item (qa.test): at least 40 facts (at least 10000001 bytes) remain.')
+  })
+})
+
 describe('a conflict says what to do next', () => {
   const refusal = (code: string, details: Record<string, string> = {}) =>
     new ResponseError(

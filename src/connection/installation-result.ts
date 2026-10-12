@@ -15,7 +15,13 @@ import type { OperationRecovery } from './command'
 
 import { shellCommand } from '../lib/shell-command'
 import { log } from '../lib/terminal/log'
-import { conflictDetails, operationConflict, reasonCode } from './reasons'
+import {
+  conflictDetails,
+  migrationRequirements,
+  operationConflict,
+  reasonCode,
+  type MigrationRequirement,
+} from './reasons'
 
 /** A successful call can still describe an unfinished or rejected installation. */
 export class IncompleteInstallation extends Error {
@@ -180,7 +186,9 @@ export function renderIncompleteInstallation(
     )
     return
   }
-  log.error(`${code}: ${message}`)
+  const explained = failure === undefined ? undefined : explainFailure(error.kind, failure)
+  log.error(`${code}: ${explained?.message ?? message}`)
+  for (const line of explained?.lines ?? []) log.dim(`  ${line}`)
   if (outcome?.kind === 'failed') {
     log.dim(`  The ${error.kind} ran and was refused: nothing was ${DONE[error.kind]}.`)
   } else if (outcome?.kind === 'cancelled') {
@@ -356,4 +364,97 @@ export function lifecycleFailureNotes(
       `Run it again once that is resolved: ${recovery.fresh}`,
     ],
   }
+}
+
+/** A failure in the reader's terms: a headline replacing the Kernel's message, and what to do. */
+interface ExplainedFailure {
+  readonly message: string
+  readonly lines: readonly string[]
+}
+
+function explainFailure(
+  lifecycle: 'install' | 'uninstall',
+  failure: { readonly code: string; readonly details?: unknown },
+): ExplainedFailure | undefined {
+  if (failure.code !== 'DATA_MIGRATION_REQUIRED') return undefined
+  const requirements = migrationRequirements(failure.details)
+  return lifecycle === 'uninstall' ? uninstallDataRemains(requirements) : undefined
+}
+
+/**
+ * An uninstall refused because data typed by its Domains remains: how much of which Class, and
+ * what removes it. A safe uninstall never deletes data, and even `--destructive` deletes at most
+ * a bound of each Class. Above that bound the Kernel stops counting, so its count is a lower
+ * bound, and the one remedy that works is to bring each such Class under it first.
+ */
+function uninstallDataRemains(
+  requirements: readonly MigrationRequirement[],
+): ExplainedFailure | undefined {
+  const removals = requirements.filter(({ operation }) => operation === 'remove-facts')
+  if (removals.length === 0) return undefined
+  const lines = removals.map((requirement) => `${requirement.subject}: ${remaining(requirement)}`)
+  const references = removals.some(({ reason }) => reason === 'foreign-reference')
+    ? ['Data of other Domains references it: delete those references first.']
+    : []
+  const limit = removals
+    .filter(({ reason }) => reason !== 'foreign-reference')
+    .map(({ work }) => bound(work))
+    .find((value) => value !== undefined)
+  if (limit !== undefined) {
+    return {
+      message: 'More data of the Domains to uninstall remains than one uninstall deletes.',
+      lines: [
+        ...lines,
+        ...references,
+        `Delete facts of each such Class until at most ${limit} of it remain, then uninstall again (with --destructive to delete the rest with the Domains).`,
+      ],
+    }
+  }
+  return {
+    message: 'Data of the Domains to uninstall remains.',
+    lines: [
+      ...lines,
+      ...references,
+      ...(removals.some(({ reason }) => reason === 'destructive-change')
+        ? [
+            'A safe uninstall never deletes data: delete it, or uninstall with --destructive to delete it with the Domains.',
+          ]
+        : []),
+    ],
+  }
+}
+
+/**
+ * The bound one uninstall deletes of one Class, present only on a requirement above it, whose
+ * counts are then lower bounds.
+ */
+function bound(work: MigrationRequirement['work']): string | undefined {
+  const parts = [
+    ...(work.maximumFacts === undefined ? [] : [facts(work.maximumFacts)]),
+    ...(work.maximumBytes === undefined ? [] : [`${work.maximumBytes} bytes`]),
+  ]
+  return parts.length === 0 ? undefined : parts.join(' and ')
+}
+
+function facts(count: number): string {
+  return `${count} ${count === 1 ? 'fact' : 'facts'}`
+}
+
+/** How much of one subject remains: "at least" once the Kernel stopped counting at the bound. */
+function remaining({ reason, work }: MigrationRequirement): string {
+  const above = bound(work) !== undefined
+  const bytes =
+    above &&
+    work.observedBytes !== undefined &&
+    work.maximumBytes !== undefined &&
+    work.observedBytes > work.maximumBytes
+      ? ` (at least ${work.observedBytes} bytes)`
+      : ''
+  const count =
+    work.observedFacts === undefined
+      ? 'data'
+      : `${above ? 'at least ' : ''}${facts(work.observedFacts)}${bytes}`
+  if (reason === 'foreign-reference') return `${count} referenced by data of other Domains.`
+  const one = work.observedFacts === undefined || work.observedFacts === 1
+  return `${count} ${one ? 'remains' : 'remain'}.`
 }

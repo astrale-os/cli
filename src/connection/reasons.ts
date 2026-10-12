@@ -200,6 +200,68 @@ export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   )
 }
 
+/** One data migration a schema change requires, as `DATA_MIGRATION_REQUIRED` names it. */
+export interface MigrationRequirement {
+  /** What must happen to the data: `remove-facts`, `populate-required`, `rewrite-values`, … */
+  readonly operation: string
+  /** Why: `destructive-change`, `budget-exceeded`, `invalid-existing`, `foreign-reference`, … */
+  readonly reason: string
+  /** The Class, Property or Domain it concerns, as a reader names it. */
+  readonly subject: string
+  readonly work: {
+    readonly observedFacts?: number
+    readonly maximumFacts?: number
+    readonly observedBytes?: number
+    readonly maximumBytes?: number
+  }
+}
+
+const MAXIMUM_REQUIREMENTS = 32
+
+/**
+ * The requirements of a `DATA_MIGRATION_REQUIRED` failure's details, bounded; a requirement whose
+ * shape is not the published one is left out, so only what the Kernel stated is shown.
+ */
+export function migrationRequirements(details: unknown): readonly MigrationRequirement[] {
+  if (!record(details) || !Array.isArray(details.requirements)) return Object.freeze([])
+  return Object.freeze(
+    details.requirements.slice(0, MAXIMUM_REQUIREMENTS).flatMap((item): MigrationRequirement[] => {
+      if (
+        !record(item) ||
+        typeof item.operation !== 'string' ||
+        typeof item.reason !== 'string' ||
+        !record(item.work)
+      ) {
+        return []
+      }
+      const subject = migrationSubject(item.subject)
+      if (subject === undefined) return []
+      const measured = item.work
+      const work = Object.fromEntries(
+        ['observedFacts', 'maximumFacts', 'observedBytes', 'maximumBytes'].flatMap((key) =>
+          Number.isSafeInteger(measured[key]) ? [[key, measured[key] as number]] : [],
+        ),
+      )
+      return [Object.freeze({ operation: item.operation, reason: item.reason, subject, work })]
+    }),
+  )
+}
+
+/** A Class as `Item (crm.acme.dev)`, a Property by its key, a Domain by its origin. */
+function migrationSubject(subject: unknown): string | undefined {
+  if (!record(subject)) return undefined
+  if (subject.kind === 'domain' && typeof subject.origin === 'string') return subject.origin
+  if (subject.kind === 'property' && typeof subject.key === 'string') return subject.key
+  if (subject.kind !== 'definition' || !record(subject.ref)) return undefined
+  return definitionLabel(subject.ref)
+}
+
+/** A Class or other definition reference as `<name> (<origin>)`. */
+export function definitionLabel(ref: unknown): string | undefined {
+  if (!record(ref) || typeof ref.name !== 'string') return undefined
+  return typeof ref.origin === 'string' ? `${ref.name} (${ref.origin})` : ref.name
+}
+
 /**
  * A refusal of an operation id another request already used: `SCHEMA_OPERATION_CONFLICT` for an
  * install or uninstall (`IDEMPOTENCY_KEY_CONFLICT` on 1.0.0-beta.5 and beta.6 Kernels).

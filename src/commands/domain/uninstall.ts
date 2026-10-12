@@ -58,7 +58,11 @@ Behavior:
   Safe mode is the default and never deletes application data. --destructive
   deletes every application fact whose concrete Class is owned by a selected
   Domain. It does not cascade into unselected Domains, and a surviving foreign
-  Edge that references a selected Node blocks the whole operation.
+  Edge that references a selected Node blocks the whole operation. One
+  uninstall deletes at most the Host's bound of each Class (10000 facts or
+  10000000 bytes in the production profile): above it, in either mode, the
+  uninstall is refused and the count it reports is a lower bound ("at
+  least"). Delete facts of that Class until it is under the bound first.
 
   Type the exact canonical Domain list to confirm, or pass --yes in automation.
   A fresh operation id is generated automatically; its outcome is final. An
