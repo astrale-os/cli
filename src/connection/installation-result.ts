@@ -15,6 +15,7 @@ import type { OperationRecovery } from './command'
 
 import { shellCommand } from '../lib/shell-command'
 import { log } from '../lib/terminal/log'
+import { executionResultCommand, executionStatusCommand } from './execution'
 import {
   conflictDetails,
   migrationRequirements,
@@ -153,45 +154,6 @@ export function replayedMember(context: LifecycleContext): { readonly replayed?:
   return context.replayed === undefined ? {} : { replayed: context.replayed }
 }
 
-/** The command that reads one install or uninstall Execution, on the same Instance and identity. */
-export function installationStatusCommand(
-  execution: string,
-  lifecycle: 'install' | 'uninstall',
-  target: readonly string[] = [],
-): string {
-  return shellCommand([
-    'astrale',
-    'domain',
-    'installation',
-    'status',
-    execution,
-    ...(lifecycle === 'uninstall' ? ['--uninstall'] : []),
-    ...target,
-  ])
-}
-
-/** How long the printed follow-up waits for the outcome: within the default request timeout. */
-export const FOLLOW_WAIT_MS = 20_000
-
-/** The command that waits for one install or uninstall Execution's outcome. */
-export function installationResultCommand(
-  execution: string,
-  lifecycle: 'install' | 'uninstall',
-  target: readonly string[] = [],
-): string {
-  return shellCommand([
-    'astrale',
-    'domain',
-    'installation',
-    'result',
-    execution,
-    ...(lifecycle === 'uninstall' ? ['--uninstall'] : []),
-    '--wait-ms',
-    String(FOLLOW_WAIT_MS),
-    ...target,
-  ])
-}
-
 /**
  * Present an install or uninstall the operator interrupted while the command waited: the durable
  * Execution continues on the Kernel without this process. Once the Kernel answered, the output names
@@ -215,8 +177,8 @@ export function renderInterruptedWait(context: LifecycleContext, machine: boolea
         ...(started === undefined
           ? { fresh: recovery.fresh }
           : {
-              observe: installationStatusCommand(started, lifecycle, recovery.target),
-              follow: installationResultCommand(started, lifecycle, recovery.target),
+              observe: executionStatusCommand(started, recovery.target),
+              follow: executionResultCommand(started, recovery.target),
             }),
       })}\n`,
     )
@@ -235,21 +197,22 @@ export function renderInterruptedWait(context: LifecycleContext, machine: boolea
   const replayed = replayLine(context)
   if (replayed !== undefined) log.dim(`  ${replayed}`)
   log.dim(`  operation: ${recovery.operation}`)
-  log.dim(`  Wait for it: ${installationResultCommand(started, lifecycle, recovery.target)}`)
-  log.dim(`  Read this run: ${installationStatusCommand(started, lifecycle, recovery.target)}`)
+  log.dim(`  Wait for it: ${executionResultCommand(started, recovery.target)}`)
+  log.dim(`  Read this run: ${executionStatusCommand(started, recovery.target)}`)
 }
 
 /** The commands a Root maintenance session accepts while it awaits its next command. */
 function sessionCommands(installation: Installation, recovery: OperationRecovery) {
   const { execution, status } = installation
   const target = recovery.target ?? []
-  const command = status.detail?.command
-  const line = (method: string, ...args: string[]) =>
-    shellCommand(['astrale', 'domain', 'installation', method, execution, ...args, ...target])
   return {
-    observe: installationStatusCommand(execution, 'install', target),
-    ...(command === undefined ? {} : { apply: line('apply', '--command', String(command)) }),
-    cancel: line('cancel'),
+    observe: executionStatusCommand(execution, target),
+    ...(status.detail?.command === undefined
+      ? {}
+      : {
+          apply: shellCommand(['astrale', 'domain', 'installation', 'apply', execution, ...target]),
+        }),
+    cancel: shellCommand(['astrale', 'execution', 'cancel', execution, ...target]),
   }
 }
 
@@ -320,8 +283,8 @@ export function runningReport(
     status,
     ...replayedMember(context),
     operation: recovery.operation,
-    observe: installationStatusCommand(execution, lifecycle, recovery.target),
-    follow: installationResultCommand(execution, lifecycle, recovery.target),
+    observe: executionStatusCommand(execution, recovery.target),
+    follow: executionResultCommand(execution, recovery.target),
   }
 }
 
@@ -348,8 +311,8 @@ export function renderRunning(
   const replayed = replayLine(context, status)
   if (replayed !== undefined) log.dim(`  ${replayed}`)
   log.dim(`  operation: ${recovery.operation}`)
-  log.dim(`  Wait for it: ${installationResultCommand(execution, lifecycle, recovery.target)}`)
-  log.dim(`  Read this run: ${installationStatusCommand(execution, lifecycle, recovery.target)}`)
+  log.dim(`  Wait for it: ${executionResultCommand(execution, recovery.target)}`)
+  log.dim(`  Read this run: ${executionStatusCommand(execution, recovery.target)}`)
 }
 
 /** What each install class did to the stored data, as one completed install reports it. */
@@ -397,7 +360,7 @@ export function renderIncompleteInstallation(
     (outcome?.kind === 'cancelled' ? 'INSTALLATION_CANCELLED' : 'INSTALLATION_PENDING')
   const message = failure?.message ?? error.message
   const recovery = context?.recovery
-  const observe = installationStatusCommand(execution, error.kind, recovery?.target)
+  const observe = executionStatusCommand(execution, recovery?.target)
   const ended = outcome !== undefined
   const fresh = ended ? recovery?.fresh : undefined
   const replayed = context === undefined ? undefined : replayLine(context, status)
@@ -535,9 +498,7 @@ export function renderOperationConflict(
   const named = other === undefined ? '' : `: ${requestLabel(other)}`
   const message = `Operation ${recovery.operation} already names another request${named}. Nothing ran for this command.`
   const observe =
-    other === undefined
-      ? undefined
-      : installationStatusCommand(other.execution, other.lifecycle ?? 'install', recovery.target)
+    other === undefined ? undefined : executionStatusCommand(other.execution, recovery.target)
   if (machine) {
     process.stderr.write(
       `${JSON.stringify({
@@ -574,8 +535,8 @@ export function lifecycleFailureNotes(
 } {
   const { lifecycle, recovery, started } = context
   if (started !== undefined) {
-    const observe = installationStatusCommand(started, lifecycle, recovery.target)
-    const follow = installationResultCommand(started, lifecycle, recovery.target)
+    const observe = executionStatusCommand(started, recovery.target)
+    const follow = executionResultCommand(started, recovery.target)
     return {
       fields: {
         execution: started,

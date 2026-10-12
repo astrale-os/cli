@@ -5,9 +5,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { ConnectionContext, runKernelCommand } from '../../connection'
+import type { ConnectionContext } from '../../connection'
 
-import { observeExecution } from '../execution'
+import { executionCommand, executionCommands } from '../execution'
 
 const kernel = issuer.accept('https://kernel.example')
 const receipt = {
@@ -29,10 +29,18 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-test('status/result actions read the file, retain default identity selection, and send the Execution Methods', async () => {
-  const wire: { target: unknown; input: unknown }[] = []
-  const results: unknown[] = []
-  const session = new ClientSession({
+const status = {
+  id: 'execution-1',
+  function: 'function-1',
+  version: `sha256:${'e'.repeat(64)}`,
+  state: 'completed',
+  createdAt: '2026-10-12T00:00:00Z',
+  outcome: { kind: 'completed', value: 42 },
+}
+
+/** A real Client session whose transport answers each Execution Method as the Kernel does. */
+function executionSession(wire: unknown[]) {
+  return new ClientSession({
     kernel,
     policy: { maximumRouteAgeMs: 60000 },
     envelopeTransport: 'http',
@@ -41,18 +49,11 @@ test('status/result actions read the file, retain default identity selection, an
       expect(String(url)).toBe(`${kernel}/invoke`)
       const body = JSON.parse(await new Response(init?.body).text())
       wire.push(body.call)
-      const target =
+      const target: string =
         typeof body.call.target === 'string' ? body.call.target : body.call.target.callable
-      const result = target.endsWith('.status')
-        ? {
-            id: 'execution-1',
-            function: 'function-1',
-            version: `sha256:${'e'.repeat(64)}`,
-            state: 'completed',
-            createdAt: '2026-10-12T00:00:00Z',
-            outcome: { kind: 'completed', value: 42 },
-          }
-        : { kind: 'completed', value: 42 }
+      const method = target.slice(target.lastIndexOf('.') + 1)
+      const result =
+        method === 'result' ? { kind: 'completed', value: 42 } : method === 'signal' ? {} : status
       const response = new Response(
         JSON.stringify({
           requestId: body.requestId,
@@ -70,81 +71,124 @@ test('status/result actions read the file, retain default identity selection, an
       return response
     },
   })
-  const run: typeof runKernelCommand = async (input) => {
-    expect(input.credential).toMatchObject({ principal: 'execution', receipt })
-    expect(input.opts.url).toBe(kernel)
+}
+
+const method = (name: string) => `@execution-1::kernel.astrale.ai:class.Execution.method.${name}`
+
+test('a receipt file is read in the context it records, and each Method is sent once', async () => {
+  const wire: unknown[] = []
+  const session = executionSession(wire)
+  const results: unknown[] = []
+  const send = async (...args: Parameters<typeof executionCommand>) => {
+    const command = await executionCommand(...args)
+    expect(command.credential).toMatchObject({ principal: 'execution', receipt })
     // No identity is inferred from the receipt. The normal connection layer selects the default.
-    expect(input.opts).not.toHaveProperty('as')
-    results.push(await input.fn({ session } as ConnectionContext))
+    expect(command.opts).not.toHaveProperty('as')
+    results.push(await command.fn({ session } as ConnectionContext))
   }
   try {
-    await observeExecution('status', file, { url: kernel, json: true }, run)
-    await observeExecution('result', file, { url: kernel, json: true }, run)
-    await observeExecution('result', file, { url: kernel, json: true, waitMs: '0' }, run)
-    await observeExecution('result', file, { url: kernel, json: true, waitMs: '1000' }, run)
+    await send('status', file, { url: kernel, json: true })
+    await send('result', file, { url: kernel, json: true })
+    await send('result', file, { url: kernel, json: true, waitMs: '1000' })
+    await send('cancel', file, { url: kernel })
+    await send('resume', file, { url: kernel })
+    await send('signal', file, { url: kernel, value: '{"by":"billing"}' }, 'approval')
+    await send('signal', file, { url: kernel }, 'consent')
     expect(wire).toEqual([
-      {
-        target: '@execution-1::kernel.astrale.ai:class.Execution.method.status',
-        input: {},
-      },
+      { target: method('status'), input: {} },
       // Without --wait-ms a result read answers at once: a wait of 0.
-      {
-        target: '@execution-1::kernel.astrale.ai:class.Execution.method.result',
-        input: { waitMs: 0 },
-      },
-      {
-        target: '@execution-1::kernel.astrale.ai:class.Execution.method.result',
-        input: { waitMs: 0 },
-      },
-      {
-        target: '@execution-1::kernel.astrale.ai:class.Execution.method.result',
-        // The time left of the 1000 ms wait when the request is sent.
-        input: { waitMs: expect.any(Number) },
-      },
+      { target: method('result'), input: { waitMs: 0 } },
+      // The time left of the 1000 ms wait when the request is sent.
+      { target: method('result'), input: { waitMs: expect.any(Number) } },
+      { target: method('cancel'), input: {} },
+      { target: method('resume'), input: {} },
+      { target: method('signal'), input: { name: 'approval', value: { by: 'billing' } } },
+      // Without --value the promise resolves with null.
+      { target: method('signal'), input: { name: 'consent', value: null } },
     ])
-    expect((wire[3] as { input: { waitMs: number } }).input.waitMs).toBeLessThanOrEqual(1000)
-    expect(results[0]).toMatchObject({ id: 'execution-1', state: 'completed' })
-    expect(results.slice(1)).toEqual(Array(3).fill({ kind: 'completed', value: 42 }))
+    expect((wire[2] as { input: { waitMs: number } }).input.waitMs).toBeLessThanOrEqual(1000)
+    expect(results.slice(0, 5)).toMatchObject([
+      { id: 'execution-1', state: 'completed' },
+      { kind: 'completed', value: 42 },
+      { kind: 'completed', value: 42 },
+      { id: 'execution-1', state: 'completed' },
+      { id: 'execution-1', state: 'completed' },
+    ])
+    expect(results.slice(5)).toEqual([
+      { execution: 'execution-1', signal: 'approval', accepted: true },
+      { execution: 'execution-1', signal: 'consent', accepted: true },
+    ])
   } finally {
     session.close()
   }
 })
 
+test('an Execution ID is reached as the caller itself, explicit credentials included', async () => {
+  for (const opts of [{ instance: 'app' }, { creds: 'opaque' }, { anonymous: true }]) {
+    const command = await executionCommand('cancel', 'execution-1', opts)
+    expect(command.credential).toEqual({ principal: 'caller' })
+    expect(command.label).toBe('Execution cancel: execution-1')
+  }
+})
+
 test('a result read names the commands that follow its Execution while it still runs', async () => {
-  const inputs: { readonly pending?: unknown }[] = []
-  const run: typeof runKernelCommand = async (input) => void inputs.push(input)
-  await observeExecution('result', file, { instance: 'app', waitMs: '0' }, run)
-  await observeExecution('status', file, { instance: 'app' }, run)
-  expect(inputs[0]!.pending).toEqual({
+  const read = await executionCommand('result', file, { instance: 'app', waitMs: '0' })
+  expect(read.pending).toEqual<unknown>({
     execution: 'execution-1',
     follow: `astrale execution result ${file} --wait-ms 20000 -i app`,
     observe: `astrale execution status ${file} -i app`,
     waited: false,
   })
-  expect(inputs[1]).not.toHaveProperty('pending')
+  expect(
+    (await executionCommand('result', 'execution-1', { instance: 'app', waitMs: '50' })).pending,
+  ).toEqual<unknown>({
+    execution: 'execution-1',
+    follow: 'astrale execution result execution-1 --wait-ms 20000 -i app',
+    observe: 'astrale execution status execution-1 -i app',
+    waited: true,
+  })
+  for (const method of ['status', 'cancel', 'resume'] as const) {
+    expect(await executionCommand(method, file, { instance: 'app' })).not.toHaveProperty('pending')
+  }
 })
 
-test('invalid waits, absent/malformed files and explicit credential overrides fail before connection', async () => {
-  let connections = 0
-  const run: typeof runKernelCommand = async () => {
-    connections++
-  }
+test('invalid waits, values, addresses, files and receipt credential overrides fail before connection', async () => {
   for (const waitMs of ['-1', 'NaN', '1.5', '9007199254740992']) {
-    await expect(observeExecution('result', file, { waitMs }, run)).rejects.toThrow(
+    await expect(executionCommand('result', file, { waitMs })).rejects.toThrow(
       '--wait-ms must be a nonnegative safe integer.',
     )
   }
-  await expect(observeExecution('status', join(directory, 'absent'), {}, run)).rejects.toThrow()
+  await expect(executionCommand('signal', file, { value: '{by:' }, 'approval')).rejects.toThrow(
+    '--value must be a JSON value.',
+  )
+  await expect(executionCommand('status', join(directory, 'absent'), {})).rejects.toThrow(
+    'Expected an Execution ID or the file of an execution receipt.',
+  )
   await writeFile(file, 'private malformed value')
-  await expect(observeExecution('status', file, {}, run)).rejects.toThrow(
+  await expect(executionCommand('status', file, {})).rejects.toThrow(
     'The execution receipt file must contain valid JSON.',
   )
+  await writeFile(file, JSON.stringify(receipt))
   for (const opts of [{ creds: 'opaque' }, { anonymous: true }]) {
-    await expect(observeExecution('status', file, opts, run)).rejects.toMatchObject({
+    await expect(executionCommand('status', file, opts)).rejects.toMatchObject({
       code: 'EXECUTION_IDENTITY_REQUIRED',
     })
   }
-  expect(connections).toBe(0)
+})
+
+test('the execution group offers status, result, cancel, resume and signal, never force or delete', () => {
+  expect(executionCommands.map(({ name }) => name)).toEqual([
+    'status',
+    'result',
+    'cancel',
+    'resume',
+    'signal',
+  ])
+  expect(
+    executionCommands
+      .flatMap(({ options }) => options ?? [])
+      .some(({ flags }) => flags.includes('--force')),
+  ).toBe(false)
 })
 
 test.each(['caller', 'domain'])(
@@ -212,6 +256,62 @@ test.each(['caller', 'domain'])(
     }
   },
 )
+
+test('real CLI operates an Execution by its ID as the caller, with no Domain exchange', async () => {
+  const observed = join(directory, 'observed.jsonl')
+  const invoke = async (args: string[]) => {
+    const child = Bun.spawn(
+      [process.execPath, join(import.meta.dir, 'fixtures/execution-cli.ts'), ...args],
+      {
+        env: { ...process.env, ASTRALE_HOME: directory, EXECUTION_FIXTURE_OBSERVED: observed },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect(code, stderr + stdout).toBe(0)
+    return JSON.parse(stdout)
+  }
+  const flags = ['--url', kernel, '--as', 'alice', '--json']
+  expect(await invoke(['execution', 'cancel', 'execution-1', ...flags])).toMatchObject({
+    id: 'execution-1',
+    state: 'completed',
+  })
+  expect(
+    await invoke([
+      'execution',
+      'signal',
+      'execution-1',
+      'approval',
+      '--value',
+      '{"by":"billing"}',
+      ...flags,
+    ]),
+  ).toEqual({ execution: 'execution-1', signal: 'approval', accepted: true })
+  const events = (await Bun.file(observed).text())
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  // An ID needs no receipt context: only the two Methods reach a server, as the caller.
+  expect(events).toEqual([
+    {
+      kind: 'invoke',
+      target: '@execution-1::kernel.astrale.ai:class.Execution.method.cancel',
+      input: {},
+      principal: 'caller',
+    },
+    {
+      kind: 'invoke',
+      target: '@execution-1::kernel.astrale.ai:class.Execution.method.signal',
+      input: { name: 'approval', value: { by: 'billing' } },
+      principal: 'caller',
+    },
+  ])
+})
 
 test('a result read before the Execution ended is still running: exit 75 and what follows it', async () => {
   const child = Bun.spawn(
