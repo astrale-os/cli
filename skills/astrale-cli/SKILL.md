@@ -200,6 +200,11 @@ Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
 instances (key-backed identities have no Admin token). Use
 `astrale instance list --bookmarked`.
 
+Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
+JWKS with that exact CA. If two bookmarks point to the same normalized URL with
+different CA settings, the CLI warns and `instance list --bookmarked --json`
+shows each bookmark's `caFile`, issuer, and default identity.
+
 Fleet administrators may add `--include-retired` to the ordinary Admin inventory. The default
 excludes retired tombstones; included retired Instances use the same output shape and
 are identified by terminal `state: "deleted"`. The optional `issuer` is present only when Admin has
@@ -236,128 +241,59 @@ astrale get @self -i development --as development-root --json
 Use an authorized human identity for the import; `development-root` is available for subsequent
 Instance calls after recovery. Root success proves execution, not an application user's access Policy.
 
-The CLI is connect-only: it does not build or run domains. The SDK's
-`astrale-domain` binary owns `build`, `deploy`, `publish`, `diff`, `yank`, `list`, `lint`,
-`package`, and test workflows; a deploy or a publish never installs. Project Environments say how to
-deploy and with which secrets; they name no instance and do not use the CLI's active instance. Only
-`astrale domain install` changes what an instance runs.
+The CLI connects; it does not build or run domains. The SDK's `astrale-domain` binary owns
+`build`, `deploy`, `publish`, `diff`, `yank`, `list`, `lint`, `package`, and test workflows.
+A deploy never installs: each deployment URL serves one release for good, and only
+`astrale domain install` changes what an instance runs (reinstalling what it already runs changes
+nothing). Project Environments name no instance and ignore the CLI's active instance.
 
-Installation and uninstallation are durable Kernel executions. The CLI waits
-for the outcome up to `--timeout` (110 s without it), counted from the Kernel's
-answer naming the execution, so reads and pre-checks before it do not count; no
-wait under 1 s is started. It reports completion only from a completed outcome.
-`--json` adds `execution` and `status` to the committed result. One still
-running when the CLI stops waiting (`--timeout`, or `--no-wait`) exits 0 with
-`execution`, `status`, `observe` (the `domain installation status` command) and
-`follow` (`domain installation result --wait-ms`) on stdout and no `changed`: it
-is not installed yet. A failed install/uninstall exits 2, a cancelled or paused
-one exits 1, retaining those fields on stderr with the exact operation ID. An
-operation names one request and its outcome is final: follow a run by its
-execution (`observe`, `follow`), and once it ended (failed or cancelled), use
-`fresh` (the same command without `--operation`). A refusal before any
-execution exists carries `execution: null`: the operation is unused; one
-refused `SCHEMA_CHANGE_ACTIVE` (another schema change holds the Instance) exits
-5. Only a completed install reads back and verifies the installed pins.
+`astrale domain install` takes deployment URLs (`https://`, or `http://` for a local Host) and
+published versions: `<origin>@1.5.0` names exactly that version (a pre-release or a yanked one
+included), `<origin>@1.5` the highest stable 1.5.x that is not yanked. Versions resolve in the
+Admin registry with your own identity; a private Domain needs `domain_installer`.
 
-`--operation` is for automation. A reused id replays only the exact same
-request: the Kernel marks that answer a replay, `--json` carries `replayed`
-(`true`, or `false` for a new run; absent when the Kernel sends no marker) and
-a human reads once that the operation already ran and this is its recorded
-outcome. Only that marker makes a replay. Any other request under a used id is
-refused `SCHEMA_OPERATION_CONFLICT` (older Hosts: `IDEMPOTENCY_KEY_CONFLICT`):
-nothing runs, the command exits 5, and `--json` names the request the id
-belongs to as `conflict` (`execution`, and `mode`/`state` when known) with
-`observe` and `fresh`. Re-running the same command with the same id can
-conflict too, since it is planned again from the current state (consent,
-guards): follow the Execution by its id instead.
+- Several references install in ONE atomic operation: every Domain moves or none does, which is
+  how dependent Domains move together. The CLI pins the release digest it read and verifies the
+  installed pins once the install completed.
+- An advisory pre-check reports the installed Domains the change would break and proposes
+  compatible published versions with the grouped command (`--json`: `precheck`). The install is
+  still sent; the Kernel decides.
+- An issuer change is never silent: `--allow-issuer-change` for a new deployment of the same line,
+  `--allow-issuer-change=<origin>` for any other change, or type the origin at a terminal. The
+  replaced issuer keeps serving its in-flight work; `--revoke-previous` cuts it at the activation.
 
-`--mode maintenance` starts a Root repair session and watches it, within
-`--timeout`, until it has drained the Instance and awaits its first command;
-then it prints the session (`--json`: `execution`, `status`, `apply`, `cancel`)
-and exits 0. `--no-wait` returns without that watch.
-The Instance excludes other callers during this session. Read its `status`,
-repair data using the Root identity, then send its exact next `detail.command`
-with `apply --command`. `--validation-scope full` and
-`--validation-counts exact` widen validation; `--no-wait` also returns an online
-installation without waiting. None of these states means the target is installed.
-
-```bash
-astrale domain installation status <execution-id> -i staging --as root --json
-astrale domain installation apply <execution-id> --command 1 -i staging --as root --json
-astrale domain installation result <execution-id> --wait-ms 10000 -i staging --as root --json
-astrale domain installation abort <execution-id> --attempt 1 -i staging --as root --json
-astrale domain installation cancel <execution-id> -i staging --as root --json
-astrale domain installation resume <execution-id> -i staging --as root --json
-```
-
-Use the same Instance and initiating identity (or Root) for observation; apply,
-abort and resume require Root. Status/result are reads and report the exact
-state/outcome, including failed outcomes. A result that has not ended yet is
-no failure: it exits 75 (try again later) with `execution`, `follow` (waits for
-the outcome) and `observe` beside `EXECUTION_PENDING`; `execution result` does
-the same for a durable call. An accepted apply/abort signal is not completion: observe
-again. Signals are not retried automatically. Cooperative cancel attempts to
-restore the source schema; inspect the resulting status. These commands offer
-neither forced cancellation nor Execution deletion. Use `--uninstall` with
-status/result/cancel/resume for an uninstall Execution.
-
-`astrale domain install` takes deployment URLs and versions:
-
-- Deployment URLs (`https://`, or `http://` for a local Host) go to the
-  instance Kernel through the public install syscall, on any instance you can
-  authenticate to. Several references install in ONE atomic Kernel operation
-  (every Domain moves or none does), which is how dependent Domains move together.
-  The CLI reads each URL's canonical `release.json` first (a 503 is read again for up to
-  60 s), refuses two references to one origin, pins the release digest it
-  read, and verifies the installed pins afterwards.
-- A version reference, `<origin>@1.5.0` (or `@2.0.0-rc.1`) for exactly that
-  version, a pre-release or a yanked one included (a yanked one warns), or
-  `<origin>@1.5` for the highest stable 1.5.x that is not yanked, is resolved
-  in the Admin registry with your own identity (`--admin` / `--admin-url`, or
-  the configured Admin target). A private Domain needs `domain_installer`,
-  directly or through a Group; one you cannot read is REGISTRY_DOMAIN_NOT_FOUND.
-  The version becomes its Publication's deployment URL and release digest; the
-  CLI checks the deployment still serves that release
-  (PUBLICATION_RELEASE_MISMATCH otherwise) and the Kernel refuses any other.
-  A major alone (`@1`), a range or build metadata is refused; an unresolvable
-  version is VERSION_UNRESOLVED. Versions and URLs mix in one install.
-- An issuer change is never silent. When a URL serves another issuer than
-  the one its origin is installed under, the install needs consent, recorded
-  by the Kernel in the installation: `--allow-issuer-change` for a new
-  deployment of the same line (same `<line>-` prefix and routing domain),
-  `--allow-issuer-change=<origin>` for any other change (a legacy issuer
-  moving to its first deployment included), or typing the origin at a
-  terminal. The replaced issuer keeps working while its in-flight work
-  drains; `--revoke-previous` cuts it at the activation. A first install from
-  a deployment URL needs no consent; the CLI notes the unverified claim.
-  The origin is given only after `=`: a bare `--allow-issuer-change` never
-  takes the next argument. Without consent, ISSUER_CHANGE_NOT_CONSENTED lists
-  every unconsented change in `details.origins` (`origin`, `installed`,
-  `replacement`, `line`) before anything is sent; `--json` reports each
-  consent as `references[].consent` (`from`, `to`, `previous`).
-- Before the install is sent, an advisory pre-check runs the Kernel's
-  compatibility engine on what the caller can read, both ways: each installed
-  root must find what it uses in its dependencies as the install leaves them,
-  and each installed Domain the install does not name must still find what it
-  uses in every upgraded dependency. For each broken dependent it proposes the
-  highest stable, non-yanked published version built against the new revision
-  (an Admin registry read, also for URL installs) and the grouped install;
-  unreadable Domains are reported as not evaluated. The install is still sent
-  and the Kernel decides. `--json` carries it as `precheck` (`compared`,
-  `dependencies`, `dependents`, `proposals`, `command?`, `skipped`,
-  `unevaluated`) in the report, and beside a SCHEMA_DEPENDENCY_INCOMPATIBLE or
-  SCHEMA_DEPENDENTS_INCOMPATIBLE refusal.
+`astrale domain uninstall` removes one or more origins atomically. Safe mode, the default, deletes
+nothing and is refused while their Classes hold facts; `--destructive` deletes those facts (never an
+unselected Domain's). Surviving dependents block it. Confirm at a terminal or pass `--yes`.
 
 ```bash
 astrale domain install https://crm.example -i staging
 astrale domain install https://projects.example https://teams.example -i staging
 astrale domain install crm.example@1.5 -i production
-astrale domain install projects.example@1.5.0 https://teams.example --allow-issuer-change -i staging
 astrale domain install <new-deployment-url> --allow-issuer-change -i staging
-astrale domain install <deployment-url> --allow-issuer-change=crm.example -i staging
 astrale domain uninstall crm.example -i staging
-astrale domain uninstall app.example shared.example --destructive -i staging
+astrale domain uninstall app.example shared.example --destructive --yes -i staging
 ```
+
+An install or uninstall is a durable Execution. The CLI waits for its outcome up to `--timeout`
+(110 s by default; `--no-wait` returns at once) and reports success only from a completed outcome.
+Never rerun it to learn what happened: follow the Execution it printed with
+`astrale domain installation status|result <execution>` (`--uninstall` for an uninstall).
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | Completed, or still running when the wait ended (`--json`: `execution`, `status`, `follow`, `observe`, no `changed`). |
+| 1 | Refused before any Execution (the operation is unused), cancelled, paused, or another error. |
+| 2 | Ended `failed`, for example `DATA_MIGRATION_REQUIRED`. |
+| 5 | Operation conflict, or another schema change holds the Instance (`SCHEMA_CHANGE_ACTIVE`). |
+| 75 | A `result` read of an Execution that has not ended: try again later. |
+| 130 | Interrupted: the Execution goes on. |
+
+`--operation <id>` is for automation: it replays only the exact same request (`--json`:
+`replayed: true`); any other request under a used id is refused, exit 5. Existing data the new
+schema refuses, maintenance repair sessions (`--mode maintenance`, then
+`domain installation apply|abort|cancel|resume`) and large destructive uninstalls are covered in
+[schema evolution and data migration](../astrale-domain/references/migration.md).
 
 `astrale domain versions <origin>` lists the Domain's published versions from the Admin
 registry, read with your own credential: you need `domain_installer` or `domain_admin` on the
@@ -392,24 +328,6 @@ astrale domain list -i staging --json
 The hidden `astrale __domain-registry bundle|claim|publish|yank` commands are JSON plumbing for
 `astrale-domain diff`, `publish` and `yank`; do not call them by hand. `astrale-domain publish`
 claims an origin no one has before its first deployment: its first claimer administers it.
-
-On a Kernel that takes no issuer consent, a replacement cannot change an
-installed Domain issuer: uninstall the origin first and then install it again.
-Uninstall accepts one or more origins and removes the complete selected set atomically, so
-dependencies inside that set are allowed. Safe mode is the default and never deletes application
-data. `--destructive` deletes application facts whose concrete Class belongs to a selected Domain;
-it does not cascade into unselected Domains. Surviving dependents and surviving foreign Edges that
-reference selected Nodes still block the complete operation. Type the canonical Domain list
-interactively, or pass `--yes` in automation.
-
-Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
-JWKS with that exact CA. If two bookmarks point to the same normalized URL with
-different CA settings, the CLI warns and `instance list --bookmarked --json`
-shows each bookmark's `caFile`, issuer, and default identity.
-
-A deploy never changes what an instance runs: each deployment URL serves one
-release for good, so new code reaches an instance only when it installs the new
-URL or version. Reinstalling the URL an instance already runs changes nothing.
 
 ## Identity And Delegation
 

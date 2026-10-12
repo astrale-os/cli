@@ -12,13 +12,12 @@ astrale execution result receipt.json --url https://example/api --as alice --wai
 
 The Kernel tells the CLI what happened: an ordinary value, including an object with an `id`, is
 printed as a value and is never a receipt. The receipt survives CLI restarts. `status` reads the
-current state; `result` returns the Kernel's terminal outcome (`completed`, `failed`, or
-`cancelled`). A result whose Execution has not ended is no failure: the CLI says it is still running,
-prints the commands that wait for it and read its status, and exits 75 (try again later); `--json`
-keeps the Kernel's `EXECUTION_PENDING` refusal on stderr with `execution`, `follow` and `observe`. `--timeout` bounds
-the request separately from `--wait-ms`; give the request enough time to cover the requested wait.
-These commands never restart, cancel, resume, or delete a workflow. A lost call response has an
-unknown outcome; do not automatically repeat the call.
+current state; `result` returns the terminal outcome (`completed`, `failed`, or `cancelled`). A
+result that has not ended yet is no failure: the CLI says so, prints the commands that wait for it
+and read its status (`--json`: `execution`, `follow`, `observe` beside `EXECUTION_PENDING`), and
+exits 75. `--timeout` bounds the request, so give it more than `--wait-ms`. These commands never
+restart, cancel, resume, or delete a workflow. A lost call response has an unknown outcome; do not
+repeat the call automatically.
 
 ## Receipt version 2
 

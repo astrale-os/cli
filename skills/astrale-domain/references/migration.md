@@ -46,13 +46,38 @@ astrale domain install a.example@2.1.0 b.example@3.0.0 -i production
 ```
 
 Grant issuer-change consent only after checking the intended issuer change. Grouped schema
-activation is atomic across its roots; the installation Execution and manual data repairs have their
-own lifecycle. A transport failure or timeout can occur after admission. Keep the returned Execution
-ID and observe it with `domain installation status/result`; do not submit a new operation to discover
-whether the previous one worked. If no ID was received, follow the CLI's instructions: a fresh
-operation is refused while the first one still changes the schema, and that refusal names it. An
-operation id names one request: reusing it for anything but that exact request is refused as an
-operation conflict, and only the Kernel's `replayed` marker says an answer is a replay.
+activation is atomic across its roots; the install Execution and manual data repairs have their own
+lifecycle (see below).
+
+## How an install treats existing data
+
+An install or uninstall is a durable Execution. Its status `detail.class` says what it does to the
+stored data:
+
+| Class | Meaning |
+| --- | --- |
+| `noop` | Nothing changes; reinstalling the same release ends here. |
+| `immediate` | Applied at once without reading the data: an optional property, a new Class or Edge, a widened enum, a removed callable. |
+| `revalidate` | The existing data is validated against the new rules before the activation: a tightened bound, a new required property, a stricter cardinality. Incremental by default; `--validation-scope full` re-reads everything and `--validation-counts exact` counts every offender. |
+
+An online install (the default mode) keeps the Instance open: it validates while applications write,
+and only the activation briefly pauses writes. Data the target refuses ends the install `failed`
+with `DATA_MIGRATION_REQUIRED` (CLI exit 2) and activates nothing. Its message and report name each
+requirement (the operation, such as `populate-required` or `remove-facts`, its subject and the
+facts observed). Then either migrate the data online and install again, repair it in a maintenance
+session (below), or, for facts that should go, delete them. Do not treat this refusal as transient.
+
+## Following an install
+
+Keep the Execution an install prints, even when the CLI stops waiting before the outcome (exit 0
+with no `changed`). Follow it with `astrale domain installation status|result <execution>` as the
+same identity or Root; never submit the install again to discover whether it worked. A transport
+failure can happen after the Kernel accepted it: install again with a fresh operation, and while the
+first one still changes the schema it is refused `SCHEMA_CHANGE_ACTIVE` naming that Execution.
+
+An operation id names one request and its outcome is final. Reusing it replays only that exact
+request, which the Kernel marks `replayed`; anything else under that id is refused as an operation
+conflict. Once a run ended `failed` or `cancelled`, request the change again with a fresh operation.
 
 ## Breaking evolution
 
@@ -77,12 +102,17 @@ Qualify each installed revision before proceeding to the next stage. Do not trea
 compatibility check requires it. Deploying the final revision does not make an intermediate data
 cleanup legal under the currently active schema.
 
-## Maintenance repair sessions
+## Uninstalling a Domain with data
 
-Use matching published CLI, SDK and Kernel versions that expose durable installation and repair
-sessions. Check the installed command help and public `session.schema.installation` API. Older
-clients can reject a new admission response after the Execution has started; an SDK version alone
-does not prove that its embedded client matches the Host.
+`astrale domain uninstall` removes the selected Domains in one activation. Safe mode, the default,
+deletes nothing: it is refused (`remove-facts`) for each of their Classes that still holds facts.
+`--destructive` deletes those facts, and the Kernel relations of the deleted Nodes, in the same
+activation, but never more than the Host's projection bound per Class; the refusal carries that
+bound in `work`. Above it, delete the facts through ordinary Mutations first (Edges before their
+Nodes, in batches the Mutation limit admits), then uninstall. Edges a surviving Domain owns and
+surviving dependents block the uninstall. A refused uninstall deleted nothing.
+
+## Maintenance repair sessions
 
 Maintenance requires Root as both principal and caller and closes the **whole Instance** to ordinary
 traffic. A Shell administrator or a business role is not automatically Root. Record the identity,
@@ -91,11 +121,11 @@ breaking experiments; preserve a recovery plan for real data.
 
 1. Retain the source revisions, exact target releases, representative node IDs/properties and Edge
    endpoints. Decide how to repair toward both target and source before entering maintenance.
-2. Start the target install with `--mode maintenance --no-wait` and a retained operation ID. Keep
-   the returned Execution: an unfinished installation exits 0 with no `changed`. Without
-   `--no-wait`, the CLI itself watches the session until it awaits its first command.
-3. Read its status until `detail.phase` is `awaiting`; stop and inspect a terminal failure or
-   cancellation instead of waiting indefinitely. A maintenance request with no schema change is
+2. Start the target install with `--mode maintenance` and a retained `--operation`. The CLI watches
+   the session until it has drained the Instance and awaits its first command, then prints it
+   (`--no-wait` returns at once with the Execution). Keep that Execution.
+3. After `--no-wait`, read its status until `detail.phase` is `awaiting`; stop and inspect a
+   terminal failure or cancellation instead of waiting indefinitely. A maintenance request with no schema change is
    refused with `SCHEMA_INPUT_INVALID`. Repair data with Root raw graph mutations using the
    session's source/target vocabulary; application Actions remain closed even to Root. Record
    each committed batch; several mutations are not one atomic migration.
@@ -123,8 +153,9 @@ astrale domain installation result "$EXECUTION" -i qa-migration --as qa-root --j
 `abort --attempt <number>` stops the named running validation attempt and returns the session to
 repair; it does not undo committed repair mutations. Cooperative `cancel` attempts to validate and
 reactivate the source schema, so it can also require data repair. `resume` resumes a paused Execution;
-it is not a command to reopen the Instance. Forced cancellation or Execution deletion can leave the
-source uncertified and are not normal recovery steps.
+it is not a command to reopen the Instance. A live session has no forced exit: it ends by `apply`,
+a cooperative `cancel` or its idle expiry; a forced cancel or a delete is refused
+`EXECUTION_EXIT_REFUSED`. Only the Host operator can release a stuck session.
 
 The repair lifecycle does not invent a Domain `Migration` hook. Domain-owned Query/Mutation
 operations remain explicit authorized operations; external effects require their own Workflow.
