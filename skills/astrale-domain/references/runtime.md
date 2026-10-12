@@ -13,8 +13,10 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   `record.ts`, `get.ts`, or a catch-all `queries.ts`. A longer descriptive name beats an ambiguous one.
 - Import the aggregate Schema as a type. Use the invocation's resolved `domain` for Classes/Properties;
   focused error, value, and StateMachine facades may supply runtime-safe values.
-- An Action owns one semantic asynchronous operation. A Workflow owns multiple observations/effects,
-  each in a stable `step.run`; pure Rules need neither steps nor dependency injection.
+- An Action reads what it needs and performs at most one effect: a Mutation, or a state-changing
+  Integration, dependency, or Kernel call. Queries and read-only calls are observations, not effects.
+  A Workflow coordinates two or more effects that cannot commit together, each operation in a stable
+  `step.run`; pure Rules need neither steps nor dependency injection.
 - The inline Workflow runner is not durable replay, retry, compensation, or exactly-once execution.
   Steps need portable results; do not return Clients, responses, or other live capabilities between steps.
 
@@ -144,23 +146,23 @@ export function canCloseIssue(issue: { status: StateOf<typeof lifecycle> } | und
   return issue?.status === 'open'
 }
 
-// functions/issue/close-issue.ts
-import { defineWorkflow } from '@astrale-os/sdk/workflow'
+// functions/issue/close-issue.ts — a read and one Mutation: an Action, not a Workflow.
+import { defineAction } from '@astrale-os/sdk/action'
 import { canCloseIssue } from '#rules/issue'
 import { issueNotClosable } from '#schema/modules/issue/errors'
 
-export const closeIssue = defineWorkflow<typeof schema>()(
+export const closeIssue = defineAction<typeof schema>()(
   'Issue.close',
   { errors: { ISSUE_NOT_CLOSABLE: issueNotClosable } },
-  async ({ self, query, mutate, step, error }) => {
-    const issue = await step.run('read-issue', () => query(readIssue, { self }))
+  async ({ self, query, mutate, error }) => {
+    const issue = await query(readIssue, { self })
     if (!canCloseIssue(issue)) throw error('ISSUE_NOT_CLOSABLE', { issueId: self })
-    return step.run('close-issue', () => mutate(closeIssueMutation, { self }))
+    return mutate(closeIssueMutation, { self })
   },
 )
 ```
 
-The Query projects, the imported Rule decides eligibility, and the Workflow maps refusal to its
+The Query projects, the imported Rule decides eligibility, and the Action maps refusal to its
 declared error. Policy owns authorization; the Mutation still guards state changes after the read.
 
 ## Expected errors
