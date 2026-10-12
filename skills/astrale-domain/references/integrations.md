@@ -41,9 +41,10 @@ to Actions and Workflows. Never perform I/O at module import.
 
 ## Action versus Workflow
 
-- An Action may make one Integration operation when that operation is the Action's single semantic
-  asynchronous effect.
-- Use a Workflow when an external call is combined with graph observations or changes.
+- An Action may read graph state and make one state-changing Integration call, or make read-only
+  Integration calls before one Mutation.
+- Use a Workflow when a state-changing external call is combined with another effect, such as a
+  graph Mutation.
 - Put each Workflow effect in its own stable `step.run`; Actions have no Step API.
 
 Provider output must be load-bearing in assertions. Validate unknown remote bytes/responses at the

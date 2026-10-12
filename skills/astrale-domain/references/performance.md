@@ -34,12 +34,12 @@ One bounded Mutation avoids per-item round trips only when all writes belong to 
 Its operations are not sequential commands: combine updates to one target and keep independently
 raceable facts as preconditions. `runtime.md` covers the effect-set and pre-state constraints.
 
-## Choose Action versus Workflow by semantics
+## Choose Action versus Workflow by effects
 
-An Action performs one semantic asynchronous operation and has no Step API. Do not split it merely to
-make tests easier. Use a Workflow when the operation has several explicit observations or effects,
-especially an Integration call between graph reads and writes. Stable steps improve diagnosability,
-but the current inline runner is not a durability system.
+An Action reads what it needs, performs at most one effect, and has no Step API. Do not split it
+merely to make tests easier. Use a Workflow only when the operation has two or more effects that
+cannot commit together, such as an Integration call and a graph Mutation. Reads never make a
+Workflow, and the current inline runner is not a durability system.
 
 ## Avoid hidden N-plus-one work
 
