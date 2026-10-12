@@ -1,5 +1,4 @@
 import { issuer } from '@astrale-os/sdk/auth'
-import { execution } from '@astrale-os/sdk/client/session'
 import { expect, test } from 'bun:test'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -49,18 +48,27 @@ function harness() {
             return { release: { identity: { issuer: installed } } }
           },
         },
-        invoke: async (reference: { target: { raw: string } }, input: unknown) => {
-          calls.push({
-            principal,
-            issuer: selected.domainIssuer,
-            target: reference.target.raw,
-            input,
-          })
-          // The backend result is a fixture, not a replacement implementation of Kernel access.
-          if (reference.target.raw.endsWith('.status'))
+        // The backend result is a fixture, not a replacement implementation of Kernel access.
+        execution: {
+          status: async (id: string) => {
+            calls.push({
+              principal,
+              issuer: selected.domainIssuer,
+              target: `${id}.status`,
+              input: {},
+            })
             return { state: terminal ? 'completed' : 'pending' }
-          if (!terminal) throw new Error('EXECUTION_PENDING')
-          return { kind: 'completed', value: 42 }
+          },
+          result: async (id: string, wait: unknown) => {
+            calls.push({
+              principal,
+              issuer: selected.domainIssuer,
+              target: `${id}.result`,
+              input: wait,
+            })
+            if (!terminal) throw new Error('EXECUTION_PENDING')
+            return { kind: 'completed', value: 42 }
+          },
         },
       },
     } as unknown as ConnectionContext
@@ -78,8 +86,8 @@ function harness() {
       {} as AstraleConfig,
       async ({ session }) =>
         operation === 'status'
-          ? session.invoke(execution.status(receipt.id), {})
-          : session.invoke(execution.result(receipt.id), { waitMs: 100 }),
+          ? session.execution.status(receipt.id)
+          : session.execution.result(receipt.id, { waitMs: 100 }),
       open,
       {
         principal: 'execution',
@@ -115,7 +123,7 @@ test('portable receipt reconstructs Domain-for-caller status and pending-to-term
   expect(h.calls.map(({ principal, issuer }) => ({ principal, issuer }))).toEqual(
     Array(3).fill({ principal: 'domain', issuer: 'https://old-domain.example' }),
   )
-  expect(h.calls[0]?.target).toBe('@execution-1::kernel.astrale.ai:class.Execution.method.status')
+  expect(h.calls[0]?.target).toBe('execution-1.status')
   expect(h.calls[2]?.input).toEqual({ waitMs: 100 })
   expect(h.counts()).toEqual({ inspections: 3, closes: 6 })
 })
@@ -182,7 +190,7 @@ test('a new CLI process reconstructs context from the receipt file without retai
     expect(stderr).toBe('')
     expect(code).toBe(0)
     expect(JSON.parse(stdout)).toEqual({
-      target: '@execution-1::kernel.astrale.ai:class.Execution.method.status',
+      target: 'execution-1.status',
       principal: 'domain',
       issuer: 'https://rotated.example',
     })

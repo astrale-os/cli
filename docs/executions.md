@@ -7,7 +7,7 @@ started. `astrale call` prints that Execution's observation receipt instead of a
 astrale call '@record::notes.example:class.Note.method.complete' \
   --url https://example/api --as alice --json > receipt.json
 astrale execution status receipt.json --url https://example/api --as alice --json
-astrale execution result receipt.json --url https://example/api --as alice --wait-ms 10000 --json
+astrale execution result receipt.json --url https://example/api --as alice --wait --json
 ```
 
 The Kernel tells the CLI what happened: an ordinary value, including an object with an `id`, is
@@ -15,9 +15,14 @@ printed as a value and is never a receipt. The receipt survives CLI restarts. `s
 current state; `result` returns the terminal outcome (`completed`, `failed`, or `cancelled`). A
 result that has not ended yet is no failure: the CLI says so, prints the commands that wait for it
 and read its status (`--json`: `execution`, `follow`, `observe` beside `EXECUTION_PENDING`), and
-exits 75. `--timeout` bounds the request, so give it more than `--wait-ms`. These commands never
-restart, cancel, resume, or delete a workflow. A lost call response has an unknown outcome; do not
-repeat the call automatically.
+exits 75. `--wait` waits up to `--timeout` (110 s without it), which then bounds the whole command.
+These commands never restart, cancel, resume, or delete a workflow. A lost call response has an
+unknown outcome; do not repeat the call automatically.
+
+`astrale call --wait` calls and waits in one command: it answers like a plain call, with the value
+once the Execution completed and the Kernel's error (exit 1) once it failed or was cancelled. Still
+running when the wait ends, it prints the receipt and exits 75; follow it with
+`astrale execution result receipt.json --wait`.
 
 ## Receipt version 2
 

@@ -8,7 +8,7 @@ import {
   installationResultCommand,
   installationStatusCommand,
 } from '../../connection/installation-result'
-import { resolveTimeoutMs } from '../../connection/session'
+import { commandWait, resolveTimeoutMs } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
 import { failInput } from '../../lib/terminal/log'
 
@@ -17,7 +17,7 @@ type Options = KernelCommandOpts & {
   readonly uninstall?: boolean
   readonly command?: string
   readonly attempt?: string
-  readonly waitMs?: string
+  readonly wait?: boolean
   readonly validationScope?: 'incremental' | 'full'
   readonly validationCounts?: 'sample' | 'exact'
 }
@@ -44,7 +44,6 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
   const id = NodeId(rawId)
   const index = operation === 'apply' ? integer(opts.command, '--command', 1) : undefined
   const attempt = operation === 'abort' ? integer(opts.attempt, '--attempt', 1) : undefined
-  const waitMs = opts.waitMs === undefined ? undefined : integer(opts.waitMs, '--wait-ms', 0)
   const lifecycle = opts.uninstall ? 'uninstall' : 'install'
   return {
     opts,
@@ -56,7 +55,7 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
             execution: id,
             follow: installationResultCommand(id, lifecycle, targetFlags(opts)),
             observe: installationStatusCommand(id, lifecycle, targetFlags(opts)),
-            waited: waitMs !== undefined && waitMs > 0,
+            waited: opts.wait === true,
           },
         }
       : {}),
@@ -66,8 +65,12 @@ export function installationCommand(operation: Operation, rawId: string, opts: O
       switch (operation) {
         case 'status':
           return reads.status(id, request)
-        case 'result':
-          return reads.result(id, waitMs === undefined ? {} : { waitMs }, request)
+        case 'result': {
+          if (opts.wait !== true) return reads.result(id, {}, request)
+          // --timeout bounds the whole read, its wait included.
+          const { wait, options } = commandWait(opts.timeout)
+          return reads.result(id, wait, options)
+        }
         case 'apply':
           await api.apply(
             id,
@@ -144,8 +147,8 @@ export const installationCommands: CommandDefinition[] = (
         : operation === 'result'
           ? [
               {
-                flags: '--wait-ms <milliseconds>',
-                description: 'Wait for the terminal outcome; --timeout also bounds the request',
+                flags: '--wait',
+                description: 'Wait for the terminal outcome up to --timeout (110000 ms without it)',
               },
             ]
           : []),

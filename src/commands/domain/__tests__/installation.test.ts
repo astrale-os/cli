@@ -29,7 +29,7 @@ test('observes or signals the exact existing Execution once, using caller author
     timeout: '5000',
     command: '3',
     attempt: '2',
-    waitMs: '100',
+    wait: true,
     validationScope: 'full' as const,
     validationCounts: 'exact' as const,
   }
@@ -42,7 +42,8 @@ test('observes or signals the exact existing Execution once, using caller author
   }
   expect(calls).toEqual([
     ['status', 'existing-execution', { timeoutMs: 5000 }],
-    ['result', 'existing-execution', { waitMs: 100 }, { timeoutMs: 5000 }],
+    // --timeout bounds the whole read, its wait included.
+    ['result', 'existing-execution', { waitMs: 5000 }, { timeoutMs: 5000 }],
     [
       'apply',
       'existing-execution',
@@ -59,8 +60,7 @@ test('a result read names the commands that follow its Execution while it still 
   const target = { instance: 'app', as: 'root' }
   expect(installationCommand('result', 'existing-execution', target).pending).toEqual<unknown>({
     execution: 'existing-execution',
-    follow:
-      'astrale domain installation result existing-execution --wait-ms 20000 -i app --as root',
+    follow: 'astrale domain installation result existing-execution --wait -i app --as root',
     observe: 'astrale domain installation status existing-execution -i app --as root',
     waited: false,
   })
@@ -68,7 +68,7 @@ test('a result read names the commands that follow its Execution while it still 
     installationCommand('result', 'existing-execution', {
       ...target,
       uninstall: true,
-      waitMs: '50',
+      wait: true,
     }).pending,
   ).toMatchObject({
     observe: 'astrale domain installation status existing-execution --uninstall -i app --as root',
@@ -87,9 +87,18 @@ test('admission rejects invalid IDs and missing, zero, fractional or unsafe sign
       '--attempt',
     )
   }
-  expect(() => installationCommand('result', 'existing-execution', { waitMs: '-1' })).toThrow(
-    '--wait-ms',
-  )
+})
+
+test('a result read waits only with --wait, 110 s without --timeout', async () => {
+  const calls: unknown[] = []
+  const result = async (...args: unknown[]) => void calls.push(args)
+  const ctx = { session: { schema: { installation: { result } } } }
+  await installationCommand('result', 'existing-execution', {}).fn(ctx as never)
+  await installationCommand('result', 'existing-execution', { wait: true }).fn(ctx as never)
+  expect(calls).toEqual([
+    ['existing-execution', {}, undefined],
+    ['existing-execution', { waitMs: 110_000 }, undefined],
+  ])
 })
 
 test('Root repair command flags are registered without force or delete', async () => {

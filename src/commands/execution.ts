@@ -1,7 +1,6 @@
 import type { NodeId } from '@astrale-os/sdk/graph/node'
 import type { Path } from '@astrale-os/sdk/graph/path'
 
-import { execution } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'
@@ -14,13 +13,13 @@ import {
   parseExecutionReceipt,
   type ExecutionReceipt,
 } from '../connection/execution'
-import { FOLLOW_WAIT_MS } from '../connection/installation-result'
+import { commandWait } from '../connection/session'
 import { targetFlags } from '../connection/target'
 import { AstraleError } from '../errors'
 import { shellCommand } from '../lib/shell-command'
 import { failInput } from '../lib/terminal/log'
 
-type ExecutionOptions = KernelCommandOpts & { waitMs?: string }
+type ExecutionOptions = KernelCommandOpts & { wait?: boolean }
 
 function requireIdentity(opts: ExecutionOptions): void {
   if (opts.creds !== undefined || opts.anonymous === true) {
@@ -60,12 +59,8 @@ export async function observeExecution(
   run: typeof runKernelCommand = runKernelCommand,
 ): Promise<void> {
   requireIdentity(opts)
-  let waitMs: number | undefined
-  if (opts.waitMs !== undefined) {
-    if (!/^\d+$/.test(opts.waitMs) || !Number.isSafeInteger(Number(opts.waitMs)))
-      throw new TypeError('--wait-ms must be a nonnegative safe integer.')
-    waitMs = Number(opts.waitMs)
-  }
+  // --timeout bounds the whole read, its wait included.
+  const { wait, options } = opts.wait === true ? commandWait(opts.timeout) : { wait: {} }
   const receipt = parseExecutionReceipt(await readFile(file, 'utf8'))
   const target = targetFlags(opts)
   const read = (method: 'status' | 'result', ...args: string[]) =>
@@ -78,16 +73,16 @@ export async function observeExecution(
       ? {
           pending: {
             execution: receipt.id,
-            follow: read('result', '--wait-ms', String(FOLLOW_WAIT_MS)),
+            follow: read('result', '--wait'),
             observe: read('status'),
-            waited: waitMs !== undefined && waitMs > 0,
+            waited: opts.wait === true,
           },
         }
       : {}),
     fn: async ({ session }) =>
       operation === 'status'
-        ? session.invoke(execution.status(receipt.id), {})
-        : session.invoke(execution.result(receipt.id), waitMs === undefined ? {} : { waitMs }),
+        ? session.execution.status(receipt.id)
+        : session.execution.result(receipt.id, wait, options),
   })
 }
 
@@ -102,8 +97,8 @@ export function observationCommand(operation: 'status' | 'result'): CommandDefin
       operation === 'result'
         ? [
             {
-              flags: '--wait-ms <milliseconds>',
-              description: 'Wait for a terminal outcome (default: no wait)',
+              flags: '--wait',
+              description: 'Wait for the terminal outcome up to --timeout (110000 ms without it)',
             },
           ]
         : [],
@@ -117,8 +112,8 @@ the authority for access, including modified or manually reconstructed receipts.
 A result whose execution has not ended is no failure: the CLI says it is still
 running, prints the commands that wait for it and read its status, and exits
 75 (try again later). --json keeps the Kernel's EXECUTION_PENDING refusal on
-stderr and adds "execution", "follow" and "observe". --timeout bounds the
-request independently of --wait-ms. No workflow is restarted or cancelled.
+stderr and adds "execution", "follow" and "observe". With --wait, --timeout
+bounds the whole read, wait included. No workflow is restarted or cancelled.
 `,
     action: async (file, opts: ExecutionOptions) => {
       try {

@@ -38,7 +38,7 @@ export interface PendingFollowUp {
   readonly follow: string
   /** The command that reads its status. */
   readonly observe: string
-  /** Whether this read waited (`--wait-ms`) before the Kernel answered that it has not ended. */
+  /** Whether this read waited (`--wait`) before the Kernel answered that it has not ended. */
   readonly waited: boolean
 }
 

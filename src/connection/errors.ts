@@ -106,8 +106,8 @@ export async function renderPendingResult(
   log.info(
     `Execution ${execution} is still running: ${
       waited
-        ? 'its outcome did not come within --wait-ms.'
-        : 'it has no outcome yet, and this read did not wait (--wait-ms).'
+        ? 'its outcome did not come within --timeout.'
+        : 'it has no outcome yet, and this read did not wait (--wait).'
     }`,
   )
   log.dim(`  Wait for it: ${follow}`)
@@ -262,7 +262,7 @@ function renderResponse(
           : failure.code === CREDENTIAL_REFUSED
             ? 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.'
             : code === 'EXECUTION_PENDING'
-              ? 'The Execution has not ended yet: wait for it with --wait-ms <milliseconds> (for example --wait-ms 20000, within --timeout), or read its status.'
+              ? 'The Execution has not ended yet: wait for it with --wait (up to --timeout), or read its status.'
               : undefined))
   if (machine) {
     writeRaw({

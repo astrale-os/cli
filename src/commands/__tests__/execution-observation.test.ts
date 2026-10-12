@@ -29,8 +29,17 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-test('status/result actions read the file, retain default identity selection, and send real SDK execution references', async () => {
-  const wire: { target: unknown; input: unknown }[] = []
+const status = {
+  id: 'execution-1',
+  function: 'function-1',
+  version: `sha256:${'a'.repeat(64)}`,
+  state: 'completed',
+  createdAt: '2026-10-12T00:00:00.000Z',
+  outcome: { kind: 'completed', value: 42 },
+}
+
+test('status/result actions read the file, retain default identity selection, and read the Execution through the SDK', async () => {
+  const wire: { target: unknown; input: { waitMs?: number } }[] = []
   const results: unknown[] = []
   const session = new ClientSession({
     kernel,
@@ -45,7 +54,9 @@ test('status/result actions read the file, retain default identity selection, an
         JSON.stringify({
           requestId: body.requestId,
           invocation: { source: kernel, id: 'read-1' },
-          result: { kind: 'completed', value: 42 },
+          result: JSON.stringify(body.call.target).includes('method.status')
+            ? status
+            : status.outcome,
         }),
         {
           headers: {
@@ -68,39 +79,20 @@ test('status/result actions read the file, retain default identity selection, an
   try {
     await observeExecution('status', file, { url: kernel, json: true }, run)
     await observeExecution('result', file, { url: kernel, json: true }, run)
-    await observeExecution('result', file, { url: kernel, json: true, waitMs: '0' }, run)
-    await observeExecution('result', file, { url: kernel, json: true, waitMs: '1000' }, run)
-    expect(wire).toEqual([
-      {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.status',
-          instance: '@execution-1',
-        },
-        input: {},
-      },
-      {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.result',
-          instance: '@execution-1',
-        },
-        input: {},
-      },
-      {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.result',
-          instance: '@execution-1',
-        },
-        input: { waitMs: 0 },
-      },
-      {
-        target: {
-          callable: 'kernel.astrale.ai:class.Execution.method.result',
-          instance: '@execution-1',
-        },
-        input: { waitMs: 1000 },
-      },
+    await observeExecution('result', file, { url: kernel, json: true, wait: true }, run)
+    await observeExecution('result', file, { url: kernel, wait: true, timeout: '5000' }, run)
+    expect(wire.map(({ target }) => target)).toEqual([
+      '@execution-1::kernel.astrale.ai:class.Execution.method.status',
+      ...Array(3).fill('@execution-1::kernel.astrale.ai:class.Execution.method.result'),
     ])
-    expect(results).toEqual(Array(4).fill({ kind: 'completed', value: 42 }))
+    // Without --wait the read answers at once; --wait waits 110 s, or what --timeout bounds.
+    const waits = wire.slice(1).map(({ input }) => input.waitMs!)
+    expect(waits[0]).toBe(0)
+    expect(waits[1]).toBeGreaterThan(100_000)
+    expect(waits[1]).toBeLessThanOrEqual(110_000)
+    expect(waits[2]).toBeGreaterThan(4_000)
+    expect(waits[2]).toBeLessThanOrEqual(5_000)
+    expect(results).toEqual([status, ...Array(3).fill(status.outcome)])
   } finally {
     session.close()
   }
@@ -109,15 +101,17 @@ test('status/result actions read the file, retain default identity selection, an
 test('a result read names the commands that follow its Execution while it still runs', async () => {
   const inputs: { readonly pending?: unknown }[] = []
   const run: typeof runKernelCommand = async (input) => void inputs.push(input)
-  await observeExecution('result', file, { instance: 'app', waitMs: '0' }, run)
+  await observeExecution('result', file, { instance: 'app' }, run)
+  await observeExecution('result', file, { instance: 'app', wait: true }, run)
   await observeExecution('status', file, { instance: 'app' }, run)
   expect(inputs[0]!.pending).toEqual({
     execution: 'execution-1',
-    follow: `astrale execution result ${file} --wait-ms 20000 -i app`,
+    follow: `astrale execution result ${file} --wait -i app`,
     observe: `astrale execution status ${file} -i app`,
     waited: false,
   })
-  expect(inputs[1]).not.toHaveProperty('pending')
+  expect(inputs[1]!.pending).toMatchObject({ waited: true })
+  expect(inputs[2]).not.toHaveProperty('pending')
 })
 
 test('invalid waits, absent/malformed files and explicit credential overrides fail before connection', async () => {
@@ -125,10 +119,10 @@ test('invalid waits, absent/malformed files and explicit credential overrides fa
   const run: typeof runKernelCommand = async () => {
     connections++
   }
-  for (const waitMs of ['-1', 'NaN', '1.5', '9007199254740992']) {
-    await expect(observeExecution('result', file, { waitMs }, run)).rejects.toThrow(
-      '--wait-ms must be a nonnegative safe integer.',
-    )
+  for (const timeout of ['-1', 'NaN', '1.5', '0']) {
+    await expect(
+      observeExecution('result', file, { wait: true, timeout }, run),
+    ).rejects.toMatchObject({ code: 'INVALID_FLAG' })
   }
   await expect(observeExecution('status', join(directory, 'absent'), {}, run)).rejects.toThrow()
   await writeFile(file, 'private malformed value')
@@ -184,19 +178,20 @@ test.each(['caller', 'domain'])(
       .map((line) => JSON.parse(line))
     expect(startEvents.some((event) => event.kind === 'exchange')).toBe(mode === 'domain')
     await writeFile(observed, '')
-    expect(JSON.parse(await invoke(['execution', 'status', file, ...flags]))).toEqual({
+    expect(JSON.parse(await invoke(['execution', 'status', file, ...flags]))).toMatchObject({
+      id: 'execution-1',
       state: 'completed',
     })
-    expect(
-      JSON.parse(await invoke(['execution', 'result', file, '--wait-ms', '0', ...flags])),
-    ).toEqual({ kind: 'completed', value: 42 })
+    expect(JSON.parse(await invoke(['execution', 'result', file, '--wait', ...flags]))).toEqual({
+      kind: 'completed',
+      value: 42,
+    })
     const events = (await Bun.file(observed).text())
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line))
-    const observations = events.filter(
-      (event) =>
-        typeof event.target === 'object' && event.target.callable?.includes('class.Execution'),
+    const observations = events.filter((event) =>
+      JSON.stringify(event.target ?? '').includes('class.Execution'),
     )
     expect(observations.map((event) => event.principal)).toEqual([mode, mode])
     if (mode === 'caller') {
@@ -216,8 +211,6 @@ test('a result read before the Execution ended is still running: exit 75 and wha
       'execution',
       'result',
       file,
-      '--wait-ms',
-      '0',
       '--url',
       kernel,
       '--as',
@@ -244,7 +237,7 @@ test('a result read before the Execution ended is still running: exit 75 and wha
   expect(code, stderr + stdout).toBe(75)
   expect(JSON.parse(stderr)).toMatchObject({
     execution: 'execution-1',
-    follow: `astrale execution result ${file} --wait-ms 20000 --url ${kernel} --as alice`,
+    follow: `astrale execution result ${file} --wait --url ${kernel} --as alice`,
     observe: `astrale execution status ${file} --url ${kernel} --as alice`,
     reason: { code: 'EXECUTION_PENDING' },
   })
@@ -321,9 +314,6 @@ test('production SessionAuth propagates observation principal refusal before Exe
     .map((line) => JSON.parse(line))
   expect(events.filter((event) => event.input?.kind === 'inspect')).toHaveLength(2)
   expect(
-    events.some(
-      (event) =>
-        typeof event.target === 'object' && event.target.callable?.includes('class.Execution'),
-    ),
+    events.some((event) => JSON.stringify(event.target ?? '').includes('class.Execution')),
   ).toBe(false)
 })

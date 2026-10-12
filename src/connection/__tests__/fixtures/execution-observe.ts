@@ -1,4 +1,3 @@
-import { execution } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 
 import type { AstraleConfig } from '../../../lib/config'
@@ -17,11 +16,13 @@ const open: ConnectionFactory = (target, _timeout, _options, _config, intent) =>
         schema: {
           inspect: async () => ({ release: { identity: { issuer: 'https://rotated.example' } } }),
         },
-        invoke: async (ref: { target: { raw: string } }) => ({
-          target: ref.target.raw,
-          principal: intent?.principal,
-          issuer: target.domainIssuer,
-        }),
+        execution: {
+          status: async (id: string) => ({
+            target: `${id}.status`,
+            principal: intent?.principal,
+            issuer: target.domainIssuer,
+          }),
+        },
       },
     } as unknown as ConnectionContext,
     close() {},
@@ -34,7 +35,7 @@ const result = await withResolvedClientSession(
   },
   { as: 'alice' },
   {} as AstraleConfig,
-  ({ session }) => session.invoke(execution.status(receipt.id), {}),
+  ({ session }) => session.execution.status(receipt.id),
   open,
   { principal: 'execution', receipt },
 )

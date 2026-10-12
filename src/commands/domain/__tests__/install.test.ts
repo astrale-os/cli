@@ -324,9 +324,11 @@ describe('install by URL', () => {
     await installByReference([B, A], JSON_OUTPUT, run.deps)
 
     expect(run.credentials).toEqual([{ principal: 'caller' }])
+    // Without --timeout the install waits 110 s for its outcome.
     expect(run.requests).toEqual([
       {
         operation: GENERATED,
+        waitMs: 110_000,
         domains: [
           { release: { url: B, digest: digest('2') } },
           { release: { url: A, digest: digest('1') } },
@@ -443,7 +445,11 @@ describe('install by URL', () => {
 
     expect(run.sleeps).toEqual([2_000, 2_000])
     expect(run.requests).toEqual([
-      { operation: GENERATED, domains: [{ release: { url: A, digest: digest('1') } }] } as never,
+      {
+        operation: GENERATED,
+        waitMs: 110_000,
+        domains: [{ release: { url: A, digest: digest('1') } }],
+      } as never,
     ])
   })
 
@@ -1015,7 +1021,7 @@ describe('durable installations', () => {
         operation: RETRY,
         mode: 'maintenance',
         validation: { scope: 'full', counts: 'exact' },
-        wait: false,
+        waitMs: 0,
       })
       expect(listings).toBe(1)
     })
@@ -1127,13 +1133,15 @@ describe('durable installations', () => {
       } as never,
     })
     await installByReference([A], { ...JSON_OUTPUT, timeout: '150', instance: 'staging' }, run.deps)
+    // --timeout bounds the install's wait.
+    expect(run.requests).toMatchObject([{ waitMs: 150 }])
     expect(JSON.parse(io.stdout)).toEqual({
       execution: EXECUTION,
       lifecycle: 'install',
       status: { id: EXECUTION, state: 'running', detail: { phase: 'validating' } },
       operation: GENERATED,
       observe: `astrale domain installation status ${EXECUTION} -i staging`,
-      follow: `astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+      follow: `astrale domain installation result ${EXECUTION} --wait -i staging`,
       precheck: expect.anything(),
     })
 
@@ -1144,7 +1152,7 @@ describe('durable installations', () => {
       `Installation ${EXECUTION} still runs on the Kernel: this command's wait (--timeout) ended first.`,
     )
     expect(shown.all).toContain(
-      `Wait for it: astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+      `Wait for it: astrale domain installation result ${EXECUTION} --wait -i staging`,
     )
     expect(shown.all).not.toContain('✖')
     expect(shown.all).not.toContain('installed (operation')
@@ -1251,7 +1259,7 @@ describe('an interrupted wait leaves the durable Execution running', () => {
       lifecycle: 'install',
       operation: GENERATED,
       observe: `astrale domain installation status ${EXECUTION} -i staging`,
-      follow: `astrale domain installation result ${EXECUTION} --wait-ms 20000 -i staging`,
+      follow: `astrale domain installation result ${EXECUTION} --wait -i staging`,
     })
     expect(process.listenerCount('SIGINT')).toBe(listeners)
   })
@@ -1317,7 +1325,7 @@ describe('published SDK durable decoder through the install command', () => {
           if (calls.at(-1)!.endsWith('.result')) return { kind: 'value', value: outcome } as never
           return { kind: 'value', value: status } as never
         },
-        { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576, lifecycleTimeoutMs: 2000 },
+        { maximumReleaseBytes: 1048576, maximumBundleBytes: 1048576 },
       )
       let listings = 0
       const run = harness({

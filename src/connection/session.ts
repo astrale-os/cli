@@ -380,6 +380,26 @@ export function resolveTimeoutMs(raw: string | undefined): number {
   return value
 }
 
+/** How long a command that waits for an Execution's outcome waits without --timeout. */
+const DEFAULT_WAIT_MS = 110_000
+
+/**
+ * The wait of a command that waits for an Execution's outcome. --timeout bounds the whole command,
+ * wait included, so the wait and the call share what is left of it once `spentMs` passed; without
+ * it, the command waits {@link DEFAULT_WAIT_MS} and each request takes the Session's timeout.
+ */
+export function commandWait(
+  timeout: string | undefined,
+  spentMs = 0,
+): {
+  readonly wait: { readonly waitMs: number }
+  readonly options?: { readonly timeoutMs: number }
+} {
+  if (timeout === undefined) return { wait: { waitMs: DEFAULT_WAIT_MS } }
+  const left = Math.max(1, resolveTimeoutMs(timeout) - spentMs)
+  return { wait: { waitMs: left }, options: { timeoutMs: left } }
+}
+
 function openConnection(
   target: ConnectionTarget,
   timeoutMs: number,

@@ -1,5 +1,4 @@
 import type {
-  InstallExecutionId,
   Installation,
   InstallResult,
   SchemaApi,
@@ -7,9 +6,10 @@ import type {
   UninstallReceipt,
 } from '@astrale-os/sdk/client/schema'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 
 import { ResponseError } from '@astrale-os/sdk/client'
-import { createSchema, DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS } from '@astrale-os/sdk/client/schema'
+import { createSchema } from '@astrale-os/sdk/client/schema'
 
 import type { OperationRecovery } from './command'
 
@@ -91,7 +91,7 @@ export function replayMarker(answer: object): boolean | undefined {
  */
 export function announcingLifecycle(
   session: Pick<ClientSession, 'dispatch'>,
-  started: (execution: InstallExecutionId, replayed?: boolean) => void,
+  started: (execution: NodeId, replayed?: boolean) => void,
 ): Lifecycle {
   const schema = createSchema(
     async (call, options) => {
@@ -100,11 +100,7 @@ export function announcingLifecycle(
       return result
     },
     // Only the lifecycle syscalls are exposed: the introspection limits bound nothing here.
-    {
-      maximumReleaseBytes: 1,
-      maximumBundleBytes: 1,
-      lifecycleTimeoutMs: DEFAULT_SCHEMA_LIFECYCLE_TIMEOUT_MS,
-    },
+    { maximumReleaseBytes: 1, maximumBundleBytes: 1 },
   )
   return Object.freeze({
     install: (request, options) => schema.install(request, options),
@@ -117,7 +113,7 @@ export interface LifecycleContext {
   readonly lifecycle: 'install' | 'uninstall'
   readonly recovery: OperationRecovery
   /** The Execution the Kernel answered for the operation; absent when it never answered one. */
-  readonly started?: InstallExecutionId
+  readonly started?: NodeId
   /** The Kernel's `replayed` marker on that answer, as it sent it; absent when it sent none. */
   readonly replayed?: boolean
 }
@@ -167,9 +163,6 @@ export function installationStatusCommand(
   ])
 }
 
-/** How long the printed follow-up waits for the outcome: within the default request timeout. */
-export const FOLLOW_WAIT_MS = 20_000
-
 /** The command that waits for one install or uninstall Execution's outcome. */
 export function installationResultCommand(
   execution: string,
@@ -183,8 +176,7 @@ export function installationResultCommand(
     'result',
     execution,
     ...(lifecycle === 'uninstall' ? ['--uninstall'] : []),
-    '--wait-ms',
-    String(FOLLOW_WAIT_MS),
+    '--wait',
     ...target,
   ])
 }
@@ -481,9 +473,9 @@ export async function conflictFailure(
   if (!(error instanceof ResponseError) || !operationConflict(error.reason)) return error
   const named = conflictDetails(error.reason)
   if (named.execution === undefined) return new OperationConflict(error)
-  const execution = named.execution as InstallExecutionId
+  const execution = named.execution as NodeId
   const read = async (reads: {
-    readonly status: (execution: InstallExecutionId) => Promise<{ readonly state: string }>
+    readonly status: (execution: NodeId) => Promise<{ readonly state: string }>
   }) => {
     try {
       return (await reads.status(execution)).state

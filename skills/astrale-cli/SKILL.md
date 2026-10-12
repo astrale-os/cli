@@ -278,7 +278,8 @@ astrale domain uninstall app.example shared.example --destructive --yes -i stagi
 An install or uninstall is a durable Execution. The CLI waits for its outcome up to `--timeout`
 (110 s by default; `--no-wait` returns at once) and reports success only from a completed outcome.
 Never rerun it to learn what happened: follow the Execution it printed with
-`astrale domain installation status|result <execution>` (`--uninstall` for an uninstall).
+`astrale domain installation status <execution>` or `result <execution> --wait` (`--uninstall`
+for an uninstall).
 
 | Exit | Meaning |
 | --- | --- |
@@ -478,7 +479,10 @@ encodes the body as text or base64. Callable input/output is
 started: `call` prints that Execution's receipt instead of a value. Save it
 with `--json > receipt.json` and follow the run with
 `astrale execution status|result receipt.json` as the same identity; never
-repeat the call to learn its outcome.
+repeat the call to learn its outcome. `call --wait` calls and waits in one
+command, up to `--timeout` (110 s by default): the value once it completed, the
+Kernel's error (exit 1) once it failed or was cancelled, or, still running, the
+receipt and exit 75.
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10

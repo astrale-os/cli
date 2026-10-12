@@ -9,10 +9,8 @@ export default {
   afterHelpText: `
 Behavior:
   Installation is durable. In online mode the CLI waits for its outcome up to
-  --timeout (110000 ms without it), counted from the Kernel's answer naming
-  the execution: the reads and the pre-check before it do not count. No wait
-  under 1 s is started, so a --timeout below 1000 returns at once with the
-  execution still running. --timeout also bounds each request. The CLI
+  --timeout (110000 ms without it), which bounds the install request and its
+  wait together: the reads and the pre-check before it do not count. The CLI
   reports success only after completion. An installation that ended failed
   exits 2, one refused as an operation conflict or while another schema change
   is active (SCHEMA_CHANGE_ACTIVE) exits 5, any other failure exits 1. One
@@ -22,7 +20,7 @@ Behavior:
   retains its execution ID and exact status.
   An operation names one request and its outcome is final. Follow an
   installation by its execution ("observe": installation status, "follow":
-  installation result --wait-ms); once it ended (failed or cancelled), try
+  installation result --wait); once it ended (failed or cancelled), try
   again without --operation ("fresh"). A refusal before any execution exists
   (--json: "execution": null) leaves the operation unused. --no-wait returns
   without waiting. Ctrl-C stops waiting, never the installation: the CLI names
@@ -100,7 +98,7 @@ Behavior:
 Examples:
   $ astrale domain installation status <execution-id> -i staging --as root --json
   $ astrale domain installation apply <execution-id> --command 1 -i staging --as root --json
-  $ astrale domain installation result <execution-id> --wait-ms 10000 -i staging --as root --json
+  $ astrale domain installation result <execution-id> --wait -i staging --as root --json
   $ astrale domain install issues.astrale.ai@1.5 -i acme-prod            # highest stable 1.5.x
   $ astrale domain install crm.acme.dev@1.5.0 https://employees.example -i staging  # mixed, atomic
   $ astrale domain install https://crm.workers.dev -i staging            # one URL, to the instance kernel

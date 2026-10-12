@@ -3,7 +3,7 @@ import type { DomainInfo } from '@astrale-os/sdk/client/schema'
 
 import { issuer } from '@astrale-os/sdk/auth'
 import { createGraph, ResponseError, TransportError } from '@astrale-os/sdk/client'
-import { ClientSession, execution } from '@astrale-os/sdk/client/session'
+import { ClientSession } from '@astrale-os/sdk/client/session'
 import { NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
@@ -117,9 +117,7 @@ describe('Shell exchange at the installed issuer', () => {
       },
     )
     await expect(
-      command.run('user-1', (context) =>
-        context.session.invoke(execution.status(NodeId('execution-1')), {}),
-      ),
+      command.run('user-1', (context) => context.session.execution.status(NodeId('execution-1'))),
     ).rejects.toMatchObject({ code: 'EXECUTION_PRINCIPAL_CHANGED' })
     expect(reads).toBe(2)
     expect(

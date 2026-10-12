@@ -124,7 +124,7 @@ test("the lifecycle passes on the Kernel's replay marker only when it sends one"
       (_execution, replayed) => markers.push(replayed),
     )
     await lifecycle
-      .install({ operation: CONTEXT.recovery.operation, domains: [], wait: false } as never)
+      .install({ operation: CONTEXT.recovery.operation, domains: [], waitMs: 0 } as never)
       .catch(() => undefined)
   }
   expect(markers).toEqual([true, false, undefined, undefined])
@@ -227,7 +227,7 @@ describe('a failure before any outcome says whether an Execution exists', () => 
     )
     expect(text).toContain('Read this run: astrale domain installation status execution-1 -i app')
     expect(text).toContain(
-      'Wait for it: astrale domain installation result execution-1 --wait-ms 20000 -i app',
+      'Wait for it: astrale domain installation result execution-1 --wait -i app',
     )
     expect(text).not.toContain('Delivery is unknown')
     expect(json).toMatchObject({
@@ -235,7 +235,7 @@ describe('a failure before any outcome says whether an Execution exists', () => 
       execution: 'execution-1',
       operation: CONTEXT.recovery.operation,
       observe: 'astrale domain installation status execution-1 -i app',
-      follow: 'astrale domain installation result execution-1 --wait-ms 20000 -i app',
+      follow: 'astrale domain installation result execution-1 --wait -i app',
     })
   })
 })
@@ -476,7 +476,7 @@ describe('a replayed end is the recorded one, said once and in the past tense', 
     )
     expect(runningReport(running, replayed)).toMatchObject({
       replayed: true,
-      follow: 'astrale domain installation result execution-1 --wait-ms 20000 -i app',
+      follow: 'astrale domain installation result execution-1 --wait -i app',
     })
     expect(runningReport(running, replayed)).not.toHaveProperty('replay')
     expect(runningReport(running, CONTEXT)).not.toHaveProperty('replayed')
@@ -592,7 +592,7 @@ test('an interrupted wait tells a human the Execution continues and how to follo
   const text = stripVTControlCharacters(lines.join('\n'))
   expect(text).toContain('Stopped waiting: the install continues on the Kernel as execution-1.')
   expect(text).toContain(
-    'Wait for it: astrale domain installation result execution-1 --wait-ms 20000 -i app',
+    'Wait for it: astrale domain installation result execution-1 --wait -i app',
   )
   expect(text).toContain(
     `Interrupted before the Kernel answered: if the uninstall reached it, it runs under operation ${CONTEXT.recovery.operation}.`,
@@ -680,8 +680,7 @@ describe('a conflict or a pending result says what to do next', () => {
       formatKernelError(refusal('EXECUTION_PENDING'), machine),
     )
     const hint =
-      'The Execution has not ended yet: wait for it with --wait-ms <milliseconds> ' +
-      '(for example --wait-ms 20000, within --timeout), or read its status.'
+      'The Execution has not ended yet: wait for it with --wait (up to --timeout), or read its status.'
     expect(text).toContain(hint)
     expect(json).toMatchObject({ reason: { code: 'EXECUTION_PENDING' }, hint })
   })
@@ -689,7 +688,7 @@ describe('a conflict or a pending result says what to do next', () => {
   test('a pending result is still running, not failed: what follows it', async () => {
     const pending = {
       execution: 'execution-1',
-      follow: 'astrale execution result r.json --wait-ms 20000 -i app',
+      follow: 'astrale execution result r.json --wait -i app',
       observe: 'astrale execution status r.json -i app',
       waited: true,
     }
@@ -699,7 +698,7 @@ describe('a conflict or a pending result says what to do next', () => {
       renderPendingResult(refusal('EXECUTION_PENDING'), pending, machine),
     )
     expect(text).toContain(
-      'Execution execution-1 is still running: its outcome did not come within --wait-ms.',
+      'Execution execution-1 is still running: its outcome did not come within --timeout.',
     )
     expect(text).toContain(`Wait for it: ${pending.follow}`)
     expect(text).toContain(`Read its status: ${pending.observe}`)

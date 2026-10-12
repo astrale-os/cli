@@ -147,7 +147,7 @@ astrale domain installation status "$EXECUTION" -i qa-migration --as qa-root --j
 # Apply deliberate repair mutations, then read status for its current command index.
 astrale domain installation apply "$EXECUTION" -i qa-migration --as qa-root \
   --command "$COMMAND_INDEX" --validation-scope full --validation-counts exact --json
-astrale domain installation result "$EXECUTION" -i qa-migration --as qa-root --json
+astrale domain installation result "$EXECUTION" --wait -i qa-migration --as qa-root --json
 ```
 
 `abort --attempt <number>` stops the named running validation attempt and returns the session to
