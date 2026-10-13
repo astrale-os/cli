@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { InstanceInfo } from '../../admin/instance'
 import type { KernelCommandOpts } from '../../connection'
 
+import { credentialRefused } from '../../connection/reasons'
 import { AstraleError } from '../../errors'
 import { readIdentities } from '../../identity'
 import { fetchWithCaFile } from '../ca-fetch'
@@ -78,14 +79,24 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 // --- Account activation at login --------------------------------------------------------------
 
 /**
- * `ready`: nothing is left to complete on Admin; it grants nothing and does not prove registration.
- * `rejected`: Admin refused this login itself. `denied`: Admin refused the pending admission.
+ * `ready`: nothing is left to complete on Admin, and its Kernel accepted the account.
+ * `unregistered`: the account has no access to Admin: outside its organization, or no Identity
+ * there. Admin's own `ready` grants nothing and does not prove registration, so login asks its
+ * Kernel. `rejected`: Admin refused this login itself. `denied`: Admin refused the pending admission.
  */
-type AccountActivation = 'ready' | 'pending' | 'rejected' | 'denied' | 'unavailable'
+type AccountActivation =
+  | 'ready'
+  | 'pending'
+  | 'unregistered'
+  | 'rejected'
+  | 'denied'
+  | 'unavailable'
 
 /** What a user should do when a login could not complete prepared access. */
 export const ACCOUNT_ACTIVATION_WARNINGS = {
   pending: 'Astrale access is still being completed. Run `astrale auth login` again in a moment.',
+  unregistered:
+    'This account has no access to Astrale Admin, so Admin commands such as `astrale issue` are refused. Ask an administrator for an invitation, then run `astrale auth login` again.',
   rejected:
     'Astrale Admin did not accept this login, so no prepared access was completed. Check that this is the invited WorkOS account.',
   denied: 'Astrale Admin refused the access prepared for this account. Ask an administrator.',
@@ -124,29 +135,60 @@ async function activateAccount(
   const endpoint = adminEndpoint(admin.domainIssuer, '/v1/account-activation')
   if (!isKernelAudience(kernel) || endpoint === undefined) return 'unavailable'
   const missing = () => new Error('No primary credential for the Admin audience is available.')
+  // An Admin bookmark's CA file covers these requests as it covers the Admin connection.
+  const fetch = admin.caFile ? fetchWithCaFile(admin.caFile) : globalThis.fetch
   try {
     return await requestAccountActivation(
       {
         endpoint: endpoint.href,
         instanceOrigin: kernel.origin,
         credential: () => primaryCredential(identityName, kernel.href, undefined, missing),
+        registered: (credential, signal) => kernelKnows(kernel.href, credential, signal, fetch),
       },
-      {
-        // An Admin bookmark's CA file covers this request as it covers the Admin connection.
-        fetch: admin.caFile ? fetchWithCaFile(admin.caFile) : globalThis.fetch,
-        sleep: wait,
-      },
+      { fetch, sleep: wait },
     )
   } catch (cause) {
-    // An account outside Admin's organization holds nothing there for a login to complete.
-    if (classifyRefreshFailure(cause) === 'org-rejected') return 'ready'
+    // WorkOS issues no Admin credential to an account outside Admin's organization.
+    if (classifyRefreshFailure(cause) === 'org-rejected') return 'unregistered'
     throw cause
   }
 }
 
-/** One bounded resume; only a registration still in progress is retried, after Admin's delay. */
+/**
+ * Whether the Kernel knows the Identity this primary credential names. It refuses an unknown
+ * account with 2002; any other failure proves nothing about registration.
+ */
+export async function kernelKnows(
+  kernel: string,
+  credential: string,
+  signal: AbortSignal,
+  fetch: Fetch = globalThis.fetch,
+): Promise<boolean> {
+  const session = new ClientSession({
+    kernel,
+    fetch,
+    timeoutMs: 15_000,
+    policy: { maximumRouteAgeMs: 30_000 },
+    auth: { ttlSeconds: 30, resolve: () => ({ credential }) },
+  })
+  try {
+    await session.auth.whoami({ signal })
+    return true
+  } catch (error) {
+    return !credentialRefused(error)
+  } finally {
+    session.close()
+  }
+}
+
+/**
+ * One bounded resume; only a registration still in progress is retried, after Admin's delay. Once
+ * Admin answers `ready`, its Kernel says whether it knows the account.
+ */
 export async function requestAccountActivation(
-  request: ActivationRequest,
+  request: ActivationRequest & {
+    readonly registered: (credential: string, signal: AbortSignal) => Promise<boolean>
+  },
   dependencies: { fetch: Fetch; sleep: (ms: number) => Promise<void> } = {
     fetch: globalThis.fetch,
     sleep: wait,
@@ -161,10 +203,11 @@ export async function requestAccountActivation(
     } catch {
       return 'unavailable'
     }
-    if (response.status === 200)
-      return ready.safeParse(await response.json().catch(() => undefined)).success
-        ? 'ready'
-        : 'unavailable'
+    if (response.status === 200) {
+      if (!ready.safeParse(await response.json().catch(() => undefined)).success)
+        return 'unavailable'
+      return (await request.registered(token, signal)) ? 'ready' : 'unregistered'
+    }
     const code = await response
       .json()
       .then((body: unknown) => (body as { code?: unknown } | null)?.code)

@@ -50,8 +50,9 @@ Notes:
   Device auth is the default because it matches CLI use. Token values are
   cached locally for credential resolution but are never printed.
   A WorkOS user login also completes the access an administrator prepared for
-  this account on Astrale Admin, such as a Fleet invitation. Login succeeds
-  even when Admin cannot be reached; run it again later to complete access.
+  this account on Astrale Admin, such as a Fleet invitation, and warns when
+  the account has no access to Admin. Login succeeds even when Admin cannot be
+  reached; run it again later to complete access.
 `,
   action: async (opts: LoginOpts) => {
     const { session, identityName, idpName } = await loginViaIdp(opts)
