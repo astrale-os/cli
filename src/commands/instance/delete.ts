@@ -3,6 +3,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { AdminInstanceNotFoundError } from '../../admin/instance'
 import { formatKernelError } from '../../connection/errors'
+import { readIdentities } from '../../identity'
 import { deleteOwnedInstance } from '../../lib/admin/instances'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin/target'
 import {
@@ -10,6 +11,7 @@ import {
   removeDeletedInstanceBookmark,
   resolveInstanceKey,
 } from '../../lib/instance/bookmarks'
+import { removeDeletedInstanceRootIdentity } from '../../lib/instance/root-cleanup'
 import { log, withSpinner } from '../../lib/terminal/log'
 import { isMachine, outputForMachine } from '../../lib/terminal/output'
 
@@ -27,6 +29,10 @@ Behavior:
   of the instance's route and tenant reservation, then removes the Instance
   projection. A same-name local bookmark is removed after the delete succeeds
   unless --keep-bookmark is passed.
+  The matching <slug>-root identity and its unshared key are also removed, even
+  with --keep-bookmark. If it was the default identity, the first remaining
+  identity becomes default. An unrelated or concurrently replaced identity is
+  preserved and reported; an alias sharing the key keeps that key.
 `,
   arguments: [{ name: 'id', description: 'Instance slug or Node ID', required: true }],
   options: [
@@ -37,6 +43,7 @@ Behavior:
     // Teardown walks services + deprovisions — same saga-sized budget as create.
     opts = { ...opts, timeout: opts.timeout ?? '240000' }
     try {
+      const identities = await readIdentities()
       const result = await withSpinner(
         `Deleting instance ${id}`,
         !isMachine(opts),
@@ -44,11 +51,26 @@ Behavior:
         { success: (deleted) => `Deleted instance: ${deleted.slug}` },
       )
 
-      if (!opts.keepBookmark && result.state === 'deleted') {
-        await removeDeletedInstanceBookmark(result)
+      const localRootIdentity =
+        result.state === 'deleted'
+          ? await removeDeletedInstanceRootIdentity(result, identities)
+          : undefined
+      if (localRootIdentity) {
+        if (localRootIdentity.status === 'retained' || localRootIdentity.status === 'error')
+          log.warn(`Root identity ${localRootIdentity.name}: ${localRootIdentity.reason}`)
+        else if (!isMachine(opts) && localRootIdentity.status === 'removed') {
+          log.success(`Removed root identity: ${localRootIdentity.name}`)
+          if (localRootIdentity.keyRetained) log.info('Kept the key shared by another identity.')
+        }
       }
 
-      if (outputForMachine(result, opts)) return
+      if (!opts.keepBookmark && result.state === 'deleted')
+        await removeDeletedInstanceBookmark(result)
+
+      if (
+        outputForMachine({ ...result, ...(localRootIdentity ? { localRootIdentity } : {}) }, opts)
+      )
+        return
     } catch (e) {
       // Bookmark-only id → no admin Instance → kernel NOT_FOUND. Point to
       // `forget` (local drop) instead of surfacing the raw path error.

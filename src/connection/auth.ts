@@ -143,6 +143,10 @@ function resolveCredentialHint(
   if (error instanceof IdpOrgMembershipError) {
     return 'This instance might belong to a different account.'
   }
+  // A refused local session file: re-login writes the same files, so it cannot help.
+  if (error instanceof IdpSessionFileAccessError) {
+    return `Check that this user can read and write ${error.path} and its directory (owner, mode, a read-only mount or a sandbox), then retry.`
+  }
   // Transient IdP outage: the cached session is still valid — retrying is the
   // fix, not re-login.
   if (error instanceof IdpRefreshTransientError) {
@@ -227,9 +231,31 @@ class IdpOrgMembershipError extends Error {
   }
 }
 
+/** The filesystem refused access to a local session file: its lock, the session or its write. */
+class IdpSessionFileAccessError extends Error {
+  readonly path: string
+
+  constructor(path: string, message: string) {
+    super(message)
+    this.name = 'IdpSessionFileAccessError'
+    this.path = path
+  }
+}
+
+const FILE_ACCESS_REFUSALS: ReadonlySet<unknown> = new Set(['EACCES', 'EPERM', 'EROFS'])
+
 function refreshFailureError(identityName: string, identity: Identity, cause: unknown): Error {
   const reason = cause instanceof Error ? cause.message : String(cause)
   const idpFlag = identity.idp ? ` --idp ${identity.idp}` : ''
+  // A local filesystem refusal says nothing about the IdP session. Only filesystem errors carry a
+  // path, which keeps a socket EPERM (a sandbox blocking the network) out of this branch.
+  const { code, path } = (cause ?? {}) as { readonly code?: unknown; readonly path?: unknown }
+  if (FILE_ACCESS_REFUSALS.has(code) && typeof path === 'string') {
+    return new IdpSessionFileAccessError(
+      path,
+      `Could not refresh the IdP session for "${identityName}": access to ${path} was refused (${String(code)}).`,
+    )
+  }
   // Only a definitively dead grant (invalid_grant: WorkOS idle/absolute
   // timeout, logout elsewhere, reuse-detection revocation) warrants a
   // re-login. Network failures and IdP 5xx leave the cached session valid —

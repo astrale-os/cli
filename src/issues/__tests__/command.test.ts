@@ -102,6 +102,27 @@ describe('issue command', () => {
     expect(f.readBody).not.toHaveBeenCalled()
   })
 
+  it('names the field that fails before any context or Admin session', async () => {
+    const f = fixture()
+    for (const [title, options, message] of [
+      [undefined, { body: 'Body' }, 'The title is empty; write 1–100 characters.'],
+      ['T'.repeat(101), { body: 'Body' }, 'The title has 101 characters; the limit is 100.'],
+      ['Title', { body: ' ' }, 'The body is empty; write 1–50,000 characters.'],
+      [
+        'Title',
+        { body: 'B'.repeat(50_001) },
+        'The body has 50,001 characters; the limit is 50,000.',
+      ],
+    ] as const) {
+      await expect(reportIssueCommand(title, options, f.dependencies)).rejects.toMatchObject({
+        code: 'ISSUE_INPUT_INVALID',
+        message,
+      })
+    }
+    expect(f.collectIssueContext).not.toHaveBeenCalled()
+    expect(f.optionsSeen).toEqual([])
+  })
+
   it('rejects retry context changes and empty content before any Admin session', async () => {
     const f = fixture()
     await expect(

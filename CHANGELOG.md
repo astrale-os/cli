@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.145](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.144...cli/v1.0.0-beta.145) (2026-10-13)
+
+
+### Bug Fixes
+
+* **lib:** report a refused session file, not an expired session ([#685](https://github.com/astrale-os/cli/issues/685)) ([538581d](https://github.com/astrale-os/cli/commit/538581d1e8e5939e5a6617a7105dd3c660af3bd8))
+
 ## [1.0.0-beta.144](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.143...cli/v1.0.0-beta.144) (2026-10-12)
 
 

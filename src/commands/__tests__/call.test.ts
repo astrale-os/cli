@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ConnectionContext } from '../../connection'
 
 import { callCommand, materializeCallResult } from '../call'
-import { human } from './fixtures/process'
+import { captureProcess, ExitError, human } from './fixtures/process'
 
 describe('call command target and dry run', () => {
   /** Run `call` with a dry-run connection that resolves @self to alice and never dispatches. */
@@ -125,6 +125,30 @@ describe('call command result lifetime', () => {
     if (materialized.kind !== 'binary') throw new Error('expected materialized binary')
     expect([...materialized.value.body]).toEqual([1, 2, 3])
     expect(Object.isFrozen(materialized.value)).toBe(true)
+  })
+})
+
+describe('call command input', () => {
+  const captured = captureProcess()
+
+  test.each([
+    ['{"body":"before\\u0000after"}', 'Portable strings must not contain U+0000 at /body'],
+    ['{"note":{"text":"\\ud800"}}', 'Expected a Unicode-scalar string at /note/text'],
+  ])('refuses %s as caller input naming its path, before any connection', async (data, why) => {
+    let connections = 0
+    await expect(
+      callCommand(
+        '/:notes.example:function.save',
+        [],
+        { data, json: true },
+        { runKernelCommand: async () => void (connections += 1), output: () => {} },
+      ),
+    ).rejects.toBeInstanceOf(ExitError)
+    expect(captured.failure()).toEqual({
+      error: 'INVALID_INPUT',
+      message: `Call input cannot be sent: ${why}.`,
+    })
+    expect(connections).toBe(0)
   })
 })
 

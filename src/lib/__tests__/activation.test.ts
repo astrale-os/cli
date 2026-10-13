@@ -12,6 +12,10 @@ const request = (endpoint: string, proof: string) => ({
   instanceOrigin: 'https://child.example',
   credential: mock(async () => proof),
 })
+const registering = (endpoint: string, proof: string, registered = true) => ({
+  ...request(endpoint, proof),
+  registered: mock(async (_credential: string, _signal: AbortSignal) => registered),
+})
 const answering = (...responses: Response[]) => {
   const fetch = mock<typeof globalThis.fetch>()
   for (const response of responses) fetch.mockResolvedValueOnce(response)
@@ -19,7 +23,7 @@ const answering = (...responses: Response[]) => {
 }
 
 test('an activation posts only its target, with the primary proof as bearer, never a cookie', async () => {
-  const account = request('https://admin.example/v1/account-activation', 'primary-admin-proof')
+  const account = registering('https://admin.example/v1/account-activation', 'primary-admin-proof')
   const transport = answering(Response.json({ status: 'ready' }))
   expect(await requestAccountActivation(account, transport)).toBe('ready')
   expect(transport.fetch.mock.calls).toEqual([
@@ -38,7 +42,8 @@ test('an activation posts only its target, with the primary proof as bearer, nev
 })
 
 describe('account activation at login', () => {
-  const account = () => request('https://admin.example/v1/account-activation', 'proof')
+  const account = (registered = true) =>
+    registering('https://admin.example/v1/account-activation', 'proof', registered)
   const refusal = (status: number, code: string, headers: Record<string, string> = {}) =>
     Response.json({ code, retryable: status === 503 }, { status, headers })
 
@@ -57,6 +62,25 @@ describe('account activation at login', () => {
     const failed = answering()
     failed.fetch.mockRejectedValue(new Error('private transport detail'))
     expect(await requestAccountActivation(account(), failed)).toBe('unavailable')
+  })
+
+  test("asks Admin's Kernel whether it knows the account once Admin has nothing to complete", async () => {
+    const known = account()
+    expect(
+      await requestAccountActivation(known, answering(Response.json({ status: 'ready' }))),
+    ).toBe('ready')
+    expect(known.registered).toHaveBeenCalledWith('proof', expect.any(AbortSignal))
+
+    const unknown = account(false)
+    expect(
+      await requestAccountActivation(unknown, answering(Response.json({ status: 'ready' }))),
+    ).toBe('unregistered')
+
+    const refused = account()
+    expect(
+      await requestAccountActivation(refused, answering(refusal(403, 'ACCOUNT_ACTIVATION_DENIED'))),
+    ).toBe('denied')
+    expect(refused.registered).not.toHaveBeenCalled()
   })
 
   test("retries a registration in progress after Admin's bounded delay, then reports pending", async () => {

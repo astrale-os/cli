@@ -2,6 +2,7 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { edge, edgeKeyOf } from '@astrale-os/sdk/graph/edge'
 import { NodeId, node } from '@astrale-os/sdk/graph/node'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { describe, expect, it, mock } from 'bun:test'
 
@@ -101,16 +102,19 @@ function fixture() {
     session: { call },
   } as unknown as ConnectionContext
   const optionsSeen: unknown[] = []
+  const credentialsSeen: unknown[] = []
   const dependencies = {
     withAdminClientSession: async <T>(
       options: unknown,
       action: (context: ConnectionContext) => Promise<T>,
+      credential?: unknown,
     ) => {
       optionsSeen.push(options)
+      credentialsSeen.push(credential)
       return action(connection)
     },
   }
-  return { kernel, call, dependencies, optionsSeen }
+  return { kernel, call, dependencies, optionsSeen, credentialsSeen }
 }
 
 describe('reported issues read', () => {
@@ -179,6 +183,8 @@ describe('reporter issue commands', () => {
       (await listReportedIssuesCommand({ all: true }, f.dependencies)).map((i) => i.reference),
     ).toEqual(['ASTRALE-2', 'ASTRALE-1'])
     expect(f.optionsSeen).toEqual([{ as: 'alice' }, {}])
+    // The reporter reads as itself: through the Admin Domain, its ceiling would hide every Issue.
+    expect(f.credentialsSeen).toEqual([{ principal: 'caller' }, { principal: 'caller' }])
     expect(f.call).not.toHaveBeenCalled()
   })
 
@@ -199,7 +205,11 @@ describe('reporter issue commands', () => {
       { title: 'Clearer title', body: 'More details', admin: 'control' },
       f.dependencies,
     )
-    expect(f.optionsSeen).toEqual([{ admin: 'control' }])
+    expect(f.optionsSeen).toEqual([{ admin: 'control' }, { admin: 'control' }])
+    expect(f.credentialsSeen).toEqual([
+      { principal: 'caller' },
+      { principal: 'callable', path: Path.parse(reportedIssueMethodPath('astrale-2-id', 'edit')) },
+    ])
     expect(f.call.mock.calls).toEqual([
       [
         createPathCall(reportedIssueMethodPath('astrale-2-id', 'edit'), {
@@ -217,7 +227,16 @@ describe('reporter issue commands', () => {
     })
     await expect(
       editReportedIssueCommand('ASTRALE-2', { title: '  ' }, f.dependencies),
-    ).rejects.toMatchObject({ code: 'ISSUE_INPUT_INVALID' })
+    ).rejects.toMatchObject({
+      code: 'ISSUE_INPUT_INVALID',
+      message: '--title is empty; write 1–100 characters.',
+    })
+    await expect(
+      editReportedIssueCommand('ASTRALE-2', { title: 'T'.repeat(101) }, f.dependencies),
+    ).rejects.toMatchObject({ message: '--title has 101 characters; the limit is 100.' })
+    await expect(
+      editReportedIssueCommand('ASTRALE-2', { body: 'B'.repeat(50_001) }, f.dependencies),
+    ).rejects.toMatchObject({ message: '--body has 50,001 characters; the limit is 50,000.' })
     expect(f.optionsSeen).toEqual([])
   })
 

@@ -7,6 +7,7 @@ import { Query, queryResult } from '@astrale-os/sdk/query'
 import { z } from 'zod'
 
 import { AstraleError } from '../errors'
+import { ISSUE_BODY, ISSUE_TITLE } from './submit'
 
 const ISSUES = 'issues.astrale.ai'
 const issueReportedBy = edgeClass('issue_reported_by')
@@ -59,10 +60,10 @@ export const reportedIssueChangesSchema = z
     title: z
       .string()
       .min(1)
-      .max(200)
+      .max(ISSUE_TITLE.maximum)
       .refine((value) => value.trim().length > 0)
       .optional(),
-    description: z.string().max(50_000).optional(),
+    description: z.string().max(ISSUE_BODY.maximum).optional(),
   })
   .refine((value) => value.title !== undefined || value.description !== undefined)
 
