@@ -505,15 +505,17 @@ export async function readIdpSession(identityName: string): Promise<IdpSession |
   return readIdpSessionFile(idpSessionPath(identityName), identityName)
 }
 
+/** Where the CLI home `home` keeps the session of `identityName`. */
+export function idpSessionPathIn(home: string, identityName: string): string {
+  return join(home, relative(paths.home, idpSessionPath(identityName)))
+}
+
 /** The session `identityName` holds in the CLI home `home`, read without its lock. */
 export async function readIdpSessionIn(
   home: string,
   identityName: string,
 ): Promise<IdpSession | null> {
-  return readIdpSessionFile(
-    join(home, relative(paths.home, idpSessionPath(identityName))),
-    identityName,
-  )
+  return readIdpSessionFile(idpSessionPathIn(home, identityName), identityName)
 }
 
 async function readIdpSessionFile(path: string, identityName: string): Promise<IdpSession | null> {

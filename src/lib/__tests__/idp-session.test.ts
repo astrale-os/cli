@@ -7,6 +7,7 @@ import {
   readdir,
   realpath,
   rm,
+  symlink,
   unlink,
   writeFile,
 } from 'node:fs/promises'
@@ -181,13 +182,20 @@ describe('ensureFreshSession', () => {
   })
 
   test.each([
-    ['signed out', () => unlink(join(tmp, 'idp-sessions', 'alice.json'))],
-    ['signed in again', () => writeSession({ claims: { sid: 'session-2' } })],
-  ] as const)('a copy adopts the session once its owner has %s', async (_state, leave) => {
+    ['its original home signed out', () => unlink(join(tmp, 'idp-sessions', 'alice.json'))],
+    ['its original home signed in again', () => writeSession({ claims: { sid: 'session-2' } })],
+    [
+      'it shares the session directory, and so the lock, of its original home',
+      async (copy: string) => {
+        await rm(join(copy, 'idp-sessions'), { recursive: true })
+        await symlink(join(tmp, 'idp-sessions'), join(copy, 'idp-sessions'))
+      },
+    ],
+  ] as const)('another home refreshes the session when %s', async (_case, arrange) => {
     await writeSession({ expires_at: past() })
     expect((await runDriver('ensure')).ok).toBe(true)
     const copy = await copyHome()
-    await leave()
+    await arrange(copy)
 
     const result = await runDriver('ensure', { ASTRALE_HOME: copy, DRIVER_EXPECTED_ORG: 'org-a' })
 

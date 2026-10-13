@@ -1,3 +1,6 @@
+import { stat } from 'node:fs/promises'
+import { dirname } from 'node:path'
+
 import { AstraleError } from '../../errors'
 import { withFileLock } from '../../state/index'
 import { orgIdForAudience } from '../instance/bookmarks'
@@ -8,6 +11,7 @@ import {
   decodeTokenClaims,
   classifyRefreshFailure,
   idpSessionPath,
+  idpSessionPathIn,
   OAuthTokenError,
   readIdpSession,
   readIdpSessionIn,
@@ -166,10 +170,19 @@ export async function ensureFreshSession(
 async function refuseCopiedSession(identityName: string, session: IdpSession): Promise<void> {
   const owner = session.home
   if (owner === undefined || owner === (await currentHome())) return
+  // A home sharing the owner's session directory (a mount, a symlink) shares its lock: no copy.
+  if (await sameDirectory(idpSessionPathIn(owner, identityName), idpSessionPath(identityName)))
+    return
   // Unreadable or undecodable: the owner may still hold it, so the copy stays read-only.
   const original = await readIdpSessionIn(owner, identityName).catch(() => session)
   if (original !== null && sameSignIn(original, session))
     throw new IdpSessionCopiedError(identityName, owner)
+}
+
+/** Whether two session files live in one directory, where their lock and atomic writes meet. */
+async function sameDirectory(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([stat(dirname(a)), stat(dirname(b))]).catch(() => [])
+  return x !== undefined && y !== undefined && x.dev === y.dev && x.ino === y.ino
 }
 
 /** Same user at the same IdP, and the same IdP session when both name one. */
