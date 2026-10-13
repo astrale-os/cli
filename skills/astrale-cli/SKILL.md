@@ -211,6 +211,8 @@ acts on; they never select the Admin kernel, and Admin operations (`instance lis
 `domain list` without them uses the active instance. Choose the Admin kernel with
 `--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
 removes only the local bookmark.
+Deletion also cleans up the matching `<slug>-root` identity and unshared key, even with
+`--keep-bookmark`; retained credentials and cleanup errors are reported.
 `instance list` shows the Instances you own or were invited into, in every Fleet; `--fleet <id>`
 keeps one Fleet, and adds its whole inventory when you administer it.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
