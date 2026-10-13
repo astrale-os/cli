@@ -101,11 +101,13 @@ const BODY_HINT = 'Use --body "Context and details", or pipe the body on stdin.'
 /** Bounds stdin before decoding: 50,000 characters take at most 200,000 UTF-8 bytes. */
 const MAXIMUM_STDIN_BYTES = 200_000
 
-async function readBodyFromStdin(): Promise<string | undefined> {
-  if (process.stdin.isTTY) return undefined
+export async function readBodyFromStdin(
+  stdin: AsyncIterable<Uint8Array | string> & { isTTY?: boolean } = process.stdin,
+): Promise<string | undefined> {
+  if (stdin.isTTY) return undefined
   const chunks: Buffer[] = []
   let size = 0
-  for await (const chunk of process.stdin) {
+  for await (const chunk of stdin) {
     const buffer = Buffer.from(chunk)
     size += buffer.byteLength
     if (size > MAXIMUM_STDIN_BYTES)
@@ -116,7 +118,16 @@ async function readBodyFromStdin(): Promise<string | undefined> {
       )
     chunks.push(buffer)
   }
-  return Buffer.concat(chunks).toString('utf8')
+  try {
+    // Refuse invalid UTF-8 rather than report replacement characters in its place.
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks))
+  } catch {
+    throw new AstraleError(
+      'ISSUE_INPUT_INVALID',
+      'The body on stdin is not valid UTF-8.',
+      BODY_HINT,
+    )
+  }
 }
 
 export default withIssueAdminOptions(

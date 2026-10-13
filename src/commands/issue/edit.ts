@@ -25,7 +25,11 @@ export async function editReportedIssueCommand(
   if (title !== undefined) admitIssueText('--title', title, ISSUE_TITLE)
   // An empty --body clears the details.
   if (body !== undefined) admitIssueText('--body', body, { ...ISSUE_BODY, blank: true })
-  const changes = reportedIssueChangesSchema.parse({ title, description: body })
+  // Send only the fields given: call input refuses `undefined`.
+  const changes = reportedIssueChangesSchema.parse({
+    ...(title !== undefined && { title }),
+    ...(body !== undefined && { description: body }),
+  })
   return withReporter(
     options,
     async (reporter) => {
