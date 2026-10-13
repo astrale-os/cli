@@ -77,11 +77,14 @@ astrale issue "Factual title" --body "$BODY"   # or pipe the body on stdin
 ```
 
 Add `--project <directory>` and `-i <affected instance>` when known; do not ask for them. Local versions are
-attached automatically. Redact credentials, tokens, keys and customer data. If confirmation fails,
-use the printed `--retry` command; if the report cannot be sent, give the user the drafted issue.
+attached automatically. Redact credentials, tokens, keys and customer data. Reporting needs an
+account with access to Admin (a Console account). Only `ISSUE_NOT_CONFIRMED` (outcome unknown)
+keeps the request: run the printed `--retry` command. Any other error is a refusal that names its
+code and failing input: fix the input and report again; if the report cannot be sent, give the
+user the drafted issue.
 
-Title the observed fact, not a request: "`domain install` fails with 5000 on a published release",
-not "Fix domain install". Body, one field per line, `none` when empty:
+Title the observed fact in at most 100 characters, not a request: "`domain install` fails with 5000
+on a published release", not "Fix domain install". Body, one field per line, `none` when empty:
 
 ```text
 Type: bug | limitation | friction

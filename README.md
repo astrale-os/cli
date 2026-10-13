@@ -169,7 +169,10 @@ Keep the body brief: **Context** → **Reproduction** for bugs (exact inputs/ste
 result) or **Scenario** for limitations/friction (concrete task, obstacle, desired behavior) → **Impact**.
 Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
 
-If confirmation fails, use the printed `--retry` command. `--json` returns the issue ID and reference.
+Titles take at most 100 characters and bodies at most 50,000. Reporting needs an account with access
+to Admin. If Admin's answer is lost, the request is saved: use the printed `--retry` command. A
+refusal prints its code and failing input, and nothing is saved. `--json` returns the issue ID and
+reference.
 
 Follow your own reports with the reference it returns:
 
