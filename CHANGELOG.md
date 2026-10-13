@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.148](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.147...cli/v1.0.0-beta.148) (2026-10-13)
+
+
+### Bug Fixes
+
+* **issue:** edit only the title or only the body, and refuse invalid UTF-8 on stdin ([#700](https://github.com/astrale-os/cli/issues/700)) ([a983ad0](https://github.com/astrale-os/cli/commit/a983ad0d94209601633fdff33c625844919175f6))
+
 ## [1.0.0-beta.147](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.146...cli/v1.0.0-beta.147) (2026-10-13)
 
 
