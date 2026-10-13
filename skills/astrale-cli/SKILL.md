@@ -208,6 +208,12 @@ acts on; they never select the Admin kernel, and Admin operations (`instance lis
 `domain list` without them uses the active instance. Choose the Admin kernel with
 `--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
 removes only the local bookmark.
+After confirmed deletion, `instance delete` removes the matching `<slug>-root` identity and its
+unshared key, even with `--keep-bookmark`. Unrelated or concurrently replaced identities are
+preserved and reported; another alias sharing the key keeps it. JSON reports `localRootIdentity`
+(`absent`, `removed`, `retained`, or `error`). If the removed identity was default, the first
+remaining identity becomes default, or none if empty. A local cleanup error does not undo the
+remote deletion; inspect the reported local state instead of repeating creation or deletion.
 `instance list` shows the Instances you own or were invited into, in every Fleet; `--fleet <id>`
 keeps one Fleet, and adds its whole inventory when you administer it.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
