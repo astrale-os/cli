@@ -19,6 +19,9 @@ const PROPERTY = {
   archived: `${ISSUES}:class.Issue.property.archived`,
   body: `${ISSUES}:class.Comment.property.body`,
   title: 'kernel.astrale.ai:class.Named.property.name',
+  /** The Issue description since Issues 0.4.5; Markdown, up to 50,000 characters. */
+  issueBody: `${ISSUES}:class.Issue.property.body`,
+  /** Where an Issue stored before 0.4.5 keeps its description until its next revision. */
   description: 'kernel.astrale.ai:class.Descriptable.property.description',
   createdAt: 'kernel.astrale.ai:class.Timestamped.property.createdAt',
   updatedAt: 'kernel.astrale.ai:class.Timestamped.property.updatedAt',
@@ -33,6 +36,7 @@ export function reportedIssueMethodPath(id: string, method: 'edit' | 'archive'):
 const issueProps = z.object({
   [PROPERTY.reference]: z.string().min(1),
   [PROPERTY.title]: z.string(),
+  [PROPERTY.issueBody]: z.string().optional(),
   [PROPERTY.description]: z.string().optional(),
   [PROPERTY.status]: z.string(),
   [PROPERTY.priority]: z.number(),
@@ -115,7 +119,7 @@ export async function readReportedIssues(
         id: node.id,
         reference: props[PROPERTY.reference],
         title: props[PROPERTY.title],
-        description: props[PROPERTY.description] ?? '',
+        description: props[PROPERTY.issueBody] ?? props[PROPERTY.description] ?? '',
         status: props[PROPERTY.status],
         priority: props[PROPERTY.priority],
         archived: props[PROPERTY.archived],
