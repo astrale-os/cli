@@ -39,10 +39,13 @@ issuer and subject metadata from the selected persisted IdP identity may select 
 cryptographically admitted exchange entry before source-token refresh. Missing, unreadable, or
 mismatched metadata falls through to ordinary source resolution. Cache misses alone resolve the
 registered Kernel User and perform delegation plus Domain exchange.
-An Astrale-managed Instance derives no exchange Domain from its route: its users act for
-themselves, so `get`, `query` and `mutate` present the selected identity, bounded by its own rules
-rather than by the Shell's. A bookmark that names an explicit exact Domain issuer is exchanged there
-instead, managed or not; re-run `astrale instance use <slug>` to drop it from a managed bookmark.
+`get`, `query` and `mutate` present the selected identity on every target, bounded by its own rules
+and by no Domain's: they never exchange at a target's Domain issuer, the Admin's included, so a read
+sees what the identity's own rules admit rather than what the Domain's authority leaves of it.
+An Astrale-managed Instance derives no exchange Domain from its route: its users act for themselves.
+A bookmark that names an explicit exact Domain issuer is exchanged there by the commands that act
+through the target's Domain, managed or not; re-run `astrale instance use <slug>` to drop it from a
+managed bookmark.
 The bookmark registry carries a format label (`version`); every bookmark write rewrites the whole
 registry with the label. In every registry, labelled or unlabelled, every `domainIssuer` is the
 user's and is preserved on read.

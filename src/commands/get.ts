@@ -32,6 +32,8 @@ export async function getCommand(target: string, opts: GetOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: `Node ${target}`,
+    // A graph command acts as the user on every target, the Admin's included: no Domain bounds it.
+    credential: { principal: 'caller' },
     fn: async (context) => {
       const { path, meta } = await expandSelfInPath(target, context)
       const resolved = meta === undefined ? parsed : Path.parse(path)

@@ -28,8 +28,8 @@ Every authenticated call carries two Identities:
 - the `caller`, the one Identity whose authority the call exercises. A direct call has
   `caller = principal`. When a Domain acts for a user (`graph.caller`, `dependencies.<alias>.caller`,
   or the SDK Domain token exchange behind a Domain's Views, the Console and a callable command), the
-  principal is the Domain and the caller is the user. Graph commands on a managed Instance and the
-  Shell's own Views act for the user itself.
+  principal is the Domain and the caller is the user. CLI graph commands (`get`, `query`, `mutate`)
+  on any Instance, the Admin included, and the Shell's own Views act for the user itself.
 
 Both are evaluated through their live `extends_with`, `constrained_by`, and `excluded_from` composition
 with deny-wins. A call carries no set of Identities: there is no union, intersection, or exclusion of

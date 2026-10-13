@@ -48,6 +48,8 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
   await runKernelCommand({
     opts,
     label: 'Query',
+    // A graph command acts as the user on every target, the Admin's included: no Domain bounds it.
+    credential: { principal: 'caller' },
     fn: async (context) => {
       const expanded = await Promise.all(sources.map((source) => expandSelfInPath(source, context)))
       const meta: SelfExpansionMeta | undefined = expanded.find(
