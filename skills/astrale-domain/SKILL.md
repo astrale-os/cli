@@ -79,3 +79,5 @@ domain's lifecycle or current problem calls for them.
 2. For live behavior, use `references/debugging.md` and prove the deployed/installed/runtime path before treating source edits as effective.
 3. When a Schema change affects existing Datasets, keep them valid and representative in the same
    change. Read `references/datasets.md`; examples complement tests rather than exhaust every case.
+4. When a problem you cannot resolve points to Astrale rather than to this Domain, report it with
+   `astrale issue` as the `astrale-cli` skill describes, then continue with a workaround if there is one.

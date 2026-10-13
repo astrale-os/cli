@@ -62,15 +62,45 @@ It cannot be combined with `--as` or `--creds`; required callables reject anonym
 
 ## Report an issue
 
-Use `astrale issue "Factual title" --body "Context and details"` (or pipe the body
-on stdin). Prefer optional `--project <directory>` and `-i <instance>` when known;
-do not ask for missing context just to fill these options. Available local versions are
-attached automatically. `-i` names the affected instance.
-Optionally add `Type: bug`, `Type: limitation` (including capability requests), or `Type: friction`.
-Keep the body brief: **Context** → **Reproduction** for bugs (exact inputs/steps, expected vs. actual
-result) or **Scenario** for limitations/friction (concrete task, obstacle, desired behavior) → **Impact**.
-Optional bug evidence: a short log excerpt, stack trace, or screenshot link when it explains the failure.
-If confirmation fails, use the printed `--retry` command.
+Report a problem yourself, without waiting to be asked, when both hold:
+
+- you could not resolve it, and it blocks the task or cost significant time;
+- the evidence puts the cause in Astrale (CLI, SDK, Kernel, Admin, a native Domain), not in the
+  project: it reproduces in a minimal case, or Astrale contradicts its own docs, help or errors.
+
+Do not report your own code or configuration errors, or a correct refusal. Report each problem once
+(`astrale issue list` shows your reports), give the user the printed reference, and continue with
+the workaround if there is one.
+
+```sh
+astrale issue "Factual title" --body "$BODY"   # or pipe the body on stdin
+```
+
+Add `--project <directory>` and `-i <affected instance>` when known; do not ask for them. Local versions are
+attached automatically. Redact credentials, tokens, keys and customer data. If confirmation fails,
+use the printed `--retry` command; if the report cannot be sent, give the user the drafted issue.
+
+Title the observed fact, not a request: "`domain install` fails with 5000 on a published release",
+not "Fix domain install". Body, one field per line, `none` when empty:
+
+```text
+Type: bug | limitation | friction
+Context: goal, command or callable, Domain, instance.
+Scenario:
+1. exact command or input
+2. …
+Observed: what happened, with the error code and message.
+Expected: what should happen; for a bug, the doc or help that says so.
+Impact: what it blocks or costs.
+Workaround: what you did instead.
+Evidence: request id, short log excerpt or stack trace.
+```
+
+| Type | Use when |
+| --- | --- |
+| `bug` | Astrale contradicts its docs, help, error contract, or an earlier version. |
+| `limitation` | Astrale works as designed but cannot do what the task needs, including capability requests. |
+| `friction` | The task succeeds, but the path is needlessly hard: misleading error, missing doc, extra steps. |
 
 The printed reference (`ASTRALE-12`) follows the report. The reporter sees and changes only its own
 reports; status, priority and comments stay with triage:
