@@ -171,6 +171,38 @@ describe('reported issues read', () => {
     ])
     expect(kernel.query).toHaveBeenCalledTimes(3)
   })
+
+  it('reads the description from the Issue body, or from where an older Issue keeps it', async () => {
+    const BODY = `${ISSUE}.property.body`
+    const DESCRIPTION = 'kernel.astrale.ai:class.Descriptable.property.description'
+    const issues = [
+      issueNode('ASTRALE-1', '2026-10-11T14:00:00.000Z', { [BODY]: '# Body only' }),
+      issueNode('ASTRALE-2', '2026-10-11T13:00:00.000Z', { [DESCRIPTION]: 'Stored before body' }),
+      issueNode('ASTRALE-3', '2026-10-11T12:00:00.000Z', {
+        [BODY]: 'Revised',
+        [DESCRIPTION]: 'Stale',
+      }),
+      issueNode('ASTRALE-4', '2026-10-11T11:00:00.000Z'),
+    ]
+    const query = mock(async (ast: { select: { kind: string } }) =>
+      ast.select.kind === 'nodes'
+        ? {
+            result: {
+              kind: 'nodes',
+              nodes: issues.map((value) => ({ kind: 'value', value })),
+            },
+            page: {},
+          }
+        : { result: { kind: 'edges', edges: [] }, page: {} },
+    )
+    const read = await readReportedIssues({ query } as never, 'alice')
+    expect(read.map(({ reference, description }) => [reference, description])).toEqual([
+      ['ASTRALE-1', '# Body only'],
+      ['ASTRALE-2', 'Stored before body'],
+      ['ASTRALE-3', 'Revised'],
+      ['ASTRALE-4', ''],
+    ])
+  })
 })
 
 describe('reporter issue commands', () => {
