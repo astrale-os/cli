@@ -53,9 +53,17 @@ Vite directly via `STUDIO_VITE_PORT`.)
 
 ### View identities
 
-Studio's canonical View preview snapshots local CLI identity names when it opens. **Switch &
-reload** authenticates the selected caller and reloads only the preview; failure keeps the current
-preview usable. It changes no CLI default or Kernel permission. Reopen to pick up new identities.
+Studio works only with instances you own in Admin (Admin's `OwnInstanceOrAdministerAdminInstance`
+Policy). The header's instance switcher still lists the others - instances you only use, local
+bookmarks such as a dev Kernel - greyed with the reason, but they cannot be picked; an active
+instance set from a terminal that you do not own carries a warning, and its Views are refused with
+an explanation. Other Studio features keep working on it.
+
+On an owned instance, a View opens like the Admin back-office opens it (`astrale view --as-owner`):
+resolved as the instance root and run as **Root**. Its **Open as** picker lists Root, the instance's
+Users and its other Identities; **Switch & reload** impersonates the selected one and reloads only
+the preview, and failure keeps the current preview usable. The root and impersonation tokens stay in
+the CLI's session server; the preview only receives its per-View grant.
 
 ### Chats
 

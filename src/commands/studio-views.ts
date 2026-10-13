@@ -1,7 +1,9 @@
+import type { InstanceOwnership } from '../lib/admin/ownership'
 import type { ViewSessionRecord } from '../lib/view/session'
 import type { ViewOpts } from './view'
 
 import { getActive, resetInstancesMemo } from '../lib/instance/bookmarks'
+import { resolveViewOwnership } from '../lib/view/owner'
 import { closeSession, listSessions } from '../lib/view/session'
 
 const RELEASE_TIMEOUT_MS = 2_000
@@ -11,6 +13,11 @@ interface OpenStudioViewSessionInput {
   instance: string
   timeoutMs: number
   allowIdentity?: readonly string[]
+  /**
+   * Open in owner mode, as the owner of this exact Admin Instance (`@<id>`) serving `instance`:
+   * the View is resolved as root and runs as root until the page picks another Identity.
+   */
+  owner?: string
   /** Idle net for a session Studio releases rather than closes; see `releaseStudioViewSession`. */
   idleMs?: number
   serveRuntime: { file: string; args: string[] }
@@ -42,6 +49,23 @@ export async function studioActiveInstanceName(
   }
 }
 
+/**
+ * Whether the caller owns `instance` in Admin, decided by Admin's own Policy on the Admin Instance
+ * serving it. A failure to decide propagates: it is never read as ownership.
+ */
+export async function studioInstanceOwnership(
+  instance: string,
+  timeoutMs: number,
+): Promise<InstanceOwnership> {
+  resetInstancesMemo()
+  const { ownership } = await resolveViewOwnership({
+    instance,
+    timeout: String(timeoutMs),
+    ci: true,
+  })
+  return ownership
+}
+
 /** Resolve and start one canonical CLI View session without another CLI process. */
 export async function openStudioViewSession(
   input: OpenStudioViewSessionInput,
@@ -51,10 +75,14 @@ export async function openStudioViewSession(
   // cached in this long-lived process for every subsequent launch.
   const { resolveSession, startViewSession } = await import('./view')
   resetInstancesMemo()
+  const timeout = String(input.timeoutMs)
   const options: ViewOpts = {
     instance: input.instance,
-    timeout: String(input.timeoutMs),
+    timeout,
     allowIdentity: input.allowIdentity ? [...input.allowIdentity] : undefined,
+    ...(input.owner === undefined
+      ? {}
+      : { owner: { instance: input.owner, admin: { timeout, ci: true } } }),
     ...(input.idleMs === undefined ? {} : { idleMs: input.idleMs }),
     open: false,
     json: true,

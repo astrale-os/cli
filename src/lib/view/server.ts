@@ -1,7 +1,6 @@
 import type { Credentials, SessionCredential } from '@astrale-os/sdk/client/session'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
-import { credential } from '@astrale-os/sdk/auth'
 import { credentials } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -15,6 +14,8 @@ import { withClientSession } from '../../connection'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
 import { exchangeViewCredential } from './exchange-credential'
+import { type GrantKind, mintedExpiry, runsOnKernelCredential, type TokenGrant } from './grant'
+import { createOwnerAccess, ROOT_IDENTITY, type OwnerAccess, type ViewIdentity } from './owner'
 import { refreshViewPlacement } from './refresh'
 import { removeSessionFiles, saveRecord } from './session'
 
@@ -32,6 +33,11 @@ import { removeSessionFiles, saveRecord } from './session'
  * left, and a View the operator opened in its own tab outlives the dialog it
  * came from. `idleMs` remains the net under that rule, for a page that stopped
  * reporting without ever leaving.
+ *
+ * Whose authority the View runs on is the session's: a local CLI identity, among
+ * those the operator allowed, or - in owner mode (`./owner`) - the instance root
+ * Admin issues to its owner, or an Identity impersonated from it. Either way the
+ * page only receives grants derived from that authority, never the authority.
  */
 
 const VIEW_TOKEN_TTL_SECONDS = 4 * 60
@@ -50,20 +56,32 @@ const IDLE_SWEEP_MS = 60_000
 const RELEASE_GRACE_MS = 10_000
 /**
  * Reserved to the loopback host page and the host that opened the session.
- * Reading the View's identity, minting against it, changing it and ending the
- * session are the host's, never the embedded View's, whether or not this
- * session was opened with identities to switch between.
+ * Reading the View's identity, listing the identities it may run as, minting
+ * against it, changing it and ending the session are the host's, never the
+ * embedded View's, whether or not this session was opened with identities to
+ * switch between.
  */
-const HOST_ONLY_ROUTES = ['/config.json', '/identity', '/release', '/token', '/kernel-token']
+const HOST_ONLY_ROUTES = [
+  '/config.json',
+  '/identities',
+  '/identity',
+  '/release',
+  '/token',
+  '/kernel-token',
+]
+/** Host-only reads a page makes before it knows, or regardless of, the revision in force. */
+const REVISION_FREE_ROUTES = ['/config.json', '/identities', '/release']
 
 type PageStatus = { state: string; error?: string; at: string }
-
-type GrantKind = 'minted' | 'exchanged'
-type TokenGrant = { token: string; expiresAt: number; kind: GrantKind }
 
 interface ViewServerDependencies {
   readonly connect: typeof withClientSession
   readonly exchange?: typeof exchangeViewCredential
+  /** Owner-mode authority over the instance; production derives it from Admin. */
+  readonly owner?: (
+    config: NonNullable<ViewServeConfig['owner']>,
+    kernel: ViewServeConfig['proxy'],
+  ) => OwnerAccess
   readonly persist?: typeof saveRecord
   /** Seam for the tests: the shutdown path ends the process in production. */
   readonly exit?: (code: number) => void
@@ -73,6 +91,18 @@ const DEFAULT_DEPENDENCIES: ViewServerDependencies = Object.freeze({
   connect: withClientSession,
 })
 
+/** Owner access to exactly the Kernel this session proxies. */
+function ownerAccess(
+  owner: NonNullable<ViewServeConfig['owner']>,
+  proxy: ViewServeConfig['proxy'],
+): OwnerAccess {
+  return createOwnerAccess(owner, {
+    url: proxy.kernelUrl,
+    issuer: proxy.issuer,
+    ...(proxy.caFile === undefined ? {} : { caFile: proxy.caFile }),
+  })
+}
+
 export function startViewServer(
   config: ViewServeConfig,
   dependencies: ViewServerDependencies = DEFAULT_DEPENDENCIES,
@@ -81,6 +111,10 @@ export function startViewServer(
   const base = `/s/${session.nonce}`
   const hostDir = viewerDistDir()
   const proxyFetch = proxy.caFile ? fetchWithCaFile(proxy.caFile) : globalThis.fetch
+  const owner =
+    config.owner === undefined
+      ? undefined
+      : (dependencies.owner ?? ownerAccess)(config.owner, proxy)
   let status: PageStatus = { state: 'waiting', at: new Date().toISOString() }
   let grantKind: GrantKind = 'minted'
   let grants = createGrantProvider()
@@ -117,13 +151,52 @@ export function startViewServer(
       identity !== undefined && view.route.handshake === 'shell'
         ? await mintGrant(kernel, view)
         : undefined
+    await commit(view, grant, identity, () => {
+      config.kernel = kernel
+    })
+  }
+
+  /**
+   * The owner-mode counterpart: the View is re-resolved as root whoever it runs as, and a switch to
+   * `selected` is proven by a first grant minted for it before anything changes.
+   */
+  async function renewAsOwner(selected?: ViewIdentity): Promise<void> {
+    const access = owner!
+    const current = config.owner!
+    const as =
+      selected === undefined
+        ? current.as
+        : selected.id === null
+          ? undefined
+          : { id: selected.id, label: selected.label }
+    const view = await access.resolveView(session.view)
+    const grant =
+      selected !== undefined && view.route.handshake === 'shell'
+        ? await access.grant(as?.id, view)
+        : undefined
+    await commit(view, grant, selected?.label, () => {
+      const { as: _previous, ...rest } = current
+      config.owner = as === undefined ? rest : { ...rest, as }
+    })
+  }
+
+  /**
+   * Persist the new placement, then switch to it in one synchronous step: `apply` and the new
+   * providers take effect together, so no mint can start between them.
+   */
+  async function commit(
+    view: ViewServeConfig['session']['view'],
+    grant: TokenGrant | undefined,
+    identity: string | undefined,
+    apply: () => void,
+  ): Promise<void> {
     await (dependencies.persist ?? saveRecord)({
       ...session,
       pid: process.pid,
       ...(identity === undefined ? {} : { identity }),
       view,
     })
-    config.kernel = kernel
+    apply()
     if (identity !== undefined) session.identity = identity
     session.view = view
     grants = createGrantProvider(grant)
@@ -149,7 +222,11 @@ export function startViewServer(
       ttlSeconds: VIEW_DELEGATION_TTL_SECONDS,
       mint: async (): Promise<SessionCredential> => {
         const started = revision
-        const fresh = await mintGrant(config.kernel, forView ? session.view : undefined)
+        const view = forView ? session.view : undefined
+        const fresh =
+          owner === undefined
+            ? await mintGrant(config.kernel, view)
+            : await owner.grant(config.owner?.as?.id, view)
         if (started !== revision)
           throw new Error('View session changed; reload before requesting credentials.')
         if (forView) grantKind = fresh.kind
@@ -178,7 +255,7 @@ export function startViewServer(
         // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
         if (
           view !== undefined &&
-          view.route.issuer !== target.kernelIssuer &&
+          !runsOnKernelCredential(view, target.kernelIssuer) &&
           kernel.creds === undefined
         ) {
           const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
@@ -243,12 +320,11 @@ export function startViewServer(
         return
       }
       // Only a page acting on the identity in force has to agree on the revision:
-      // reading the config is how a fresh page learns it, and a host releasing a
-      // session holds no page revision at all.
+      // reading the config is how a fresh page learns it, listing identities acts
+      // on none, and a host releasing a session holds no page revision at all.
       if (
-        config.identities?.length &&
-        sub !== '/config.json' &&
-        sub !== '/release' &&
+        (config.identities?.length || owner !== undefined) &&
+        !REVISION_FREE_ROUTES.includes(sub) &&
         req.headers['x-astrale-view-revision'] !== String(revision)
       ) {
         json(res, 409, { error: 'View session changed; reload before continuing.' })
@@ -273,13 +349,29 @@ export function startViewServer(
         view: session.view,
         kernelUrl: proxy.direct ? proxy.kernelUrl : `${base}/k`,
         kernelIssuer: proxy.issuer,
-        identity: session.identity ?? null,
+        identity:
+          config.owner === undefined
+            ? (session.identity ?? null)
+            : (config.owner.as?.label ?? ROOT_IDENTITY.label),
         instance: session.instance ?? null,
         sessionId: session.id,
         externalOrigins: config.externalOrigins,
         delegationTtlSeconds: VIEW_DELEGATION_TTL_SECONDS,
         revision,
         ...(config.identities ? { identities: config.identities } : {}),
+        // The page then lists what the View may run as from `/identities`.
+        ...(config.owner === undefined ? {} : { owner: true }),
+      })
+      return
+    }
+    if (sub === '/identities' && req.method === 'GET') {
+      if (owner === undefined) {
+        json(res, 404, { error: 'This View session runs as one identity only.' })
+        return
+      }
+      json(res, 200, {
+        selected: config.owner?.as?.id ?? null,
+        identities: await owner.identities(),
       })
       return
     }
@@ -301,6 +393,10 @@ export function startViewServer(
         expiresAt: fresh.expiresAt,
         kind: forView ? grantKind : 'minted',
       })
+      return
+    }
+    if (sub === '/identity' && req.method === 'POST' && owner !== undefined) {
+      await switchAsOwner(req, res, owner)
       return
     }
     if (sub === '/identity' && req.method === 'POST') {
@@ -366,7 +462,7 @@ export function startViewServer(
         return
       }
       // Concurrent requests share one resolution; a failed resolution retains the last good View.
-      refreshing ??= renew().finally(() => {
+      refreshing ??= (owner === undefined ? renew() : renewAsOwner()).finally(() => {
         refreshing = undefined
       })
       await refreshing
@@ -378,6 +474,44 @@ export function startViewServer(
       return
     }
     res.writeHead(404).end()
+  }
+
+  /**
+   * Run the View as `{ identity }`: an Identity node id, or `null` for the instance root. Only an
+   * identity the instance lists right now, read as root, is admitted.
+   */
+  async function switchAsOwner(
+    req: IncomingMessage,
+    res: ServerResponse,
+    access: OwnerAccess,
+  ): Promise<void> {
+    const body = await readJson(req)
+    const wanted = body?.identity
+    if (wanted !== null && typeof wanted !== 'string') {
+      json(res, 403, { error: 'Identity was not allowed for this View session.' })
+      return
+    }
+    if (switching || refreshing) {
+      json(res, 409, { error: 'View session update in progress.' })
+      return
+    }
+    // The body may have arrived after another page finished switching.
+    if (req.headers['x-astrale-view-revision'] !== String(revision)) {
+      json(res, 409, { error: 'View session changed; reload before continuing.' })
+      return
+    }
+    switching = true
+    try {
+      const selected = (await access.identities()).find((identity) => identity.id === wanted)
+      if (selected === undefined) {
+        json(res, 403, { error: 'Identity was not allowed for this View session.' })
+        return
+      }
+      await renewAsOwner(selected)
+      json(res, 200, { revision })
+    } finally {
+      switching = false
+    }
   }
 
   /** Forward a kernel call: verbatim headers/body both ways, CORS added. */
@@ -474,6 +608,7 @@ export function startViewServer(
     }
     process.off('SIGTERM', terminate)
     process.off('SIGINT', terminate)
+    owner?.close()
   }
   // Stop owning background work as soon as close is requested, even if an in-flight HTTP request
   // must finish before the close event. Closing a library-created server never exits its caller.
@@ -500,29 +635,6 @@ export function startViewServer(
 
   server.listen(session.port, '127.0.0.1')
   return server
-}
-
-/**
- * The issuer's own expiration is the only evidence of this credential's lifetime; the requested TTL
- * is a request, never a grant. Issuance already refuses to return a credential this cannot read, so
- * an unreadable one is a Kernel defect and fails closed rather than carrying an estimate into the
- * browser, where Shell bounds its child delegation by exactly this value.
- */
-function mintedExpiry(token: string): number {
-  let claimed: unknown
-  try {
-    claimed = credential.inspect(token).claims.exp
-  } catch (cause) {
-    throw new TypeError('The minted View credential could not be read.', { cause })
-  }
-  if (typeof claimed !== 'number' || !Number.isSafeInteger(claimed)) {
-    throw new TypeError('The minted View credential carries no usable expiration.')
-  }
-  const expiresAt = claimed * 1_000
-  if (!Number.isSafeInteger(expiresAt)) {
-    throw new TypeError('The minted View credential expiration is out of range.')
-  }
-  return expiresAt
 }
 
 function corsHeaders(origin: string | undefined): Record<string, string> {

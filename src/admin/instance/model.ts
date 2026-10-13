@@ -44,6 +44,15 @@ export interface RetrievedRootIdentity {
   readonly transfer: RootIdentityTransfer
 }
 
+/** A short-lived root credential Admin issues to whoever owns one Instance in the Admin sense. */
+export interface InstanceRootToken {
+  readonly token: string
+  /** The Instance Kernel that issued the token, and the only one it authenticates at. */
+  readonly issuer: string
+  /** Epoch seconds. */
+  readonly expiresAt: number
+}
+
 export type InvitationState =
   | 'pending'
   | 'accepted'

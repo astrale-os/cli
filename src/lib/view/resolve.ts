@@ -42,6 +42,11 @@ export function parseViewSpec(spec: string): ViewSpec {
   )
 }
 
+/** What resolving a View needs of a connection: its Session and the Kernel it reaches. */
+export type ViewResolutionContext = Pick<ConnectionContext, 'session'> & {
+  readonly target: Pick<ConnectionContext['target'], 'url'>
+}
+
 /** One exact Shell selection plus stable presentation fields for CLI output. */
 export type ViewCandidate = ResolvedView & {
   id: string
@@ -64,7 +69,7 @@ export interface DomainViews {
 
 /** Resolve every View of one Domain through its per-Domain catalog. */
 export async function resolveDomainViews(
-  ctx: ConnectionContext,
+  ctx: Pick<ConnectionContext, 'session'>,
   origin: string,
 ): Promise<DomainViews> {
   const domain = Path.domain(origin).raw
@@ -80,7 +85,7 @@ export async function resolveDomainViews(
 
 /** Resolve one explicitly named Domain view from the exact installed artifact. */
 export async function resolveInstalledDomainView(
-  ctx: ConnectionContext,
+  ctx: ViewResolutionContext,
   viewPath: string,
 ): Promise<ViewCandidate> {
   const path = Path.parse(viewPath)
@@ -134,7 +139,7 @@ export async function resolveInstalledDomainView(
 }
 
 /** Mirror the Session policy used by the CLI connection for this admitted binding. */
-function assertAllowedInstalledViewEndpoint(ctx: ConnectionContext, href: string): void {
+function assertAllowedInstalledViewEndpoint(ctx: ViewResolutionContext, href: string): void {
   const protocol = new URL(href).protocol
   if (protocol === 'https:') return
   if (protocol === 'http:' && new URL(ctx.target.url).protocol === 'http:') return

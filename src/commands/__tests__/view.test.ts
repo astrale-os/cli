@@ -17,6 +17,10 @@ const findAgentBrowserMock = mock(async () => '/usr/bin/agent-browser' as string
 const io = captureProcess()
 
 mock.module('../../connection', () => ({
+  adminSessionOptions: (options: unknown) => options,
+  withAdminClientSession: async () => {
+    throw new Error('These View tests never reach Admin.')
+  },
   createPathCall: (target: string, input: unknown) => ({ target, input }),
   expandSelfInPath: async (path: string) => ({ path }),
   runKernelCommand: mock(async () => undefined),
@@ -232,6 +236,43 @@ describe('view session runtime', () => {
     expect(() =>
       createViewServeConfig(named, { allowIdentity: ['bob'], creds: 'opaque' }, target),
     ).toThrow('requires a named CLI identity')
+  })
+
+  test('an owner-mode config carries the Admin Instance and no CLI identity at all', async () => {
+    const { createViewServeConfig, establishViewOwner } = await import('../view')
+    const target = { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' }
+    const record = {
+      id: 'v-owner',
+      pid: 0,
+      port: 4419,
+      nonce: 'owner',
+      pageUrl: 'http://127.0.0.1:4419/s/owner/',
+      view: { target: Path.parse(`/:${ORIGIN}`).raw, route: resolved[0] },
+      instance: 'mine',
+      identity: 'Root',
+      createdAt: '2026-10-13T00:00:00.000Z',
+    }
+    const owner = { instance: '@admin-instance', admin: { timeout: '30000' } }
+
+    const config = createViewServeConfig(record, { owner }, target)
+    expect(config.owner).toEqual(owner)
+    expect(config.kernel).toEqual({
+      instance: 'mine',
+      url: undefined,
+      as: undefined,
+      creds: undefined,
+      timeout: undefined,
+    })
+    expect(config.identities).toBeUndefined()
+    for (const conflicting of [{ allowIdentity: ['bob'] }, { creds: 'opaque' }, { as: 'alice' }]) {
+      expect(() => createViewServeConfig(record, { owner, ...conflicting }, target)).toThrow(
+        'not as a CLI identity',
+      )
+      // --as-owner refuses them before asking Admin anything.
+      await expect(establishViewOwner({ asOwner: true, ...conflicting })).rejects.toMatchObject({
+        code: 'INVALID_OPTION',
+      })
+    }
   })
 
   test('spawns the detached server from a compiled executable without its virtual Bun entry', async () => {

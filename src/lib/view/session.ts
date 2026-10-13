@@ -4,6 +4,8 @@ import { closeSync, fchmodSync, openSync } from 'node:fs'
 import { chmod, mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import type { AdminConnectionOptions } from '../../connection'
+
 import { AstraleError } from '../../errors'
 import { atomicWrite, paths } from '../../state/index'
 
@@ -29,6 +31,16 @@ export type ViewSessionRecord = {
   createdAt: string
 }
 
+/** The Admin Instance a View session acts as the owner of, and the Identity its View runs as. */
+export type ViewOwnerConfig = {
+  /** Exact Admin Instance node (`@<id>`) serving this session's Kernel. */
+  instance: string
+  /** Admin target and caller used to retrieve that Instance's root token. */
+  admin: AdminConnectionOptions
+  /** The Identity the View runs as, by node id and display label; absent for the instance root. */
+  as?: { id: string; label: string }
+}
+
 /** Everything the detached `view __serve` process needs, written before spawn. */
 export type ViewServeConfig = {
   session: ViewSessionRecord
@@ -46,6 +58,12 @@ export type ViewServeConfig = {
   externalOrigins: readonly string[]
   /** Local identities explicitly allowed by the operator for this View session. */
   identities?: readonly string[]
+  /**
+   * Owner mode, exclusive with `identities`: the session holds the root token Admin issues to the
+   * owner of `owner.instance`, resolves the View as root, and runs it as root or as one of the
+   * instance's Identities. Neither token ever leaves the session server.
+   */
+  owner?: ViewOwnerConfig
   /**
    * Budget for a session no page reports on any more. It is the net under the
    * page-attachment rule, not the ordinary way a session ends: a browser that

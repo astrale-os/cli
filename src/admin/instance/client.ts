@@ -15,6 +15,7 @@ import {
   AdminInstanceNotFoundError,
   type InvitationInfo,
   type InstanceInfo,
+  type InstanceRootToken,
   type InstanceState,
   type RetrievedRootIdentity,
   type RootIdentityRecipient,
@@ -39,6 +40,13 @@ export interface AdminInstanceApi {
     identifier: string,
     recipient: RootIdentityRecipient,
   ): Promise<RetrievedRootIdentity>
+  /**
+   * Whether the caller owns each Instance in the Admin sense, in order: the Kernel decides
+   * `OwnInstanceOrAdministerAdminInstance` for all of them in one batch.
+   */
+  owns(instances: readonly InstanceInfo[]): Promise<readonly boolean[]>
+  /** A short-lived root token of one exact Instance (`@<id>`), issued only to its owner. */
+  retrieveRootToken(instance: string): Promise<InstanceRootToken>
   statusInvitation(invitation: string): Promise<InvitationInfo>
   reconcileInvitation(invitation: string): Promise<InvitationInfo>
 }
@@ -219,6 +227,29 @@ export async function connectAdminInstances(
       }
       return Object.freeze({ instance, transfer })
     },
+    async owns(instances: readonly InstanceInfo[]) {
+      if (instances.length === 0) return []
+      const policy = AdminContract.policies.ownInstanceOrAdministerAdminInstance
+      const decisions = await context.session.auth.can(
+        instances.map((instance) => ({ policy, object: instanceNodeId(instance.id) })),
+      )
+      if (decisions.length !== instances.length) {
+        throw new TypeError('Admin ownership decisions are misaligned with their Instances.')
+      }
+      return decisions
+    },
+    async retrieveRootToken(instance: string) {
+      const receiver = directNodePath(instance)
+      if (receiver === undefined) throw new TypeError('Admin Instance id is invalid.')
+      return rootToken(
+        await callAdminMethod(
+          context.session,
+          receiver,
+          MethodKey.of(AdminContract.classes.Instance, 'retrieveRootToken'),
+          {},
+        ),
+      )
+    },
     async statusInvitation(invitation: string) {
       const receiver = invitationReceiver(invitation)
       return instanceInvitationFromSummary(
@@ -335,6 +366,33 @@ function directNodePath(input: string): ReturnType<typeof Path.parse> | undefine
   } catch {
     return undefined
   }
+}
+
+/** The Node id a Policy decision names: Instance summaries carry it as a direct Node Path. */
+function instanceNodeId(id: string): NodeId {
+  const anchor = directNodePath(id)?.ast.anchor
+  if (anchor?.kind !== 'id') throw new TypeError('Admin Instance id is invalid.')
+  return anchor.id
+}
+
+/** Admit Admin's root token answer; a token past its expiry is refused here, not at the Kernel. */
+function rootToken(input: unknown): InstanceRootToken {
+  const value = record(input, 'Admin root token')
+  const expiresAt = value.expiresAt
+  if (
+    typeof expiresAt !== 'number' ||
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt <= Date.now() / 1_000
+  ) {
+    throw new TypeError('Admin root token expiration is invalid.')
+  }
+  const issuer = optionalHttpUrl(value.issuer, 'Admin root token issuer')
+  if (issuer === undefined) throw new TypeError('Admin root token issuer is invalid.')
+  return Object.freeze({
+    token: requiredString(value.token, 'Admin root token'),
+    issuer,
+    expiresAt,
+  })
 }
 
 function instanceFromNode(node: Node): InstanceInfo {

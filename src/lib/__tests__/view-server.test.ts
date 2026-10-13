@@ -59,6 +59,18 @@ describe('view session credentials', () => {
     }
   })
 
+  test('a Shell View runs on a Kernel credential of the caller, never on a Domain one', async () => {
+    const mint = mock(async () => mintedCredential('minted'))
+    const exchange = mock(async () => ({ token: 'exchanged', expiresAt: Date.now() + 240_000 }))
+    const config = viewConfig('shell', { issuer: 'https://shell.astrale.ai' })
+    const route = config.session.view.route as { key: string }
+    route.key = 'shell.astrale.ai:view.application'
+    await serving(config, { connect: connecting(mint), exchange }, async (session) => {
+      expect(await (await post(`${session}/token`)).json()).toMatchObject({ kind: 'minted' })
+    })
+    expect(exchange).not.toHaveBeenCalled()
+  })
+
   test('serves concurrent page requests from one mint, then reuses the grant', async () => {
     let release!: () => void
     const held = new Promise<void>((resolve) => (release = resolve))
@@ -194,12 +206,12 @@ describe('view session ownership and host authority', () => {
     expect(reloaded).not.toHaveBeenCalled()
   })
 
-  test.each(['/config.json', '/identity', '/release', '/token', '/kernel-token'])(
+  test.each(['/config.json', '/identities', '/identity', '/release', '/token', '/kernel-token'])(
     'refuses %s to anything but the View host',
     async (route) => {
       await serving(viewConfig('host-only', { handshake: 'none' }), {}, async (session) => {
         const response = await fetch(`${session}${route}`, {
-          method: route === '/config.json' ? 'GET' : 'POST',
+          method: route === '/config.json' || route === '/identities' ? 'GET' : 'POST',
           headers: { origin: 'https://example.test' },
         })
         expect(response.status).toBe(403)
