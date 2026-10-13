@@ -73,12 +73,6 @@ returns a nonzero exit status without changing a successful provisioning receipt
 creator's WorkOS identity while retaining the same Admin target options.
 Root recovery is independent and never substitutes for the human owner's access.
 
-After a successful `astrale instance delete <slug-or-id>`, the CLI removes the matching
-`<slug>-root` identity and its unshared key, including with `--keep-bookmark`. It preserves and
-reports unrelated or concurrently replaced identities, and keeps keys referenced by other
-identity aliases. JSON includes `localRootIdentity` with the cleanup outcome. If the removed
-identity was the default, the first remaining identity becomes default (or none if empty).
-
 If you already have a kernel URL, create a local bookmark:
 
 ```bash

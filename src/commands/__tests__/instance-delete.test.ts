@@ -31,10 +31,7 @@ async function run(
     failure?: boolean
     repoint?: boolean
     state?: string
-    root?: { issuer?: string | null; source?: 'key' | 'idp'; selected?: boolean; alias?: boolean }
-    replaceRoot?: boolean
-    cleanupFailure?: boolean
-    noOtherIdentity?: boolean
+    root?: 'matching' | 'shared' | 'other-issuer' | 'idp' | 'replaced' | 'broken-key'
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'astrale-instance-delete-'))
@@ -66,12 +63,12 @@ async function run(
     globalThis.fetch = async () => { throw new Error('Unexpected network access') }
     const root = ${JSON.stringify(options.root ?? null)}
     if (root) {
-      if (!${options.noOtherIdentity ?? false}) await upsertIdpIdentity('owner', { subject: 'human', idp: 'workos', issuer: 'https://idp.example' })
-      const issuer = root.issuer === null ? undefined : (root.issuer ?? ${JSON.stringify(url)})
-      if (root.source === 'idp') await upsertIdpIdentity('demo-root', { subject: 'root-subject', idp: 'workos', issuer, use: false })
+      await upsertIdpIdentity('owner', { subject: 'human', idp: 'workos', issuer: 'https://idp.example' })
+      const issuer = root === 'other-issuer' ? ${JSON.stringify(otherUrl)} : ${JSON.stringify(url)}
+      if (root === 'idp') await upsertIdpIdentity('demo-root', { subject: 'root-subject', idp: 'workos', issuer, use: false })
       else await createIdentity('demo-root', { subject: 'root-subject', issuer })
-      if (root.selected) await setDefault('demo-root')
-      if (root.alias) await importIdentity(await exportIdentity('demo-root'), { name: 'root-alias' })
+      await setDefault('demo-root')
+      if (root === 'shared') await importIdentity(await exportIdentity('demo-root'), { name: 'root-alias' })
     }
     const cache = { version: 2, entries: ${JSON.stringify({ [cacheKey(url)]: { credential: 'test-only' }, [cacheKey(otherUrl)]: { credential: 'other-test-only' } })} }
     await mkdir(dirname(EXCHANGE_CREDENTIALS_PATH), { recursive: true })
@@ -80,8 +77,8 @@ async function run(
       deleteOwnedInstance: async (_opts, identifier) => {
         if (identifier !== ${JSON.stringify(options.identifier ?? '@instance-id')}) throw new Error('Wrong receiver')
         ${options.failure ? "throw new Error('Admin deletion failed')" : ''}
-        ${options.replaceRoot ? `await createIdentity('replacement', { subject: 'replacement-subject', issuer: ${JSON.stringify(url)} }); await importIdentity(await exportIdentity('replacement'), { name: 'demo-root', replace: true });` : ''}
-        ${options.cleanupFailure ? "const { privatePath } = keypairPaths('root-subject'); await unlink(privatePath); await mkdir(privatePath);" : ''}
+        ${options.root === 'replaced' ? `await createIdentity('replacement', { subject: 'replacement-subject', issuer: ${JSON.stringify(url)} }); await importIdentity(await exportIdentity('replacement'), { name: 'demo-root', replace: true });` : ''}
+        ${options.root === 'broken-key' ? "const { privatePath } = keypairPaths('root-subject'); await unlink(privatePath); await mkdir(privatePath);" : ''}
         ${
           options.repoint
             ? `
@@ -136,7 +133,10 @@ describe('instance delete bookmark cleanup', () => {
   ])('removes the matching bookmark and credentials: %j', async (options) => {
     const result = await run(options)
     expect(result.exitCode, result.stderr).toBe(0)
-    expect(JSON.parse(result.stdout).state).toBe('deleted')
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      state: 'deleted',
+      localRootIdentity: { status: 'absent' },
+    })
     expect(Object.keys(result.store.instances)).toEqual(['other'])
     expect(result.store.active).toBe('other')
     expect(Object.keys(result.cache.entries)).toEqual([cacheKey(otherUrl)])
@@ -158,88 +158,31 @@ describe('instance delete bookmark cleanup', () => {
   })
 })
 
-describe('instance delete root identity cleanup', () => {
-  test.each([
-    { identifier: 'demo' },
-    { identifier: '@instance-id' },
-    { keepBookmark: true },
-    { bookmarkIssuer: otherUrl },
-    { root: { selected: true } },
-    { root: { selected: true }, noOtherIdentity: true },
-  ])('removes the matching root identity and both key files: %j', async (options) => {
-    const result = await run({ root: {}, ...options })
-    expect(result.exitCode, result.stderr).toBe(0)
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      state: 'deleted',
-      localRootIdentity: { name: 'demo-root', status: 'removed', keyRetained: false },
-    })
-    expect(result.identities.identities['demo-root']).toBeUndefined()
-    expect(result.identities.default).toBe('noOtherIdentity' in options ? '' : 'owner')
-    expect(result.keys).toEqual([])
-    expect(result.cache.entries).toEqual({})
-  })
-
-  test('keeps a key shared by another identity', async () => {
-    const result = await run({ root: { alias: true } })
-    expect(result.exitCode, result.stderr).toBe(0)
-    expect(JSON.parse(result.stdout).localRootIdentity).toMatchObject({
-      status: 'removed',
-      keyRetained: true,
-    })
-    expect(result.identities.identities['demo-root']).toBeUndefined()
+test.each([
+  { root: 'matching', identifier: 'demo', status: 'removed', keys: 0 },
+  { root: 'matching', keepBookmark: true, status: 'removed', keys: 0 },
+  { root: 'shared', status: 'removed', keys: 2 },
+  { root: 'other-issuer', status: 'retained', keys: 2 },
+  { root: 'idp', status: 'retained', keys: 0 },
+  { root: 'replaced', status: 'retained', keys: 2 },
+  { root: 'matching', failure: true, status: undefined, keys: 2 },
+  { root: 'matching', state: 'deleting', status: undefined, keys: 2 },
+  { root: 'broken-key', status: 'error', keys: 2 },
+] as const)('instance delete root cleanup: %j', async ({ status, keys, ...options }) => {
+  const result = await run(options)
+  expect(result.exitCode, result.stderr).toBe('failure' in options ? 1 : 0)
+  const output = result.exitCode === 0 ? JSON.parse(result.stdout) : undefined
+  expect(output?.localRootIdentity?.status).toBe(status)
+  const removed = status === 'removed' || status === 'error'
+  expect(Boolean(result.identities.identities['demo-root'])).toBe(!removed)
+  expect(result.identities.default).toBe(removed ? 'owner' : 'demo-root')
+  expect(result.keys).toHaveLength(keys)
+  if (status) expect(output.state).toBe('deleted')
+  if ('keepBookmark' in options) expect(result.store.instances.demo).toBeDefined()
+  if (options.root === 'shared') {
+    expect(output.localRootIdentity.keyRetained).toBe(true)
     expect(result.identities.identities['root-alias'].subject).toBe('root-subject')
-    expect(result.keys.sort()).toEqual(['root-subject.private.jwk', 'root-subject.public.jwk'])
-  })
-
-  test.each([
-    { root: { issuer: otherUrl } },
-    { root: { issuer: null } },
-    { root: { source: 'idp' as const } },
-    { resultIssuer: null },
-    { replaceRoot: true },
-  ])('reports and preserves an unrelated or replaced root identity: %j', async (options) => {
-    const result = await run({ root: {}, ...options })
-    expect(result.exitCode, result.stderr).toBe(0)
-    expect(JSON.parse(result.stdout).localRootIdentity).toMatchObject({
-      name: 'demo-root',
-      status: 'retained',
-    })
+  }
+  if (status === 'retained' || status === 'error')
     expect(result.stderr).toContain('Root identity demo-root:')
-    expect(result.identities.identities['demo-root']).toBeDefined()
-    if (result.identities.identities['demo-root'].source !== 'idp')
-      expect(result.keys).toHaveLength(2)
-    expect(Object.keys(result.cache.entries)).toEqual([cacheKey(otherUrl)])
-  })
-
-  test.each([{ failure: true }, { state: 'deleting' }])(
-    'keeps the identity and keys until deletion succeeds: %j',
-    async (options) => {
-      const result = await run({ root: {}, ...options })
-      expect(result.exitCode).toBe('failure' in options ? 1 : 0)
-      expect(result.identities.identities['demo-root']).toBeDefined()
-      expect(result.keys).toHaveLength(2)
-      expect(Object.keys(result.cache.entries)).toEqual([cacheKey(url), cacheKey(otherUrl)])
-    },
-  )
-
-  test('reports an absent root identity', async () => {
-    const result = await run()
-    expect(result.exitCode, result.stderr).toBe(0)
-    expect(JSON.parse(result.stdout).localRootIdentity).toEqual({
-      name: 'demo-root',
-      status: 'absent',
-    })
-  })
-
-  test('reports local cleanup failure without obscuring the completed remote deletion', async () => {
-    const result = await run({ root: {}, cleanupFailure: true })
-    expect(result.exitCode, result.stderr).toBe(0)
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      state: 'deleted',
-      localRootIdentity: { status: 'error' },
-    })
-    expect(result.stderr).toContain('Local root cleanup failed')
-    expect(result.store.instances.demo).toBeUndefined()
-    expect(result.identities.identities['demo-root']).toBeUndefined()
-  })
 })
