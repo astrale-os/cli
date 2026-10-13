@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0-beta.146](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.145...cli/v1.0.0-beta.146) (2026-10-13)
+
+
+### Features
+
+* **commands:** wait with --wait up to --timeout, and call and wait in one command ([#681](https://github.com/astrale-os/cli/issues/681)) ([2fca644](https://github.com/astrale-os/cli/commit/2fca64482f9efa92839cf8405f981c44e7886ff8))
+
+
+### Bug Fixes
+
+* **commands:** clean up instance root identity after deletion ([#691](https://github.com/astrale-os/cli/issues/691)) ([6b37f74](https://github.com/astrale-os/cli/commit/6b37f746e85a332f62d30ed0684ed62c8f80b3d6))
+* **commands:** read your own issue reports as yourself, not through the Admin Domain ([#689](https://github.com/astrale-os/cli/issues/689)) ([051978c](https://github.com/astrale-os/cli/commit/051978c67b87db533dfc04347c089f0e468b155b))
+* **commands:** refuse call input the Kernel client cannot send, naming its path ([#693](https://github.com/astrale-os/cli/issues/693)) ([61ab3d2](https://github.com/astrale-os/cli/commit/61ab3d298a54ae8675be08899511662d5ae3ee7e))
+* **commands:** run graph commands as the user on every target, the Admin included ([#695](https://github.com/astrale-os/cli/issues/695)) ([4ee3d17](https://github.com/astrale-os/cli/commit/4ee3d178b31d6ff4fe760033acc9fa12a0371f75))
+* **commands:** show an issue report refusal as a refusal, keep only an unknown outcome for --retry ([#694](https://github.com/astrale-os/cli/issues/694)) ([e9c9a3f](https://github.com/astrale-os/cli/commit/e9c9a3f9325e33a3a76f4d2a047443806728c994))
+* **lib:** warn at login when the account has no access to Admin ([#692](https://github.com/astrale-os/cli/issues/692)) ([3b359f5](https://github.com/astrale-os/cli/commit/3b359f596bd4d01e6eb11dc4e015214d7f1e820d))
+
 ## [1.0.0-beta.145](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.144...cli/v1.0.0-beta.145) (2026-10-13)
 
 
