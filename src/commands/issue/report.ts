@@ -136,11 +136,8 @@ export default withIssueAdminOptions(
     ],
     afterHelpText: `
   A title and body are enough. Prefer --project and -i when known.
-  Optional body type: bug, limitation (including capability requests), or friction.
-  Keep it brief: Context, Reproduction for bugs (exact inputs/steps, expected vs.
-  actual result) or Scenario for limitations/friction (task, obstacle, desired
-  behavior), Impact.
-  Optional bug evidence: short log excerpt, stack trace, or screenshot link.
+  Body, one field per line: Type (bug, limitation, or friction), Context,
+  Scenario (numbered steps), Observed, Expected, Impact, Workaround, Evidence.
   If confirmation fails, use the printed --retry command.
 
   $ astrale issue "Short title" --body "Context and details"
