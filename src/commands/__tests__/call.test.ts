@@ -1,3 +1,4 @@
+import { ResponseError } from '@astrale-os/sdk/client'
 import { describe, expect, test } from 'bun:test'
 
 import type { ConnectionContext } from '../../connection'
@@ -217,6 +218,75 @@ describe('call command durable answer', () => {
     expect(shown.lines).toContain(
       'This call already ran as run-1: the receipt names its recorded Execution; nothing ran again.',
     )
+  })
+
+  /** What `call --wait` hands to presentation, and the waits it asked of the Execution. */
+  async function waited(ended: () => Promise<unknown>, opts: Record<string, unknown> = {}) {
+    const waits: unknown[][] = []
+    const context = {
+      target: { kernelIssuer: 'https://kernel.example' },
+      credentialPrincipal: () => 'domain',
+      session: {
+        dispatch: async () => ({ kind: 'execution', invocation, execution: 'run-1' }),
+        execution: {
+          result: async (...args: unknown[]) => {
+            waits.push(args)
+            return ended()
+          },
+        },
+      },
+    } as unknown as ConnectionContext
+    let result: unknown
+    await callCommand(
+      '/:jobs.example:function.hold',
+      ['invoice=inv-1'],
+      { json: true, wait: true, ...opts },
+      {
+        async runKernelCommand(input) {
+          result = await input.fn(context)
+        },
+        output: () => {},
+      },
+    )
+    return { result, waits }
+  }
+
+  test('--wait answers a completed Execution with its value, waiting 110 s without --timeout', async () => {
+    const { result, waits } = await waited(async () => ({ kind: 'completed', value: { held: 1 } }))
+    expect(result).toEqual({ kind: 'value', value: { held: 1 } })
+    expect(waits).toEqual([['run-1', { waitMs: 110_000 }, undefined]])
+  })
+
+  test('--timeout bounds the call and its wait together', async () => {
+    const { waits } = await waited(async () => ({ kind: 'completed', value: 1 }), {
+      timeout: '5000',
+    })
+    const [[, wait, options]] = waits as [[string, { waitMs: number }, { timeoutMs: number }]]
+    expect(wait.waitMs).toBeGreaterThan(4_000)
+    expect(wait.waitMs).toBeLessThanOrEqual(5_000)
+    expect(options).toEqual({ timeoutMs: wait.waitMs })
+  })
+
+  test('--wait fails like a plain call once the Execution failed or was cancelled', async () => {
+    const error = { code: 'INVOICE_LOCKED', message: 'Invoice inv-1 is locked.' }
+    await expect(waited(async () => ({ kind: 'failed', error }))).rejects.toMatchObject(error)
+    await expect(waited(async () => ({ kind: 'cancelled' }))).rejects.toMatchObject({
+      code: 'EXECUTION_CANCELLED',
+    })
+  })
+
+  test('a wait that ends first keeps the receipt: the Execution still runs', async () => {
+    const { result } = await waited(async () => {
+      throw new ResponseError(4001 as never, 'Pending.', 'call-1' as never, {
+        code: 'EXECUTION_PENDING',
+        details: {},
+      })
+    })
+    expect(result).toMatchObject({
+      kind: 'execution',
+      receipt: { kind: 'astrale.execution', id: 'run-1' },
+      running: true,
+    })
   })
 
   test('keeps an id-shaped value a value', async () => {

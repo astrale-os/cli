@@ -8,6 +8,10 @@ import type { ExecutionReceipt } from '../connection/execution'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
+import { TRY_LATER_EXIT } from '../connection/command'
+import { executionPending } from '../connection/errors'
+import { commandWait } from '../connection/session'
+import { AstraleError } from '../errors'
 import { containsSelfRef } from '../lib/self'
 import { presentBinary, readBinaryBody } from '../lib/terminal/binary'
 import { failInput, log } from '../lib/terminal/log'
@@ -22,6 +26,8 @@ type CallOpts = KernelCommandOpts & {
   admin?: string | true
   adminUrl?: string
   domainIssuer?: string
+  /** Wait for a durable call's outcome and present it as the call's own answer. */
+  wait?: boolean
 }
 
 type CallDependencies = {
@@ -56,6 +62,8 @@ type CallOutcome =
       readonly receipt: ExecutionReceipt
       /** The Kernel marked its answer a replay of an Execution the call already started. */
       readonly replayed: boolean
+      /** `--wait` ended before the Execution did. */
+      readonly running?: true
     }
   | { readonly kind: 'dry'; readonly call: unknown }
 
@@ -97,13 +105,23 @@ export async function callCommand(
       )
       if (opts.dryRun) return { kind: 'dry', call: request }
       return withSelfHint(async () => {
+        const began = Date.now()
         const result = await ctx.session.dispatch(request)
         if (result.kind !== 'execution') return materializeCallResult(result)
         const id = result.execution
-        return {
+        const started = {
           kind: 'execution',
           receipt: executionReceipt(ctx, Path.parse(expanded.path), id),
           replayed: result.replayed === true,
+        } as const
+        if (opts.wait !== true) return started
+        // --timeout bounds the whole call, its wait included.
+        const { wait, options } = commandWait(opts.timeout, Date.now() - began)
+        try {
+          return endedCall(id, await ctx.session.execution.result(id, wait, options))
+        } catch (error) {
+          if (executionPending(error)) return { ...started, running: true }
+          throw error
         }
       }, expanded.meta)
     },
@@ -125,15 +143,21 @@ export async function callCommand(
           // The receipt is a strict, portable document: the replay marker is said, never stored.
           present(result.receipt, fmtOpts)
           if (!isMachine(fmtOpts)) {
+            if (result.running) {
+              log.info(
+                `Execution ${result.receipt.id} is still running: its outcome did not come within --timeout.`,
+              )
+            }
             if (result.replayed) {
               log.dim(
                 `This call already ran as ${result.receipt.id}: the receipt names its recorded Execution; nothing ran again.`,
               )
             }
             log.dim(
-              'Save it with --json > receipt.json, then astrale execution result receipt.json',
+              'Save it with --json > receipt.json, then astrale execution result receipt.json --wait',
             )
           }
+          if (result.running) process.exit(TRY_LATER_EXIT)
           return
         case 'redirect':
           throw new Error('Client Session returned an unresolved redirect.')
@@ -201,6 +225,28 @@ function looksLikeParam(value: string): boolean {
 
 function usageError(message: string, hint: string): CommanderError {
   return new CommanderError(2, 'commander.conflictingOption', `error: ${message}\n${hint}`)
+}
+
+/**
+ * A durable call's outcome as the call's own answer: its value once it completed, else the failure
+ * a plain call would have thrown.
+ */
+function endedCall(
+  id: string,
+  outcome: Awaited<ReturnType<ConnectionContext['session']['execution']['result']>>,
+): MaterializedCallResult {
+  switch (outcome.kind) {
+    case 'completed':
+      return { kind: 'value', value: outcome.value } as MaterializedCallResult
+    case 'failed':
+      throw new AstraleError(
+        outcome.error.code,
+        outcome.error.message,
+        `Execution ${id} ended failed.`,
+      )
+    case 'cancelled':
+      throw new AstraleError('EXECUTION_CANCELLED', `Execution ${id} was cancelled.`)
+  }
 }
 
 /** Drain a session-backed stream before the command-scoped Client Session closes. */
@@ -383,6 +429,11 @@ Durable callables:
   the run with astrale execution status|result receipt.json. A lost answer
   leaves the outcome unknown: do not repeat the call automatically.
 
+  --wait waits for that outcome up to --timeout (110000 ms without it), which
+  then bounds the whole call, and answers like a plain call: the value once
+  it completed, the Kernel's error (exit 1) once it failed or was cancelled.
+  Still running when the wait ends, it prints the receipt and exits 75.
+
 Admin kernel:
   --admin [<bookmark>] or --admin-url <url> runs the call on the Admin
   kernel, selected exactly like \`domain\` commands select it: the configured
@@ -413,6 +464,10 @@ Examples:
     { flags: '-d, --data <json>', description: 'Params as JSON: inline, - (stdin), or @<file>' },
     { flags: '-o, --output <file>', description: 'Write binary/raw output to a file' },
     { flags: '--dry-run', description: 'Show what would be sent without executing' },
+    {
+      flags: '--wait',
+      description: "Wait for a durable call's outcome up to --timeout (110000 ms without it)",
+    },
     {
       flags: '--admin [bookmark]',
       description: 'Call on the Admin kernel: the configured one, or this Admin bookmark',

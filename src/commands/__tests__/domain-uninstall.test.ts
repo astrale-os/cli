@@ -73,6 +73,15 @@ test('uses one explicit operation for submission and recovery', async () => {
   ])
 })
 
+test('--no-wait answers at once, and the fresh uninstall keeps it', async () => {
+  const command = uninstallKernelCommand(['app.example'], { yes: true, wait: false })
+  const request: { readonly waitMs?: number }[] = []
+  const running = { execution: 'execution-1', status: { state: 'running' } }
+  await command.fn({ uninstall: async (input: never) => (request.push(input), running) } as never)
+  expect(request).toMatchObject([{ waitMs: 0 }])
+  expect(command.recovery.fresh).toContain('--yes --no-wait')
+})
+
 test('requires --yes outside a TTY before connecting to a Kernel', async () => {
   const home = await mkdtemp(join(tmpdir(), 'astrale-domain-uninstall-'))
   const result = await runCli(home, ['domain', 'uninstall', 'grc.example', '--json'])

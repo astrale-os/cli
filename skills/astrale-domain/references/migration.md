@@ -148,7 +148,7 @@ astrale execution status "$EXECUTION" -i qa-migration --as qa-root --json
 # Apply deliberate repair mutations, then apply the target at the command the session awaits.
 astrale domain installation apply "$EXECUTION" -i qa-migration --as qa-root \
   --validation-scope full --validation-counts exact --json
-astrale execution result "$EXECUTION" -i qa-migration --as qa-root --json
+astrale execution result "$EXECUTION" --wait -i qa-migration --as qa-root --json
 ```
 
 `domain installation abort` stops the validation attempt the session runs toward its target and

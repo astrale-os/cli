@@ -89,16 +89,18 @@ test('a receipt file is read in the context it records, and each Method is sent 
   try {
     await send('status', file, { url: kernel, json: true })
     await send('result', file, { url: kernel, json: true })
-    await send('result', file, { url: kernel, json: true, waitMs: '1000' })
+    await send('result', file, { url: kernel, json: true, wait: true })
+    await send('result', file, { url: kernel, json: true, wait: true, timeout: '5000' })
     await send('cancel', file, { url: kernel })
     await send('resume', file, { url: kernel })
     await send('signal', file, { url: kernel, value: '{"by":"billing"}' }, 'approval')
     await send('signal', file, { url: kernel }, 'consent')
     expect(wire).toEqual([
       { target: method('status'), input: {} },
-      // Without --wait-ms a result read answers at once: a wait of 0.
+      // Without --wait a result read answers at once: a wait of 0.
       { target: method('result'), input: { waitMs: 0 } },
-      // The time left of the 1000 ms wait when the request is sent.
+      // --wait waits 110 s, or what --timeout bounds, less the time its answer takes.
+      { target: method('result'), input: { waitMs: expect.any(Number) } },
       { target: method('result'), input: { waitMs: expect.any(Number) } },
       { target: method('cancel'), input: {} },
       { target: method('resume'), input: {} },
@@ -106,15 +108,20 @@ test('a receipt file is read in the context it records, and each Method is sent 
       // Without --value the promise resolves with null.
       { target: method('signal'), input: { name: 'consent', value: null } },
     ])
-    expect((wire[2] as { input: { waitMs: number } }).input.waitMs).toBeLessThanOrEqual(1000)
-    expect(results.slice(0, 5)).toMatchObject([
+    const waits = wire.slice(2, 4).map((sent) => (sent as { input: { waitMs: number } }).input)
+    expect(waits[0]!.waitMs).toBeGreaterThan(100_000)
+    expect(waits[0]!.waitMs).toBeLessThanOrEqual(110_000)
+    expect(waits[1]!.waitMs).toBeGreaterThan(2_000)
+    expect(waits[1]!.waitMs).toBeLessThanOrEqual(5_000)
+    expect(results.slice(0, 6)).toMatchObject([
       { id: 'execution-1', state: 'completed' },
+      { kind: 'completed', value: 42 },
       { kind: 'completed', value: 42 },
       { kind: 'completed', value: 42 },
       { id: 'execution-1', state: 'completed' },
       { id: 'execution-1', state: 'completed' },
     ])
-    expect(results.slice(5)).toEqual([
+    expect(results.slice(6)).toEqual([
       { execution: 'execution-1', signal: 'approval', accepted: true },
       { execution: 'execution-1', signal: 'consent', accepted: true },
     ])
@@ -132,18 +139,18 @@ test('an Execution ID is reached as the caller itself, explicit credentials incl
 })
 
 test('a result read names the commands that follow its Execution while it still runs', async () => {
-  const read = await executionCommand('result', file, { instance: 'app', waitMs: '0' })
+  const read = await executionCommand('result', file, { instance: 'app' })
   expect(read.pending).toEqual<unknown>({
     execution: 'execution-1',
-    follow: `astrale execution result ${file} --wait-ms 20000 -i app`,
+    follow: `astrale execution result ${file} --wait -i app`,
     observe: `astrale execution status ${file} -i app`,
     waited: false,
   })
   expect(
-    (await executionCommand('result', 'execution-1', { instance: 'app', waitMs: '50' })).pending,
+    (await executionCommand('result', 'execution-1', { instance: 'app', wait: true })).pending,
   ).toEqual<unknown>({
     execution: 'execution-1',
-    follow: 'astrale execution result execution-1 --wait-ms 20000 -i app',
+    follow: 'astrale execution result execution-1 --wait -i app',
     observe: 'astrale execution status execution-1 -i app',
     waited: true,
   })
@@ -152,7 +159,7 @@ test('a result read names the commands that follow its Execution while it still 
     (await executionCommand('result', 'execution-1', { instance: 'app', creds: 'secret-token' }))
       .pending,
   ).toMatchObject({
-    follow: "astrale execution result execution-1 --wait-ms 20000 -i app --creds '<credential>'",
+    follow: "astrale execution result execution-1 --wait -i app --creds '<credential>'",
     observe: "astrale execution status execution-1 -i app --creds '<credential>'",
   })
   expect(
@@ -164,10 +171,10 @@ test('a result read names the commands that follow its Execution while it still 
 })
 
 test('invalid waits, values, addresses, files and receipt credential overrides fail before connection', async () => {
-  for (const waitMs of ['-1', 'NaN', '1.5', '9007199254740992']) {
-    await expect(executionCommand('result', file, { waitMs })).rejects.toThrow(
-      '--wait-ms must be a nonnegative safe integer.',
-    )
+  for (const timeout of ['-1', 'NaN', '1.5', '0']) {
+    await expect(executionCommand('result', file, { wait: true, timeout })).rejects.toMatchObject({
+      code: 'INVALID_FLAG',
+    })
   }
   await expect(executionCommand('signal', file, { value: '{by:' }, 'approval')).rejects.toThrow(
     '--value must be a JSON value.',
@@ -252,9 +259,10 @@ test.each(['caller', 'domain'])(
       state: 'completed',
       outcome: { kind: 'completed', value: 42 },
     })
-    expect(
-      JSON.parse(await invoke(['execution', 'result', file, '--wait-ms', '0', ...flags])),
-    ).toEqual({ kind: 'completed', value: 42 })
+    expect(JSON.parse(await invoke(['execution', 'result', file, '--wait', ...flags]))).toEqual({
+      kind: 'completed',
+      value: 42,
+    })
     const events = (await Bun.file(observed).text())
       .trim()
       .split('\n')
@@ -336,8 +344,6 @@ test('a result read before the Execution ended is still running: exit 75 and wha
       'execution',
       'result',
       file,
-      '--wait-ms',
-      '0',
       '--url',
       kernel,
       '--as',
@@ -364,7 +370,7 @@ test('a result read before the Execution ended is still running: exit 75 and wha
   expect(code, stderr + stdout).toBe(75)
   expect(JSON.parse(stderr)).toMatchObject({
     execution: 'execution-1',
-    follow: `astrale execution result ${file} --wait-ms 20000 --url ${kernel} --as alice`,
+    follow: `astrale execution result ${file} --wait --url ${kernel} --as alice`,
     observe: `astrale execution status ${file} --url ${kernel} --as alice`,
     reason: { code: 'EXECUTION_PENDING' },
   })

@@ -16,12 +16,13 @@ import {
   parseExecutionReceipt,
   type ExecutionReceipt,
 } from '../connection/execution'
+import { commandWait } from '../connection/session'
 import { targetFlags } from '../connection/target'
 import { AstraleError } from '../errors'
 import { failInput } from '../lib/terminal/log'
 
 type Method = 'status' | 'result' | 'cancel' | 'resume' | 'signal'
-type ExecutionOptions = KernelCommandOpts & { waitMs?: string; value?: string }
+type ExecutionOptions = KernelCommandOpts & { wait?: boolean; value?: string }
 
 function requireIdentity(opts: ExecutionOptions): void {
   if (opts.creds !== undefined || opts.anonymous === true) {
@@ -79,13 +80,6 @@ async function addressed(
   return { id: receipt.id, credential: { principal: 'execution', receipt } }
 }
 
-function nonnegative(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined
-  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
-    throw new TypeError('--wait-ms must be a nonnegative safe integer.')
-  return Number(value)
-}
-
 function signalValue(text: string | undefined): unknown {
   if (text === undefined) return null
   try {
@@ -105,7 +99,9 @@ export async function executionCommand(
   opts: ExecutionOptions,
   name?: string,
 ) {
-  const waitMs = method === 'result' ? nonnegative(opts.waitMs) : undefined
+  // --timeout bounds the whole read, its wait included.
+  const { wait, options } =
+    method === 'result' && opts.wait === true ? commandWait(opts.timeout) : { wait: {} }
   const value = method === 'signal' ? signalValue(opts.value) : undefined
   const { id, credential } = await addressed(argument, opts)
   const target = targetFlags(opts)
@@ -119,7 +115,7 @@ export async function executionCommand(
             execution: id,
             follow: executionResultCommand(argument, target),
             observe: executionStatusCommand(argument, target),
-            waited: waitMs !== undefined && waitMs > 0,
+            waited: opts.wait === true,
           },
         }
       : {}),
@@ -128,7 +124,7 @@ export async function executionCommand(
         case 'status':
           return session.execution.status(id)
         case 'result':
-          return session.execution.result(id, waitMs === undefined ? {} : { waitMs })
+          return session.execution.result(id, wait, options)
         case 'cancel':
           return session.execution.cancel(id)
         case 'resume':
@@ -163,8 +159,9 @@ install or a repair session, its phase, progress and the command it awaits.`,
   result: {
     summary: 'Read the terminal outcome of an Execution, optionally waiting',
     help: `
---wait-ms waits for the outcome in total, across requests (default: no wait).
-A result whose Execution has not ended is no failure: the CLI says it is still
+--wait waits for the outcome up to --timeout (110000 ms without it), which
+then bounds the whole read, across requests; without it the read answers at
+once. A result whose Execution has not ended is no failure: the CLI says it is still
 running, prints the commands that wait for it and read its status, and exits
 75 (try again later). --json keeps the Kernel's EXECUTION_PENDING refusal on
 stderr and adds "execution", "follow" and "observe". Ending the wait never
@@ -210,7 +207,12 @@ export const executionCommands: CommandDefinition[] = (Object.keys(descriptions)
     ],
     options:
       method === 'result'
-        ? [{ flags: '--wait-ms <milliseconds>', description: 'Wait for a terminal outcome' }]
+        ? [
+            {
+              flags: '--wait',
+              description: 'Wait for the terminal outcome up to --timeout (110000 ms without it)',
+            },
+          ]
         : method === 'signal'
           ? [
               {

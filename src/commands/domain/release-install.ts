@@ -26,7 +26,6 @@ import {
   completedExecutionLine,
   IncompleteInstallation,
   installationResult,
-  lifecycleWaitMs,
   openSessionReport,
   renderOpenSession,
   renderRunning,
@@ -38,6 +37,7 @@ import {
   type Lifecycle,
 } from '../../connection/installation-result'
 import { reasonCode } from '../../connection/reasons'
+import { commandWait } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import {
@@ -376,11 +376,12 @@ async function installReleases(
     }
   }
 
-  const waitMs = lifecycleWaitMs(opts)
+  // --timeout bounds the whole install, its wait included; --no-wait answers at once.
+  const { wait, options } = commandWait(opts.timeout)
   const request = {
     operation,
     ...(opts.mode === undefined ? {} : { mode: opts.mode }),
-    waitMs,
+    waitMs: opts.wait === false ? 0 : wait.waitMs,
     ...(opts.validationScope === undefined && opts.validationCounts === undefined
       ? {}
       : {
@@ -417,10 +418,10 @@ async function installReleases(
         : `Installing ${sources.length} domains (operation ${operation})`,
     recovery,
     call: async (started) => {
-      const deadline = run.deps.now() + waitMs
+      const deadline = run.deps.now() + wait.waitMs
       let installation: Installation
       try {
-        installation = await run.deps.lifecycle(session, started).install(request)
+        installation = await run.deps.lifecycle(session, started).install(request, options)
       } catch (error) {
         // A conflict over the operation refuses this install: the request it names is read only
         // to say which one it is.

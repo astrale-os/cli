@@ -1139,7 +1139,7 @@ describe('durable installations', () => {
       status: { id: EXECUTION, state: 'running', detail: { phase: 'validating' } },
       operation: GENERATED,
       observe: `astrale execution status ${EXECUTION} -i staging`,
-      follow: `astrale execution result ${EXECUTION} --wait-ms 20000 -i staging`,
+      follow: `astrale execution result ${EXECUTION} --wait -i staging`,
       precheck: expect.anything(),
     })
 
@@ -1150,7 +1150,7 @@ describe('durable installations', () => {
       `Installation ${EXECUTION} still runs on the Kernel: this command's wait (--timeout) ended first.`,
     )
     expect(shown.all).toContain(
-      `Wait for it: astrale execution result ${EXECUTION} --wait-ms 20000 -i staging`,
+      `Wait for it: astrale execution result ${EXECUTION} --wait -i staging`,
     )
     expect(shown.all).not.toContain('✖')
     expect(shown.all).not.toContain('installed (operation')
@@ -1257,7 +1257,7 @@ describe('an interrupted wait leaves the durable Execution running', () => {
       lifecycle: 'install',
       operation: GENERATED,
       observe: `astrale execution status ${EXECUTION} -i staging`,
-      follow: `astrale execution result ${EXECUTION} --wait-ms 20000 -i staging`,
+      follow: `astrale execution result ${EXECUTION} --wait -i staging`,
     })
     expect(process.listenerCount('SIGINT')).toBe(listeners)
   })

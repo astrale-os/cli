@@ -26,7 +26,6 @@ import {
   type MigrationRule,
   type MigrationRules,
 } from './reasons'
-import { resolveTimeoutMs } from './session'
 
 /** A successful call can still describe an unfinished or rejected installation. */
 export class IncompleteInstallation extends Error {
@@ -74,22 +73,6 @@ export function installationResult(
 
 /** The install and uninstall syscalls, as `announcingLifecycle` binds them. */
 export type Lifecycle = Pick<SchemaApi, 'install' | 'uninstall'>
-
-/** How long install and uninstall wait for their outcome without --timeout. */
-export const LIFECYCLE_WAIT_MS = 110_000
-
-/**
- * How long an install or uninstall command waits for its outcome, counted from the Kernel's answer
- * naming its Execution: not at all with --no-wait, else --timeout, else {@link LIFECYCLE_WAIT_MS}.
- * Each request keeps the session's --timeout.
- */
-export function lifecycleWaitMs(opts: {
-  readonly timeout?: string
-  readonly wait?: boolean
-}): number {
-  if (opts.wait === false) return 0
-  return opts.timeout === undefined ? LIFECYCLE_WAIT_MS : resolveTimeoutMs(opts.timeout)
-}
 
 /**
  * The install and uninstall syscalls of one Session, which tell `started` the Execution the Kernel

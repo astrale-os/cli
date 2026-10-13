@@ -14,13 +14,13 @@ import {
   completedExecutionLine,
   conflictFailure,
   installationResult,
-  lifecycleWaitMs,
   renderRunning,
   replayedMember,
   replayLine,
   runningReport,
   stillRunning,
 } from '../../connection/installation-result'
+import { commandWait } from '../../connection/session'
 import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import { shellCommand } from '../../lib/shell-command'
@@ -36,6 +36,7 @@ type UninstallOpts = KernelCommandOpts & {
   readonly yes?: boolean
   readonly destructive?: boolean
   readonly operation?: string
+  readonly wait?: boolean
 }
 
 /** A completed uninstall's receipt with its Execution, or its Execution still running. */
@@ -86,9 +87,9 @@ Behavior:
   and this is its recorded outcome. Any other request under that id is
   refused as an operation conflict: nothing runs, and the CLI names the
   execution the id belongs to. The CLI waits for the outcome up to --timeout
-  (110000 ms without it), counted from the Kernel's answer naming the
-  execution; no wait under 1 s is started. An uninstall still running then is
-  no failure: the CLI prints its execution and how to follow it, and exits 0.
+  (110000 ms without it), which bounds the uninstall request and its wait
+  together; --no-wait returns at once. An uninstall still running then is no
+  failure: the CLI prints its execution and how to follow it, and exits 0.
   Ctrl-C stops waiting, never the uninstall: the CLI names its execution and
   exits 130.
 
@@ -122,6 +123,10 @@ Examples:
     {
       flags: '--operation <uuid>',
       description: 'Operation id for automation; a reused id replays only the same request',
+    },
+    {
+      flags: '--no-wait',
+      description: 'Return the durable execution state without waiting for completion',
     },
   ],
   action: async (origins: [string, ...string[]], opts: UninstallOpts) => {
@@ -179,10 +184,15 @@ export function uninstallKernelCommand(
     recovery,
     credential: { principal: 'caller' as const },
     fn: async (lifecycle: Pick<Lifecycle, 'uninstall'>): Promise<UninstallResult> => {
-      const installation = await lifecycle.uninstall({
-        ...uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe', operation),
-        waitMs: lifecycleWaitMs(opts),
-      })
+      // --timeout bounds the whole uninstall, its wait included; --no-wait answers at once.
+      const { wait, options } = commandWait(opts.timeout)
+      const installation = await lifecycle.uninstall(
+        {
+          ...uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe', operation),
+          waitMs: opts.wait === false ? 0 : wait.waitMs,
+        },
+        options,
+      )
       if (stillRunning(installation.status)) return { running: installation }
       return {
         ...installationResult(installation, 'uninstall'),
@@ -198,7 +208,7 @@ export function uninstallKernelCommand(
     ) => {
       if ('running' in result) {
         if (machine) output(runningReport(result.running, context), formatOpts)
-        else renderRunning(result.running, context, true)
+        else renderRunning(result.running, context, opts.wait !== false)
         return
       }
       if (machine) {
@@ -226,6 +236,7 @@ function uninstallCommand(origins: readonly [string, ...string[]], opts: Uninsta
     ...origins,
     ...(opts.destructive ? ['--destructive'] : []),
     '--yes',
+    ...(opts.wait === false ? ['--no-wait'] : []),
     ...targetFlags(opts),
     ...(opts.timeout === undefined ? [] : ['--timeout', opts.timeout]),
   ])

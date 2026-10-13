@@ -51,9 +51,6 @@ export function parseExecutionReceipt(text: string): ExecutionReceipt {
   return acceptExecutionReceipt(value)
 }
 
-/** How long the printed follow-up waits for the outcome: within the default request timeout. */
-export const FOLLOW_WAIT_MS = 20_000
-
 /** The command that reads one Execution, by its ID or its receipt file, on the same target. */
 export function executionStatusCommand(execution: string, target: readonly string[] = []): string {
   return shellCommand(['astrale', 'execution', 'status', execution, ...target])
@@ -61,13 +58,5 @@ export function executionStatusCommand(execution: string, target: readonly strin
 
 /** The command that waits for one Execution's outcome, by its ID or its receipt file. */
 export function executionResultCommand(execution: string, target: readonly string[] = []): string {
-  return shellCommand([
-    'astrale',
-    'execution',
-    'result',
-    execution,
-    '--wait-ms',
-    String(FOLLOW_WAIT_MS),
-    ...target,
-  ])
+  return shellCommand(['astrale', 'execution', 'result', execution, '--wait', ...target])
 }
