@@ -12,6 +12,7 @@ import {
 } from '../lib/idp/provider'
 import {
   ensureFreshSession,
+  IdpSessionCopiedError,
   IdpSessionMissingError,
   IdpSessionNoRefreshTokenError,
 } from '../lib/idp/session'
@@ -138,6 +139,8 @@ function resolveCredentialHint(
       ? `The IdP issues tokens for audience ${error.actual}, not the target's ${error.requested}. Target an instance whose URL/issuer is ${error.actual} (re-login won't change the audience).`
       : `The IdP did not mint a token for the target audience ${error.requested}, and re-login won't change it. Target an instance whose audience the IdP issues, or reconfigure the bookmark/IdP.`
   }
+  // A copy of another home's session: re-login here or the owner home helps, waiting does not.
+  if (error instanceof IdpSessionCopiedError && error.hint) return error.hint
   // Org-membership rejection: the session is healthy; the org we scoped the
   // token to doesn't hold this user. Re-login can never fix it.
   if (error instanceof IdpOrgMembershipError) {
@@ -200,7 +203,7 @@ async function resolveIdpAccessToken(
     // An audience mismatch means the session is healthy but the IdP won't
     // mint this audience — re-login is futile, so propagate it verbatim for
     // the hint logic to handle.
-    if (e instanceof IdpAudienceMismatchError) throw e
+    if (e instanceof IdpAudienceMismatchError || e instanceof IdpSessionCopiedError) throw e
     throw refreshFailureError(identityName, identity, e)
   }
 

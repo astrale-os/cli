@@ -1,13 +1,20 @@
+import { stat } from 'node:fs/promises'
+import { dirname } from 'node:path'
+
+import { AstraleError } from '../../errors'
 import { withFileLock } from '../../state/index'
 import { orgIdForAudience } from '../instance/bookmarks'
 import { fetchOrgHint } from '../meta'
 import {
   accessTokenForAudience,
+  currentHome,
   decodeTokenClaims,
   classifyRefreshFailure,
   idpSessionPath,
+  idpSessionPathIn,
   OAuthTokenError,
   readIdpSession,
+  readIdpSessionIn,
   refreshSession,
   type IdpSession,
 } from './provider'
@@ -31,6 +38,27 @@ export class IdpSessionNoRefreshTokenError extends Error {
     super(`IdP session for "${identityName}" has no refresh token`)
     this.name = 'IdpSessionNoRefreshTokenError'
     this.identityName = identityName
+  }
+}
+
+/**
+ * The session is a copy of one another CLI home still holds. Its cached access tokens remain
+ * usable, but its refresh token is the owner's: refreshing it here would sign the owner out.
+ */
+export class IdpSessionCopiedError extends AstraleError {
+  readonly identityName: string
+  readonly owner: string
+
+  constructor(identityName: string, owner: string) {
+    super(
+      'IDP_SESSION_COPIED',
+      `The IdP session for "${identityName}" is a copy of the one in the CLI home ${owner}. ` +
+        'Refreshing it here would sign that home out: each refresh token works only once.',
+      `Run the command from that home, or sign this home in: astrale auth login --name ${identityName}`,
+    )
+    this.name = 'IdpSessionCopiedError'
+    this.identityName = identityName
+    this.owner = owner
   }
 }
 
@@ -79,6 +107,8 @@ export async function ensureFreshSession(
     if (!current) throw new IdpSessionMissingError(identityName)
     if (sessionServes(current, opts.audience, minimumRemainingMs, opts.organizationId))
       return current
+    // The lock serializes refreshes within this home only; a copy must not race its owner.
+    await refuseCopiedSession(identityName, current)
 
     // Org resolution order: explicit > bookmarked-at-create > router lookup.
     const bookmarkOrg =
@@ -129,6 +159,40 @@ export async function ensureFreshSession(
       throw e
     }
   })
+}
+
+/**
+ * Refuse to refresh a session another CLI home still holds. A copy (another `ASTRALE_HOME` built
+ * from this one's files) shares the owner's refresh token but not its lock: the first home to
+ * refresh strands the other, whose next refresh fails with "Refresh token already exchanged". A
+ * copy whose owner no longer holds that sign-in (moved home, logout, new login) adopts it.
+ */
+async function refuseCopiedSession(identityName: string, session: IdpSession): Promise<void> {
+  const owner = session.home
+  if (owner === undefined || owner === (await currentHome())) return
+  // A home sharing the owner's session directory (a mount, a symlink) shares its lock: no copy.
+  if (await sameDirectory(idpSessionPathIn(owner, identityName), idpSessionPath(identityName)))
+    return
+  // Unreadable or undecodable: the owner may still hold it, so the copy stays read-only.
+  const original = await readIdpSessionIn(owner, identityName).catch(() => session)
+  if (original !== null && sameSignIn(original, session))
+    throw new IdpSessionCopiedError(identityName, owner)
+}
+
+/** Whether two session files live in one directory, where their lock and atomic writes meet. */
+async function sameDirectory(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([stat(dirname(a)), stat(dirname(b))]).catch(() => [])
+  return x !== undefined && y !== undefined && x.dev === y.dev && x.ino === y.ino
+}
+
+/** Same user at the same IdP, and the same IdP session when both name one. */
+function sameSignIn(a: IdpSession, b: IdpSession): boolean {
+  const sid = (session: IdpSession) => session.claims?.sid
+  return (
+    a.issuer === b.issuer &&
+    a.subject === b.subject &&
+    (sid(a) === undefined || sid(b) === undefined || sid(a) === sid(b))
+  )
 }
 
 /**

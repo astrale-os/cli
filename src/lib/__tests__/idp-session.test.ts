@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises'
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,10 +19,12 @@ import { tokenEndpoint, unsignedJwt, writeIdp } from './idp.fixture'
 const AUD = 'https://kernel.example.com'
 
 let tmp: string
+let copies: string[]
 let server: ReturnType<typeof rotation>
 
 beforeEach(async () => {
   tmp = await mkdtemp(join(tmpdir(), 'astrale-idp-session-'))
+  copies = []
   await mkdir(join(tmp, 'idp-sessions'), { recursive: true })
   server = rotation()
   await writeIdp(tmp, server.url)
@@ -20,6 +33,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await server.stop()
   await rm(tmp, { recursive: true, force: true })
+  for (const copy of copies) await rm(copy, { recursive: true, force: true })
 })
 
 describe('ensureFreshSession', () => {
@@ -149,6 +163,46 @@ describe('ensureFreshSession', () => {
     },
   )
 
+  test('a copy in another CLI home keeps its cached token but never refreshes the owner session', async () => {
+    await writeSession({ expires_at: past() })
+    expect((await runDriver('ensure')).ok).toBe(true)
+    const copy = await copyHome()
+
+    // Serving the copied, still-fresh access token touches no refresh token.
+    expect(await runDriver('ensure', { ASTRALE_HOME: copy })).toMatchObject({ ok: true })
+    // A new organization forces a refresh, as owner activation of a created Instance does.
+    const inCopy = await runDriver('ensure', { ASTRALE_HOME: copy, DRIVER_EXPECTED_ORG: 'org-a' })
+    const inOwner = await runDriver('ensure', { DRIVER_EXPECTED_ORG: 'org-b' })
+
+    // Had the copy rotated the single-use token, the owner would now present an exchanged one.
+    expect(inOwner).toMatchObject({ ok: true })
+    expect(inCopy).toMatchObject({ ok: false, errorName: 'IdpSessionCopiedError' })
+    expect(inCopy.message).toContain(await realpath(tmp))
+    expect(server.refreshCount()).toBe(2)
+  })
+
+  test.each([
+    ['its original home signed out', () => unlink(join(tmp, 'idp-sessions', 'alice.json'))],
+    ['its original home signed in again', () => writeSession({ claims: { sid: 'session-2' } })],
+    [
+      'it shares the session directory, and so the lock, of its original home',
+      async (copy: string) => {
+        await rm(join(copy, 'idp-sessions'), { recursive: true })
+        await symlink(join(tmp, 'idp-sessions'), join(copy, 'idp-sessions'))
+      },
+    ],
+  ] as const)('another home refreshes the session when %s', async (_case, arrange) => {
+    await writeSession({ expires_at: past() })
+    expect((await runDriver('ensure')).ok).toBe(true)
+    const copy = await copyHome()
+    await arrange(copy)
+
+    const result = await runDriver('ensure', { ASTRALE_HOME: copy, DRIVER_EXPECTED_ORG: 'org-a' })
+
+    expect(result).toMatchObject({ ok: true })
+    expect((await readSession(copy)).home).toBe(await realpath(copy))
+  })
+
   test('reports a missing session when it is deleted while waiting for the lock', async () => {
     await writeSession({ expires_at: past() })
     const lockPath = join(tmp, 'idp-sessions', 'alice.json.lock')
@@ -194,8 +248,18 @@ async function writeSession(overrides: Record<string, unknown>): Promise<void> {
   )
 }
 
-async function readSession(): Promise<Record<string, unknown>> {
-  return JSON.parse(await readFile(join(tmp, 'idp-sessions', 'alice.json'), 'utf-8'))
+async function readSession(home = tmp): Promise<Record<string, unknown>> {
+  return JSON.parse(await readFile(join(home, 'idp-sessions', 'alice.json'), 'utf-8'))
+}
+
+/** Another CLI home built from this one's IdP configuration and session file. */
+async function copyHome(): Promise<string> {
+  const copy = await mkdtemp(join(tmpdir(), 'astrale-idp-session-copy-'))
+  copies.push(copy)
+  await cp(join(tmp, 'idps'), join(copy, 'idps'), { recursive: true })
+  await mkdir(join(copy, 'idp-sessions'))
+  await cp(join(tmp, 'idp-sessions', 'alice.json'), join(copy, 'idp-sessions', 'alice.json'))
+  return copy
 }
 
 async function lockFilesLeft(): Promise<string[]> {
@@ -203,7 +267,7 @@ async function lockFilesLeft(): Promise<string[]> {
   return entries.filter((e) => e.endsWith('.lock') || e.endsWith('.tmp'))
 }
 
-/** The test IdP's token endpoint, minting audience tokens that carry the requested organization. */
+/** The test IdP's token endpoint, minting audience tokens of one IdP session that carry the requested organization. */
 const rotation = () =>
   tokenEndpoint({
     mint: (form) => {
@@ -211,6 +275,7 @@ const rotation = () =>
       return unsignedJwt({
         aud: AUD,
         exp: futureEpoch(),
+        sid: 'session-1',
         ...(organization === null ? {} : { org_id: organization }),
       })
     },

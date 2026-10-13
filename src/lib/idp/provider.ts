@@ -1,6 +1,6 @@
 import { decodeJwt, type JWTPayload } from 'jose'
-import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readFile, readdir, realpath, unlink } from 'node:fs/promises'
+import { dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
 import { atomicWrite, IDPS_PATH, IDP_SESSIONS_DIR, paths } from '../../state/index'
@@ -166,6 +166,12 @@ const IdpSessionSchema = z
         z.object({ access_token: z.string(), expires_at: z.string().optional() }).passthrough(),
       )
       .optional(),
+    /**
+     * Real path of the CLI home that wrote this session. A refresh token works once and the
+     * refresh lock lives in the home, so a copy of this file in another home is a second refresher
+     * of the same sign-in: whichever home refreshes first signs the other out.
+     */
+    home: z.string().optional(),
     updatedAt: z.string(),
   })
   .passthrough()
@@ -482,15 +488,39 @@ export function identityNameFromClaims(claims: JWTPayload | undefined, fallback:
   return normalized || fallback
 }
 
+/** The real path of this CLI home: the owner every session saved here records. */
+export async function currentHome(): Promise<string> {
+  return realpath(paths.home).catch(() => resolve(paths.home))
+}
+
+/** Save `session` in this CLI home, which becomes its owner. */
 export async function saveIdpSession(session: IdpSession): Promise<void> {
   const path = idpSessionPath(session.identity)
   await mkdir(dirname(path), { recursive: true })
-  await atomicWrite(path, JSON.stringify(session, null, 2) + '\n')
+  const owned: IdpSession = { ...session, home: await currentHome() }
+  await atomicWrite(path, JSON.stringify(owned, null, 2) + '\n')
 }
 
 export async function readIdpSession(identityName: string): Promise<IdpSession | null> {
+  return readIdpSessionFile(idpSessionPath(identityName), identityName)
+}
+
+/** Where the CLI home `home` keeps the session of `identityName`. */
+export function idpSessionPathIn(home: string, identityName: string): string {
+  return join(home, relative(paths.home, idpSessionPath(identityName)))
+}
+
+/** The session `identityName` holds in the CLI home `home`, read without its lock. */
+export async function readIdpSessionIn(
+  home: string,
+  identityName: string,
+): Promise<IdpSession | null> {
+  return readIdpSessionFile(idpSessionPathIn(home, identityName), identityName)
+}
+
+async function readIdpSessionFile(path: string, identityName: string): Promise<IdpSession | null> {
   try {
-    const raw = await readFile(idpSessionPath(identityName), 'utf-8')
+    const raw = await readFile(path, 'utf-8')
     return IdpSessionSchema.parse(JSON.parse(raw))
   } catch (e) {
     if ((e as { code?: string }).code === 'ENOENT') return null

@@ -670,6 +670,11 @@ drain, a 2002 refusal of that confirmation re-reads the installation and exchang
 within the same command, before any application call. Application calls themselves are never replayed
 by this recovery.
 
+`idp-sessions/` holds sign-ins whose refresh tokens work once, and each belongs to the home that
+wrote it. A copy in another `ASTRALE_HOME` may use its cached access token but refuses to refresh
+(`IDP_SESSION_COPIED`) while that home still holds the sign-in: refreshing the copy would sign the
+original home out. Give another home its own sign-in with `astrale auth login`.
+
 Optional roots are `ASTRALE_HOME` and `ASTRALE_KEYS_DIR`.
 
 Studio preferences live under `<ASTRALE_HOME>/studio/`: `settings.json` stores one
