@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.147](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.146...cli/v1.0.0-beta.147) (2026-10-13)
+
+
+### Bug Fixes
+
+* **commands:** read an Issue's description from its body, then from the Kernel description ([#696](https://github.com/astrale-os/cli/issues/696)) ([17c5919](https://github.com/astrale-os/cli/commit/17c5919da011502101a08fb812b4f34928ca0d78))
+* **lib:** keep a copied IdP session from signing its original home out ([#697](https://github.com/astrale-os/cli/issues/697)) ([cdded79](https://github.com/astrale-os/cli/commit/cdded79b128dc128c50d2b9a7a75ab908acda03e))
+
 ## [1.0.0-beta.146](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.145...cli/v1.0.0-beta.146) (2026-10-13)
 
 
