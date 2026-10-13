@@ -232,10 +232,22 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
   ],
 })
 
+export const CLI_CONNECTION_GRAPH_COMMAND_ACTS_FOR_ITSELF = defineLaw({
+  id: 'CLI-CONNECTION-GRAPH-COMMAND-ACTS-FOR-ITSELF',
+  statement:
+    "A graph command (`get`, `query`, `mutate`) presents the selected identity on every target, a managed Instance, a bookmark that names an explicit exact Domain issuer and the Admin alike: it is bounded by the identity's own rules and by no Domain principal, so it never exchanges at the target's Domain issuer. A callable keeps its own credential rule.",
+  tests: [
+    {
+      file: '../commands/__tests__/graph-acts-for-itself.test.ts',
+      id: 'TEST-CLI-GRAPH-COMMAND-ACTS-FOR-ITSELF',
+    },
+  ],
+})
+
 export const CLI_CONNECTION_MANAGED_USER_ACTS_FOR_ITSELF = defineLaw({
   id: 'CLI-CONNECTION-MANAGED-USER-ACTS-FOR-ITSELF',
   statement:
-    'A managed Instance derives no exchange Domain from its route: its users act for themselves, so a graph command presents the selected identity, bounded by its own rules and by no Domain principal. Re-running `astrale instance use <slug>` resets a managed bookmark to act so; an explicit exact Domain issuer a user sets on any bookmark is still exchanged at.',
+    "A managed Instance derives no exchange Domain from its route: its users act for themselves. Re-running `astrale instance use <slug>` resets a managed bookmark to act so; an explicit exact Domain issuer a user sets on any bookmark is still exchanged at by the commands that act through the target's Domain, never by a graph command.",
   tests: [
     {
       file: '../lib/__tests__/instance-target.test.ts',

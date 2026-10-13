@@ -35,6 +35,8 @@ export async function mutateCommand(opts: MutateOpts): Promise<void> {
   await runKernelCommand<MutationResult>({
     opts,
     label: 'Mutate',
+    // A graph command acts as the user on every target, the Admin's included: no Domain bounds it.
+    credential: { principal: 'caller' },
     fn: ({ graph }) => graph.mutate(mutation),
     format: (result, format, machine) => {
       if (machine || format.format !== undefined) output(result, format)

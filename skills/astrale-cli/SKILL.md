@@ -410,11 +410,11 @@ callable's Policy alone decides, with no `can_use` needed. Without `--creds`, `c
 selected identity's credential through the callable's Domain instead: the Domain becomes the
 principal, the identity stays the caller, and the Policy is evaluated against the identity.
 
-| Selection                                               | Principal presented             | Effect                                                                                                              |
-| ------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `call` with `--as <identity>` or the default identity   | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity                              |
-| `get`, `query`, `mutate` on an Astrale-managed instance | the identity                    | bounded by each Class's rules and the identity's Policies, with no Domain scope                                     |
-| `--creds "$(astrale token --raw)"`                      | the identity                    | the callable's Policy alone decides; a Kernel syscall's `canUseSyscall` still asks for the identity's own `can_use` |
+| Selection                                                    | Principal presented             | Effect                                                                                                              |
+| ------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `call` with `--as <identity>` or the default identity        | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity                              |
+| `get`, `query`, `mutate` on any instance, the Admin included | the identity                    | bounded by each Class's rules and the identity's Policies, with no Domain scope                                     |
+| `--creds "$(astrale token --raw)"`                           | the identity                    | the callable's Policy alone decides; a Kernel syscall's `canUseSyscall` still asks for the identity's own `can_use` |
 
 Reuse a minted token for anything the identity may do itself; `call --as` presents the Domain's
 credential instead, for a Domain that must act for the identity.
@@ -573,7 +573,7 @@ astrale logs --topic-prefix function. --follow
 
 Use `--principal`, `--caller`, `--since`, `--until`, or an opaque `--cursor` as needed.
 `--principal` filters in the Kernel by the executing principal; a Domain acting for a user
-(managed CLI, Console, `astrale call` through a Domain token exchange) is the principal of its
+(Console, `astrale call` through a Domain token exchange) is the principal of its
 records. `--caller` keeps the records whose caller (the identity whose authority the operation
 exercised) matches; it filters each returned page, so `--limit` bounds the page first. The Kernel
 records `caller` only when it differs from the principal, so the effective caller is `caller`,
