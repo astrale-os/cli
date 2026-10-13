@@ -3,6 +3,7 @@ import type { ResolvedView } from '@astrale-os/shell'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
+import { adminSessionOptions } from '../../connection/target'
 import { captureProcess, ExitError } from './fixtures/process'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
@@ -16,8 +17,9 @@ const findAgentBrowserMock = mock(async () => '/usr/bin/agent-browser' as string
 
 const io = captureProcess()
 
+// A module mock holds for the whole Bun process: other suites rely on the real Admin option filter.
 mock.module('../../connection', () => ({
-  adminSessionOptions: (options: unknown) => options,
+  adminSessionOptions,
   withAdminClientSession: async () => {
     throw new Error('These View tests never reach Admin.')
   },
