@@ -64,7 +64,7 @@ It cannot be combined with `--as` or `--creds`; required callables reject anonym
 
 Report a problem yourself, without waiting to be asked, when both hold:
 
-- you could not resolve it, and it blocks the task or cost significant time;
+- it blocks the task, cost significant time, or forced an unsatisfactory workaround;
 - the evidence puts the cause in Astrale (CLI, SDK, Kernel, Admin, a native Domain), not in the
   project: it reproduces in a minimal case, or Astrale contradicts its own docs, help or errors.
 
