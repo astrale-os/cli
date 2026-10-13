@@ -1,4 +1,5 @@
 import { Path } from '@astrale-os/sdk/graph/path'
+import { acceptImmutable, BoundaryError } from '@astrale-os/sdk/value'
 import { CommanderError } from 'commander'
 import { readFile } from 'node:fs/promises'
 
@@ -68,7 +69,7 @@ export async function callCommand(
   let params: Record<string, unknown>
   try {
     Path.parse(path)
-    params = await parseParams(rawParams, opts.data)
+    params = admitCallInput(await parseParams(rawParams, opts.data))
   } catch (error) {
     failInput(error, opts)
   }
@@ -220,6 +221,21 @@ export async function materializeCallResult(
 }
 
 // ── Param parsing ───────────────────────────────────────────
+
+/**
+ * The Kernel client sends only portable Values: refuse anything else as the caller's input, naming
+ * its path (a string with U+0000 or an unpaired surrogate, a non-finite number).
+ */
+export function admitCallInput(params: Record<string, unknown>): Record<string, unknown> {
+  try {
+    acceptImmutable(params)
+  } catch (error) {
+    if (error instanceof BoundaryError)
+      throw new TypeError(`Call input cannot be sent: ${error.message}.`)
+    throw error
+  }
+  return params
+}
 
 export async function parseParams(
   rawParams: string[],
