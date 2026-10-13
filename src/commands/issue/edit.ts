@@ -6,6 +6,7 @@ import {
   reportedIssueChangesSchema,
   reportedIssueMethodPath,
 } from '../../issues/reported'
+import { admitIssueText, ISSUE_BODY, ISSUE_TITLE } from '../../issues/submit'
 import { log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { failIssueCommand } from './failure'
@@ -19,17 +20,17 @@ export async function editReportedIssueCommand(
   { title, body, ...options }: EditOptions,
   dependencies = reporterSession,
 ): Promise<unknown> {
-  const changes = reportedIssueChangesSchema.safeParse({ title, description: body })
-  if (!changes.success)
-    throw new AstraleError(
-      'ISSUE_INPUT_INVALID',
-      'Provide --title (1–200 characters), --body (up to 50,000 characters), or both.',
-    )
+  if (title === undefined && body === undefined)
+    throw new AstraleError('ISSUE_INPUT_INVALID', 'Provide --title, --body, or both.')
+  if (title !== undefined) admitIssueText('--title', title, ISSUE_TITLE)
+  // An empty --body clears the details.
+  if (body !== undefined) admitIssueText('--body', body, { ...ISSUE_BODY, blank: true })
+  const changes = reportedIssueChangesSchema.parse({ title, description: body })
   return withReporter(
     options,
     async (reporter) => {
       const issue = findReportedIssue(await reporter.issues(), reference)
-      return reporter.call(reportedIssueMethodPath(issue.id, 'edit'), changes.data)
+      return reporter.call(reportedIssueMethodPath(issue.id, 'edit'), changes)
     },
     dependencies,
   )
@@ -40,7 +41,10 @@ export default withIssueAdminOptions({
   description: 'Edit the title or details of one of your reports',
   arguments: [{ name: 'reference', description: 'Issue reference, e.g. ASTRALE-12' }],
   options: [
-    { flags: '--title <text>', description: 'New title' },
+    {
+      flags: '--title <text>',
+      description: `New title, at most ${ISSUE_TITLE.maximum} characters`,
+    },
     { flags: '--body <text>', description: 'New details; replaces the current ones' },
   ],
   action: async (reference: string, options: EditOptions) => {

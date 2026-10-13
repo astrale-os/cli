@@ -227,7 +227,16 @@ describe('reporter issue commands', () => {
     })
     await expect(
       editReportedIssueCommand('ASTRALE-2', { title: '  ' }, f.dependencies),
-    ).rejects.toMatchObject({ code: 'ISSUE_INPUT_INVALID' })
+    ).rejects.toMatchObject({
+      code: 'ISSUE_INPUT_INVALID',
+      message: '--title is empty; write 1–100 characters.',
+    })
+    await expect(
+      editReportedIssueCommand('ASTRALE-2', { title: 'T'.repeat(101) }, f.dependencies),
+    ).rejects.toMatchObject({ message: '--title has 101 characters; the limit is 100.' })
+    await expect(
+      editReportedIssueCommand('ASTRALE-2', { body: 'B'.repeat(50_001) }, f.dependencies),
+    ).rejects.toMatchObject({ message: '--body has 50,001 characters; the limit is 50,000.' })
     expect(f.optionsSeen).toEqual([])
   })
 

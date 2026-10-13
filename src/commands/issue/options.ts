@@ -6,6 +6,9 @@ import { withKernelOptions } from '../../program/options'
 /** Issue commands always target Admin: no direct Kernel URL, no anonymous call. */
 const NOT_ADMIN_FLAGS = ['--url <url>', '--anonymous']
 
+/** Issue commands print human text on a terminal; --format selects a structured document. */
+const FORMAT_DESCRIPTION = 'Output format (default: human text in TTY, json when piped)'
+
 export function withIssueAdminOptions(
   definition: CommandDefinition,
   { affectedInstance = false } = {},
@@ -28,7 +31,9 @@ export function withIssueAdminOptions(
               ...option,
               description: 'Affected instance bookmark (optional; never the destination)',
             }
-          : option,
+          : option.flags === '--format <type>'
+            ? { ...option, description: FORMAT_DESCRIPTION }
+            : option,
       ),
   }
 }
