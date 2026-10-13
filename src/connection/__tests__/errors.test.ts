@@ -121,10 +121,10 @@ describe('Kernel refusals', () => {
       reason: removal,
       hint: 'Delete this data explicitly, then retry. No data was deleted.',
     })
-    expect((await machine(refusal(2002))).json).toMatchObject({
-      code: 2002,
-      hint: expect.stringContaining('astrale auth login'),
-    })
+    // 2002 does not tell an unknown account from a stale credential: the hint serves both.
+    const credentialHint = (await machine(refusal(2002))).json.hint
+    expect(credentialHint).toContain('signing in again does not help: ask an administrator')
+    expect(credentialHint).toContain('If it had access, sign in again with `astrale auth login`.')
     const upgrade = {
       code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
       details: { origin: 'grc.example', issue: 'in-flight-limit', inFlight: 8 },

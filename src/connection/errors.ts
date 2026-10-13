@@ -238,6 +238,14 @@ function renderTransport(
   else if (unknown) renderRecovery(recovery)
 }
 
+/**
+ * A 2002 does not say whether the Kernel knows no Identity for this account or no longer accepts
+ * its credential. A fresh sign-in renews only the credential, so it cannot help an account that was
+ * never given access.
+ */
+const CREDENTIAL_REFUSED_HINT =
+  'This Kernel does not accept this identity. If this account has no access to it, signing in again does not help: ask an administrator for an invitation. If it had access, sign in again with `astrale auth login`.'
+
 function renderResponse(
   failure: Extract<FailureDiagnostic, { kind: 'response' }>,
   machine: boolean,
@@ -260,7 +268,7 @@ function renderResponse(
         (upgrade
           ? schemaUpgradeHint(upgrade)
           : failure.code === CREDENTIAL_REFUSED
-            ? 'This Kernel does not accept this identity. Sign in again with `astrale auth login`; if it persists, ask an administrator for access.'
+            ? CREDENTIAL_REFUSED_HINT
             : code === 'EXECUTION_PENDING'
               ? 'The Execution has not ended yet: wait for it with --wait-ms <milliseconds> (for example --wait-ms 20000, within --timeout), or read its status.'
               : undefined))
