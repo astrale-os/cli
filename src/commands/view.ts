@@ -7,11 +7,13 @@ import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import type { KernelCommandOpts } from '../connection'
-import type { ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
+import type { ConnectionTarget } from '../connection/target'
+import type { ViewOwnerConfig, ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
 import type { CommandDefinition } from '../program/index'
 
 import { withClientSession } from '../connection'
 import { AstraleError } from '../errors'
+import { notOwnerError } from '../lib/admin/ownership'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser/agent-browser'
 import { readInstances } from '../lib/instance/bookmarks'
 import { findFreePort } from '../lib/port'
@@ -22,6 +24,13 @@ import { isMachine, output, outputForMachine, type RawOutputOpts } from '../lib/
 import { promptSelect } from '../lib/terminal/prompt'
 import { ensureViewerAssets } from '../lib/view/assets'
 import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
+import {
+  type OwnerKernel,
+  resolveViewOwnership,
+  resolveViewTarget,
+  ROOT_IDENTITY,
+  withOwnerAccess,
+} from '../lib/view/owner'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
   candidateSlug,
@@ -32,6 +41,7 @@ import {
   resolveInstalledDomainView,
   selectedView,
   type ViewCandidate,
+  type ViewResolutionContext,
 } from '../lib/view/resolve'
 import {
   closeSession,
@@ -46,7 +56,9 @@ import { snapshotText, waitForSettledSnapshot } from '../lib/view/snapshot'
 
 /**
  * `astrale view` — open ONE view in a local browser shell, authenticated as
- * the CLI identity, driveable by agent-browser (default) or a real browser.
+ * the CLI identity (or, with --as-owner, as the instance owner in Admin: root
+ * or an impersonated Identity), driveable by agent-browser (default) or a real
+ * browser.
  * Design + protocol details: VIEW_CLI_SPEC.md at the workspace root.
  */
 
@@ -65,6 +77,13 @@ export type ViewOpts = KernelCommandOpts &
     all?: boolean
     allowExternalOrigin?: string[]
     allowIdentity?: string[]
+    /** `--as-owner`: open as the instance's owner in Admin; established into `owner`. */
+    asOwner?: boolean
+    /**
+     * Owner mode, once ownership is established: the Admin Instance whose root token the session
+     * holds and the Admin session that retrieves it. Studio sets it after its own check.
+     */
+    owner?: Pick<ViewOwnerConfig, 'instance' | 'admin'>
     /**
      * Internal Studio host override. A Studio session is released when its
      * dialog closes, so its idle budget is only the net for a page that stopped
@@ -95,13 +114,21 @@ export async function resolveSession(
   if (parsed.kind === 'view' && opts.view) {
     fatal(new Error('An explicit ViewPath cannot be combined with --view <slug>'))
   }
-  const views = await withClientSession(opts, async (context): Promise<DomainViews> => {
+  const resolve = async (context: ViewResolutionContext): Promise<DomainViews> => {
     if (parsed.kind === 'view') {
       const candidate = await resolveInstalledDomainView(context, parsed.path)
       return { domain: String(candidate.target), candidates: [candidate], entrypoint: candidate }
     }
     return resolveDomainViews(context, parsed.origin)
-  })
+  }
+  // The owner resolves as root: running a View as an Identity never requires that Identity, or the
+  // CLI identity, to be allowed to discover it.
+  const views =
+    opts.owner === undefined
+      ? await withClientSession(opts, resolve)
+      : await withOwnerAccess(opts.owner, ownerKernel(await resolveViewTarget(opts)), (access) =>
+          resolve(access.context),
+        )
 
   if (opts.list) {
     return { candidates: views.candidates }
@@ -111,6 +138,32 @@ export async function resolveSession(
     view: selectedView(picked),
     candidates: views.candidates,
   }
+}
+
+function ownerKernel(target: ConnectionTarget): OwnerKernel {
+  return {
+    url: target.url,
+    issuer: target.kernelIssuer,
+    ...(target.caFile === undefined ? {} : { caFile: target.caFile }),
+  }
+}
+
+/**
+ * `--as-owner`: establish that the caller owns, in Admin, the instance this View session reaches.
+ * Owner mode replaces the local identity entirely, so it combines with no identity selection.
+ */
+export async function establishViewOwner(
+  opts: ViewOpts,
+): Promise<Pick<ViewOwnerConfig, 'instance' | 'admin'>> {
+  if (opts.as !== undefined || opts.creds !== undefined || opts.allowIdentity?.length) {
+    throw new AstraleError(
+      'INVALID_OPTION',
+      '--as-owner runs the View as the instance root or an impersonated Identity; it cannot be combined with --as, --creds or --allow-identity.',
+    )
+  }
+  const { ownership, admin } = await resolveViewOwnership(opts)
+  if (ownership.status !== 'owned') throw notOwnerError(ownership)
+  return Object.freeze({ instance: ownership.instance, admin })
 }
 
 async function chooseCandidate(
@@ -220,7 +273,11 @@ export async function startViewSession(
   opts: ViewOpts,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
-  const { identity, target } = await withClientSession(opts, async (context) => context)
+  // An owner-mode session authenticates with no local identity: it starts as the instance root.
+  const { identity, target } =
+    opts.owner === undefined
+      ? await withClientSession(opts, async (context) => context)
+      : { identity: ROOT_IDENTITY.label, target: await resolveViewTarget(opts) }
   const [instances, runtime] = await Promise.all([
     readInstances(),
     opts.serveRuntime ?? resolveServeRuntime(),
@@ -295,11 +352,18 @@ export function createViewServeConfig(
     | 'creds'
     | 'idleMs'
     | 'instance'
+    | 'owner'
     | 'timeout'
     | 'url'
   >,
   kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
 ): ViewServeConfig {
+  if (opts.owner !== undefined && (opts.allowIdentity?.length || opts.creds || opts.as)) {
+    throw new AstraleError(
+      'INVALID_OPTION',
+      'An owner-mode View runs as the instance root or an impersonated Identity, not as a CLI identity.',
+    )
+  }
   if (opts.allowIdentity?.length && (opts.creds || !record.identity)) {
     throw new AstraleError(
       'INVALID_OPTION',
@@ -311,10 +375,14 @@ export function createViewServeConfig(
     kernel: {
       url: opts.url,
       instance: opts.instance ?? (opts.url === undefined ? record.instance : undefined),
-      as: opts.creds ? undefined : (opts.as ?? record.identity),
+      // Owner mode mints nothing from a CLI identity: the root token is its only authority.
+      as: opts.creds || opts.owner ? undefined : (opts.as ?? record.identity),
       creds: opts.creds,
       timeout: opts.timeout,
     },
+    ...(opts.owner === undefined
+      ? {}
+      : { owner: { instance: opts.owner.instance, admin: opts.owner.admin } }),
     proxy: {
       kernelUrl: kernelTarget.url,
       issuer: kernelTarget.kernelIssuer,
@@ -530,6 +598,11 @@ export default {
       description: 'Allow switching to these local identities in the viewer (reloads the View)',
     },
     {
+      flags: '--as-owner',
+      description:
+        'Open as the instance owner in Admin: run the View as root or as any Identity of the instance',
+    },
+    {
       flags: '--refresh <id>',
       description: 'Re-resolve and reload an open View in its existing tab',
     },
@@ -560,11 +633,21 @@ What it does:
   gets exactly what the GUI would hand it: one Domain-bound resolved placement,
   an audience-bound credential for shell mounts, and the kernel endpoint.
 
+  --as-owner opens the View the way the Admin back-office does, on an instance
+  you own in Admin: the session server holds the short-lived instance root
+  token Admin issues to its owner, resolves the View as root, and runs it as
+  Root by default. The viewer's "Open as" picker lists Root, the instance's
+  Users and its other Identities (read as root); picking one impersonates it and
+  reloads the View. Root and impersonation tokens never reach the browser, and
+  every renewal asks Admin again, so a revoked ownership stops the session
+  within minutes. It cannot be combined with --as, --creds or --allow-identity.
+
 Examples:
   $ astrale view crm.example.dev
   $ astrale view crm.example.dev --view dashboard --snapshot
   $ astrale view /:crm.example.dev:view.dashboard
   $ astrale view /:agents.astrale.ai:view.agent --as alice
+  $ astrale view /:agents.astrale.ai:view.agent -i my-instance --as-owner
   $ astrale view /:integrations.astrale.ai:view.application
   $ astrale view crm.example.dev --list
   $ astrale view --list
@@ -601,6 +684,9 @@ Examples:
       process.exit(1)
     }
 
+    if (opts.asOwner) {
+      opts = { ...opts, owner: await establishViewOwner(opts).catch((error) => fatal(error, opts)) }
+    }
     const { view, candidates } = await resolveSession(spec, opts).catch((error) =>
       fatal(error, opts),
     )

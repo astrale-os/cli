@@ -14,6 +14,14 @@ export interface InstanceInfo {
   url: string
   active: boolean
   kind: 'bookmark' | 'managed'
+  /**
+   * The user owns the Admin Instance behind this entry, in the Admin sense: the Admin Policy
+   * `OwnInstanceOrAdministerAdminInstance`. Studio works only with owned instances; the others
+   * stay listed, but cannot be selected.
+   */
+  owned: boolean
+  /** Why an entry is not owned, shown beside it: `Not owner`, `Not an Admin instance`, … */
+  reason?: string
 }
 
 /** Global (NOT per-domain) — the CLI's instances + which is active. Source of truth: `astrale instance list`. */

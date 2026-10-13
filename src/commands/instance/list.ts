@@ -7,7 +7,10 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatInstanceState, type InstanceInfo } from '../../admin/instance'
 import { AstraleError } from '../../errors'
-import { listInstanceInventory } from '../../lib/admin/instances'
+import {
+  listInstanceInventory,
+  listInstanceInventoryWithOwnership,
+} from '../../lib/admin/instances'
 import {
   ADMIN_TARGET_OPTIONS,
   FLEET_OPTION,
@@ -86,9 +89,12 @@ export default {
 
       let managed: InstanceInfo[] = []
       if (!opts.bookmarked) {
+        // Machine output also says which Instances the caller owns in the Admin sense, decided
+        // in the same Admin session: Studio works only with those.
+        const read = isMachine(opts) ? listInstanceInventoryWithOwnership : listInstanceInventory
         try {
           managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
-            readAdminInventory(() => listInstanceInventory(opts, opts.includeRetired ?? false)),
+            readAdminInventory(() => read(opts, opts.includeRetired ?? false)),
           )
         } catch (error) {
           throw classifyAdminInventoryError(error)

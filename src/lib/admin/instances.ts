@@ -5,6 +5,7 @@ import { connectAdminInstances, AdminInstanceNotFoundError } from '../../admin/i
 import { resolveAdminFleet } from '../../admin/selection'
 import { withAdminClientSession } from '../../connection'
 import { AstraleError } from '../../errors'
+import { type InstanceOwnership, type KernelLocation, matchAdminInstance } from './ownership'
 
 /** Resolve the Admin target and read only the caller-visible Instance inventory. */
 export function listOwnedInstances(options: AdminConnectionOptions, includeRetired = false) {
@@ -22,6 +23,53 @@ export function listInstanceInventory(options: AdminConnectionOptions, includeRe
     (await connectAdminInstances({ ...context, fleet: options.fleet })).inventory({
       includeRetired,
     }),
+  )
+}
+
+/**
+ * The same inventory, each Instance flagged with whether the caller owns it in the Admin sense
+ * (`OwnInstanceOrAdministerAdminInstance`), decided in one batch within the same Admin session.
+ */
+export function listInstanceInventoryWithOwnership(
+  options: AdminConnectionOptions,
+  includeRetired = false,
+): Promise<Array<InstanceInfo & { readonly owned: boolean }>> {
+  return withAdminClientSession(options, async (context) => {
+    const instances = await connectAdminInstances({ ...context, fleet: options.fleet })
+    const inventory = await instances.inventory({ includeRetired })
+    const owned = await instances.owns(inventory)
+    return inventory.map((instance, index) => Object.freeze({ ...instance, owned: owned[index]! }))
+  })
+}
+
+/**
+ * Whether the caller owns, in the Admin sense, the Admin Instance serving one Kernel. Only the
+ * caller-visible Instances are candidates: an owner always sees its own Instance.
+ */
+export function resolveInstanceOwnership(
+  options: AdminConnectionOptions,
+  kernel: KernelLocation,
+): Promise<InstanceOwnership> {
+  return withAdminClientSession(options, async (context) => {
+    const instances = await connectAdminInstances(context)
+    const match = matchAdminInstance(kernel, await instances.list())
+    if (match === undefined) return Object.freeze({ status: 'not-managed' as const })
+    if (match === 'ambiguous') return Object.freeze({ status: 'ambiguous' as const })
+    const [owned] = await instances.owns([match])
+    return Object.freeze({
+      status: owned ? ('owned' as const) : ('not-owner' as const),
+      instance: match.id,
+    })
+  })
+}
+
+/**
+ * A short-lived root token of one exact Admin Instance. Admin issues it only while the caller owns
+ * that Instance, so every renewal re-checks ownership.
+ */
+export function retrieveInstanceRootToken(options: AdminConnectionOptions, instance: string) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).retrieveRootToken(instance),
   )
 }
 

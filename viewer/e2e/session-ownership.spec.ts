@@ -125,8 +125,8 @@ test('a popped-out View outlives the dialog that opened it, and ends with its ow
   await dialog.goto(`${base()}/?page=studio-dialog`)
   await expect(dialog.locator('#status-dot')).toHaveAttribute('data-state', 'plain')
 
-  // The session carries no identity list, so neither page offers a switch: the
-  // View runs as the identity its instance is bound to.
+  // This session carries neither an identity list nor owner mode, so neither
+  // page offers a switch: the View runs as the identity its instance is bound to.
   await expect(dialog.locator('#identity-form')).toBeHidden()
 
   // The operator opens the same View in a tab of their own.

@@ -1,5 +1,7 @@
+import type { InstanceInfo } from '@shared/contracts/workspace'
+
 import { useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronsUpDown, ExternalLink, Loader2, Server } from 'lucide-react'
+import { Check, ChevronsUpDown, ExternalLink, Loader2, Server, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -21,10 +23,23 @@ function instancePageUrl(url?: string | null): string | null {
   }
 }
 
+const NOT_OWNER = 'Not owner'
+
+/** Why the active instance is a problem for Studio, or `null` when the user owns it. */
+export function activeInstanceWarning(instances: readonly InstanceInfo[]): string | null {
+  const current = instances.find((instance) => instance.active)
+  if (!current || current.owned) return null
+  return `You are not the owner of ${current.name} in Admin (${current.reason ?? NOT_OWNER}). Its Views cannot be opened in Studio.`
+}
+
 /**
  * Top-left: the GLOBAL active Astrale instance, with a switcher. Backed entirely
  * by the `astrale` CLI (`instance list` / `instance use`) — the studio keeps no
  * instance state of its own. Independent of the selected domain.
+ *
+ * Studio works only with the instances its user owns in Admin. The others stay
+ * listed, so nothing seems to vanish, but cannot be picked; an active one set
+ * from a terminal carries a warning, since Studio will not open its Views.
  */
 export function InstanceSwitcher() {
   const { data } = useInstances()
@@ -36,6 +51,7 @@ export function InstanceSwitcher() {
 
   const pick = async (name: string) => {
     if (name === active || switching) return
+    if (!instances.find((instance) => instance.name === name)?.owned) return
     setSwitching(name)
     try {
       const r = await api.switchInstance(name)
@@ -57,80 +73,126 @@ export function InstanceSwitcher() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <div className="-ml-1 inline-flex items-center gap-0.5">
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            title="Active instance — click to switch"
-            className="inline-flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-accent/50"
-          >
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/15 text-primary">
-              <Server className="h-4 w-4" />
-            </span>
-            <span className="font-semibold tracking-tight">{active ?? 'no instance'}</span>
-            <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-        </PopoverTrigger>
+        <InstanceTrigger active={active} warning={activeInstanceWarning(instances)} />
       </div>
-      <PopoverContent align="start" className="w-64 p-1.5">
-        <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Active instance
-        </div>
-        <div className="space-y-0.5">
-          {instances.map((i) => {
-            const openUrl = instancePageUrl(i.url)
-            return (
-              <div
-                key={i.name}
-                className={cn(
-                  'flex w-full items-center gap-1 rounded-md transition-colors hover:bg-accent',
-                  i.active && 'bg-accent/40',
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => pick(i.name)}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
-                >
-                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                    {switching === i.name ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                    ) : i.active ? (
-                      <Check className="h-3.5 w-3.5 text-primary" />
-                    ) : null}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{i.name}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">
-                      {openUrl ? openUrl.replace(/^https?:\/\//, '') : 'no URL'}
-                    </span>
-                  </span>
-                  {i.kind === 'managed' && (
-                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground">
-                      managed
-                    </span>
-                  )}
-                </button>
-                {openUrl && (
-                  <a
-                    href={openUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={`Open ${i.name} in a new tab`}
-                    className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
-              </div>
-            )
-          })}
-          {instances.length === 0 && (
-            <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
-              No instances found
-            </div>
-          )}
-        </div>
+      <PopoverContent align="start" className="w-72 p-1.5">
+        <InstanceList instances={instances} switching={switching} onPick={pick} />
       </PopoverContent>
     </Popover>
+  )
+}
+
+function InstanceTrigger({ active, warning }: { active: string | null; warning: string | null }) {
+  return (
+    <PopoverTrigger asChild>
+      <button
+        type="button"
+        title={warning ?? 'Active instance — click to switch'}
+        className="inline-flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-accent/50"
+      >
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/15 text-primary">
+          <Server className="h-4 w-4" />
+        </span>
+        <span className="font-semibold tracking-tight">{active ?? 'no instance'}</span>
+        {warning && (
+          <TriangleAlert
+            className="h-3.5 w-3.5 text-warning"
+            role="img"
+            aria-label="You are not the owner of the active instance"
+          />
+        )}
+        <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+    </PopoverTrigger>
+  )
+}
+
+/** The popover's body: an owned instance is a choice, any other one only an explanation. */
+export function InstanceList({
+  instances,
+  switching,
+  onPick,
+}: {
+  instances: readonly InstanceInfo[]
+  switching: string | null
+  onPick: (name: string) => void
+}) {
+  const warning = activeInstanceWarning(instances)
+  return (
+    <>
+      <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Active instance
+      </div>
+      {warning && (
+        <div
+          role="alert"
+          className="mx-1 mb-1 flex gap-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] leading-snug"
+        >
+          <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
+          <span>{warning}</span>
+        </div>
+      )}
+      <div className="space-y-0.5">
+        {instances.map((i) => {
+          const openUrl = instancePageUrl(i.url)
+          const reason = i.owned ? undefined : (i.reason ?? NOT_OWNER)
+          return (
+            <div
+              key={i.name}
+              className={cn(
+                'flex w-full items-center gap-1 rounded-md transition-colors',
+                i.owned && 'hover:bg-accent',
+                i.active && 'bg-accent/40',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => onPick(i.name)}
+                disabled={!i.owned}
+                title={reason && `${reason}: Studio works only with instances you own in Admin`}
+                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left disabled:cursor-not-allowed"
+              >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                  {switching === i.name ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  ) : i.active && i.owned ? (
+                    <Check className="h-3.5 w-3.5 text-primary" />
+                  ) : i.active ? (
+                    <TriangleAlert className="h-3.5 w-3.5 text-warning" />
+                  ) : null}
+                </span>
+                <span className={cn('min-w-0 flex-1', reason && 'opacity-60')}>
+                  <span className="block truncate text-sm font-medium">{i.name}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {openUrl ? openUrl.replace(/^https?:\/\//, '') : 'no URL'}
+                  </span>
+                </span>
+                {(reason || i.kind === 'managed') && (
+                  <span className="max-w-24 shrink-0 truncate text-[9px] uppercase tracking-wide text-muted-foreground">
+                    {reason ?? 'managed'}
+                  </span>
+                )}
+              </button>
+              {openUrl && (
+                <a
+                  href={openUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`Open ${i.name} in a new tab`}
+                  className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+          )
+        })}
+        {instances.length === 0 && (
+          <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
+            No instances found
+          </div>
+        )}
+      </div>
+    </>
   )
 }

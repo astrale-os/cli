@@ -115,8 +115,13 @@ test('instances merge bookmarked and managed lists, and a switch is non-interact
         {
           stdout: {
             instances: [
-              { slug: 'staging', url: 'https://duplicate.example' },
-              { slug: 'production', url: 'https://production.example' },
+              { slug: 'staging', url: 'https://duplicate.example', state: 'ready', owned: true },
+              {
+                slug: 'production',
+                url: 'https://production.example',
+                state: 'ready',
+                owned: true,
+              },
             ],
           },
         },
@@ -128,9 +133,30 @@ test('instances merge bookmarked and managed lists, and a switch is non-interact
   expect(await listInstances()).toEqual({
     active: 'staging',
     instances: [
-      { name: 'local', url: 'http://127.0.0.1:7200', active: false, kind: 'bookmark' },
-      { name: 'staging', url: 'https://staging.example', active: true, kind: 'bookmark' },
-      { name: 'production', url: 'https://production.example', active: false, kind: 'managed' },
+      {
+        name: 'local',
+        url: 'http://127.0.0.1:7200',
+        active: false,
+        kind: 'bookmark',
+        owned: false,
+        reason: 'Not an Admin instance',
+      },
+      // Same name, another Kernel: the managed one is not behind this bookmark.
+      {
+        name: 'staging',
+        url: 'https://staging.example',
+        active: true,
+        kind: 'bookmark',
+        owned: false,
+        reason: 'Not an Admin instance',
+      },
+      {
+        name: 'production',
+        url: 'https://production.example',
+        active: false,
+        kind: 'managed',
+        owned: true,
+      },
     ],
   })
   expect(await setActiveInstance('staging')).toMatchObject({

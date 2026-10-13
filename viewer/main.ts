@@ -33,8 +33,22 @@ type Config = {
   /** Delegation every View call must be able to make; the credential threshold derives from it. */
   delegationTtlSeconds: number
   revision: number
+  /** Local CLI identities the operator allowed this session to switch between. */
   identities?: readonly string[]
+  /** Owner mode: the View may run as Root or as any Identity `/identities` lists. */
+  owner?: true
 }
+
+/** One identity an owner-mode session may run the View as; `id` is `null` for Root. */
+type ListedIdentity = {
+  id: string | null
+  label: string
+  kind: 'root' | 'user' | 'identity'
+  className?: string
+}
+
+/** The select value standing for Root: Identity node ids are never empty. */
+const ROOT_VALUE = ''
 
 const HEARTBEAT_MS = 1_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
@@ -143,6 +157,91 @@ function showPlacement(view: ResolvedView): void {
   document.title = viewTitle(view.route.key)
 }
 
+/**
+ * Show the identity form, labelled `label`, and switch to the selected value on submit: the server
+ * re-resolves the View for it, and the whole page reloads on the new revision. The select stays
+ * disabled until its caller has filled it and calls `ready` with the value in force.
+ */
+function identityForm(
+  label: string,
+  body: (value: string) => unknown,
+): { select: HTMLSelectElement; ready: (current: string) => void } {
+  const form = el('identity-form') as HTMLFormElement
+  const select = el('identity-select') as HTMLSelectElement
+  const button = el('identity-switch') as HTMLButtonElement
+  let current: string | undefined
+  el('identity-select-label').textContent = label
+  form.hidden = false
+  select.disabled = button.disabled = true
+  select.onchange = () => {
+    button.disabled = select.value === current
+  }
+  form.onsubmit = (event) => {
+    event.preventDefault()
+    if (current === undefined || select.value === current) return
+    select.disabled = button.disabled = true
+    button.textContent = 'Switching…'
+    el('frame').inert = true
+    void j('/identity', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body(select.value)),
+    })
+      .then(() => location.reload())
+      .catch((error: unknown) => {
+        showIntentError(error)
+        select.disabled = false
+        button.disabled = select.value === current
+        button.textContent = 'Switch & reload'
+        el('frame').inert = false
+      })
+  }
+  return {
+    select,
+    ready(value) {
+      current = value
+      select.value = value
+      select.disabled = false
+    },
+  }
+}
+
+/** Owner mode: "Open as" Root, a User, or any other Identity of the instance, as root reads them. */
+async function showOwnerIdentities(): Promise<void> {
+  const { select, ready } = identityForm('Open as', (value) => ({
+    identity: value === ROOT_VALUE ? null : value,
+  }))
+  const loading = new Option('Loading identities…', ROOT_VALUE)
+  select.add(loading)
+  let listed: { selected: string | null; identities: readonly ListedIdentity[] }
+  try {
+    listed = await j('/identities')
+  } catch (error) {
+    loading.text = 'Identities unavailable'
+    showIntentError(error)
+    return
+  }
+  loading.remove()
+  select.add(new Option('Root', ROOT_VALUE))
+  const group = (label: string, kind: ListedIdentity['kind']) => {
+    const members = listed.identities.filter((identity) => identity.kind === kind)
+    if (members.length === 0) return
+    const optgroup = document.createElement('optgroup')
+    optgroup.label = label
+    for (const identity of members) {
+      const text =
+        kind === 'identity' && identity.className
+          ? `${identity.label} · ${identity.className}`
+          : identity.label
+      optgroup.append(new Option(text, identity.id ?? ROOT_VALUE))
+    }
+    select.append(optgroup)
+  }
+  group('Users', 'user')
+  group('Other identities', 'identity')
+  ready(listed.selected ?? ROOT_VALUE)
+}
+
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
   revision = cfg.revision
@@ -150,35 +249,13 @@ async function main(): Promise<void> {
   const route = cfg.view.route
   showPlacement(cfg.view)
   el('identity-label').textContent = [cfg.identity, cfg.instance].filter(Boolean).join(' @ ')
-  if (cfg.identities?.length) {
-    const form = el('identity-form') as HTMLFormElement
-    const select = el('identity-select') as HTMLSelectElement
-    const button = el('identity-switch') as HTMLButtonElement
-    for (const name of cfg.identities)
-      select.add(new Option(name, name, false, name === cfg.identity))
-    form.hidden = false
-    button.disabled = true
-    select.onchange = () => {
-      button.disabled = select.value === cfg.identity
-    }
-    form.onsubmit = (event) => {
-      event.preventDefault()
-      select.disabled = button.disabled = true
-      button.textContent = 'Switching…'
-      el('frame').inert = true
-      void j('/identity', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ identity: select.value }),
-      })
-        .then(() => location.reload())
-        .catch((error: unknown) => {
-          showIntentError(error)
-          select.disabled = button.disabled = false
-          button.textContent = 'Switch & reload'
-          el('frame').inert = false
-        })
-    }
+  if (cfg.owner) {
+    // Listing reads the whole instance as root; the View mounts meanwhile.
+    void showOwnerIdentities()
+  } else if (cfg.identities?.length) {
+    const { select, ready } = identityForm('Identity', (value) => ({ identity: value }))
+    for (const name of cfg.identities) select.add(new Option(name, name))
+    ready(cfg.identity ?? '')
   }
 
   report('mounting')

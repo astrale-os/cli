@@ -25,6 +25,7 @@ afterEach(() => {
 function cli(active: string, opened: unknown[] = []): Partial<ViewSessionDependencies> {
   return {
     activeInstance: async () => active,
+    ownership: async () => ({ status: 'owned', instance: '@admin-instance' }),
     open: async (input) => {
       opened.push(input)
       return {
@@ -58,6 +59,8 @@ test('launches the canonical ViewPath on the instance the preparation pinned', a
     {
       viewPath: '/:issues.example.dev:view.issues',
       instance: 'staging',
+      // Opened as the owner of the exact Admin Instance serving the active instance.
+      owner: '@admin-instance',
       timeoutMs: 20_000,
       idleMs: 8 * 60 * 60_000,
       serveRuntime: { file: '/cli/astrale', args: [] },
@@ -102,4 +105,39 @@ test('refuses a launch the preparation does not cover', async () => {
   } finally {
     setSystemTime()
   }
+})
+
+test('opens Views only on an instance its user owns in Admin, and says why otherwise', async () => {
+  const { preparationId } = await getViewRuntime('/workspace', origin, view, cli('staging'))
+  const opened: unknown[] = []
+  const launch = (ownership: ViewSessionDependencies['ownership']) =>
+    launchViewSession('/workspace', origin, view, { preparationId }, 2000, {
+      ...cli('staging', opened),
+      ownership,
+    })
+
+  expect(await launch(async () => ({ status: 'not-owner', instance: '@admin-instance' }))).toEqual({
+    status: 'unavailable',
+    reason:
+      'You are not the owner of this instance in Admin: Admin does not record you as its owner.',
+  })
+  // A local dev Kernel, or any bookmark no Admin Instance of the user's serves.
+  expect(await launch(async () => ({ status: 'not-managed' }))).toMatchObject({
+    status: 'unavailable',
+    reason: expect.stringMatching(/^You are not the owner of this instance in Admin:/),
+  })
+  expect(await launch(async () => ({ status: 'ambiguous' }))).toMatchObject({
+    status: 'unavailable',
+    reason: expect.stringMatching(/^You are not the owner of this instance in Admin:/),
+  })
+  // Admin not answering is never read as ownership.
+  expect(
+    await launch(async () => {
+      throw new Error('Admin is unreachable.')
+    }),
+  ).toEqual({
+    status: 'unavailable',
+    reason: 'Studio could not verify in Admin that you own this instance: Admin is unreachable.',
+  })
+  expect(opened).toEqual([])
 })

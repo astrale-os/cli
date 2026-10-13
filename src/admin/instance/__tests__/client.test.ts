@@ -255,6 +255,57 @@ describe('Admin Instance adapter', () => {
     ])
   })
 
+  test("decides the caller's Admin ownership of every Instance in one ordered batch", async () => {
+    const decisions = mock(async (_checks: unknown) => [true, false])
+    const remote = adminSession()
+    Object.defineProperty(remote.session, 'auth', { value: { can: decisions } })
+    const owner = await connectAdminInstances({
+      session: remote.session,
+      graph: { query: mock() } as unknown as AdminGraphQueryApi,
+    })
+    const listed = [summary(instance()), { ...summary(instance()), id: '@other-node' }]
+    expect(await owner.owns(listed as never)).toEqual([true, false])
+    expect(decisions).toHaveBeenCalledTimes(1)
+    expect(decisions).toHaveBeenCalledWith([
+      {
+        policy: AdminContract.policies.ownInstanceOrAdministerAdminInstance,
+        object: 'instance-node',
+      },
+      { policy: AdminContract.policies.ownInstanceOrAdministerAdminInstance, object: 'other-node' },
+    ])
+    expect(await owner.owns([])).toEqual([])
+    expect(decisions).toHaveBeenCalledTimes(1)
+
+    decisions.mockImplementationOnce(async () => [true])
+    await expect(owner.owns(listed as never)).rejects.toThrow('misaligned')
+  })
+
+  test('retrieves the root token of the exact Instance node, refusing an expired or malformed one', async () => {
+    const expiresAt = Math.floor(Date.now() / 1_000) + 300
+    let answer: unknown = {
+      token: 'root-token',
+      issuer: 'https://demo.eu.astrale.ai/api',
+      expiresAt,
+    }
+    const fixture = admin({ fleet: null, invoke: () => answer })
+    const api = await fixture.connect()
+    expect(await api.retrieveRootToken('@instance-node')).toEqual(answer as never)
+    // No lookup: the receiver is the exact Node, and the input is empty.
+    expect(fixture.calls).toEqual([{ target: `${INSTANCE}.retrieveRootToken`, value: {} }])
+    expect(fixture.query).not.toHaveBeenCalled()
+
+    await expect(api.retrieveRootToken('demo')).rejects.toThrow('Admin Instance id is invalid.')
+    for (const invalid of [
+      { token: 'root-token', issuer: 'https://demo.eu.astrale.ai/api', expiresAt: expiresAt - 600 },
+      { token: '', issuer: 'https://demo.eu.astrale.ai/api', expiresAt },
+      { token: 'root-token', issuer: 'not a url', expiresAt },
+      { token: 'root-token', expiresAt },
+    ]) {
+      answer = invalid
+      await expect(api.retrieveRootToken('@instance-node')).rejects.toThrow(TypeError)
+    }
+  })
+
   test('invites, observes and reconciles an Invitation, exposing its reserved Shell User', async () => {
     const fixture = admin({
       instances: [instance()],

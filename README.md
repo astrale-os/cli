@@ -226,6 +226,21 @@ re-resolves the same View in its Domain and mints a fresh credential before relo
 (unsaved changes are lost). Failure leaves the previous session usable. This does not change CLI
 defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
 
+On an Admin instance you own, open the View the way the Admin back-office does instead:
+
+```bash
+astrale view /:app.example:view.application -i my-instance --as-owner
+```
+
+Ownership is Admin's `OwnInstanceOrAdministerAdminInstance` Policy on the instance (its owner, or,
+for Admin's own instance, the `admin` Fleet's administrators), not merely being able to use it. The
+local session server holds the short-lived root token Admin issues to the owner, resolves the View
+as root and runs it as **Root**; the viewer's **Open as** picker lists Root, the instance's Users and
+its other Identities, and impersonates the one you pick. Root and impersonation tokens never reach
+the browser, which only receives the usual per-View grant. Every renewal asks Admin again, so a
+revoked ownership stops the session within minutes. It cannot be combined with `--as`, `--creds` or
+`--allow-identity`. Domain Studio opens every View this way, and only on instances you own.
+
 A durable callable answers `astrale call` with a nonsecret receipt for the Execution it started;
 follow it with `execution status` or `execution result`, and operate it with `execution cancel`,
 `resume` or `signal`. Installs and uninstalls are Executions too, addressed by their ID. See

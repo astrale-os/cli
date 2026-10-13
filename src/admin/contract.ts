@@ -34,6 +34,15 @@ export const AdminContract = Object.freeze({
   policies: Object.freeze({
     administerFleet: Object.freeze({ origin, kind: 'policy', name: 'AdministerFleet' } as const),
     useFleet: Object.freeze({ origin, kind: 'policy', name: 'UseFleet' } as const),
+    /**
+     * Ownership in the Admin sense: the Instance's owner or, for Admin's own Instance only, the
+     * administrators of the `admin` Fleet. It gates `Instance.retrieveRootToken`.
+     */
+    ownInstanceOrAdministerAdminInstance: Object.freeze({
+      origin,
+      kind: 'policy',
+      name: 'OwnInstanceOrAdministerAdminInstance',
+    } as const),
   }),
   properties: Object.freeze({
     domain: Object.freeze({
