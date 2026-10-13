@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from 'bun:test'
 
 import type { ConnectionContext } from '../../connection'
 
-import { reportIssueCommand } from '../../commands/issue/report'
+import { readBodyFromStdin, reportIssueCommand } from '../../commands/issue/report'
 import { createPathCall } from '../../connection'
 import { ISSUE_REPORT_PATH, type IssuePayload } from '../submit'
 
@@ -132,5 +132,23 @@ describe('issue command', () => {
       code: 'ISSUE_INPUT_INVALID',
     })
     expect(f.optionsSeen).toEqual([])
+  })
+
+  it('reads a UTF-8 body from stdin and refuses invalid UTF-8', async () => {
+    const stdin = (...chunks: Uint8Array[]) => ({
+      async *[Symbol.asyncIterator]() {
+        yield* chunks
+      },
+    })
+    const text = 'Café 🧪\r\n'
+    const bytes = Buffer.from(text)
+    await expect(readBodyFromStdin(stdin(bytes.subarray(0, 4), bytes.subarray(4)))).resolves.toBe(
+      text,
+    )
+    await expect(readBodyFromStdin({ ...stdin(), isTTY: true })).resolves.toBeUndefined()
+    await expect(readBodyFromStdin(stdin(Buffer.from([0x41, 0xff])))).rejects.toMatchObject({
+      code: 'ISSUE_INPUT_INVALID',
+      message: 'The body on stdin is not valid UTF-8.',
+    })
   })
 })

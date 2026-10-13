@@ -252,6 +252,17 @@ describe('reporter issue commands', () => {
     ])
   })
 
+  it('sends only the field an edit gives', async () => {
+    const f = fixture()
+    await editReportedIssueCommand('ASTRALE-2', { title: 'Clearer title' }, f.dependencies)
+    await editReportedIssueCommand('ASTRALE-2', { body: '' }, f.dependencies)
+    const path = reportedIssueMethodPath('astrale-2-id', 'edit')
+    expect(f.call.mock.calls).toStrictEqual([
+      [createPathCall(path, { title: 'Clearer title' })],
+      [createPathCall(path, { description: '' })],
+    ])
+  })
+
   it('refuses an empty edit before opening an Admin session', async () => {
     const f = fixture()
     await expect(editReportedIssueCommand('ASTRALE-2', {}, f.dependencies)).rejects.toMatchObject({
