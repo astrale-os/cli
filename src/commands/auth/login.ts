@@ -72,8 +72,6 @@ Notes:
 
     log.success(`Logged in as "${identityName}" via IdP "${idpName}"`)
     log.dim(`  subject: ${session.subject}`)
-    if (session.expires_at) log.dim(`  expires_at: ${session.expires_at}`)
-    if (opts.use !== false) log.dim('  default identity updated')
     if (adminAccess && adminAccess !== 'ready') log.warn(ACCOUNT_ACTIVATION_WARNINGS[adminAccess])
   },
 } satisfies CommandDefinition
