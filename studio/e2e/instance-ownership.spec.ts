@@ -52,7 +52,14 @@ test('instances the user does not own are listed but cannot be picked; an active
   const pick = (name: string) => list.getByRole('button', { name: new RegExp(`^${name}\\b`) })
   await expect(pick('team')).toBeDisabled()
   await expect(pick('dev')).toBeDisabled()
-  await expect(pick('dev')).toContainText('Not an Admin instance')
+  // The reason is a greyed warning beside the row, explained on hover.
+  await expect(list.getByText('Not an Admin instance')).toHaveCount(0)
+  await list.getByRole('button', { name: /^Not an Admin instance:/ }).hover()
+  const why = page.getByText(/so it cannot switch to dev/)
+  await expect(why).toBeVisible()
+  await expect(why.locator('..')).toContainText('Not an Admin instance')
+  await page.mouse.move(0, 400)
+  await expect(why).toBeHidden()
   await expect(pick('mine')).toBeEnabled()
 
   await pick('dev').click({ force: true })

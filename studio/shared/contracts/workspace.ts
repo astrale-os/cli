@@ -30,6 +30,26 @@ export interface InstancesState {
   instances: InstanceInfo[]
 }
 
+/** One Domain installed on an instance, as `astrale domain list -i <instance> --json` names it. */
+export interface InstanceDomain {
+  origin: string
+  /** The registry version of the installed release, when one names it. */
+  version?: string
+  /** The deployment's printed name: the version, a preview name, `local` or `unknown`. */
+  name: string
+  /** The deployment URL; absent for a local install. */
+  url?: string
+  /** The highest stable version above the installed one, when one is known. */
+  available?: string
+}
+
+/** What runs on one instance, or why it could not be read. */
+export interface InstanceDomains {
+  ok: boolean
+  domains: InstanceDomain[]
+  error?: string
+}
+
 export type ThreadRole = 'user' | 'author'
 export type ThreadEntryType = 'text' | 'choice'
 

@@ -51,6 +51,14 @@ test('an instance the user does not own is listed, greyed with its reason, and c
   expect(listed.get('dev')).toContain('disabled=""')
   expect(listed.get('dev')).toContain('Not an Admin instance')
   expect(listed.get('dev')).toContain('Studio works only with instances you own in Admin')
+  // The reason is no longer printed in the row: a greyed warning names it and explains on hover.
+  expect(html).not.toContain('>Not owner<')
+  expect(html).toContain(
+    'aria-label="Not owner: Studio works only with instances you own in Admin"',
+  )
+  expect(html).toContain(
+    'aria-label="Not an Admin instance: Studio works only with instances you own in Admin"',
+  )
   // No active instance, so nothing to warn about.
   expect(html).not.toContain('role="alert"')
 })
@@ -73,7 +81,9 @@ test('while the instances load, the list shows a loader instead of "No instances
     <InstanceList instances={[]} loading switching={null} onPick={() => {}} />,
   )
   expect(loading).toContain('role="status"')
-  expect(loading).toContain('Loading instances')
+  expect(loading).toContain('aria-label="Loading instances"')
+  expect(loading).toContain('animate-pulse')
+  expect(loading).not.toContain('animate-spin')
   expect(loading).not.toContain('No instances found')
 
   const empty = renderToStaticMarkup(
