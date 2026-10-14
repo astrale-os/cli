@@ -42,7 +42,7 @@ export function activeInstanceWarning(instances: readonly InstanceInfo[]): strin
  * from a terminal carries a warning, since Studio will not open its Views.
  */
 export function InstanceSwitcher() {
-  const { data } = useInstances()
+  const { data, isPending } = useInstances()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState<string | null>(null)
@@ -73,27 +73,52 @@ export function InstanceSwitcher() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <div className="-ml-1 inline-flex items-center gap-0.5">
-        <InstanceTrigger active={active} warning={activeInstanceWarning(instances)} />
+        <InstanceTrigger
+          active={active}
+          loading={isPending}
+          warning={activeInstanceWarning(instances)}
+        />
       </div>
       <PopoverContent align="start" className="w-72 p-1.5">
-        <InstanceList instances={instances} switching={switching} onPick={pick} />
+        <InstanceList
+          instances={instances}
+          loading={isPending}
+          switching={switching}
+          onPick={pick}
+        />
       </PopoverContent>
     </Popover>
   )
 }
 
-function InstanceTrigger({ active, warning }: { active: string | null; warning: string | null }) {
+function InstanceTrigger({
+  active,
+  loading,
+  warning,
+}: {
+  active: string | null
+  loading: boolean
+  warning: string | null
+}) {
   return (
     <PopoverTrigger asChild>
       <button
         type="button"
-        title={warning ?? 'Active instance — click to switch'}
+        aria-busy={loading || undefined}
+        title={loading ? 'Loading instances' : (warning ?? 'Active instance — click to switch')}
         className="inline-flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-accent/50"
       >
         <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/15 text-primary">
           <Server className="h-4 w-4" />
         </span>
-        <span className="font-semibold tracking-tight">{active ?? 'no instance'}</span>
+        {loading ? (
+          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading instances…
+          </span>
+        ) : (
+          <span className="font-semibold tracking-tight">{active ?? 'no instance'}</span>
+        )}
         {warning && (
           <TriangleAlert
             className="h-3.5 w-3.5 text-warning"
@@ -110,10 +135,12 @@ function InstanceTrigger({ active, warning }: { active: string | null; warning: 
 /** The popover's body: an owned instance is a choice, any other one only an explanation. */
 export function InstanceList({
   instances,
+  loading = false,
   switching,
   onPick,
 }: {
   instances: readonly InstanceInfo[]
+  loading?: boolean
   switching: string | null
   onPick: (name: string) => void
 }) {
@@ -187,10 +214,20 @@ export function InstanceList({
             </div>
           )
         })}
-        {instances.length === 0 && (
-          <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
-            No instances found
+        {loading ? (
+          <div
+            role="status"
+            className="flex items-center justify-center gap-2 px-2 py-3 text-[12px] text-muted-foreground"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading instances…
           </div>
+        ) : (
+          instances.length === 0 && (
+            <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
+              No instances found
+            </div>
+          )
         )}
       </div>
     </>
