@@ -1,6 +1,6 @@
 ---
 name: astrale-frontend-design
-description: "Design, implement, review, and refine focused product interfaces for Astrale Domain Views embedded in the Astrale GUI. Use when working on information architecture, layout, React or UI components, forms, lists, menus, dialogs, loading/empty/error/mutation states, interaction polish, responsive behavior, accessibility, or interface copy in a Domain frontend."
+description: "Design, implement, review, and refine focused product interfaces for Astrale Domain Views embedded in the Astrale GUI. Use when working on information architecture, layout, React or UI components, forms, lists, menus, dialogs, loading/empty/error/mutation states, perceived latency, prefetching, navigation, interaction polish, responsive behavior, accessibility, or interface copy in a Domain frontend."
 ---
 
 # Astrale Frontend Design
@@ -45,7 +45,8 @@ Model the relevant initial, loading, empty, ready, submitting, success, failure,
 disabled states before considering a flow complete.
 
 - Show loading at the scope that is actually waiting: inside a submitted button for a local action,
-  or with a page skeleton for initial page content. Never show multiple loaders for one action.
+  or with a layout-matching skeleton per section on first load. Never show multiple spinners or
+  progress bars for one action.
 - Prevent duplicate submissions. Preserve user input on failure and place actionable feedback next
   to the affected control or content.
 - Handle creation clearly: show that the action succeeded, insert the result where the user expects
@@ -63,6 +64,33 @@ disabled states before considering a flow complete.
 - Make hover, disabled, pending, success, and error states visually distinct without relying on color
   alone.
 
+## Hide Latency
+
+Kernel calls can take seconds. Rely on `@astrale-os/shell-react` before writing any cache or loader.
+
+- Show a skeleton only while `data === undefined`; keep content while `stale` or `refreshing`. When
+  input changes, pass `keepPrevious` and render `previous?.data` dimmed; defer typed input.
+- Give each independent section its own named Query so sections load in parallel and paint when
+  ready. Put dependent reads in one `defineCompositeQuery`, not a parent-then-child waterfall.
+  Identical reads are already shared: never cache by hand.
+- Unmount inactive tabs: the Store keeps their result and refreshes it in the background on return.
+- Prefetch only the likely next step (`Link` already warms its node) with one
+  `useQuery(next ? definition : null, input)` slot, never every row or tab.
+- `useMutation` is optimistic for updates and deletes of loaded nodes; `useAction` is not. For a
+  predictable action, use `useOptimistic` in `startTransition`, `await run()` then
+  `await query.refresh()` so nothing flickers, and catch the error. Never for payments or access.
+- A read is reused for 30 s and never refreshes by itself: poll (`refreshInterval`) or call
+  `refresh()` for changes made elsewhere. Keep `refresh: 'all'` on actions unless every affected
+  Query is listed.
+- A durable callable returns its Execution at once: release the form and show progress in place.
+
+## Navigate Through The Shell
+
+- Use `defineNavigation`, `NavigationScope`, and `urlAdapter()` (or an existing History API router),
+  never a hand-written `popstate` store. With the host's `navigation.history` grant, browser Back,
+  Forward, and deep links reach the app; without it, use `memoryAdapter()`.
+- Put shareable state (record, tab, filters) in the URL, with `replace` for filter changes.
+
 ## Reduce Text Deliberately
 
 Keep only text that helps the user understand the state, decide, or act. Preserve necessary labels,
@@ -76,5 +104,6 @@ and remove it unless the interface becomes harder to understand, decide from, or
 
 Exercise the real task flows with representative, empty, long, loading, and failing data. Check
 creation, deletion, rollback, outside-click and Escape behavior, keyboard order, narrow layouts, and
-visible feedback. Then review the whole screen once more and remove redundant cards, effects, copy,
+visible feedback. On a throttled network, check tab returns, optimistic writes, waterfalls, and
+Back. Then review the whole screen once more and remove redundant cards, effects, copy,
 and space before useful content.
