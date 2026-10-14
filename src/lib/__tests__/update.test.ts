@@ -22,6 +22,7 @@ async function installation(
   next: {
     version: string
     binaryVersion?: string
+    channel?: string
     reports?: string
     members?: string[]
     sha256?: string
@@ -63,7 +64,7 @@ async function installation(
     JSON.stringify({
       version: next.version,
       binaryVersion: next.binaryVersion ?? next.version,
-      channel: 'alpha',
+      channel: next.channel ?? 'alpha',
       assets: { 'darwin-arm64': { name: 'astrale-darwin-arm64.tar.gz', sha256 } },
     }),
   )
@@ -112,6 +113,38 @@ describe('standalone update', () => {
       latestVersion: '1.1.0',
     })
     expect(await behind.state()).toEqual(before)
+  })
+
+  test('an installation ahead of another channel is not moved back unless the user names it', async () => {
+    const ahead = await installation('1.0.0-beta.149', {
+      version: '1.0.0-beta.147',
+      channel: 'latest',
+    })
+    const before = await ahead.state()
+    for (const check of [true, false]) {
+      expect(await updateAstrale(ahead.request({ check, channel: 'latest' }))).toEqual({
+        status: 'up-to-date',
+        currentVersion: '1.0.0-beta.149',
+        latestVersion: '1.0.0-beta.147',
+        channel: 'latest',
+      })
+    }
+    expect(await ahead.state()).toEqual(before)
+
+    expect(
+      (await updateAstrale(ahead.request({ check: true, channel: 'latest', explicit: true })))
+        .status,
+    ).toBe('available')
+    const behind = await installation('1.0.0-beta.146', {
+      version: '1.0.0-beta.147',
+      channel: 'latest',
+    })
+    expect((await updateAstrale(behind.request({ check: true, channel: 'latest' }))).status).toBe(
+      'available',
+    )
+    // The installed channel rolling back is still followed.
+    const rollback = await installation('1.1.0', { version: '1.0.0' })
+    expect((await updateAstrale(rollback.request({ check: true }))).status).toBe('available')
   })
 
   test('a canary binary may report the package version instead of the release version', async () => {

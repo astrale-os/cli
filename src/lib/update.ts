@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 
+import { compareVersions } from '../admin/registry/order'
 import { AstraleError } from '../errors'
 import { atomicWrite } from '../state/files'
 import { INSTALL_PATH } from '../state/index'
@@ -55,6 +56,11 @@ export type UpdateRequest = {
   check?: boolean
   channel?: string
   version?: string
+  /**
+   * The user named the target (`--channel` or `--version`), so an older release is a deliberate
+   * move. Otherwise an older release from another channel than the installed one is not an update.
+   */
+  explicit?: boolean
   currentVersion: string
   platform?: Platform
   installPath?: string
@@ -167,6 +173,15 @@ export function releaseBase(
   return `https://github.com/${repo}/releases/download/${request.channel ?? meta.channel}`
 }
 
+function precedes(left: string, right: string): boolean {
+  try {
+    return compareVersions(left, right) < 0
+  } catch {
+    // A non-canonical version cannot be ordered: treat it as a different release.
+    return false
+  }
+}
+
 /** GET a release file; `file://` bases serve local release directories. */
 async function download(url: string, signal?: AbortSignal): Promise<Buffer> {
   if (url.startsWith('file://')) return readFile(new URL(url))
@@ -273,6 +288,15 @@ export async function updateAstrale(request: UpdateRequest): Promise<UpdateResul
   }
   const release = { currentVersion, latestVersion: manifest.version, channel: manifest.channel }
   if (currentVersion === manifest.version) return { status: 'up-to-date', ...release }
+  // A beta installation ahead of `latest` waits for `latest` to catch up; the same channel moving
+  // back (a rollback) is still followed.
+  if (
+    !request.explicit &&
+    manifest.channel !== meta.channel &&
+    precedes(manifest.version, currentVersion)
+  ) {
+    return { status: 'up-to-date', ...release }
+  }
   if (request.check) return { status: 'available', ...release }
 
   const directory = await mkdtemp(join(tmpdir(), 'astrale-update-'))
