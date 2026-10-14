@@ -165,7 +165,7 @@ export function InstanceList({
             <div
               key={i.name}
               className={cn(
-                'flex w-full items-center gap-1 rounded-md transition-colors',
+                'group flex w-full items-center gap-1 rounded-md transition-colors',
                 i.owned && 'hover:bg-accent',
                 i.active && 'bg-accent/40',
               )}
@@ -204,7 +204,7 @@ export function InstanceList({
                   target="_blank"
                   rel="noreferrer"
                   title={`Open ${i.name} in a new tab`}
-                  className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-[color,background-color,opacity] hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
