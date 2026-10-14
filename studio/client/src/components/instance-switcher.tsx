@@ -10,8 +10,9 @@ import { useInstances } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+import { Skeleton } from './ui/skeleton'
 
-function instancePageUrl(url?: string | null): string | null {
+export function instancePageUrl(url?: string | null): string | null {
   const raw = url?.trim()
   if (!raw) return null
   try {
@@ -112,10 +113,7 @@ function InstanceTrigger({
           <Server className="h-4 w-4" />
         </span>
         {loading ? (
-          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading instances…
-          </span>
+          <Skeleton className="h-4 w-24" />
         ) : (
           <span className="font-semibold tracking-tight">{active ?? 'no instance'}</span>
         )}
@@ -215,12 +213,16 @@ export function InstanceList({
           )
         })}
         {loading ? (
-          <div
-            role="status"
-            className="flex items-center justify-center gap-2 px-2 py-3 text-[12px] text-muted-foreground"
-          >
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading instances…
+          <div role="status" aria-label="Loading instances" className="space-y-0.5">
+            {['w-24', 'w-32', 'w-20'].map((width) => (
+              <div key={width} className="flex items-center gap-2 px-2 py-1.5">
+                <span className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 space-y-1.5 py-0.5">
+                  <Skeleton className={cn('h-3.5', width)} />
+                  <Skeleton className="h-2.5 w-40" />
+                </span>
+              </div>
+            ))}
           </div>
         ) : (
           instances.length === 0 && (

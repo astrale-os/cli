@@ -73,7 +73,9 @@ test('while the instances load, the list shows a loader instead of "No instances
     <InstanceList instances={[]} loading switching={null} onPick={() => {}} />,
   )
   expect(loading).toContain('role="status"')
-  expect(loading).toContain('Loading instances')
+  expect(loading).toContain('aria-label="Loading instances"')
+  expect(loading).toContain('animate-pulse')
+  expect(loading).not.toContain('animate-spin')
   expect(loading).not.toContain('No instances found')
 
   const empty = renderToStaticMarkup(
