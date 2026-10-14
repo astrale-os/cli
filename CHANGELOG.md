@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.149](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.148...cli/v1.0.0-beta.149) (2026-10-14)
+
+
+### Features
+
+* **studio:** work on owned Instances and open Views as any identity ([#699](https://github.com/astrale-os/cli/issues/699)) ([8e53576](https://github.com/astrale-os/cli/commit/8e53576eedf2862493d2f784a8d537996dccf6dc))
+
+
+### Bug Fixes
+
+* **lib:** upgrade pre-V1 local registries instead of refusing them ([#703](https://github.com/astrale-os/cli/issues/703)) ([680402e](https://github.com/astrale-os/cli/commit/680402ef8234bfb9a376ac24e64c760abc46262c))
+
 ## [1.0.0-beta.148](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.147...cli/v1.0.0-beta.148) (2026-10-13)
 
 
