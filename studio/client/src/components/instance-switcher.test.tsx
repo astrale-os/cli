@@ -67,3 +67,18 @@ test('an active instance the user does not own carries a warning instead of a ch
   expect(html).toContain('You are not the owner of team in Admin')
   expect(activeInstanceWarning([{ ...owned, active: true }, member])).toBeNull()
 })
+
+test('while the instances load, the list shows a loader instead of "No instances found"', () => {
+  const loading = renderToStaticMarkup(
+    <InstanceList instances={[]} loading switching={null} onPick={() => {}} />,
+  )
+  expect(loading).toContain('role="status"')
+  expect(loading).toContain('Loading instances')
+  expect(loading).not.toContain('No instances found')
+
+  const empty = renderToStaticMarkup(
+    <InstanceList instances={[]} switching={null} onPick={() => {}} />,
+  )
+  expect(empty).toContain('No instances found')
+  expect(empty).not.toContain('Loading instances')
+})
