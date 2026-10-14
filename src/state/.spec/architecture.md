@@ -8,8 +8,9 @@ releases its lock on every terminal path.
 
 The identity registry admits only the V1 envelope into one semantic `IdentityStore`. Missing files
 seed an empty store without writing. Unversioned, invalid, and unsupported-version files remain
-untouched and fail before any transition. To recover an old local registry, rename its file to
-preserve the bytes, then authenticate again; keep the keys directory unchanged. Identity
+untouched and fail before any transition. Format upgrade is not the registry's concern: before a
+command runs, the CLI entry point upgrades a convertible pre-V1 registry once under its lock and
+keeps the exact prior bytes at `identities.json.v0.bak` (`src/lib/legacy-state.ts`). Identity
 orchestration owns key and IdP-session effects above this module and validates the registry before
 requesting login credentials.
 

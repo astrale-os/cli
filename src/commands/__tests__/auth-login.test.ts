@@ -35,7 +35,7 @@ const session = async () =>
   JSON.parse(await readFile(join(tmp, 'idp-sessions', 'alice.json'), 'utf8').catch(() => 'null'))
 
 describe('auth login command', () => {
-  test('refuses unversioned identity state before OAuth, then recovers explicitly without losing keys', async () => {
+  test('upgrades unversioned identity state before login, keeping its bytes and keys', async () => {
     const accessToken = token()
     const server = tokenEndpoint({ mint: () => accessToken })
     const path = join(tmp, 'identities.json')
@@ -47,19 +47,43 @@ describe('auth login command', () => {
       await mkdir(join(tmp, 'keys'))
       await writeFile(privatePath, 'retained private key bytes')
 
-      const refused = await runAuthLogin(...LOGIN)
-      expect(refused.exitCode).toBe(1)
-      expect(refused.stderr).toContain('Rename this file to preserve it')
-      expect(server.forms.map((form) => form.get('client_id'))).toEqual([])
-      expect(await session()).toBeNull()
-
-      await rename(path, `${path}.saved`)
-      expect((await runAuthLogin(...LOGIN)).exitCode).toBe(0)
+      const login = await runAuthLogin(...LOGIN)
+      expect(login.exitCode).toBe(0)
+      expect(login.stderr).toContain(`Upgraded ${path} to the current format`)
+      expect(await readFile(`${path}.v0.bak`, 'utf8')).toBe(saved)
       expect(await readFile(privatePath, 'utf8')).toBe('retained private key bytes')
       expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({
         version: 1,
         default: 'alice',
       })
+      expect((await session()).access_token).toBe(accessToken)
+    } finally {
+      await server.stop()
+    }
+  })
+
+  test('refuses unsupported identity state before OAuth, then recovers explicitly without losing keys', async () => {
+    const accessToken = token()
+    const server = tokenEndpoint({ mint: () => accessToken })
+    const path = join(tmp, 'identities.json')
+    const saved = `${JSON.stringify({ version: 2, default: 'manager', identities: {} })}\n`
+    const privatePath = join(tmp, 'keys', 'manager.private.jwk')
+    try {
+      await writeIdp(tmp, server.url, CLIENT)
+      await writeFile(path, saved)
+      await mkdir(join(tmp, 'keys'))
+      await writeFile(privatePath, 'retained private key bytes')
+
+      const refused = await runAuthLogin(...LOGIN)
+      expect(refused.exitCode).toBe(1)
+      expect(refused.stderr).toContain('unsupported version 2')
+      expect(server.forms.map((form) => form.get('client_id'))).toEqual([])
+      expect(await session()).toBeNull()
+      expect(await readFile(path, 'utf8')).toBe(saved)
+
+      await rename(path, `${path}.saved`)
+      expect((await runAuthLogin(...LOGIN)).exitCode).toBe(0)
+      expect(await readFile(privatePath, 'utf8')).toBe('retained private key bytes')
       expect((await session()).access_token).toBe(accessToken)
     } finally {
       await server.stop()

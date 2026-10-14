@@ -17,6 +17,7 @@ import {
   classifyRefreshFailure,
 } from '../idp/provider'
 import { ensureFreshSession } from '../idp/session'
+import { log } from '../terminal/log'
 import { resolveAdminTarget, type AdminTargetCommandOpts } from './target'
 
 /**
@@ -83,6 +84,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * `unregistered`: the account has no access to Admin: outside its organization, or no Identity
  * there. Admin's own `ready` grants nothing and does not prove registration, so login asks its
  * Kernel. `rejected`: Admin refused this login itself. `denied`: Admin refused the pending admission.
+ * `incomplete`: a local step failed before Admin was asked.
  */
 type AccountActivation =
   | 'ready'
@@ -90,6 +92,7 @@ type AccountActivation =
   | 'unregistered'
   | 'rejected'
   | 'denied'
+  | 'incomplete'
   | 'unavailable'
 
 /** What a user should do when a login could not complete prepared access. */
@@ -100,6 +103,8 @@ export const ACCOUNT_ACTIVATION_WARNINGS = {
   rejected:
     'Astrale Admin did not accept this login, so no prepared access was completed. Check that this is the invited WorkOS account.',
   denied: 'Astrale Admin refused the access prepared for this account. Ask an administrator.',
+  incomplete:
+    'Prepared Astrale access was not completed. Fix the problem above, then run `astrale auth login` again.',
   unavailable:
     'Astrale Admin could not be reached to complete prepared access. Run `astrale auth login` again later.',
 } satisfies Record<Exclude<AccountActivation, 'ready'>, string>
@@ -121,8 +126,13 @@ export async function activateLoggedInAccount(
   selection: AdminSelection = {},
 ): Promise<AccountActivation | undefined> {
   if (login.idpName !== BUILTIN_WORKOS_IDP_NAME || login.clientCredentials) return undefined
+  // Admin's own answers and transport failures resolve to a status; anything thrown failed locally
+  // before Admin was asked, so it is reported as itself rather than as an unreachable Admin.
   return activateAccount(login.identityName, selection).catch(
-    (): AccountActivation => 'unavailable',
+    (error: unknown): AccountActivation => {
+      log.warn(error instanceof Error ? error.message : String(error))
+      return 'incomplete'
+    },
   )
 }
 

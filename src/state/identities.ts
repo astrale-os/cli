@@ -131,14 +131,28 @@ export async function updateIdentityStore<Value>(
     `${path}.lock`,
     async () => {
       const update = await transition(await readIdentityStore(options))
-      await atomicWrite(
-        path,
-        `${JSON.stringify({ version: IDENTITY_STORE_VERSION, ...update.next }, null, 2)}\n`,
-      )
+      await atomicWrite(path, encodeV1(update.next))
       return update.value
     },
     options.lock,
   )
+}
+
+/**
+ * The V1 bytes for a registry written before the format label, or undefined when `raw` is not one
+ * this release can convert. Those registries held the V1 fields without `version`.
+ */
+export function upgradeUnversionedIdentityState(raw: string): string | undefined {
+  const input: unknown = JSON.parse(raw)
+  if (typeof input !== 'object' || input === null || Object.hasOwn(input, 'version')) return
+  const parsed = IdentityFileV1Schema.safeParse({ version: IDENTITY_STORE_VERSION, ...input })
+  if (!parsed.success) return
+  const { version: _, ...store } = parsed.data
+  return encodeV1(store)
+}
+
+function encodeV1(store: IdentityStore): string {
+  return `${JSON.stringify({ version: IDENTITY_STORE_VERSION, ...store }, null, 2)}\n`
 }
 
 function invalidState(path: string, cause?: unknown): IdentityStateError {

@@ -1,6 +1,7 @@
 import { type Command, CommanderError } from 'commander'
 
 import { renderCommanderError } from '../src/lib/command-dx'
+import { upgradeUnversionedState } from '../src/lib/legacy-state'
 import { maybeRunStartupMaintenance } from '../src/lib/startup-maintenance'
 import { configureInvocation } from '../src/lib/terminal/output'
 import { buildProgram, normalizeRootVersionArgv } from '../src/program/index'
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
 
   const argv = normalizeRootVersionArgv(process.argv)
   configureInvocation(argv)
+  await upgradeUnversionedState()
   try {
     if (await maybeRunStartupMaintenance(argv)) return
   } catch (error) {

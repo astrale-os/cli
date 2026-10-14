@@ -169,6 +169,30 @@ function decodeInstanceStore(raw: string): InstanceStore {
   return InstanceStoreSchema.parse(input)
 }
 
+/**
+ * The V1 bytes for a registry written before the format label, or undefined when `raw` is not one
+ * this release can convert. Those releases skipped the retired `manager` entry and entries without
+ * a connection URL on every read; the upgrade drops them the same way.
+ */
+export function upgradeUnversionedInstanceState(raw: string): string | undefined {
+  const input: unknown = JSON.parse(raw)
+  if (typeof input !== 'object' || input === null || Object.hasOwn(input, 'version')) return
+  const { active, instances } = input as { active?: unknown; instances?: unknown }
+  if (typeof instances !== 'object' || instances === null) return
+  const kept = Object.fromEntries(
+    Object.entries(instances).filter(
+      ([key, entry]) =>
+        key !== 'manager' && typeof (entry as { url?: unknown } | null)?.url === 'string',
+    ),
+  )
+  const parsed = InstanceStoreSchema.safeParse({
+    version: INSTANCE_STORE_VERSION,
+    active: typeof active === 'string' && Object.hasOwn(kept, active) ? active : '',
+    instances: kept,
+  })
+  return parsed.success ? encodeInstanceStore(sanitizeStore(parsed.data)) : undefined
+}
+
 /** Every write publishes the whole registry in this release's format. */
 function encodeInstanceStore(store: InstanceStore): string {
   const encoded = {
