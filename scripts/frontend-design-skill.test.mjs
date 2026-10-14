@@ -17,7 +17,7 @@ test('the shipped frontend skill preserves the focused Domain UI contract', () =
   assert.match(source, /focused product interface, not a landing page/)
   assert.match(source, /Before writing UI code, sketch a high-level wireframe/)
   assert.match(source, /Do not turn every element into a card/)
-  assert.match(source, /Never show multiple loaders for one action/)
+  assert.match(source, /Never show multiple spinners or\s+progress bars for one action/)
   assert.match(source, /Use optimistic list updates.*Roll back on failure/s)
   assert.match(source, /clicks outside it or presses Escape/)
   assert.match(source, /Make long labels and values part of layout testing/)
