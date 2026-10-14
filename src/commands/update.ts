@@ -141,6 +141,7 @@ async function cliStale(
       check: true,
       channel: opts.channel ?? DEFAULT_UPDATE_CHANNEL,
       version: opts.version,
+      explicit: opts.channel !== undefined || opts.version !== undefined,
       currentVersion: running,
     })
     if (r.status === 'managed') return { stale: false, managed: true, current: running }
@@ -243,8 +244,7 @@ export default {
     { flags: '--check', description: 'Only check whether an update is available' },
     {
       flags: '--channel <name>',
-      description: 'Update from a release channel (latest, alpha, beta, rc, canary, stable)',
-      default: DEFAULT_UPDATE_CHANNEL,
+      description: `Update from a release channel (latest, alpha, beta, rc, canary, stable; default: ${DEFAULT_UPDATE_CHANNEL})`,
     },
     { flags: '--version <version>', description: 'Update to an exact version tag' },
     { flags: '--no-skills', description: 'Skip ensuring the Astrale agent skills' },
@@ -276,6 +276,8 @@ Behavior:
   project; SDK dependency updates change versions, not authored configuration.
 
   The default release channel is latest; --channel overrides it for one run.
+  Without --channel or --version, an installation ahead of latest from another
+  channel (e.g. a newer beta) is reported up to date rather than moved back.
   --check is a dry run (binary + skills + SDK deps; exit 10 if anything is available) and
   never writes. With --json it emits a unified staleness report
   ({ stale, cli, skills, sdk }) for tooling. --yes applies existing updates
@@ -323,8 +325,9 @@ Examples:
         () =>
           updateAstrale({
             check: opts.check,
-            channel: opts.channel,
+            channel: opts.channel ?? DEFAULT_UPDATE_CHANNEL,
             version: opts.version,
+            explicit: opts.channel !== undefined || opts.version !== undefined,
             currentVersion: pkg.version,
           }),
         { longRunningText: `${updateLabel} — still working` },

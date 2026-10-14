@@ -152,6 +152,8 @@ Old binaries still default to `beta`, including when an old release is selected 
 `astrale update --channel latest` explicitly to move those installations to the selected channel.
 New binaries use `latest` by default; `--channel beta` opts into the moving beta for that run. For
 installation before activation or for deliberate beta consumption, use `ASTRALE_CHANNEL=beta`.
+A bare `astrale update` (and Studio's Update badge) never moves an installation back to an older
+release of another channel: a beta installation ahead of `latest` stays put until `latest` catches up.
 No implicit fallback to beta is used when latest is absent or unavailable.
 
 ### Rerun and rollback
