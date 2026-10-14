@@ -2,6 +2,7 @@
 import { agentWorkspace } from '../agent/workspace'
 import { allDomains, depsInstalled } from '../domain/registry'
 import { listInstances, setActiveInstance } from '../instances/active'
+import { listInstanceDomains } from '../instances/domains'
 import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../introspect/cache'
 import { asString } from '../json'
 import { studioSettings, updateStudioSettings } from '../state/settings'
@@ -111,6 +112,11 @@ export async function handleWorkspaceRoute(
   }
 
   if (path === '/api/instances' && req.method === 'GET') return json(await listInstances())
+  if (path === '/api/instances/domains' && req.method === 'GET') {
+    const name = (new URL(req.url).searchParams.get('name') ?? '').trim()
+    if (!name) return badRequest('name is required')
+    return json(await listInstanceDomains(name))
+  }
   if (path === '/api/instances/use' && req.method === 'POST') {
     const body = await readJsonRecord(req)
     const name = (asString(body.name) ?? '').trim()

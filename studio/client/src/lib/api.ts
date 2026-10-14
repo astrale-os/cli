@@ -38,6 +38,7 @@ import type {
   DocMeta,
   DomainCatalogEntry,
   DomainSummary,
+  InstanceDomains,
   InstancesState,
   LayoutState,
   MergeResult,
@@ -92,6 +93,8 @@ export const api = {
     ),
   catalog: () => get<DomainCatalogEntry[]>('/api/catalog'),
   instances: () => get<InstancesState>('/api/instances'),
+  instanceDomains: (name: string) =>
+    get<InstanceDomains>(`/api/instances/domains?name=${encodeURIComponent(name)}`),
   switchInstance: (name: string) =>
     post<{ ok: boolean; active: string | null; output: string }>('/api/instances/use', { name }),
 
@@ -291,6 +294,7 @@ export const qk = {
   workspaceState: ['workspace-state'] as const,
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,
+  instanceDomains: (name: string) => ['instance-domains', name] as const,
   bundle: (id: string) => ['bundle', id] as const,
   introspection: ['workspace-introspection'] as const,
   core: (id: string) => ['core', id] as const,

@@ -76,6 +76,15 @@ export function useInstances() {
     refetchInterval: settings?.instancePollMs ?? 30_000,
   })
 }
+/** What runs on one instance. Each read spawns the CLI and reaches its Kernel: fetched on demand. */
+export function useInstanceDomains(name: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: qk.instanceDomains(name ?? ''),
+    queryFn: () => api.instanceDomains(name!),
+    enabled: !!name && enabled,
+    staleTime: 60_000,
+  })
+}
 export function useBundle(id?: string) {
   return useQuery({ ...bundleQueryOptions(id ?? ''), enabled: !!id })
 }

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Eye, EyeOff, PanelLeftClose, Plus } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
+import { DomainInstalledChip } from '@/components/instance-domains'
 import { DomainPackageUpdates } from '@/components/updates-badge'
 import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
@@ -150,6 +151,7 @@ export function DomainRow({
         />
       )}
 
+      <DomainInstalledChip origin={origin} />
       <DomainPackageUpdates domainId={domainId} origin={origin} />
 
       <AnchorButton
