@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.150](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.149...cli/v1.0.0-beta.150) (2026-10-15)
+
+
+### Features
+
+* **studio:** show the version each Domain runs on the active instance ([#709](https://github.com/astrale-os/cli/issues/709)) ([490b50d](https://github.com/astrale-os/cli/commit/490b50dd59ffa625ca40ea182c0887ca6cc59681))
+
+
+### Bug Fixes
+
+* **commands:** accept every View name the Kernel admits in astrale view ([#710](https://github.com/astrale-os/cli/issues/710)) ([ee5db12](https://github.com/astrale-os/cli/commit/ee5db12edd95e486f2b4c56d0eda9fd43940e600))
+* **commands:** drop the token expiry and default-identity lines from human login output ([#704](https://github.com/astrale-os/cli/issues/704)) ([7401639](https://github.com/astrale-os/cli/commit/7401639b8996bb2998bf42328d1920765c1465b9))
+* **deps:** adopt SDK 0.6.0-beta.36 on Kernel beta.10, which decodes an admission age ([#711](https://github.com/astrale-os/cli/issues/711)) ([dae5020](https://github.com/astrale-os/cli/commit/dae50206cb65f08005487bf0b225cb8106dfe1fd))
+* **lib:** stop offering an older latest release as an update to beta installs ([#707](https://github.com/astrale-os/cli/issues/707)) ([d569880](https://github.com/astrale-os/cli/commit/d569880de1b1c1623d9ee4ce7eadfdb1d63d70d8))
+* **studio:** show a loader while the instances load ([#708](https://github.com/astrale-os/cli/issues/708)) ([b0a6481](https://github.com/astrale-os/cli/commit/b0a6481c8f3df23acbbc618c4a943fbac4f77862))
+
 ## [1.0.0-beta.149](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.148...cli/v1.0.0-beta.149) (2026-10-14)
 
 
