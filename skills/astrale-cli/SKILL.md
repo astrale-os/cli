@@ -30,6 +30,7 @@ astrale status
 astrale whoami
 astrale use <name>
 astrale get <target>
+astrale download <node> <property> -o <file>
 astrale query [sources...]
 astrale introspect <origin-or-path>
 astrale mutate
@@ -447,6 +448,26 @@ astrale get /:kernel.astrale.ai --schema
 Method Paths identify callables rather than Nodes; use `call` to invoke them or
 `introspect` to inspect their Schema. Schema-valued properties are omitted
 unless `--schema` is passed.
+
+### `download`
+
+A blob Property holds a file: a read shows only its Ref,
+`{ "digest": "sha256:…", "mediaType": "application/pdf", "size": 48213 }`.
+`download` streams the bytes it names, reading as `get` does:
+
+```bash
+astrale download @doc content -o report.pdf
+astrale download @doc notes.example:class.Document.property.content -o report.pdf --json
+astrale download @doc content > report.pdf
+```
+
+`<property>` is the Property key or its name when the Node holds one file by
+that name; otherwise the error lists the files the Node holds. The bytes are
+checked against the Ref's size and digest, and `-o` writes `<file>.part`, renamed
+only when complete. `--json` describes the written file
+(`{ node, property, mediaType, size, digest, file }`). Without `-o` the bytes go to
+a redirected stdout (`-o -` forces it); a terminal is refused. Missing and
+unreadable files are both `BLOB_NOT_FOUND` or `FILE_NOT_FOUND`.
 
 ### `introspect`
 
