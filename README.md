@@ -206,8 +206,8 @@ Main command groups:
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
 
-`astrale view <origin>` opens a Domain's entrypoint View (`--view <slug>` picks
-another, `--list` prints them all); `astrale view /:<origin>:view.<slug>` opens
+`astrale view <origin>` opens a Domain's entrypoint View (`--view <name>` picks
+another, `--list` prints them all); `astrale view /:<origin>:view.<name>` opens
 one View exactly. Every View belongs to its Domain: none is opened for a node, and
 a View that shows one node selects it through its own internal routing.
 

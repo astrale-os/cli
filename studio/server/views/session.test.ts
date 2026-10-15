@@ -68,6 +68,28 @@ test('launches the canonical ViewPath on the instance the preparation pinned', a
   ])
 })
 
+test('launches a View by any name its Schema may declare', async () => {
+  const opened: { viewPath: string }[] = []
+  for (const slug of ['issueBoard', 'issue_board']) {
+    const named = { slug, kind: 'unknown' } satisfies ViewInfo
+    const { preparationId } = await getViewRuntime('/workspace', origin, named, cli('staging'))
+    expect(
+      await launchViewSession(
+        '/workspace',
+        origin,
+        named,
+        { preparationId },
+        2000,
+        cli('staging', opened),
+      ),
+    ).toMatchObject({ status: 'ready' })
+  }
+  expect(opened.map(({ viewPath }) => viewPath)).toEqual([
+    '/:issues.example.dev:view.issueBoard',
+    '/:issues.example.dev:view.issue_board',
+  ])
+})
+
 test('refuses a launch the preparation does not cover', async () => {
   const { preparationId } = await getViewRuntime('/workspace', origin, view, cli('staging'))
   const launch = (root: string, active: string) =>

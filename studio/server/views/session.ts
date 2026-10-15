@@ -17,6 +17,7 @@ import {
   studioInstanceOwnership,
 } from '../../../src/commands/studio-views'
 import { notOwnerError } from '../../../src/lib/admin/ownership'
+import { viewPathOf } from '../../../src/lib/view/resolve'
 import { studioCliCommand } from '../cli'
 
 const PREPARATION_TTL_MS = 10 * 60_000
@@ -161,7 +162,7 @@ export async function launchViewSession(
     // instance's Identities, read as root, and switches between them; the root
     // and impersonation tokens behind that list never leave the session server.
     const session = await (dependencies.open ?? defaults.open)({
-      viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
+      viewPath: viewPathOf(origin, view.slug),
       instance,
       owner,
       idleMs: STUDIO_VIEW_IDLE_MS,
@@ -200,17 +201,6 @@ export async function releaseViewSession(
   const named = page !== undefined && /^[A-Za-z0-9-]{1,64}$/.test(page) ? page : undefined
   await releaseStudioViewSession(sessionId, named)
   return { ok: true }
-}
-
-/** Refuse anything but a plain domain origin before it is spliced into a graph path. */
-function assertOrigin(value: string): string {
-  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(value)) throw new Error(`Invalid domain origin: ${value}`)
-  return value
-}
-
-function assertViewSlug(value: string): string {
-  if (!/^[a-z][a-z0-9-]*$/.test(value)) throw new Error(`Invalid view slug: ${value}`)
-  return value
 }
 
 function studioViewServeRuntime(): { file: string; args: string[] } {
