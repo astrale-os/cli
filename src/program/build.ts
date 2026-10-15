@@ -74,6 +74,7 @@ export async function buildProgram(): Promise<Command> {
 
   registerCommand(program, withKernelOptions((await import('../commands/token')).default))
   registerCommand(program, withKernelOptions((await import('../commands/get')).default))
+  registerCommand(program, withKernelOptions((await import('../commands/download')).default))
   registerCommand(program, withKernelOptions((await import('../commands/mutate')).default))
   registerCommand(program, withKernelOptions((await import('../commands/query')).default))
   registerCommand(program, withKernelOptions((await import('../commands/introspect')).default))
@@ -244,7 +245,8 @@ export async function buildProgram(): Promise<Command> {
     `
 Command groups:
   Start         setup             sign in, pick an instance, equip your workspace
-  Kernel        get, mutate, call, query, introspect, logs, view, token
+  Kernel        get, download, mutate, call, query, introspect, logs, view,
+                token
   Management    admin, instance, domain, identity, auth, idp, update
   Application   ui                initialize, inspect, and install Astrale UI source
   Agent         browser, skills   drive the GUI; configure global agent skills
