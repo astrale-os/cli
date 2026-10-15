@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.151](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.150...cli/v1.0.0-beta.151) (2026-10-15)
+
+
+### Features
+
+* **download:** stream the file a node holds in a blob property ([#715](https://github.com/astrale-os/cli/issues/715)) ([45d17df](https://github.com/astrale-os/cli/commit/45d17df1ae8cc4606e664188b9ee7284def83224))
+
 ## [1.0.0-beta.150](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.149...cli/v1.0.0-beta.150) (2026-10-15)
 
 
