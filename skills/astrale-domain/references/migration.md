@@ -131,7 +131,9 @@ Maintenance requires Root as both principal and caller and closes the **whole In
 traffic. Root is the Instance's root identity: on an Instance you own, `astrale instance root import
 <slug>` saves it locally as `<slug>-root`, selected with `--as <slug>-root`. A Shell administrator or
 a business role is not Root. Record the identity, Instance, reason and effects of every Root use.
-Rehearse on a populated QA Instance; preserve a recovery plan for real data.
+Every other caller is refused `INSTANCE_MAINTENANCE`, a `BACKEND_UNAVAILABLE` (5001) with a retry
+delay (CLI exit 75 once its retries run out), and Root's writes are refused while `apply` validates:
+prepare the repair before entering, and warn the Instance's users.
 
 1. Retain the source revisions, exact target releases, representative node IDs/properties and Edge
    endpoints. Decide how to repair toward both target and source before entering maintenance.
@@ -168,13 +170,29 @@ astrale domain installation apply "$EXECUTION" -i "$INSTANCE" --as "$INSTANCE-ro
 astrale execution result "$EXECUTION" --wait -i "$INSTANCE" --as "$INSTANCE-root" --json
 ```
 
+The online refusal's report, or `detail.report.summary` in the session status after a refused
+`apply`, lists each failing rule: its Class, property, count and at most 20 offenders (`truncated`
+when more exist). Past them, read the Class as Root (`astrale query --class`) and select the
+offenders yourself. A repair is an ordinary Mutation (`astrale mutate --as "$INSTANCE-root"`;
+`--dry` checks its form, not the data) keyed by full Property keys; a rename sets the target key
+and unsets the source's, `node.delete` and `edge.delete` (`edge: { source, target, class }`) remove
+facts:
+
+```json
+{ "operations": [{ "op": "node.update", "node": "@task-42", "class": "tasks.example:class.Task",
+  "props": { "set": { "tasks.example:class.Task.property.title": "Draft" },
+             "unset": ["tasks.example:class.Task.property.name"] } }] }
+```
+
 `domain installation abort` stops the validation attempt the session runs toward its target and
 returns it to repair; it does not undo committed repair mutations, and an attempt back to the source
 cannot be aborted. `astrale execution cancel` attempts to validate
 and reactivate the source schema, so it can also require data repair. `astrale execution resume`
 resumes a paused Execution; it is not a command to reopen the Instance. A live session has no forced exit: it ends by `apply`,
-a cooperative `cancel` or its idle expiry; a forced cancel or a delete is refused
-`EXECUTION_EXIT_REFUSED`. Only the Host operator can release a stuck session.
+a cooperative `cancel` or, without a command by `detail.expires`, an attempt back to its source; a forced
+cancel or a delete is refused `EXECUTION_EXIT_REFUSED`. Only the Host operator can release a stuck
+session. After a completed `apply`, going back is a new maintenance session that installs the
+previous release and reverses the repair.
 
 The repair lifecycle does not invent a Domain `Migration` hook. Domain-owned Query/Mutation
 operations remain explicit authorized operations; external effects require their own Workflow.
@@ -192,7 +210,8 @@ For a change from the current revision to a candidate revision:
 1. retain the current origin/revision and representative data evidence;
 2. build and deploy the candidate, which installs nothing;
 3. verify the release its deployment serves, its Bundle, and its new revision;
-4. install it through the public CLI (`astrale domain install`) or Client APIs;
+4. install it through the public CLI (`astrale domain install`) or Client APIs; for a breaking
+   change, run the whole maintenance session on a populated QA Instance and time the closure;
 5. repeat the same intent and prove convergence;
 6. read existing data and invoke retained behavior;
 7. exercise the added behavior;
