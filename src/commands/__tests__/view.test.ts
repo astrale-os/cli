@@ -181,6 +181,47 @@ describe('view session resolution', () => {
     })
   })
 
+  test('opens an explicit ViewPath by every View name the Kernel admits, and only those', async () => {
+    const { resolveSession } = await import('../view')
+    for (const name of ['modelView', 'model_view']) {
+      const key = `${ORIGIN}:view.${name}`
+      bundleMock.mockImplementationOnce(async () => ({
+        domain: {
+          ...installedDomain.domain,
+          bindings: {
+            callables: [],
+            views: [{ view: key, href: `https://${ORIGIN}/ui/${name}`, handshake: 'none' }],
+          },
+        },
+        bundle: {
+          root: {
+            views: {
+              [name]: { ref: { origin: ORIGIN, kind: 'view', name }, target: { kind: 'domain' } },
+            },
+          },
+        },
+      }))
+
+      const result = await resolveSession(`/:${key}`, {})
+
+      expect(result.view).toEqual({
+        target: Path.domain(ORIGIN).raw,
+        route: expect.objectContaining({ key, href: `https://${ORIGIN}/ui/${name}` }),
+      })
+    }
+    expect(bundleMock).toHaveBeenCalledTimes(2)
+
+    // A name the Kernel refuses is refused before any Kernel call.
+    for (const name of ['model-view', '1model']) {
+      await expect(resolveSession(`/:${ORIGIN}:view.${name}`, {})).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringContaining('/:<origin>:view.<name>'),
+      })
+    }
+    expect(bundleMock).toHaveBeenCalledTimes(2)
+    expect(viewsForMock).not.toHaveBeenCalled()
+  })
+
   test('refuses a node path: Views belong to their Domain', async () => {
     const { resolveSession } = await import('../view')
 

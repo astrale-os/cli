@@ -1,7 +1,7 @@
 import type { ResolvedView as SessionResolvedView } from '@astrale-os/sdk/client/session'
 import type { ResolvedView } from '@astrale-os/shell'
 
-import { Path } from '@astrale-os/sdk/graph/path'
+import { Path, PathError } from '@astrale-os/sdk/graph/path'
 
 import type { ConnectionContext } from '../../connection'
 
@@ -21,25 +21,64 @@ import { AstraleError } from '../../errors'
  * bindings. A Domain is resolved through its per-Domain View catalog.
  */
 
-const VIEW_PATH_RE = /^\/:[^\s/:@]+:view\.[a-z][a-z0-9-]*$/
-const DOMAIN_RE = /^(?:\/:)?([a-z0-9][a-z0-9.-]*)$/i
-
 type ViewSpec = { kind: 'view'; path: string } | { kind: 'domain'; origin: string }
 
+/**
+ * Read a ViewPath, a Domain Path or a bare Domain origin with the Kernel's own Path
+ * parser, so a View name is admitted exactly when the Kernel admits it.
+ */
 export function parseViewSpec(spec: string): ViewSpec {
-  if (VIEW_PATH_RE.test(spec)) return { kind: 'view', path: spec }
-  const domain = DOMAIN_RE.exec(spec)
-  if (domain) return { kind: 'domain', origin: domain[1]! }
-  if (spec.startsWith('/') || spec.startsWith('@')) {
+  const bare = !spec.startsWith('/') && !spec.startsWith('@')
+  let path: Path
+  try {
+    path = Path.parse(bare ? `/:${spec}` : spec)
+  } catch (error) {
+    if (!(error instanceof PathError)) throw error
     throw new AstraleError(
       'INVALID_ARGUMENT',
-      `"${spec}" is a node path. Views belong to their Domain: pass its origin or a ViewPath (/:origin:view.slug), and let the View route to the node itself.`,
+      `"${spec}" is neither a ViewPath (/:<origin>:view.<name>) nor a Domain origin: ${error.message}`,
+    )
+  }
+  const { anchor, steps } = path.ast
+  if (anchor.kind === 'domain' && steps.length === 0) {
+    return { kind: 'domain', origin: anchor.origin }
+  }
+  const [step] = steps
+  if (
+    !bare &&
+    anchor.kind === 'domain' &&
+    steps.length === 1 &&
+    step?.kind === 'projection' &&
+    step.projection.kind === 'view'
+  ) {
+    return { kind: 'view', path: path.raw }
+  }
+  if (bare) {
+    throw new AstraleError(
+      'INVALID_ARGUMENT',
+      `"${spec}" is neither a ViewPath (/:<origin>:view.<name>) nor a Domain origin`,
     )
   }
   throw new AstraleError(
     'INVALID_ARGUMENT',
-    `"${spec}" is neither a ViewPath (/:origin:view.slug) nor a Domain origin`,
+    `"${spec}" is a node path. Views belong to their Domain: pass its origin or a ViewPath (/:<origin>:view.<name>), and let the View route to the node itself.`,
   )
+}
+
+/**
+ * The ViewPath `/:<origin>:view.<name>` of one View, built with the Kernel's Path grammar:
+ * an origin or View name the Kernel refuses never becomes a path.
+ */
+export function viewPathOf(origin: string, name: string): string {
+  try {
+    return Path.project({ origin, kind: 'view', name }).raw
+  } catch (error) {
+    if (!(error instanceof PathError)) throw error
+    throw new AstraleError(
+      'INVALID_ARGUMENT',
+      `/:${origin}:view.${name} is not a valid ViewPath: ${error.message}`,
+    )
+  }
 }
 
 /** What resolving a View needs of a connection: its Session and the Kernel it reaches. */

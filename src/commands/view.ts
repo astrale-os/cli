@@ -112,7 +112,7 @@ export async function resolveSession(
 ): Promise<{ view?: ResolvedView; candidates: ViewCandidate[] }> {
   const parsed = parseViewSpec(spec)
   if (parsed.kind === 'view' && opts.view) {
-    fatal(new Error('An explicit ViewPath cannot be combined with --view <slug>'))
+    fatal(new Error('An explicit ViewPath cannot be combined with --view <name>'))
   }
   const resolve = async (context: ViewResolutionContext): Promise<DomainViews> => {
     if (parsed.kind === 'view') {
@@ -185,7 +185,7 @@ async function chooseCandidate(
   }
   throw new AstraleError(
     'AMBIGUOUS_VIEW',
-    `${domain} publishes ${candidates.length} views and no entrypoint - pick one with --view <slug>: ${candidates.map(candidateSlug).join(', ')}`,
+    `${domain} publishes ${candidates.length} views and no entrypoint - pick one with --view <name>: ${candidates.map(candidateSlug).join(', ')}`,
   )
 }
 
@@ -577,13 +577,13 @@ export default {
   arguments: [
     {
       name: 'spec',
-      description: 'ViewPath (/:origin:view.slug) or Domain origin (origin or /:origin)',
+      description: 'ViewPath (/:<origin>:view.<name>) or Domain origin (<origin> or /:<origin>)',
       required: false,
     },
   ],
   options: [
     {
-      flags: '--view <slug>',
+      flags: '--view <name>',
       description: 'With a Domain origin: open this View instead of the Domain entrypoint',
     },
     { flags: '--list', description: "Print the Domain's views; do not open" },
@@ -619,7 +619,7 @@ export default {
   afterHelpText: `
 What it does:
   Renders ONE view - no GUI, no cookies, no WorkOS. Every View belongs to its
-  Domain: a Domain origin opens its entrypoint (or --view <slug>) from the
+  Domain: a Domain origin opens its entrypoint (or --view <name>) from the
   Domain's View catalog, and an explicit ViewPath resolves from authenticated
   installation introspection. A View that shows one node selects it through its
   own internal routing; there is no target node to pass.

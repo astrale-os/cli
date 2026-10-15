@@ -598,7 +598,7 @@ With `--json`, `--follow` emits NDJSON with one complete admitted record per lin
 ## Views And Browser Sessions
 
 `astrale view` opens one resolved View through a local browser shell. Every View belongs to its
-Domain: pass a Domain origin (opens its entrypoint, or `--view <slug>`) or an explicit ViewPath. A
+Domain: pass a Domain origin (opens its entrypoint, or `--view <name>`) or an explicit ViewPath. A
 View is never opened for a node; a View that shows one node routes to it itself.
 
 ```bash
