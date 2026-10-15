@@ -37,8 +37,9 @@ phased workflow below; an existing public scaffold already satisfies its foundat
 - Build or review browser views, mounted UI, View access, View resolution, or frontend design: read
   `references/views.md` and apply `astrale-frontend-design` for product-interface layout,
   interaction, and copy.
-- Plan or qualify an installed Schema revision, data transition, or backfill; follow an install;
-  repair data an install refuses; or uninstall a Domain with data: read `references/migration.md`.
+- Plan or qualify an installed Schema revision, data transition, or backfill; migrate a breaking
+  change (a Root maintenance session by default); follow an install; repair data an install refuses;
+  or uninstall a Domain with data: read `references/migration.md`.
 - Optimize graph access, reduce round trips, choose indexes/queries, or review call patterns for latency: read `references/performance.md`.
 - Author or update demo data — the Datasets under `tests/` the Studio draws and proves policies on:
   read `references/datasets.md`.

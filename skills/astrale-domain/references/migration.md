@@ -10,22 +10,32 @@ callable/Class keys remain stable. Reinstall through the public installation pat
 data remains valid.
 
 Adding syntax is not necessarily compatible with existing data: a new required property or an Edge
-with minimum cardinality `1` can invalidate existing nodes. Introduce an optional form, backfill,
-then install the tightened contract; a default in application code is not a persisted backfill.
+with minimum cardinality `1` can invalidate existing nodes. Such a change is breaking (below); a
+default in application code is not a persisted backfill.
 
-## Production changes: expand, migrate, contract
+## Breaking changes: a Root maintenance session by default
 
-For production data, prefer staged compatibility over an immediately breaking change:
+A change is breaking when existing data may not satisfy the target: a removed or renamed property,
+Class, Edge or origin; a new required property; a tightened bound, enum or cardinality. Installing
+the target never migrates stored data. Do not conceal the migration in Core data, Runtime
+initialization, a Provider, or an undocumented repair Action.
 
-1. Expand the Schema to accept both representations. Deploy readers that understand both and writers
-   that produce the new form; keep old-data reads working throughout the transition.
-2. Move every producer off the old form, including older deployments, jobs, imports, and clients.
-   Migrate existing data in bounded, restart-safe batches without overwriting concurrent updates.
-3. Verify no old representation remains and no active producer can recreate it. Only then tighten
-   the Schema and remove compatibility code; a rollback must not reintroduce an incompatible writer.
+Migrate a breaking change in a [maintenance repair session](#maintenance-repair-sessions), as the
+Instance's Root: install the target with `--mode maintenance`, repair the data with Root raw graph
+mutations, then apply the target. During the session Root writes in the union of the source and
+target vocabularies, without the state rules (required properties, cardinality, accepted endpoints)
+of either Schema; `apply` validates the repaired data against the target and activates it in one
+step. The Instance is closed to ordinary traffic meanwhile, so no application writes the old form
+during the repair, and no intermediate Schema revision is needed.
 
-For local iteration with disposable data, a direct change or deliberate reset may suffice. Do not
-impose a production rollout on every experiment, or treat production data as disposable.
+Rehearse the session on a populated QA Instance, then run it on the real Instance with a recovery
+plan. When the existing data may already satisfy a tightened rule, an online install proves it
+without closing the Instance; a refusal with `DATA_MIGRATION_REQUIRED` activates nothing, and the
+repair then goes through the maintenance session. Keep a
+[staged online transition](#staged-online-transition-expand-migrate-contract) for an Instance that
+cannot be closed for the repair, or for clients you do not control that still write the old form.
+For local iteration with disposable data, a direct change or deliberate reset may suffice; do not
+treat production data as disposable.
 
 ## Dependency compatibility and grouped activation
 
@@ -64,8 +74,9 @@ An online install (the default mode) keeps the Instance open: it validates while
 and only the activation briefly pauses writes. Data the target refuses ends the install `failed`
 with `DATA_MIGRATION_REQUIRED` (CLI exit 2) and activates nothing. Its message and report name each
 requirement (the operation, such as `populate-required` or `remove-facts`, its subject and the
-facts observed). Then either migrate the data online and install again, repair it in a maintenance
-session (below), or, for facts that should go, delete them. Do not treat this refusal as transient.
+facts observed). Repair the data in a maintenance session (below), or, for facts that should go,
+delete them; migrate it online and install again only when the Instance must stay open. Do not treat
+this refusal as transient.
 
 ## Following an install
 
@@ -79,28 +90,30 @@ An operation id names one request and its outcome is final. Reusing it replays o
 request, which the Kernel marks `replayed`; anything else under that id is refused as an operation
 conflict. Once a run ended `failed` or `cancelled`, request the change again with a fresh operation.
 
-## Breaking evolution
+## Staged online transition: expand, migrate, contract
 
-Removing or renaming a property, Class, Edge, Policy, callable, or origin does not migrate stored data.
-Treat it as an explicit compatibility and data-migration design. Do not conceal it in Core data,
-Runtime initialization, a Provider, or an undocumented repair Action.
+When the Instance must stay open during the transition, stage the change over compatible releases:
 
-An online install that removes a populated Class (Node or Edge) is refused with
-`DATA_MIGRATION_REQUIRED`. Resolve the incompatible data through a staged online transition or the
-explicit maintenance session below. Installing the target does not automatically migrate those rows.
+1. Expand the Schema to accept both representations. Deploy readers that understand both and writers
+   that produce the new form; keep old-data reads working throughout the transition.
+2. Move every producer off the old form, including older deployments, jobs, imports, and clients.
+   Migrate existing data in bounded, restart-safe batches without overwriting concurrent updates.
+3. Verify no old representation remains and no active producer can recreate it. Only then tighten
+   the Schema and remove compatibility code; a rollback must not reintroduce an incompatible writer.
 
-For an online staged transition, deleting the only required Edge first violates the currently installed cardinality; removing its
-Class first leaves data in a retired Class. To remove a `1` relationship while retaining its nodes:
+Online, every write is checked against the active Schema. Deleting the only required Edge first
+violates the installed cardinality; removing its Class first leaves data in a retired Class. To
+remove a `1` relationship while retaining its nodes:
 
 1. publish and install an intermediate Schema revision that loosens the endpoint cardinality from
    `1` to optional (`0..1`);
 2. delete every existing instance of the Edge Class; and
 3. publish and install the final Schema revision that removes the Edge Class.
 
-Qualify each installed revision before proceeding to the next stage. Do not treat
-`DATA_MIGRATION_REQUIRED` as a transient failure. Update dependent Domains when the structural
-compatibility check requires it. Deploying the final revision does not make an intermediate data
-cleanup legal under the currently active schema.
+Qualify each installed revision before proceeding to the next stage. Update dependent Domains when
+the structural compatibility check requires it. Deploying the final revision does not make an
+intermediate data cleanup legal under the currently active schema. In a maintenance session the same
+change is one target: install the final revision, delete the Edges, apply.
 
 ## Uninstalling a Domain with data
 
@@ -115,9 +128,10 @@ surviving dependents block the uninstall. A refused uninstall deleted nothing.
 ## Maintenance repair sessions
 
 Maintenance requires Root as both principal and caller and closes the **whole Instance** to ordinary
-traffic. A Shell administrator or a business role is not automatically Root. Record the identity,
-Instance, reason and effects of every Root use. Use a separate populated QA Instance for deliberate
-breaking experiments; preserve a recovery plan for real data.
+traffic. Root is the Instance's root identity: on an Instance you own, `astrale instance root import
+<slug>` saves it locally as `<slug>-root`, selected with `--as <slug>-root`. A Shell administrator or
+a business role is not Root. Record the identity, Instance, reason and effects of every Root use.
+Rehearse on a populated QA Instance; preserve a recovery plan for real data.
 
 1. Retain the source revisions, exact target releases, representative node IDs/properties and Edge
    endpoints. Decide how to repair toward both target and source before entering maintenance.
@@ -127,8 +141,10 @@ breaking experiments; preserve a recovery plan for real data.
 3. After `--no-wait`, read its status until `detail.phase` is `awaiting`; stop and inspect a
    terminal failure or cancellation instead of waiting indefinitely. A maintenance request with no schema change is
    refused with `SCHEMA_INPUT_INVALID`. Repair data with Root raw graph mutations using the
-   session's source/target vocabulary; application Actions remain closed even to Root. Record
-   each committed batch; several mutations are not one atomic migration.
+   session's source/target vocabulary; the state rules of neither Schema apply until `apply`
+   validates, so a rename is a copy into the target's key followed by a delete of the source's.
+   Application Actions remain closed even to Root. Record each committed batch; several mutations
+   are not one atomic migration.
 4. Send `domain installation apply`. It reads the command the session awaits (`detail.command`)
    and sends exactly that one; while the session drains or attempts it sends nothing and is refused
    `SESSION_NOT_AWAITING`. `apply` validates, activates the target and reopens the Instance on
@@ -142,13 +158,14 @@ breaking experiments; preserve a recovery plan for real data.
    evidence that the migration finished.
 
 ```sh
-astrale domain install "$TARGET_URL" -i qa-migration --as qa-root \
+astrale instance root import "$INSTANCE" --yes
+astrale domain install "$TARGET_URL" -i "$INSTANCE" --as "$INSTANCE-root" \
   --operation "$OPERATION" --mode maintenance --no-wait --json
-astrale execution status "$EXECUTION" -i qa-migration --as qa-root --json
-# Apply deliberate repair mutations, then apply the target at the command the session awaits.
-astrale domain installation apply "$EXECUTION" -i qa-migration --as qa-root \
+astrale execution status "$EXECUTION" -i "$INSTANCE" --as "$INSTANCE-root" --json
+# Apply the repair mutations, then apply the target at the command the session awaits.
+astrale domain installation apply "$EXECUTION" -i "$INSTANCE" --as "$INSTANCE-root" \
   --validation-scope full --validation-counts exact --json
-astrale execution result "$EXECUTION" --wait -i qa-migration --as qa-root --json
+astrale execution result "$EXECUTION" --wait -i "$INSTANCE" --as "$INSTANCE-root" --json
 ```
 
 `domain installation abort` stops the validation attempt the session runs toward its target and
