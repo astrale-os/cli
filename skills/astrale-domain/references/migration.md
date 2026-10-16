@@ -68,7 +68,7 @@ stored data:
 | --- | --- |
 | `noop` | Nothing changes; reinstalling the same release ends here. |
 | `immediate` | Applied at once without reading the data: an optional property, a new Class or Edge, a widened enum, a removed callable. |
-| `revalidate` | The existing data is validated against the new rules before the activation: a tightened bound, a new required property, a stricter cardinality. Incremental by default; `--validation-scope full` re-reads everything and `--validation-counts exact` counts every offender. |
+| `revalidate` | The existing data is validated against the new rules before the activation: a tightened bound, a new required property, a stricter cardinality. Incremental by default; `--validation-scope full` re-reads everything and `--validation-counts exact` counts every offender (small Classes only, see `apply` below). |
 
 An online install (the default mode) keeps the Instance open: it validates while applications write,
 and only the activation briefly pauses writes. Data the target refuses ends the install `failed`
@@ -115,6 +115,15 @@ the structural compatibility check requires it. Deploying the final revision doe
 intermediate data cleanup legal under the currently active schema. In a maintenance session the same
 change is one target: install the final revision, delete the Edges, apply.
 
+Changing the Class of existing nodes online (renaming, merging or splitting a Class) means creating
+new nodes and deleting the old ones, and a delete can remove other Domains' data. An Edge Class
+whose endpoint accepts a Class its own Domain does not own detaches at that endpoint, unless one of
+its endpoints declares a minimum of `1`. So deleting your node also deletes the optional Edges that
+dependent Domains hold toward it. The Mutation result does not report them, and your Domain cannot
+query their Edge Classes to move them first. Agree such a change with every dependent Domain before
+recreating nodes. In a maintenance session the same delete is refused with
+`MUTATION_POST_STATE_INVALID`.
+
 ## Uninstalling a Domain with data
 
 `astrale domain uninstall` removes the selected Domains in one activation. Safe mode, the default,
@@ -150,8 +159,11 @@ prepare the repair before entering, and warn the Instance's users.
 4. Send `domain installation apply`. It reads the command the session awaits (`detail.command`)
    and sends exactly that one; while the session drains or attempts it sends nothing and is refused
    `SESSION_NOT_AWAITING`. `apply` validates, activates the target and reopens the Instance on
-   success; it is not a dry-run validation. `--validation-scope full --validation-counts exact` requests broader validation and
-   failure counts when needed. An accepted signal only acknowledges the command.
+   success; it is not a dry-run validation. `--validation-scope full` revalidates every retained
+   fact. Keep the default sampled counts: with `--validation-counts exact`, a value rule (an enum,
+   a length, a type) that rejects thousands of distinct values can keep the attempt from reaching a
+   verdict, with the Instance still closed. The report's offenders and a Root Query locate the rest
+   (below). An accepted signal only acknowledges the command.
 5. Observe status/result. A refused validation leaves its report and returns the same session to
    repair; fix the reported data and apply again. Reconnect to the same
    Execution after a client restart rather than starting another install.
@@ -166,7 +178,7 @@ astrale domain install "$TARGET_URL" -i "$INSTANCE" --as "$INSTANCE-root" \
 astrale execution status "$EXECUTION" -i "$INSTANCE" --as "$INSTANCE-root" --json
 # Apply the repair mutations, then apply the target at the command the session awaits.
 astrale domain installation apply "$EXECUTION" -i "$INSTANCE" --as "$INSTANCE-root" \
-  --validation-scope full --validation-counts exact --json
+  --validation-scope full --json
 astrale execution result "$EXECUTION" --wait -i "$INSTANCE" --as "$INSTANCE-root" --json
 ```
 
@@ -184,9 +196,9 @@ facts:
              "unset": ["tasks.example:class.Task.property.name"] } }] }
 ```
 
-`domain installation abort` stops the validation attempt the session runs toward its target and
-returns it to repair; it does not undo committed repair mutations, and an attempt back to the source
-cannot be aborted. `astrale execution cancel` attempts to validate
+A maintenance session has no rollback: neither `abort` nor `cancel` undoes committed repair
+mutations. `domain installation abort` stops the validation attempt the session runs toward its
+target and returns it to repair, and an attempt back to the source cannot be aborted. `astrale execution cancel` attempts to validate
 and reactivate the source schema, so it can also require data repair. `astrale execution resume`
 resumes a paused Execution; it is not a command to reopen the Instance. A live session has no forced exit: it ends by `apply`,
 a cooperative `cancel` or, without a command by `detail.expires`, an attempt back to its source; a forced
