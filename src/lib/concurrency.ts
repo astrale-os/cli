@@ -7,7 +7,8 @@
 /**
  * Run `fn` over `items` with at most `limit` in flight at once. Results
  * are returned in input order regardless of completion order. The first
- * rejection rejects the returned promise (in-flight work still settles).
+ * rejection rejects the returned promise and starts no further item;
+ * in-flight work still settles.
  */
 export async function mapBounded<T, R>(
   items: readonly T[],
@@ -17,12 +18,18 @@ export async function mapBounded<T, R>(
   const results: R[] = []
   const bound = Math.max(1, Math.min(limit, items.length))
   let next = 0
+  let failed = false
 
   async function worker(): Promise<void> {
-    while (true) {
+    while (!failed) {
       const i = next++
       if (i >= items.length) return
-      results[i] = await fn(items[i] as T, i)
+      try {
+        results[i] = await fn(items[i] as T, i)
+      } catch (error) {
+        failed = true
+        throw error
+      }
     }
   }
 
