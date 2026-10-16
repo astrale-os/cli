@@ -52,4 +52,17 @@ describe('issuer reachability', () => {
       code: 'ISSUER_UNREACHABLE',
     })
   })
+
+  test('reports a JWKS document without a keys array as an unreachable issuer', async () => {
+    for (const jwks of [{}, null, { keys: 'bootstrap' }]) {
+      const fetch = async (input: RequestInfo | URL): Promise<Response> =>
+        String(input).endsWith('/.well-known/openid-configuration')
+          ? Response.json({ issuer: ISSUER, jwks_uri: `${ISSUER}/.well-known/jwks.json` })
+          : Response.json(jwks)
+
+      await expect(checkIssuerReachability(INVOCATION, ISSUER, fetch)).rejects.toMatchObject({
+        code: 'ISSUER_UNREACHABLE',
+      })
+    }
+  })
 })
