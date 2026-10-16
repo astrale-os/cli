@@ -30,7 +30,7 @@ export async function createIdentity(
 ): Promise<Identity> {
   validateName(name, 'Identity')
   return updateIdentityStore(async (store) => {
-    if (store.identities[name]) throw new Error(`Identity "${name}" already exists`)
+    if (Object.hasOwn(store.identities, name)) throw new Error(`Identity "${name}" already exists`)
 
     const subject = options.subject ?? name
     const generated = await persistKeypair(subject, { kid: options.kid })
@@ -42,7 +42,7 @@ export async function createIdentity(
       kid: generated.kid,
       issuer: options.issuer,
     }
-    const hasDefault = store.default !== '' && store.identities[store.default] !== undefined
+    const hasDefault = store.default !== '' && Object.hasOwn(store.identities, store.default)
     return {
       next: {
         default: hasDefault ? store.default : name,
@@ -55,7 +55,7 @@ export async function createIdentity(
 
 export async function deleteIdentity(name: string): Promise<void> {
   await updateIdentityStore(async (store) => {
-    const entry = store.identities[name]
+    const entry = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
     if (!entry) throw new Error(`Identity "${name}" not found`)
     if (store.default === name) {
       throw new Error(
@@ -81,14 +81,14 @@ function hasAnotherKeyIdentity(store: IdentityStore, name: string, subject: stri
 
 export async function setDefault(name: string): Promise<void> {
   await updateIdentityStore((store) => {
-    if (!store.identities[name]) throw new Error(`Identity "${name}" not found`)
+    if (!Object.hasOwn(store.identities, name)) throw new Error(`Identity "${name}" not found`)
     return { next: { ...store, default: name }, value: undefined }
   })
 }
 
 export async function getDefault(): Promise<Identity & { readonly name: string }> {
   const store = await readIdentities()
-  if (store.default === '' || store.identities[store.default] === undefined) {
+  if (store.default === '' || !Object.hasOwn(store.identities, store.default)) {
     throw new AstraleError(
       'NO_IDENTITY',
       'No default identity.',
@@ -101,7 +101,7 @@ export async function getDefault(): Promise<Identity & { readonly name: string }
 
 export async function getIdentity(name: string): Promise<Identity> {
   const store = await readIdentities()
-  const identity = store.identities[name]
+  const identity = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
   if (!identity) {
     throw new AstraleError(
       'NO_IDENTITY',
@@ -126,7 +126,7 @@ export async function upsertIdpIdentity(
   validateName(name, 'Identity')
   validateName(options.idp, 'IdP')
   return updateIdentityStore((store) => {
-    const existing = store.identities[name]
+    const existing = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
     if (existing && existing.source !== 'idp') {
       throw new Error(`Identity "${name}" already exists and is key-backed`)
     }
@@ -157,7 +157,7 @@ export async function setRegistration(
   registration: Registration,
 ): Promise<void> {
   await updateIdentityStore((store) => {
-    const entry = store.identities[name]
+    const entry = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
     if (!entry) throw new Error(`Identity "${name}" not found`)
     const identity: Identity = {
       ...entry,
@@ -172,7 +172,7 @@ export async function setRegistration(
 
 export async function setIdentityMode(name: string, mode: IdentityMode): Promise<void> {
   await updateIdentityStore((store) => {
-    const entry = store.identities[name]
+    const entry = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
     if (!entry) throw new Error(`Identity "${name}" not found`)
     const identity: Identity = { ...entry, mode }
     return {

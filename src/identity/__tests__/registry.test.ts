@@ -63,4 +63,28 @@ describe('identity registry journey', () => {
     expect(persisted.version).toBe(1)
     expect(stdout).not.toContain('"d":')
   })
+
+  test('treats Object.prototype member names as ordinary identity names', async () => {
+    const child = Bun.spawn(
+      [process.execPath, join(import.meta.dir, 'fixtures', 'prototype-names.ts')],
+      {
+        env: { ...process.env, ASTRALE_HOME: root },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect(exitCode, stderr).toBe(0)
+
+    const result = JSON.parse(stdout)
+    for (const message of Object.values(result.missing)) {
+      expect(message).toContain('Identity "toString" not found')
+    }
+    expect(result.default).toBe('constructor')
+    expect(result.names).toEqual(['constructor', 'hasOwnProperty', 'valueOf'])
+  })
 })
