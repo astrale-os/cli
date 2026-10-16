@@ -1,7 +1,7 @@
 /**
  * Minimal bounded-concurrency map. No external dependency (the repo
  * hand-rolls with `Promise.all`); a tiny worker pool is enough for the
- * `domain dev up` fan-out.
+ * read fan-outs of Fleet discovery, `domain list` and the install pre-check.
  */
 
 /**

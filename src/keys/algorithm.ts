@@ -19,7 +19,7 @@ export function inferAlg(privateJwk: Record<string, unknown>, keyPath?: string):
   throw new AstraleError(
     'INVALID_KEY_FILE',
     `JWK${where} is missing both \`alg\` and a recognizable \`(kty, crv)\` pair — cannot pick a signing algorithm.`,
-    'Re-stamp the file with `"alg": "ES256"` (P-256 EC keys) or `"alg": "EdDSA"` (Ed25519 OKP keys), or regenerate via `astrale domain init` / `astrale identity create`.',
+    'Re-stamp the file with `"alg": "ES256"` (P-256 EC keys) or `"alg": "EdDSA"` (Ed25519 OKP keys), or regenerate via `astrale identity create`.',
   )
 }
 

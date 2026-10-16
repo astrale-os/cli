@@ -201,9 +201,9 @@ Main command groups:
 
 | Group | What it covers |
 |-------|----------------|
-| Kernel | `get`, `call`, `execution`, `query`, `introspect`, `logs`, `view`, `token` |
+| Kernel | `get`, `download`, `mutate`, `call`, `execution`, `query`, `introspect`, `logs`, `view`, `token` |
 | Context | `status`, `whoami`, `use` |
-| Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
+| Management | `admin`, `instance`, `domain`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
 
 `astrale view <origin>` opens a Domain's entrypoint View (`--view <name>` picks
@@ -432,7 +432,8 @@ Creating a Fleet requires central Shell administrator authority. Admin keeps one
 this way. Provision a new Fleet's own Host capacity (`Fleet.provisionHost`) before creating
 Instances. Host capacity is never borrowed from another Fleet.
 
-An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation These commands have no `--fleet` option. Domain URL installs authenticate directly to the selected
+An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation and
+Domain installation. These commands have no `--fleet` option. Domain URL installs authenticate directly to the selected
 Instance; version installs resolve their deployment in the Admin registry first. Keep the same `--operation` value when retrying creation.
 Fleet membership does not transfer personal Instance ownership.
 
