@@ -27,6 +27,8 @@ test.each([
   ['stage', 'instance', 'staging'],
   ['prod', 'ambiguous', 'prod'],
   ['missing', 'missing', 'missing'],
+  ['constructor', 'missing', 'constructor'],
+  ['toString', 'missing', 'toString'],
 ] as const)('resolveUseTarget(%p) is %s %p', (input, kind, name) => {
   expect(resolveUseTarget(input, instances, identities)).toEqual({ kind, name })
 })

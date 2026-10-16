@@ -230,7 +230,7 @@ export function assertNoCollision(
 }
 
 export function resolveInstanceKey(store: InstanceStore, identifier: string): string | null {
-  if (store.instances[identifier]) return identifier
+  if (Object.hasOwn(store.instances, identifier)) return identifier
   for (const [key, entry] of Object.entries(store.instances)) {
     if (entry.slug === identifier || entry.name === identifier) return key
   }
@@ -410,7 +410,7 @@ function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {
 
 export async function removeInstance(key: string): Promise<void> {
   const removed = await mutateInstances((store) => {
-    if (!store.instances[key]) throw new Error(`Instance "${key}" not found`)
+    if (!Object.hasOwn(store.instances, key)) throw new Error(`Instance "${key}" not found`)
     return deleteBookmark(store, key)
   })
   await forgetKernel(removed.issuer ?? removed.url!)

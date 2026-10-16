@@ -39,6 +39,9 @@ describe('bookmark names', () => {
     expect(resolveInstanceKey(store, 'stage')).toBe('staging')
     expect(resolveInstanceKey(store, 'Staging Cluster')).toBe('staging')
     expect(resolveInstanceKey(store, 'nope')).toBeNull()
+    // Inherited Object.prototype members are not bookmarks.
+    for (const inherited of ['constructor', 'toString', '__proto__'])
+      expect(resolveInstanceKey(store, inherited)).toBeNull()
     for (const taken of ['staging', 'localdev', 'Staging Cluster']) {
       expect(() => assertNoCollision(store, [taken])).toThrow(IdentifierCollisionError)
     }

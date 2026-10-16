@@ -26,7 +26,7 @@ export function resolveUseTarget(
   instances: InstanceStore,
   identities: IdentityStore,
 ): UseTarget {
-  const identityExists = !!identities.identities[name]
+  const identityExists = Object.hasOwn(identities.identities, name)
   const instanceKey = resolveInstanceKey(instances, name)
 
   if (identityExists && instanceKey) return { kind: 'ambiguous', name }
