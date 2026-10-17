@@ -27,3 +27,17 @@ test('mapBounded handles empty input, clamps a bound below 1, and propagates a r
     }),
   ).rejects.toThrow('boom')
 })
+
+test('mapBounded starts no new item after a rejection', async () => {
+  const started: number[] = []
+  await expect(
+    mapBounded([1, 2, 3, 4, 5, 6], 2, async (n) => {
+      started.push(n)
+      await tick(5)
+      if (n === 1) throw new Error('boom')
+      return n
+    }),
+  ).rejects.toThrow('boom')
+  await tick(50)
+  expect(started).toEqual([1, 2])
+})

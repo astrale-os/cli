@@ -50,7 +50,9 @@ async function fetchJwks(
   try {
     const r = await fetchImpl(jwksUri, { signal: AbortSignal.timeout(timeoutMs) })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    return (await r.json()) as { keys: JWK[] }
+    const body = (await r.json()) as { keys?: unknown } | null
+    if (!Array.isArray(body?.keys)) throw new Error('JWKS missing "keys"')
+    return { keys: body.keys as JWK[] }
   } catch (e) {
     throw new IssuerUnreachableError(jwksUri, (e as Error).message)
   }
