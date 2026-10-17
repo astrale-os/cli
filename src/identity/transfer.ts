@@ -123,7 +123,7 @@ export async function exportIdentity(
   options: IdentityFileOptions = {},
 ): Promise<IdentityExport> {
   const store = await readIdentityStore(options.state)
-  const identity = store.identities[name]
+  const identity = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
   if (!identity)
     throw new Error(`Identity "${name}" not found. Run: astrale identity create ${name}`)
   if (identity.source === 'idp') {
@@ -150,7 +150,7 @@ export async function importIdentity(
   if (options.issuer !== undefined) validateUrl(options.issuer)
 
   const imported = await updateIdentityStore(async (store) => {
-    const existing = store.identities[name]
+    const existing = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
     if (existing && !options.replace) throw new Error(`Identity "${name}" already exists`)
     const issuer = options.issuer ?? envelope.issuer
     if (
