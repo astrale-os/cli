@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-beta.152](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.151...cli/v1.0.0-beta.152) (2026-10-18)
+
+
+### Bug Fixes
+
+* **deps:** run on SDK 0.6.0-beta.37 ([#722](https://github.com/astrale-os/cli/issues/722)) ([9fedb86](https://github.com/astrale-os/cli/commit/9fedb869c347ace4c50cb2a54b0e2f8fc045752f))
+* ignore inherited Object.prototype keys when resolving identity names ([#720](https://github.com/astrale-os/cli/issues/720)) ([e1cbca3](https://github.com/astrale-os/cli/commit/e1cbca38a9fc738e1285dcef8914d6c1809e4395))
+* **lib:** validate JWKS shape and stop mapBounded after the first rejection ([#719](https://github.com/astrale-os/cli/issues/719)) ([bc6f692](https://github.com/astrale-os/cli/commit/bc6f692c2cfb8c1514a569be1f61589e94bfd1e2))
+
 ## [1.0.0-beta.151](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.150...cli/v1.0.0-beta.151) (2026-10-15)
 
 
