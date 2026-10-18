@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.153](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.152...cli/v1.0.0-beta.153) (2026-10-18)
+
+
+### Bug Fixes
+
+* **deps:** run on SDK 0.6.0-beta.38 ([#724](https://github.com/astrale-os/cli/issues/724)) ([5d48011](https://github.com/astrale-os/cli/commit/5d480114b40a83fe792064f28bc18e3b057f6c9b))
+
 ## [1.0.0-beta.152](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.151...cli/v1.0.0-beta.152) (2026-10-18)
 
 
