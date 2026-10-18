@@ -39,6 +39,7 @@ const rename = method({
 
 const Named = nodeClass({
   icon: classIcon.neutral,
+  inheritance: 'open',
   policies: { read: true },
   properties: { title: string },
 })
@@ -55,7 +56,8 @@ const Document = nodeClass({
   methods: { rename },
 })
 const links = edgeClass.directed({
-  source: { as: 'source', accepts: [Document], outgoing: '1' },
+  // `target` holds Nodes of another Domain, so `source` is optional: it detaches when they go.
+  source: { as: 'source', accepts: [Document], outgoing: '0..1' },
   target: { as: 'target', accepts: [Named], incoming: '0..*' },
   policies: { read: true },
 })
@@ -132,7 +134,7 @@ describe('canonical Schema projection', () => {
         name: 'source',
         types: ['Document'],
         refs: [documentRef],
-        cardinality: { min: 1, max: 1 },
+        cardinality: { min: 0, max: 1 },
       },
       {
         name: 'target',
