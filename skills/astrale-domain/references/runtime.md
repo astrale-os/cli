@@ -15,8 +15,9 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   focused error, value, and StateMachine facades may supply runtime-safe values.
 - An Action reads what it needs and performs at most one effect: a Mutation, or a state-changing
   Integration, dependency, or Kernel call. Queries and read-only calls are observations, not effects.
-  A Workflow coordinates two or more effects that cannot commit together, each operation in a stable
-  `step.run`; pure Rules need neither steps nor dependency injection.
+  A Workflow coordinates two or more effects that cannot commit together, each effect in its own
+  stable `step.run`. A step may make several reads; the reads an effect depends on go in an earlier
+  step. Pure Rules need neither steps nor dependency injection.
 - The inline Workflow runner is not durable replay, retry, compensation, or exactly-once execution.
   Steps need portable results; do not return Clients, responses, or other live capabilities between steps.
 
