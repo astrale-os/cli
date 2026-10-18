@@ -52,8 +52,8 @@ const INVOCATION = {
 
 const icon = classIcon.neutral
 const policies = { read: true } as const
-const Member = nodeClass({ icon, policies })
-const Badge = nodeClass({ icon, policies })
+const Member = nodeClass({ icon, inheritance: 'open', policies })
+const Badge = nodeClass({ icon, inheritance: 'open', policies })
 /** Shell R1 declares Member; R2 drops it for Badge (breaking); R1b adds Badge beside it. */
 const ShellR1 = defineSchema(SHELL, { name: 'Test Domain', classes: { Member } })
 const ShellR2 = defineSchema(SHELL, { name: 'Test Domain', classes: { Badge } })
@@ -62,7 +62,7 @@ const ShellR1b = defineSchema(SHELL, { name: 'Test Domain', classes: { Member, B
 const CrmR1 = defineSchema(CRM, {
   name: 'Test Domain',
   dependencies: { shell: ShellR1 },
-  classes: { Profile: nodeClass({ extends: [Member], icon, policies }) },
+  classes: { Profile: nodeClass({ extends: [Member], icon, inheritance: 'open', policies }) },
 })
 const CrmR2 = defineSchema(CRM, {
   name: 'Test Domain',
