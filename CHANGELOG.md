@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.154](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.153...cli/v1.0.0-beta.154) (2026-10-19)
+
+
+### Bug Fixes
+
+* **identity:** carry Kernel registrations in identity exports ([#726](https://github.com/astrale-os/cli/issues/726)) ([71cf247](https://github.com/astrale-os/cli/commit/71cf2471896833a3f9ce2c160b9547ee84149bbd))
+
 ## [1.0.0-beta.153](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.152...cli/v1.0.0-beta.153) (2026-10-18)
 
 
