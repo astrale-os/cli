@@ -6,13 +6,13 @@ import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../
 import { readPassphrase } from '../../lib/terminal/prompt'
 
 /**
- * Export the per-identity keypair as a plaintext JWK envelope by default.
- * With `--encrypt`, wrap it in a JOSE JWE (PBES2-HS256+A128KW / A256GCM)
- * using a passphrase prompted from the TTY.
+ * Export the per-identity keypair and its Kernel registrations as a plaintext V2 envelope by
+ * default. With `--encrypt`, wrap it in a JOSE JWE (PBES2-HS256+A128KW / A256GCM) using a
+ * passphrase prompted from the TTY.
  */
 export default {
   name: 'export',
-  description: 'Export an identity keypair to disk (optional --encrypt)',
+  description: 'Export an identity keypair and its registrations to disk (optional --encrypt)',
   arguments: [
     { name: 'name', description: 'Identity name', required: true },
     { name: 'path', description: 'Output file path', required: true },

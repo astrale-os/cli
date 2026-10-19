@@ -81,20 +81,27 @@ astrale instance use staging
 ```
 
 Local `identities.json` and `instances.json` registries require `version: 1`; portable identity
-imports likewise require the V1 export envelope. A registry written by an earlier release without
+imports require a versioned export envelope (V1 or V2). A registry written by an earlier release without
 `version` is upgraded automatically on the next command, which keeps its exact prior bytes beside
 it as `<file>.v0.bak`. If the CLI still reports an unsupported registry, rename that specific file
 in `ASTRALE_HOME` (by default `~/.astrale`) to retain its bytes, keeping the `keys` directory
 unchanged. Then run `astrale auth login` and select an Instance with `astrale instance use
 <name>`, or bookmark its new URL. Login
 validates the identity registry before requesting a token or writing a session. Existing keys can
-still be imported using a V1 identity export; do not discard them to reset local bookmarks.
+still be imported using an identity export; do not discard them to reset local bookmarks.
 
 Local key registrations are scoped to the Kernel issuer, not a bookmark name or transport URL.
 Aliases for the same issuer share a registration; different issuers remain isolated. Registrations
 retained under old bookmark keys must be re-recorded with `astrale identity register <name>
 --node @existing-user -i <instance>` using an authorized caller. This reuses the existing identity
 and keypair; do not create a replacement User or key. No alias-based credential fallback is used.
+
+`astrale identity export` writes the V2 envelope, which carries these registrations, so `astrale
+identity import` in another `ASTRALE_HOME` restores an identity that signs in wherever the original
+was registered. A V1 envelope, from an earlier release or a Host bootstrap root, imports with no
+registrations. A key identity with no registration for the target Kernel and no issuer of its own
+is refused locally with the name of that Kernel: register it there, or import a V2 export of it
+from the home where it is registered.
 
 ## Agent Browser
 

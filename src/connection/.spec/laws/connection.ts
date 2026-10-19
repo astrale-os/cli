@@ -131,11 +131,15 @@ export const CLI_CONNECTION_ISSUER_DISCOVERY = defineLaw({
 export const CLI_AUTH_REGISTRATION_TARGET = defineLaw({
   id: 'CLI-AUTH-REGISTRATION-TARGET',
   statement:
-    'Key identity registration lookup uses the same target key for bookmark, managed, Admin, and direct URL calls that identity registration stores, and signs the registered (issuer, subject).',
+    'Key identity registration lookup uses the same target key for bookmark, managed, Admin, and direct URL calls that identity registration stores, and signs the registered (issuer, subject). A key identity with no registration for the target and no issuer of its own, under the unconfigured CLI issuer, is refused before any request with an error naming the identity and the target Kernel.',
   tests: [
     {
       file: '__tests__/credential.test.ts',
       id: 'TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-REFUSES-UNREGISTERED-KEY-IDENTITY',
     },
   ],
 })

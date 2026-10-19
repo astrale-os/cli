@@ -11,11 +11,16 @@ import {
   type Identity,
   type IdentityMode,
   type IdentityStoreOptions,
+  type Registration,
 } from '../state/index'
 
-const IDENTITY_EXPORT_VERSION = 1 as const
+/** The version export writes. Import also admits V1, which carries no Kernel registrations. */
+const IDENTITY_EXPORT_VERSION = 2 as const
 const JwkSchema = z.record(z.string(), z.unknown())
-const IdentityExportFields = {
+const RegistrationSchema = z
+  .object({ iss: z.string().min(1), sub: z.string().min(1), registeredAt: z.string().min(1) })
+  .strict()
+const KeyIdentityFields = {
   subject: z.string().min(1),
   mode: z.enum(['local', 'remote']).optional(),
   kid: z.string().min(1).optional(),
@@ -23,21 +28,35 @@ const IdentityExportFields = {
   privateJwk: JwkSchema,
   publicJwk: JwkSchema,
 }
-const IdentityExportV1Schema = z
-  .object({ version: z.literal(IDENTITY_EXPORT_VERSION), ...IdentityExportFields })
+/** A key identity without its registrations: earlier exports and Host bootstrap roots. */
+const IdentityExportV1Schema = z.object({ version: z.literal(1), ...KeyIdentityFields }).strict()
+/** A key identity with every Kernel registration it holds, keyed by that Kernel's issuer. */
+const IdentityExportV2Schema = z
+  .object({
+    version: z.literal(IDENTITY_EXPORT_VERSION),
+    ...KeyIdentityFields,
+    registrations: z.record(z.string().min(1), RegistrationSchema),
+  })
   .strict()
+const IdentityExportSchema = z.discriminatedUnion('version', [
+  IdentityExportV1Schema,
+  IdentityExportV2Schema,
+])
 
 export interface IdentityFileOptions {
   readonly state?: IdentityStoreOptions
   readonly keysDir?: string
 }
 
+/** The admitted envelope: V2, or a V1 envelope read as V2 with no registrations. */
 export interface IdentityExport {
-  readonly version: 1
+  readonly version: 2
   readonly subject: string
   readonly mode: IdentityMode
   readonly kid?: string
   readonly issuer?: string
+  /** The `(iss, sub)` each Kernel registered for this key, keyed by that Kernel's issuer. */
+  readonly registrations: Readonly<Record<string, Registration>>
   readonly privateJwk: JWK
   readonly publicJwk: JWK
 }
@@ -81,9 +100,9 @@ export async function decodeIdentityExport(
     throw invalidExport('The identity export is not valid JSON.')
   }
 
-  let decoded: z.infer<typeof IdentityExportV1Schema>
+  let decoded: z.infer<typeof IdentityExportSchema>
   try {
-    decoded = IdentityExportV1Schema.parse(input)
+    decoded = IdentityExportSchema.parse(input)
   } catch {
     throw invalidExport('The identity export has an invalid or unsupported shape.')
   }
@@ -102,6 +121,7 @@ export async function decodeIdentityExport(
     mode: decoded.mode ?? 'local',
     kid: decoded.kid ?? pair.kid,
     issuer: decoded.issuer,
+    registrations: decoded.version === 1 ? {} : decoded.registrations,
     privateJwk: pair.privateJwk,
     publicJwk: pair.publicJwk,
   }
@@ -130,15 +150,21 @@ export async function exportIdentity(
     throw new Error(`Identity "${name}" is IdP-backed and has no transferable local keypair`)
   }
   const pair = await readKeypair(identity.subject, options.keysDir)
-  return {
+  const envelope: IdentityExport = {
     version: IDENTITY_EXPORT_VERSION,
     subject: identity.subject,
     mode: identity.mode ?? 'local',
     kid: identity.kid ?? pair.kid,
     issuer: identity.issuer,
+    registrations: identity.registrations ?? {},
     privateJwk: pair.privateJwk,
     publicJwk: pair.publicJwk,
   }
+  // Export writes only what import admits, so a written export always restores this identity.
+  if (!IdentityExportV2Schema.safeParse(envelope).success) {
+    throw invalidExport(`Identity "${name}" has registry metadata that an export cannot carry.`)
+  }
+  return envelope
 }
 
 export async function importIdentity(
@@ -176,6 +202,10 @@ export async function importIdentity(
       mode: envelope.mode,
       kid: envelope.kid ?? pair.kid,
       issuer,
+      registrations:
+        Object.keys(envelope.registrations).length === 0
+          ? undefined
+          : { ...envelope.registrations },
     }
     return {
       next: { ...store, identities: { ...store.identities, [name]: identity } },

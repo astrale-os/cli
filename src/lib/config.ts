@@ -11,8 +11,14 @@ import { log } from './terminal/log'
  *  and must never read as "no limit". */
 const bound = z.number().positive().finite().optional().catch(undefined)
 
+/**
+ * The issuer of a CLI with none configured. Its `.invalid` name never resolves (RFC 6761), so no
+ * Kernel can verify a credential it issues.
+ */
+export const UNREGISTERED_ISSUER = 'https://unregistered.invalid'
+
 export const AstraleConfigSchema = z.object({
-  issuer: z.string().url().default('https://unregistered.invalid'),
+  issuer: z.string().url().default(UNREGISTERED_ISSUER),
   admin: AdminTargetConfigSchema.default(DEFAULT_ADMIN_TARGET_CONFIG),
   // The retention bounds live in the schema, not just in the readers that
   // consume them: zod strips unknown keys, so a config the CLI rewrites (see

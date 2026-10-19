@@ -6,6 +6,10 @@ credentials for an explicit anonymous selection or resolves fresh source-Kernel 
 Call, binds Graph and Auth helpers, and closes every owned Client resource when the command action
 terminates.
 
+A key identity signs the `(iss, sub)` its registration holds for the exact source Kernel issuer,
+else its own issuer. One left with only the unconfigured CLI issuer, whose reserved `.invalid` name
+no Kernel can resolve, is refused before any request, naming the Kernel whose registration it lacks.
+
 When a target also names an exact Domain issuer, or the origin of an installed Domain, the connection
 owner obtains a Domain token through the Kernel Client's `session.exchange(issuer)`, which runs the
 `whoami -> delegate -> issuer exchange` journey and admits the Domain response. The

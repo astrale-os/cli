@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.astrale.ai/cli/identity-export/2",
+  "title": "Astrale Identity Export V2",
+  "description": "Portable plaintext key-identity transfer envelope written by the Astrale CLI: the V1 fields plus every Kernel registration of the key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "subject", "registrations", "privateJwk", "publicJwk"],
+  "properties": {
+    "version": { "const": 2 },
+    "subject": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["local", "remote"] },
+    "kid": { "type": "string", "minLength": 1 },
+    "issuer": { "type": "string", "format": "uri" },
+    "registrations": {
+      "description": "The (iss, sub) each Kernel registered for this key, keyed by that Kernel's exact issuer. Empty when the key is registered nowhere.",
+      "type": "object",
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": { "$ref": "#/$defs/registration" }
+    },
+    "privateJwk": { "$ref": "#/$defs/jwk" },
+    "publicJwk": { "$ref": "#/$defs/jwk" }
+  },
+  "$defs": {
+    "jwk": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": true
+    },
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iss", "sub", "registeredAt"],
+      "properties": {
+        "iss": { "type": "string", "minLength": 1 },
+        "sub": { "type": "string", "minLength": 1 },
+        "registeredAt": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

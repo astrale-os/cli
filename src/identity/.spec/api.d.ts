@@ -20,13 +20,18 @@ interface IdentityFileOptions {
   readonly keysDir?: string
 }
 
-/** Canonical V1 key-identity transfer envelope. */
+/**
+ * The admitted key-identity transfer envelope: V2, or a V1 envelope read as V2 with no
+ * registrations. Export writes V2.
+ */
 export interface IdentityExport {
-  readonly version: 1
+  readonly version: 2
   readonly subject: string
   readonly mode: IdentityMode
   readonly kid?: string
   readonly issuer?: string
+  /** The `(iss, sub)` each Kernel registered for this key, keyed by that Kernel's issuer. */
+  readonly registrations: Readonly<Record<string, Registration>>
   readonly privateJwk: JWK
   readonly publicJwk: JWK
 }
@@ -105,16 +110,19 @@ export function setIdentityMode(name: string, mode: IdentityMode): Promise<void>
 /** Detect the retained compact-JWE representation without decoding it. */
 export function isEncryptedIdentityExport(raw: string): boolean
 
-/** Decode V1 plaintext or compact-JWE content into one admitted V1 envelope. */
+/** Decode V1 or V2 plaintext or compact-JWE content into one admitted envelope. */
 export function decodeIdentityExport(raw: string, passphrase?: string): Promise<IdentityExport>
 
 /** Encode one admitted envelope as plaintext JSON or compact JWE. */
 export function encodeIdentityExport(envelope: IdentityExport, passphrase?: string): Promise<string>
 
-/** Read and prove one key-backed identity's transferable envelope. */
+/** Read and prove one key-backed identity's transferable envelope, with its registrations. */
 export function exportIdentity(name: string, options?: IdentityFileOptions): Promise<IdentityExport>
 
-/** Import one admitted envelope after checking registry conflicts but before publishing registry state. */
+/**
+ * Import one admitted envelope, restoring its registrations exactly, after checking registry
+ * conflicts but before publishing registry state.
+ */
 export function importIdentity(
   envelope: IdentityExport,
   options?: IdentityImportOptions,
