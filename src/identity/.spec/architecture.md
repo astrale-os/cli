@@ -4,15 +4,20 @@ Identity owns local identity selection and the coordination between the State re
 Keys, and IdP sessions. State owns durable registry decoding and locking; Keys owns JWK admission,
 pair proof, and private files. Commands own prompts and presentation, not persistence mechanics.
 
-Identity transfer accepts only the V1 envelope, as plaintext JSON or compact JWE. Unversioned
-exports are rejected. Admission completes before mutation. Import checks the registry under
-its file lock, persists the admitted keypair, and only then publishes the identity entry. Export
-proves the stored pair and atomically writes one mode-`0600` user-selected file.
+Identity transfer accepts the V1 and V2 envelopes, as plaintext JSON or compact JWE. Unversioned
+and unknown versions are rejected. Export writes V2: the key identity with every Kernel registration
+it holds, the `(iss, sub)` keyed by the exact Kernel issuer it was registered on, so the imported
+identity signs exactly what the exporting one signs on each Kernel. A V1 envelope carries no
+registrations and imports with none; the CLI never derives one. Admission completes before mutation.
+Import checks the registry under its file lock, persists the admitted keypair, and only then
+publishes the identity entry with the envelope's registrations. Export proves the stored pair,
+admits its own envelope as import would, and atomically writes one mode-`0600` user-selected file.
 
-The canonical plaintext V1 structure is independently published as
-`https://schemas.astrale.ai/cli/identity-export/1`. A production Host may emit that envelope as its
-bootstrap root secret, but CLI Identity remains the format owner and cryptographically proves the
-pair on import. The governing bootstrap flow imports the root as `platform-root`, authenticates it
+The canonical plaintext structures are independently published as
+`https://schemas.astrale.ai/cli/identity-export/1` and `https://schemas.astrale.ai/cli/identity-export/2`.
+Both are strict, so V2 is a new version rather than a V1 extension that earlier readers would refuse
+as malformed. A production Host may emit the V1 envelope as its bootstrap root secret, but CLI
+Identity remains the format owner and cryptographically proves the pair on import. The governing bootstrap flow imports the root as `platform-root`, authenticates it
 directly to the `platform-manager` Kernel, and reaches a child only through a manager-minted
 child-audience Management carrier. The carrier's outer subject is not the child's effective
 principal; authenticated child `Identity.whoami` owns that projection.

@@ -1,9 +1,9 @@
-import type { AstraleConfig } from '../lib/config'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AuthError } from '../errors'
 import { getDefault, getIdentity, type Identity } from '../identity/registry'
 import { signAs } from '../keys/index'
+import { UNREGISTERED_ISSUER, type AstraleConfig } from '../lib/config'
 import {
   accessTokenForAudience,
   classifyRefreshFailure,
@@ -82,6 +82,9 @@ export async function bindCredentialIdentity<Options extends ConnectionOptions>(
  *   2. `opts.as` — sign as a named local identity.
  *   3. Default — sign as the active local identity. If the identity has a
  *      registration for the target instance, use that target-issued `(iss, sub)`.
+ *
+ * A key identity left with only the unconfigured CLI issuer has nothing the target can verify, so
+ * it is refused here, naming the Kernel whose registration it lacks.
  */
 export async function resolveCredential(
   opts: {
@@ -112,9 +115,13 @@ export async function resolveCredential(
       )
     }
     const registration = registrationKey ? resolved.registrations?.[registrationKey] : undefined
+    const issuer =
+      registration?.iss ?? resolved.issuer ?? systemIdentityIssuer(resolved, audience, config)
+    if (issuer === UNREGISTERED_ISSUER) {
+      throw new IdentityRegistrationMissingError(resolved.name, registrationKey ?? audience)
+    }
     return await signAs(resolved.subject, KEYS_DIR, {
-      issuer:
-        registration?.iss ?? resolved.issuer ?? systemIdentityIssuer(resolved, audience, config),
+      issuer,
       subject: registration?.sub,
       audience,
     })
@@ -141,6 +148,9 @@ function resolveCredentialHint(
   }
   // A copy of another home's session: re-login here or the owner home helps, waiting does not.
   if (error instanceof IdpSessionCopiedError && error.hint) return error.hint
+  if (error instanceof IdentityRegistrationMissingError) {
+    return `Register it there with \`astrale identity register ${error.identity} --node @<identity-node-id>\`, or import a V2 export of it from the home where it is registered.`
+  }
   // Org-membership rejection: the session is healthy; the org we scoped the
   // token to doesn't hold this user. Re-login can never fix it.
   if (error instanceof IdpOrgMembershipError) {
@@ -216,6 +226,17 @@ async function resolveIdpAccessToken(
   }
 
   return token
+}
+
+/** A key identity with no registration on the target Kernel and no issuer of its own to sign as. */
+class IdentityRegistrationMissingError extends Error {
+  readonly identity: string
+
+  constructor(identity: string, kernelIssuer: string) {
+    super(`Identity "${identity}" has no registration for Kernel ${kernelIssuer}.`)
+    this.name = 'IdentityRegistrationMissingError'
+    this.identity = identity
+  }
 }
 
 /** A refresh attempt failed for a reason that re-login will NOT fix. */

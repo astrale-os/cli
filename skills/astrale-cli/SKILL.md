@@ -367,9 +367,11 @@ claims an origin no one has before its first deployment: its first claimer admin
 
 ## Identity And Delegation
 
-Identity import accepts the versioned IdentityExport V1 envelope, either plaintext JSON or
-passphrase-encrypted compact JWE. Unversioned exports are rejected; do not remove the version
-field or invent missing identity metadata to bypass admission. Use `astrale identity import --help`
+Identity import accepts the versioned IdentityExport V1 or V2 envelope, either plaintext JSON or
+passphrase-encrypted compact JWE. Export writes V2, which carries the identity's Kernel
+registrations, so the imported identity signs in wherever the original was registered; a V1
+envelope imports with none. Unversioned exports are rejected; do not remove the version field or
+invent missing identity metadata or registrations to bypass admission. Use `astrale identity import --help`
 and `astrale identity export --help` for the transfer options.
 
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { keypairPaths, persistKeypair, readKeypair } from '../../keys/index'
-import { readIdentityStore, updateIdentityStore } from '../../state/index'
+import { readIdentityStore, updateIdentityStore, type Registration } from '../../state/index'
 import {
   decodeIdentityExport,
   encodeIdentityExport,
@@ -14,6 +14,13 @@ import {
   writeIdentityExport,
   type IdentityExport,
 } from '../index'
+
+const KERNEL = 'https://admin.example/api'
+const AT: Registration = {
+  iss: `${KERNEL}/iss/thumbprint`,
+  sub: 'self',
+  registeredAt: '2026-10-19T10:00:00.000Z',
+}
 
 describe('identity transfer', () => {
   let root = ''
@@ -39,6 +46,21 @@ describe('identity transfer', () => {
   })
   const absent = (subject: string) => access(keypairPaths(subject, keysDir).privatePath)
   const store = async () => (await readIdentityStore({ path: statePath })).identities
+  /** Record registrations on an identity of this test's registry, as `identity register` does. */
+  const register = (name: string, registrations: Record<string, Registration>) =>
+    updateIdentityStore(
+      (current) => ({
+        next: {
+          ...current,
+          identities: {
+            ...current.identities,
+            [name]: { ...current.identities[name]!, registrations },
+          },
+        },
+        value: undefined,
+      }),
+      { path: statePath, now },
+    )
 
   async function envelope(subject: string, suffix: string): Promise<IdentityExport> {
     const pair = await persistKeypair(subject, {
@@ -61,10 +83,26 @@ describe('identity transfer', () => {
   /** @evidence TEST-CLI-IDENTITY-TRANSFER-REJECTS */
   test('rejects malformed, newer, and mismatched content before durable mutation', async () => {
     await expect(decodeIdentityExport('{')).rejects.toThrow(/not valid JSON/)
-    const newer = { version: 2, subject: 'alice', mode: 'local', privateJwk: {}, publicJwk: {} }
+    const newer = { version: 3, subject: 'alice', mode: 'local', privateJwk: {}, publicJwk: {} }
     await expect(decodeIdentityExport(JSON.stringify(newer))).rejects.toThrow(
       /invalid or unsupported shape/,
     )
+    const registered = { ...(await envelope('carol', 'shape')), registrations: { [KERNEL]: AT } }
+    const { registrations: _, ...unregistered } = registered
+    const v1WithRegistrations = { ...registered, version: 1 }
+    const { sub: _sub, ...incomplete } = AT
+    for (const shape of [
+      unregistered,
+      v1WithRegistrations,
+      { ...registered, registrations: { [KERNEL]: incomplete } },
+      { ...registered, registrations: { [KERNEL]: { ...AT, sub: '' } } },
+      { ...registered, registrations: { [KERNEL]: { ...AT, node: 'extra' } } },
+      { ...registered, registrations: { '': AT } },
+    ]) {
+      await expect(decodeIdentityExport(JSON.stringify(shape))).rejects.toThrow(
+        /invalid or unsupported shape/,
+      )
+    }
 
     const alice = await envelope('alice', 'a')
     const bob = await envelope('bob', 'b')
@@ -78,8 +116,9 @@ describe('identity transfer', () => {
   })
 
   /** @evidence TEST-CLI-IDENTITY-TRANSFER-ROUNDTRIP */
-  test('roundtrips V1 plaintext and encrypted representations, and refuses unversioned exports', async () => {
+  test('roundtrips V2 plaintext and encrypted representations, reads V1, and refuses unversioned exports', async () => {
     const current = await envelope('alice', 'roundtrip')
+    expect(current).toMatchObject({ version: 2, registrations: {} })
     const { version: _, ...unversioned } = current
     await expect(decodeIdentityExport(JSON.stringify(unversioned))).rejects.toThrow(
       /invalid or unsupported shape/,
@@ -207,6 +246,57 @@ describe('identity transfer', () => {
     await expect(pending).rejects.toMatchObject({ code: 'IDENTITY_ISSUER_CONFLICT' })
     expect((await readKeypair(original.subject, keysDir)).kid).toBe(original.kid)
     await expect(absent(replacement.subject)).rejects.toThrow()
+  })
+
+  /** @evidence TEST-CLI-IDENTITY-TRANSFER-REGISTRATIONS */
+  test('carries every Kernel registration through plaintext and encrypted exports, and restores it exactly', async () => {
+    const registrations = {
+      [KERNEL]: AT,
+      'https://other.example/api': {
+        iss: 'https://other.example/api/iss/thumbprint',
+        sub: 'self',
+        registeredAt: '2026-10-19T11:00:00.000Z',
+      },
+    }
+    await importIdentity(await envelope('alice', 'registered'), into({ name: 'ci' }))
+    await register('ci', registrations)
+    const source = (await store()).ci!
+
+    const exported = await exportIdentity('ci', into())
+    expect(exported.registrations).toEqual(registrations)
+    const plaintext = await encodeIdentityExport(exported)
+    expect(JSON.parse(plaintext)).toMatchObject({ version: 2, registrations })
+    const encrypted = await encodeIdentityExport(exported, 'correct-horse-battery')
+
+    for (const [suffix, content, passphrase] of [
+      ['plaintext', plaintext, undefined],
+      ['encrypted', encrypted, 'correct-horse-battery'],
+    ] as const) {
+      const target = join(root, `target-${suffix}`)
+      const imported = await importIdentity(await decodeIdentityExport(content, passphrase), {
+        name: 'ci',
+        state: { path: join(target, 'identities.json'), now },
+        keysDir: join(target, 'keys'),
+      })
+      expect(imported).toEqual({ ...source, createdAt: now().toISOString() })
+      const restored = await readIdentityStore({ path: join(target, 'identities.json') })
+      expect(restored.identities.ci?.registrations).toEqual(registrations)
+    }
+
+    // A V1 envelope carries no registrations, so its import records none.
+    const { registrations: _, ...v1 } = exported
+    const imported = await importIdentity(
+      await decodeIdentityExport(JSON.stringify({ ...v1, version: 1 })),
+      into({ name: 'from-v1' }),
+    )
+    expect(imported.registrations).toBeUndefined()
+    expect(Object.hasOwn((await store())['from-v1']!, 'registrations')).toBe(false)
+
+    // Export writes only what import admits.
+    await register('ci', { [KERNEL]: { ...AT, sub: '' } })
+    await expect(exportIdentity('ci', into())).rejects.toMatchObject({
+      code: 'INVALID_IDENTITY_EXPORT',
+    })
   })
 
   /** @evidence TEST-CLI-IDENTITY-EXPORT-PRIVATE */

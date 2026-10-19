@@ -127,6 +127,8 @@ async function adminHome(): Promise<string> {
   await writeFile(
     join(root, 'config.json'),
     JSON.stringify({
+      // An issuer alice can sign as without a registration: the fake Kernel verifies no credential.
+      issuer: 'https://cli.test',
       admin: {
         name: 'admin',
         url: ADMIN_KERNEL,

@@ -17,11 +17,18 @@ export const CLI_IDENTITY_TRANSFER_ADMITTED = defineLaw({
 export const CLI_IDENTITY_TRANSFER_ROUNDTRIP = defineLaw({
   id: 'CLI-IDENTITY-TRANSFER-ROUNDTRIP',
   statement:
-    'WHEN an identity is transferred, the CLI MUST admit only V1 plaintext or compact-JWE envelopes, reject unversioned exports, and publish explicit exports atomically with mode 0600.',
+    'WHEN an identity is transferred, the CLI MUST admit only V1 or V2 plaintext or compact-JWE envelopes, reject unversioned exports, write V2, and publish explicit exports atomically with mode 0600.',
   tests: [
     { file: '__tests__/transfer.test.ts', id: 'TEST-CLI-IDENTITY-TRANSFER-ROUNDTRIP' },
     { file: '__tests__/transfer.test.ts', id: 'TEST-CLI-IDENTITY-EXPORT-PRIVATE' },
   ],
+})
+
+export const CLI_IDENTITY_TRANSFER_REGISTRATIONS = defineLaw({
+  id: 'CLI-IDENTITY-TRANSFER-REGISTRATIONS',
+  statement:
+    'An export carries every Kernel registration of the key identity, plaintext or encrypted, and import restores exactly those registrations; a V1 envelope imports with none, and export refuses registry content its import would reject.',
+  tests: [{ file: '__tests__/transfer.test.ts', id: 'TEST-CLI-IDENTITY-TRANSFER-REGISTRATIONS' }],
 })
 
 export const CLI_IDENTITY_IMPORT_ORDERED = defineLaw({

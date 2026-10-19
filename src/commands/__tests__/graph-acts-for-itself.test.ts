@@ -25,6 +25,8 @@ beforeAll(async () => {
   await writeFile(
     join(template, 'config.json'),
     JSON.stringify({
+      // An issuer alice can sign as without a registration: the fake Kernel verifies no credential.
+      issuer: 'https://cli.test',
       admin: {
         name: 'admin',
         url: ADMIN_KERNEL,

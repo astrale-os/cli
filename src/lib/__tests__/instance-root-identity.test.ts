@@ -36,11 +36,12 @@ const transfer = {
 } as const
 
 const envelope = {
-  version: 1,
+  version: 2,
   subject: transfer.subject,
   mode: 'local',
   kid: 'kernel-key',
   issuer: instance.issuer,
+  registrations: {},
   privateJwk: { kty: 'EC', d: 'private' },
   publicJwk: { kty: 'EC', x: 'public' },
 } satisfies IdentityExport

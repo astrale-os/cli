@@ -38,6 +38,19 @@ describe('connection credential', () => {
     })
   })
 
+  /** @evidence TEST-CLI-CONNECTION-REFUSES-UNREGISTERED-KEY-IDENTITY */
+  test('refuses a key identity with no registration on the target Kernel and nothing else to sign as', async () => {
+    expect(await runFixture('unregistered-key-identity.ts')).toEqual({
+      refused: {
+        code: 'AUTH_ERROR',
+        message: 'Identity "ci" has no registration for Kernel https://other.example/api.',
+        hint: expect.stringContaining('astrale identity register ci --node @<identity-node-id>'),
+      },
+      registered: { iss: 'https://registered.example/api/iss/thumbprint', sub: 'self' },
+      configured: { iss: 'https://cli.example', sub: 'ci' },
+    })
+  })
+
   test.each(['EACCES', 'EPERM', 'EROFS'])(
     'reports a session lock the filesystem refuses (%s) as that file, never as an ended session',
     async (code) => {
