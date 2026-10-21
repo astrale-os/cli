@@ -18,8 +18,9 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   A Workflow coordinates two or more effects that cannot commit together, each effect in its own
   stable `step.run`. A step may make several reads; the reads an effect depends on go in an earlier
   step. Pure Rules need neither steps nor dependency injection.
-- The inline Workflow runner is not durable replay, retry, compensation, or exactly-once execution.
-  Steps need portable results; do not return Clients, responses, or other live capabilities between steps.
+- The inline Workflow runner is not durable replay, retry, compensation, or exactly-once execution;
+  a durable callable is (see Durable Workflows below). Steps need portable results; do not return
+  Clients, responses, or other live capabilities between steps.
 
 ## Authority and inputs
 
@@ -165,6 +166,28 @@ export const closeIssue = defineAction<typeof schema>()(
 
 The Query projects, the imported Rule decides eligibility, and the Action maps refusal to its
 declared error. Policy owns authorization; the Mutation still guards state changes after the read.
+
+## Durable Workflows
+
+A callable whose Schema declares `execution: { durable: true }` runs on the Kernel's workflow engine;
+implement it with `defineWorkflow`. The SDK repository's `docs/durable-workflows.md` documents its
+context, retry budgets and serving. A run started on one release ends on it, under four rules:
+
+- Serve each release at its own URL, as the shipped adapters do. Code served in place at the same
+  URL replays the journals of runs in flight: a renamed, reordered or removed Step pauses them, and
+  no Workflow option declares such a change.
+- Keep the Schema additive while runs are in flight. A Step calls the Kernel as installed when it
+  calls: a Class, Function or Edge a later install removed or narrowed refuses it until the Step
+  spends its budget.
+- Do not retire a release, or drop a durable callable, while runs are in flight. A retired release
+  strands its runs: signals time out and only a forced cancel ends them. The Kernel cancels the runs
+  of a callable a new install no longer declares, without compensation.
+- After an issuer change, a run in flight calls the Kernel for at most the Host drain bound (7 days
+  by default); its later calls are refused. Keep runs that call the Kernel shorter.
+
+A Step that spends its budget ends the Execution `failed` with `STEP_EXHAUSTED`, unless the Workflow
+catches it (`exhausted(error)`). The outcome names the Step, and the Kernel refusal of its last
+attempt by codes alone: `details: { step, refusal?: { code, reason? } }`, never a message.
 
 ## Expected errors
 
