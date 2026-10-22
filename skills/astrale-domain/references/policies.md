@@ -180,6 +180,18 @@ export const managesProject = policy({
   match: ({ edge, object, subject }) => edge({ source: subject, class: manages, target: object }),
 })
 
+// The caller is the group or a member of it, at any depth.
+export const extendsGroup = policy({
+  match: ({ object, sameNode, subject }) => sameNode(subject, object),
+})
+
+// Only members of a Core Group (`superadmins`) observe the Class; a read that is not `true` also
+// needs `traverse`.
+policies: {
+  read: ({ check, ref }) => check(extendsGroup, ref(superadmins)),
+  traverse: ({ check, ref }) => check(extendsGroup, ref(superadmins)),
+},
+
 // Two facts, possibly from two groups: one check each.
 // In an authorized Function or Method:
 policy: ({ allOf, check, input, ref }) =>
