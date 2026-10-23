@@ -209,11 +209,16 @@ the durable context, and only that callable and its callers change.
   nest.
 - Steps and waits run one after another. Never await Steps or waits together through
   `Promise.all`, `allSettled`, `race` or `any`: the SDK refuses a Step started while another runs.
-  Group independent reads in one Step, whose Kernel calls `Promise.all` may combine:
-  `step.run('read-order', ({ query }) => Promise.all([query(a, x), query(b, y)]))`.
-- Each Step costs one round trip to the engine. Give a Step to each effect, not to each item: a
-  loop that opens a Step per element grows the run's latency with the element count, so write the
-  elements in one Mutation, or hand them to a durable callable.
+  Run independent Steps together with `step.parallel((p) => [p.query(...), p.run(...)])`: `p`
+  declares Steps with the arguments of `step.*`, and the group costs one engine round trip. It
+  waits for every Step, then resolves their outputs in order or throws the first failure in
+  declaration order, after the other Steps' effects committed: keep in sequence the effects a
+  failure would make you compensate. Independent reads also fit in one Step, whose Kernel calls
+  `Promise.all` may combine.
+- Each Step awaited alone costs one round trip to the engine. Give a Step to each effect, not to
+  each item: a loop that opens a Step per element grows the run's latency with the element count,
+  so write the elements in one Mutation, run them with `step.parallel`, or hand them to a durable
+  callable.
 - The Workflow still returns its output; callers receive `ExecutionRef<Output>`. A View follows it
   with `useExecution` from `@astrale-os/shell-react`, which refreshes every Query once it ends.
 - The typecheck reports each member the durable context lacks and each caller that reads the output.
