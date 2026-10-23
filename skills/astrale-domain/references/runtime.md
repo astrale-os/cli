@@ -209,7 +209,7 @@ the durable context, and only that callable and its callers change.
   nest.
 - Steps and waits run one after another. Never await Steps or waits together through
   `Promise.all`, `allSettled`, `race` or `any`: the SDK refuses a Step started while another runs.
-  Run independent Steps together with `step.parallel((p) => [p.query(...), p.run(...)])`: `p`
+  Run independent Steps together with `step.parallel((s) => [s.query(...), s.run(...)])`: `s`
   declares Steps with the arguments of `step.*`, and the group costs one engine round trip. It
   waits for every Step, then resolves their outputs in order or throws the first failure in
   declaration order, after the other Steps' effects committed: keep in sequence the effects a
