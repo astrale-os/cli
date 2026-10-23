@@ -170,8 +170,9 @@ declared error. Policy owns authorization; the Mutation still guards state chang
 ## Durable Workflows
 
 A callable whose Schema declares `execution: { durable: true }` runs on the Kernel's workflow engine;
-implement it with `defineWorkflow`. The SDK repository's `docs/durable-workflows.md` documents its
-context, retry budgets and serving. A run started on one release ends on it, under four rules:
+implement it with `defineWorkflow`. The `@astrale-os/sdk` package's `docs/durable-workflows.md`
+documents its context, retry budgets and serving. A run started on one release ends on it, under
+four rules:
 
 - Serve each release at its own URL, as the shipped adapters do. Code served in place at the same
   URL replays the journals of runs in flight: a renamed, reordered or removed Step pauses them, and
@@ -188,6 +189,49 @@ context, retry budgets and serving. A run started on one release ends on it, und
 A Step that spends its budget ends the Execution `failed` with `STEP_EXHAUSTED`, unless the Workflow
 catches it (`exhausted(error)`). The outcome names the Step, and the Kernel refusal of its last
 attempt by codes alone: `details: { step, refusal?: { code, reason? } }`, never a message.
+
+### From an inline Workflow
+
+The Schema chooses, not the Workflow: `execution: { durable: true }` gives the same `defineWorkflow`
+the durable context, and only that callable and its callers change.
+
+- The context keeps `domain`, `input`, `self` and `error`. It has no `query`, `mutate`, `kernel`,
+  `graph`, `dependencies`, `integrations` or `caller`: the Kernel is reachable only inside a Step, as
+  the Domain alone. A read becomes `step.query(id, query, input)`, a Mutation
+  `step.mutate(id, mutation, input)`, and any other call goes in
+  `step.run(id, ({ query, mutate, kernel, graph, dependencies, integrations }) => …)`, whose
+  `integrations` lack every operation that may be `unsafe`.
+- `execution` holds attested facts (`id`, `function`, `kernel`, `initiator`, `receiver`), not the
+  Action lifetime. `sleep`, `awaitSignal`, `awaitExecution`, `exhausted`, `cancelled` and `retryAfter`
+  are members of the context.
+- A helper that receives `query` or `mutate` runs inside a Step, with that Step's capabilities. A
+  helper that opens Steps receives the durable `step` and reads through `step.query`; Steps never
+  nest.
+- Steps and waits run one after another. Never await Steps or waits together through
+  `Promise.all`, `allSettled`, `race` or `any`: the SDK refuses a Step started while another runs.
+  Run independent Steps together with `step.parallel((s) => [s.query(...), s.run(...)])`: `s`
+  declares Steps with the arguments of `step.*`, and the group costs one engine round trip. It
+  waits for every Step, then resolves their outputs in order or throws the first failure in
+  declaration order, after the other Steps' effects committed: keep in sequence the effects a
+  failure would make you compensate. Independent reads also fit in one Step, whose Kernel calls
+  `Promise.all` may combine.
+- Each Step awaited alone costs one round trip to the engine. Give a Step to each effect, not to
+  each item: a loop that opens a Step per element grows the run's latency with the element count,
+  so write the elements in one Mutation, run them with `step.parallel`, or hand them to a durable
+  callable.
+- The Workflow still returns its output; callers receive `ExecutionRef<Output>`. A View follows it
+  with `useExecution` from `@astrale-os/shell-react`, which refreshes every Query once it ends.
+- The typecheck reports each member the durable context lacks and each caller that reads the output.
+  Three changes compile unchanged; check them in every converted Workflow:
+  - Throw a business refusal a Step detects as its declared `error(...)`, inside that Step. Any other
+    error is retried until the Step spends its budget, and the Execution ends `STEP_EXHAUSTED`
+    instead of the refusal: translating the error around the Step comes too late.
+  - Read the clock, randomness and generated ids inside a Step. Code between Steps runs again on
+    every replay and must take the same path; `astrale-domain lint` warns on the clock and randomness
+    read there.
+  - A caller that ignores the output, such as a View that refreshes right after the call, refreshes
+    before the Execution ends. Follow the Execution and refresh when it ends.
+- Test each converted Workflow with `createTestEngine` (see `testing.md`).
 
 ## Expected errors
 
