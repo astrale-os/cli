@@ -15,6 +15,7 @@ import { exchangeCallerProof } from '../lib/exchange-grant'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
 import { cachedCredentialTtlSeconds, exchangeCredentialTtlSeconds } from './lifetime'
 import { CREDENTIAL_REFUSED, credentialRefused } from './reasons'
+import { resendingClients } from './resend'
 
 /** CLI error code of each Client exchange failure; a Domain refusal keeps the Domain's own code. */
 const EXCHANGE_FAILURE_CODES: Readonly<Record<Exclude<ExchangeFailure, 'rejected'>, string>> =
@@ -241,6 +242,7 @@ function bearerSession(
   return new ClientSession({
     kernel: kernelIssuer,
     fetch,
+    client: resendingClients(fetch, timeoutMs),
     timeoutMs,
     policy: {
       maximumRouteAgeMs: 60_000,

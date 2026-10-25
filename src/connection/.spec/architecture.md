@@ -108,6 +108,14 @@ Every ClientSession receives the CLI-owned `state/session-routes` representation
 Client still owns route keying, admission, expiry, and one safe stale/miss recovery; Connection does
 not reproduce routing or add an Admin-only bypass.
 
+Every ClientSession also pools its HTTP Clients through `resend`. An invocation the Kernel refused
+before admitting any work, with a Protocol retry delay (`SERVER_DRAINING`, `CAPACITY_EXHAUSTED`,
+`INSTANCE_MAINTENANCE`), is sent again after that delay while the next attempt can still end within
+the request timeout, so a command outlives a Host upgrade that keeps its Instance closed for less
+than `--timeout`. Nothing ran on a refused attempt, so a Mutation is resent as safely as a read.
+Transport failures whose outcome is unknown and OUTCOME_UNKNOWN are never resent; streaming and
+binary calls keep the Session's own Client.
+
 `--anonymous` deliberately suppresses ambient and bookmark-default identities by omitting the
 `SessionAuth` capability. It cannot be combined with `--as` or `--creds`; contradictory selections fail
 before local identity state or a connection is opened. Public and optional callables can then

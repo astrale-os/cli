@@ -109,5 +109,16 @@ describe('Admin inventory failures', () => {
     await expect(readAdminInventory(denied, { sleep })).rejects.toThrow('Access denied.')
     expect(denied.attempts()).toBe(1)
     expect(delays).toEqual([])
+
+    // The Session's transport already resent a refusal with a retry delay until its deadline.
+    const draining = failing(
+      new ResponseError(5001, 'Instance is unavailable; retry later.', INVOCATION, {
+        code: 'SERVER_DRAINING',
+        details: { retryAfterMs: 1_000 },
+      }),
+    )
+    await expect(readAdminInventory(draining, { sleep })).rejects.toThrow('retry later')
+    expect(draining.attempts()).toBe(1)
+    expect(delays).toEqual([])
   })
 })

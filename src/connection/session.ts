@@ -39,6 +39,7 @@ import {
 } from './credential'
 import { createInstalledIssuer, type InstalledIssuer } from './installed-issuer'
 import { credentialRefused } from './reasons'
+import { resendingClients } from './resend'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -473,6 +474,7 @@ export function createClientSessionOptions(
       ...(new URL(target.url).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
     },
     envelopeTransport: 'http',
+    client: resendingClients(fetch, timeoutMs),
     timeoutMs,
   }
 }

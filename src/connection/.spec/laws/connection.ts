@@ -188,6 +188,30 @@ export const CLI_CONNECTION_TIMEOUT = defineLaw({
   ],
 })
 
+export const CLI_CONNECTION_REFUSAL_RESEND = defineLaw({
+  id: 'CLI-CONNECTION-REFUSAL-RESEND',
+  statement:
+    'When the Kernel refuses an invocation before admitting any work, with a Protocol retry delay, a CLI Session waits that delay and sends it again within the request timeout. It stops when the next attempt could not end before the deadline, after one resend per second of the timeout, or on cancellation, and the last refusal then surfaces unchanged. A transport failure whose outcome is unknown, OUTCOME_UNKNOWN, and every refusal without a retry delay surface at once.',
+  tests: [
+    {
+      file: '__tests__/resend.test.ts',
+      id: 'TEST-CLI-CONNECTION-RESENDS-REFUSAL-AFTER-ITS-DELAY',
+    },
+    {
+      file: '__tests__/resend.test.ts',
+      id: 'TEST-CLI-CONNECTION-SURFACES-REFUSAL-BEFORE-DEADLINE',
+    },
+    {
+      file: '__tests__/resend.test.ts',
+      id: 'TEST-CLI-CONNECTION-NEVER-RESENDS-UNSETTLED-OUTCOMES',
+    },
+    {
+      file: '__tests__/resend.test.ts',
+      id: 'TEST-CLI-CONNECTION-BOUNDS-REFUSAL-RESENDS',
+    },
+  ],
+})
+
 export const CLI_CONNECTION_CA_SCOPE = defineLaw({
   id: 'CLI-CONNECTION-CA-SCOPE',
   statement:

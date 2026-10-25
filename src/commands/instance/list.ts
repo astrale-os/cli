@@ -1,4 +1,4 @@
-import { ResponseError } from '@astrale-os/sdk/client'
+import { ResponseError, retryAfterOf } from '@astrale-os/sdk/client'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
@@ -204,7 +204,11 @@ type AdminInventoryRetryDependencies = Readonly<{
   sleep?: (milliseconds: number) => Promise<void>
 }>
 
-/** Retry the idempotent inventory read through a short, bounded backend recovery window. */
+/**
+ * Retry the idempotent inventory read through a short, bounded backend recovery window. A refusal
+ * with a retry delay was already resent until its request deadline by the Session's transport, so
+ * it is not read again.
+ */
 export async function readAdminInventory<Value>(
   read: () => Promise<Value>,
   dependencies: AdminInventoryRetryDependencies = {},
@@ -220,6 +224,7 @@ export async function readAdminInventory<Value>(
       if (
         !(cause instanceof ResponseError) ||
         cause.code !== BACKEND_UNAVAILABLE ||
+        retryAfterOf(cause) !== undefined ||
         retryDelayMs === undefined
       ) {
         throw cause
