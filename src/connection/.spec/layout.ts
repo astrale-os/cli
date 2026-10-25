@@ -13,6 +13,7 @@ export default defineLayout({
     'installed-issuer.ts',
     'lifetime.ts',
     'reasons.ts',
+    'resend.ts',
     'self.ts',
     'session.ts',
     'target.ts',
