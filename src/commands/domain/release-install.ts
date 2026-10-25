@@ -316,8 +316,10 @@ type InstallAnswer =
   | { readonly session: Installation }
   | { readonly running: Installation }
 
-/** Each step of a session watch: a bounded wait for the outcome, then a status read. */
-const WATCH_WAIT_MS = 1_000
+/** A session watch reads the status again at most a second after its last read. */
+const WATCH_PAUSE_MS = 1_000
+/** What a status read of a session watch has past the command's deadline to come back. */
+const WATCH_READ_GRACE_MS = 1_000
 
 async function installReleases(
   session: ClientSession,
@@ -886,8 +888,10 @@ function warnUnreadableConsentOrigins(
 
 /**
  * Follow a maintenance session until it awaits Root's command, ends or pauses, within `deadline`,
- * as the Kernel client's canonical watch does: a bounded wait for the outcome, which holds nothing
- * the session's drain needs, then a status read. A session first drains the Instance's open work.
+ * at the pace of the Kernel client's `installation.watch`: each status read follows the last one
+ * after a quarter of the time watched, never less than that read took nor 1 ms, and never more
+ * than a second, so the session is seen within a quarter of the time it took to await. A session
+ * first drains the Instance's open work.
  */
 async function watchSession(
   session: ClientSession,
@@ -897,24 +901,24 @@ async function watchSession(
 ): Promise<Installation> {
   const { execution } = installation
   let { status } = installation
+  const started = deps.now()
+  let took = 0
   while (
     status.outcome === undefined &&
     status.state !== 'paused' &&
     status.detail?.phase !== 'awaiting'
   ) {
-    const left = deadline - deps.now()
+    const now = deps.now()
+    const left = deadline - now
     if (left <= 0) break
-    const step = Math.min(WATCH_WAIT_MS, left)
-    const began = deps.now()
-    await session.schema.installation
-      .result(execution, { waitMs: step }, { timeoutMs: step + WATCH_WAIT_MS })
-      .catch(() => undefined)
-    // A wait the Kernel answers at once does not pace the watch.
-    const spent = deps.now() - began
-    if (spent < step) await deps.sleep(step - spent)
+    await deps.sleep(
+      Math.min(WATCH_PAUSE_MS, Math.max(1, took, Math.ceil((now - started) / 4)), left),
+    )
+    const read = deps.now()
     status = await session.schema.installation.status(execution, {
-      timeoutMs: Math.max(1, deadline - deps.now()) + WATCH_WAIT_MS,
+      timeoutMs: Math.max(1, deadline - read) + WATCH_READ_GRACE_MS,
     })
+    took = deps.now() - read
   }
   return { ...installation, status }
 }
