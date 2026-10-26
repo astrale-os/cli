@@ -1,12 +1,19 @@
 import type { ResolvedView } from '@astrale-os/shell'
 
+import { issuer } from '@astrale-os/sdk/auth'
+import { NodeUnavailableError, ResponseError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
+import { K } from '@astrale-os/sdk/schema'
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import { adminSessionOptions } from '../../connection/target'
 import { captureProcess, ExitError } from './fixtures/process'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
+/** A Domain that declares no entrypoint: its `entrypoint` Edge reaches no Node. */
+const viewMock = mock(async (target: unknown): Promise<unknown> => {
+  throw new NodeUnavailableError(target as Path)
+})
 const bundleMock = mock(async (_origin: unknown): Promise<unknown> => installedDomain)
 const abMock = mock(async (_args: string[]) => ({
   ok: true,
@@ -29,12 +36,16 @@ mock.module('../../connection', () => ({
   withClientSession: async (
     _opts: unknown,
     run: (ctx: {
-      session: { viewsFor: typeof viewsForMock; schema: { bundle: typeof bundleMock } }
+      session: {
+        viewsFor: typeof viewsForMock
+        view: typeof viewMock
+        schema: { bundle: typeof bundleMock }
+      }
       target: { url: string; kernelIssuer: string }
     }) => Promise<unknown>,
   ) =>
     run({
-      session: { viewsFor: viewsForMock, schema: { bundle: bundleMock } },
+      session: { viewsFor: viewsForMock, view: viewMock, schema: { bundle: bundleMock } },
       target: { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' },
     }),
 }))
@@ -48,12 +59,14 @@ mock.module('../../lib/browser/agent-browser', () => ({
 
 beforeEach(() => {
   viewsForMock.mockClear()
+  viewMock.mockClear()
   bundleMock.mockClear()
   abMock.mockClear()
   findAgentBrowserMock.mockClear()
 })
 
 const ORIGIN = 'ai-gateway.astrale.ai'
+const INVOCATION = Object.freeze({ source: issuer.accept('https://kernel.test'), id: 'call-1' })
 const route = (name: string, handshake: 'shell' | 'none', seed: string) =>
   ({
     key: `${ORIGIN}:view.${name}`,
@@ -120,18 +133,48 @@ describe('view session resolution', () => {
       target: Path.domain('ai-gateway.astrale.ai').raw,
       route: resolved[0],
     })
+    // A named View needs no entrypoint.
+    expect(viewMock).not.toHaveBeenCalled()
   })
 
-  test('opens the Domain entrypoint when no View is named, and never guesses without one', async () => {
+  test('opens the View the Domain declares as its entrypoint when no View is named', async () => {
     const { resolveSession } = await import('../view')
-    viewsForMock.mockImplementationOnce(async () => ({ entrypoint: resolved[1], views: resolved }))
-    const result = await resolveSession('/:ai-gateway.astrale.ai', { json: true })
-    expect(result.view).toEqual({ target: Path.domain(ORIGIN).raw, route: resolved[1] })
-
     viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
-    await expect(resolveSession('ai-gateway.astrale.ai', { json: true })).rejects.toMatchObject({
-      code: 'AMBIGUOUS_VIEW',
+    // Not the first View in key order, which a client ignoring the entrypoint would open.
+    viewMock.mockImplementationOnce(async () => ({ path: `/:${ORIGIN}:view.model` }))
+
+    const result = await resolveSession('/:ai-gateway.astrale.ai', { json: true })
+
+    expect(result.view).toEqual({ target: Path.domain(ORIGIN).raw, route: resolved[1] })
+    // Read as any View is, by the Path of the Domain's `entrypoint` Edge.
+    expect(viewMock).toHaveBeenCalledTimes(1)
+    expect(String(viewMock.mock.calls[0]?.[0])).toBe(
+      Path.domain(ORIGIN).in(K.classes.entrypoint.key).raw,
+    )
+  })
+
+  test('never guesses among several Views without an entrypoint the caller reads', async () => {
+    const { resolveSession } = await import('../view')
+    const unnamed = async () => {
+      viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
+      return resolveSession('ai-gateway.astrale.ai', { json: true })
+    }
+    // The Domain declares none, or the caller may not read it.
+    await expect(unnamed()).rejects.toMatchObject({ code: 'AMBIGUOUS_VIEW' })
+    // The caller may not query the graph: the catalog alone settles what it opens, as before.
+    viewMock.mockImplementationOnce(async () => {
+      throw new ResponseError(2004, 'Access denied.', INVOCATION)
     })
+    await expect(unnamed()).rejects.toMatchObject({ code: 'AMBIGUOUS_VIEW' })
+    // An entrypoint the catalog does not list is not opened.
+    viewMock.mockImplementationOnce(async () => ({ path: `/:${ORIGIN}:view.absent` }))
+    await expect(unnamed()).rejects.toMatchObject({ code: 'AMBIGUOUS_VIEW' })
+    // Any other failure stays a failure.
+    const unavailable = new ResponseError(5001, 'Instance is unavailable; retry later.', INVOCATION)
+    viewMock.mockImplementationOnce(async () => {
+      throw unavailable
+    })
+    await expect(unnamed()).rejects.toBe(unavailable)
   })
 
   test('lists every View of the Domain with its placement, without agent-browser', async () => {
@@ -158,6 +201,8 @@ describe('view session resolution', () => {
     )
     expect(findAgentBrowserMock).not.toHaveBeenCalled()
     expect(abMock).not.toHaveBeenCalled()
+    // A list opens nothing, so it needs no entrypoint.
+    expect(viewMock).not.toHaveBeenCalled()
   })
 
   test('resolves an explicit Domain ViewPath from its installed bundle, host included', async () => {

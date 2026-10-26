@@ -1,7 +1,12 @@
-import type { ResolvedView as SessionResolvedView } from '@astrale-os/sdk/client/session'
+import type {
+  ClientSession,
+  ResolvedView as SessionResolvedView,
+} from '@astrale-os/sdk/client/session'
 import type { ResolvedView } from '@astrale-os/shell'
 
+import { NodeUnavailableError, ResponseError } from '@astrale-os/sdk/client'
 import { Path, PathError } from '@astrale-os/sdk/graph/path'
+import { K } from '@astrale-os/sdk/schema'
 
 import type { ConnectionContext } from '../../connection'
 
@@ -18,7 +23,8 @@ import { AstraleError } from '../../errors'
  * An explicit ViewPath is selected from the installed Domain bundle without
  * reading the Domain's graph node; installation introspection is already an
  * authenticated, admitted view of the exact active schema and release
- * bindings. A Domain is resolved through its per-Domain View catalog.
+ * bindings. A Domain is resolved through its per-Domain View catalog, and opens
+ * the entrypoint View its `entrypoint` Edge names, which the catalog does not name.
  */
 
 type ViewSpec = { kind: 'view'; path: string } | { kind: 'domain'; origin: string }
@@ -102,24 +108,56 @@ export type ViewCandidate = ResolvedView & {
 export interface DomainViews {
   domain: string
   candidates: ViewCandidate[]
-  /** The Domain's published entrypoint, when its catalog names one. */
+  /** The View the Domain declares as its entrypoint, when the caller reads it among them. */
   entrypoint?: ViewCandidate
 }
 
-/** Resolve every View of one Domain through its per-Domain catalog. */
-export async function resolveDomainViews(
+/** Resolve every View of one Domain through its per-Domain catalog, without its entrypoint. */
+export async function resolveDomainCatalog(
   ctx: Pick<ConnectionContext, 'session'>,
   origin: string,
 ): Promise<DomainViews> {
   const domain = Path.domain(origin).raw
   const catalog = await ctx.session.viewsFor(domain)
-  const candidates = catalog.views.map((route) => toCandidate(domain, route))
-  const entrypointKey = catalog.entrypoint?.key
+  return { domain, candidates: catalog.views.map((route) => toCandidate(domain, route)) }
+}
+
+/** Resolve every View of one Domain through its per-Domain catalog, and the entrypoint it declares. */
+export async function resolveDomainViews(
+  ctx: Pick<ConnectionContext, 'session'>,
+  origin: string,
+): Promise<DomainViews> {
+  const [views, declared] = await Promise.all([
+    resolveDomainCatalog(ctx, origin),
+    declaredEntrypoint(ctx.session, origin),
+  ])
   const entrypoint =
-    entrypointKey === undefined
+    declared === undefined
       ? undefined
-      : candidates.find((candidate) => candidate.route.key === entrypointKey)
-  return { domain, candidates, ...(entrypoint === undefined ? {} : { entrypoint }) }
+      : views.candidates.find((candidate) => candidate.path === declared)
+  return { ...views, ...(entrypoint === undefined ? {} : { entrypoint }) }
+}
+
+/** The Kernel refusal of a Query to a caller that may not query the graph. */
+const ACCESS_DENIED = 2004
+
+/**
+ * The Path of the View a Domain declares as its entrypoint, read as any View is, by the Path of
+ * its `entrypoint` Edge. `undefined` when the caller reads none: the Domain declares none, the
+ * caller may not read it, which the Kernel answers alike, or the caller may not query the graph
+ * at all and still opens what the catalog alone settles.
+ */
+async function declaredEntrypoint(
+  session: ClientSession,
+  origin: string,
+): Promise<string | undefined> {
+  try {
+    return (await session.view(Path.domain(origin).in(K.classes.entrypoint.key))).path
+  } catch (error) {
+    if (error instanceof NodeUnavailableError) return undefined
+    if (error instanceof ResponseError && error.code === ACCESS_DENIED) return undefined
+    throw error
+  }
 }
 
 /** Resolve one explicitly named Domain view from the exact installed artifact. */

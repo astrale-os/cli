@@ -37,6 +37,7 @@ import {
   type DomainViews,
   parseViewSpec,
   pickCandidate,
+  resolveDomainCatalog,
   resolveDomainViews,
   resolveInstalledDomainView,
   selectedView,
@@ -119,7 +120,10 @@ export async function resolveSession(
       const candidate = await resolveInstalledDomainView(context, parsed.path)
       return { domain: String(candidate.target), candidates: [candidate], entrypoint: candidate }
     }
-    return resolveDomainViews(context, parsed.origin)
+    // Only a Domain opened without a View name needs the entrypoint it declares.
+    return opts.list || opts.view
+      ? resolveDomainCatalog(context, parsed.origin)
+      : resolveDomainViews(context, parsed.origin)
   }
   // The owner resolves as root: running a View as an Identity never requires that Identity, or the
   // CLI identity, to be allowed to discover it.
