@@ -99,7 +99,7 @@ Schema declares a durable callable; there is nothing else to wire.
 | `sleep(ms)` | A durable timer, kept while the Domain is down. |
 | `awaitSignal(name, { timeoutMs? })` | Waits for a signal; with `timeoutMs`, answers `{ kind: 'signal', value }` or `{ kind: 'timeout' }`. |
 | `exhausted(error)`, `cancelled(error)` | Recognize a Step that spent its budget, or a cancellation, in a `catch`. |
-| `retryAfter(ms, cause?)` | Thrown inside a Step: the next attempt waits `ms` (at most one hour). |
+| `retryAfter(ms, cause?)` | Thrown inside a Step: the next attempt waits `ms` (at most one hour). It spends an attempt. |
 | `execution` | Facts on the run: `id` (record it in the graph), `function`, `kernel`, `initiator`, `receiver`. Data, never authority. |
 
 The context has no `query`, `mutate`, `kernel`, `graph`, `dependencies`, `integrations` or
@@ -229,24 +229,33 @@ continue from there (a signal, a later call). From an Action, pass the key yours
 
 ## Retries, failures and outcomes
 
-- Each Step runs under the deployment's budget unless it declares its own: by default 20 attempts,
-  backoff from 1 s to 60 s, 60 s per attempt. A Step overrides it with
+- Each Step runs under the deployment's budget unless it declares its own: by default 10 attempts,
+  backoff from 1 s to 60 s, no time limit, 60 s per attempt. A Step overrides it with
   `{ id, retry: { maxAttempts, maxDurationMs, initialIntervalMs, maxIntervalMs }, timeoutMs }`;
   `timeoutMs` runs from one second to ten minutes.
+- Only the Step's own failures spend attempts: its code, a Provider, a deadline, `retryAfter`, and
+  any Kernel refusal not listed below.
+- An unavailable Kernel spends none. A refusal that prescribes a delay (capacity, draining,
+  maintenance), or a Query or keyed call that gets no answer, is waited out, each wait the longer of
+  the prescribed delay and the backoff, for as long as the outage lasts. Only `maxDurationMs` or a
+  cancel bounds that wait: declare `maxDurationMs` when the business has a deadline.
+- An attempt that ran an unkeyed `invoke` spends an attempt even on an outage, since the next attempt
+  runs it again.
+- A request the Kernel never accepts (malformed or invalid, a method not allowed or unsupported, an
+  expectation or callable fingerprint that no longer matches) fails the Step at once.
 - Set the deployment's defaults with the Environment's `durable` option in `astrale.config.ts`
   (`retentionMs`, `retry`, `stepTimeoutMs`). They are frozen into the deployment: changing them
   makes a new deployment, and running runs keep the old values.
-- A Step that spends its budget throws into the Workflow. Catch it with `exhausted(cause)` to take
-  another path; uncaught, the Execution ends `failed` with `STEP_EXHAUSTED`, and
+- A Step that spends its budget, or fails at once, throws into the Workflow. Catch it with
+  `exhausted(cause)` to take another path; uncaught, the Execution ends `failed` with `STEP_EXHAUSTED`, and
   `details: { step, refusal?: { code, reason? } }` names the Step and the Kernel refusal, if any.
-- A Kernel refusal that prescribes a delay waits that delay instead of the backoff, as `retryAfter`
-  does.
 - A declared `error(...)` ends the Execution `failed` with that code. A failed Execution is never
   resumed; a new attempt is a new call.
 - A failure outside any Step (an error between Steps, a journal the code no longer replays, an
-  output the Schema refuses) retries the whole run up to `maxAttempts`, then pauses it. `resume`
+  output the Schema refuses, a deployment that does not answer) retries the whole run up to the
+  deployment's `retry.maxAttempts` (20 when it declares none), then pauses it. `resume`
   attempts it again with the code served at its URL, so it helps when the cause was transient;
-  otherwise the owner Domain ends it with `cancel({ force: true })`, without compensation.
+  otherwise cancel it (see Cancellation and compensation).
 - The outcome is kept for the retention (7 days by default). Write anything needed later into the
   graph from a Step.
 
@@ -268,8 +277,10 @@ try {
 await step.mutate('confirm-order', confirmOrder, { order: self, hold })
 ```
 
-A forced cancel (`cancel({ force: true })`, owner Domain only) ends the run at once, without
-compensation; external effects stay.
+A run that never reaches a wait or a Step (it fails outside any Step on every attempt, or its
+deployment no longer answers) cannot compensate: a cancel ends it once the engine has spent its run
+attempts. A forced cancel (`cancel({ force: true })`, owner Domain only) ends any run at once. Both
+end it without compensation; external effects stay.
 
 ## Callers
 
@@ -356,7 +367,7 @@ A run finishes on the code of the deployment that started it.
 | New release installed | Finish on the old deployment; new calls start on the new one. Each deployment is its own issuer: the old one keeps calling the Kernel for its runs for 7 days at most, then their Kernel calls are refused. A run that only waits is unaffected. | Keep the old deployment served until its runs end (`adapter-astrale` gives each release its own URL). Keep runs that call the Kernel under 7 days. `--revoke-previous` at install cuts the old deployment, its runs included, at once. |
 | Code redeployed at the same URL | Resume with the new code; a renamed, moved or removed Step pauses them. | Avoid. Otherwise keep existing Steps in place, then `resume` the paused runs. |
 | Class, Function or Edge removed or narrowed | A Step that still uses it is refused, then ends `STEP_EXHAUSTED`. | Keep the Schema additive; remove once no run uses it. |
-| Deployment retired | Its runs stop progressing. | Retire a deployment once its runs have ended. |
+| Deployment retired | Its runs stop progressing; their signals time out, and a cancel ends them without compensation. | Retire a deployment once its runs have ended. |
 | Durable callable removed | The Kernel cancels its runs within minutes, without compensation. | Remove a callable once its runs have ended. |
 
 ## Migrate an existing Workflow
