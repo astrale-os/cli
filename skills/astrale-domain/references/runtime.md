@@ -181,7 +181,8 @@ four rules:
   calls: a Class, Function or Edge a later install removed or narrowed refuses it until the Step
   spends its budget.
 - Do not retire a release, or drop a durable callable, while runs are in flight. A retired release
-  strands its runs: signals time out and only a forced cancel ends them. The Kernel cancels the runs
+  strands its runs: signals time out, and a cancel ends them without compensation, a forced one at
+  once and a cooperative one once the engine has spent their attempts. The Kernel cancels the runs
   of a callable a new install no longer declares, without compensation.
 - After an issuer change, a run in flight calls the Kernel for at most the Host drain bound (7 days
   by default); its later calls are refused. Keep runs that call the Kernel shorter.
