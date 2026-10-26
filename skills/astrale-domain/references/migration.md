@@ -213,7 +213,7 @@ operations remain explicit authorized operations; external effects require their
 
 A migration involving a remote system is a multi-step Workflow with explicit failure and retry
 semantics; it cannot be one atomic graph Mutation. Preserve immutable evidence and do not claim
-exactly-once execution without a durable runner.
+exactly-once execution without a durable Workflow (`workflows.md`).
 
 ## Qualify a Schema revision
 

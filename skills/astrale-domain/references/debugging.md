@@ -103,7 +103,8 @@ topic, callable, and capability metadata, and destroy isolated journal state dur
 - Runtime initialization errors occur before invocation; inspect admitted environment and Provider
   construction without printing secrets.
 - Action dispatch errors involve one registered Action address and have no Step lifecycle.
-- Workflow failures should name the stable step that failed; step results must be JSON-serializable.
+- A durable Workflow whose Step spent its budget ends `STEP_EXHAUSTED`, naming the Step and the
+  Kernel refusal; a paused Execution gives no cause, so read the Domain's logs (`workflows.md`).
 - Provider response errors belong to Provider admission; unexpected network defects must not become
   caller-input errors.
 

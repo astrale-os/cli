@@ -11,7 +11,8 @@ Use the smallest real boundary that proves the behavior:
 - test a Mutation with a narrow `MutationClient` double and assert the exact atomic document;
 - invoke an Action definition's `run` with an admitted, typed context when testing handler
   orchestration;
-- invoke a Workflow with an inline Step implementation when testing explicit step order and values;
+- run a durable Workflow in `createTestWorkflowEngine` (`workflows.md`, Test), or an inline one with an
+  inline Step implementation, when testing step order and values;
 - realize a Runtime when testing Action/Workflow exhaustiveness and Provider initialization;
 - use a real Kernel for installation, identity, callable authority, Policy, routing, and persistence.
 
@@ -43,16 +44,10 @@ the affected callables and their dependent invariants. Binding metadata, lower-l
 one tested handler cannot stand in for an unexecuted public callable. Compute expected business
 results independently of the implementation; tests that reuse the same calculation only prove agreement.
 
-The current inline runner gives structure and observability. It does not prove durable replay,
-exactly-once effects, compensation, or crash recovery. Never claim those guarantees from an in-memory
-test.
-
-Run a durable Workflow in `createTestWorkflowEngine` from `@astrale-os/sdk/testing`. It journals
-each Step, replays the journal on every attempt, retries a failing Step within its budget, and
-`interruptAfter(id)` loses a Step's result after its effect. Exercise each refusal path, which must
-end with its declared error rather than `STEP_EXHAUSTED`, and end each scenario with
-`execution.replay()`, which fails when the Workflow takes another path. Only the engine is simulated:
-these tests prove replay against the Workflow's code, not crash recovery on a Host.
+An inline Workflow run in memory proves structure and step order, never durable replay,
+exactly-once effects, compensation, or crash recovery. `workflows.md` lists what to prove of a durable
+Workflow in `createTestWorkflowEngine`; those tests prove replay against its code, not crash recovery
+on a Host.
 
 ## Core and fixtures
 

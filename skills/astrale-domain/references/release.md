@@ -183,7 +183,7 @@ astrale-domain yank 1.5.0                                                       
   ever swapped under a published URL.
 - Yanking stops line references from choosing a version: installations keep running and its
   deployment keeps serving. Retiring a deployment, which then answers DEPLOYMENT_RETIRED, is another
-  act; it strands the durable runs the deployment started (`runtime.md`, Durable Workflows).
+  act; it strands the durable runs the deployment started (`workflows.md`, Deploy and evolve).
 
 ## Secrets of a deployment
 

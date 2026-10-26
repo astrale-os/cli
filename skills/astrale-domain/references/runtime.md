@@ -15,12 +15,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   focused error, value, and StateMachine facades may supply runtime-safe values.
 - An Action reads what it needs and performs at most one effect: a Mutation, or a state-changing
   Integration, dependency, or Kernel call. Queries and read-only calls are observations, not effects.
-  A Workflow coordinates two or more effects that cannot commit together, each effect in its own
-  stable `step.run`. A step may make several reads; the reads an effect depends on go in an earlier
-  step. Pure Rules need neither steps nor dependency injection.
-- The inline Workflow runner is not durable replay, retry, compensation, or exactly-once execution;
-  a durable callable is (see Durable Workflows below). Steps need portable results; do not return
-  Clients, responses, or other live capabilities between steps.
+  Two or more effects that cannot commit together, or a wait, make a Workflow: read `workflows.md`.
+  Pure Rules need neither steps nor dependency injection.
 
 ## Authority and inputs
 
@@ -166,72 +162,6 @@ export const closeIssue = defineAction<typeof schema>()(
 
 The Query projects, the imported Rule decides eligibility, and the Action maps refusal to its
 declared error. Policy owns authorization; the Mutation still guards state changes after the read.
-
-## Durable Workflows
-
-A callable whose Schema declares `execution: { durable: true }` runs on the Kernel's workflow engine;
-implement it with `defineWorkflow`. The `@astrale-os/sdk` package's `docs/durable-workflows.md`
-documents its context, retry budgets and serving. A run started on one release ends on it, under
-four rules:
-
-- Serve each release at its own URL, as the shipped adapters do. Code served in place at the same
-  URL replays the journals of runs in flight: a renamed, reordered or removed Step pauses them, and
-  no Workflow option declares such a change.
-- Keep the Schema additive while runs are in flight. A Step calls the Kernel as installed when it
-  calls: a Class, Function or Edge a later install removed or narrowed refuses it until the Step
-  spends its budget.
-- Do not retire a release, or drop a durable callable, while runs are in flight. A retired release
-  strands its runs: signals time out and only a forced cancel ends them. The Kernel cancels the runs
-  of a callable a new install no longer declares, without compensation.
-- After an issuer change, a run in flight calls the Kernel for at most the Host drain bound (7 days
-  by default); its later calls are refused. Keep runs that call the Kernel shorter.
-
-A Step that spends its budget ends the Execution `failed` with `STEP_EXHAUSTED`, unless the Workflow
-catches it (`exhausted(error)`). The outcome names the Step, and the Kernel refusal of its last
-attempt by codes alone: `details: { step, refusal?: { code, reason? } }`, never a message.
-
-### From an inline Workflow
-
-The Schema chooses, not the Workflow: `execution: { durable: true }` gives the same `defineWorkflow`
-the durable context, and only that callable and its callers change.
-
-- The context keeps `domain`, `input`, `self` and `error`. It has no `query`, `mutate`, `kernel`,
-  `graph`, `dependencies`, `integrations` or `caller`: the Kernel is reachable only inside a Step, as
-  the Domain alone. A read becomes `step.query(id, query, input)`, a Mutation
-  `step.mutate(id, mutation, input)`, and any other call goes in
-  `step.run(id, ({ query, mutate, kernel, graph, dependencies, integrations }) => …)`, whose
-  `integrations` lack every operation that may be `unsafe`.
-- `execution` holds attested facts (`id`, `function`, `kernel`, `initiator`, `receiver`), not the
-  Action lifetime. `sleep`, `awaitSignal`, `exhausted`, `cancelled` and `retryAfter` are members of
-  the context.
-- A helper that receives `query` or `mutate` runs inside a Step, with that Step's capabilities. A
-  helper that opens Steps receives the durable `step` and reads through `step.query`; Steps never
-  nest.
-- Steps and waits run one after another. Never await Steps or waits together through
-  `Promise.all`, `allSettled`, `race` or `any`: the SDK refuses a Step started while another runs.
-  Run independent Steps together with `step.parallel((s) => [s.query(...), s.run(...)])`: `s`
-  declares Steps with the arguments of `step.*`, and the group costs one engine round trip. It
-  waits for every Step, then resolves their outputs in order or throws the first failure in
-  declaration order, after the other Steps' effects committed: keep in sequence the effects a
-  failure would make you compensate. Independent reads also fit in one Step, whose Kernel calls
-  `Promise.all` may combine.
-- Each Step awaited alone costs one round trip to the engine. Give a Step to each effect, not to
-  each item: a loop that opens a Step per element grows the run's latency with the element count,
-  so write the elements in one Mutation, run them with `step.parallel`, or hand them to a durable
-  callable.
-- The Workflow still returns its output; callers receive `ExecutionRef<Output>`. A View follows it
-  with `useExecution` from `@astrale-os/shell-react`, which refreshes every Query once it ends.
-- The typecheck reports each member the durable context lacks and each caller that reads the output.
-  Three changes compile unchanged; check them in every converted Workflow:
-  - Throw a business refusal a Step detects as its declared `error(...)`, inside that Step. Any other
-    error is retried until the Step spends its budget, and the Execution ends `STEP_EXHAUSTED`
-    instead of the refusal: translating the error around the Step comes too late.
-  - Read the clock, randomness and generated ids inside a Step. Code between Steps runs again on
-    every replay and must take the same path; `astrale-domain lint` warns on the clock and randomness
-    read there.
-  - A caller that ignores the output, such as a View that refreshes right after the call, refreshes
-    before the Execution ends. Follow the Execution and refresh when it ends.
-- Test each converted Workflow with `createTestWorkflowEngine` (see `testing.md`).
 
 ## Expected errors
 

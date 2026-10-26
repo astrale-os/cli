@@ -27,8 +27,8 @@ local Action or Workflow
 ```
 
 This keeps provider location, credentials, retries, and remote failure translation out of Schema and
-business rules. A state-changing foreign call combined with local changes is a Workflow; it is not one atomic graph
-Mutation.
+business rules. A state-changing foreign call combined with local changes is a Workflow (`workflows.md`);
+it is not one atomic graph Mutation.
 
 ## Public boundary
 
