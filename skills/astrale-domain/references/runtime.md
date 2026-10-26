@@ -202,8 +202,8 @@ the durable context, and only that callable and its callers change.
   `step.run(id, ({ query, mutate, kernel, graph, dependencies, integrations }) => …)`, whose
   `integrations` lack every operation that may be `unsafe`.
 - `execution` holds attested facts (`id`, `function`, `kernel`, `initiator`, `receiver`), not the
-  Action lifetime. `sleep`, `awaitSignal`, `awaitExecution`, `exhausted`, `cancelled` and `retryAfter`
-  are members of the context.
+  Action lifetime. `sleep`, `awaitSignal`, `exhausted`, `cancelled` and `retryAfter` are members of
+  the context.
 - A helper that receives `query` or `mutate` runs inside a Step, with that Step's capabilities. A
   helper that opens Steps receives the durable `step` and reads through `step.query`; Steps never
   nest.
@@ -231,7 +231,7 @@ the durable context, and only that callable and its callers change.
     read there.
   - A caller that ignores the output, such as a View that refreshes right after the call, refreshes
     before the Execution ends. Follow the Execution and refresh when it ends.
-- Test each converted Workflow with `createTestEngine` (see `testing.md`).
+- Test each converted Workflow with `createTestWorkflowEngine` (see `testing.md`).
 
 ## Expected errors
 

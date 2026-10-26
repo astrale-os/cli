@@ -47,8 +47,8 @@ The current inline runner gives structure and observability. It does not prove d
 exactly-once effects, compensation, or crash recovery. Never claim those guarantees from an in-memory
 test.
 
-Run a durable Workflow in `createTestEngine` from `@astrale-os/sdk/testing`. It journals each Step,
-replays the journal on every attempt, retries a failing Step within its budget, and
+Run a durable Workflow in `createTestWorkflowEngine` from `@astrale-os/sdk/testing`. It journals
+each Step, replays the journal on every attempt, retries a failing Step within its budget, and
 `interruptAfter(id)` loses a Step's result after its effect. Exercise each refusal path, which must
 end with its declared error rather than `STEP_EXHAUSTED`, and end each scenario with
 `execution.replay()`, which fails when the Workflow takes another path. Only the engine is simulated:
