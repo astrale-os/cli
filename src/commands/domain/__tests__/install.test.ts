@@ -1055,7 +1055,8 @@ describe('durable installations', () => {
       { ...JSON_OUTPUT, mode: 'maintenance', instance: 'staging', as: 'root' },
       run.deps,
     )
-    expect(run.reads.filter((read) => read.startsWith('status'))).toHaveLength(2)
+    // The watch reads the status alone: an outcome wait never answers a session that awaits.
+    expect(run.reads).toEqual([A, `status ${EXECUTION}`, `status ${EXECUTION}`])
     expect(JSON.parse(io.stdout)).toMatchObject({
       execution: EXECUTION,
       status: { state: 'waiting', detail: { phase: 'awaiting', command: 1 } },
@@ -1073,6 +1074,48 @@ describe('durable installations', () => {
       `Maintenance session ${EXECUTION} awaits command 1 (operation ${GENERATED})`,
     )
     expect(shown.lines).toContain('The Instance is closed to other callers')
+  })
+
+  test('--mode maintenance reads the session at a quarter of the time watched, at most once a second', async () => {
+    const draining = {
+      ...completedInstallation(committed([AGENCIES])).status,
+      id: EXECUTION,
+      state: 'running' as const,
+      outcome: undefined,
+      detail: { phase: 'draining' as const, mode: 'maintenance' as const },
+    }
+    const awaiting = {
+      ...draining,
+      state: 'waiting' as const,
+      detail: { phase: 'awaiting' as const, mode: 'maintenance' as const, command: 1 },
+    }
+    // Each status read takes 400 ms; the clock moves only with reads and pauses.
+    let slept = 0
+    const reads = () => run.reads.filter((read) => read.startsWith('status')).length
+    const run = harness({
+      served: { [A]: served(AGENCIES, A, '1') },
+      installation: { execution: EXECUTION as never, status: draining as never },
+      executions: { [EXECUTION]: [draining, draining, draining, draining, draining, awaiting] },
+      now: () => 400 * reads() + slept,
+    })
+    run.deps = {
+      ...run.deps,
+      sleep: async (ms: number) => {
+        run.sleeps.push(ms)
+        slept += ms
+      },
+    }
+    await installByReference(
+      [A],
+      { ...JSON_OUTPUT, mode: 'maintenance', instance: 'staging', as: 'root' },
+      run.deps,
+    )
+    // The first read follows at once; each next one waits as long as a read took, then a quarter
+    // of the time watched, then at most a second.
+    expect(run.sleeps).toEqual([1, 400, 400, 501, 726, 1_000])
+    expect(JSON.parse(io.stdout)).toMatchObject({
+      status: { state: 'waiting', detail: { phase: 'awaiting', command: 1 } },
+    })
   })
 
   test('--no-wait does not watch the session: an awaiting one is shown, any other is not', async () => {
