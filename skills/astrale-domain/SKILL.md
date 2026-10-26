@@ -30,6 +30,8 @@ phased workflow below; an existing public scaffold already satisfies its foundat
   owns a development instance: read `references/release.md`.
 - Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/schema.md` first. Always read it for schema work.
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
+- Coordinate several effects, wait for a delay or a decision, or write, test, call, deploy, or migrate
+  a Workflow: read `references/workflows.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
 - Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
 - Model sign-in users, invite/register existing people, assign Shell groups, or make someone an instance administrator: read `references/users.md`.
@@ -59,7 +61,8 @@ order and load a reference only when its phase begins.
 2. **Schema:** Before authoring the schema, read `references/schema.md`; for sign-in users and groups,
    also read `references/users.md` before inventing identity or onboarding vocabulary.
 3. **Callables:** Before implementing callables, read `references/runtime.md` and
-   `references/policies.md`. If an external system is involved, also read `references/integrations.md`.
+   `references/policies.md`. If an operation makes several effects or waits, also read
+   `references/workflows.md`; if an external system is involved, `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition. Every View
    belongs to its Domain; node screens are internal routes of its frontend, not Class-bound Views.

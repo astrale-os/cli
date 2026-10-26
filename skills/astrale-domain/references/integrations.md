@@ -45,7 +45,9 @@ to Actions and Workflows. Never perform I/O at module import.
   Integration calls before one Mutation.
 - Use a Workflow when a state-changing external call is combined with another effect, such as a
   graph Mutation.
-- Put each Workflow effect in its own stable `step.run`; Actions have no Step API.
+- A Workflow calls the external system inside a Step; declare a state-changing operation `keyed` so
+  a retried Step sends the same `idempotencyKey` (`workflows.md`, Call an external system). Actions
+  have no Step API.
 
 Provider output must be load-bearing in assertions. Validate unknown remote bytes/responses at the
 Provider boundary. Preserve unexpected transport/provider defects as defects, and translate only
