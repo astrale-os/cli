@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.155](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.154...cli/v1.0.0-beta.155) (2026-10-27)
+
+
+### Bug Fixes
+
+* **commands:** resend Kernel refusals that ask for a retry, within --timeout ([#731](https://github.com/astrale-os/cli/issues/731)) ([23fb149](https://github.com/astrale-os/cli/commit/23fb14989b889912eed1002328d30ccafd790bfb))
+
+
+### Performance Improvements
+
+* **commands:** watch a maintenance session at the pace it can learn something ([#733](https://github.com/astrale-os/cli/issues/733)) ([9f1cd55](https://github.com/astrale-os/cli/commit/9f1cd5555e237780cee4bb682fced13d2d990123))
+
 ## [1.0.0-beta.154](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.153...cli/v1.0.0-beta.154) (2026-10-19)
 
 
