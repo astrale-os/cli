@@ -17,13 +17,26 @@ The full reference ships in the `@astrale-os/sdk` package as `docs/durable-workf
 - An effect is a Mutation, or a state-changing Integration, dependency or Kernel call. Reads never
   make a Workflow, and two Mutations that can commit together are one Mutation.
 - The Schema decides whether a Workflow is durable, with `execution: { durable: true }` on its
-  method. Without it, the Workflow runs inline, inside the request: the caller gets the output in
-  the response, but a failure leaves the effects already made, and nothing resumes, retries or
-  compensates them. Declare a Workflow durable unless its caller needs the output in the response.
+  method. Without it, the Workflow is inline, the previous API: its context is the Action context
+  plus a `step.run` that records nothing. It runs inside the request, and a failure leaves the
+  effects already made: nothing resumes, retries or compensates them. An inline Workflow guarantees
+  no more than an Action. Write no new one, and migrate existing ones (see Migrate an inline
+  Workflow).
 - A durable callable needs `auth: 'authenticated'` or `'authorized'`, a value input and output (no
   binary, no stream), and a remote binding. It never runs inline.
 - A caller receives `ExecutionRef<Output>` at once, not the output: design the caller to follow the
   run (see Callers).
+
+Default to an Action: a durable Workflow pays for its guarantees.
+
+- Each Step waits for the engine to record its result before the next one starts. N Steps in
+  sequence cost N + 2 requests from the engine to the Domain, each replaying the journal so far;
+  an Action is one request.
+- The caller follows an Execution instead of reading the output in the response.
+- The run acts as the Domain only, never as its caller.
+
+When a user waits on screen for the result, the callable is an Action unless it truly coordinates
+effects.
 
 ## Write one
 
@@ -370,7 +383,59 @@ A run finishes on the code of the deployment that started it.
 | Deployment retired | Its runs stop progressing; their signals time out, and a cancel ends them without compensation. | Retire a deployment once its runs have ended. |
 | Durable callable removed | The Kernel cancels its runs within minutes, without compensation. | Remove a callable once its runs have ended. |
 
-## Migrate an existing Workflow
+## Migrate an inline Workflow
+
+Count the effects, not the Steps or the reads:
+
+| The inline Workflow… | Becomes |
+| --- | --- |
+| makes no effect, or one (exclusive branches that each make one count as one) | an Action: most inline Workflows |
+| makes several writes that one Mutation can commit | an Action, with that one Mutation |
+| makes effects that cannot commit together, or waits | a durable Workflow |
+
+Do not make every inline Workflow durable. Declaring a read and one write durable buys an engine
+round trip per Step and an Execution the caller must follow, for no guarantee the Action lacks.
+
+An inline Workflow stays only when its effects cannot commit together and its caller needs the
+output in the response. It keeps the inline gap knowingly: make each effect safe to repeat, so that
+the caller's retry completes a call that failed halfway.
+
+### To an Action
+
+The change is mechanical: `defineWorkflow` becomes `defineAction` from `@astrale-os/sdk/action`,
+and each `step.run` is unwrapped. The callable, its Schema and its callers stay the same.
+
+```ts
+// before: an inline Workflow
+export const editComment = defineWorkflow<typeof schema>()(
+  'Comment.edit',
+  { errors },
+  async ({ error, query, mutate, input, self, step }) => {
+    const comment = await step.run('read-comment', () => query(commentOf, self))
+    const issue = await step.run('read-issue', () => query(issueOf, comment.issue))
+    if (issue.archived) throw error('ISSUE_ARCHIVED', {})
+    return step.run('edit-comment', () => mutate(editBody, { comment: self, body: input.body }))
+  },
+)
+
+// after: an Action
+export const editComment = defineAction<typeof schema>()(
+  'Comment.edit',
+  { errors },
+  async ({ error, query, mutate, input, self }) => {
+    const comment = await query(commentOf, self)
+    const issue = await query(issueOf, comment.issue)
+    if (issue.archived) throw error('ISSUE_ARCHIVED', {})
+    return mutate(editBody, { comment: self, body: input.body })
+  },
+)
+```
+
+The effect stays last, after the reads it needs (`runtime.md`). A fact that must still hold when it
+commits is a precondition of the Mutation (`mutation.expect`), not a read before it. Tests invoke
+the Action's `run` directly (`testing.md`); Step traces go away.
+
+### To a durable Workflow
 
 1. Add `execution: { durable: true }` to its callable.
 2. Move every Kernel call into a Step: reads become `step.query`, writes `step.mutate`, anything else
@@ -383,7 +448,7 @@ A run finishes on the code of the deployment that started it.
 5. Run `astrale-domain lint`, then the tests above.
 
 ```ts
-// before
+// before: an inline Workflow
 async ({ input, self, query, mutate, integrations, step, error }) => {
   const invoice = await step.run('read-invoice', () => query(invoiceOf, { invoice: self }))
   if (invoice.balance > 0) throw error('OPEN_BALANCE', { invoice: self })
@@ -392,7 +457,7 @@ async ({ input, self, query, mutate, integrations, step, error }) => {
   return null
 }
 
-// after
+// after: a durable Workflow
 async ({ input, self, step, error }) => {
   const invoice = await step.query('read-invoice', invoiceOf, { invoice: self })
   if (invoice.balance > 0) throw error('OPEN_BALANCE', { invoice: self })
