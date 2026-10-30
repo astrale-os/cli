@@ -109,6 +109,7 @@ test('the deployment guide is routed and states the three commands and their eff
   // Consent classes (D7): same line bare, another line by origin, a terminal confirmation.
   assert.match(guide, /\| Same line[^\n]*\| `--allow-issuer-change` \|/)
   assert.match(guide, /\| Another line[^\n]*\| `--allow-issuer-change=<origin>` \|/)
+  assert.match(guide, /The origin follows `=` only/)
   // release-please (D5) and the publish order (tech [.73345]).
   assert.match(guide, /`Release-As: 2\.0\.0` footer\s+or a `feat!:` commit/)
   assert.match(guide, /--allow-dirty/)

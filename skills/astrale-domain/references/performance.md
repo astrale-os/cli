@@ -30,6 +30,22 @@ and every independently raceable fact a guard (`expect.none|exists|count|unchang
 before it. What the Schema declares (a key, a cardinality, accepted endpoints) is enforced, never a
 guard.
 
+## Admission round trip
+
+Each call a deployment serves costs one `Function.admit` round trip to its Kernel before the handler
+runs. `admission: { maxAge }` (`policies.md`, Admission age) removes it for a repeated call within
+the age, at the price of revocation lag. Kept admissions live in the `serve({ cache })` cache:
+
+| `cache` | Kept in |
+| --- | --- |
+| omitted | process or isolate memory, 1,024 entries, least recently used out first |
+| `() => DeploymentCache` | that cache (`get(key)`, `put(key, value, expiresAt)`); a read failing or over 30 ms is a miss |
+| `false` | nowhere |
+
+A Worker built by `@astrale-os/adapter-cloudflare` keeps them in its deployment's Cache API behind
+an isolate memory tier; `cloudflareWorkerEntry()({ cache: false })` keeps none. Reuse needs a Kernel
+whose `Function.admit` answers `maxAge`; any other admits every call.
+
 ## Action or Workflow
 
 An Action reads, then makes at most one effect; a Workflow only for two or more effects that cannot

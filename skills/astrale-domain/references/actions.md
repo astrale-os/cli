@@ -81,7 +81,8 @@ Check the model first: when the caller should see the records, a `read` rule gra
 
 | Field | What it is |
 | --- | --- |
-| `input` | The admitted input; the SDK validated it and validates the output |
+| `input` | The admitted input; the SDK validated it and validates the output. On a binary-input Function, the metadata |
+| `body` | On a binary-input Function: `{ body: ReadableStream<Uint8Array>, length }`, single-consumer (Streams and bytes) |
 | `self` | The receiver's `NodeId`, on an instance Method |
 | `caller` | The incoming call: `identity` is the caller, `principal` the executor (`authority.md`) |
 | `query`, `mutate` | Query and Mutation calls, each naming its authority with `{ as }` (`queries.md`, `mutations.md`) |
@@ -141,6 +142,27 @@ export const reassign = defineAction<typeof schema>()(
 - The read and the Mutation are two snapshots. A reassignment between them makes the Mutation's
   delete of the old Edge, or the at-most-one cardinality, refuse it: the Mutation keeps the change
   correct, not the read.
+
+## Streams and bytes
+
+| Output declared (`schema.md`) | The handler returns |
+| --- | --- |
+| a value schema | the value |
+| `output.stream(item)` | an `AsyncIterable` of items: `async () => items()`, `items` an `async function*`; the handler itself is never a generator |
+| `output.binary()`, buffered | `{ body: Uint8Array, mediaType, status?, headers? }` |
+| `output.binary()`, streamed | `{ body: AsyncIterable<Uint8Array>, mediaType, length?, delivery?: { maximumDurationMs, idleTimeoutMs }, status?, headers? }` |
+
+- A buffered body is replayable under idempotency; a streamed one is not, and holds its resources
+  until delivered or cancelled. A declared `length` is exact: delivery aborts on a mismatch.
+- A provider's bytes pass through as they arrive: never collected, never turned into stream items,
+  with only the headers the Integration admits.
+- Binary input: the body was admitted against `maximumBytes` before the handler runs (else
+  `LIMIT_EXCEEDED`). Read it once, through its end; never `tee()` it or read it before handing it
+  on. `kernel.content.upload(body, { mediaType })` takes it unread and streams it to the Kernel
+  (`blob.writer`, `policies.md`); the upload is one attempt, never retried.
+- Storing a received file is two effects, the upload and the Mutation recording its receipt in the
+  same invocation (receipts expire). A binary input excludes a durable Workflow: write an inline
+  Workflow (`workflows.md`); after a failure, the caller sends the file again.
 
 ## Expected errors
 

@@ -18,7 +18,8 @@ followed, signalled or cancelled. Full reference: `docs/durable-workflows.md` in
 - Durability is Schema-declared: `execution: { durable: true }` on the method. Without it the
   Workflow is inline (legacy): the Action context plus a `step.run` that records nothing; a failure
   leaves earlier effects, with no resume, retry or compensation. Write no new one (Migrate an
-  inline Workflow).
+  inline Workflow), except a binary-input Function storing its file (`actions.md`, Streams and
+  bytes).
 - A durable callable needs `auth: 'authenticated' | 'authorized'`, value input and output (no
   binary, no stream), and a remote binding; it never runs inline. `defineAction` refuses it.
 - Cost: N sequential Steps = N + 2 engine → Domain requests, each replaying the journal so far; an

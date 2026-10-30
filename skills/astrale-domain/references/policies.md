@@ -42,6 +42,22 @@ rule. An Identity acting for itself delegates nothing: its rule alone decides.
   needs the Role and so does the Domain, as its ceiling. Resource checks inside the syscall are
   separate.
 
+### Admission age
+
+`admission: { maxAge }` on a callable, an integer from 1 to 300 seconds, lets its deployment reuse
+an admission the Kernel granted while it is younger than `maxAge`, bounded by the Kernel's cap (300
+on a Host; a cap of 0 grants none). Absent, every call is admitted by the Kernel.
+
+- Reuse requires the same source Kernel and served release, principal and caller (or no credential),
+  target with its receiver, and values of the input fields the `policy` reads, a missing field
+  differing from `null`. Only an admission is kept, never a refusal.
+- Revocation lags by up to `maxAge`: a caller who lost the right, a changed Policy Edge, the
+  Instance's maintenance or a moved binding still let recently admitted calls through. Declare an
+  age only where that lag is acceptable.
+- Every call still has its release pin check, credential verification (before any kept admission
+  is read) and input validation; each Kernel call of the handler is authorized afresh.
+- A durable Workflow never reuses one: it runs as a Kernel Execution.
+
 ## Class Policies
 
 `policies: { read, traverse, create, update, delete }`, one rule per slot, local to a concrete Class

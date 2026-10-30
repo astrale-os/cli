@@ -118,6 +118,12 @@ export const Issue = nodeClass({
   `method.abstract`.
 - Shared handler logic is an ordinary function; each exposed Method and its Policy are declared on
   their Class. Composition over inheritance when the relation is not "is-a".
+- A callable answers a value (a schema), a value stream (`output.stream(item)`) or bytes
+  (`output.binary()`). Only a Function takes bytes: `input.binary(metadata, { maximumBytes })`,
+  `metadata` a value schema and `maximumBytes` an integer ≥ 1, within the target blob Property's
+  `maxBytes` and the Kernel's 100 MiB blob limit when the bytes go to the Kernel. A Method takes a
+  value, so a Function receiving a file names its target Node in the metadata. A durable callable
+  takes and answers values only. Handler shapes: `actions.md`.
 
 ## Policies
 
@@ -132,6 +138,23 @@ export const Issue = nodeClass({
 
 - Core holds stable Domain-owned reference facts needed right after installation, such as one
   well-known Group. Never demo data, mutable product state, a post-install hook or a migration.
+- `core.node(Class, properties)` declares a Node; `core.edge(source, EdgeClass, target, properties)`
+  an Edge whose endpoints are `core.domain`, a Core Node or another local Definition (a handle, a
+  lazy `() => X` or its ref). The Schema lists them under `core`:
+
+  ```ts
+  import { core, defineSchema } from '@astrale-os/sdk/schema'
+
+  export const schema = defineSchema('issues.example', {
+    name: 'Issues',
+    classes: { Project, Issue },
+    core: { nodes: { inbox: core.node(Project, { name: 'Inbox', archived: false }) } },
+  })
+  ```
+
+- A Query names it `d.core.inbox` (`queries.md`), a Dataset `ref(domain.core.nodes.inbox)`
+  (`datasets.md`). A release that stops declaring a Core Node deletes it, within the bounds of
+  `migration.md` (Uninstalling a Domain with data).
 - A projected Core node keeps its id only while its projected Path and Class stay unchanged; a Class
   change can allocate a new id. Consumers resolve the ref instead of caching an installation's id.
 

@@ -57,6 +57,9 @@ its issuer:
 | Another line: another Environment, a production version over a staging preview, the first move from a legacy stable Worker | `--allow-issuer-change=<origin>` |
 | Either, at a terminal | typing the origin when asked |
 
+The origin follows `=` only: `--allow-issuer-change <origin>` is the bare same-line consent followed
+by a stray install reference. Repeat `--allow-issuer-change=<origin>` for each origin.
+
 The replaced issuer keeps serving its in-flight work while it drains; `--revoke-previous` cuts it at
 the activation. Without consent: ISSUER_CHANGE_NOT_CONSENTED before anything is sent;
 `details.origins` lists every change.

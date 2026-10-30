@@ -84,9 +84,11 @@ Semantics:
   Nodes of both Classes.
 - `node.is(class)` in `where` narrows the rows' type to that Class's Properties. `is(row, classKey)`
   in `output` narrows `$class` only, never the Properties.
-- `orderBy` sorts rows missing the value last, unless `{ missing: 'first' }`. On a union whose
-  Classes map one name to different Properties, that name filters but does not order. A set or
-  JSON Property never orders.
+- Rows follow identity, or the `orderBy` Properties with identity breaking every tie: `first(n)`
+  and each page are deterministic.
+- `orderBy` sorts rows missing the value last, in either direction, unless `{ missing: 'first' }`.
+  On a union whose Classes map one name to different Properties, that name filters but does not
+  order. A set or JSON Property never orders.
 - `.via` requires `direction` when both ends accept the Edge Class, or when the listed Edge Classes
   leave the Node in different directions.
 - A relation's `get` finding none or a second raises `INTEGRITY` naming the relation.

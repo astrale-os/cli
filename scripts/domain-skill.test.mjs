@@ -101,6 +101,19 @@ test('the reorganized guides retain current authority and exact Method semantics
   )
 })
 
+test('the guides keep the boundary rules a reader cannot derive', () => {
+  const read = (name) => readFileSync(join(root, 'references', name), 'utf8')
+  assert.match(read('queries.md'), /identity breaking every tie/)
+  assert.match(read('migration.md'), /Past it, the Class is refused\s+`budget-exceeded`/)
+  assert.match(
+    read('migration.md'),
+    /a View renamed, a\s+Class removed, a Core Node no longer declared/,
+  )
+  assert.match(read('policies.md'), /Revocation lags by up to `maxAge`/)
+  assert.match(read('schema.md'), /Only a Function takes bytes/)
+  assert.match(read('schema.md'), /A durable callable\s+takes and answers values only/)
+})
+
 test('the shipped skills mention legacy capability authority only as deprecated', () => {
   const skills = join(root, '..')
   const files = readdirSync(skills, { recursive: true })

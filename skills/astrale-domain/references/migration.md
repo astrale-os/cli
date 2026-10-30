@@ -34,8 +34,10 @@ An install or uninstall is a durable Execution; its status `detail.class`:
   activation briefly pauses writes.
 - Data the target refuses: `failed`, `DATA_MIGRATION_REQUIRED` (CLI exit 2), nothing activated. Not
   transient. Message and report name each requirement: operation (`populate-required`,
-  `remove-facts`, …), subject, observed facts. Repair in a maintenance session, delete facts that
-  should go, or migrate online and install again.
+  `remove-facts`, …), reason (`invalid-existing`, `unbounded`, `budget-exceeded`,
+  `transform-required`, `destructive-change`, `foreign-reference`, `restricted-deletion`), subject,
+  `work` (facts and bytes observed, and their bound). Repair in a maintenance session,
+  delete facts that should go, or migrate online and install again.
 - An Edge endpoint's lifetime is `onDelete: 'restrict' | 'detach'` (`schema.md`). Deleting a Node
   detaches the Edges other Domains hold toward it; the Mutation result does not report them and
   your Domain cannot query their Edge Classes to move them first. Agree a Class change that
@@ -108,6 +110,12 @@ In a maintenance session that is one target: install the final revision, delete 
 - Either mode: Edges of surviving Classes follow their lifetimes; a restricting Edge at a leaving
   Node refuses the uninstall as `restricted-deletion` until deleted. Surviving dependents block it.
   A refused uninstall deleted nothing.
+- Either mode: the Edges at the leaving Nodes are read within the bound of one activation, the
+  Host's `maximumProjectionFacts` and `maximumProjectionBytes`. Past it, the Class is refused
+  `budget-exceeded`: its `work` carries the bound (`maximumFacts`, `maximumBytes`) and a count that
+  is a lower bound (`observedFacts`, `observedBytes`). Delete those Edges by Mutations, then retry.
+- An install meets the same bounds at the projection Nodes its release drops: a View renamed, a
+  Class removed, a Core Node no longer declared.
 
 ## Maintenance repair sessions
 
