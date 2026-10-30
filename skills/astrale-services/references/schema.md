@@ -89,7 +89,7 @@ reason  = invalid-deployment | address-mismatch | build-mismatch | service-owned
 - Services keeps no secret values; listing metadata never recovers them.
 - To rotate a non-current generic Worker release, redeploy its exact original input with updated
   values and `promote: false`. Domain releases: the
-  [identical redeploy and restore-current procedure](../../astrale-domain/references/release.md#secrets-of-a-deployment);
+  [identical redeploy and restore-current procedure](../../astrale-domain/references/deployment.md#secrets-of-a-deployment);
   the Domain adapter always promotes.
 - Services never creates consumer Domain or Function nodes nor returns their installed ids. A Domain
   release's origin, revision, issuer and Publication belong to its deployer; its record is opaque to

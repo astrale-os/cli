@@ -100,7 +100,7 @@ revision. A read before a Mutation is not transaction evidence.
 Fetch the served release (release.json), discovery/JWKS and Bundle; never trust intended
 Addressing. Then Kernel installation state. `SCHEMA_REQUIREMENTS_UNSATISFIED`: `details.denials`
 names, by Edge Class and target, each Role membership, granter or scope the installer may not pose
-or remove (`release.md`). A Worker that cannot reach a local Kernel tunnel: prove public health and
+or remove (`deployment.md`). A Worker that cannot reach a local Kernel tunnel: prove public health and
 Worker-to-Kernel reachability separately.
 
 ## Package drift

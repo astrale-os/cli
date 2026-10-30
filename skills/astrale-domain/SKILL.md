@@ -24,7 +24,7 @@ Load only the references the task needs.
 | Task | Read |
 | --- | --- |
 | Scaffold, TypeScript, Environments, local test setup | `references/development.md` |
-| Deploy, install, publish or yank a version, roll back, rotate a deployment's secret, own a development instance | `references/release.md` |
+| Deploy, install, publish or yank a version, roll back, rotate a deployment's secret, own a development instance | `references/deployment.md` |
 | Schema: vocabulary, Properties, Class/Edge choices, inheritance, keys, Edge lifetimes, Methods; always for Schema work | `references/schema.md` |
 | An Action handler; Action vs Workflow vs no callable; calling another callable or Domain | `references/actions.md` |
 | Read the graph: a Query, relations, pages, counts, limits | `references/queries.md` |

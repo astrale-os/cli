@@ -555,7 +555,7 @@ astrale call "@${SERVICE_NODE_ID}::services.astrale.ai:class.CloudflareService.m
   the call: recheck `current`, then verify intended behavior after propagation.
 - It always follows current; a historical deployment has no `setSecret` Method. Identical-release
   redeploy and promotion effects:
-  [deployment secrets](../astrale-domain/references/release.md#secrets-of-a-deployment).
+  [deployment secrets](../astrale-domain/references/deployment.md#secrets-of-a-deployment).
 
 ## Journal
 

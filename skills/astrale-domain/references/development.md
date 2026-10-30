@@ -97,10 +97,10 @@ export default defineProject({
 ```
 
 - An Environment = how to deploy + which secrets; it names no instance. A deploy never installs;
-  `astrale domain install -i <instance>` chooses (`release.md`). `astrale()` refuses `instance`,
+  `astrale domain install -i <instance>` chooses (`deployment.md`). `astrale()` refuses `instance`,
   `signingIdentity`, `organization`; an Environment declaring `installation` is refused.
 - Every Environment deploys as the authenticated `astrale` CLI identity (`--as`); line ownership:
-  `release.md`, Who owns a development instance.
+  `deployment.md`, Who owns a development instance.
 - `entrypoints.runtime` only overrides the conventional Runtime file; never repeat Runtime or
   frontend in Project or adapter options.
 - Each deployment gets a signing key generated at deploy: no key file; distinct from the CLI
@@ -125,7 +125,7 @@ astrale domain install <url> --allow-issuer-change -i <dev-instance>
 - No watch loop. Each changed build is a new preview at its own URL; installing it over the previous
   one is a same-line issuer change (`--allow-issuer-change`, or typing the origin at a terminal).
 - `deploy` requires an explicit Environment. Iterate on a development instance you own
-  (`release.md`), never on production.
+  (`deployment.md`), never on production.
 - A failed build or deploy changes no instance. No local Kernel or tunnel needed.
 
 ## Verification and handoff

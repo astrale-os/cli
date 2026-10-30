@@ -132,6 +132,8 @@ astrale-domain publish production    # deploys, verifies, then creates the versi
 5. Asks Admin for the Publication under the Domain's lock. A version published meanwhile with
    another release is refused; this deployment stays a preview.
 
+Publishing never installs: `astrale domain install <origin>@<version>` does.
+
 - A failure leaves at most a deployment without a version and says whether a rerun can help; a
   rerun reuses the deployment and settles a Publication whose answer was lost. A refusal Admin would
   repeat (missing `domain_admin`, a release Admin will not name) names its cause.
@@ -264,7 +266,8 @@ astrale-domain list --environment production --json
   such option, and rebuilding a Domain upload through `readWorkerDirectory` is not equivalent.
 - A deployment in a platform dispatch namespace (adapter-cloudflare `namespace` mode) has no
   Services node: its operators rotate it with that namespace's per-script tooling, reading the value
-  on stdin, or by an identical redeploy.
+  on stdin (`pnpm provider:platform-secret -- --label <label> --name <NAME> < value-file` in the
+  Services package of the `domains` repository), or by an identical redeploy.
 
 After a leak: put the new value in the secrets file and every CI secret store first (an identical
 redeploy with the old value would write it back), rotate every deployment still serving, then

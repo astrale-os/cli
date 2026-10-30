@@ -48,7 +48,7 @@ An install or uninstall is a durable Execution; its status `detail.class`:
   Follow it with `astrale execution status|result <execution>` as the same identity, Root or an
   `execution.reader`. Never resubmit an install to learn whether it worked.
 - Install needs the Kernel Role `domain.installer`, uninstall `domain.uninstaller` (or Root);
-  `release.md`, Authority an install needs.
+  `deployment.md`, Authority an install needs.
 - After a transport failure the Kernel may already have accepted it: install again with a fresh
   operation; while the first still changes the Schema the second is refused `SCHEMA_CHANGE_ACTIVE`,
   naming that Execution.
@@ -69,7 +69,7 @@ An install or uninstall is a durable Execution; its status `detail.class`:
   explicit roots of one grouped install. Embedded dependencies are not roots. Uninstalling a
   dependent does not repair compatibility.
 - Grouped activation is atomic across its roots; the install Execution and manual repairs are not.
-  Consent to an issuer change only after checking it (`release.md`).
+  Consent to an issuer change only after checking it (`deployment.md`).
 
 ```sh
 astrale domain install "$URL_A" "$URL_B" -i staging

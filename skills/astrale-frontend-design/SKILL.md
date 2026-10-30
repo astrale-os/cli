@@ -9,11 +9,18 @@ A Domain View renders inside the Astrale GUI shell: a focused product interface,
 page. Apply with the `astrale-domain` View guidance; reuse the host's visual language and the
 project's primitives unless the task sets another direction.
 
+## Information architecture
+
+Before writing UI code, sketch a high-level wireframe, mentally or in a temporary note: the primary
+task, the sections and subsections, the links between them, their relative importance, what belongs
+together, and the parent of every subsection.
+
 ## Layout and aesthetics
 
 - No hero, presentation area, redundant page header or empty space before useful content.
 - Task priority sets order, space and weight; each section is one logical unit; state and controls
   sit next to the content they affect.
+- Few strong regions, clear hierarchy, compact spacing, consistent controls.
 - Refused by default: a card per element, containers nested without a grouping need, cards lifting
   on hover, decorative gradients, pills, oversized metrics, ornamental animation or copy, cream or
   off-white backgrounds, italic accent words in headlines, numbered "01/02/03" section labels,
@@ -28,13 +35,18 @@ unauthorized and disabled states are modeled.
 - Loading at the waiting scope only: inside the submitted button, or a layout-matching skeleton per
   section on first load. One indicator per action.
 - No duplicate submission; input kept on failure; feedback next to the affected control.
-- Creation inserts the result where expected; focus moves only when it serves the next task.
-  Deletion distinguishes reversible removal from destruction; confirm only when the consequence
-  warrants it.
-- Dropdowns close on outside click and Escape and return focus to the trigger.
+- Creation shows its success and inserts the result where expected; focus moves only when it serves
+  the next task. Deletion distinguishes reversible removal from destruction; confirm only when the
+  consequence warrants it.
+- Optimistic updates only when the result is predictable. On failure: roll back, show the failure,
+  reconcile with the committed Kernel state.
+- Dropdowns close on outside click and Escape, support keyboard navigation, expose the selected
+  item and return focus to the trigger.
+- Dialogs, menus, forms and inline actions work by keyboard: visible focus, semantic controls,
+  associated labels, announced status and errors.
 - Long labels and values are layout cases: wrap when read, truncate only in fixed space with access
   to the full value, never over adjacent actions.
-- State is never conveyed by color alone.
+- Hover, disabled, pending, success and error states are distinct, never by color alone.
 
 ## Latency (`@astrale-os/shell-react`)
 
@@ -70,12 +82,13 @@ Kernel calls can take seconds. Use the Store before writing any cache or loader.
 ## Copy
 
 Keep only text that explains state or enables a decision or action, plus labels and accessibility
-text. After implementation, a dedicated pass reads every visible string in context and removes each
-one whose absence does not hurt understanding or action.
+text; no introductions, repetition, obvious help, decorative copy, or descriptions restating a
+heading or control. After implementation, a dedicated pass reads every visible string in context
+and removes each one whose absence does not hurt understanding or action.
 
 ## Verification
 
 Run the real flows with representative, empty, long, loading and failing data: creation, deletion,
-rollback, outside click and Escape, keyboard order, narrow layouts. On a throttled network: tab
-returns, optimistic writes, waterfalls, Back. Then remove redundant cards, effects, copy and space
-before useful content.
+rollback, outside click and Escape, keyboard order, narrow layouts, visible feedback. On a
+throttled network: tab returns, optimistic writes, waterfalls, Back. Then remove redundant cards,
+effects, copy and space before useful content.
