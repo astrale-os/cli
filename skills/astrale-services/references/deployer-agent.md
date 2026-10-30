@@ -17,6 +17,9 @@ Functions. A plain API or background job does not need this workflow; use
    DeployResultV1 itself has no owner or Service/deployment node IDs.
 4. If installation is part of the request, run `astrale domain install <deployment-url> -i <consumer>`
    on each selected consumer. Follow the CLI's issuer-change consent contract when it applies.
+   The installing identity needs that consumer's Kernel `domain.installer` Role and the right to
+   grant every Kernel Role membership the release requests; Root passes both. The release's Roles
+   and scopes are described in [Policies](../../astrale-domain/references/policies.md).
    Deploying, promoting a Service, and installing on one consumer do not upgrade other consumers.
 5. Confirm the exact installed release and invoke the requested Functions through each consumer
    with its intended application identity and representative inputs. Infrastructure readiness and

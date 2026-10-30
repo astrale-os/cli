@@ -61,11 +61,12 @@ confirmPayment: method({
 export const remind = defineWorkflow<typeof schema, typeof integrations>()(
   'Invoice.remind',
   async ({ input, self, execution, step, awaitSignal }) => {
-    await step.mutate('record-reminder', recordReminder, {
-      invoice: self,
-      note: input.note,
-      execution: execution.id, // lets confirmPayment find this run
-    })
+    await step.mutate(
+      'record-reminder',
+      recordReminder,
+      { invoice: self, note: input.note, execution: execution.id }, // lets confirmPayment find this run
+      { as: 'executor' },
+    )
 
     await step.parallel((s) => [
       s.run({ id: 'send-email', retry: { maxAttempts: 5 }, timeoutMs: 30_000 }, ({ integrations }) =>
@@ -78,10 +79,15 @@ export const remind = defineWorkflow<typeof schema, typeof integrations>()(
       timeoutMs: 3 * 24 * 3_600_000,
     })
     if (payment.kind === 'timeout') {
-      await step.mutate('flag-overdue', flagOverdue, { invoice: self })
+      await step.mutate('flag-overdue', flagOverdue, { invoice: self }, { as: 'executor' })
       return { paid: false }
     }
-    await step.mutate('record-payment', recordPayment, { invoice: self, amount: payment.value.amount })
+    await step.mutate(
+      'record-payment',
+      recordPayment,
+      { invoice: self, amount: payment.value.amount },
+      { as: 'executor' },
+    )
     return { paid: true }
   },
 )
@@ -90,7 +96,7 @@ export const remind = defineWorkflow<typeof schema, typeof integrations>()(
 export const confirmPayment = defineAction<typeof schema>()(
   'Invoice.confirmPayment',
   async ({ input, self, query, kernel }) => {
-    const reminder = await query(pendingReminderOf, { invoice: self })
+    const reminder = await query(pendingReminderOf, { invoice: self }, { as: 'executor' })
     await kernel.execution.signal(reminder.execution, { name: 'paid', value: { amount: input.amount } })
     return null
   },
@@ -105,8 +111,8 @@ Schema declares a durable callable; there is nothing else to wire.
 | Member | Use |
 | --- | --- |
 | `input`, `self`, `domain`, `error` | As in an Action. |
-| `step.query(id, query, input)` | One read, recorded: a resumed run reuses its result. |
-| `step.mutate(id, mutation, input)` | One Mutation, keyed: a retry never writes twice. |
+| `step.query(id, recipe, input, { as: 'executor' })` | One Query recipe, recorded: a resumed run reuses its result. |
+| `step.mutate(id, recipe, input, { as: 'executor' })` | One Mutation recipe, keyed: a retry never writes twice. |
 | `step.run(id, (capabilities) => …)` | Any other call. The callback receives `query`, `mutate`, `kernel`, `graph`, `dependencies` and `integrations`, acting with the identity of the function (its Domain). |
 | `step.parallel((s) => [...])` | Independent Steps in one engine round trip; `s` takes the arguments of `step.*`. |
 | `sleep(ms)` | A durable timer, kept while the Domain is down. |
@@ -133,13 +139,13 @@ code between Steps runs again on every resume. Every rule below follows from tha
   ```ts
   // wrong: the read and the effect share one Step
   await step.run('record', async ({ query, mutate }) => {
-    const sent = await query(remindersOf, { invoice: self })
-    return mutate(recordReminder, { invoice: self, rank: sent.length + 1 })
+    const sent = await query(remindersOf, { invoice: self }, { as: 'executor' })
+    return mutate(recordReminder, { invoice: self, rank: sent.length + 1 }, { as: 'executor' })
   })
 
   // right
-  const sent = await step.query('count-reminders', remindersOf, { invoice: self })
-  await step.mutate('record', recordReminder, { invoice: self, rank: sent.length + 1 })
+  const sent = await step.query('count-reminders', remindersOf, { invoice: self }, { as: 'executor' })
+  await step.mutate('record', recordReminder, { invoice: self, rank: sent.length + 1 }, { as: 'executor' })
   ```
 
 - **Refuse inside the Step.** A business refusal a Step detects is `throw error(code, details)`
@@ -205,10 +211,10 @@ export const collect = defineWorkflow<typeof schema, typeof integrations>()(
       )
     } catch (cause) {
       if (!exhausted(cause)) throw cause
-      await step.mutate('flag-unpaid', flagUnpaid, { invoice: self })
+      await step.mutate('flag-unpaid', flagUnpaid, { invoice: self }, { as: 'executor' })
       throw error('CHARGE_FAILED', { invoice: self })
     }
-    await step.mutate('record-charge', recordCharge, { invoice: self, receipt })
+    await step.mutate('record-charge', recordCharge, { invoice: self, receipt }, { as: 'executor' })
     return { charged: true }
   },
 )
@@ -279,20 +285,22 @@ recognizes. Compensate with Steps, then rethrow to end `cancelled`, or return a 
 `completed`.
 
 ```ts
-const hold = await step.mutate('hold-stock', holdStock, { order: self, lines: input.lines })
+const executor = { as: 'executor' } as const
+const hold = await step.mutate('hold-stock', holdStock, { order: self, lines: input.lines }, executor)
 try {
   await awaitSignal('approved')
 } catch (cause) {
   if (!cancelled(cause)) throw cause
-  await step.mutate('release-stock', releaseStock, { hold })
+  await step.mutate('release-stock', releaseStock, { hold }, executor)
   throw cause
 }
-await step.mutate('confirm-order', confirmOrder, { order: self, hold })
+await step.mutate('confirm-order', confirmOrder, { order: self, hold }, executor)
 ```
 
 A run that never reaches a wait or a Step (it fails outside any Step on every attempt, or its
 deployment no longer answers) cannot compensate: a cancel ends it once the engine has spent its run
-attempts. A forced cancel (`cancel({ force: true })`, owner Domain only) ends any run at once. Both
+attempts. A forced cancel (`cancel({ force: true })`: owner Domain, Root, or the Kernel Role
+`execution.terminator`) ends any run at once. Both
 end it without compensation; external effects stay.
 
 ## Callers
@@ -300,13 +308,14 @@ end it without compensation; external effects stay.
 | Operation | View (`@astrale-os/shell-react`) | CLI | Client session | Who |
 | --- | --- | --- | --- | --- |
 | Start | `useAction(callable).run(…)` | `astrale call` | `session.invoke` | The callable's Policy |
-| Follow | `useExecution(ref)` | `astrale execution status`, `result --wait` | `execution.status`, `execution.result` | Initiator, owner Domain |
-| Cancel | | `astrale execution cancel` | `execution.cancel(ref)` | Initiator, owner Domain |
+| Follow | `useExecution(ref)` | `astrale execution status`, `result --wait` | `execution.status`, `execution.result` | Initiator, owner Domain, Root, `execution.reader` |
+| Cancel | | `astrale execution cancel` | `execution.cancel(ref)` | Initiator, owner Domain, Root, `execution.terminator` |
 | Signal | | `astrale execution signal` | `execution.signal(ref, { name, value })` | Owner Domain, Root |
 | Resume a pause | | `astrale execution resume` | `execution.resume(ref)` | Owner Domain, Root |
-| Force cancel, delete | | | `execution.cancel(ref, { force: true })`, `execution.delete(ref)` | Owner Domain, Root |
+| Force cancel, delete | | | `execution.cancel(ref, { force: true })`, `execution.delete(ref)` | Owner Domain, Root, `execution.terminator` |
 
-The owner Domain reaches these from any of its handlers through `kernel.execution`.
+`execution.reader` and `execution.terminator` are Kernel Roles (`policies.md`); no Role signals or
+resumes. The owner Domain reaches these from any of its handlers through `kernel.execution`.
 
 ```tsx
 // A View refreshes when the run ends, not when the call returns
@@ -406,15 +415,19 @@ The change is mechanical: `defineWorkflow` becomes `defineAction` from `@astrale
 and each `step.run` is unwrapped. The callable, its Schema and its callers stay the same.
 
 ```ts
+const executor = { as: 'executor' } as const // read and write as the Domain
+
 // before: an inline Workflow
 export const editComment = defineWorkflow<typeof schema>()(
   'Comment.edit',
   { errors },
   async ({ error, query, mutate, input, self, step }) => {
-    const comment = await step.run('read-comment', () => query(commentOf, self))
-    const issue = await step.run('read-issue', () => query(issueOf, comment.issue))
+    const comment = await step.run('read-comment', () => query(commentOf, self, executor))
+    const issue = await step.run('read-issue', () => query(issueOf, comment.issue, executor))
     if (issue.archived) throw error('ISSUE_ARCHIVED', {})
-    return step.run('edit-comment', () => mutate(editBody, { comment: self, body: input.body }))
+    return step.run('edit-comment', () =>
+      mutate(editBody, { comment: self, body: input.body }, executor),
+    )
   },
 )
 
@@ -423,10 +436,10 @@ export const editComment = defineAction<typeof schema>()(
   'Comment.edit',
   { errors },
   async ({ error, query, mutate, input, self }) => {
-    const comment = await query(commentOf, self)
-    const issue = await query(issueOf, comment.issue)
+    const comment = await query(commentOf, self, executor)
+    const issue = await query(issueOf, comment.issue, executor)
     if (issue.archived) throw error('ISSUE_ARCHIVED', {})
-    return mutate(editBody, { comment: self, body: input.body })
+    return mutate(editBody, { comment: self, body: input.body }, executor)
   },
 )
 ```
@@ -439,7 +452,8 @@ the Action's `run` directly (`testing.md`); Step traces go away.
 
 1. Add `execution: { durable: true }` to its callable.
 2. Move every Kernel call into a Step: reads become `step.query`, writes `step.mutate`, anything else
-   `step.run(id, ({ query, mutate, kernel, integrations, dependencies }) => …)`. Drop `caller`.
+   `step.run(id, ({ query, mutate, kernel, integrations, dependencies }) => …)`. Drop `caller` and
+   `{ as: 'caller' }`: the run reads and writes as the executor alone.
 3. Fix what the typecheck reports: each member the durable context lacks, and each caller that
    reads the output (it now receives `ExecutionRef<Output>`).
 4. Check the three changes the typecheck cannot see: refusals thrown as `error(...)` inside their
@@ -448,20 +462,24 @@ the Action's `run` directly (`testing.md`); Step traces go away.
 5. Run `astrale-domain lint`, then the tests above.
 
 ```ts
+const executor = { as: 'executor' } as const
+
 // before: an inline Workflow
 async ({ input, self, query, mutate, integrations, step, error }) => {
-  const invoice = await step.run('read-invoice', () => query(invoiceOf, { invoice: self }))
+  const invoice = await step.run('read-invoice', () => query(invoiceOf, { invoice: self }, executor))
   if (invoice.balance > 0) throw error('OPEN_BALANCE', { invoice: self })
-  await step.run('archive', () => mutate(markArchived, { invoice: self, reason: input.reason }))
+  await step.run('archive', () =>
+    mutate(markArchived, { invoice: self, reason: input.reason }, executor),
+  )
   await step.run('notify', () => integrations.mailer.send({ invoice: self, template: 'archived' }))
   return null
 }
 
 // after: a durable Workflow
 async ({ input, self, step, error }) => {
-  const invoice = await step.query('read-invoice', invoiceOf, { invoice: self })
+  const invoice = await step.query('read-invoice', invoiceOf, { invoice: self }, executor)
   if (invoice.balance > 0) throw error('OPEN_BALANCE', { invoice: self })
-  await step.mutate('archive', markArchived, { invoice: self, reason: input.reason })
+  await step.mutate('archive', markArchived, { invoice: self, reason: input.reason }, executor)
   await step.run('notify', ({ integrations }) =>
     integrations.mailer.send({ invoice: self, template: 'archived' }),
   )

@@ -18,6 +18,12 @@ Class for a meaningful relationship between typed endpoints.
 Shared object contracts use abstract Classes (`nodeClass({ abstract: true, ... })`), not a separate
 interface declaration kind. Create concrete descendants, not instances of the abstract Class.
 
+`inheritance` decides who may extend a Class: omitted, `'internal'`, only Classes of its own Domain;
+`'open'`, also Classes of every Domain that depends on it; `'final'`, none. Extend another Domain's
+Class, such as Shell `User` or `Group`, only when it is `'open'`; authoring and install refuse any
+other foreign parent. Open a Class only as a deliberate extension point: closing or finalizing an
+`'open'` Class is a major change, and any other inheritance change is a patch.
+
 SDK-authored node Classes declare an icon: prefer `classIcon.lucide` with data from
 `@astrale-os/sdk/schema/icons`, or `classIcon.svg` for custom SVG. `classIcon.neutral` explicitly shows
 no glyph. Do not import React icons into Schema.
@@ -29,8 +35,26 @@ no glyph. Do not import React icons into Schema.
   provenance, or relationships of its own.
 
 State endpoint direction and cardinality explicitly. Do not hide relationships in string IDs,
-paths, generic JSON, or a catch-all relation Class. Do not add a constant business slug to a many-to-
-many Edge merely to satisfy storage identity.
+paths, generic JSON, or a catch-all relation Class. An Edge is identified by its source, target, and
+exact Class, so a Class holds at most one Edge per endpoint pair; its slug is optional locator
+metadata, never identity.
+
+Declare uniqueness as a key, never as a guard or a pre-read. A Node Class lists Property tuples,
+`unique: [['email'], ['country', 'siret']]`; a directed Edge Class lists tuples over `'source'`,
+`'target'`, `'slug'`, and `{ property }`, so `unique: [['source', 'slug']]` makes a slug unique under
+its source. A key Property is a string, number, boolean, or instant without `auto`; a tuple binds
+only while all its fields are present and covers descendants without restating it. A Node key is
+global to its Class: for uniqueness under a parent, key the parent's Edge. A duplicate write fails
+`MUTATION_POST_STATE_INVALID` with rule `duplicate-key`. Adding or removing a key is a major change.
+
+Each Edge endpoint declares or derives what deleting its Node does: `onDelete: 'restrict'` requires
+the transition to delete the Edge explicitly; `'detach'` deletes the Edge with the Node. Omitted, an
+endpoint that can hold another Domain's Node (it accepts a foreign Class, an own `'open'` Class, or
+an own Class that an own `'open'` Class extends) detaches, and every other endpoint restricts. Such an
+endpoint cannot declare `restrict`. An Edge Class with an endpoint that requires an Edge (`'1'`,
+`'1..*'`) declares no `detach` and no endpoint that can hold another Domain's Node. A subclass keeps
+its parent's lifetimes. Uninstalls and Schema transitions follow them: a restricting Edge at a
+leaving Node refuses with `DATA_MIGRATION_REQUIRED` (`restricted-deletion`).
 
 ## Properties
 
@@ -65,6 +89,7 @@ export const lifecycle = stateMachine({
 export const Issue = nodeClass({
   icon: classIcon.lucide(CircleAlert),
   properties: { status: stateProperty(lifecycle) },
+  policies: { read: true },
 })
 ```
 
@@ -102,13 +127,26 @@ and its Policy on its Class. Prefer composition when the relationship is not an 
 
 ## Policies
 
-Schema Policy owns authorization predicates. Keep authentication mode, callable authority, and Policy
-as distinct concerns. Policy may refer to the caller as its subject, receiver, Core Groups, and graph
-facts supported by the language. Do not move caller admission into Action/Workflow code.
+Schema Policy owns authorization predicates. Keep authentication mode, the Roles and scopes the
+release requests, and Policy as distinct concerns. Policy may refer to the caller as its subject,
+receiver, Core Groups, and graph facts supported by the language. Do not move caller admission into
+Action/Workflow code.
 
-`node(Class)` includes concrete descendants, including foreign installed descendants; it is not an
-exact-Class check. Use `node.exact(Class)` to retain exact matching. Read `policies.md` for connected
-proofs, direct-dependency references, and expanded-expression budgets.
+A concrete Class has five local Policy slots, never inherited: `policies: { read, traverse, create,
+update, delete }`. An omitted `read` or `traverse` admits every caller, as `true` does; `false` admits
+only the owning Domain acting as itself. An omitted `create`, `update`, or `delete` admits only the
+owning Domain acting as itself, as `false` does; `true` admits every caller. A slot takes a named
+Policy, a constant, or checks built from `({ check, self, ref, allOf, anyOf, sameNode })`, where
+`self` is the Node, or the Edge in an Edge Class rule. Node `create` takes only a constant or checks
+over fixed `ref` members: the Node does not exist yet. The SDK requires a concrete Class to declare
+`read`, and `traverse` whenever `read` is not `true`; Edge observation takes a named Policy or a
+constant. An abstract Class declares no slot. An executable `authorized` callable declares its
+`policy`. Read `policies.md` for admission, Roles, and scopes.
+
+`node(Class)` includes active concrete descendants within the Policy owner's pinned dependency
+closure; a Domain that depends on the owner never joins it. It is not an exact-Class check. Use
+`node.exact(Class)` to retain exact matching. Read `policies.md` for connected proofs,
+direct-dependency references, and expanded-expression budgets.
 
 ## Core data
 

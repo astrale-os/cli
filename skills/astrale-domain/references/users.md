@@ -28,7 +28,9 @@ create Employee extends Shell.User → same node, initially without Authenticati
 ## Allow Shell to traverse the membership endpoints
 
 Shell maintains membership using its own authority. Grant `traverse` on each participating concrete
-User and Group Class, not `read` of their profiles. An inaccessible endpoint must not look like absent membership.
+User and Group Class, not `read` of their profiles. Keep `read` your business rule (`readsEmployee`,
+`readsTeam` below): an absent or `true` `read` admits every caller, traversal included. An
+inaccessible endpoint must not look like absent membership.
 
 This combined example represents separate Schema owner files; normal imports between owners are abbreviated.
 It covers direct subclasses of Shell.User/Group, not arbitrary inheritance depth.
@@ -42,14 +44,14 @@ import { z } from 'zod'
 // schema/policies/owns-user-or-group-class.ts
 export const ownsUserOrGroupClass = policy({
   description: 'Shell may traverse instances of our direct User/Group subclasses to maintain membership.',
-  match: ({ allOf, anyOf, sameNode, exists, object, ref, subject }) =>
+  match: ({ allOf, anyOf, edge, exists, object, ref, sameNode, subject }) =>
     exists(({ node }) => {
       const memberClass = node()
       const userOrGroupClass = node()
       return allOf(
-        { source: object, class: K.classes.instance_of.ref, target: memberClass },
-        { source: memberClass, class: K.classes.extends.ref, target: userOrGroupClass },
-        { source: userOrGroupClass, class: K.classes.of_domain.ref, target: subject },
+        edge(K.classes.instance_of, { instance: object, class: memberClass }),
+        edge(K.classes.extends, { sub: memberClass, super: userOrGroupClass }),
+        edge(K.classes.of_domain, { member: userOrGroupClass, domain: subject }),
         anyOf(
           sameNode(userOrGroupClass, ref(S.classes.User.ref)),
           sameNode(userOrGroupClass, ref(S.classes.Group.ref)),
@@ -63,14 +65,14 @@ export const Employee = nodeClass({
   icon: classIcon.lucide(UserRound),
   extends: [S.classes.User],
   properties: { employeeNumber: z.string().min(1) },
-  policies: { traverse: ownsUserOrGroupClass },
+  policies: { read: readsEmployee, traverse: ownsUserOrGroupClass },
 })
 
 // schema/modules/team/classes/team.ts
 export const Team = nodeClass({
   icon: classIcon.lucide(Users),
   extends: [S.classes.Group],
-  policies: { traverse: ownsUserOrGroupClass },
+  policies: { read: readsTeam, traverse: ownsUserOrGroupClass },
 })
 
 // schema/schema.ts
@@ -78,7 +80,7 @@ export const schema = defineSchema('work.example', {
   name: 'Work',
   dependencies: { kernel: KernelSchema, shell: ShellSchema },
   classes: { Employee, Team },
-  policies: { ownsUserOrGroupClass },
+  policies: { ownsUserOrGroupClass, readsEmployee, readsTeam },
 })
 ```
 
@@ -116,20 +118,22 @@ export const schema = defineSchema('work.example', {
   invite concrete Shell-owned Users. Instance administration alone does not authorize foreign Classes.
 - Core `admin` and `member` are independent groups, not an implicit hierarchy. Registration grants
   neither; an explicit admin assignment is privileged, not a default business onboarding step.
-- A Team has no implicit capability profile. Membership may drive business Policies; installation
-  profiles grant capabilities to local Core identities, not arbitrary dynamic groups or users.
+- A Team holds no Role by default. Membership may drive business Policies; installation makes only the
+  Domain and its own Core Identities members of Roles, never arbitrary dynamic groups or users.
 - Unassigning removes that direct pair, not Authentication or every other access path. Memberships
   may precede registration; removing `member` alone is not a permanent ban on owner-authorized readmission.
 
-Shell's three methods above are decided by their Policy on the caller. A Domain calling them for its
-users also needs the principal ceiling of that delegation, so it declares the exact Method
-requirements; a human may inherit capabilities through `extends_with`. Neither bypasses the Policy. Declare Kernel Query/Mutate/Register
-capabilities as needed, and protect the business callable before it invokes Shell. See `policies.md`.
+Shell's three methods above decide their caller by their Policy. Declare a `call` scope on each one
+the Domain invokes (`{ on: S.classes.Group.static.methods.assignMember, operations: ['call'] }`); it
+meets only the ceiling of a delegation and bypasses no Policy. Hold the Kernel Roles your handlers
+need (`graph.reader`, `graph.writer`, `identity.registrar`), and protect the business callable before
+it invokes Shell. See `policies.md`.
 
 Use `dependencies.shell.caller.invoke(...)` to act for the incoming caller, or
 `dependencies.shell.self.invoke(...)` when an admitted business operation deliberately acts as its
 Domain, for example assigning to its own Team. There is no default dependency `invoke` and no mode
-combining both. The Domain principal still needs the exact Method capability.
+combining both. In a `self` session the Domain is the caller, so Shell's Policy decides the Domain
+itself, for example as owner of the Team's Class.
 
 ## Inspect and exercise the installed surface
 
@@ -148,8 +152,7 @@ astrale call /:shell.astrale.ai:class.Group:assignMember \
 These Shell handlers require exact `@NodeId` reference inputs; group methods return `{}`. Keep business
 references as IDs and convert to `@NodeId` at the Shell call boundary. Resolve Core member/admin
 on the target instance first, rather than sending group labels or IDs copied from another Kernel.
-An administrator finds both among their own memberships. The Core Path `/:shell.astrale.ai:core.admin`
-traverses the Shell Domain node and Kernel `of_domain`, which Shell administrators cannot read.
+An administrator finds both among their own memberships.
 
 To make an invited user an instance administrator, an existing administrator assigns them to Core
 `admin`; invitation never does. `astrale instance invitation status` reports the invited `user`, the
@@ -174,8 +177,10 @@ astrale identity register alice --node @employee-id -i staging --as operator
 astrale get @self -i staging --as alice --json
 ```
 
-If the operator lacks authority over Employee, use `--via` only with the Domain's explicitly admitted
-registration Function. Do not add a public registration wrapper or a generic enrollment callback for invitation.
+Registering directly needs the operator to extend `identity.registrar` and pass Employee's `update`
+rule (absent: the owning Domain only). Otherwise use `--via` only with the Domain's explicitly admitted
+registration Function; it owns the authorization, and its Domain extends `identity.registrar`. Do not
+add a public registration wrapper or a generic enrollment callback for invitation.
 
 Verify the same User ID before/after activation, both membership edges, and a real allowed/refused
 business call. Shell traversal must work without exposing private profile properties. Test root/bootstrap

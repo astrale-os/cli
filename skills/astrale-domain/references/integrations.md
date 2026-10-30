@@ -70,12 +70,16 @@ egress boundary; do not turn one directory layout into a universal security rule
 
 ## Remote Domains
 
-Use the same Integration/Provider boundary for cross-Domain calls. Bind the invocation's caller-scoped
-capability and invoke the exact callable from the exact loaded dependency. Do not store a Client,
-reconstruct a foreign path, widen to a registry, call a foreign implementation, copy its types, or
-claim atomicity across the service boundary.
+A declared dependency is called directly from an Action or Workflow (`domains.md`). Put a cross-Domain
+call behind an Integration only for substitution, replay metadata, or failure translation. Its
+Provider takes the exact dependency from the loaded `context.domain` that `initialize` receives and
+invokes the callable through the caller-bound `execution.invoke`, absent when the call carried no
+credential. Do not store a Client, reconstruct a foreign path, widen to a registry, call a foreign
+implementation, copy its types, or claim atomicity across the service boundary.
 
-Cross-Domain callable authority is installed Domain-to-Domain authority derived from the declared
-dependency. It is not a human `can_*` grant or a Provider-held credential. Test install ordering,
-direct-human denial, caller-bound dispatch, and observable effects separately only when each fact is
-part of the scenario's claim.
+The release requests a `call` scope on each foreign callable a handler or Provider invokes; the SDK
+linter reports a missing one. The scope only bounds what the Domain does for another caller: the
+callee's Policy still decides that caller, and the dependency grants nothing (see `policies.md`). It
+is not a human grant or a Provider-held credential. Test install ordering, the callee's refusal of a
+caller its Policy rejects, caller-bound dispatch, and observable effects separately only when each
+fact is part of the scenario's claim.

@@ -59,7 +59,8 @@ or credential options, except `astrale ui request`, which is an authenticated
 Kernel command and takes the shared Kernel options.
 
 Use `--anonymous` to omit a caller credential even when a local or bookmark-default identity exists.
-It cannot be combined with `--as` or `--creds`; required callables reject anonymous requests.
+It cannot be combined with `--as` or `--creds`; a callable that requires authentication
+(`authenticated` or `authorized`) refuses an anonymous request.
 
 ## Report an issue
 
@@ -286,7 +287,12 @@ nothing). Project Environments name no instance and ignore the CLI's active inst
 `astrale domain install` takes deployment URLs (`https://`, or `http://` for a local Host) and
 published versions: `<origin>@1.5.0` names exactly that version (a pre-release or a yanked one
 included), `<origin>@1.5` the highest stable 1.5.x that is not yanked. Versions resolve in the
-Admin registry with your own identity; a private Domain needs `domain_installer`.
+Admin registry with your own identity; a private Domain needs `domain_installer`. The install and
+the uninstall themselves are Kernel syscalls sent as you, decided by Kernel Roles rather than those
+Admin rights: an install needs `domain.installer` and the right to grant every Kernel Role
+membership the release requests (a scope toward a Kernel target needs Root), an uninstall
+`domain.uninstaller` and the right to revoke them. Root passes all of these; a release's Roles and
+scopes are described in [Policies](../astrale-domain/references/policies.md).
 
 - Several references install in ONE atomic operation: every Domain moves or none does, which is
   how dependent Domains move together. The CLI pins the release digest it read and verifies the
@@ -299,8 +305,10 @@ Admin registry with your own identity; a private Domain needs `domain_installer`
   replaced issuer keeps serving its in-flight work; `--revoke-previous` cuts it at the activation.
 
 `astrale domain uninstall` removes one or more origins atomically. Safe mode, the default, deletes
-nothing and is refused while their Classes hold facts; `--destructive` deletes those facts (never an
-unselected Domain's). Surviving dependents block it. Confirm at a terminal or pass `--yes`.
+nothing and is refused while their Classes hold facts; `--destructive` retires their Classes at the
+activation, whatever their number of facts, and purges those facts afterwards (never an unselected
+Domain's). Surviving dependents block it, and so does an Edge of a surviving Class whose lifetime
+restricts the deletion. Confirm at a terminal or pass `--yes`.
 
 ```bash
 astrale domain install https://crm.example -i staging
@@ -328,7 +336,7 @@ Never rerun it to learn what happened: follow the Execution it printed with
 `--operation <id>` is for automation: it replays only the exact same request (`--json`:
 `replayed: true`); any other request under a used id is refused, exit 5. Existing data the new
 schema refuses, maintenance repair sessions (`--mode maintenance`, then
-`domain installation apply|abort`) and large destructive uninstalls are covered in
+`domain installation apply|abort`) and destructive uninstalls are covered in
 [schema evolution and data migration](../astrale-domain/references/migration.md).
 
 `astrale domain versions <origin>` lists the Domain's published versions from the Admin
@@ -389,7 +397,8 @@ astrale identity register alice \
 The Kernel assigns Node IDs. They are returned by reads and creation results
 and can be reused through the `@node-id` Path form; do not derive application
 meaning from their contents. The primary self credential is signed for the target
-Kernel audience. Register checks the caller's authority on the existing Node.
+Kernel audience. Register needs the Kernel `identity.registrar` Role and update authority on the
+existing Node.
 When a Domain callable supplies that authority, optionally name it with `--via`;
 the CLI sends the same request and verifies the returned Node and Authentication.
 No Domain callback is required when the direct caller already has authority:
@@ -413,16 +422,23 @@ TOKEN=$(astrale token --raw -i staging)
 astrale query /:notes.example:class.Note --creds "$TOKEN" -i staging
 ```
 
-A minted token carries the identity itself as principal and caller: it acts for itself, so a
-callable's Policy alone decides, with no `can_use` needed. Without `--creds`, `call` exchanges the
-selected identity's credential through the callable's Domain instead: the Domain becomes the
-principal, the identity stays the caller, and the Policy is evaluated against the identity.
+A minted token carries the identity itself as principal and caller: it acts for itself, so the
+callable's Policy alone decides and no delegation ceiling applies. Without `--creds`, `call`
+exchanges the selected identity's credential through the callable's Domain instead: the Domain
+becomes the principal, the identity stays the caller, and the Policy is evaluated against the
+identity. A Kernel syscall has no Domain to exchange through, so every command presents the
+identity itself, and the syscall admits the members of its Kernel Role: Query `graph.reader`,
+Mutation `graph.writer`, Download `blob.reader`, Journal `journal.reader`, Register
+`identity.registrar`, Install `domain.installer`. An Identity is a member by extending the Role
+(`extends_with`), directly or through an Identity it extends, such as a Group; Root holds every
+Role. Deprecated: a `can_use` Edge on the syscall, which a release in the legacy requirements shape
+poses, still admits its holder.
 
-| Selection                                                    | Principal presented             | Effect                                                                                                              |
-| ------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `call` with `--as <identity>` or the default identity        | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity                              |
-| `get`, `query`, `mutate` on any instance, the Admin included | the identity                    | bounded by each Class's rules and the identity's Policies, with no Domain scope                                     |
-| `--creds "$(astrale token --raw)"`                           | the identity                    | the callable's Policy alone decides; a Kernel syscall's `canUseSyscall` still asks for the identity's own `can_use` |
+| Selection                                                    | Principal presented             | Effect                                                                                                       |
+| ------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `call` with `--as <identity>` or the default identity        | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity                       |
+| `get`, `query`, `mutate` on any instance, the Admin included | the identity                    | `graph.reader` or `graph.writer` admits the syscall; each Class's Policies then decide, with no Domain scope |
+| `--creds "$(astrale token --raw)"`                           | the identity                    | the callable's Policy alone decides; a Kernel syscall admits the members of its Kernel Role                  |
 
 Reuse a minted token for anything the identity may do itself; `call --as` presents the Domain's
 credential instead, for a Domain that must act for the identity.
@@ -535,15 +551,16 @@ encodes the body as text or base64. Callable input/output is
 `astrale introspect <path>`. A durable callable answers with the Execution it
 started: `call` prints that Execution's receipt instead of a value. Save it
 with `--json > receipt.json` and follow the run with
-`astrale execution status|result receipt.json` as the same identity; never
-repeat the call to learn its outcome. `call --wait` calls and waits in one
-command, up to `--timeout` (110 s by default): the value once it completed, the
-Kernel's error (exit 1) once it failed or was cancelled, or, still running, the
-receipt and exit 75. `astrale execution` takes an Execution
-ID or a receipt file and also sends a cooperative `cancel` (open to whoever
-started it), and `resume` and `signal <name> --value <json>` (Root only: one
-durable promise the run awaits, resolved once; the Kernel checks neither name
-nor value).
+`astrale execution status|result receipt.json` as the same identity (a member of
+the Kernel `execution.reader` Role reads any Execution); never repeat the call to
+learn its outcome. `call --wait` calls and waits in one command, up to
+`--timeout` (110 s by default): the value once it completed, the Kernel's error
+(exit 1) once it failed or was cancelled, or, still running, the receipt and
+exit 75. `astrale execution` takes an Execution ID or a receipt file and also
+sends a cooperative `cancel` (open to whoever started it, and to a member of
+`execution.terminator`), and `resume` and `signal <name> --value <json>` (Root
+only: one durable promise the run awaits, resolved once; the Kernel checks
+neither name nor value).
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10
@@ -591,9 +608,9 @@ For its identical-release redeploy path and promotion effects, see
 
 ## Journal
 
-`astrale logs` reads the public Kernel journal syscall and returns
-`{ records, cursor?, frontier?, gap? }`. Filters match exact values; use
-`--topic-prefix` for prefix matching. Function invocation records use
+`astrale logs` reads the public Kernel journal syscall as the selected identity, which needs the
+Kernel `journal.reader` Role, and returns `{ records, cursor?, frontier?, gap? }`. Filters match
+exact values; use `--topic-prefix` for prefix matching. Function invocation records use
 `function.invoke`; `payload.outcome` contains their outcome:
 
 ```bash
@@ -660,7 +677,12 @@ astrale whoami
 ```
 
 Add `--debug` for full Kernel error diagnostics. Missing and authorization-masked
-Nodes are intentionally indistinguishable. A Path also needs access to its
+Nodes are intentionally indistinguishable. Kernel Nodes are masked by family
+Role: Class, Function and Policy Nodes need `domain.reader`, Views `view.reader`,
+Executions `execution.reader`, and composition and scope Edges `authority.reader`.
+A 2004 `ACCESS_DENIED` from `get`, `query` or `logs`, rather than an empty
+answer, means the identity lacks that syscall's Kernel Role; `mutate` also
+answers it when a Class write Policy refuses. A Path also needs access to its
 intermediate nodes and edges: an observed Node may be readable by `@id` or a
 Class query while its Domain-rooted Path is unavailable. Check `-i` and `--as`;
 this alone does not prove corrupt data. Use `introspect` for callable schemas.

@@ -7,23 +7,27 @@ Read when writing Domain fixtures, focused tests, demos, or live acceptance jour
 Use the smallest real boundary that proves the behavior:
 
 - test pure projection and rules as ordinary functions;
-- test a Query with a narrow `QueryClient` double and assert the exact AST and pagination behavior;
+- test a Query recipe with a narrow `RecipeClient` double and assert the exact documents, page size,
+  and cursor;
 - test a Mutation with a narrow `MutationClient` double and assert the exact atomic document;
 - invoke an Action definition's `run` with an admitted, typed context when testing handler
   orchestration;
 - run a durable Workflow in `createTestWorkflowEngine` (`workflows.md`, Test), or an inline one with an
   inline Step implementation, when testing step order and values;
 - realize a Runtime when testing Action/Workflow exhaustiveness and Provider initialization;
-- use a real Kernel for installation, identity, callable authority, Policy, routing, and persistence.
+- use a real Kernel for installation, identity, Roles, scopes, callable authority, Policy, routing,
+  and persistence.
 
 Do not create a general fake Kernel. It becomes a second implementation of authority, visibility,
 transactions, paging, and error semantics, while still proving none of them.
 
 ## Exercise the owner, not its registration
 
-Use `executeQuery(client, domain, recipe, input)` / `executeMutation(client, domain, recipe, input)`
-with narrow capability doubles. They exercise SDK recipe realization and projection; invoking a
-hand-copied builder or merely asserting an AST version bypasses the behavior being delivered.
+Use `runQueryRecipe(client, domain, recipe, input)` / `executeMutation(client, domain, recipe, input)`
+with narrow capability doubles, and `checkRecipe(recipe, sampleInput, { domain })` from
+`@astrale-os/sdk/testing` for a recipe's bounds and the scopes its relations need. They exercise SDK
+recipe realization and projection; invoking a hand-copied builder or merely asserting a document
+version bypasses the behavior being delivered.
 
 Assert the invariant-bearing operations and absence of unintended writes, not only call counts.
 A constructed stale-state precondition proves authoring; only transaction execution proves it rejects
@@ -32,8 +36,8 @@ a concurrent edit without partial writes.
 ## Actions and Workflows
 
 Use a fixture that crosses a page boundary for a “complete collection” claim; a tiny dataset cannot
-detect first-page truncation. Check a repeated cursor and an exhausted bound reject without publishing
-partial business output, rather than merely asserting that `.query` was called.
+detect first-page truncation. Check that a read past its bound raises `TOO_MANY` without publishing
+partial business output, rather than merely asserting that `query` was called.
 
 For a read→Rule→Mutation flow, change the guarded fact between observation and commit. The Rule's
 unit test cannot prove the Mutation rejects stale state; use the actual Kernel transaction for that claim.
@@ -91,6 +95,8 @@ Make each scenario prove one semantic claim with the smallest sufficient criteri
 classes do not all need to appear in every scenario. Prefer focused proofs such as:
 
 - cross-Domain package boundary, install ordering, and caller-bound dispatch;
+- delegation authority: a `caller` operation refused when the caller fails the Role or Policy or the
+  Domain lacks the scope, and a dependency call as `self` decided by its Policy alone;
 - multi-user Policy denial and revocation;
 - local service, tunnel, and real external API delivery; and
 - a thin integrated smoke that composes already-proven pieces without duplicating every adversarial

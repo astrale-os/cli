@@ -40,7 +40,10 @@ export const frontend = defineFrontend({
 - Every Schema declares the Domain `name` the Shell shows, and at most one `entrypoint` among its
   Views: the View the Shell opens for the application. Both are projected into the graph (the Domain
   Node `name`, an `entrypoint` Edge), where the Shell lists them; a Domain without an entrypoint is
-  not listed. `defineFrontend` no longer takes an `entrypoint`.
+  not listed. `defineFrontend` takes no `entrypoint`.
+- A View is read from its Node, which carries its placement (URL, handshake), under the caller's
+  read authority: a View Node or an `entrypoint` Edge needs the Kernel Role `view.reader` (in the
+  `reader` profile), so the Shell opens and lists only the Views its caller reads.
 
 - Use `handshake: 'shell'` for host-provided session/client access; `none` is for standalone public documents.
   A View declaration has no callable auth mode: its graph reads and calls retain their own authorization.
@@ -110,8 +113,8 @@ Choose the boundary from product semantics; callable access and direct graph acc
 
 | Intended contract | Use |
 | --- | --- |
-| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session; Policy evaluates its caller |
-| Read a Class for the user through the Domain's own scope | Direct Query with the Domain as principal: it must own the Class or hold its exact capability, and the rule still judges the user |
+| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session (its caller holds `graph.reader`); Policy evaluates its caller |
+| Read a Class for the user through the Domain's own scope | Direct Query with the Domain as principal: both hold `graph.reader`; the Domain owns the Class, holds its `read`/`traverse` scopes, or passes the rule itself; the rule still judges the user |
 | Expose a calculated, aggregated, redacted, or graph-independent stable result | Function with explicit callable admission; implement it as an Action or Workflow as appropriate |
 
 The host owns session selection, exchange, and refresh; View code keeps using the supplied client.

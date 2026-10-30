@@ -11,28 +11,41 @@ the same product invariant remains proven.
 
 ## Read through reusable Queries
 
-Author reusable reads with `defineQuery` or `defineCompositeQuery` from `@astrale-os/sdk/query` and
-execute them with the Action or Workflow's bound Client. Use resolved Schema Classes and Properties;
-do not copy Definition keys, parse paths, issue raw database queries, or recreate the canonical Query
-AST.
+Author reusable reads as Query recipes, `defineQuery<typeof schema>()(id, { build, output? })` from
+`@astrale-os/sdk/query`, and call them from the Action or Workflow context under a named authority
+(`{ as: 'caller' }` or `{ as: 'executor' }`). Use the Schema's handles (`d.Issue`,
+`d.directory.Person`); do not copy Definition keys, parse paths, issue raw database queries, or
+write the canonical Query document by hand.
 
-- Use one Query when one graph observation answers the question.
-- Use a composite Query for a closed set of dependent reads with one final projection.
-- Declare complete pagination when completeness is required; let the SDK bound and validate cursors.
-- Project from the returned graph instead of re-reading each returned node.
+- Use one read when one graph observation answers the question; carry relations with `with`.
+- Use a record of facets for independent reads, and `steps(first, …)` (two to eight) when a read
+  needs an earlier result.
+- End each read with the verb that bounds it: `first(n)`, `page({ max })`, `count({ upTo })`, or
+  `all({ max })` when completeness is required (past `max` it raises `TOO_MANY`).
+- Project in `output` from the returned rows instead of re-reading each returned node.
 - Treat an absent visible node as unavailable; do not infer that it does not exist.
 
-Query execution owns remote response admission and pagination. A local projection should remain pure.
+Each read is one Kernel invocation at its own snapshot; facets, steps and pages share none. Do not
+expect a recipe of several reads to make one round trip. `d.A.union(d.B)` reads two Classes in one
+read; measure the actual calls rather than inferring batching from one `query(...)` in the handler.
 
-Do not replace several observations with a composite expecting one network round trip: ordinary
-leaves still execute separately. A supported collection union can combine compatible Class collections;
-measure the actual calls rather than inferring batching from one `query(...)` in the handler.
+Before sending, the SDK refuses a recipe past its bounds: 32 reads, 100,000 rows, a verb bound of
+83,332 (`TOO_MANY`), an `in` past 16 values (`INPUT_INVALID`). The Kernel then refuses a document
+past its language bounds before planning it: `QUERY_INPUT_INVALID` with
+`issue: 'QUERY_PLAN_LIMIT_EXCEEDED'`, the `limit`, its `maximum` and the `actual` measure. The
+limits are the estimated `cost`, `traversal-depth` (18), `conjuncts-per-pattern` (20),
+`connective-depth` (85), `order-keys` (100) and `nesting` (450); a Host may lower them. The SDK
+raises it as `QueryError` `INPUT_INVALID` with its `kernelCode`, `phase` and `path`. Neither
+refusal is transient: narrow the read or split it into steps.
 
 ## Write one invariant as one Mutation
 
 One bounded Mutation avoids per-item round trips only when all writes belong to one atomic invariant.
 Its operations are not sequential commands: combine updates to one target and keep independently
-raceable facts as preconditions. `runtime.md` covers the effect-set and pre-state constraints.
+raceable facts as guards (`mutation.expect.none|exists|count|unchanged` in a
+`defineMutation<typeof schema>()` recipe), never as a read before it. What the Schema declares (a
+key, a cardinality, accepted endpoints) is never a guard. `runtime.md` covers the effect-set and
+pre-state constraints.
 
 ## Choose Action versus Workflow by effects
 
@@ -56,16 +69,18 @@ Worker closure and packed package, because a source-only test cannot prove deplo
 
 ## Let the Registry lower Policy Node selectors
 
-Do not duplicate a long list of concrete Classes to optimize an existential Policy. Kernel resolves
-`node(Class)` through the pinned Registry to the active concrete descendants, including installed
-foreign descendants. It resolves `node()` from the active concrete Registry and narrows that set from
-the variable's Edge endpoints when the normalized Policy makes a safe constraint available. The
-backend then evaluates exact label alternatives rather than discovering inheritance per candidate.
+Do not duplicate a long list of concrete Classes to optimize an existential Policy. Kernel closes
+`node(Class)` to the active concrete descendant-or-self Classes inside the Policy owner's pinned
+dependency closure; an independently installed extension never joins it. It resolves `node()` from
+the active concrete catalog and narrows that set from the variable's Edge endpoints when the
+normalized Policy makes a safe constraint available. The backend then evaluates exact label
+alternatives rather than discovering inheritance per candidate.
 
 Selector choice still follows authorization semantics. `node.exact(Class)` is the smallest extent;
-`node(Class)` can grow as concrete descendants are installed; and `node()` can remain broad when its
-Edge topology does not narrow it. Review the resolved selector extent and Policy plan when a broad
-existential is on a measured hot path, but do not make an exact selector merely to improve a benchmark.
+`node(Class)` covers the concrete descendants the owner's closure pins; and `node()` can remain
+broad when its Edge topology does not narrow it. Review the resolved selector extent and Policy
+plan when a broad existential is on a measured hot path, but do not make an exact selector merely
+to improve a benchmark.
 
 ## Stop before cleverness
 

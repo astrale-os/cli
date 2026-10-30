@@ -13,8 +13,9 @@ Load detailed domain knowledge from the references that matches the goal.
 - Domain source imports Core and DSL authoring values only through the matching semantic
   `@astrale-os/sdk/*` subpath. Do not import `@astrale-os/kernel-core` or
   `@astrale-os/kernel-dsl` directly, and do not replace them with a flat SDK root barrel.
-- Keep authorization in Schema-owned Policy and callable `auth` mode; handlers execute only admitted
-  calls and do not define a second authorization model.
+- Keep authorization in Schema-owned Policy, callable `auth` mode, and the Kernel Roles and scopes
+  the release requests; handlers execute only admitted calls and do not define a second
+  authorization model.
 - Choose each existential Policy Node extent deliberately: `node()` for topology-owned matching,
   `node(Class)` for a polymorphic Class family, or `node.exact(Class)` for exact identity.
 - Treat the installed SDK's public exports and the current Domain source as authoritative
@@ -28,14 +29,19 @@ phased workflow below; an existing public scaffold already satisfies its foundat
 - Scaffold, test, or configure TypeScript and Environments for a domain: read `references/development.md`.
 - Deploy, install, publish or yank a version, roll back, rotate a deployment's secret, or decide who
   owns a development instance: read `references/release.md`.
-- Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/schema.md` first. Always read it for schema work.
+- Author schema, vocabulary, properties, Class/Edge choices, inheritance, keys, Edge lifetimes, or
+  Class Policy slots, or review a schema: read `references/schema.md` first. Always read it for
+  schema work.
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
 - Coordinate several effects, wait for a delay or a decision, or write, test, call, deploy, or migrate
   a Workflow: read `references/workflows.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
-- Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
+- Decide whether to reuse/import another Astrale Domain instead of modeling its vocabulary yourself,
+  or how to depend on and call one: read `references/domains.md`.
 - Model sign-in users, invite/register existing people, assign Shell groups, or make someone an instance administrator: read `references/users.md`.
-- Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication mode, or Policy: read `references/policies.md`.
+- Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication
+  mode, or Policy, or choose the Kernel Roles and scopes a release requests: read
+  `references/policies.md`.
 - Build or review browser views, mounted UI, View access, View resolution, or frontend design: read
   `references/views.md` and apply `astrale-frontend-design` for product-interface layout,
   interaction, and copy.

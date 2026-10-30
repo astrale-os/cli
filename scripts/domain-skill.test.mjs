@@ -83,5 +83,28 @@ test('the reorganized guides retain current authority and exact Method semantics
   assert.match(schema, /Use `method.executable`/)
   assert.match(runtime, /A missing handler rejects the Runtime/)
   assert.match(schema, /Instance Methods require an instance of their exact declaring Class/)
-  assert.match(policies, /`kernel.auth.register\(\.\.\.\)` requires `K.functions.register`/)
+  assert.match(runtime, /a recipe call without `as` throws/)
+  assert.match(
+    policies,
+    /`kernel.auth.register\(\.\.\.\)` admits a caller that extends `identity.registrar`/,
+  )
+})
+
+test('the shipped skills mention legacy capability authority only as deprecated', () => {
+  const skills = join(root, '..')
+  const files = readdirSync(skills, { recursive: true })
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => join(skills, name))
+  for (const path of files) {
+    for (const paragraph of readFileSync(path, 'utf8').split(/\n\s*\n/)) {
+      if (!/\bcan_(?:use|read|traverse|create|update|delete)\b|\bcanUseSyscall\b/.test(paragraph))
+        continue
+      assert.match(paragraph, /Deprecated/, `${path} teaches legacy capability authority`)
+    }
+  }
+  const domain = files
+    .filter((path) => path.startsWith(root))
+    .map((path) => readFileSync(path, 'utf8'))
+  for (const source of domain)
+    assert.doesNotMatch(source, /requirements\(\{\s*(?:functions|classes|authority|core)\s*:/)
 })

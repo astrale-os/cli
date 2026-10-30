@@ -70,14 +70,20 @@ import { K } from '@astrale-os/sdk/schema'
 // Import schema as a value here, plus runtime and frontend from their composition owners.
 export const domain = defineDomain({
   schema, runtime, frontend,
-  requirements: requirements({ functions: [K.functions.query, K.functions.mutate] }),
+  requirements: requirements({
+    roles: [
+      { role: K.core.nodes['graph.reader'], members: ['domain'] },
+      { role: K.core.nodes['graph.writer'], members: ['domain'] },
+    ],
+  }),
 })
 ```
 
 - Initialize Providers once from admitted environment. No Provider I/O at module scope and no handlers,
   authorization, or deployment effects in composition roots.
 - Requirements are inert Domain definition composition, not a top-level `requirements/` layer. Schema
-  dependencies pin definitions; installation requirements grant exact protected callable capabilities.
+  dependencies pin definitions; requirements name the Kernel Roles the Domain holds and the scopes
+  bounding what it does for callers on its dependencies (`policies.md`, `runtime.md`).
 
 ## defineProject and environments
 

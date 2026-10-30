@@ -45,8 +45,9 @@ astrale domain install "$URL_A" "$URL_B" --allow-issuer-change -i acme-stg
 ```
 
 - The URL is already a pin: the CLI reads the release it serves and pins its release digest, and
-  the Kernel refuses any other. A deployment URL never serves other code, so new code reaches an
-  instance only through an install of its new URL or version.
+  the Kernel refuses any other (`SCHEMA_REVISION_CONFLICT`). The Kernel installs only a DomainRelease
+  v4. A deployment URL never serves other code, so new code reaches an instance only through an
+  install of its new URL or version.
 
 ## Issuer changes need consent
 
@@ -62,6 +63,24 @@ issuer, which is never silent:
 The first install of an origin needs no consent. The replaced issuer keeps serving its in-flight work
 while it drains; `--revoke-previous` cuts it at the activation. Without consent the install fails
 with ISSUER_CHANGE_NOT_CONSENTED before anything is sent, and `details.origins` lists every change.
+
+## Authority an install needs
+
+The Kernel decides an install by Kernel authority, separate from the registry's rights:
+
+- Installing needs the Kernel Role `domain.installer`, uninstalling `domain.uninstaller` (both in
+  `domain.manager` and `admin`). The registry's `domain_installer` and `domain_admin` are Admin
+  rights on versions, not these Roles.
+- The install poses what each release's `requirements({ roles, scopes })` requests (`policies.md`).
+  Toward a Role, Class, or callable the Domain owns, nothing more is needed. A membership on another
+  Domain's Role needs the right to grant it: `can_grant_extension` toward the Role, or ownership of
+  its Class; a granter needs the rights to grant and to revoke it. For a Kernel Role, such as
+  `graph.reader`, that is Root or a granter of the Role. A scope toward another Domain's callable or
+  Class needs nothing more; a scope toward a Kernel target needs Root. Dropping one on an upgrade or
+  uninstall needs the right to remove it.
+- The caller and the authenticated principal, when they differ, must each pass. Otherwise the
+  install is refused `SCHEMA_REQUIREMENTS_UNSATISFIED`, with `details.denials` naming each Edge Class
+  and target. An install that changes nothing (`noop`) skips this check.
 
 ## Who owns a development instance
 
@@ -133,8 +152,9 @@ expire like a preview.
   ever chooses it. Publish from `production`; `publish staging` only for a beta that must run on
   test resources.
 - An Astrale operator creates the Domain in the registry and names its first administrator.
-  Publishing and yanking require `domain_admin`, reading versions `domain_installer` (a public
-  Domain grants it to the Public group); both can be held through a Group, CI included.
+  Publishing and yanking require the registry right `domain_admin`, reading versions
+  `domain_installer` (a public Domain grants it to the Public group); both can be held through a
+  Group, CI included.
 - `diff`, `publish` and `yank` reach the registry through the `astrale` CLI, with its Admin target and
   identity (`--as <identity>` on `diff` and `publish`). `--json` prints one report on stdout
   (DiffReportV1, PublishReportV1, YankReportV1); decide on the exit status.

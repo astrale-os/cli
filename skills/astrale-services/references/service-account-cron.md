@@ -49,13 +49,16 @@ including deletion. See [schema.md](schema.md).
 
 The self proof's audience is the exact Kernel issuer, including its path. Use the SDK primitives
 imported by the scaffold (`register.selfIssuer`, `issuer`, `jwk`, `connect`) rather than a guessed
-signing API. The default generated account session presents the account as principal. For an
-`authorized` callable it therefore needs `can_use` as well as its business Policy.
+signing API. The generated session (`connect` with `auth`) exchanges the account's credential at
+a hosted callable's declaring Domain, which then acts for the account: the callable's Policy
+decides for the account, and the declaring Domain needs no scope for its own callable. A Kernel
+syscall such as Query or Mutation receives the account itself and admits it only as a member of
+that syscall's Kernel Role (`graph.reader`, `graph.writer`); see
+[Policies](../../astrale-domain/references/policies.md).
 
-The scaffold exports `openAccount`. Its default session uses the account's
-own authority; do not copy an invented helper to enable Domain exchange. If that distinct mode is
-needed, adapt `openAccount` using the selected SDK's documented credential/session contract and
-verify the actual callable and business authorization before scheduling.
+The scaffold exports `openAccount`. Keep its `connect` defaults; `exchange: { mode: 'source' }`
+presents the account itself instead, and the same Policy decides. Either way, verify the actual
+callable and business authorization under the account before scheduling.
 
 ## Deploy and verify before scheduling
 

@@ -41,8 +41,8 @@ treat production data as disposable.
 
 A Domain retains the exact dependency revision against which it was authored. A current Kernel can
 bind it to another active revision when the structural comparison preserves its referenced schema,
-inheritance obligations and declared capabilities. A different revision alone does not require
-rebuilding every dependent. Inspect `SCHEMA_DEPENDENCY_INCOMPATIBLE` or
+inheritance obligations and the callables and Classes its release scopes name (`policies.md`). A
+different revision alone does not require rebuilding every dependent. Inspect `SCHEMA_DEPENDENCY_INCOMPATIBLE` or
 `SCHEMA_DEPENDENTS_INCOMPATIBLE` for the affected keys and Domains; preserve their business meaning.
 
 Rebuild the incompatible consumers and their affected reverse dependents against the intended
@@ -82,13 +82,17 @@ this refusal as transient.
 
 Keep the Execution an install prints, even when the CLI stops waiting before the outcome (exit 0
 with no `changed`). Follow it with `astrale execution status|result <execution>` as the same
-identity or Root; never submit the install again to discover whether it worked. A transport
+identity, Root, or a holder of the Kernel Role `execution.reader`; never submit the install again
+to discover whether it worked. An install needs the Role `domain.installer` and an uninstall
+`domain.uninstaller` (or Root). A transport
 failure can happen after the Kernel accepted it: install again with a fresh operation, and while the
 first one still changes the schema it is refused `SCHEMA_CHANGE_ACTIVE` naming that Execution.
 
 An operation id names one request and its outcome is final. Reusing it replays only that exact
-request, which the Kernel marks `replayed`; anything else under that id is refused as an operation
-conflict. Once a run ended `failed` or `cancelled`, request the change again with a fresh operation.
+request, which the Kernel marks `replayed`; anything else under that id is refused
+`SCHEMA_OPERATION_CONFLICT`. A call refused before dispatch (validation, authority,
+`SCHEMA_CHANGE_ACTIVE`) leaves the id free. Once a run ended `failed` or `cancelled`, request the
+change again with a fresh operation.
 
 ## Staged online transition: expand, migrate, contract
 
@@ -116,9 +120,12 @@ intermediate data cleanup legal under the currently active schema. In a maintena
 change is one target: install the final revision, delete the Edges, apply.
 
 Changing the Class of existing nodes online (renaming, merging or splitting a Class) means creating
-new nodes and deleting the old ones, and a delete can remove other Domains' data. An Edge Class
-whose endpoint accepts a Class its own Domain does not own detaches at that endpoint, unless one of
-its endpoints declares a minimum of `1`. So deleting your node also deletes the optional Edges that
+new nodes and deleting the old ones, and a delete can remove other Domains' data. An Edge endpoint
+declares its lifetime with `onDelete: 'restrict' | 'detach'`. Undeclared, an endpoint that can hold
+another Domain's Node (a foreign Class, an `'open'` Class or a Class extending one) detaches, and
+every other endpoint restricts: deleting the Node first requires deleting the Edge. An endpoint
+that can hold another Domain's Node cannot declare `restrict`, and the Builder refuses it in an Edge
+Class with an endpoint that requires an Edge. So deleting your node also deletes the Edges that
 dependent Domains hold toward it. The Mutation result does not report them, and your Domain cannot
 query their Edge Classes to move them first. Agree such a change with every dependent Domain before
 recreating nodes. In a maintenance session the same delete is refused with
@@ -127,12 +134,15 @@ recreating nodes. In a maintenance session the same delete is refused with
 ## Uninstalling a Domain with data
 
 `astrale domain uninstall` removes the selected Domains in one activation. Safe mode, the default,
-deletes nothing: it is refused (`remove-facts`) for each of their Classes that still holds facts.
-`--destructive` deletes those facts, and the Kernel relations of the deleted Nodes, in the same
-activation, but never more than the Host's projection bound per Class; the refusal carries that
-bound in `work`. Above it, delete the facts through ordinary Mutations first (Edges before their
-Nodes, in batches the Mutation limit admits), then uninstall. Edges a surviving Domain owns and
-surviving dependents block the uninstall. A refused uninstall deleted nothing.
+deletes nothing: it is refused (`remove-facts`) for each of their Classes that still holds facts,
+whatever their number. `--destructive` retires those Classes at the activation, whatever their
+size: their facts become invisible to every read and write, and the uninstall Execution then purges
+them in batches (`detail.phase` `purging`, `detail.purge: { removed, total? }`). Once the
+activation commits, the uninstall cannot be cancelled or deleted (`EXECUTION_EXIT_REFUSED`) and
+ends `completed`. In either mode, Edges of surviving Classes follow their lifetimes: a detaching
+Edge goes with the Node, and one that restricts at a leaving Node refuses the uninstall as
+`restricted-deletion` until you delete it. Surviving dependents block the uninstall. A refused
+uninstall deleted nothing.
 
 ## Maintenance repair sessions
 
@@ -184,8 +194,8 @@ astrale execution result "$EXECUTION" --wait -i "$INSTANCE" --as "$INSTANCE-root
 
 The online refusal's report, or `detail.report.summary` in the session status after a refused
 `apply`, lists each failing rule: its Class, property, count and at most 20 offenders (`truncated`
-when more exist). Past them, read the Class as Root (`astrale query --class`) and select the
-offenders yourself. A repair is an ordinary Mutation (`astrale mutate --as "$INSTANCE-root"`;
+when more exist). Past them, read the Class as Root (`astrale query --class`, Query V6: the
+Kernel serves no Query v7 recipe in a session) and select the offenders yourself. A repair is an ordinary Mutation (`astrale mutate --as "$INSTANCE-root"`;
 `--dry` checks its form, not the data) keyed by full Property keys; a rename sets the target key
 and unsets the source's, `node.delete` and `edge.delete` (`edge: { source, target, class }`) remove
 facts:

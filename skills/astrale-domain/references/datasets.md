@@ -58,7 +58,7 @@ import the Dataset or install its facts.
 
 - Admission checks properties, concrete Classes, endpoint compatibility, and duplicate IDs. It is
   not proof of business dates, lifecycle eligibility, or live cardinality enforcement.
-- Endpoints must be Dataset nodes. For a local or direct-dependency Core/Class/Function/Policy node,
+- Endpoints must be Dataset nodes. For a local or direct-dependency Core/Class/Function/Policy/View node,
   use the graph callback's `ref(domain.core.nodes.inbox)` (or the appropriate definition). This
   retains its reference identity; copying properties into `node(...)` does not. Dataset refs are
   resolved from Schema, not fetched from a live installation.

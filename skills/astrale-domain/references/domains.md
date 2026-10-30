@@ -9,26 +9,30 @@ recreate its callable contracts locally for convenience.
 For sign-in users and shared groups, use Shell's public contract; read `users.md` for concrete
 subclasses, existing-node registration, invitation, and the traversal agreement Shell needs.
 
-## Graph-level dependency
+## Schema dependency
 
-Declare a Schema dependency only when the local graph directly refers to foreign Classes, Edges,
-Policies, Views, or Core definitions. Import the foreign Domain through its published package facade.
-Do not reconstruct definition keys or depend on another package's private source.
+Declare a Schema dependency on each Domain whose Classes, Edges, Policies, Views, Core definitions,
+or callables the local Domain refers to or calls; a reference reached only through another
+dependency is refused. Import the foreign Domain through its published package facade. Do not
+reconstruct definition keys or depend on another package's private source.
 
 ## Behavioral dependency
 
-Cross-Domain behavior is a consumer-owned Integration:
+Call a foreign callable from an Action or Workflow through its declared alias, choosing the
+authority explicitly (`runtime.md`):
 
 ```text
 local Action or Workflow
-  -> local Integration contract
-  -> Runtime Provider
-  -> remote Domain public Client/session call
+  -> dependencies.<alias>.caller.invoke(...)   acts for the incoming caller
+     dependencies.<alias>.self.invoke(...)     acts as the Domain
+  -> remote callable, admitted by its own Policy
 ```
 
-This keeps provider location, credentials, retries, and remote failure translation out of Schema and
-business rules. A state-changing foreign call combined with local changes is a Workflow (`workflows.md`);
-it is not one atomic graph Mutation.
+The release requests a `call` scope on each foreign callable it invokes; the scope bounds only what
+the Domain does for another caller, and the dependency itself grants nothing (see `policies.md`).
+Wrap the call in a consumer-owned Integration (`integrations.md`) when it needs substitution, replay
+metadata, or failure translation. A state-changing foreign call combined with local changes is a
+Workflow (`workflows.md`); it is not one atomic graph Mutation.
 
 ## Public boundary
 
@@ -42,7 +46,7 @@ another instance must not silently rename the Schema origin or its Definition ke
 ## Review
 
 - Which package owns each Class, Edge, Policy, callable, and lifecycle?
-- Does graph-level use justify a Schema dependency?
-- Is remote behavior behind a local Integration and Provider?
+- Does a direct reference or call justify each Schema dependency?
+- Does each foreign call select `caller` or `self` and have its `call` scope?
 - Are only published facades imported?
 - Are atomicity and availability claims honest across the remote boundary?
