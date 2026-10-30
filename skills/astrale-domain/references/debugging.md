@@ -51,10 +51,10 @@ installed-Domain binding → source Kernel → local result
 
 - The SDK session owns discovery, delegation transport, redirect admission, and credential reuse.
   Do not assume every call performs separate delegate/exchange requests; local and warm calls differ.
-- A Domain token exchange changes the authenticated principal to that Domain's installed identity while
-  the caller stays the verified source identity, usually the user. This changes the principal's Roles,
-  scopes, and ownership, not the caller: Policies still evaluate the user, and Journal records name the
-  Domain as principal. It also bounds every operation of the session: the Domain must hold the
+- A Domain token exchange makes that Domain's installed identity the executor while the caller stays
+  the verified source identity, usually the user. This changes the executor's Roles, scopes, and
+  ownership, not the caller: Policies still evaluate the user, and Journal records name the Domain as
+  `principal`. It also bounds every operation of the session: the Domain must hold the
   syscall's Role, and own each Class or callable, hold a scope on it, or itself pass its Policy. An
   identity acting for itself meets no such ceiling; use the session selected by the host.
 - A protocol redirect carries a destination credential, not permission to forward the original token
@@ -78,7 +78,7 @@ installed-Domain binding → source Kernel → local result
   the caller's rule), a direct one (the rule alone), and the Domain's own writes on a foreign Class
   (that Class's write slot; no scope widens them). Without a scope, the ceiling holds only when the
   Domain owns the target or itself passes its rule; the caller's passing Policy never compensates.
-  The installed executor never substitutes for that principal. See `policies.md` before changing
+  The callee Domain never substitutes for the calling executor. See `policies.md` before changing
   requirements or slots.
 - Policy refusal: distinguish Function Root/owner alternatives from Class owner/rule alternatives;
   neither a Role nor a scope bypasses a business Policy. Check the deployed Kernel's semantics first.

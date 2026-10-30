@@ -32,7 +32,12 @@ phased workflow below; an existing public scaffold already satisfies its foundat
 - Author schema, vocabulary, properties, Class/Edge choices, inheritance, keys, Edge lifetimes, or
   Class Policy slots, or review a schema: read `references/schema.md` first. Always read it for
   schema work.
-- Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
+- Implement an Action handler, choose between an Action, a Workflow and no callable, or call
+  another callable or Domain from a handler: read `references/actions.md`.
+- Read the graph (a Query, its relations, pages, counts, limits): read `references/queries.md`.
+- Write the graph (a Mutation, its guards, refusals and transitions): read `references/mutations.md`.
+- Choose whose authority a call uses (`executor` or `caller`, `.self` or `.caller`), or reason about
+  Identities and composition: read `references/authority.md`.
 - Coordinate several effects, wait for a delay or a decision, or write, test, call, deploy, or migrate
   a Workflow: read `references/workflows.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
@@ -66,8 +71,9 @@ order and load a reference only when its phase begins.
    Runtime, keep that plumbing and move directly to Schema.
 2. **Schema:** Before authoring the schema, read `references/schema.md`; for sign-in users and groups,
    also read `references/users.md` before inventing identity or onboarding vocabulary.
-3. **Callables:** Before implementing callables, read `references/runtime.md` and
-   `references/policies.md`. If an operation makes several effects or waits, also read
+3. **Callables:** Before implementing callables, read `references/actions.md`,
+   `references/authority.md` and `references/policies.md`, then `references/queries.md` and
+   `references/mutations.md` for the reads and writes they make. If an operation makes several effects or waits, also read
    `references/workflows.md`; if an external system is involved, `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition. Every View

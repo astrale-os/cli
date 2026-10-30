@@ -83,7 +83,7 @@ export const domain = defineDomain({
   authorization, or deployment effects in composition roots.
 - Requirements are inert Domain definition composition, not a top-level `requirements/` layer. Schema
   dependencies pin definitions; requirements name the Kernel Roles the Domain holds and the scopes
-  bounding what it does for callers on its dependencies (`policies.md`, `runtime.md`).
+  bounding what it does for callers on its dependencies (`policies.md`, `authority.md`).
 
 ## defineProject and environments
 

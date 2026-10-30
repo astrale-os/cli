@@ -19,7 +19,7 @@ reconstruct definition keys or depend on another package's private source.
 ## Behavioral dependency
 
 Call a foreign callable from an Action or Workflow through its declared alias, choosing the
-authority explicitly (`runtime.md`):
+authority explicitly (`authority.md`):
 
 ```text
 local Action or Workflow

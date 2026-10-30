@@ -69,21 +69,23 @@ test('the Domain skill router reaches existing reference files without orphaned 
 })
 
 test('the reorganized guides retain current authority and exact Method semantics', () => {
-  const runtime = readFileSync(join(root, 'references', 'runtime.md'), 'utf8')
+  const authority = readFileSync(join(root, 'references', 'authority.md'), 'utf8')
+  const actions = readFileSync(join(root, 'references', 'actions.md'), 'utf8')
   const schema = readFileSync(join(root, 'references', 'schema.md'), 'utf8')
   const policies = readFileSync(join(root, 'references', 'policies.md'), 'utf8')
   assert.match(
-    runtime,
-    /Default `query`, `mutate`, and `kernel` use the installed Domain authority/,
+    authority,
+    /\| `kernel`, `graph` \| The executor: `kernel.invoke\(\.\.\.\)` acts as the Domain \|/,
   )
-  assert.match(runtime, /`graph.caller` or `kernel.caller`/)
-  assert.match(runtime, /no `expect` or `schemaExpectation` option/)
+  assert.match(authority, /`graph.caller`, `kernel.caller`, `dependencies.<alias>.caller`/)
+  assert.match(authority, /a recipe call without `as` throws/)
+  assert.match(authority, /Use `extends_with` alone/)
+  assert.match(actions, /no\s+`expect` or `schemaExpectation` option/)
   assert.match(schema, /Only abstract Method obligations are inherited/)
   assert.match(schema, /A concrete Class can declare `abstract: true`/)
   assert.match(schema, /Use `method.executable`/)
-  assert.match(runtime, /A missing handler rejects the Runtime/)
+  assert.match(actions, /A\s+missing handler rejects the Runtime/)
   assert.match(schema, /Instance Methods require an instance of their exact declaring Class/)
-  assert.match(runtime, /a recipe call without `as` throws/)
   assert.match(
     policies,
     /`kernel.auth.register\(\.\.\.\)` admits a caller that extends `identity.registrar`/,

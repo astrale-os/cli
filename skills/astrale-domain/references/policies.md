@@ -10,49 +10,48 @@ Runtime evaluates them against the pinned installation state:
 
 - `anonymous` permits an absent credential. If a credential is supplied, Runtime authenticates it and
   propagates authentication failure instead of falling back to anonymous. Without a credential the
-  handler still runs with the Domain's own authority (see `runtime.md`), so the caller is granted
+  handler still runs with the Domain's own authority (see `authority.md`), so the caller is granted
   nothing but what the handler does for it;
 - `authenticated` requires an authenticated actor and adds no callable Policy;
 - `authorized` requires an authenticated actor and is the only mode with a caller rule (`policy`), which
   the SDK requires: Policy checks, `true`, or `false`. Kernel Root acting as itself passes; every other
-  call requires the caller's admission and, for a delegation, the principal ceiling, as described below.
+  call requires the caller's admission and, for a delegation, the executor's ceiling, as described below.
 - Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
   a protected operation merely because its handler can access Domain-owned data.
 
 ## Function admission: the caller's rule, scoped by a delegation
 
-Every authenticated call carries two Identities:
+Every authenticated call carries two Identities (`authority.md` chooses between them in a handler):
 
-- the `principal`, established by authentication: the executor, its non-transferable ceiling, installed
-  ownership, and Root;
+- the executor, established by authentication: its non-transferable ceiling, installed ownership,
+  and Root. Kernel errors and Journal records name it `principal`;
 - the `caller`, the one Identity whose authority the call exercises. A direct call has
-  `caller = principal`. When a Domain acts for a user (`graph.caller`, `dependencies.<alias>.caller`,
+  `caller = executor`. When a Domain acts for a user (`graph.caller`, `dependencies.<alias>.caller`,
   or the SDK Domain token exchange behind a Domain's Views, the Console and a callable command), the
-  principal is the Domain and the caller is the user. CLI graph commands (`get`, `query`, `mutate`)
+  executor is the Domain and the caller is the user. CLI graph commands (`get`, `query`, `mutate`)
   on any Instance, the Admin included, and the Shell's own Views act for the user itself.
 
-Both are evaluated through their live `extends_with`, `constrained_by`, and `excluded_from` composition
-with deny-wins. A call carries no set of Identities: there is no union, intersection, or exclusion of
-callers. The caller never raises the principal's ceiling, and principal authority never flows into the
-caller's evaluation. An authorized Function makes two decisions:
+Both are evaluated through their live composition (see Groups below). A call carries no set of
+Identities: there is no union, intersection, or exclusion of callers. The caller never raises the
+executor's ceiling, and executor authority never flows into the caller's evaluation. An authorized Function makes two decisions:
 
 1. The caller rule. The caller passes as Root, by exact Function ownership, or by the declared
    callable Policy. `false` leaves Root and the owner only; `true` admits every caller, excluded ones
    included. Holding a Role or a scope bypasses nothing: a Role admits only where a Policy checks it.
-2. The principal ceiling, only when a non-Root principal acts for another caller. The principal holds
+2. The executor's ceiling, only when a non-Root executor acts for another caller. The executor holds
    `scope_call` toward the Function (see Requirements), owns it exactly, or itself satisfies its
-   Policy; a `true` Policy needs no ceiling. A group the principal extends may supply the scope; the
+   Policy; a `true` Policy needs no ceiling. A group the executor extends may supply the scope; the
    caller never does. An Identity acting for itself delegates nothing: its rule alone decides.
 
 Class operations make the same two decisions (Graph access below): a delegation never exceeds what
-the caller may do alone, nor what the principal's scope, ownership, or rule allows.
+the caller may do alone, nor what the executor's scope, ownership, or rule allows.
 
-- The callee Domain that runs the handler never replaces the calling principal. Exact Method ownership
+- The callee Domain that runs the handler never replaces the calling executor. Exact Method ownership
   follows its executable declaring installation, not a business `ownedBy` Edge; instance receivers must
   have the exact declaring Class.
-- A Root principal acting for a caller meets no ceiling, but its caller is still decided. A Root caller
-  carried by a Domain session passes the caller rule, never the principal ceiling.
-- A Policy `subject` is the caller, not necessarily the authenticated principal, and it already covers the
+- A Root executor acting for a caller meets no ceiling, but its caller is still decided. A Root caller
+  carried by a Domain session passes the caller rule, never the executor's ceiling.
+- A Policy `subject` is the caller, not necessarily the executor, and it already covers the
   caller's groups (see Groups below).
 - A Kernel syscall's Policy admits the members of its Kernel Role (see Requirements): a `caller` session
   needs it for the user and for the Domain's ceiling. Resource checks inside the syscall stay independent.
@@ -73,9 +72,9 @@ the caller may do alone, nor what the principal's scope, ownership, or rule allo
 | Edge Class `create` | a Policy, `true`, or checks over `self`, the Edge | the owning Domain only |
 
 - The caller passes as Root, by installed ownership of the Class, or by the slot's rule, never by a
-  scope it holds. When a principal acts for another caller, it also meets its ceiling: it holds
+  scope it holds. When an executor acts for another caller, it also meets its ceiling: it holds
   `scope_<op>` toward the Class, owns it, or itself satisfies the slot's rule. An open rule (`true`,
-  or an absent observation) admits every caller and principal without a ceiling. The outer Query or
+  or an absent observation) admits every caller and executor without a ceiling. The outer Query or
   Mutation gate still applies; choose the intended View boundary in `views.md`.
 - A scope bounds what its holder does for others. Put "this group reads every node" in the rule
   itself, as a check on the group.
@@ -172,7 +171,7 @@ Deprecated: `can_use`, `can_read`, `can_traverse`, `can_create`, `can_update`, `
   does not justify a shadow User or manual writes to Shell's membership/authority pair.
 - Declare a `call` scope on each foreign Function or Method the Domain invokes, Shell methods included.
   It meets only the Domain's ceiling: the caller (the Domain itself in a `self` session, the user in a
-  `caller` session) must still pass the callable's rule. For a human principal, inspect the human's
+  `caller` session) must still pass the callable's rule. For a human caller, inspect the human's
   live group composition: Domain requirements grant the human nothing, and a right a group supplies
   through `extends_with` needs no direct copy.
 - `kernel.auth.register(...)` admits a caller that extends `identity.registrar`, directly or through
@@ -205,15 +204,14 @@ export const rename = method({
 ## Groups: `subject` is the caller's composition
 
 The caller's composition is the caller and every Identity it reaches through `extends_with` (group
-membership; Shell `Group.assignMember` writes it, see `users.md`), at any depth. `constrained_by` caps
-an Identity: its constraint must satisfy the Policy too. `excluded_from` vetoes: whatever the excluded
-Identity satisfies is refused to the caller, even when the caller holds it itself or through another
-group. Kernel decides each Policy for every Identity of that composition, so `subject` already means
-"the caller or any of its groups".
+membership; Shell `Group.assignMember` writes it, see `users.md`), at any depth. Kernel decides each
+Policy for every Identity of that composition, so `subject` already means "the caller or any of its
+groups". Domains compose Identities with `extends_with` only: the Kernel also evaluates
+`constrained_by` and `excluded_from`, which Domains never author (`authority.md`, Composition).
 
 - State a fact a group holds as one Edge from or to `subject`. Never walk `extends_with` (one hop or a
-  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, skips the constraints
-  and exclusions of the groups it crosses, and spends a leaf and a variable of the branch budget.
+  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, bypasses the
+  composition the Kernel decides, and spends a leaf and a variable of the branch budget.
 - Check membership in a fixed group against that group: `check(extendsGroup, ref(group))`, with
   `extendsGroup` matching `sameNode(subject, object)`. Keep the group a fixed `ref`: the composition
   includes the caller itself, so an input object admits any caller passing its own id.
@@ -302,11 +300,11 @@ policy: ({ allOf, check, input, ref }) =>
 
 ## Policy and admission evidence
 
-- Root success proves executability, not an application user's Policy. Test distinct registered principals
+- Root success proves executability, not an application user's Policy. Test distinct registered Identities
   with real business facts; a local CLI identity need not be registered or authorized on the target Kernel.
-- Test credential failure, a delegation refused for want of the principal's scope, a fact inherited
+- Test credential failure, a delegation refused for want of the executor's scope, a fact inherited
   from a Group, a direct caller admitted by the Policy alone, and a business Policy denial despite
-  the principal's valid scope. Keep Root/owner alternatives out of a test claiming Policy enforcement.
+  the executor's valid scope. Keep Root/owner alternatives out of a test claiming Policy enforcement.
   For denials, prove reachable handlers, steps, Providers, and graph effects did not run; earlier Runtime
   initialization is outside that assertion.
 - Inspect the Domain's installed Role memberships and scopes, and the live group composition of human

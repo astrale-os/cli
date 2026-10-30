@@ -146,7 +146,7 @@ uninstall deleted nothing.
 
 ## Maintenance repair sessions
 
-Maintenance requires Root as both principal and caller and closes the **whole Instance** to ordinary
+Maintenance requires Root as both executor and caller and closes the **whole Instance** to ordinary
 traffic. Root is the Instance's root identity: on an Instance you own, `astrale instance root import
 <slug>` saves it locally as `<slug>-root`, selected with `--as <slug>-root`. A Shell administrator or
 a business role is not Root. Record the identity, Instance, reason and effects of every Root use.

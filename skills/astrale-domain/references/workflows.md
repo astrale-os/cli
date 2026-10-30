@@ -9,7 +9,7 @@ The full reference ships in the `@astrale-os/sdk` package as `docs/durable-workf
 
 | The operation… | Write |
 | --- | --- |
-| reads, then makes at most one effect, and answers at once | an Action (`runtime.md`) |
+| reads, then makes at most one effect, and answers at once | an Action (`actions.md`) |
 | makes two or more effects that cannot commit together | a durable Workflow |
 | waits: a delay, a decision, a payment | a durable Workflow |
 | must finish after a crash or a redeploy between two effects | a durable Workflow |
@@ -444,7 +444,7 @@ export const editComment = defineAction<typeof schema>()(
 )
 ```
 
-The effect stays last, after the reads it needs (`runtime.md`). A fact that must still hold when it
+The effect stays last, after the reads it needs (`actions.md`). A fact that must still hold when it
 commits is a precondition of the Mutation (`mutation.expect`), not a read before it. Tests invoke
 the Action's `run` directly (`testing.md`); Step traces go away.
 

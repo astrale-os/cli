@@ -114,11 +114,11 @@ Choose the boundary from product semantics; callable access and direct graph acc
 | Intended contract | Use |
 | --- | --- |
 | Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session (its caller holds `graph.reader`); Policy evaluates its caller |
-| Read a Class for the user through the Domain's own scope | Direct Query with the Domain as principal: both hold `graph.reader`; the Domain owns the Class, holds its `read`/`traverse` scopes, or passes the rule itself; the rule still judges the user |
+| Read a Class for the user through the Domain's own scope | Direct Query with the Domain as executor: both hold `graph.reader`; the Domain owns the Class, holds its `read`/`traverse` scopes, or passes the rule itself; the rule still judges the user |
 | Expose a calculated, aggregated, redacted, or graph-independent stable result | Function with explicit callable admission; implement it as an Action or Workflow as appropriate |
 
 The host owns session selection, exchange, and refresh; View code keeps using the supplied client.
-See `policies.md` for the principal ceiling and the caller, and `debugging.md` for exchange mechanics.
+See `authority.md` for the executor and the caller, `policies.md` for the executor's ceiling, and `debugging.md` for exchange mechanics.
 
 - Instance `useAction.run` accepts `{ id: NodeId }`; a returned ID does not require a second Class read
   or a fabricated `BoundNode`. Validate only genuinely untrusted raw values entering that boundary.
@@ -161,7 +161,7 @@ astrale view --sessions
 astrale view --close <session-id>
 ```
 
-- Use explicit instance and identity; repeat with a second registered principal for access contrasts.
+- Use explicit instance and identity; repeat with a second registered Identity for access contrasts.
   Root success is not Policy proof. Verify CLI flags with `--help` for the installed release.
 - Check actual records, navigation, keyboard use, narrow layout, console errors, and a refusal.
   Distinguish local mock checks from installed-View evidence; never retain credentials in proof files.

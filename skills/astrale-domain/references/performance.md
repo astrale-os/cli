@@ -44,7 +44,7 @@ One bounded Mutation avoids per-item round trips only when all writes belong to 
 Its operations are not sequential commands: combine updates to one target and keep independently
 raceable facts as guards (`mutation.expect.none|exists|count|unchanged` in a
 `defineMutation<typeof schema>()` recipe), never as a read before it. What the Schema declares (a
-key, a cardinality, accepted endpoints) is never a guard. `runtime.md` covers the effect-set and
+key, a cardinality, accepted endpoints) is never a guard. `mutations.md` covers the effect-set and
 pre-state constraints.
 
 ## Choose Action versus Workflow by effects

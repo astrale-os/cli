@@ -78,7 +78,7 @@ The Kernel decides an install by Kernel authority, separate from the registry's 
   `graph.reader`, that is Root or a granter of the Role. A scope toward another Domain's callable or
   Class needs nothing more; a scope toward a Kernel target needs Root. Dropping one on an upgrade or
   uninstall needs the right to remove it.
-- The caller and the authenticated principal, when they differ, must each pass. Otherwise the
+- The caller and the executor, when they differ, must each pass. Otherwise the
   install is refused `SCHEMA_REQUIREMENTS_UNSATISFIED`, with `details.denials` naming each Edge Class
   and target. An install that changes nothing (`noop`) skips this check.
 
