@@ -54,6 +54,15 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
   assert.doesNotMatch(source, /\.union\.(?:invoke|query|mutate)\b/, 'removed union authority mode')
 })
 
+test('the shipped skills name Query v7 after the Query, never a recipe', () => {
+  const skills = join(root, '..')
+  for (const name of readdirSync(skills, { recursive: true })) {
+    if (!String(name).endsWith('.md')) continue
+    const text = readFileSync(join(skills, String(name)), 'utf8')
+    assert.doesNotMatch(text, /recipe/i, String(name))
+  }
+})
+
 test('the Domain skill router reaches existing reference files without orphaned guides', () => {
   const entrypoint = readFileSync(join(root, 'SKILL.md'), 'utf8')
   const references = [...entrypoint.matchAll(/`(references\/[\w-]+\.md)`/g)].map(
@@ -69,19 +78,57 @@ test('the Domain skill router reaches existing reference files without orphaned 
 })
 
 test('the reorganized guides retain current authority and exact Method semantics', () => {
-  const runtime = readFileSync(join(root, 'references', 'runtime.md'), 'utf8')
+  const authority = readFileSync(join(root, 'references', 'authority.md'), 'utf8')
+  const actions = readFileSync(join(root, 'references', 'actions.md'), 'utf8')
   const schema = readFileSync(join(root, 'references', 'schema.md'), 'utf8')
   const policies = readFileSync(join(root, 'references', 'policies.md'), 'utf8')
   assert.match(
-    runtime,
-    /Default `query`, `mutate`, and `kernel` use the installed Domain authority/,
+    authority,
+    /\| `kernel`, `graph` \| The executor: `kernel.invoke\(\.\.\.\)` acts as the Domain \|/,
   )
-  assert.match(runtime, /`graph.caller` or `kernel.caller`/)
-  assert.match(runtime, /no `expect` or `schemaExpectation` option/)
+  assert.match(authority, /`graph.caller`, `kernel.caller`, `dependencies.<alias>.caller`/)
+  assert.match(authority, /None: a call without `as` throws/)
+  assert.match(authority, /Use `extends_with` alone/)
+  assert.match(actions, /no\s+`expect` or `schemaExpectation` option/)
   assert.match(schema, /Only abstract Method obligations are inherited/)
   assert.match(schema, /A concrete Class can declare `abstract: true`/)
   assert.match(schema, /Use `method.executable`/)
-  assert.match(runtime, /A missing handler rejects the Runtime/)
+  assert.match(actions, /A\s+missing handler rejects the Runtime/)
   assert.match(schema, /Instance Methods require an instance of their exact declaring Class/)
-  assert.match(policies, /`kernel.auth.register\(\.\.\.\)` requires `K.functions.register`/)
+  assert.match(
+    policies,
+    /`kernel.auth.register\(\.\.\.\)` admits a caller that extends `identity.registrar`/,
+  )
+})
+
+test('the guides keep the boundary rules a reader cannot derive', () => {
+  const read = (name) => readFileSync(join(root, 'references', name), 'utf8')
+  assert.match(read('queries.md'), /identity breaking every tie/)
+  assert.match(read('migration.md'), /Past it, the Class is refused\s+`budget-exceeded`/)
+  assert.match(
+    read('migration.md'),
+    /a View renamed, a\s+Class removed, a Core Node no longer declared/,
+  )
+  assert.match(read('policies.md'), /Revocation lags by up to `maxAge`/)
+  assert.match(read('schema.md'), /Only a Function takes bytes/)
+  assert.match(read('schema.md'), /A durable callable\s+takes and answers values only/)
+})
+
+test('the shipped skills mention legacy capability authority only as deprecated', () => {
+  const skills = join(root, '..')
+  const files = readdirSync(skills, { recursive: true })
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => join(skills, name))
+  for (const path of files) {
+    for (const paragraph of readFileSync(path, 'utf8').split(/\n\s*\n/)) {
+      if (!/\bcan_(?:use|read|traverse|create|update|delete)\b|\bcanUseSyscall\b/.test(paragraph))
+        continue
+      assert.match(paragraph, /Deprecated/, `${path} teaches legacy capability authority`)
+    }
+  }
+  const domain = files
+    .filter((path) => path.startsWith(root))
+    .map((path) => readFileSync(path, 'utf8'))
+  for (const source of domain)
+    assert.doesNotMatch(source, /requirements\(\{\s*(?:functions|classes|authority|core)\s*:/)
 })

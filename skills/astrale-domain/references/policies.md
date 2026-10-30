@@ -1,130 +1,180 @@
 # Policies
 
-Read when declaring callable authentication or authorization, or using a Schema Policy.
+- **Kernel-decided**: admission is decided by the Kernel on the pinned installation before the
+  handler runs. A handler never re-decides it (no Role lookup, no ownership check in code).
+- **Two independent decisions**: callable admission (may the caller invoke this Function or Method)
+  and graph access (may the caller read, traverse or write this Node or Edge). Admission to
+  `Project.rename` grants no Query or Mutation access to Project Nodes; a permitted read proves
+  nothing about invoking a Function on the record.
+- **Caller-centric**: a Policy's `subject` is the caller and its composition (Groups), never the
+  executor (`authority.md`).
 
-## Authentication mode is not the authorization rule
+## Callable authentication
 
-The installed Schema declares each callable's authentication mode and optional callable Policy;
-Kernel Runtime defines and evaluates those semantics against the pinned installation state:
+| `auth` | Credential | Caller rule |
+| --- | --- | --- |
+| `anonymous` | optional; a supplied one is authenticated and its failure propagates, never falling back to anonymous | none; without a credential the handler acts as the Domain alone (`authority.md`) |
+| `authenticated` | required | none: every authenticated Identity passes |
+| `authorized` | required | `policy`, required by the SDK: checks, `true` or `false` |
 
-- `anonymous` permits an absent credential. If a credential is supplied, Runtime authenticates it and
-  propagates authentication failure instead of falling back to anonymous. Without a credential the
-  handler still runs with the Domain's own authority (see `runtime.md`), so the caller is granted
-  nothing but what the handler does for it;
-- `authenticated` requires an authenticated actor;
-- `authorized` requires an authenticated actor. The principal of the active installed Kernel registration
-  bypasses the remaining callable gate; every other call requires the caller's admission and, for a
-  delegation, the principal's effective authority, as described below;
-- only `authorized` may declare a callable Policy. `authenticated` does not add a `can_use` or Policy gate.
-- Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
-  a protected operation merely because its handler can access Domain-owned data.
+A protected operation is `authorized`, even when its handler only touches Domain-owned data.
 
-## Function admission: the caller's rule, scoped by a delegation
+## Callable admission
 
-Every authenticated call carries two Identities:
+An `authorized` call is decided twice:
 
-- the `principal`, established by authentication: the executor, its non-transferable ceiling, installed
-  ownership, and Root;
-- the `caller`, the one Identity whose authority the call exercises. A direct call has
-  `caller = principal`. When a Domain acts for a user (`graph.caller`, `dependencies.<alias>.caller`,
-  or the SDK Domain token exchange behind a Domain's Views, the Console and a callable command), the
-  principal is the Domain and the caller is the user. CLI graph commands (`get`, `query`, `mutate`)
-  on any Instance, the Admin included, and the Shell's own Views act for the user itself.
+1. **Caller rule**, on the caller alone: Root, exact Function ownership, or the `policy`. `false`
+   admits Root and the owner only; `true` admits every caller. A Role or scope the caller holds
+   bypasses nothing: a Role admits only where a Policy checks it.
+2. **Executor ceiling**, only when a non-Root executor acts for another caller: the executor holds
+   `scope_call` toward the Function (Requirements), owns it exactly, or itself satisfies its
+   `policy`. A `true` policy needs no ceiling. A group the executor extends may supply the scope.
 
-Both are evaluated through their live `extends_with`, `constrained_by`, and `excluded_from` composition
-with deny-wins. A call carries no set of Identities: there is no union, intersection, or exclusion of
-callers. The caller never raises the principal's ceiling, and principal authority never flows into the
-caller's evaluation.
+The caller never raises the executor's ceiling; the executor's authority never enters the caller's
+rule. An Identity acting for itself delegates nothing: its rule alone decides.
 
-For a non-Root principal, an authorized Function requires:
+- The ceiling is the calling executor's, never that of the callee Domain running the handler.
+- Exact Method ownership follows the Method's executable declaring installation, never a business
+  `ownedBy` Edge. An instance Method's receiver is of its exact declaring Class.
+- A Root executor acting for a caller meets no ceiling; its caller is still decided. A Root caller
+  carried by a Domain session passes the caller rule, never the executor's ceiling.
+- A Kernel syscall's Policy admits its Kernel Role's members (Requirements): under `caller`, the user
+  needs the Role and so does the Domain, as its ceiling. Resource checks inside the syscall are
+  separate.
 
-1. The caller passes the intrinsic Root/Function-owner branch OR the declared callable Policy. Missing
-   Policy supplies no alternative, and `true` admits every Identity. `can_use` is not an intrinsic
-   bypass; giving the caller that capability does not defeat a business Policy.
-2. When the principal acts for another caller, its own Identity profile also supplies `can_use` or
-   exact Function ownership (the principal ceiling). A User may inherit `can_use` from a Group without
-   an individual capability Edge. The caller carried by a Domain session cannot supply this ceiling.
-   An Identity acting for itself delegates nothing and meets no ceiling: its rule alone decides.
+### Admission age
 
-This is the same rule as Class observation (Graph access below): the caller decides by its rule, and
-the ceiling scopes only a delegation.
+`admission: { maxAge }` on a callable, an integer from 1 to 300 seconds, lets its deployment reuse
+an admission the Kernel granted while it is younger than `maxAge`, bounded by the Kernel's cap (300
+on a Host; a cap of 0 grants none). Absent, every call is admitted by the Kernel.
 
-- The callee Domain that runs the handler never replaces the calling principal. Exact Method ownership
-  follows its executable declaring installation, not a business `ownedBy` Edge; instance receivers must
-  have the exact declaring Class.
-- Only a Root principal, the authenticated installed Kernel Root, takes the outer shortcut. A Root caller
-  carried by a Domain session stays in the caller branch: it can satisfy the intrinsic Root alternative,
-  never the principal ceiling.
-- A Policy `subject` is the caller, not necessarily the authenticated principal, and it already covers the
-  caller's groups (see Groups below).
-- Protected Kernel syscalls explicitly attach `canUseSyscall` to their exact Function or Method. That
-  Policy checks the caller's `can_use`, so even a direct call needs it; resource checks inside the
-  syscall remain independent. Capability-only callable admission must likewise be declared explicitly
-  in the Policy, never inferred from `can_use`.
+- Reuse requires the same source Kernel and served release, principal and caller (or no credential),
+  target with its receiver, and values of the input fields the `policy` reads, a missing field
+  differing from `null`. Only an admission is kept, never a refusal.
+- Revocation lags by up to `maxAge`: a caller who lost the right, a changed Policy Edge, the
+  Instance's maintenance or a moved binding still let recently admitted calls through. Declare an
+  age only where that lag is acceptable.
+- Every call still has its release pin check, credential verification (before any kept admission
+  is read) and input validation; each Kernel call of the handler is authorized afresh.
+- A durable Workflow never reuses one: it runs as a Kernel Execution.
 
-## Graph access is a separate decision
+## Class Policies
 
-- Invoking `Project.rename` does not grant direct Query/Mutation access to Project nodes. Conversely,
-  a permitted graph read is not proof that the caller may invoke a Function operating on that record.
-- The Class rule decides observation (`read`/`traverse`) for the caller: the caller passes by
-  ownership or by the rule, never by a Class capability it holds. A Class without a rule, or with
-  `true`, admits every Identity of the instance; `false` admits its owning Domain only. Declare a rule
-  on every Class whose nodes are not for everyone.
-- A delegation is scoped by its principal. When a Domain acts for a caller, the Domain must also own
-  the Class's installation or hold its exact Class capability (declare it in the requirements),
-  whatever rule the Class declares. An Identity acting for itself delegates nothing and meets no such
-  ceiling; Kernel Root bypasses both. The outer Query Function gate still applies. Choose the intended
-  View boundary in `views.md`.
-- A Class capability is therefore a scope, not a right: a Group's `can_read` bounds what its holders
-  read for others and lets them read nothing the rule refuses. Put "this group reads every node" in
-  the rule itself, as a check on the group.
-- Current Class effects (`create`/`update`/`delete`) do not evaluate Class observation Policies. For a
-  non-Root principal, effect closure requires principal capability/ownership and caller
-  capability/ownership. A Domain's `self` session on Classes it owns closes by installed ownership
-  (principal = caller = owner); a `caller` session does not. If initiated through a callable, callable
-  admission remains a separate outer gate.
-- Read authority also permits traversal; traversal alone does not permit property reads. Test what
-  the caller can observe, not just whether one isolated `traverse` Policy matches.
+`policies: { read, traverse, create, update, delete }`, one rule per slot, local to a concrete Class
+and never inherited; an abstract Class declares none. The SDK requires `read`, and `traverse`
+whenever `read` is not `true`. `true` on `read`/`traverse` and `false` on `create`/`update`/`delete`
+spell the absent slot. Checks are built from `({ check, self, ref, allOf, anyOf, sameNode })`, `self`
+being the Node, or the Edge in an Edge Class rule.
 
-## Declare the business rule at its owner
+| Slot | Accepts | Absent |
+| --- | --- | --- |
+| Node `read`, `traverse` | a Policy, `false`, or checks over `self` and `ref` members | every caller |
+| Edge `read`, `traverse` | a Policy or `false` | every caller |
+| `update`, `delete` | a Policy, `true`, or checks over `self` and `ref` members | the owning Domain only |
+| Node `create` | `true`, or checks over `ref` members only (no `self` yet) | the owning Domain only |
+| Edge `create` | a Policy, `true`, or checks over `self`, the Edge | the owning Domain only |
 
-- Name a Policy as the sentence its subject completes, in the Domain's words: a verb, each business
-  entity crossed in order, the object last (`managesProject`, `managesWorkspaceOfProject`). Say what
-  a Kernel hop means, not how it walks: `extendsGroup` for `sameNode` against a group,
-  `ownsClassOfDocument` for `of_domain` then `instance_of`. An Edge Policy names its endpoint by
-  its `as` name (`ownsService`); a composition joins its operands (`managesProjectOrOwnsProject`) and
-  splits into checks when too long to name. A long name is fine; an ambiguous one is not. Never name
-  the permission granted (`can…`, `may…`: the slot or callable names it), use a graph mechanics word
-  (`source`, `target`, `sub`, `super`, `subject`, `object`, `caller`), or drop a business hop. A check
-  then reads as a sentence: `check(managesWorkspaceOfProject, self)`.
-- Project convention: give each match Policy a `description` stating the subject, protected object or
-  endpoints, and condition, naming the business relation when one exists. Keep reusable graph predicates
-  in the module's `policies/`, never `types/`; place a callable's check inline in its declaration.
-- `policy.allOf(...)` / `policy.anyOf(...)` currently accept Policy operands, not description options.
-  Describe the constituent match Policies; do not add unsupported metadata or duplicate patterns for a label.
-- Read `users.md` for Shell User subclasses, registration, and membership. Business graph ownership
-  does not justify a shadow User or manual writes to Shell's membership/authority pair.
-- Declare the exact protected foreign Function in the Domain definition's requirements when calling as the Domain,
-  including Policy-admitted Shell methods. Installation supplies the Domain principal's capability;
-  the caller (the Domain itself in a `self` session, the user in a `caller` session) must still satisfy
-  the callable's intrinsic or Policy branch.
-- For a human-principal session, inspect the human's effective group profile instead. Domain requirements
-  do not grant that human authority, and a missing direct User capability is not a reason to duplicate
-  rights already supplied through `extends_with`.
-- `kernel.auth.register(...)` requires `K.functions.register` and must independently satisfy
-  its credential, target, and graph/Schema admission. Select the `caller` or `self` session explicitly; a Schema
-  dependency is not a capability, and granting the human rights is not Domain-owned execution.
+**Write slots stay absent.** Every write is a Function of the owning Domain writing
+`{ as: 'executor' }`, which passes by installed ownership; the Function's `policy` decides the user.
+Declare `create`, `update` or `delete` only for a cross-Domain write the developer explicitly asks
+for: another Domain, or its users under `caller`, writing the Class directly.
+
+- On a Class, the caller passes as Root, by installed ownership of the Class, or by the slot's rule,
+  never by a scope. An executor acting for another caller also meets its ceiling: `scope_<op>`
+  toward the Class, ownership, or the slot's rule itself. An open rule (`true`, or an absent
+  `read`/`traverse`) admits every caller and executor without a ceiling.
+- A scope bounds only what its holder does for others. "This group reads every Node" is a check on
+  the group in the rule, never a scope.
+- The syscall's Role still applies (`graph.reader` to query, `graph.writer` to mutate). The View
+  boundary: `views.md`.
+- A write slot does not evaluate observation: a guard on a target also needs the target's `read`.
+- `read` permits traversal; `traverse` alone permits no Property read. A restricted `read` beside an
+  open `traverse` leaves the Node reachable by every caller.
+
+```ts
+import { classIcon, nodeClass } from '@astrale-os/sdk/schema'
+import { Folder } from '@astrale-os/sdk/schema/icons'
+
+export const Project = nodeClass({
+  icon: classIcon.lucide(Folder),
+  policies: { read: managesProject, traverse: managesProject },
+  // `create`, `update`, `delete` absent: users write through Project's Methods
+})
+```
+
+## Requirements: Kernel Roles and scopes
+
+A Domain asks its instance for authority in its Domain definition; installation poses it, and nobody
+grants it by hand. `directory` is a direct dependency's resolved Schema:
+
+```ts
+import { requirements } from '@astrale-os/sdk/domain'
+import { K } from '@astrale-os/sdk/schema'
+
+requirements({
+  roles: [
+    { role: K.core.nodes['graph.reader'], members: ['domain'] },
+    { role: K.core.nodes['graph.writer'], members: ['domain'] },
+  ],
+  scopes: [
+    { on: directory.functions.lookup, operations: ['call'] },
+    { on: directory.classes.Person, operations: ['read', 'traverse'] },
+  ],
+})
+```
+
+- A Role is an Identity: Kernel-owned, a dependency's, or the Domain's own. Its `members` extend it
+  and hold what it holds; its `granters` may grant and revoke its membership. A holder is `'domain'`
+  or one of the Domain's own Core Identities. Joining a Role the Domain does not own requires Root
+  or a granter.
+- Syscall → Role: `query` `graph.reader`, `mutate` `graph.writer`, `download` `blob.reader`,
+  `upload` `blob.writer`, `install` `domain.installer`, `uninstall` `domain.uninstaller`, `journal`
+  `journal.reader`, `register` `identity.registrar`, `Identity.whois` `identity.resolver`,
+  `Identity.impersonate` `identity.impersonator`.
+- Kernel definition reads by Role: Class, Function, Policy, `extends`, `governed_by` by
+  `domain.reader`; View, `entrypoint` by `view.reader`; Execution, `created_by` by
+  `execution.reader`; Roles and composition, scope and meta-authority Edges by `authority.reader`.
+- Bundles hold one family (`graph.manager`, `blob.manager`, `domain.manager`, `identity.manager`,
+  `execution.manager`); profiles nest `reader` ⊂ `writer` ⊂ `admin`. `identity.impersonator` is in
+  no bundle. Ask for the narrowest Role.
+- A scope names a direct dependency's callable (`['call']`) or Class (`create`, `read`, `traverse`,
+  `update`, `delete`). It never admits a caller; the Domain's own write on a foreign Class is
+  decided by that Class's write rule. A Core Identity holds no scope. Installation poses a scope
+  toward another installed Domain's target; a scope toward a Kernel target requires Root.
+- Each foreign Function or Method the Domain invokes, Shell's included, needs a `call` scope. It is
+  only the Domain's ceiling: the caller (the Domain under `self`, the user under `caller`) still
+  passes the callable's rule. Requirements grant a human caller nothing; a right a group supplies
+  through `extends_with` needs no direct copy.
+- `kernel.auth.register(...)` admits a caller that extends `identity.registrar`, directly or through
+  `identity.manager` or `admin`: declare that membership for the Domain; under `caller` the user
+  needs it too. Register then verifies the credential evidence and needs `update` authority on each
+  target's exact Class. Select the session explicitly; a Schema dependency grants nothing.
+- Users, registration and membership: `users.md`. Business graph ownership never justifies a shadow
+  User or a manual write to Shell's membership/authority pair.
+
+| Legacy entry | Declare instead |
+| --- | --- |
+| `functions: [K.functions.<syscall>]` | the syscall's Role; Kernel definition reads need the reader Roles above |
+| `functions: [<dependency callable>]` | `scopes: [{ on, operations: ['call'] }]` |
+| `classes: [{ class, operations }]` | the same Class scope; the Domain's own write needs the Class's write rule |
+| `authority: { grant, revoke }` | the Role's `granters` |
+| `core: [{ subject, ... }]` | the Core Identity in the Role's `members` |
+
+Deprecated: `can_use`, `can_read`, `can_traverse`, `can_create`, `can_update`, `can_delete`,
+`canUseSyscall`, the legacy `requirements` keys above, which the SDK refuses, and `View.resolve`
+(read a Domain's View Nodes instead).
+
+## Writing a Policy
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'
 import { z } from 'zod'
 
-import { manages } from './relationships.js'
+import { manages } from './relationships.js' // ends `manager` and `project`
 
 export const managesProject = policy({
   description: 'The caller manages this Project.',
-  match: ({ edge, subject, object }) =>
-    edge({ source: subject, class: manages, target: object }),
+  match: ({ edge, subject, object }) => edge(manages, { manager: subject, project: object }),
 })
 
 export const rename = method({
@@ -135,133 +185,124 @@ export const rename = method({
 })
 ```
 
-- Runtime dispatches `Project.rename` as an Action or Workflow. Its context facilities are not a second
-  authorization decision; handler code must not replace Kernel admission with a role lookup.
+- Name a Policy as the sentence its subject completes, in the Domain's words: a verb, each business
+  entity crossed in order, the object last (`managesProject`, `managesWorkspaceOfProject`). Name
+  what a Kernel hop means, not how it walks: `extendsGroup` for `sameNode` against a group,
+  `ownsClassOfDocument` for `of_domain` then `instance_of`. An Edge Policy names its endpoint by its
+  `as` name (`ownsService`); a composition joins its operands (`managesProjectOrOwnsProject`) or
+  splits into checks. Never the permission granted (`can…`, `may…`), a graph mechanics word
+  (`source`, `target`, `sub`, `super`, `subject`, `object`, `caller`), or a dropped business hop. A
+  check reads as a sentence: `check(managesWorkspaceOfProject, self)`.
+- Each match Policy has a `description` stating the subject, the protected object or endpoints and
+  the condition, naming the business relation. Reusable predicates live in the module's
+  `policies/`, never `types/`; a callable's check is inline in its declaration.
+- `policy.allOf(...)` / `policy.anyOf(...)` take Policy operands only, no `description`: describe
+  the operands.
 
-## Groups: `subject` is the caller's composition
+## Groups
 
-The caller's composition is the caller and every Identity it reaches through `extends_with` (group
-membership; Shell `Group.assignMember` writes it, see `users.md`), at any depth. `constrained_by` caps
-an Identity: its constraint must satisfy the Policy too. `excluded_from` vetoes: whatever the excluded
-Identity satisfies is refused to the caller, even when the caller holds it itself or through another
-group. Kernel decides each Policy for every Identity of that composition, so `subject` already means
-"the caller or any of its groups".
+`subject` is the caller's composition: the caller and every Identity it reaches through
+`extends_with`, at any depth (group membership, written by Shell `Group.assignMember`: `users.md`).
+The Kernel decides each Policy for every Identity of it. Domains author `extends_with` only
+(`authority.md`, Composition).
 
-- State a fact a group holds as one Edge from or to `subject`. Never walk `extends_with` (one hop or a
-  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, skips the constraints
-  and exclusions of the groups it crosses, and spends a leaf and a variable of the branch budget.
-- Check membership in a fixed group against that group: `check(extendsGroup, ref(group))`, with
-  `extendsGroup` matching `sameNode(subject, object)`. Keep the group a fixed `ref`: the composition
-  includes the caller itself, so an input object admits any caller passing its own id.
-- One Identity satisfies a whole Policy branch. When two facts may come from different groups, such as
-  a Role from one Team and the management of a Project from another, write one check per fact: each check
-  tries the whole composition on its own.
+- A fact a group holds is one Edge from or to `subject`. Never walk `extends_with` (one hop or a
+  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, bypasses the
+  composition the Kernel decides, and spends a leaf and a variable of the budget.
+- Membership in a fixed group: `check(extendsGroup, ref(group))`. Keep the group a fixed `ref`: the
+  composition includes the caller, so an input object admits any caller passing its own id.
+- One Identity satisfies a whole branch. Two facts that may come from different groups (edit rights
+  from one Team, management of the Project from another) are two checks; each tries the whole
+  composition.
+- An open rule (`true`, an absent `read`/`traverse`) reads no composition. Freezing an Identity
+  refuses its new invocations.
 
 ```ts
-// Wrong: re-walks the composition by hand and skips its constraints and exclusions.
+// Wrong: re-walks the composition by hand.
 export const extendsGroupManagingProject = policy({
   match: ({ allOf, edge, exists, object, subject }) =>
     exists(({ node }) => {
       const holder = node()
       return allOf(
-        {
-          source: subject,
-          class: K.classes.extends_with.ref,
-          target: holder,
-          repeat: { min: 0, max: 2 },
-        },
-        edge({ source: holder, class: manages, target: object }),
+        edge(K.classes.extends_with, { subject, extension: holder }, { repeat: { min: 0, max: 2 } }),
+        edge(manages, { manager: holder, project: object }),
       )
     }),
 })
 
-// Right: the caller or any group it belongs to manages the Project.
-export const managesProject = policy({
-  match: ({ edge, object, subject }) => edge({ source: subject, class: manages, target: object }),
-})
+// Right: `managesProject` above holds when the caller or any of its groups manages the Project.
 
 // The caller is the group or a member of it, at any depth.
 export const extendsGroup = policy({
   match: ({ object, sameNode, subject }) => sameNode(subject, object),
 })
 
-// Only members of a Core Group (`superadmins`) observe the Class; a read that is not `true` also
-// needs `traverse`.
-policies: {
-  read: ({ check, ref }) => check(extendsGroup, ref(superadmins)),
-  traverse: ({ check, ref }) => check(extendsGroup, ref(superadmins)),
-},
-
 // Two facts, possibly from two groups: one check each.
-// In an authorized Function or Method:
 policy: ({ allOf, check, input, ref }) =>
   allOf(check(extendsGroup, ref(editors)), check(managesProject, input.project)),
-// In a Node Class:
-policies: {
-  read: ({ allOf, check, ref, self }) =>
-    allOf(check(extendsGroup, ref(editors)), check(managesProject, self)),
-},
 ```
 
-## Reuse without changing what is checked
+## Composition rules
 
-- Named `policy.allOf(...)` / `policy.anyOf(...)` composition and callable `check(...)` accept only exact local
-  named Policy refs; cycles and foreign named Policy refs are rejected. A dependency's presence does not make
-  its named Policy locally composable or callable-checkable.
-- Inside a match or callable object expression, `ref(...)` may name a projected Class, Function, Policy, View,
-  or Core node from the local Domain or an exact direct dependency. Referencing a dependency Policy this way
-  compares or traverses its projected graph node; it does not evaluate that Policy.
-- Method refs require a compatible SDK/DSL: `ref(methodHandle)` or `ref(() => methodHandle)` names an
-  exact executable declaring Method, static or instance, including `abstract: true` on a concrete
-  Class. Contract-only Methods on abstract Classes and inherited aliases are not Function projections; reference the executable declaration from the local or direct-dependency owner.
-- Every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
-  Edge-Policy branch references `source`, `target`, or both. The `subject`, every referenced protected term,
-  and every scoped existential variable must form one connected proof graph. A branch saying only “caller
-  belongs to a group” is not resource-scoped and rejects; check membership instead (see Groups).
-- Query admission separately verifies the candidate's exact Edge Class, then evaluates its Policy against
-  the admitted `source` and `target`. Constrain whichever endpoint owns access. A Policy Edge predicate is an
-  existence test; do not use it as a surrogate identity check for the candidate Edge.
+- Named `policy.allOf`/`policy.anyOf` and callable `check(...)` take only exact local named Policy
+  refs; cycles and a dependency's named Policies are refused.
+- `ref(...)` in a match or callable expression names a projected Class, Function, Policy, View or
+  Core node of the local Domain or an exact direct dependency. `ref(dependencyPolicy)` compares or
+  traverses that Policy's graph node; it never evaluates it.
+- `ref(method)` / `ref(() => method)` names an exact executable declaring Method, static or
+  instance, including `abstract: true` on a concrete Class. Contract-only Methods of abstract Classes
+  and inherited aliases are not Function projections: reference the executable declaration of the
+  local or direct-dependency owner.
+- Each normalized branch uses one target mode: a Node Policy references `object`; an Edge Policy
+  `source`, `target` or both. `subject`, every referenced protected term and every existential
+  variable form one connected proof graph. A branch saying only "the caller belongs to a group" is
+  not resource-scoped and is refused: check membership instead (Groups).
+- Query admission verifies a candidate Edge's exact Class, then evaluates its Policy on the admitted
+  `source` and `target`. An Edge predicate in a Policy is an existence test, never an identity test
+  of the candidate Edge.
+- `check(policy, object)` evaluates one Policy on one object; checks on `self` and on an input are
+  independent requirements, not a relation between them. Node equality is `sameNode(...)`.
+- Every branch of a callable rule or Class rule passes through a `check`: `sameNode` names no
+  caller, and a branch naming none admits everyone. `sameNode(self, input.target)` alone or as an
+  `anyOf` branch is refused (`PL_CONNECTIVITY`); put it in an `allOf` beside a `check`.
 
-- Each `check(policy, object)` evaluates one Policy against one protected object. Checks on `self` and input
-  refs are independent requirements, not a relationship between those objects; use callable `sameNode(...)`
-  for exact Node equality.
-- Every way callable checks or a Class rule can hold must pass through a `check`: `sameNode` compares two
-  objects and names no caller. `sameNode(self, input.target)` alone, or as one `anyOf` branch, is refused
-  (`PL_CONNECTIVITY`); put it in an `allOf` beside a `check`. An Identity acting for itself is decided by these
-  checks alone, so a branch that names no caller would admit everyone.
+## Limits
 
-## Composition consumes a budget
+Counted after named-Policy expansion and branch normalization; named helpers reset nothing.
 
-- Budgets apply after named-policy expansion and branch normalization, not per helper file.
-  AND multiplies alternatives: `(A OR B OR C) AND (D OR E OR F)` creates 9 branches, over the current limit of 8.
-- Current DSL limits include expanded pattern depth 4, 6 Edge-or-`sameNode` predicate leaves per normalized
-  branch, 4 variables per `exists`, integral repetition bounds `0 <= min <= max <= 3`, and 4 distinct Domain
-  origins including the Policy's own Domain. Callable checks also cap depth at 4 and leaves/branches at 8.
-- Refactoring into named helpers does not reset those budgets. Simplify the actual proof topology
-  when `PL_BUDGET` rejects; do not move authorization into a handler or drop an alternative to compile.
-- These are Schema admission ceilings, not guaranteed runtime scan capacity. Verify the installed
-  DSL's limits before relying on a boundary value. The caller's group ancestry needs no repeat (see
-  Groups); a repeat from any other term still stops at its bound.
+- A Policy: ≤ 8 normalized branches, expanded pattern depth ≤ 4, ≤ 6 Edge-or-`sameNode` leaves per
+  branch, ≤ 4 variables per `exists`, integral repeat bounds `0 ≤ min ≤ max ≤ 3`, ≤ 4 Domain origins,
+  its own included.
+- Callable checks and Node Class rules: depth ≤ 4, ≤ 8 leaves, ≤ 8 branches.
+- AND distributes: `(A ∨ B ∨ C) ∧ (D ∨ E ∨ F)` is 9 branches.
+- `PL_BUDGET`: simplify the proof topology. Never move authorization into a handler or drop an
+  alternative to compile.
+- These are Schema admission ceilings, not runtime scan capacity; check the installed DSL's limits
+  before relying on a boundary value. The caller's group ancestry needs no repeat (Groups); any
+  other repeat stops at its bound.
 
-## Scope existential Node witnesses deliberately
+## Node selectors
 
-- Policy Node selectors define authorization scope, not types. `node()` accepts any matching active concrete
-  Node Class; `node(Class)` also accepts its active concrete descendants, including foreign ones;
-  `node.exact(Class)` accepts only that exact concrete Class and is empty for an abstract Class.
-- `node.exact(Class)` does not test Node identity; use `sameNode(...)`. Test every intentionally broad selector
-  with an allowed witness and a connected unauthorized witness; include a descendant for polymorphic success.
+- `node()`: any matching active concrete Node Class. `node(Class)`: that Class and its active
+  concrete descendants. `node.exact(Class)`: that exact concrete Class; empty for an abstract one,
+  and never an identity test (`sameNode`).
+- Node families and Edge relations close over the Policy owner's pinned Domain closure: an
+  independently installed Domain never joins it; another Domain's subclass exists only under an
+  `inheritance: 'open'` Class.
+- Test a broad selector with an allowed witness, a connected unauthorized witness and, for
+  polymorphic success, a descendant.
 
-## Policy and admission evidence
+## Evidence
 
-- Root success proves executability, not an application user's Policy. Test distinct registered principals
-  with real business facts; a local CLI identity need not be registered or authorized on the target Kernel.
-- Test credential failure, principal-profile denial of a delegation, inherited Group capability
-  success, a direct caller admitted by the Policy alone, and business Policy denial despite valid
-  principal `can_use`. Keep Root/owner alternatives out of a test claiming Policy enforcement.
-  For denials, prove reachable handlers, steps, Providers, and graph effects did not run; earlier Runtime
-  initialization is outside that assertion.
-- Inspect requested/materialized capabilities for Domain principals and live group composition for human
-  callers. Prove the caller's authority independently, including relevant constraints, exclusions, and
-  revocation.
-- Keep evidence proportional: mutating denial needs an independent no-effect read, read-only denial does not.
-  Test revocation by removing the business fact and repeating the same operation while the Domain stays installed.
+- Root success proves executability, not a user's Policy; a local CLI Identity need not be
+  registered or authorized on the target Kernel. Test distinct registered Identities with real
+  business facts, and keep Root/owner alternatives out of a test claiming Policy enforcement.
+- Cover: credential failure; a delegation refused for want of the executor's scope; a fact inherited
+  from a group; a direct caller admitted by the Policy alone; a business denial despite the
+  executor's valid scope.
+- A denial proves that no reachable handler, Step, Provider or graph effect ran (earlier Runtime
+  initialization excepted). A mutating denial needs an independent no-effect read; a read-only one
+  does not.
+- Inspect the Domain's installed Role memberships and scopes, and the live group composition of
+  human callers.
+- Revocation: remove the business fact and repeat the same operation, the Domain still installed.
