@@ -1,15 +1,15 @@
 # Queries
 
-Read to read the graph: author a Query recipe, call it from a handler, or choose how to express a
-read. A recipe is a typed business observation:
+Read to read the graph: define a Query, call it from a handler, or choose how to express a read.
+A Query is a typed business observation:
 
 - **Typed by the Schema.** Handles, conditions and rows come from the Domain's Schema; a Class,
   Property or relation it cannot name does not compile. Rows need no decoder and no defaults.
-- **Bounded before it reads.** Every read ends with a verb that bounds it; the SDK refuses a recipe
+- **Bounded before it reads.** Every read ends with a verb that bounds it; the SDK refuses a Query
   past its bounds before sending anything.
 - **One snapshot per read.** Each read is one Kernel invocation at its own snapshot. Facets, steps
-  and pages of one recipe share none.
-- **Authority-neutral.** A recipe names no authority; each call names the one it reads under
+  and pages of one Query share none.
+- **Authority-neutral.** A Query names no authority; each call names the one it reads under
   (`authority.md`). The reader's Class `read`/`traverse` rules decide which rows it sees.
 
 The full reference ships in the `@astrale-os/sdk` package as `docs/queries.md`.
@@ -17,7 +17,7 @@ The full reference ships in the `@astrale-os/sdk` package as `docs/queries.md`.
 ## Grammar
 
 ```text
-recipe     defineQuery<typeof schema>()(id, { build, output?, errors? })       from '@astrale-os/sdk/query'
+query      defineQuery<typeof schema>()(id, { build, output?, errors? })       from '@astrale-os/sdk/query'
 id         lowercase dot-separated segments of letters, digits and '-': 'issues.issue.read'
 build      (input, d, steps) => read | facets | steps(facets, (earlier) => facets, …)   2 to 8 steps
 facets     { name: read | read[] | undefined, … }
@@ -43,9 +43,10 @@ cond       prop.<term> | node.id.eq(id) | node.id.in(ids) | node.path.eq(path) |
 keys       key | [key, …]          key = prop.asc({ missing?: 'first' | 'last' }) | prop.desc(…)
 output     (results, input, { error, is }) => portable JSON                 pure and synchronous
 errors     { CODE: error({ family, message, details }) }
-call       query(recipe, input, { as: 'executor' | 'caller' })              in an Action
-           query(pageRecipe, input, { as, size?, after? })
-           step.query(stepId, recipe, input, { as: 'executor' })           in a durable Workflow
+call       query(definedQuery, input, { as: 'executor' | 'caller' })        in an Action
+           query(pageQuery, input, { as, size?, after? })
+           step.query(stepId, definedQuery, input, { as: 'executor' })     in a durable Workflow
+           runQuery(client, domain, definedQuery, input, { size?, after? })   with a Client
 ```
 
 Property terms, by the Property's value:
@@ -70,7 +71,7 @@ Verbs:
 | `exists(id?)` | `boolean` | |
 | `first()`, `first(n)` | the first row or `undefined`, up to `n` rows | |
 | `first(n, { more: true })` | `{ rows, more }` | |
-| `page({ max })` | `{ rows, next? }`; the recipe's single read | |
+| `page({ max })` | `{ rows, next? }`; the Query's single read | |
 | `all({ max })` | every row | `TOO_MANY` past `max` |
 | `count({ upTo })` | `{ count, more }`; `more` when the count reached `upTo` | |
 
@@ -220,7 +221,7 @@ export const latest = defineQuery<typeof schema>()('issues.latest', {
 
 ### Several reads, and reads that wait for another
 
-Independent reads are facets of one recipe. A read that needs an earlier answer is a step:
+Independent reads are facets of one Query. A read that needs an earlier answer is a step:
 
 ```ts
 export const projectBoard = defineQuery<typeof schema>()('issues.project.board', {
@@ -255,7 +256,7 @@ read with `id.in(ids)`.
 
 ### Pages
 
-A page recipe's single read is `.page({ max })`; the call passes `size` and the cursor:
+A page Query's single read is `.page({ max })`; the call passes `size` and the cursor:
 
 ```ts
 export const projectIssuesPage = defineQuery<typeof schema>()('issues.project.issues-page', {
@@ -290,14 +291,15 @@ d.Issue.where((i) => i.project.is(d.core.inbox)).first(20)
 
 ## Calling
 
-- In an Action: `query(recipe, input, { as })`; a recipe without input takes `undefined`. In a
-  durable Workflow: `step.query(id, recipe, input, { as: 'executor' })`, journaled and replayed.
-- Outside a handler, a Client runs it with `runQueryRecipe(client, domain, recipe, input)`.
-- `OutputOf<typeof recipe>` and `InputOf<typeof recipe>` type the answer and the input for Rules
-  and Views.
-- A Function lets a recipe's errors reach its caller by declaring them:
+- In an Action: `query(readIssue, input, { as })`; a Query without input takes `undefined`. In a
+  durable Workflow: `step.query(id, readIssue, input, { as: 'executor' })`, journaled and replayed.
+- Outside a handler, a Client runs it with `runQuery(client, domain, readIssue, input)` from
+  `@astrale-os/sdk/query`.
+- `OutputOf<typeof readIssue>` and `InputOf<typeof readIssue>` type the answer and the input for
+  Rules and Views.
+- A Function lets a Query's errors reach its caller by declaring them:
   `{ errors: { ...readIssue.errors } }`.
-- `isQueryError(error, code?)` recognizes a `QueryError`. `checkRecipe(recipe, sampleInput,
+- `isQueryError(error, code?)` recognizes a `QueryError`. `checkQuery(readIssue, sampleInput,
   { domain })` from `@astrale-os/sdk/testing` runs the bounds and requirements checks in a test,
   without a Kernel; give it an input that builds every optional condition.
 
@@ -317,11 +319,11 @@ d.Issue.where((i) => i.project.is(d.core.inbox)).first(20)
 - **Direction.** `.via` needs `direction` when both ends accept the Edge Class (`blocks`) or when
   the listed Edges leave it in different directions.
 - **Falsy filters.** `filter.x && p.eq(filter.x)` skips the filter when `x` is `0` or `false`
-  (`QRY-RECIPE-FALSY`). Write `filter.x !== undefined && …`, or say that `false` means no filter.
-- **Time.** `build` and `output` read no clock (`QRY-RECIPE-CLOCK`): take `now` in the input.
+  (`QRY-FALSY`). Write `filter.x !== undefined && …`, or say that `false` means no filter.
+- **Time.** `build` and `output` read no clock (`QRY-CLOCK`): take `now` in the input.
 - **Snapshots.** Facets, steps and pages are separate reads at separate snapshots: never claim they
   observe one state. A write that depends on a fact still holding guards it (`mutations.md`).
-- **Authority changes the answer.** A list leaves out rows its reader may not read. The same recipe
+- **Authority changes the answer.** A list leaves out rows its reader may not read. The same Query
   read as `caller` and as `executor` can answer differently (`authority.md`).
 - **Order and missing values.** Rows without the ordered value sort last unless
   `asc({ missing: 'first' })`. On a union whose Classes map one name to different Properties, the
@@ -333,25 +335,27 @@ d.Issue.where((i) => i.project.is(d.core.inbox)).first(20)
 
 | Limit | Value | Refusal |
 | --- | --- | --- |
-| Reads per recipe | 32 | `TOO_MANY` (`limit: 'reads'`) |
-| Rows per recipe, counted from verb bounds and relations per parent row | 100,000 | `TOO_MANY` (`limit: 'rows'`) |
+| Reads per Query | 32 | `TOO_MANY` (`limit: 'reads'`) |
+| Rows per Query, counted from verb bounds and relations per parent row | 100,000 | `TOO_MANY` (`limit: 'rows'`) |
 | A verb's bound | 83,332 | `TOO_MANY` |
 | `in` values | 16 | `INPUT_INVALID` (`limit: 'in'`) |
 | Ids and values carried by a read outside its root `id.in` | 32,768 | `INPUT_INVALID` |
 | `steps` | 2 to 8 | does not compile |
 
-- The Kernel refuses a document past its plan limits before planning it (`INPUT_INVALID` with
-  `kernelCode`, `phase` and `path`): its estimated `cost`, `traversal-depth` (18),
-  `conjuncts-per-pattern` (20), `connective-depth` (85), `order-keys` (100) and `nesting` (450); a
-  Host may lower them. Neither refusal is transient: narrow the read or split it into steps.
-- `QRY-RECIPE-ROWS` warns when a recipe's constant bounds multiply past 10,000 rows.
+- The Kernel refuses a document past its plan limits before planning it: its estimated `cost`,
+  `traversal-depth` (18), `conjuncts-per-pattern` (20), `connective-depth` (85), `order-keys` (100)
+  and `nesting` (450); a Host may lower them. The SDK raises `INPUT_INVALID` with `kernelCode`
+  `QUERY_INPUT_INVALID`, `phase` and `path`; the Kernel's details name
+  `issue: 'QUERY_PLAN_LIMIT_EXCEEDED'`, the `limit`, its `maximum` and the `actual` measure. Neither
+  refusal is transient: narrow the read or split it into steps.
+- `QRY-ROWS` warns when a Query's constant bounds multiply past 10,000 rows.
 - A relation that crosses a dependency's Class needs `read` and `traverse` scopes on it in the
   release's `requirements` (`policies.md`); otherwise the call throws a `TypeError` naming the scope
   to add. Roots, Kernel Classes and the Domain's own Classes need none.
 - Query v7 is not served in maintenance or repair sessions (`INSTANCE_MAINTENANCE`): a migration
   there reads with V6 (`migration.md`).
 
-What the language cannot express is bridged inside the recipe, invisible to its callers:
+What the language cannot express is bridged inside the Query, invisible to its callers:
 
 | The business asks | Bridge |
 | --- | --- |
@@ -371,13 +375,13 @@ truncate silently.
 | `NOT_FOUND` | A root `get` found nothing |
 | `NOT_READABLE` | `get` or `find` met a row the reader may not read |
 | `INTEGRITY` | A relation's `get` found none, or a second row came where one is allowed |
-| `TOO_MANY` | Past a `max`, a verb bound, the recipe's rows or reads |
+| `TOO_MANY` | Past a `max`, a verb bound, the Query's rows or reads |
 | `REFUSED` | The Kernel refused the read (`kernelCode`, `retryable`) |
 | `INPUT_INVALID` | The SDK or the Kernel refused the built query before reading |
 | `OUTDATED` | The Host's Registry does not match the Domain's build |
 | `UNSUPPORTED` | The Kernel does not serve Query v7 |
 
-A refusal the caller handles by code is a declared error the recipe raises from `output`; an
+A refusal the caller handles by code is a declared error the Query raises from `output`; an
 expected case is a union in the output, not an error.
 
 ## Legacy
@@ -385,5 +389,5 @@ expected case is a union in the output, not an error.
 Deprecated: V6 Query definitions (`Query.from`, `defineQuery<S>()((domain) => …)`,
 `defineCollectionQuery`, `defineCompositeQuery`) and `graph.query(definition)`. A maintenance or
 repair session serves no Query v7 and reads with V6 (`migration.md`); write every other read as a
-recipe. `d.document(query)` reads one canonical v7 document whose rows are typed `unknown`: validate
+Query v7. `d.document(query)` reads one canonical v7 document whose rows are typed `unknown`: validate
 them in `output`, and prefer handles.

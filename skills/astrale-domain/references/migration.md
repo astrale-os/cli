@@ -195,7 +195,7 @@ astrale execution result "$EXECUTION" --wait -i "$INSTANCE" --as "$INSTANCE-root
 The online refusal's report, or `detail.report.summary` in the session status after a refused
 `apply`, lists each failing rule: its Class, property, count and at most 20 offenders (`truncated`
 when more exist). Past them, read the Class as Root (`astrale query --class`, Query V6: the
-Kernel serves no Query v7 recipe in a session) and select the offenders yourself. A repair is an ordinary Mutation (`astrale mutate --as "$INSTANCE-root"`;
+Kernel serves no Query v7 in a session) and select the offenders yourself. A repair is an ordinary Mutation (`astrale mutate --as "$INSTANCE-root"`;
 `--dry` checks its form, not the data) keyed by full Property keys; a rename sets the target key
 and unsets the source's, `node.delete` and `edge.delete` (`edge: { source, target, class }`) remove
 facts:

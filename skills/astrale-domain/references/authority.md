@@ -72,7 +72,7 @@ the authority that fits its business meaning:
 
 | Surface | Without a selection |
 | --- | --- |
-| `query(recipe, …)`, `mutate(recipe, …)` | None: a recipe call without `as` throws |
+| `query(definedQuery, …)`, `mutate(definedMutation, …)` | None: a call without `as` throws |
 | `kernel`, `graph` | The executor: `kernel.invoke(...)` acts as the Domain |
 | deprecated V6 Query definitions and closure Mutations | The executor |
 | `dependencies.<alias>` | None: choose `.caller.invoke` or `.self.invoke` |
@@ -80,7 +80,7 @@ the authority that fits its business meaning:
 - A durable Workflow acts as its executor only: its Steps have no `caller` and no
   `{ as: 'caller' }` (`workflows.md`). The callable's Policy is checked once, at the call.
 - A public callable (`auth: 'anonymous'`) called without a credential has no caller
-  (`caller.kind === 'anonymous'`): its handler acts as the Domain alone. Recipes run
+  (`caller.kind === 'anonymous'`): its handler acts as the Domain alone. Queries and Mutations run
   `{ as: 'executor' }`; `kernel`, `graph` and `dependencies.<alias>.self` work as in any handler.
   The `caller` selections and a Provider's `execution.invoke` are absent: reach them through the
   selection itself (`graph.caller?.query(...)`), since a check on `caller.kind` does not narrow

@@ -14,7 +14,7 @@ changes nothing is an observation.
 | --- | --- |
 | Reads, then makes one effect, or none | An Action |
 | Makes two or more effects that cannot commit together, or waits | A durable Workflow (`workflows.md`) |
-| Only reads what its caller may read | No callable: declare the Query recipe (Read-only Actions) |
+| Only reads what its caller may read | No callable: define the Query (Read-only Actions) |
 
 - Prefer an Action. It answers in one request; a durable Workflow pays a request per Step and makes
   its caller follow an Execution. Several writes that can commit together are one Mutation, so one
@@ -27,8 +27,8 @@ changes nothing is an observation.
 ## Read-only Actions
 
 Avoid them. A client reads the graph under its own authority: a View with its Query hooks
-(`views.md`), the CLI with `astrale query`, a Client with `runQueryRecipe`, another Domain with its
-own recipe. Declare the recipe and let them read it: the Kernel already decides each reader's rows
+(`views.md`), the CLI with `astrale query`, a Client with `runQuery`, another Domain with its
+own Query. Define the Query and let them read it: the Kernel already decides each reader's rows
 by its Class rules. A read-only callable adds a request, a Policy and a contract for nothing.
 
 A read-only Action is right when the caller must learn something it may not read itself: whether a
@@ -70,7 +70,7 @@ business decision, so its name and contract state what it discloses.
 
 - `functions/` holds Actions and Workflows, one per owner file; register one exact `functions`
   collection, with no parallel handler registry or path dispatch.
-- `queries/` and `mutations/` hold one recipe per owner file; `rules/` holds pure business Rules.
+- `queries/` and `mutations/` hold one Query or Mutation per owner file; `rules/` holds pure business Rules.
   Group them in business submodules behind curated facades, never a generic repository or decoder
   layer.
 - Name files by intent: `read-project.ts`, `list-project-issues.ts`, `archive-project.ts`, not
@@ -90,7 +90,7 @@ business decision, so its name and contract state what it discloses.
 | `input` | The admitted input; the SDK validated it and validates the output |
 | `self` | The receiver's `NodeId`, on an instance Method |
 | `caller` | The incoming call: `identity` is the caller, `principal` the executor (`authority.md`) |
-| `query`, `mutate` | Recipe calls, each naming its authority with `{ as }` (`queries.md`, `mutations.md`) |
+| `query`, `mutate` | Query and Mutation calls, each naming its authority with `{ as }` (`queries.md`, `mutations.md`) |
 | `kernel`, `graph` | Kernel syscalls and graph operations, as the executor; `.caller` and `.self` select |
 | `dependencies` | Exact dependency callables, `.caller.invoke` or `.self.invoke` |
 | `integrations` | The declared Integration clients (`integrations.md`) |
@@ -101,7 +101,7 @@ business decision, so its name and contract state what it discloses.
 - Never re-validate the input, re-check the caller's rights or invent defaults: the SDK and the
   Kernel already did, and the Policy admitted the call before the handler ran.
 - In public inputs and outputs, reference records by id: the input declares `nodeId()`, and
-  `NodeId(input.person)` types it for a recipe. Use a `Path` only where the developer asks for one
+  `NodeId(input.person)` types it for a Query or a Mutation. Use a `Path` only where the developer asks for one
   or a called API requires it, converting at that boundary.
 - Name a definition by its resolved handle or reference, never by a rebuilt locator string.
 - Use the SDK's executors and bindings, never hand-built endpoints, tokens or routing
@@ -166,7 +166,7 @@ export const assigneeAtCapacity = error({
 ```
 
 - A callable registers the errors it may raise under stable codes: its own, and those of the
-  recipes it calls (`{ errors: { ...reassignIssue.errors } }`). The declaration owns the safe
+  Queries and Mutations it calls (`{ errors: { ...reassignIssue.errors } }`). The declaration owns the safe
   message and the details contract; the registration key is the code.
 - Declaring errors under Schema source does not install them as Schema members or as
   generated-client alternatives.
@@ -224,7 +224,7 @@ missing handler rejects the Runtime before it can serve calls.
   must hold at commit is a guard in the Mutation.
 - **Success before the commit.** Answer success only after `mutate` resolves; on an unknown outcome,
   observe before retrying (`mutations.md`).
-- **Reads in a loop.** One recipe with relations or `id.in` replaces a read per row
+- **Reads in a loop.** One Query with relations or `id.in` replaces a read per row
   (`performance.md`).
 - **Executor reads returned whole.** Rows read as `executor` and returned to the caller disclose them;
   return what the caller may learn.

@@ -111,8 +111,8 @@ Schema declares a durable callable; there is nothing else to wire.
 | Member | Use |
 | --- | --- |
 | `input`, `self`, `domain`, `error` | As in an Action. |
-| `step.query(id, recipe, input, { as: 'executor' })` | One Query recipe, recorded: a resumed run reuses its result. |
-| `step.mutate(id, recipe, input, { as: 'executor' })` | One Mutation recipe, keyed: a retry never writes twice. |
+| `step.query(id, definedQuery, input, { as: 'executor' })` | One Query, recorded: a resumed run reuses its result. |
+| `step.mutate(id, definedMutation, input, { as: 'executor' })` | One Mutation, keyed: a retry never writes twice. |
 | `step.run(id, (capabilities) => …)` | Any other call. The callback receives `query`, `mutate`, `kernel`, `graph`, `dependencies` and `integrations`, acting with the identity of the function (its Domain). |
 | `step.parallel((s) => [...])` | Independent Steps in one engine round trip; `s` takes the arguments of `step.*`. |
 | `sleep(ms)` | A durable timer, kept while the Domain is down. |

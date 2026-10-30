@@ -54,6 +54,15 @@ test('the shipped Domain skill avoids removed APIs and private Kernel imports', 
   assert.doesNotMatch(source, /\.union\.(?:invoke|query|mutate)\b/, 'removed union authority mode')
 })
 
+test('the shipped skills name Query v7 after the Query, never a recipe', () => {
+  const skills = join(root, '..')
+  for (const name of readdirSync(skills, { recursive: true })) {
+    if (!String(name).endsWith('.md')) continue
+    const text = readFileSync(join(skills, String(name)), 'utf8')
+    assert.doesNotMatch(text, /recipe/i, String(name))
+  }
+})
+
 test('the Domain skill router reaches existing reference files without orphaned guides', () => {
   const entrypoint = readFileSync(join(root, 'SKILL.md'), 'utf8')
   const references = [...entrypoint.matchAll(/`(references\/[\w-]+\.md)`/g)].map(
@@ -78,7 +87,7 @@ test('the reorganized guides retain current authority and exact Method semantics
     /\| `kernel`, `graph` \| The executor: `kernel.invoke\(\.\.\.\)` acts as the Domain \|/,
   )
   assert.match(authority, /`graph.caller`, `kernel.caller`, `dependencies.<alias>.caller`/)
-  assert.match(authority, /a recipe call without `as` throws/)
+  assert.match(authority, /None: a call without `as` throws/)
   assert.match(authority, /Use `extends_with` alone/)
   assert.match(actions, /no\s+`expect` or `schemaExpectation` option/)
   assert.match(schema, /Only abstract Method obligations are inherited/)

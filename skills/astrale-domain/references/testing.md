@@ -7,7 +7,7 @@ Read when writing Domain fixtures, focused tests, demos, or live acceptance jour
 Use the smallest real boundary that proves the behavior:
 
 - test pure projection and rules as ordinary functions;
-- test a Query recipe with a narrow `RecipeClient` double and assert the exact documents, page size,
+- test a Query with a narrow `QueryClient` double and assert the exact documents, page size,
   and cursor;
 - test a Mutation with a narrow `MutationClient` double and assert the exact atomic document;
 - invoke an Action definition's `run` with an admitted, typed context when testing handler
@@ -23,10 +23,10 @@ transactions, paging, and error semantics, while still proving none of them.
 
 ## Exercise the owner, not its registration
 
-Use `runQueryRecipe(client, domain, recipe, input)` / `executeMutation(client, domain, recipe, input)`
-with narrow capability doubles, and `checkRecipe(recipe, sampleInput, { domain })` from
-`@astrale-os/sdk/testing` for a recipe's bounds and the scopes its relations need. They exercise SDK
-recipe realization and projection; invoking a hand-copied builder or merely asserting a document
+Use `runQuery(client, domain, query, input)` / `executeMutation(client, domain, mutation, input)`
+with narrow capability doubles, and `checkQuery(query, sampleInput, { domain })` from
+`@astrale-os/sdk/testing` for a Query's bounds and the scopes its relations need. They exercise the
+SDK's realization and projection; invoking a hand-copied builder or merely asserting a document
 version bypasses the behavior being delivered.
 
 Assert the invariant-bearing operations and absence of unintended writes, not only call counts.

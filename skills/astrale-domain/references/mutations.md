@@ -1,7 +1,7 @@
 # Mutations
 
-Read to write the graph: author a Mutation recipe, guard it, map its refusals, or decide what one
-Mutation may contain. A recipe is one atomic business change:
+Read to write the graph: define a Mutation, guard it, map its refusals, or decide what one
+Mutation may contain. A Mutation is one atomic business change:
 
 - **Atomic.** Its writes and guards commit together or not at all, in one Kernel invocation.
 - **An effect set.** `build` declares writes and guards; it reads nothing and runs nothing.
@@ -14,8 +14,8 @@ The examples write the Schema of `queries.md`.
 ## Grammar
 
 ```text
-recipe     defineMutation<typeof schema>()(id, { build, output?, reject?, errors? })   from '@astrale-os/sdk/mutation'
-id         lowercase dot-separated segments, shared with Query recipes: 'issues.issue.close'
+mutation   defineMutation<typeof schema>()(id, { build, output?, reject?, errors? })   from '@astrale-os/sdk/mutation'
+id         lowercase dot-separated segments, shared with Queries: 'issues.issue.close'
 build      (input, d, mutation) => undefined                synchronous; writes and guards only
 write      mutation.createNode({ as, class: d.<Class>, props? })                         → created
            | mutation.updateNode({ node, class: d.<Class>, props: { set?, unset? } })
@@ -34,9 +34,9 @@ node       NodeId | NodePath | { id } | definition ref                    an exi
 end        node | created                                                 createEdge only
 output     (result, input) => Output              result: { createdNodes, replayed? }
 reject     (failure, input, { error, is }) => Output | throw error(code, details) | throw failure
-call       mutate(recipe, input, { as: 'executor' | 'caller' })            in an Action
-           step.mutate(stepId, recipe, input, { as: 'executor' })          in a durable Workflow
-           executeMutation(client, domain, recipe, input)                  with a Client
+call       mutate(definedMutation, input, { as: 'executor' | 'caller' })   in an Action
+           step.mutate(stepId, definedMutation, input, { as: 'executor' }) in a durable Workflow
+           executeMutation(client, domain, definedMutation, input)         with a Client
 ```
 
 - Each write and guard names one Class by its handle: a union names none. `as` binds a created Node
@@ -269,4 +269,4 @@ or make it a Workflow of independent business steps; never split one invariant.
 
 Deprecated: the closure form `defineMutation<S>()((domain) => ({ id, build, project? }))`, and its
 `expect.query` V6 precondition. A call without `as` runs a closure Mutation as the executor. Write
-every Mutation as a recipe, and rewrite a closure Mutation the change touches.
+every Mutation with `defineMutation`, and rewrite a closure Mutation the change touches.

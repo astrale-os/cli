@@ -11,39 +11,29 @@ the same product invariant remains proven.
 
 ## Read through reusable Queries
 
-Author reusable reads as Query recipes, `defineQuery<typeof schema>()(id, { build, output? })` from
-`@astrale-os/sdk/query`, and call them from the Action or Workflow context under a named authority
-(`{ as: 'caller' }` or `{ as: 'executor' }`). Use the Schema's handles (`d.Issue`,
-`d.directory.Person`); do not copy Definition keys, parse paths, issue raw database queries, or
-write the canonical Query document by hand.
+Define reusable reads as Queries (`queries.md` owns the grammar, the patterns and the limits) and
+call them from the Action or Workflow context under a named authority. Use the Schema's handles;
+do not copy Definition keys, parse paths, issue raw database queries, or write the canonical Query
+document by hand.
 
 - Use one read when one graph observation answers the question; carry relations with `with`.
 - Use a record of facets for independent reads, and `steps(first, …)` (two to eight) when a read
   needs an earlier result.
-- End each read with the verb that bounds it: `first(n)`, `page({ max })`, `count({ upTo })`, or
-  `all({ max })` when completeness is required (past `max` it raises `TOO_MANY`).
+- End each read with the verb that bounds it; `all({ max })` only when completeness is required.
 - Project in `output` from the returned rows instead of re-reading each returned node.
-- Treat an absent visible node as unavailable; do not infer that it does not exist.
 
 Each read is one Kernel invocation at its own snapshot; facets, steps and pages share none. Do not
-expect a recipe of several reads to make one round trip. `d.A.union(d.B)` reads two Classes in one
+expect a Query of several reads to make one round trip. `d.A.union(d.B)` reads two Classes in one
 read; measure the actual calls rather than inferring batching from one `query(...)` in the handler.
-
-Before sending, the SDK refuses a recipe past its bounds: 32 reads, 100,000 rows, a verb bound of
-83,332 (`TOO_MANY`), an `in` past 16 values (`INPUT_INVALID`). The Kernel then refuses a document
-past its language bounds before planning it: `QUERY_INPUT_INVALID` with
-`issue: 'QUERY_PLAN_LIMIT_EXCEEDED'`, the `limit`, its `maximum` and the `actual` measure. The
-limits are the estimated `cost`, `traversal-depth` (18), `conjuncts-per-pattern` (20),
-`connective-depth` (85), `order-keys` (100) and `nesting` (450); a Host may lower them. The SDK
-raises it as `QueryError` `INPUT_INVALID` with its `kernelCode`, `phase` and `path`. Neither
-refusal is transient: narrow the read or split it into steps.
+A read past the SDK's bounds or the Kernel's plan limits is refused before it runs, never slowed
+(`queries.md`, Limits): narrow the read or split it into steps.
 
 ## Write one invariant as one Mutation
 
 One bounded Mutation avoids per-item round trips only when all writes belong to one atomic invariant.
 Its operations are not sequential commands: combine updates to one target and keep independently
 raceable facts as guards (`mutation.expect.none|exists|count|unchanged` in a
-`defineMutation<typeof schema>()` recipe), never as a read before it. What the Schema declares (a
+`defineMutation<typeof schema>()` Mutation), never as a read before it. What the Schema declares (a
 key, a cardinality, accepted endpoints) is never a guard. `mutations.md` covers the effect-set and
 pre-state constraints.
 
