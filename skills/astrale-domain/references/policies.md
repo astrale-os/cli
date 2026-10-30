@@ -102,15 +102,15 @@ the ceiling scopes only a delegation.
   in the module's `policies/`, never `types/`; place a callable's check inline in its declaration.
 - `policy.allOf(...)` / `policy.anyOf(...)` currently accept Policy operands, not description options.
   Describe the constituent match Policies; do not add unsupported metadata or duplicate patterns for a label.
-- Read `users.md` for Shell User subclasses, registration, and membership. Business graph ownership
-  does not justify a shadow User or manual writes to Shell's membership/authority pair.
-- Declare the exact protected foreign Function in the Domain definition's requirements when calling as the Domain,
-  including Policy-admitted Shell methods. Installation supplies the Domain principal's capability;
-  the caller (the Domain itself in a `self` session, the user in a `caller` session) must still satisfy
-  the callable's intrinsic or Policy branch.
-- For a human-principal session, inspect the human's effective group profile instead. Domain requirements
-  do not grant that human authority, and a missing direct User capability is not a reason to duplicate
-  rights already supplied through `extends_with`.
+- Read `users.md` for Shell accounts, Domain Roles and Teams. Link a business record to the Shell
+  account with a Domain Edge; never extend Shell User or Group or write Shell's memberships yourself.
+- Declare a `call` scope on each protected foreign callable in the Domain definition's requirements,
+  including Shell methods. When the Domain calls as itself, the callable's Policy decides for the
+  Domain, so the release also binds it to the Role that Policy tests (Shell `user.writer` for the
+  account methods); in a `caller` session the user must satisfy the Policy, within the Domain's scopes.
+- For a human-principal session, inspect the human's Roles through their composition instead.
+  Domain requirements do not grant that human authority, and a missing direct grant is not a reason
+  to duplicate rights already supplied through `extends_with`.
 - `kernel.auth.register(...)` requires `K.functions.register` and must independently satisfy
   its credential, target, and graph/Schema admission. Select the `caller` or `self` session explicitly; a Schema
   dependency is not a capability, and granting the human rights is not Domain-owned execution.
@@ -141,17 +141,18 @@ export const rename = method({
 ## Groups: `subject` is the caller's composition
 
 The caller's composition is the caller and every Identity it reaches through `extends_with` (group
-membership; Shell `Group.assignMember` writes it, see `users.md`), at any depth. `constrained_by` caps
+membership and Role grants; see `users.md`), at any depth. `constrained_by` caps
 an Identity: its constraint must satisfy the Policy too. `excluded_from` vetoes: whatever the excluded
 Identity satisfies is refused to the caller, even when the caller holds it itself or through another
 group. Kernel decides each Policy for every Identity of that composition, so `subject` already means
 "the caller or any of its groups".
 
 - State a fact a group holds as one Edge from or to `subject`. Never walk `extends_with` (one hop or a
-  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, skips the constraints
+  `repeat`) from `subject`: the walk reads raw Edges, skips the constraints
   and exclusions of the groups it crosses, and spends a leaf and a variable of the branch budget.
 - Check membership in a fixed group against that group: `check(extendsGroup, ref(group))`, with
-  `extendsGroup` matching `sameNode(subject, object)`. Keep the group a fixed `ref`: the composition
+  `extendsGroup` matching `sameNode(subject, object)`. A Role is checked the same way, with the
+  Domain's own `hasRole` Policy: `check(hasRole, ref(role))` (see `users.md`). Keep the group a fixed `ref`: the composition
   includes the caller itself, so an input object admits any caller passing its own id.
 - One Identity satisfies a whole Policy branch. When two facts may come from different groups, such as
   a Role from one Team and the management of a Project from another, write one check per fact: each check
