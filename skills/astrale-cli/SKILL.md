@@ -5,25 +5,17 @@ description: Reference for the standalone Astrale CLI (`astrale`) - setup, graph
 
 # Astrale CLI
 
-`astrale` connects to existing Astrale Kernels. It selects an instance and
-identity, performs graph reads and mutations, invokes callables, installs
-running domains, reads the Kernel journal, and opens authenticated views.
+`astrale` targets existing Kernels: instance and identity selection, graph reads and mutations,
+callable invocation, Domain installation, the Kernel journal, authenticated Views. It never builds
+or runs Domains: the SDK's `astrale-domain` binary owns `build`, `deploy`, `publish`, `diff`,
+`yank`, `list`, `lint`, `package` and tests.
 
-The rendered command help is authoritative for flags and defaults:
+`astrale --help` and `astrale <command> --help` are authoritative for flags and defaults.
 
-```bash
-astrale --help
-astrale <command> --help
-```
-
-- Binary: `astrale`
-- Distribution: standalone executable with an embedded Bun runtime; no Node/npm/Bun installation is required to run it. The npm distribution is retired.
-- Source development: use the repository's pinned toolchain.
-- Dev entrypoint: `bun cli/bin/astrale.ts <command>`
+- Standalone executable embedding its Bun runtime: needs no Node, npm or Bun. No npm distribution.
+- Source development: the repository's pinned toolchain; dev entry `bun cli/bin/astrale.ts <command>`.
 
 ## Command Surface
-
-Primary commands:
 
 ```bash
 astrale status
@@ -49,44 +41,40 @@ astrale admin ...
 astrale issue "Title" --body "Context and details"
 ```
 
-Kernel-touching commands share `--format`, `--json`, `--raw`, `--url`,
-`-i/--instance`, `--timeout`, `--as`, `--creds`, `--anonymous`, and `--debug` where
-applicable. The CLI creates one public Kernel `Call`, and its Client session owns
-remote routing, fresh credentials, and one safe stale-route retry.
-
-`astrale ui` is local project tooling and takes no Kernel, instance, identity,
-or credential options, except `astrale ui request`, which is an authenticated
-Kernel command and takes the shared Kernel options.
-
-Use `--anonymous` to omit a caller credential even when a local or bookmark-default identity exists.
-It cannot be combined with `--as` or `--creds`; a callable that requires authentication
-(`authenticated` or `authorized`) refuses an anonymous request.
+- Shared Kernel options, where applicable: `--format`, `--json`, `--raw`, `--url`, `-i/--instance`,
+  `--timeout`, `--as`, `--creds`, `--anonymous`, `--debug`. A command creates one public Kernel
+  `Call`; its Client session owns remote routing, fresh credentials and one safe stale-route retry.
+- `--anonymous` omits the caller credential even when a local or bookmark-default identity exists;
+  it excludes `--as` and `--creds`; an `authenticated` or `authorized` callable refuses it.
+- `astrale ui` is local project tooling without Kernel, instance, identity or credential options,
+  except `astrale ui request`, an authenticated Kernel command with the shared options.
 
 ## Report an issue
 
-Report a problem yourself, without waiting to be asked, when both hold:
+Report unprompted when both hold:
 
 - it blocks the task, cost significant time, or forced an unsatisfactory workaround;
-- the evidence puts the cause in Astrale (CLI, SDK, Kernel, Admin, a native Domain), not in the
-  project: it reproduces in a minimal case, or Astrale contradicts its own docs, help or errors.
+- the evidence places the cause in Astrale (CLI, SDK, Kernel, Admin, a native Domain), not the
+  project: a minimal reproduction, or Astrale contradicting its own docs, help or errors.
 
-Do not report your own code or configuration errors, or a correct refusal. Report each problem once
-(`astrale issue list` shows your reports), give the user the printed reference, and continue with
-the workaround if there is one.
+Never for your own code or configuration error, or a correct refusal. Once per problem
+(`astrale issue list` shows your reports); give the user the printed reference and continue with
+the workaround if one exists.
 
 ```sh
 astrale issue "Factual title" --body "$BODY"   # or pipe the body on stdin
 ```
 
-Add `--project <directory>` and `-i <affected instance>` when known; do not ask for them. Local versions are
-attached automatically. Redact credentials, tokens, keys and customer data. Reporting needs an
-account with access to Admin (a Console account). Only `ISSUE_NOT_CONFIRMED` (outcome unknown)
-keeps the request: run the printed `--retry` command. Any other error is a refusal that names its
-code and failing input: fix the input and report again; if the report cannot be sent, give the
-user the drafted issue.
+- Add `--project <directory>` and `-i <affected instance>` when known; never ask for them. Local
+  versions are attached automatically. Redact credentials, tokens, keys and customer data.
+- Needs an account with access to Admin (a Console account).
+- Only `ISSUE_NOT_CONFIRMED` (outcome unknown) keeps the request: run the printed `--retry`
+  command. Any other error is a refusal naming its code and failing input: fix it and report again;
+  if the report cannot be sent, give the user the drafted issue.
+- Title: the observed fact, at most 100 characters, not a request: "`domain install` fails with 5000
+  on a published release", not "Fix domain install".
 
-Title the observed fact in at most 100 characters, not a request: "`domain install` fails with 5000
-on a published release", not "Fix domain install". Body, one field per line, `none` when empty:
+Body, one field per line, `none` when empty:
 
 ```text
 Type: bug | limitation | friction
@@ -107,24 +95,20 @@ Evidence: request id, short log excerpt or stack trace.
 | `limitation` | Astrale works as designed but cannot do what the task needs, including capability requests. |
 | `friction` | The task succeeds, but the path is needlessly hard: misleading error, missing doc, extra steps. |
 
-The printed reference (`ASTRALE-12`) follows the report. The reporter sees and changes only its own
-reports; status, priority and comments stay with triage:
+The report prints its reference (`ASTRALE-12`). The reporter sees and changes only its own reports;
+status, priority and comments belong to triage.
 
 ```sh
-astrale issue list --json
+astrale issue list --json                              # archived ones only with --all
 astrale issue show ASTRALE-12
-astrale issue edit ASTRALE-12 --body "Updated details"
-astrale issue archive ASTRALE-12
+astrale issue edit ASTRALE-12 --body "Updated details" # --title, --body (replaces), or both
+astrale issue archive ASTRALE-12                       # withdraws it; triage keeps its history
 ```
-
-`list` omits archived reports unless `--all`; `edit` takes `--title`, `--body` (it replaces the
-details), or both; `archive` withdraws the report, and triage keeps its history.
 
 ## UI Projects
 
-Astrale UI is one tree-shakeable runtime package plus consumer-owned pattern,
-block, and theme source. Initialize a React and Tailwind CSS v4 project with the exact
-published UI release:
+One tree-shakeable runtime package plus consumer-owned pattern, block and theme source, for React
+and Tailwind CSS v4, initialized at the exact published UI release:
 
 ```bash
 astrale ui init --preset astrale
@@ -138,35 +122,27 @@ astrale ui doctor --project ./apps/web
 astrale ui preset apply compact
 ```
 
-Initialization writes Base UI + Nova shadcn configuration, theme and preset CSS
-imports, and `astrale-ui.lock.json`. The lock records the exact package version,
-Git tag, resolved commit SHA, shadcn version, Base UI version, preset, and hashes
-of installed source. Registry metadata, included manifests, and item files are
-always read from that single commit snapshot.
-
-Run `astrale ui add` without item arguments for an interactive picker. In CI,
-provide canonical addresses explicitly. Ordinary add refuses locally edited
-installed files; review those files, then use `--overwrite --yes` only when
-replacement is intentional. `--dry-run` leaves project files and the lock
-unchanged. Use `astrale ui search <free-text> --json` to receive a short ranked candidate list with
-exact demo code and its `command` or runtime `packageImport`.
-
-Use `astrale ui request <free-text>` when search does not satisfy the need. It calls
-`/:ui.astrale.ai:function.request` on the selected instance with one bounded intent (1-512
-characters) and prints the returned receipt: `{ state: "submitted", requestId, collaborationUrl }`
-or `{ state: "pending" | "outcome-unknown" | "failed" | "conflict", requestId }`.
-
-Patterns, blocks, and themes are application-owned source after installation. A
-theme is copied to `components/astrale/theme/` and activated through one relative
-import in the configured host stylesheet; local playground exports require no
-registry fetch or shadcn invocation. Composition root
-`className`, inline `style`, controlled values/actions, and stable `data-slot`
-anatomy remain open to the host. The package owns reusable runtime behavior;
-neither the CLI nor the SDK embeds the UI package or Base UI.
+- `init` writes Base UI + Nova shadcn configuration, theme and preset CSS imports, and
+  `astrale-ui.lock.json`: exact package version, Git tag, resolved commit SHA, shadcn and Base UI
+  versions, preset, hashes of installed source. Registry metadata, manifests and item files are
+  always read from that one commit.
+- `add` without items opens an interactive picker; CI passes canonical addresses. It refuses
+  locally edited installed files: `--overwrite --yes` only for an intended replacement.
+  `--dry-run` changes neither project files nor the lock.
+- `search <text> --json`: a short ranked candidate list with exact demo code and its `command` or
+  runtime `packageImport`.
+- `request <text>`, when search does not satisfy the need: calls `/:ui.astrale.ai:function.request`
+  on the selected instance with one intent of 1–512 characters and prints the receipt
+  `{ state: "submitted", requestId, collaborationUrl }` or
+  `{ state: "pending" | "outcome-unknown" | "failed" | "conflict", requestId }`.
+- Installed patterns, blocks and themes are application-owned source. A theme is copied to
+  `components/astrale/theme/` and activated by one relative import in the configured host
+  stylesheet; a local playground export needs no registry fetch or shadcn invocation. Root
+  `className`, inline `style`, controlled values/actions and stable `data-slot` anatomy stay open
+  to the host. The package owns reusable runtime behavior; neither the CLI nor the SDK embeds it or
+  Base UI.
 
 ## Paths
-
-Use canonical Kernel Paths:
 
 | Form                    | Example                                                 |
 | ----------------------- | ------------------------------------------------------- |
@@ -177,12 +153,12 @@ Use canonical Kernel Paths:
 | Node ID                 | `@node-id`                                              |
 | Active caller shorthand | `@self`                                                 |
 
-Static dispatch uses one colon before the method. Instance dispatch uses `::` followed by the complete Domain-qualified Method key.
-Discover methods with `astrale introspect <origin> --bundle`. Introspection can use a Class
-receiver to inspect an instance contract; calling it requires an observed instance Path.
-`@self` is expanded by the CLI before signing when it appears at the head of a
-call Path or a bare `key=@self` value. It is not rewritten inside `--data`,
-stdin JSON, URLs, or arbitrary substrings.
+- Static dispatch: one `:` before the method. Instance dispatch: `::` and the complete
+  Domain-qualified Method key.
+- `astrale introspect <origin> --bundle` lists methods. Introspection accepts a Class receiver for
+  an instance contract; calling needs an observed instance Path.
+- `@self` is expanded before signing only at the head of a call Path or as a bare `key=@self`
+  value; never inside `--data`, stdin JSON, URLs or substrings.
 
 ```bash
 astrale get @self --json
@@ -193,7 +169,9 @@ astrale call /:admin.astrale.ai:class.Instance:list --admin
 
 ## Instances And Domains
 
-`astrale instance` combines admin-provisioned instances and local bookmarks:
+### Instances
+
+`astrale instance` combines Admin-provisioned instances and local bookmarks:
 
 ```bash
 astrale instance create my-app
@@ -208,107 +186,107 @@ astrale instance bookmark staging --url https://kernel.example.com
 astrale instance forget staging
 ```
 
-Use explicit `-i <instance>` in scripts. `-i` and `--url` always select the instance a command
-acts on; they never select the Admin kernel, and Admin operations (`instance list`, …) reject them; `domain list -i <instance>` lists what runs on that instance,
-`domain list` without them uses the active instance. Choose the Admin kernel with
-`--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
-removes only the local bookmark.
-Deletion also cleans up the matching `<slug>-root` identity and unshared key, even with
-`--keep-bookmark`; retained credentials and cleanup errors are reported.
-`instance list` shows the Instances you own or were invited into, in every Fleet; `--fleet <id>`
-keeps one Fleet, and adds its whole inventory when you administer it.
-`instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
-to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
-`instance invite` requires authority to manage the exact Instance and grants
-only Instance member access. It returns the durable Invitation immediately.
-WorkOS acceptance alone grants nothing: Admin registers the child Shell user
-with the recipient's own credential, then adds Instance membership, when they
-sign in to the Instance from the invitation link.
-`instance invitation status <id>` performs one read-only observation of the
-retained Invitation. Its `user` is the Shell User reserved on the Instance,
-which an Instance administrator can assign to Core `admin` (see the
-astrale-domain `references/users.md`). `completed` means access is
-materialized; `accepted`, `registering`, and `registered` are intermediate
-states, not completed access.
-The command requires the exact Invitation id and does not change its state.
-`instance invitation reconcile <id>` is diagnostic recovery, not the normal
-invitation journey.
-Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
-instances (key-backed identities have no Admin token). Use
-`astrale instance list --bookmarked`.
+- `-i` and `--url` select the instance a command acts on, never the Admin kernel; Admin operations
+  (`instance list`, …) refuse them. Admin kernel: `--admin <bookmark>` or `--admin-url <url>`.
+  Scripts pass `-i` explicitly. `domain list -i <instance>` lists that instance; without `-i` or
+  `--url`, the active one.
+- `instance delete`: the Admin-managed Instance, plus the matching `<slug>-root` identity and
+  unshared key, even with `--keep-bookmark`; retained credentials and cleanup errors are reported.
+  `instance forget`: the local bookmark only.
+- `instance list`: Instances you own or were invited into, in every Fleet. `--fleet <path>` keeps
+  one Fleet, with its whole inventory when you administer it. Fleet administrators add
+  `--include-retired`: retired tombstones in the same shape, terminal `state: "deleted"` (excluded
+  by default). `issuer` appears only when Admin retained exact evidence. Unreachable ≠ retired.
+  `--admin-only` omits local bookmarks from the JSON envelope. `--fleet` and `--include-retired`
+  are refused with `--bookmarked`.
+- Without a deployed Admin Domain, `instance list` cannot fetch managed instances (a key-backed
+  identity has no Admin token): `instance list --bookmarked`.
+- `instance status`: Admin-owned lifecycle; `--bookmarked` probes one bookmark's exact issuer, JWKS
+  and TLS trust instead.
+- A bookmark keeps its own TLS trust (`--ca`); `instance use` probes OIDC and JWKS with that CA.
+  Two bookmarks on one normalized URL with different CAs: a warning;
+  `instance list --bookmarked --json` shows each `caFile`, issuer and default identity.
 
-Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
-JWKS with that exact CA. If two bookmarks point to the same normalized URL with
-different CA settings, the CLI warns and `instance list --bookmarked --json`
-shows each bookmark's `caFile`, issuer, and default identity.
+Creation:
 
-Fleet administrators may add `--include-retired` to the ordinary Admin inventory. The default
-excludes retired tombstones; included retired Instances use the same output shape and
-are identified by terminal `state: "deleted"`. The optional `issuer` is present only when Admin has
-retained exact evidence. Unreachable does not mean retired. Add `--admin-only` when local bookmarks
-should be omitted from the machine-readable envelope.
+- `instance create` provisions through the Admin Domain with a WorkOS caller; Admin owns Host
+  placement. An existing active target is kept, a concurrent selection included; with none, it
+  selects the new instance after verifying owner access. It never repoints a bookmark to another
+  endpoint: on conflict it keeps the ready receipt and verified access, reports
+  `bookmark.status=pending` with a recovery command under an unused name, and skips automatic root
+  import. Switch with `instance use <name>`.
+- Automatic root recovery starts only after verified access and completed bookmarking, and replaces
+  a root alias only for the same exact issuer claim. Explicit root import keeps its own recovery
+  contract. Neither `instance create` nor `instance root import` accepts `--host`.
+- `INSTANCE_CAPACITY_UNAVAILABLE`: the Fleet has no ready consumer Host; the creation operation
+  fails. A Fleet administrator provisions one (`Fleet.provisionHost`); rerun `instance create`
+  without `--operation` (replaying the failed one returns the same refusal).
 
-`instance create` provisions through the configured Admin Domain with a WorkOS caller; Admin owns
-Host placement. Creation preserves an existing active target, including a concurrent selection;
-with no active target it selects the first instance after verifying owner access. It never repoints
-an existing bookmark to a different endpoint. A conflict retains the ready receipt and verified
-access, reports `bookmark.status=pending` with a recovery command under an unused name, and skips
-automatic root import. Use `instance use <name>` to switch explicitly.
-Automatic root recovery starts only after verified access and completed bookmarking, and replaces
-an existing root alias only for the same exact issuer claim. Explicit root import keeps its recovery contract.
-Neither `instance create` nor `instance root import` accepts `--host`.
-A Fleet with no ready consumer Host refuses creation with `INSTANCE_CAPACITY_UNAVAILABLE`, and the
-creation operation fails: a Fleet administrator provisions a Host (`Fleet.provisionHost`), then the
-caller reruns `instance create` without `--operation`, since replaying the failed one returns the same refusal.
+Root import:
 
-`instance root import <slug-or-id>` retrieves the target owned Instance's root signing identity
-through Admin over an end-to-end encrypted, one-use transfer. It imports that identity locally as
-`<slug>-root`, not the Admin or Host root identity. Use `--admin <bookmark>` or `--admin-url <url>`
-to select another Admin endpoint. Recovery requires `--yes` in automation, replaces an existing
-key-backed identity with that name, and refuses to overwrite an IdP-backed identity.
-
-Root import preserves the active instance and keeps the human Admin identity as the Instance
-bookmark's default. Select the imported root explicitly with `--as`:
+- `instance root import <slug-or-id>` retrieves the owned Instance's root signing identity through
+  Admin over an end-to-end encrypted one-use transfer and imports it as `<slug>-root` (not the Admin
+  or Host root). `--admin <bookmark>` / `--admin-url <url>` select another Admin. Recovery needs
+  `--yes` in automation, replaces a key-backed identity of that name, and refuses to overwrite an
+  IdP-backed one.
+- It keeps the active instance and the human Admin identity as the bookmark's default: select the
+  root with `--as`. Run the import as an authorized human identity. Root success proves execution,
+  not an application user's access Policy.
 
 ```bash
 astrale instance root import development --yes
 astrale get @self -i development --as development-root --json
 ```
 
-Use an authorized human identity for the import; `development-root` is available for subsequent
-Instance calls after recovery. Root success proves execution, not an application user's access Policy.
+Invitations:
 
-The CLI connects; it does not build or run domains. The SDK's `astrale-domain` binary owns
-`build`, `deploy`, `publish`, `diff`, `yank`, `list`, `lint`, `package`, and test workflows.
+- `instance invite` needs authority to manage that exact Instance, grants only Instance member
+  access and returns the durable Invitation at once. WorkOS acceptance grants nothing: when the
+  recipient signs in from the invitation link, Admin registers the child Shell user with the
+  recipient's own credential, then adds Instance membership.
+- `instance invitation status <id>`: one read-only observation of the exact Invitation. `user` is
+  the Shell User reserved on the Instance, which an Instance administrator can assign to Core
+  `admin` (astrale-domain `references/users.md`). Only `completed` means access is materialized;
+  `accepted`, `registering`, `registered` are intermediate.
+- `instance invitation reconcile <id>`: diagnostic recovery, not the normal invitation journey.
+
+### Domains
+
 A deploy never installs: each deployment URL serves one release for good, and only
-`astrale domain install` changes what an instance runs (reinstalling what it already runs changes
+`astrale domain install` changes what an instance runs (reinstalling the running release changes
 nothing). Project Environments name no instance and ignore the CLI's active instance.
 
-`astrale domain install` takes deployment URLs (`https://`, or `http://` for a local Host) and
-published versions: `<origin>@1.5.0` names exactly that version (a pre-release or a yanked one
-included), `<origin>@1.5` the highest stable 1.5.x that is not yanked. Versions resolve in the
-Admin registry with your own identity; a private Domain needs `domain_installer`. The install and
-the uninstall themselves are Kernel syscalls sent as you, decided by Kernel Roles rather than those
-Admin rights: an install needs `domain.installer` and the right to grant every Kernel Role
-membership the release requests (a scope toward a Kernel target needs Root), an uninstall
-`domain.uninstaller` and the right to revoke them. Root passes all of these; a release's Roles and
-scopes are described in [Policies](../astrale-domain/references/policies.md).
+```text
+domain install <ref>... [-i <instance>] [--allow-issuer-change[=<origin>]] [--revoke-previous]
+               [--mode online|maintenance] [--operation <id>] [--timeout <ms>] [--no-wait]
+<ref> = https://… | http://… (local Host)   a deployment URL
+      | <origin>@1.5.0 | <origin>@2.0.0-rc.1  exactly that version, pre-release or yanked included
+      | <origin>@1.5                           the highest stable 1.5.x that is not yanked
+        refused: a major alone (@1), a range, build metadata
+domain uninstall <origin>... [--destructive] [--yes] [--operation <id>] [--no-wait]
+```
 
-- Several references install in ONE atomic operation: every Domain moves or none does, which is
-  how dependent Domains move together. The CLI pins the release digest it read and verifies the
-  installed pins once the install completed.
-- An advisory pre-check reports the installed Domains the change would break and proposes
-  compatible published versions with the grouped command (`--json`: `precheck`). The install is
-  still sent; the Kernel decides.
+- Versions resolve in the Admin registry under your own identity; a private Domain needs
+  `domain_installer` or `domain_admin`, directly or through a Group.
+- Install and uninstall are Kernel syscalls sent as you, decided by Kernel Roles, not by those Admin
+  rights. Install: `domain.installer` plus the right to grant every Kernel Role membership the
+  release requests (a scope toward a Kernel target needs Root). Uninstall: `domain.uninstaller` plus
+  the right to revoke them. Root passes all; a release's Roles and scopes:
+  [Policies](../astrale-domain/references/policies.md).
+- Several references install in ONE atomic operation, URLs and versions mixed: every Domain moves
+  or none does (dependent Domains move together). The CLI pins the release digest it read and
+  verifies the installed pins once the install completed.
+- An advisory pre-check reports installed Domains the change would break and proposes compatible
+  published versions with the grouped command (`--json`: `precheck`). The install is still sent;
+  the Kernel decides.
 - An issuer change is never silent: `--allow-issuer-change` for a new deployment of the same line,
   `--allow-issuer-change=<origin>` for any other change, or type the origin at a terminal. The
   replaced issuer keeps serving its in-flight work; `--revoke-previous` cuts it at the activation.
-
-`astrale domain uninstall` removes one or more origins atomically. Safe mode, the default, deletes
-nothing and is refused while their Classes hold facts; `--destructive` retires their Classes at the
-activation, whatever their number of facts, and purges those facts afterwards (never an unselected
-Domain's). Surviving dependents block it, and so does an Edge of a surviving Class whose lifetime
-restricts the deletion. Confirm at a terminal or pass `--yes`.
+- Uninstall removes the selected origins atomically. Safe mode (default) deletes nothing and is
+  refused while their Classes hold facts; `--destructive` retires their Classes at the activation
+  whatever their number of facts, then purges those facts (never an unselected Domain's). A
+  surviving dependent blocks it, as does an Edge of a surviving Class whose lifetime restricts the
+  deletion. Confirm at a terminal or pass `--yes`.
 
 ```bash
 astrale domain install https://crm.example -i staging
@@ -319,10 +297,9 @@ astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive --yes -i staging
 ```
 
-An install or uninstall is a durable Execution. The CLI waits for its outcome up to `--timeout`
-(110 s by default; `--no-wait` returns at once) and reports success only from a completed outcome.
-Never rerun it to learn what happened: follow the Execution it printed with
-`astrale execution status <execution>` or `result <execution> --wait`.
+An install or uninstall is a durable Execution. The CLI waits up to `--timeout` (110 s by default;
+`--no-wait` returns at once) and reports success only from a completed outcome. Never rerun it to
+learn the outcome: `astrale execution status <execution>` or `result <execution> --wait`.
 
 | Exit | Meaning |
 | --- | --- |
@@ -333,36 +310,38 @@ Never rerun it to learn what happened: follow the Execution it printed with
 | 75 | A `result` read of an Execution that has not ended: try again later. |
 | 130 | Interrupted: the Execution goes on. |
 
-`--operation <id>` is for automation: it replays only the exact same request (`--json`:
-`replayed: true`); any other request under a used id is refused, exit 5. Existing data the new
-schema refuses, maintenance repair sessions (`--mode maintenance`, then
-`domain installation apply|abort`) and destructive uninstalls are covered in
-[schema evolution and data migration](../astrale-domain/references/migration.md).
+- `--operation <id>` (automation) replays only the exact same request (`--json`: `replayed: true`);
+  any other request under a used id is refused, exit 5.
+- Existing data the new schema refuses, maintenance repair sessions (`--mode maintenance`, then
+  `domain installation apply|abort`) and destructive uninstalls:
+  [schema evolution and data migration](../astrale-domain/references/migration.md).
 
-`astrale domain versions <origin>` lists the Domain's published versions from the Admin
-registry, read with your own credential: you need `domain_installer` or `domain_admin` on the
-Domain, directly or through a Group. Pre-releases and yanked versions are listed; a yanked
-version is never chosen by a line such as `@1.5`. An absent Domain and one you cannot read give
-the same `REGISTRY_DOMAIN_NOT_FOUND`. `--json` prints one `astrale.registry-index` document;
-refusals print `{ "error": { "code", "message", "details" } }` on stdout and exit 1. Rerunning
-the same command is always safe; it can help only when `details.retryable` is `true`.
+`astrale domain versions <origin>`: published versions from the Admin registry, read with your own
+credential (`domain_installer` or `domain_admin` on the Domain, directly or through a Group).
+
+- Lists pre-releases and yanked versions; a line such as `@1.5` never selects a yanked one.
+- Absent and unreadable Domains give the same `REGISTRY_DOMAIN_NOT_FOUND`.
+- `--json`: one `astrale.registry-index` document; a refusal prints
+  `{ "error": { "code", "message", "details" } }` on stdout, exit 1. Rerunning is always safe and
+  helps only when `details.retryable` is `true`.
 
 ```bash
 astrale domain versions issues.astrale.ai
 astrale domain versions issues.astrale.ai --json --as ci
 ```
 
-`astrale domain list` (active instance, or `-i <instance>` / `--url <kernel>`) shows what runs on that instance: each
-installation its Kernel pins to a deployment that you can read, with the release digest from the
-Kernel pin, the version from the Admin registry (the version naming that exact release, else the
-one naming the same build from the same issuer, as `1.5.0 · staging`; a build digest alone never
-names a version), else the name the deployment's public record gives a preview
-(`1.4.2 + 7 commits · a1b2c3d · staging`, printed as computed), and
-the highest stable version available above it. The list is partial by nature: built-in and local
-Domains, and Domains you cannot read, never appear, so an absent origin is unknown, not "not
-installed". The registry is read as you (`--as` or your default identity) on the Admin kernel;
-`--creds` and `--anonymous` apply to the instance only. `--json` prints one
-`astrale.installed-list` document.
+`astrale domain list` (active instance, `-i <instance>` or `--url <kernel>`): each installation
+that instance's Kernel pins to a deployment you can read.
+
+- Release digest from the Kernel pin. Version from the Admin registry: the one naming that exact
+  release, else the one naming the same build from the same issuer (`1.5.0 · staging`); a build
+  digest alone never names a version. Otherwise the preview name from the deployment's public
+  record (`1.4.2 + 7 commits · a1b2c3d · staging`, printed as computed). Plus the highest stable
+  version above it.
+- Partial by nature: built-in, local and unreadable Domains never appear; an absent origin is
+  unknown, not "not installed".
+- The registry is read as you (`--as` or your default identity) on the Admin kernel; `--creds` and
+  `--anonymous` apply to the instance only. `--json`: one `astrale.installed-list` document.
 
 ```bash
 astrale domain list -i staging
@@ -370,92 +349,77 @@ astrale domain list -i staging --json
 ```
 
 The hidden `astrale __domain-registry bundle|claim|publish|yank` commands are JSON plumbing for
-`astrale-domain diff`, `publish` and `yank`; do not call them by hand. `astrale-domain publish`
-claims an origin no one has before its first deployment: its first claimer administers it.
+`astrale-domain diff`, `publish` and `yank`; never call them by hand. `astrale-domain publish`
+claims an unclaimed origin before its first deployment: its first claimer administers it.
 
 ## Identity And Delegation
 
-Identity import accepts the versioned IdentityExport V1 or V2 envelope, either plaintext JSON or
-passphrase-encrypted compact JWE. Export writes V2, which carries the identity's Kernel
-registrations, so the imported identity signs in wherever the original was registered; a V1
-envelope imports with none. Unversioned exports are rejected; do not remove the version field or
-invent missing identity metadata or registrations to bypass admission. Use `astrale identity import --help`
-and `astrale identity export --help` for the transfer options.
-
-`astrale auth login` stores an IdP-backed identity. `astrale identity create`
-creates a local key identity. Registration targets an existing Identity Node;
-it never creates a Node, changes business properties, assigns a Group, or replaces
-the local identity or its keypair:
+- `identity import` admits a versioned IdentityExport V1 or V2 envelope, plaintext JSON or
+  passphrase-encrypted compact JWE. `identity export` writes V2, which carries the identity's
+  Kernel registrations: the import signs in wherever the original was registered; V1 imports none.
+  An unversioned export is refused; never strip the version or invent identity metadata or
+  registrations. Transfer options: `identity import|export --help`.
+- `auth login` stores an IdP-backed identity; `identity create` a local key identity.
+- `identity register` targets an existing Identity Node: it never creates a Node, changes business
+  properties, assigns a Group, or replaces the local identity or keypair. It needs Kernel
+  `identity.registrar` and update authority on that Node. `--via <callablePath>` names a Domain
+  callable that supplies that authority; the CLI sends the same request and verifies the returned
+  Node and Authentication. A caller that already has the authority needs no `--via`. The primary
+  self credential is signed for the target Kernel audience.
+- The Kernel assigns Node ids; reads and creation results return them, reusable as `@node-id`.
+  Never derive application meaning from their contents.
 
 ```bash
 astrale identity create alice
-astrale identity register alice \
-  --node @existing-user-id \
-  -i staging
+astrale identity register alice --node @existing-user-id -i staging
+astrale identity register operator --node @existing-operator-id \
+  --via /:operations.example:function.registerOperator -i staging
 ```
 
-The Kernel assigns Node IDs. They are returned by reads and creation results
-and can be reused through the `@node-id` Path form; do not derive application
-meaning from their contents. The primary self credential is signed for the target
-Kernel audience. Register needs the Kernel `identity.registrar` Role and update authority on the
-existing Node.
-When a Domain callable supplies that authority, optionally name it with `--via`;
-the CLI sends the same request and verifies the returned Node and Authentication.
-No Domain callback is required when the direct caller already has authority:
+`astrale token [--audience <aud>] [--ttl <sec>] [--for <identity>]` (`--for` = `--as`):
 
-```bash
-astrale identity register operator \
-  --node @existing-operator-id \
-  --via /:operations.example:function.registerOperator \
-  -i staging
-```
-
-`astrale token` issues an audience-bound credential for the selected authenticated identity. When
-the audience is the target Kernel issuer (the default), it mints a top-level Kernel bearer credential
-for the selected identity that can be reused with `--creds`. A different `--audience` creates a delegated service envelope for that
-receiver instead. TTL defaults to 240 seconds so ordinary tokens remain short beneath the one-hour
-local operator proof; an explicit TTL still cannot outlive the selected source credential. Use
-`--raw` for shell assignment.
+- Audience = the target Kernel issuer (default): a top-level Kernel bearer credential for the
+  selected identity, reusable with `--creds`. Any other `--audience`: a delegated service envelope
+  for that receiver.
+- TTL 240 s by default, below the one-hour local operator proof; never beyond the source
+  credential's remaining life. `--raw` for shell assignment.
+- `astrale auth token` differs: it prints the cached upstream IdP token.
 
 ```bash
 TOKEN=$(astrale token --raw -i staging)
 astrale query /:notes.example:class.Note --creds "$TOKEN" -i staging
 ```
 
-A minted token carries the identity itself as principal and caller: it acts for itself, so the
-callable's Policy alone decides and no delegation ceiling applies. Without `--creds`, `call`
-exchanges the selected identity's credential through the callable's Domain instead: the Domain
-becomes the principal, the identity stays the caller, and the Policy is evaluated against the
-identity. A Kernel syscall has no Domain to exchange through, so every command presents the
-identity itself, and the syscall admits the members of its Kernel Role: Query `graph.reader`,
-Mutation `graph.writer`, Download `blob.reader`, Journal `journal.reader`, Register
-`identity.registrar`, Install `domain.installer`. An Identity is a member by extending the Role
-(`extends_with`), directly or through an Identity it extends, such as a Group; Root holds every
-Role. Deprecated: a `can_use` Edge on the syscall, which a release in the legacy requirements shape
-poses, still admits its holder.
+Executor and caller:
 
-| Selection                                                    | Principal presented             | Effect                                                                                                       |
+- A minted token makes the identity both executor and caller: it acts for itself, the callable's
+  Policy alone decides, no delegation ceiling applies.
+- `call` without `--creds` exchanges the identity's credential at the callable's declaring Domain:
+  the Domain is the executor, the identity the caller, and the Policy is evaluated against the
+  identity.
+- A Kernel syscall has no Domain to exchange through: every command presents the identity itself,
+  admitted as a member of the syscall's Kernel Role: Query `graph.reader`, Mutation `graph.writer`,
+  Download `blob.reader`, Journal `journal.reader`, Register `identity.registrar`, Install
+  `domain.installer`. Membership = extending the Role (`extends_with`), directly or through an
+  extended Identity such as a Group; Root holds every Role. Deprecated: a `can_use` Edge on the
+  syscall, posed by a release in the legacy requirements shape, still admits its holder.
+
+| Selection                                                    | Executor                        | Effect                                                                                                       |
 | ------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `call` with `--as <identity>` or the default identity        | the callable's declaring Domain | the Domain's ownership meets the ceiling; the Policy is evaluated against the identity                       |
 | `get`, `query`, `mutate` on any instance, the Admin included | the identity                    | `graph.reader` or `graph.writer` admits the syscall; each Class's Policies then decide, with no Domain scope |
 | `--creds "$(astrale token --raw)"`                           | the identity                    | the callable's Policy alone decides; a Kernel syscall admits the members of its Kernel Role                  |
 
-Reuse a minted token for anything the identity may do itself; `call --as` presents the Domain's
-credential instead, for a Domain that must act for the identity.
-
-`astrale auth token` is different: it prints the cached upstream IdP token.
+A minted token serves anything the identity may do itself; `call --as` presents the Domain's
+credential, for a Domain that must act for the identity.
 
 ## Graph Reads
 
 ### `get`
 
-`get` reads one exact canonical Node:
-
-```json
-{ "id": "node-id", "class": "notes.example:class.Note", "props": {} }
-```
-
-The structured Node result is exactly `{ id, class, props }`.
+`get <target> [--schema]` reads one exact canonical Node. Result exactly `{ id, class, props }`;
+Schema-valued properties only with `--schema`. A Method Path is a callable, not a Node: `call` or
+`introspect`.
 
 ```bash
 astrale get @note --json
@@ -463,15 +427,11 @@ astrale get /:notes.example:class.Note
 astrale get /:kernel.astrale.ai --schema
 ```
 
-Method Paths identify callables rather than Nodes; use `call` to invoke them or
-`introspect` to inspect their Schema. Schema-valued properties are omitted
-unless `--schema` is passed.
-
 ### `download`
 
-A blob Property holds a file: a read shows only its Ref,
-`{ "digest": "sha256:…", "mediaType": "application/pdf", "size": 48213 }`.
-`download` streams the bytes it names, reading as `get` does:
+A blob Property read shows only its Ref,
+`{ "digest": "sha256:…", "mediaType": "application/pdf", "size": 48213 }`. `download` streams the
+bytes it names, reading as `get` does.
 
 ```bash
 astrale download @doc content -o report.pdf
@@ -479,17 +439,18 @@ astrale download @doc notes.example:class.Document.property.content -o report.pd
 astrale download @doc content > report.pdf
 ```
 
-`<property>` is the Property key or its name when the Node holds one file by
-that name; otherwise the error lists the files the Node holds. The bytes are
-checked against the Ref's size and digest, and `-o` writes `<file>.part`, renamed
-only when complete. `--json` describes the written file
-(`{ node, property, mediaType, size, digest, file }`). Without `-o` the bytes go to
-a redirected stdout (`-o -` forces it); a terminal is refused. Missing and
-unreadable files are both `BLOB_NOT_FOUND` or `FILE_NOT_FOUND`.
+- `<property>`: the Property key, or a name when the Node holds one file by that name; otherwise
+  the error lists the files the Node holds.
+- Bytes are checked against the Ref's size and digest; `-o` writes `<file>.part`, renamed only when
+  complete. `--json`: `{ node, property, mediaType, size, digest, file }`. Without `-o`, a
+  redirected stdout (`-o -` forces it); a terminal is refused.
+- Missing and unreadable files are indistinguishable: `BLOB_NOT_FOUND` or `FILE_NOT_FOUND`.
 
 ### `introspect`
 
-`introspect` reads the Kernel Schema syscall for one installed Domain.
+Reads the Kernel Schema syscall for one installed Domain. A method or Function Path projects its
+input/output from the installed bundle. An instance Method's qualified key selects the schema even
+behind an `@id` receiver, which is neither read nor invoked; a bare `@id` has no schema origin.
 
 ```bash
 astrale introspect kernel.astrale.ai
@@ -498,23 +459,20 @@ astrale introspect /:kernel.astrale.ai:class.Identity:whois
 astrale introspect @note::notes.example:class.Note.method.archive
 ```
 
-A method or Function Path projects its input/output from the installed bundle.
-An instance Method's qualified key selects the schema even with an `@id` receiver;
-introspection neither reads nor invokes that receiver. A bare `@id` has no schema origin.
-
 ### `query`
 
-`query` executes canonical `astrale.graph.query/v6`. Its structured result is
-`{ kind: "graph", graph: { nodes, edges }, page?: { next } }`; pass the opaque
-`page.next` value to `--cursor` until it is absent.
+Executes canonical `astrale.graph.query/v6` →
+`{ kind: "graph", graph: { nodes, edges }, page?: { next } }`; pass the opaque `page.next` to
+`--cursor` until it is absent.
 
-- Positional Paths create Path source terms.
-- `--class <path>` selects Nodes implementing one exact Class.
-- `--edge <class>` adds one exact expansion; direction is `outgoing`,
-  `incoming`, or `incident`.
-- `--limit` is finite and defaults to 100.
-- `--cursor` resumes the same caller-bound query scope.
-- `--ast` and `--file` admit a complete canonical Query V6 document.
+```text
+query [<path>...]                    positional Paths = Path source terms
+  --class <path>                     Nodes implementing one exact Class
+  --edge <class> [--direction outgoing|incoming|incident]   one exact expansion (exact neighborhood)
+  --limit <n>                        finite; default 100
+  --cursor <token>                   resumes the same caller-bound query scope
+  --ast <json> | --file <path>       a complete canonical Query V6 document
+```
 
 ```bash
 astrale query /:notes.example:class.Note --limit 50 --json
@@ -525,14 +483,12 @@ astrale query @note \
 astrale query --file query.v6.json --cursor "$CURSOR"
 ```
 
-Use `query` with `--edge` for an exact neighborhood.
-
 ## Mutations
 
-`astrale mutate` accepts canonical `astrale.graph.mutation/v3` or its exact
-`{ preconditions, operations }` authoring input from `--data`, `--file`, or
-stdin. The transition is atomic. `--dry` admits and prints the canonical
-document without opening a Kernel connection. The result is `{ createdNodes }`.
+`astrale mutate` takes canonical `astrale.graph.mutation/v3` or its exact
+`{ preconditions, operations }` authoring input from `--data`, `--file` or stdin. Atomic. `--dry`
+admits and prints the canonical document without opening a Kernel connection. Result
+`{ createdNodes }`.
 
 ```bash
 astrale mutate --file mutation.v3.json --dry
@@ -541,26 +497,29 @@ astrale mutate --file mutation.v3.json
 
 ## Calls
 
-`astrale call` creates one Path-targeted Call. Input priority is `--data`,
-`key=value`, piped stdin, then `{}`. `--dry-run` admits the Path and prints
-the call input. Value, binary, and stream results are handled explicitly, and
-`--output` writes binary data. A streaming binary is drained with backpressure
-while the command-scoped Client session is live, then presented through the same
-raw/file/JSON paths as buffered binary. JSON preserves application status and
-encodes the body as text or base64. Callable input/output is
-`astrale introspect <path>`. A durable callable answers with the Execution it
-started: `call` prints that Execution's receipt instead of a value. Save it
-with `--json > receipt.json` and follow the run with
-`astrale execution status|result receipt.json` as the same identity (a member of
-the Kernel `execution.reader` Role reads any Execution); never repeat the call to
-learn its outcome. `call --wait` calls and waits in one command, up to
-`--timeout` (110 s by default): the value once it completed, the Kernel's error
-(exit 1) once it failed or was cancelled, or, still running, the receipt and
-exit 75. `astrale execution` takes an Execution ID or a receipt file and also
-sends a cooperative `cancel` (open to whoever started it, and to a member of
-`execution.terminator`), and `resume` and `signal <name> --value <json>` (Root
-only: one durable promise the run awaits, resolved once; the Kernel checks
-neither name nor value).
+`astrale call` creates one Path-targeted Call; its input/output contract is
+`astrale introspect <path>`.
+
+- Input precedence: `--data`, `key=value`, piped stdin, then `{}`. `--dry-run` admits the Path and
+  prints the input.
+- Top-level `key=value` values coerce booleans, null, numbers, arrays and objects; nested or
+  digits-only strings go in `--data`. `--data` also takes `-` (piped stdin only; a terminal is
+  refused) or `@<file>`, parsed like inline JSON: pass secrets only these ways, never in argv or
+  shell history.
+- Value, binary and stream results are handled explicitly; `--output` writes binary data. A
+  streaming binary is drained with backpressure while the command's Client session is live, then
+  presented like a buffered binary (raw, file or JSON). JSON keeps the application status and
+  encodes the body as text or base64.
+- A durable callable answers with the Execution it started: `call` prints the receipt, not a value.
+  Save it (`--json > receipt.json`) and follow with `astrale execution status|result receipt.json`
+  as the same identity (an `execution.reader` member reads any Execution); never repeat the call to
+  learn its outcome. `call --wait` waits up to `--timeout` (110 s by default): the value once
+  completed; the Kernel's error, exit 1, once failed or cancelled; still running: the receipt,
+  exit 75.
+- `astrale execution status|result|cancel|resume|signal` takes an Execution id or a receipt file.
+  `cancel` is cooperative, open to whoever started the Execution and to `execution.terminator`
+  members. `resume` and `signal <name> --value <json>` are Root only from the CLI; `signal`
+  resolves one durable promise the run awaits, once, and the Kernel checks neither name nor value.
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10
@@ -571,47 +530,37 @@ astrale call /:blog.example:class.Author:create -d @author.json
 astrale call /:admin.astrale.ai:class.Instance:list --admin --json
 ```
 
-Top-level `key=value` values coerce booleans, null, numbers, arrays, and
-objects. Use `--data` for nested or digits-only string values. `--data` also
-takes `-` (read the JSON from stdin) or `@<file>`, parsed like inline JSON; pass
-secrets only in those forms so their values never sit in argv or shell history.
+Admin target:
 
-`--data -` reads piped stdin only; on a terminal it is refused.
+- `--admin [<bookmark>]` or `--admin-url <url>` (with `--domain-issuer <url>`) runs the call on the
+  Admin kernel, selected as `domain` commands select it. Usage error, exit 2: `-i` or `--url` with
+  them, `--admin` with `--admin-url`, `--domain-issuer` without `--admin-url`.
+- The call is otherwise unchanged: it exchanges at its callable's declaring Domain as the Admin
+  kernel's installation names it; the Admin Domain issuer only completes the Admin target.
+- Put `key=value` params before `--admin`, or write `--admin=<bookmark>`.
 
-`--admin [<bookmark>]` or `--admin-url <url>` (with `--domain-issuer <url>`) runs
-the call on the Admin kernel, selected exactly like `domain` commands select it.
-`-i` and `--url` are refused with them (usage error, exit 2), as are `--admin`
-with `--admin-url` and `--domain-issuer` without `--admin-url`. The call itself
-is unchanged: it exchanges at its callable's declaring Domain as the Admin
-kernel's installation names it; the Admin Domain issuer only completes the Admin
-target. Put `key=value` params before `--admin`, or write `--admin=<bookmark>`.
-
-Rotating one secret of a Service's current deployment is such a call.
-With `@astrale-os/adapter-astrale` 0.5.0-beta.171 or newer,
-`astrale-domain list --json` exposes `current` and `callTarget.service` (the
-`CloudflareService` target). Use that Service target for rotation; the listing also exposes
-the Deployment's `callTarget.path`, which is for retirement. Put the input
-in a protected file outside the repository or pipe it, never in argv. The current
-deployment keeps its URL, issuer and key; provider propagation takes a few seconds.
+Rotating one secret of a Service's current deployment is such a call. With
+`@astrale-os/adapter-astrale` ≥ 0.5.0-beta.171, `astrale-domain list --json` exposes `current`,
+`callTarget.service` (the `CloudflareService` target, for rotation) and the deployment's
+`callTarget.path` (for retirement). `SERVICE_NODE_ID` is the bare id between `@` and `::` in
+`callTarget.service`. Input from a protected file outside the repository or a pipe, never argv.
 
 ```bash
 astrale call "@${SERVICE_NODE_ID}::services.astrale.ai:class.CloudflareService.method.setSecret" \
   --admin -d @rotate.json --json
 ```
 
-`SERVICE_NODE_ID` is the bare ID between `@` and `::` in the returned `callTarget.service`.
-Recheck `current` after success and verify intended behavior after propagation: the reply names
-only the secret and cannot identify the rotated deployment if a promotion raced with the call.
-This call always follows current; a historical deployment has no `setSecret` Method.
-For its identical-release redeploy path and promotion effects, see
-[deployment secrets](../astrale-domain/references/release.md#secrets-of-a-deployment).
+- The current deployment keeps its URL, issuer and key; provider propagation takes a few seconds.
+- The reply names only the secret and cannot identify the rotated deployment if a promotion raced
+  the call: recheck `current`, then verify intended behavior after propagation.
+- It always follows current; a historical deployment has no `setSecret` Method. Identical-release
+  redeploy and promotion effects:
+  [deployment secrets](../astrale-domain/references/release.md#secrets-of-a-deployment).
 
 ## Journal
 
-`astrale logs` reads the public Kernel journal syscall as the selected identity, which needs the
-Kernel `journal.reader` Role, and returns `{ records, cursor?, frontier?, gap? }`. Filters match
-exact values; use `--topic-prefix` for prefix matching. Function invocation records use
-`function.invoke`; `payload.outcome` contains their outcome:
+`astrale logs` reads the public Kernel journal syscall as the selected identity (Kernel
+`journal.reader`) → `{ records, cursor?, frontier?, gap? }`.
 
 ```bash
 astrale logs -i staging --limit 50
@@ -619,27 +568,26 @@ astrale logs --topic function.invoke
 astrale logs --topic-prefix function. --follow
 ```
 
-Use `--principal`, `--caller`, `--since`, `--until`, or an opaque `--cursor` as needed.
-`--principal` filters in the Kernel by the executing principal; a Domain acting for a user
-(Console, `astrale call` through a Domain token exchange) is the principal of its
-records. `--caller` keeps the records whose caller (the identity whose authority the operation
-exercised) matches; it filters each returned page, so `--limit` bounds the page first. The Kernel
-records `caller` only when it differs from the principal, so the effective caller is `caller`,
-else `principal`: exact for records written by a Kernel with astrale-os/kernel#959, while records
-from an older Kernel fall back to the principal (a Domain acting for a user shows as the caller).
-Both accept `@self`; the human table shows PRINCIPAL and the effective CALLER, and JSON keeps
-`caller` only where the Kernel recorded it.
-`--follow` retains one Client session and advances only with returned cursors.
-Structured output retains the admitted `correlation` object, including invocation root and
-parent identifiers, and includes `correlationId` as a projection of `invocationId`.
-With `--json`, `--follow` emits NDJSON with one complete admitted record per line; combining
-`--format yaml` with `--follow` is rejected.
+- Filters match exact values; `--topic-prefix` matches prefixes. Function invocation records use
+  `function.invoke`, with their outcome in `payload.outcome`. Also `--principal`, `--caller`,
+  `--since`, `--until`, an opaque `--cursor`.
+- `--principal` filters in the Kernel by the executor: a Domain acting for a user (Console,
+  `astrale call` through a Domain token exchange) is the executor of its records.
+- `--caller` keeps the records whose caller (the identity whose authority the operation exercised)
+  matches; it filters each returned page, so `--limit` bounds the page first. The Kernel records
+  `caller` only when it differs from the executor: effective caller = `caller`, else `principal`.
+- Both accept `@self`. The table shows PRINCIPAL and the effective CALLER; JSON keeps `caller` only
+  where the Kernel recorded it.
+- `--follow` keeps one Client session and advances only with returned cursors; with `--json`, NDJSON
+  of one complete admitted record per line; `--format yaml` with `--follow` is refused.
+- Structured output keeps the admitted `correlation` object (invocation root and parent ids) and
+  adds `correlationId`, a projection of `invocationId`.
 
 ## Views And Browser Sessions
 
 `astrale view` opens one resolved View through a local browser shell. Every View belongs to its
-Domain: pass a Domain origin (opens its entrypoint, or `--view <name>`) or an explicit ViewPath. A
-View is never opened for a node; a View that shows one node routes to it itself.
+Domain: pass a Domain origin (its entrypoint, or `--view <name>`) or an explicit ViewPath. A View is
+never opened for a node; a View that shows one node routes to it itself.
 
 ```bash
 astrale view crm.example --list
@@ -650,24 +598,18 @@ astrale view --sessions
 astrale view --close <session-id>
 ```
 
-`astrale browser` prepares a persistent authenticated GUI browser profile.
-Use `astrale browser --check` to verify it, then drive the printed profile with
-`agent-browser`.
+`astrale browser` prepares a persistent authenticated GUI browser profile; `astrale browser --check`
+verifies it; drive the printed profile with `agent-browser`.
 
 ## Output And Automation
 
-- TTY defaults are human-readable.
-- `--json` emits one JSON document for finite commands; `logs --follow` emits an NDJSON stream.
+- TTY: human-readable. `--json`: one JSON document for finite commands; `logs --follow`: NDJSON.
 - `--raw` unwraps scalars and writes raw binary bytes.
-- `--format yaml|json` selects finite structured rendering; `logs --follow` supports JSON/NDJSON only.
-- Use `--ci --no-prompt` for automation.
-- Use explicit `-i`, `--as`, and `--timeout` rather than ambient state.
-- Pipe large JSON through stdin; command-line argument size is limited by the
-  operating system.
+- `--format yaml|json`: finite structured rendering; `logs --follow` supports JSON/NDJSON only.
+- Automation: `--ci --no-prompt`, explicit `-i`, `--as`, `--timeout`, never ambient state. Pipe
+  large JSON through stdin: argv size is OS-limited.
 
 ## Debugging
-
-Start with:
 
 ```bash
 astrale status
@@ -676,20 +618,19 @@ astrale auth status
 astrale whoami
 ```
 
-Add `--debug` for full Kernel error diagnostics. Missing and authorization-masked
-Nodes are intentionally indistinguishable. Kernel Nodes are masked by family
-Role: Class, Function and Policy Nodes need `domain.reader`, Views `view.reader`,
-Executions `execution.reader`, and composition and scope Edges `authority.reader`.
-A 2004 `ACCESS_DENIED` from `get`, `query` or `logs`, rather than an empty
-answer, means the identity lacks that syscall's Kernel Role; `mutate` also
-answers it when a Class write Policy refuses. A Path also needs access to its
-intermediate nodes and edges: an observed Node may be readable by `@id` or a
-Class query while its Domain-rooted Path is unavailable. Check `-i` and `--as`;
-this alone does not prove corrupt data. Use `introspect` for callable schemas.
+- `--debug`: full Kernel error diagnostics.
+- Missing and authorization-masked Nodes are indistinguishable. Kernel Nodes are masked by family
+  Role: Class, Function and Policy Nodes need `domain.reader`, Views `view.reader`, Executions
+  `execution.reader`, composition and scope Edges `authority.reader`.
+- `2004 ACCESS_DENIED` from `get`, `query` or `logs`, rather than an empty answer: the identity
+  lacks that syscall's Kernel Role. `mutate` also answers it when a Class write Policy refuses.
+- A Path also needs access to its intermediate nodes and edges: a Node readable by `@id` or a Class
+  query may have an unavailable Domain-rooted Path. Check `-i` and `--as`; this alone does not
+  prove corrupt data. `introspect` for callable schemas.
 
 ## Storage
 
-State lives under `ASTRALE_HOME`, or `~/.astrale` by default:
+State lives under `ASTRALE_HOME` (default `~/.astrale`); `ASTRALE_KEYS_DIR` optionally moves keys.
 
 ```text
 config.json
@@ -705,28 +646,22 @@ session/routes.json
 session/installations.json
 ```
 
-`exchange/credentials.json` holds Domain-exchanged credentials until they expire;
-`session/routes.json` holds learned Domain routes and their short-lived carriers;
-`session/installations.json` remembers each Domain's installed issuer per Kernel.
-All three are owner-private caches: deleting them only costs a re-read or a new exchange, never
-access. Before a callable or managed-Instance command uses a credential from a remembered issuer,
-the CLI confirms it with a read-only Kernel call. After a Domain reinstall and the previous issuer's
-drain, a 2002 refusal of that confirmation re-reads the installation and exchanges at the new issuer
-within the same command, before any application call. Application calls themselves are never replayed
-by this recovery.
-
-`idp-sessions/` holds sign-ins whose refresh tokens work once, and each belongs to the home that
-wrote it. A copy in another `ASTRALE_HOME` may use its cached access token but refuses to refresh
-(`IDP_SESSION_COPIED`) while that home still holds the sign-in: refreshing the copy would sign the
-original home out. Give another home its own sign-in with `astrale auth login`.
-
-Optional roots are `ASTRALE_HOME` and `ASTRALE_KEYS_DIR`.
-
-Studio preferences live under `<ASTRALE_HOME>/studio/`: `settings.json` stores one
-`agentModel: { harness, model } | null`; `harness-gateway.json` stores gateway `auth` with
-`mode: mint | token | host`. Old `agentModels` and gateway `apiKey` fields are read for
-compatibility; saving through Studio writes the current format. Do not delete those files
-as caches: they contain user preferences and may contain a gateway credential.
+- Owner-private caches; deleting one costs only a re-read or a new exchange, never access:
+  `exchange/credentials.json` (Domain-exchanged credentials until expiry), `session/routes.json`
+  (learned Domain routes and their short-lived carriers), `session/installations.json` (each
+  Domain's installed issuer per Kernel).
+- Before a callable or managed-Instance command uses a credential from a remembered issuer, a
+  read-only Kernel call confirms it. After a Domain reinstall and the previous issuer's drain, a
+  2002 refusal of that confirmation re-reads the installation and exchanges at the new issuer in the
+  same command, before any application call. Application calls are never replayed by this
+  recovery.
+- `idp-sessions/`: sign-ins whose refresh tokens work once, each owned by the home that wrote it. A
+  copy in another `ASTRALE_HOME` may use its cached access token but refuses to refresh
+  (`IDP_SESSION_COPIED`) while the original home holds the sign-in. Give another home its own
+  `astrale auth login`.
+- Studio preferences, under `<ASTRALE_HOME>/studio/`, are not caches: `settings.json` holds
+  `agentModel: { harness, model } | null`; `harness-gateway.json` holds gateway
+  `auth: { mode: "mint", instance? } | { mode: "token", token }`, so it may hold a credential.
 
 ## Source Map
 

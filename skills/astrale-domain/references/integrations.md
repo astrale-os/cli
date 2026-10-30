@@ -1,29 +1,17 @@
 # Integrations
 
-An Integration is a consumer-owned, provider-neutral contract for behavior outside the Domain graph.
-A Provider supplies its environment-specific implementation at Runtime initialization.
-
-## Define the contract
+An Integration is a consumer-owned, provider-neutral contract for behavior outside the Domain
+graph. A Provider implements it for one environment and is constructed at Runtime initialization.
 
 ```ts
-import { defineIntegration } from '@astrale-os/sdk/integration'
+import { defineIntegration, defineProvider } from '@astrale-os/sdk/integration'
 
 export const openMeteo = defineIntegration({
   id: 'open-meteo',
   operations: {
-    forecast: defineIntegration.operation<Coordinates, Forecast>({
-      replay: { kind: 'safe' },
-    }),
+    forecast: defineIntegration.operation<Coordinates, Forecast>({ replay: { kind: 'safe' } }),
   },
 })
-```
-
-Choose replay metadata honestly. A marker does not manufacture idempotency or exactly-once behavior.
-
-## Define and initialize the Provider
-
-```ts
-import { defineProvider } from '@astrale-os/sdk/integration'
 
 export function createOpenMeteo(configuration: Configuration) {
   return defineProvider(openMeteo, {
@@ -35,51 +23,66 @@ export function createOpenMeteo(configuration: Configuration) {
 }
 ```
 
-Construct Providers only inside Runtime `initialize(environment)`. Admit environment configuration
-once, retain only the necessary values, and expose Integration clients—not raw environment or secrets—
-to Actions and Workflows. Never perform I/O at module import.
+## Replay
 
-## Action versus Workflow
+| `replay` | Another attempt |
+| --- | --- |
+| `{ kind: 'safe' }` | Runs again: repeating it is harmless |
+| `{ kind: 'keyed', source: 'execution' }` | Runs again; `execution.idempotencyKey` is the logical call's id, the same on every attempt (in a Step, derived from the Execution) |
+| `{ kind: 'keyed', source: 'input', key }` | Runs again; `execution.idempotencyKey` is `key` |
+| `{ kind: 'unsafe' }` | Refused (`TypeError`) after the first attempt |
+| `(input) => decision` | Decided per input; replayable only if it never answers `unsafe` |
 
-- An Action may read graph state and make one state-changing Integration call, or make read-only
+- An operation accepts at most one input.
+- A durable Step's `integrations` omit every operation whose decision may be `unsafe`, and refuse an
+  `unsafe` decision before the Provider runs. A state-changing operation called from a Step is
+  `keyed` (`workflows.md`, Call an external system).
+- The marker states what the external system guarantees; it creates no idempotency.
+
+## Providers
+
+- Construct Providers only inside Runtime `initialize(environment)`. Admit the configuration once,
+  keep only the values needed, and expose Integration clients, never the raw environment or
+  secrets. No I/O at module import.
+- Validate unknown remote bytes and responses at the Provider boundary. Translate only declared
+  expected failures; an unexpected transport or provider failure stays a defect.
+- Provider output is load-bearing in assertions.
+
+## Effects
+
+An Integration call that changes external state is one effect (`actions.md`):
+
+- An Action reads, then makes one effect: one state-changing Integration call, or read-only
   Integration calls before one Mutation.
-- Use a Workflow when a state-changing external call is combined with another effect, such as a
-  graph Mutation.
-- A Workflow calls the external system inside a Step; declare a state-changing operation `keyed` so
-  a retried Step sends the same `idempotencyKey` (`workflows.md`, Call an external system). Actions
-  have no Step API.
-
-Provider output must be load-bearing in assertions. Validate unknown remote bytes/responses at the
-Provider boundary. Preserve unexpected transport/provider defects as defects, and translate only
-declared expected failures.
+- A state-changing external call combined with another effect is a Workflow, inside a Step.
 
 ## Secrets and evidence
 
-Keep secrets in deployment/runtime environment, never Schema, Core data, graph properties, logs,
-handoffs, snapshots, or tests. For signed webhooks, retain exact received bytes and headers required by
-the signature scheme before decoding business content.
-
-Observe an external effect through an independently owned receiver or queryable API. A handler-local
-counter, authored success boolean, or handoff cannot prove delivery. The producer may return a stable
-correlation value or digest of the exact body it sent; receiver observation and receiver cleanup
-belong to the acceptance owner.
-
-Receiver evidence proves the expected request occurred, not that no alternate egress occurred. Add a
-narrow source admission or runtime network control only when the scenario actually claims a closed
-egress boundary; do not turn one directory layout into a universal security rule.
+- Secrets live in the deployment or runtime environment, never in the Schema, Core data, graph
+  Properties, logs, handoffs, snapshots or tests.
+- Signed webhooks: retain the exact received bytes and the headers the signature scheme needs
+  before decoding the business content.
+- An external effect is proven by an independently owned receiver or a queryable API, never by a
+  handler-local counter, an authored success boolean or a handoff. The producer may return a stable
+  correlation value or a digest of the exact body it sent; receiver observation and cleanup belong
+  to the acceptance owner.
+- Receiver evidence proves the expected request happened, not the absence of other egress. Add a
+  narrow source admission or runtime network control only when the scenario claims a closed egress
+  boundary.
 
 ## Remote Domains
 
-A declared dependency is called directly from an Action or Workflow (`domains.md`). Put a cross-Domain
-call behind an Integration only for substitution, replay metadata, or failure translation. Its
-Provider takes the exact dependency from the loaded `context.domain` that `initialize` receives and
-invokes the callable through the caller-bound `execution.invoke`, absent when the call carried no
-credential. Do not store a Client, reconstruct a foreign path, widen to a registry, call a foreign
-implementation, copy its types, or claim atomicity across the service boundary.
+A declared dependency is called directly from an Action or Workflow (`domains.md`). Put a
+cross-Domain call behind an Integration only for substitution, replay metadata or failure
+translation. Its Provider:
 
-The release requests a `call` scope on each foreign callable a handler or Provider invokes; the SDK
-linter reports a missing one. The scope only bounds what the Domain does for another caller: the
-callee's Policy still decides that caller, and the dependency grants nothing (see `policies.md`). It
-is not a human grant or a Provider-held credential. Test install ordering, the callee's refusal of a
-caller its Policy rejects, caller-bound dispatch, and observable effects separately only when each
-fact is part of the scenario's claim.
+- takes the exact dependency from the loaded `context.domain` that `initialize` receives;
+- invokes the callable through `execution.invoke`, bound to the incoming caller; absent when the
+  call carried no credential and in a durable Step;
+- never stores a Client, rebuilds a foreign path, widens to a registry, calls a foreign
+  implementation, copies its types, or claims atomicity across the Domain boundary.
+
+The release requests a `call` scope on each foreign callable a handler or Provider invokes
+(`FNC-XDOM-REQ` reports a missing one). The scope bounds only what the Domain does for another
+caller; the callee's Policy still decides that caller (`policies.md`). It is neither a human grant
+nor a Provider-held credential.

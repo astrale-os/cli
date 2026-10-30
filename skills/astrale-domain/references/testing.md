@@ -1,115 +1,100 @@
 # Testing
 
-Read when writing Domain fixtures, focused tests, demos, or live acceptance journeys.
+Read for Domain tests, fixtures, demos and live acceptance.
 
 ## Test at the semantic owner
 
-Use the smallest real boundary that proves the behavior:
+| Behavior | Smallest real boundary |
+| --- | --- |
+| Projection, Rules | Ordinary function calls |
+| A Query | `runQuery(client, domain, query, input)` with a narrow `QueryClient` double: assert the exact documents, page size and cursor. `checkQuery(query, sampleInput, { domain })` (`@astrale-os/sdk/testing`) checks its bounds and relation scopes without a Kernel |
+| A Mutation | `executeMutation(client, domain, mutation, input)` with a narrow `MutationClient` double: assert the exact atomic document |
+| Action orchestration | The Action definition's `run` with an admitted, typed context (an Action has no Step API) |
+| Durable Workflow step order and values | `createTestWorkflowEngine` (`workflows.md`, Test) |
+| Inline Workflow step order and values | An inline Step implementation |
+| Action/Workflow exhaustiveness, Provider initialization | A realized Runtime |
+| Installation, identity, Roles, scopes, callable authority, Policy, routing, persistence | A real Kernel |
 
-- test pure projection and rules as ordinary functions;
-- test a Query with a narrow `QueryClient` double and assert the exact documents, page size,
-  and cursor;
-- test a Mutation with a narrow `MutationClient` double and assert the exact atomic document;
-- invoke an Action definition's `run` with an admitted, typed context when testing handler
-  orchestration;
-- run a durable Workflow in `createTestWorkflowEngine` (`workflows.md`, Test), or an inline one with an
-  inline Step implementation, when testing step order and values;
-- realize a Runtime when testing Action/Workflow exhaustiveness and Provider initialization;
-- use a real Kernel for installation, identity, Roles, scopes, callable authority, Policy, routing,
-  and persistence.
+- No general fake Kernel: it re-implements authority, visibility, transactions, paging and error
+  semantics and proves none of them.
+- A hand-copied builder, or an assertion on the document version alone, bypasses the SDK's
+  realization and projection.
+- Assert the invariant-bearing operations and the absence of unintended writes, not call counts.
 
-Do not create a general fake Kernel. It becomes a second implementation of authority, visibility,
-transactions, paging, and error semantics, while still proving none of them.
+## What a test proves
 
-## Exercise the owner, not its registration
-
-Use `runQuery(client, domain, query, input)` / `executeMutation(client, domain, mutation, input)`
-with narrow capability doubles, and `checkQuery(query, sampleInput, { domain })` from
-`@astrale-os/sdk/testing` for a Query's bounds and the scopes its relations need. They exercise the
-SDK's realization and projection; invoking a hand-copied builder or merely asserting a document
-version bypasses the behavior being delivered.
-
-Assert the invariant-bearing operations and absence of unintended writes, not only call counts.
-A constructed stale-state precondition proves authoring; only transaction execution proves it rejects
-a concurrent edit without partial writes.
-
-## Actions and Workflows
-
-Use a fixture that crosses a page boundary for a “complete collection” claim; a tiny dataset cannot
-detect first-page truncation. Check that a read past its bound raises `TOO_MANY` without publishing
-partial business output, rather than merely asserting that `query` was called.
-
-For a read→Rule→Mutation flow, change the guarded fact between observation and commit. The Rule's
-unit test cannot prove the Mutation rejects stale state; use the actual Kernel transaction for that claim.
-
-Actions have no Step API. For a complete Domain delivery, exercise the exposed Action and Workflow
-definitions with representative success and applicable refusal inputs. For a focused change, exercise
-the affected callables and their dependent invariants. Binding metadata, lower-level AST checks, or
-one tested handler cannot stand in for an unexecuted public callable. Compute expected business
-results independently of the implementation; tests that reuse the same calculation only prove agreement.
-
-An inline Workflow run in memory proves structure and step order, never durable replay,
-exactly-once effects, compensation, or crash recovery. `workflows.md` lists what to prove of a durable
-Workflow in `createTestWorkflowEngine`; those tests prove replay against its code, not crash recovery
-on a Host.
+- A constructed stale-state precondition proves authoring only. A refused concurrent edit without
+  partial writes needs a Kernel transaction: for read → Rule → Mutation, change the guarded fact
+  between the read and the commit.
+- A "complete collection" claim needs a fixture that crosses a page boundary, and a read past its
+  bound must raise `TOO_MANY` without publishing partial output.
+- An inline Workflow run in memory proves structure and step order; never durable replay,
+  exactly-once effects, compensation or crash recovery. `createTestWorkflowEngine` proves replay
+  against the code, not crash recovery on a Host.
+- Compute expected results independently of the implementation; reusing its calculation proves
+  agreement only.
+- A complete delivery exercises every exposed Action and Workflow with representative success and
+  applicable refusal inputs; a focused change, the affected callables and their dependent
+  invariants. Binding metadata, AST checks or one tested handler never stand in for an unexecuted
+  public callable.
 
 ## Core and fixtures
 
-Core is fixed Domain-owned installation data, not demo data, mutable product state, a post-install
-hook, or a migration mechanism. Put throwaway sample data in a test fixture or explicitly invoked
-demo owner. Runtime- or environment-dependent setup belongs to an Action, Workflow, or operator-owned
-journey with declared requirements.
-
-Demo data has one owner: a Dataset under `tests/`, referenced lazily from `astrale.config.ts`
-(`tests: tests({ datasets: [dataset('./tests/datasets/demo.ts')] })`). `dataset(path)` is a lazy
-coordinate: building or deploying never loads the module, and a Dataset never reaches a Build, a
-Release, or an installation. The Domain Studio extracts referenced Datasets on demand and renders
-them in its Tests tab; several Datasets per project are fine as long as their ids differ. Production
-code never imports `tests/`. How to author a Dataset worth reading: `datasets.md`.
+- Core is fixed Domain-owned installation data: never demo data, mutable product state, a
+  post-install hook or a migration mechanism.
+- Throwaway sample data: a test fixture or an explicitly invoked demo owner. Runtime- or
+  environment-dependent setup: an Action, a Workflow or an operator-owned journey with declared
+  requirements.
+- Demo data: Datasets under `tests/`, referenced from `astrale.config.ts` as
+  `tests: tests({ datasets: [dataset('./tests/datasets/demo.ts')] })`. `dataset(path)` is lazy:
+  build and deploy never load the module, and a Dataset never reaches a Build, a Release or an
+  installation. Studio extracts referenced Datasets on demand (Tests tab); several per project need
+  distinct ids. Production code never imports `tests/`. Authoring: `datasets.md`.
 
 ## Live acceptance
 
-For deployment or integration claims, exercise a representative journey on the intended Kernel with
-real credentials and the deployment adapter the product ships. For package/release qualification,
-also use a packed or published consumer outside the source workspace. A local Kernel is not a
-prerequisite for a managed-remote application test. Isolate destructive lifecycle scenarios from
-shared instances and record exact deployed and installed revisions.
+- Deployment or integration claims: a representative journey on the intended Kernel, with real
+  credentials and the deployment adapter the product ships. Package or release qualification: also
+  a packed or published consumer outside the source workspace. A managed-remote test needs no local
+  Kernel.
+- Isolate destructive lifecycle scenarios from shared instances; record the exact deployed and
+  installed revisions.
+- Observe through public Client APIs. Keep authentication, authority, Policy, handler, Provider,
+  persistence, update, uninstall and cleanup evidence distinct; report locally tested, remotely
+  observed and not exercised separately.
+- Durable regression tests stay with their production owner; situational logs, credentials and
+  proof tooling stay out of the delivery.
 
-Observe installation and invocation through public Client APIs. Keep authentication, authority,
-Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct. Report what
-was locally tested, remotely observed, and not exercised separately. Keep durable regression tests
-with their production owner; keep situational logs, credentials, and proof tooling out of delivery.
+Cleanup converges from every partial state (nothing installed, dependencies only, the full closure):
 
-Cleanup must converge from partial lifecycle states: neither Domain installed, only dependencies
-installed, or the complete closure installed. Establish exact Domain presence with a public
-Domain-root point observation before querying its Classes; accept only the exact not-found result as
-absence. Do not use a Schema-introspection failure as an absence shortcut.
-`QUERY_DEFINITION_UNRESOLVED` is an empty cleanup observation only when the owning Domain is already
-proven absent; never suppress authentication, authorization, protocol, unknown-outcome, or unrelated
-query failures. Delete only independently observed business facts, then uninstall dependents before
-dependencies.
+1. Prove Domain presence with a public Domain-root point observation before querying its Classes.
+   Only the exact not-found result is absence; a Schema-introspection failure is not.
+2. `QUERY_DEFINITION_UNRESOLVED` is an empty observation only once the owning Domain is proven
+   absent. Never suppress authentication, authorization, protocol, unknown-outcome or unrelated
+   query failures.
+3. Delete only independently observed business facts, then uninstall dependents before
+   dependencies.
 
 ### Design focused scenarios
 
-Make each scenario prove one semantic claim with the smallest sufficient criteria. Distinct evidence
-classes do not all need to appear in every scenario. Prefer focused proofs such as:
+One semantic claim per scenario, with the smallest sufficient criteria; evidence classes need not
+all appear in each. For example:
 
-- cross-Domain package boundary, install ordering, and caller-bound dispatch;
-- delegation authority: a `caller` operation refused when the caller fails the Role or Policy or the
-  Domain lacks the scope, and a dependency call as `self` decided by its Policy alone;
+- cross-Domain package boundary, install ordering and caller-bound dispatch;
+- delegation authority: a `caller` operation refused when the caller fails the Role or Policy or
+  the Domain lacks the scope, and a dependency call as `self` decided by its Policy alone;
 - multi-user Policy denial and revocation;
-- local service, tunnel, and real external API delivery; and
-- a thin integrated smoke that composes already-proven pieces without duplicating every adversarial
+- local service, tunnel and real external API delivery;
+- a thin integrated smoke composing already-proven pieces, without repeating every adversarial
   check.
 
-Do not make acceptance stricter than the public product contract. Criteria should observe outcomes
-and security boundaries, not prescribe private filenames, arbitrary test counts, one source layout,
-or incidental output fields. Add a criterion only when its absence would make the scenario's stated
-claim unsupported or dishonest.
+Criteria observe outcomes and security boundaries, never private filenames, test counts, one source
+layout or incidental output fields, and are never stricter than the public contract. Add a
+criterion only when its absence leaves the claim unsupported.
 
 ### Bound convergence
 
-Keep the scenario's product claim and package versions explicit. Classify newly found issues without
-automatically expanding the test framework or the task. If a defect invalidates the claim, retain
-the reproduction and fix it at its owner; otherwise track it separately. Do not add more scenarios
-or tooling merely to accumulate evidence already supplied by an existing test.
+Keep the product claim and package versions explicit. A defect that invalidates the claim: keep
+the reproduction and fix it at its owner; otherwise track it separately. Never expand the test
+framework or the task automatically, nor add scenarios or tooling for evidence an existing test
+already supplies.

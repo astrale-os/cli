@@ -1,88 +1,96 @@
 # Services contract
 
-Origin: `services.astrale.ai`. Provider operations run on the Admin instance; use
-`astrale call ... --admin` (or `--admin=<bookmark>` for an explicit Admin target).
+Origin `services.astrale.ai`. Operations run on the Admin instance: `astrale call ... --admin`
+(`--admin=<bookmark>` for an explicit Admin target).
 
 ## Resources and ownership
 
-- `Service` / `CloudflareService`: the stable `(project, environment)` resource. Its opaque name
-  is computed by the SDK's `serviceName`; its URL serves `current_deployment`. States: `active`,
-  `deleting`. This address is not owner-scoped: changing caller does not create another owner's
-  copy of the same project/environment.
-- `service_owned_by`: exactly one owner Identity, set on first deploy and changed only by
-  `transfer`. The caller owns the first deploy by default. A request may name an `owner` only when
-  the caller is or acts as that Identity (`ActAs`). `OwnService` includes authority reached through
-  `extends_with`; membership of an owning group grants management, including deletion.
-- `Deployment` / `CloudflareDeployment`: one Worker build and frozen configuration. Its opaque
-  label covers the Service name, build digest, and configuration digest; it has its own URL and,
-  when requested, its own signing identity. States: `deploying`, `active`, `failed`, `retiring`,
-  `retired`. Retirement is permanent.
-- `deployment_of` and `current_deployment`: a deployment belongs to its Service and inherits its
-  ownership; promotion changes which active deployment the Service serves.
+| Resource | Contract |
+| --- | --- |
+| `Service` / `CloudflareService` | The stable `(project, environment)` resource; opaque name from the SDK's `serviceName`; its URL serves `current_deployment`. States `active`, `deleting`. Not owner-scoped: another caller never gets its own copy of the same project and environment |
+| `service_owned_by` | Exactly one owner Identity, set on first deploy (the caller by default) and changed only by `transfer` |
+| `Deployment` / `CloudflareDeployment` | One Worker build and frozen configuration; opaque label over the Service name, build digest and configuration digest; its own URL and, when requested, its own signing identity. States `deploying`, `active`, `failed`, `retiring`, `retired`; retirement is permanent |
+| `deployment_of`, `current_deployment` | A deployment belongs to its Service and inherits its ownership; promotion changes which active deployment the Service serves |
 
-Methods are authenticated and enforce ownership. A caller lacking ownership sees
-`SERVICE_NOT_FOUND` / `DEPLOYMENT_NOT_FOUND`; deploying an existing Service owned elsewhere gives
-`service-owned-elsewhere`. Registration of an account grants none of this authority.
+- A request names an `owner` only when the caller is or acts as that Identity (`ActAs`).
+- `OwnService` includes authority reached through `extends_with`: a member of an owning group
+  manages the Service, deletion included.
+- Methods are authenticated and enforce ownership. A non-owner gets `SERVICE_NOT_FOUND` /
+  `DEPLOYMENT_NOT_FOUND`; deploying an existing Service owned elsewhere gives
+  `service-owned-elsewhere`. Registering an account grants none of this authority.
 
 ## Deploy input
 
-The static `CloudflareService.deploy` accepts `WorkerDeploymentRequestV1` from
-`@astrale-os/sdk/deployment/worker`. Prefer `@astrale-os/adapter-astrale/services` to assemble and
-send it; a hand-written old `serviceKey`, `entry`, or flat module payload is not this contract.
+Static `CloudflareService.deploy` takes `WorkerDeploymentRequestV1` from
+`@astrale-os/sdk/deployment/worker`. Assemble and send it with
+`@astrale-os/adapter-astrale/services`; a hand-written `serviceKey`, `entry` or flat module payload
+is not this contract.
 
 | Member | Meaning |
 | --- | --- |
 | `format`, `version` | `astrale.worker.deployment-request`, `1` |
 | `project`, `environment` | Stable Service coordinates |
-| `buildDigest`, `label` | Derived from admitted Worker bytes and configuration, not invented identifiers |
-| `worker` | `mainModule`, build `manifest`, `modules`, optional `assets`; each content envelope carries encoding, decoded size, and base64 content/chunks |
-| `configuration` | Canonical `astrale.worker.configuration` v1: compatibility date/flags, vars, declared secret names, and `record`, `signingIdentity`, `router` booleans |
-| `secrets` | Values for exactly the names the configuration declares; write-only input |
-| `record` | Opaque bytes/media type, present exactly when configuration requests a record |
-| `readiness` | Optional paths that must return 200 with the uploaded version's `x-astrale-worker-version` |
-| `promote` | Defaults to true; false leaves the Service's current deployment unchanged |
-| `owner` | Optional first-owner choice, subject to `ActAs`; not an ownership bypass |
+| `buildDigest`, `label` | Derived from the admitted Worker bytes and configuration |
+| `worker` | `mainModule`, build `manifest`, `modules`, optional `assets`; each content envelope carries encoding, decoded size and base64 content or chunks |
+| `configuration` | Canonical `astrale.worker.configuration` v1: compatibility date and flags, vars, declared secret names, and the `record`, `signingIdentity`, `router` booleans |
+| `secrets` | Values for exactly the declared names; write-only |
+| `record` | Opaque bytes and media type, present exactly when the configuration requests a record |
+| `readiness` | Optional paths that must answer 200 with the uploaded version's `x-astrale-worker-version` |
+| `promote` | Default `true`; `false` leaves the current deployment unchanged |
+| `owner` | Optional first owner, subject to `ActAs`; a bare Identity node id (no `@`) |
 
-Services recomputes the build and address. Runtime settings and secret names affect the label;
-secret values do not. The same release reuses its deployment and may update that deployment's
-secret values in place. A new code/configuration release gets another deployment, leaving earlier
-ones served. Do not append compatibility flags or otherwise edit configuration after hashing.
-Host-owned bindings (`WORKER_URL`, `ASTRALE_BUILD_DIGEST`, `ASTRALE_VERSION_METADATA`,
-`ASTRALE_SIGNING_IDENTITY`, `ROUTER`, `ASSETS`) are not user vars or secrets.
+- Services recomputes the build and the address. Runtime settings and secret names enter the label;
+  secret values do not.
+- The same release reuses its deployment and may update its secret values in place. New code or
+  configuration makes another deployment; earlier ones keep serving.
+- Never edit configuration (such as appending compatibility flags) after hashing.
+- Host-owned bindings, never user vars or secrets: `WORKER_URL`, `ASTRALE_BUILD_DIGEST`,
+  `ASTRALE_VERSION_METADATA`, `ASTRALE_SIGNING_IDENTITY`, `ROUTER`, `ASSETS`.
 
-## Results and management
+## Results
 
-A deploy result is either:
+```text
+WorkerDeploymentResponseV1 =
+  { kind: 'deployed', state: 'created' | 'reused',
+    secrets: { state: 'bound' | 'unchanged' | 'updated' }, deployment: Summary }
+| { kind: 'rejected', reason, message, retryAfter?: ISO instant }
+Summary = { id, url, label, serviceId, service, project, environment,
+            owner: Identity Path, state, current: boolean, createdAt, retiredAt?,
+            buildDigest, configuration: digest, signingKeyId?,
+            record?: { contentType, contentBase64 } }
+reason  = invalid-deployment | address-mismatch | build-mismatch | service-owned-elsewhere
+        | deployment-conflict | deployment-retired | hosting-unavailable | service-unavailable
+```
 
-- `kind: deployed`, `state: created | reused`, `secrets.state: bound | unchanged | updated`, and
-  `deployment` with `id`, `serviceId`, opaque `service` name, `label`, `project`, `environment`,
-  `url`, owner, state, digests, `current`, timestamps, optional `record` (bytes and media type), and `signingKeyId`; or
-- `kind: rejected`, `reason`, `message`, and optional `retryAfter`.
+- `bound`: secrets bound at creation; `unchanged`: a reused deployment's secrets match;
+  `updated`: rewritten in place on that deployment only.
+- A refusal changed nothing, except `service-unavailable`, which may follow effects a rerun
+  converges.
+- A JSON response or exit 0 alone does not prove deployment success. The adapter throws
+  `ServicesRefusal` on a rejection.
+- An ownership or validation refusal needs corrected intent. On `service-unavailable`, rerun the
+  same release within bounds and its `retryAfter`. Never allocate another
+  project to route around ownership.
 
-A JSON response or exit zero alone does not establish deployment success. The adapter throws
-`ServicesRefusal` for a deploy rejection. Ownership or validation refusals need corrected intent;
-`service-unavailable` may follow effects, so retain the same release and respect its retry advice
-within a bounded recovery attempt. Never allocate a different project to route around ownership.
+## Management
 
-`owner` in deploy or transfer input is a bare Identity node ID (no `@` prefix).
-
-Static `CloudflareService.hosting` describes hosting; `list({project?, environment?})` returns
-visible deployment summaries, not Service-only rows. Use `summary.serviceId` for Service Methods
-and `summary.id` for deployment retirement.
+- Static `CloudflareService.hosting` describes hosting. `list({ project?, environment? })` returns
+  visible deployment summaries, not Service rows: `summary.serviceId` for Service Methods,
+  `summary.id` to retire a deployment.
 
 | Receiver | Methods |
 | --- | --- |
 | `CloudflareService` | `promote({label})`, `transfer({owner})`, `setSecret({name,value})`, `secrets({})`, `setSchedule({crons})`, `schedules({})`, `logs({label?,tail?,since?})`, `delete({})` |
 | `CloudflareDeployment` | `retire({})` |
 
-`setSecret` affects the Service's current deployment only. There is no `deleteSecret` Method:
-adding/removing a secret name changes configuration and needs a new deployment. Removing a name
-from a new deployment does not remove it from older ones. Services retains no secret values;
-metadata listing cannot recover them. A generic Worker with its exact original deploy input can
-rotate a non-current release with updated values and `promote: false`. For Domain releases use
-the [identical redeploy and restore-current procedure](../../astrale-domain/references/release.md#secrets-of-a-deployment);
-the Domain adapter always promotes.
-
-Services neither creates consumer Domain/Function nodes nor returns their installed IDs. A Domain
-release's origin, revision, issuer, and Publication belong to its deployer. Its record is opaque to
-Services; the Domain tooling admits it. Installing that release is a separate consumer operation.
+- `setSecret` updates the current deployment only. No `deleteSecret`: adding or removing a secret
+  name changes the configuration and needs a new deployment; removing a name from a new deployment
+  leaves it in older ones.
+- Services keeps no secret values; listing metadata never recovers them.
+- To rotate a non-current generic Worker release, redeploy its exact original input with updated
+  values and `promote: false`. Domain releases: the
+  [identical redeploy and restore-current procedure](../../astrale-domain/references/release.md#secrets-of-a-deployment);
+  the Domain adapter always promotes.
+- Services never creates consumer Domain or Function nodes nor returns their installed ids. A Domain
+  release's origin, revision, issuer and Publication belong to its deployer; its record is opaque to
+  Services and admitted by the Domain tooling. Installing it is a separate consumer operation.

@@ -1,39 +1,32 @@
 # Users and groups
 
-Read when a Domain owns people who sign in, invites existing business users, or assigns group access.
-Shell owns the shared User/Group contract; the business Domain owns its concrete users and their lifecycle.
-
-## Prerequisites
-
-Use compatible Shell and SDK packages, with Shell installed on the target instance. This guide uses
-static `User.invite`, `Group.assignMember`/`unassignMember`, and registration of existing nodes. Check the
-installed callable contracts before running examples; coordinate dependency upgrades using `migration.md`.
+For a Domain owning people who sign in, inviting existing business users, or assigning group access.
+Shell owns the shared User/Group contract and is installed on the target instance; the business
+Domain owns its concrete users and their lifecycle. Shell surface used here: static `User.invite`,
+`Group.assignMember`/`unassignMember`, registration of existing nodes; check the installed contracts
+with `astrale introspect` and upgrade dependencies per `migration.md`.
 
 ## One business user, three separate transitions
 
 ```text
-create Employee extends Shell.User → same node, initially without Authentication
+create Employee extends Shell.User → same node, without Authentication
   ├─ invite through Shell → invitee signs in → Admin registers their own proof → assures Core member
   └─ register directly with user proof → explicitly assign the intended groups
 ```
 
-- Extend `Shell.User` for a sign-in-capable business person; do not create a second Shell User beside
-  Employee. Mere contacts need not become identities. Add business properties to the concrete subclass.
-- Create through the Domain's ordinary Mutation, without `iss`/`sub`. Register attaches Authentication
-  to that existing node; it does not create the person, change their profile, or assign a group.
-- Shell.User does not declare `displayName` or `email`; the business Class may add them when needed.
-  These are profile data, not authentication evidence. Editing an email does not change the bound
-  identity; invitation destination is an explicit, separate argument.
+- Extend `Shell.User` for a sign-in-capable person; never a second Shell User beside Employee.
+  Contacts need not be identities. Business properties go on the concrete subclass.
+- Create through the Domain's ordinary Mutation, without `iss`/`sub`. Register only attaches
+  Authentication to that node: it creates no person, changes no profile, assigns no group.
+- Shell.User declares no `displayName` or `email`. Profile email is not authentication evidence;
+  editing it changes no bound identity; the invitation destination is a separate argument.
 
 ## Allow Shell to traverse the membership endpoints
 
-Shell maintains membership using its own authority. Grant `traverse` on each participating concrete
-User and Group Class, not `read` of their profiles. Keep `read` your business rule (`readsEmployee`,
-`readsTeam` below): an absent or `true` `read` admits every caller, traversal included. An
-inaccessible endpoint must not look like absent membership.
-
-This combined example represents separate Schema owner files; normal imports between owners are abbreviated.
-It covers direct subclasses of Shell.User/Group, not arbitrary inheritance depth.
+Shell maintains membership with its own authority. Grant `traverse` (not `read`) on each concrete
+User and Group Class. Keep `read` your business rule: an absent or `true` `read` admits every
+caller, traversal included. An inaccessible endpoint must not look like absent membership. Covers
+direct subclasses of Shell.User/Group only; deeper inheritance needs a verified pattern.
 
 ```ts
 import { ShellSchema, S } from '@astrale-domains/shell'
@@ -84,61 +77,62 @@ export const schema = defineSchema('work.example', {
 })
 ```
 
-- The Policy identifies Shell through protected Schema ownership, not a configured Domain NodeId.
+- The Policy identifies Shell by protected Schema ownership, never a configured NodeId.
   Parent-Class Policies do not replace the concrete foreign Class's traversal agreement.
-- Preserve existing traversal with `policy.anyOf(existingTraverse, ownsUserOrGroupClass)`; do not
-  replace business access or broaden `read`/writes. Deeper inheritance needs an explicitly verified pattern.
+- Keep existing traversal: `policy.anyOf(existingTraverse, ownsUserOrGroupClass)`; never broaden
+  `read`.
 
 ## Invite or register, without substituting the identity
 
-| Path | Consumer responsibility | Completion |
+| Path | Consumer does | Completion |
 | --- | --- | --- |
-| Invitation | Call static `Shell.User.invite({ user, email })` on the existing User | At the invitee's sign-in, Admin registers their own proof and assures Core member |
-| Direct Register | Submit valid self or external user proof for the existing node under authorized Domain/operator authority | Authentication only; group assignment is separate |
+| Invitation | static `Shell.User.invite({ user, email })` on the existing User | at the invitee's sign-in, Admin registers their own proof and assures Core member |
+| Direct register | submit valid self or external user proof for the existing node | Authentication only; group assignment is separate |
 
-- Register needs real user proof valid for the target Kernel. Email, a freely supplied `(iss, sub)`,
-  or an administrator's credential cannot replace it. Never pass private keys into a Function.
-- Authentication is write-once and `(iss, sub)` is unique per Kernel. Do not self-register a node as
-  a temporary step before WorkOS registration; that is not an interchangeable login binding.
-- Preserve the same node and registration key on retry; do not create another person after an uncertain
-  result. A new equivalent proof can refresh credentials without changing the intended identity.
-- Invitation `accepted` is not final access: `completed` follows registration and member assignment.
-  A normal login must not recreate revoked membership; invitation does not imply admin or Fleet access.
+- Register needs real user proof valid for the target Kernel; never an email, a freely supplied
+  `(iss, sub)` or an administrator's credential. Never pass private keys into a Function.
+- Authentication is write-once; `(iss, sub)` is unique per Kernel. Never self-register a node as a
+  temporary step before WorkOS registration.
+- Retry with the same node and registration key; never create another person after an uncertain
+  result. A new equivalent proof refreshes credentials without changing the identity.
+- Invitation `accepted` is not access: `completed` follows registration and member assignment. A
+  login never recreates revoked membership; invitation implies no admin or Fleet access.
 
 ## Use Shell's group operations
 
-- `Group.assignMember({ member, group })` maintains both `member_of_group` and Kernel `extends_with`;
-  `unassignMember` removes both. `member` accepts a Shell.User or Shell.Group, including concrete
-  descendants; a Class extending only Kernel.Identity is not a Shell membership endpoint.
-  Do not write just one Edge or implement a parallel membership system.
-- Both group methods use the same Policy: the caller must administer a concrete Shell-owned
-  Group, or own the concrete Class of the target Group. Thus the Group-Class owner may assign/unassign
-  its Teams. Owning the member's User Class alone grants no assignment to Core `member` or `admin`.
-- `User.invite` checks the User instead: its Class owner may invite it; Shell administrators may
-  invite concrete Shell-owned Users. Instance administration alone does not authorize foreign Classes.
-- Core `admin` and `member` are independent groups, not an implicit hierarchy. Registration grants
-  neither; an explicit admin assignment is privileged, not a default business onboarding step.
-- A Team holds no Role by default. Membership may drive business Policies; installation makes only the
-  Domain and its own Core Identities members of Roles, never arbitrary dynamic groups or users.
-- Unassigning removes that direct pair, not Authentication or every other access path. Memberships
-  may precede registration; removing `member` alone is not a permanent ban on owner-authorized readmission.
+- `Group.assignMember({ member, group })` maintains both `member_of_group` and Kernel
+  `extends_with`; `unassignMember` removes both. `member`: a Shell.User or Shell.Group, concrete
+  descendants included; a Class extending only Kernel.Identity is not a membership endpoint. Never
+  write one Edge alone or a parallel membership system.
+- Both group methods share one Policy: the caller administers a concrete Shell-owned Group, or owns
+  the concrete Class of the target Group (so the Group-Class owner assigns its Teams). Owning the
+  member's User Class grants no assignment to Core `member` or `admin`.
+- `User.invite` checks the User: its Class owner, or Shell administrators for concrete Shell-owned
+  Users. Instance administration alone does not authorize foreign Classes.
+- Core `admin` and `member` are independent groups, no hierarchy. Registration grants neither; an
+  admin assignment is privileged, never default onboarding.
+- A Team holds no Role by default. Installation makes only the Domain and its own Core Identities
+  members of Roles, never dynamic groups or users.
+- Unassigning removes that direct pair only, not Authentication or other access paths. Memberships
+  may precede registration; removing `member` is not a ban on owner-authorized readmission.
 
-Shell's three methods above decide their caller by their Policy. Declare a `call` scope on each one
-the Domain invokes (`{ on: S.classes.Group.static.methods.assignMember, operations: ['call'] }`); it
-meets only the ceiling of a delegation and bypasses no Policy. Hold the Kernel Roles your handlers
-need (`graph.reader`, `graph.writer`, `identity.registrar`), and protect the business callable before
-it invokes Shell. See `policies.md`.
+Shell's three methods decide their caller by their Policy. Declare a `call` scope on each one the
+Domain invokes (`{ on: S.classes.Group.static.methods.assignMember, operations: ['call'] }`): it
+meets only a delegation's ceiling and bypasses no Policy. Hold the Kernel Roles your handlers need
+(`graph.reader`, `graph.writer`, `identity.registrar`); protect the business callable before it
+invokes Shell (`policies.md`).
 
-Use `dependencies.shell.caller.invoke(...)` to act for the incoming caller, or
-`dependencies.shell.self.invoke(...)` when an admitted business operation deliberately acts as its
-Domain, for example assigning to its own Team. There is no default dependency `invoke` and no mode
-combining both. In a `self` session the Domain is the caller, so Shell's Policy decides the Domain
-itself, for example as owner of the Team's Class.
+`dependencies.shell.caller.invoke(...)` acts for the incoming caller;
+`dependencies.shell.self.invoke(...)` acts as the Domain (e.g. assigning to its own Team: Shell's
+Policy then decides the Domain, as owner of the Team's Class). No default `invoke`, no mode
+combining both.
 
 ## Inspect and exercise the installed surface
 
-Use an already authorized operator; replace example IDs with returned IDs on the same instance.
-These are static Shell methods, not `@user::invite` or instance Group methods.
+Static Shell methods, not `@user::invite` or instance Group methods. Inputs are exact `@NodeId`
+references; group methods return `{}`. Resolve Core `member`/`admin` on the target instance (an
+administrator finds both among their own memberships); never send labels or IDs from another
+Kernel.
 
 ```sh
 astrale introspect /:shell.astrale.ai:class.User:invite -i staging --as operator
@@ -149,16 +143,10 @@ astrale call /:shell.astrale.ai:class.Group:assignMember \
   member=@employee-id group=@team-id -i staging --as operator
 ```
 
-These Shell handlers require exact `@NodeId` reference inputs; group methods return `{}`. Keep business
-references as IDs and convert to `@NodeId` at the Shell call boundary. Resolve Core member/admin
-on the target instance first, rather than sending group labels or IDs copied from another Kernel.
-An administrator finds both among their own memberships.
-
-To make an invited user an instance administrator, an existing administrator assigns them to Core
-`admin`; invitation never does. `astrale instance invitation status` reports the invited `user`, the
-Shell User Admin reserved on the Instance; the accepting account registers onto it. Assign it once
-the Invitation is `completed`. `unassignMember` with the same input revokes it, and the user keeps
-Core `member`:
+Instance administrator: an existing administrator assigns the user to Core `admin` once the
+Invitation is `completed`; invitation never does. `astrale instance invitation status` reports
+`user`, the Shell User Admin reserved on the Instance that the accepting account registers onto.
+`unassignMember` with the same input revokes it; the user keeps Core `member`.
 
 ```sh
 astrale instance invitation status @invitation-id --json
@@ -167,21 +155,20 @@ astrale call /:shell.astrale.ai:class.Group:assignMember \
   member=@user-id group=@administrators-id -i staging --as operator
 ```
 
-For local-key testing, use a CLI whose `astrale identity register --help` exposes `--node`.
-Register the existing Employee ID; do not create another node to attach login credentials.
+Local-key testing registers the existing Employee node; never create another node for credentials:
 
 ```sh
-# Only with the existing-node registration CLI and an authorized operator.
 astrale identity create alice
-astrale identity register alice --node @employee-id -i staging --as operator
+astrale identity register alice --node @employee-id -i staging \
+  --via /:work.example:function.registerEmployee
 astrale get @self -i staging --as alice --json
 ```
 
-Registering directly needs the operator to extend `identity.registrar` and pass Employee's `update`
-rule (absent: the owning Domain only). Otherwise use `--via` only with the Domain's explicitly admitted
-registration Function; it owns the authorization, and its Domain extends `identity.registrar`. Do not
-add a public registration wrapper or a generic enrollment callback for invitation.
-
-Verify the same User ID before/after activation, both membership edges, and a real allowed/refused
-business call. Shell traversal must work without exposing private profile properties. Test root/bootstrap
-separately; mocks and locally stored identities do not prove WorkOS acceptance or installed access.
+- Register through the Domain's registration Function (`--via`): it owns the authorization, and its
+  Domain holds `identity.registrar`. Without `--via`, the CLI caller registers directly and needs
+  `identity.registrar` plus admission of the Authentication `node.update` on the node, for executor
+  and caller; an absent `update` slot admits the owning Domain only. Never add an `update` rule to
+  admit registration; no public registration wrapper, no enrollment callback for invitation.
+- Verify the same User ID before and after activation, both membership Edges, and one allowed and
+  one refused business call. Shell traversal must work without exposing private profile properties.
+  Mocks and local identities prove no WorkOS acceptance or installed access.

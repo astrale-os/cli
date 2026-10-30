@@ -1,123 +1,169 @@
 # Queries
 
-Read to read the graph: define a Query, call it from a handler, or choose how to express a read.
-A Query is a typed business observation:
+A Query v7 is a typed, bounded, authority-neutral read of the graph:
 
-- **Typed by the Schema.** Handles, conditions and rows come from the Domain's Schema; a Class,
-  Property or relation it cannot name does not compile. Rows need no decoder and no defaults.
-- **Bounded before it reads.** Every read ends with a verb that bounds it; the SDK refuses a Query
-  past its bounds before sending anything.
-- **One snapshot per read.** Each read is one Kernel invocation at its own snapshot. Facets, steps
-  and pages of one Query share none.
-- **Authority-neutral.** A Query names no authority; each call names the one it reads under
-  (`authority.md`). The reader's Class `read`/`traverse` rules decide which rows it sees.
+- **Typed** from the Domain's Schema: a Class, Property or relation the Domain cannot name does not
+  compile; rows need no decoder.
+- **Bounded before sending**: the SDK refuses a Query past its bounds (S11) or with a relation that
+  crosses an undeclared dependency Class (S12), before any read.
+- **One Kernel invocation and one snapshot per read.** Facets, steps and pages of one Query share no
+  snapshot. Exception: a root `id.in` past 32,768 ids is sent in consecutive parts, each at its own
+  snapshot, rows merged in Kernel order.
+- **Authority-neutral**: each call names `{ as }` (`authority.md`); the reader's Class
+  `read`/`traverse` Policies decide its rows. A row absent from a read is invisible to that reader,
+  not proven absent.
+- **One `QueryError` per refusal**, by code. A network failure, a refusal carrying a retry time and
+  `INSTANCE_MAINTENANCE` pass through unchanged; business refusals are declared errors.
 
-The full reference ships in the `@astrale-os/sdk` package as `docs/queries.md`.
+The package reference is `@astrale-os/sdk` `docs/queries.md`.
 
 ## Grammar
 
 ```text
-query      defineQuery<typeof schema>()(id, { build, output?, errors? })       from '@astrale-os/sdk/query'
-id         lowercase dot-separated segments of letters, digits and '-': 'issues.issue.read'
-build      (input, d, steps) => read | facets | steps(facets, (earlier) => facets, …)   2 to 8 steps
+query      defineQuery<typeof schema>()(id, { build, output?, errors? })        '@astrale-os/sdk/query'
+id         unique in the Domain; dot-separated segments of [a-z0-9-]: 'issues.issue.read'
+build      (input, d, steps) => read | facets | steps(facets, (earlier) => facets, …)
 facets     { name: read | read[] | undefined, … }
-read       set . verb | d.document(canonical v7 document)
-set        root [ .where(conds) | .orderBy(keys) | .with(relations) | .union(class)
-                | .pick() | .includeWithheld() ]…
-root       d.<Class> | d.<alias>.<Class> | d.kernel.<Class> | d.<Edge>
-verb       get(id?) | find(id?) | exists(id?) | first() | first(n) | first(n, { more: true })
+steps      2..8; each next step is a function of the merged earlier results and adds new names only
+read       set.verb | d.document(canonical v7 document)
+set        root [.where(conds) | .orderBy(keys) | .with(relations) | .union(class) | .pick() | .includeWithheld()]…
+root       d.<Class> | d.<alias>.<Class> | d.kernel.<Class> | d.<EdgeClass>
+target     NodeId | NodePath | d.core.<node>
+verb       get(target?) | find(target?) | exists(target?) | first() | first(n) | first(n, { more: true })
            | page({ max }) | all({ max }) | count({ upTo })
-id         NodeId | NodePath | d.core.<node>
-relations  (node) => ({ name: relation . verb, … })
-relation   node.<role>                                    a to-one end, named by its far role
+relations  (node) => ({ name: relation.verb, … })
+relation   node.<role>                                    to-one end, by its far role
            | node.via(edge | [edge, …], { direction? })    'outgoing' | 'incoming' | 'incident'
-           [ .where((node, edge) => conds) | .orderBy((node, edge) => keys) | .with(relations)
-           | .withEdge() | .distinct() | .pick() | .includeWithheld() ]…
+           [.where((node, edge) => conds) | .orderBy((node, edge) => keys) | .with(relations)
+            | .withEdge() | .distinct() | .pick() | .includeWithheld()]…
            verbs: get() find() exists() first() first(n) all({ max }) count({ upTo })
-conds      cond | [cond | false | undefined, …]           a list is an `and`; falsy entries are skipped
+conds      cond | [cond | falsy, …]                       list = and; falsy entries skipped
 cond       prop.<term> | node.id.eq(id) | node.id.in(ids) | node.path.eq(path) | node.path.in(paths)
            | node.is(class) | node.is(class, (narrowed) => conds) | node.isExactly(class)
-           | relation.is(id) | relation.exists() | relation.some(f?) | relation.none(f?)
+           | relation.is(target) | relation.exists() | relation.some(f?) | relation.none(f?)
            | relation.every(f) | relation.atLeast(n, f?) | relation.atMost(n, f?) | relation.exactly(n, f?)
            | cond.and(cond, …) | cond.or(cond, …) | cond.not()
-keys       key | [key, …]          key = prop.asc({ missing?: 'first' | 'last' }) | prop.desc(…)
-output     (results, input, { error, is }) => portable JSON                 pure and synchronous
+keys       key | [key, …];  key = prop.asc({ missing?: 'first' | 'last' }) | prop.desc(…)
+output     (results, input, { error, is }) => portable JSON           synchronous, pure; default: results
 errors     { CODE: error({ family, message, details }) }
-call       query(definedQuery, input, { as: 'executor' | 'caller' })        in an Action
-           query(pageQuery, input, { as, size?, after? })
-           step.query(stepId, definedQuery, input, { as: 'executor' })     in a durable Workflow
-           runQuery(client, domain, definedQuery, input, { size?, after? })   with a Client
 ```
 
-Property terms, by the Property's value:
+`d.origin` is the Domain's origin. A Class or alias named `kernel`, `core`, `origin` or `document`
+has no handle.
 
-| Value | Terms |
+Terms by the Property's value kind:
+
+| Kind | Terms |
 | --- | --- |
-| any | `isSet()`, `isMissing()` |
-| text | `eq`, `in`, `gt`, `gte`, `lt`, `lte`, `between(lower, upper)`, `startsWith`, `asc`, `desc` |
-| number | `eq`, `in`, `gt`, `gte`, `lt`, `lte`, `between`, `asc`, `desc` |
-| enum, boolean | `eq`, `in`, `asc`, `desc` |
-| JSON object | `eq` |
-
-`between` is `lower <= value < upper`. `eq(null)` matches a stored null, `isMissing()` an absent
-value. `in` takes at most 16 values; `id.in` takes any number at a read's root.
+| text, instant | `eq` `in` `gt` `gte` `lt` `lte` `between` `startsWith` `isSet` `isMissing` `asc` `desc` |
+| number | `eq` `in` `gt` `gte` `lt` `lte` `between` `isSet` `isMissing` `asc` `desc` |
+| enum | `eq` `in` `isSet` `isMissing` `asc` `desc` |
+| boolean | `eq` `in` `isSet` `isMissing` `asc` `desc` |
+| JSON value | `eq` `isSet` `isMissing` |
+| set (array of unique items) | `isSet` `isMissing` |
 
 Verbs:
 
 | Verb | Answers | Raises |
 | --- | --- | --- |
-| `get(id?)` | exactly one row | `NOT_FOUND` for none, `INTEGRITY` for a second, `NOT_READABLE` for one the reader may not read |
-| `find(id?)` | one row or `undefined` | `INTEGRITY` for a second, `NOT_READABLE` |
-| `exists(id?)` | `boolean` | |
-| `first()`, `first(n)` | the first row or `undefined`, up to `n` rows | |
-| `first(n, { more: true })` | `{ rows, more }` | |
-| `page({ max })` | `{ rows, next? }`; the Query's single read | |
-| `all({ max })` | every row | `TOO_MANY` past `max` |
-| `count({ upTo })` | `{ count, more }`; `more` when the count reached `upTo` | |
+| `get(target?)` | exactly one row | none: `NOT_FOUND`; a second: `INTEGRITY`; unreadable: `NOT_READABLE` |
+| `find(target?)` | one row or `undefined` | a second: `INTEGRITY`; unreadable: `NOT_READABLE` |
+| `exists(target?)` | `boolean` | |
+| `first()` / `first(n)` | first row or `undefined` / up to `n` rows | |
+| `first(n, { more: true })` | `{ rows, more }`, reading `n + 1` | |
+| `page({ max })` | `{ rows, next? }`; only as the Query's single read | |
+| `all({ max })` | every row | past `max`: `TOO_MANY` |
+| `count({ upTo })` | `{ count, more }`; `more` = reached `upTo` | |
 
-A relation's `get` that finds none or a second raises `INTEGRITY` naming the relation. An Edge root
-answers `{ $class, $source, $target }`, the Edge's Properties and both ends under their roles; its
-`get`, `find` and `exists` take no id, and its `first(n)` no `{ more }`.
+Semantics:
 
-Rows are portable JSON: `id`, `$class` and each Property by name; an optional Property may be
-absent, and `null` is a stored null. `.with` adds each relation's answer under its name,
-`.withEdge()` the Edge under `$edge`, `.pick()` renders rows as `{ id, $class }`, and
-`.includeWithheld()` keeps the rows the reader may not read as `{ id, $class, $withheld }`.
-`.distinct()` renders a far Node once per parent row however many Edges reach it, so it takes no
-`withEdge`. A Property whose name the SDK takes goes under `$prop`: `id` on rows, a handle member
-(`id`, `path`, `is`, `isExactly`, `via`) on handles, an Edge root's roles; `path` is `row.path` on
-a row and `a.$prop.path` on a handle. Two parents' Properties of one name, which the Class does not
-redeclare, go under their owner's name: `row.$record.title`.
+- `between(l, u)` is `l <= v < u`. `eq(null)` matches a stored null; `isMissing()` an absent value.
+- `in` takes ≤ 16 values. `id.in` is unbounded at a read's root; elsewhere a read carries ≤ 32,768
+  ids and values.
+- A Class handle includes its subclasses; `isExactly` excludes them. `d.A.union(d.B)` reads the
+  Nodes of both Classes.
+- `node.is(class)` in `where` narrows the rows' type to that Class's Properties. `is(row, classKey)`
+  in `output` narrows `$class` only, never the Properties.
+- `orderBy` sorts rows missing the value last, unless `{ missing: 'first' }`. On a union whose
+  Classes map one name to different Properties, that name filters but does not order. A set or
+  JSON Property never orders.
+- `.via` requires `direction` when both ends accept the Edge Class, or when the listed Edge Classes
+  leave the Node in different directions.
+- A relation's `get` finding none or a second raises `INTEGRITY` naming the relation.
+- `.with` reading another root, or adding a name the row already carries, does not compile: read it
+  as a facet.
+- `steps` orders the reads of one call. They are not durable Workflow Steps: nothing is journaled.
+  A name read again does not compile and throws a `TypeError` before the step reads.
+- `get` asserts existence: use it for ids the Domain holds. For an id a caller sends, `find` and
+  raise a declared error from `output`.
+
+Rows are portable JSON:
+
+- Node row: `id`, `$class` (the Class or a subclass the Domain can name), each Property by name;
+  an optional Property may be absent, `null` is a stored null.
+- `.with` adds each relation's answer under its name; `.withEdge()` adds the Edge's Class and
+  Properties under `$edge`.
+- `.pick()`: `{ id, $class }`. `.includeWithheld()` keeps unreadable rows of a list as
+  `{ id, $class, $withheld }`, `$withheld` naming the withheld values; `get`/`find` still raise
+  `NOT_READABLE` on them.
+- `.distinct()`: each far Node once per parent row, however many Edges reach it; no `withEdge`.
+- Edge root row: `{ $class, $source, $target }`, the Edge's Properties, both ends under their
+  roles. Its `get()`, `find()`, `exists()` take no target; its `first(n)` takes no `{ more }`.
+  `edgeKey(row)` (`@astrale-os/sdk/query`) gives the `{ source, target, class }` a Mutation names
+  an Edge by.
+- A Property whose name the SDK takes is under `$prop`: `id` on rows, a handle member (`id`,
+  `path`, `is`, `isExactly`, `via`) on handles, an Edge root's roles. `path` is `row.path` on a row,
+  `a.$prop.path` on a handle.
+- Two parents' Properties of one name that the Class does not redeclare are grouped by owner, in
+  lower camel case: `row.$record.title`. An owner name taking an SDK key gets one more `$`:
+  `$$class`.
+
+## Calling
+
+```text
+query(q, input, { as: 'executor' | 'caller' })        Action; inline Workflow inside step.run
+query(pageQ, input, { as, size?, after? })            size: integer 1..max, default max; else TypeError
+step.query(stepId, q, input, { as: 'executor' })      durable Workflow; output journaled, replay returns it
+runQuery(client, domain, q, input, { size?, after? }, declared?)     '@astrale-os/sdk/query'; declared → S12
+checkQuery(q, sampleInput, { domain })                '@astrale-os/sdk/testing'
+OutputOf<typeof q>, InputOf<typeof q>                 answer and input types
+isQueryError(error, code?)
+```
+
+- A Query without input takes `undefined`. An `auth: 'anonymous'` callable reads `as: 'executor'`
+  only.
+- In `step.query`, a `QueryError` other than `REFUSED`, or an S12 `TypeError`, fails the Step at
+  once and a replay throws it again. `REFUSED` is a failed attempt: a permanent one exhausts the
+  Step, a stale snapshot spends no attempt.
+- A callable re-declares the Query's errors to raise them: `{ errors: { ...readIssue.errors } }`.
+- `checkQuery` runs S11 and S12 on the first step built from `sampleInput`, without a Kernel; S12
+  only when given the Domain definition, not the Schema alone. Give it an input that builds every
+  optional condition; test later steps through a call.
+
+## Errors
+
+`QueryError` carries the Query's id, a `code` and its details:
+
+| Code | When | Details |
+| --- | --- | --- |
+| `NOT_FOUND` | A root `get` found nothing | `class`; `target` |
+| `NOT_READABLE` | `get`/`find` met a fact the reader may not read | `class`; `id` (an Edge's key) |
+| `INTEGRITY` | A relation's `get` found none, or a second row where one is allowed | `relation`; `parent`; `found: 0 \| 2` |
+| `TOO_MANY` | Past a `max`, a verb bound, the Query's rows or reads | `limit: 'max' \| 'rows' \| 'reads'`; `bound` |
+| `REFUSED` | The Kernel refused the read | `kernelCode`; `retryable` |
+| `INPUT_INVALID` | The SDK or the Kernel refused the built document before reading | `kernelCode`, `phase`, `path`; `limit: 'in'` |
+| `OUTDATED` | The Host's Registry does not match the Domain's build | `kernelCode: 'QUERY_EXPECTATION_MISMATCH'` |
+| `UNSUPPORTED` | The Kernel does not serve Query v7, or omits a row's Class | `feature: 'v7' \| 'classes'` |
+
+A Runtime that does not name the v7 refusal answers `REFUSED` with `kernelCode: 'INTERNAL_ERROR'`.
+A business refusal is a declared error raised from `output`; an expected case is a union in the
+output, not an error.
 
 ## Patterns
 
-The examples read this Schema, origin `issues.example`, with `Person` from the `directory`
-dependency:
-
-```text
-Project      { name (unique), archived: boolean }
-Issue        { title, status: open ⇄ closed (close, reopen), priority: number, dueOn?: text, closedOn?: text }
-Bug          extends Issue { severity: number }
-Comment      { body, postedAt }
-in_project   Issue (exactly 1) → Project           issue.project
-comment_on   Comment (exactly 1) → Issue { pinned }   comment.issue
-assigned_to  Issue (at most 1) → directory.Person  issue.assignee
-blocks       Issue → Issue, any number             read with .via(blocks, { direction })
-core node    inbox: Project                        d.core.inbox
-```
-
-### One record the caller names
-
-`find` the id a caller sends and raise a declared error from `output`; read its relations in the
-same read with `with`, and answer what the business needs:
+One record a caller names, with relations in the same read:
 
 ```ts
-// queries/issue/read-issue.ts
-import type { NodeId } from '@astrale-os/sdk/graph/node'
-import { defineQuery } from '@astrale-os/sdk/query'
-import type { schema } from '#schema'
-import { issueNotFound } from '#schema/modules/issue/errors'
-
 export const readIssue = defineQuery<typeof schema>()('issues.issue.read', {
   build: (issue: NodeId, d) =>
     d.Issue.with((i) => ({
@@ -134,7 +180,6 @@ export const readIssue = defineQuery<typeof schema>()('issues.issue.read', {
     if (row === undefined) throw error('ISSUE_NOT_FOUND', { issue })
     return {
       title: row.title,
-      status: row.status,
       project: row.project.name,
       assignee: row.assignee?.name,
       pinned: row.pinned.map((comment) => comment.body),
@@ -145,19 +190,9 @@ export const readIssue = defineQuery<typeof schema>()('issues.issue.read', {
 })
 ```
 
-### A filtered list
-
-A `where` list takes optional filters in place: a falsy entry is skipped. Test a value that may be
-`0` or `false` with `!== undefined`, or it skips the filter:
+Optional filters in place; `!== undefined` where `0` or `false` is a filter value:
 
 ```ts
-type IssueFilter = {
-  readonly project: NodeId
-  readonly assignee?: NodeId
-  readonly minPriority?: number
-  readonly prefix?: string
-}
-
 export const projectIssues = defineQuery<typeof schema>()('issues.project.issues', {
   build: (filter: IssueFilter, d) =>
     d.Issue.where((i) => [
@@ -172,33 +207,26 @@ export const projectIssues = defineQuery<typeof schema>()('issues.project.issues
 })
 ```
 
-### Filter by related facts in the read
-
-A relation condition keeps the filter in the Kernel, before the verb's bound:
+Relation conditions, evaluated by the Kernel before the verb's bound:
 
 ```ts
-// Open issues that no open issue blocks, without a comment, outside archived projects
 d.Issue.where((i) => [
-  i.status.eq('open'),
   i.via(d.blocks, { direction: 'incoming' }).none((blocker) => blocker.status.eq('open')),
   i.via(d.comment_on, { direction: 'incoming' }).none(),
   i.project.some((project) => project.archived.eq(false)),
 ]).all({ max: 500 })
 
-// Issues assigned to someone in a Person list, or due in October
 d.Issue.where((i) =>
-  i.assignee.some((person) => person.id.in(people))
-    .or(i.dueOn.between('2026-10-01', '2026-11-01')),
+  i.assignee.some((person) => person.id.in(people)).or(i.dueOn.between('2026-10-01', '2026-11-01')),
 ).first(20)
 ```
 
-### Subclasses
-
-A Class handle includes its subclasses. Narrow with `is`, exclude them with `isExactly`, and tell
-rows apart in `output` with `is(row, classKey)`. A row carries the Properties of the Class read: a
-Bug's `severity` is a condition here, and a read of `d.Bug` returns it:
+Subclasses and unions:
 
 ```ts
+d.Issue.where((i) => [i.project.is(project), i.is(d.Bug)]).first(5) // rows: Bug, with severity
+d.Issue.where((i) => i.isExactly(d.Issue)).first(20) // no subclass
+
 export const triage = defineQuery<typeof schema>()('issues.issue.triage', {
   build: (project: NodeId, d) =>
     d.Issue.where((i) => [
@@ -209,9 +237,6 @@ export const triage = defineQuery<typeof schema>()('issues.issue.triage', {
     rows.map((row) => ({ id: row.id, title: row.title, bug: is(row, 'issues.example:class.Bug') })),
 })
 
-d.Issue.where((i) => i.isExactly(d.Issue)).first(20) // Issues that are not Bugs
-
-// The Nodes of both Classes, a union, not an intersection; `is` tells its rows apart
 export const latest = defineQuery<typeof schema>()('issues.latest', {
   build: (_: undefined, d) => d.Issue.union(d.Comment).first(20),
   output: (rows, _input, { is }) =>
@@ -219,9 +244,7 @@ export const latest = defineQuery<typeof schema>()('issues.latest', {
 })
 ```
 
-### Several reads, and reads that wait for another
-
-Independent reads are facets of one Query. A read that needs an earlier answer is a step:
+Facets read independently; a step reads after the earlier results:
 
 ```ts
 export const projectBoard = defineQuery<typeof schema>()('issues.project.board', {
@@ -237,7 +260,7 @@ export const issueContext = defineQuery<typeof schema>()('issues.issue.context',
     steps(
       { issue: d.Issue.with((i) => ({ project: i.project.get() })).find(issue) },
       ({ issue: row }) => {
-        const dueOn = row?.dueOn
+        const dueOn = row?.dueOn // narrowing does not survive into the callback below
         return {
           earlier:
             row === undefined || dueOn === undefined
@@ -251,12 +274,7 @@ export const issueContext = defineQuery<typeof schema>()('issues.issue.context',
 })
 ```
 
-A facet may also be a list of reads, `ids.map((id) => d.Issue.find(id))`; for many ids prefer one
-read with `id.in(ids)`.
-
-### Pages
-
-A page Query's single read is `.page({ max })`; the call passes `size` and the cursor:
+Pages:
 
 ```ts
 export const projectIssuesPage = defineQuery<typeof schema>()('issues.project.issues-page', {
@@ -270,124 +288,78 @@ const second = first.next
   : undefined
 ```
 
-### Edges at the root, references, withheld rows
+Edge roots, references, withheld rows, `distinct`, Core nodes:
 
 ```ts
-// Pinned comment links, both ends by role; edgeKey(row) names one Edge for a guard
 d.comment_on.where((e) => [e.pinned.eq(true), e.issue.id.eq(issue)]).all({ max: 50 })
-
-// References only, and rows the reader may not read kept as { id, $class, $withheld }
 d.Issue.where((i) => i.project.is(project)).pick().includeWithheld().first(100)
-
-// Issues linked by `blocks` either way, each once, with the Edge on each blocker row
 d.Issue.with((i) => ({
   linked: i.via(d.blocks, { direction: 'incident' }).distinct().all({ max: 50 }),
   blockers: i.via(d.blocks, { direction: 'incoming' }).withEdge().all({ max: 50 }),
 })).get(issue)
-
-// A Core node the Schema declares, as a target
 d.Issue.where((i) => i.project.is(d.core.inbox)).first(20)
 ```
 
-## Calling
-
-- In an Action: `query(readIssue, input, { as })`; a Query without input takes `undefined`. In a
-  durable Workflow: `step.query(id, readIssue, input, { as: 'executor' })`, journaled and replayed.
-- Outside a handler, a Client runs it with `runQuery(client, domain, readIssue, input)` from
-  `@astrale-os/sdk/query`.
-- `OutputOf<typeof readIssue>` and `InputOf<typeof readIssue>` type the answer and the input for
-  Rules and Views.
-- A Function lets a Query's errors reach its caller by declaring them:
-  `{ errors: { ...readIssue.errors } }`.
-- `isQueryError(error, code?)` recognizes a `QueryError`. `checkQuery(readIssue, sampleInput,
-  { domain })` from `@astrale-os/sdk/testing` runs the bounds and requirements checks in a test,
-  without a Kernel; give it an input that builds every optional condition.
-
 ## Pitfalls
 
-- **An id proves nothing.** An id does not prove existence, visibility or Class. `find` an id the
-  caller sends and raise a declared error; `get` only ids the Domain itself holds. Absence from a
-  read is "not visible to this reader", not "does not exist".
-- **Read, then drop rows.** Filtering in `output` runs after the Kernel applied the verb's bound:
-  `first(20)` then a filter returns fewer than 20 and misses matches. Put the condition in `where`,
-  as a relation condition when it is about related Nodes.
-- **Read again.** Project the rows a read returned; never read each returned Node again. Carry
-  relations with `with`.
-- **Union and subclasses.** `d.A.union(d.B)` reads the Nodes of both Classes, not their
-  intersection. A Class handle includes its concrete descendants: add `isExactly` when a subclass
-  must not qualify.
-- **Direction.** `.via` needs `direction` when both ends accept the Edge Class (`blocks`) or when
-  the listed Edges leave it in different directions.
-- **Falsy filters.** `filter.x && p.eq(filter.x)` skips the filter when `x` is `0` or `false`
-  (`QRY-FALSY`). Write `filter.x !== undefined && …`, or say that `false` means no filter.
-- **Time.** `build` and `output` read no clock (`QRY-CLOCK`): take `now` in the input.
-- **Snapshots.** Facets, steps and pages are separate reads at separate snapshots: never claim they
-  observe one state. A write that depends on a fact still holding guards it (`mutations.md`).
-- **Authority changes the answer.** A list leaves out rows its reader may not read. The same Query
-  read as `caller` and as `executor` can answer differently (`authority.md`).
-- **Order and missing values.** Rows without the ordered value sort last unless
-  `asc({ missing: 'first' })`. On a union whose Classes map one name to different Properties, the
-  name filters but does not order.
-- **Naming.** Name the observation, not an access promise: `listProjectIssues`, not
-  `listAuthorizedIssues`. `listIssuesByAssignee` is a business filter, not access control.
+- **Filtering in `output`** runs after the verb's bound: `first(20)` then a filter returns fewer
+  than 20 and misses matches. Filter in `where`, with a relation condition for related Nodes.
+- **A read per returned row.** Carry relations with `with`; read many ids with one `id.in`, not a
+  list of `find`s.
+- **Falsy filter values.** `filter.x && p.eq(filter.x)` skips the filter when `x` is `0` or `false`
+  (`QRY-FALSY`).
+- **Clock in `build` or `output`** (`QRY-CLOCK`): take now in the input.
+- **One state across reads.** Facets, steps and pages are separate snapshots. A write that depends
+  on a fact still holding guards it in the Mutation (`mutations.md`).
+- **Authority changes the answer.** The same Query read `as: 'caller'` and `as: 'executor'` can
+  answer differently.
+- **Access in the name.** Name the observation (`listProjectIssues`), never an access promise
+  (`listAuthorizedIssues`).
 
 ## Limits
 
 | Limit | Value | Refusal |
 | --- | --- | --- |
 | Reads per Query | 32 | `TOO_MANY` (`limit: 'reads'`) |
-| Rows per Query, counted from verb bounds and relations per parent row | 100,000 | `TOO_MANY` (`limit: 'rows'`) |
+| Rows per Query, from verb bounds × relations per parent row | 100,000 | `TOO_MANY` (`limit: 'rows'`) |
 | A verb's bound | 83,332 | `TOO_MANY` |
-| `in` values | 16 | `INPUT_INVALID` (`limit: 'in'`) |
-| Ids and values carried by a read outside its root `id.in` | 32,768 | `INPUT_INVALID` |
-| `steps` | 2 to 8 | does not compile |
+| Values of an `in` | 16 | `INPUT_INVALID` (`limit: 'in'`) |
+| Ids and values per read, outside its root `id.in` | 32,768 | `INPUT_INVALID` |
+| `steps` | 2..8 | does not compile; `TypeError` |
 
-- The Kernel refuses a document past its plan limits before planning it: its estimated `cost`,
-  `traversal-depth` (18), `conjuncts-per-pattern` (20), `connective-depth` (85), `order-keys` (100)
-  and `nesting` (450); a Host may lower them. The SDK raises `INPUT_INVALID` with `kernelCode`
-  `QUERY_INPUT_INVALID`, `phase` and `path`; the Kernel's details name
-  `issue: 'QUERY_PLAN_LIMIT_EXCEEDED'`, the `limit`, its `maximum` and the `actual` measure. Neither
-  refusal is transient: narrow the read or split it into steps.
+- Kernel plan limits, checked before planning: estimated `cost`, `traversal-depth` 18,
+  `conjuncts-per-pattern` 20, `connective-depth` 85, `order-keys` 100, `nesting` 450; a Host may
+  lower them. Refusal: `INPUT_INVALID` with `kernelCode: 'QUERY_INPUT_INVALID'`, `phase`, `path`;
+  the Kernel details carry `issue: 'QUERY_PLAN_LIMIT_EXCEEDED'`, `limit`, `maximum`, `actual`.
+- Neither the bounds nor the plan limits are transient: narrow the read or split it into steps.
 - `QRY-ROWS` warns when a Query's constant bounds multiply past 10,000 rows.
-- A relation that crosses a dependency's Class needs `read` and `traverse` scopes on it in the
-  release's `requirements` (`policies.md`); otherwise the call throws a `TypeError` naming the scope
-  to add. Roots, Kernel Classes and the Domain's own Classes need none.
-- Query v7 is not served in maintenance or repair sessions (`INSTANCE_MAINTENANCE`): a migration
-  there reads with V6 (`migration.md`).
+- S12: a relation crossing a direct dependency's Class needs `read` and `traverse` scopes on that
+  Class in the release's `requirements` (`policies.md`); a scope on a parent Class covers its
+  children. Otherwise the call throws a `TypeError` naming the Query, relation and scope. Roots,
+  Kernel Classes and the Domain's own Classes need none. A condition the input leaves unbuilt is
+  not checked; a relation an empty list folds away is.
+- Maintenance and repair sessions serve no Query v7 (`INSTANCE_MAINTENANCE`); a migration there
+  reads with V6 (`migration.md`).
 
-What the language cannot express is bridged inside the Query, invisible to its callers:
+Beyond v7, bridge inside the Query; the bridge's reads and rows count toward its bounds, and the
+SDK splits no read except a long root `id.in`:
 
-| The business asks | Bridge |
+| Need | Bridge |
 | --- | --- |
-| A value compared with a parent's | A step reads the parent, the next compares with its value |
-| Two parts of a pattern meeting at one Node | Read both with `with`, compare in `output` |
-| Ancestors, a sub-tree at any depth | One step per level with `id.in`, up to 8 |
+| A value compared with a parent's | A step reads the parent, the next compares; or read both, filter in `output` |
+| Two pattern parts meeting at one Node | Read both with `with`, compare in `output` |
+| Ancestors, a sub-tree at any depth | One step per level with `id.in`, ≤ 8 levels |
 | Sums, averages, groups | `all({ max })`, compute in `output` |
-| Case-insensitive search, locale sorting | A normalized Property the Domain writes |
+| Case-insensitive search, locale sort | A normalized Property the Domain writes, or filter and sort in `output` |
+| Several unrelated lists | Facets |
 
-When no bounded read can answer, change the read or the product design and state the cost; do not
+When no bounded read answers, change the read or the product design and state the cost; never
 truncate silently.
-
-## Errors
-
-| Code | When |
-| --- | --- |
-| `NOT_FOUND` | A root `get` found nothing |
-| `NOT_READABLE` | `get` or `find` met a row the reader may not read |
-| `INTEGRITY` | A relation's `get` found none, or a second row came where one is allowed |
-| `TOO_MANY` | Past a `max`, a verb bound, the Query's rows or reads |
-| `REFUSED` | The Kernel refused the read (`kernelCode`, `retryable`) |
-| `INPUT_INVALID` | The SDK or the Kernel refused the built query before reading |
-| `OUTDATED` | The Host's Registry does not match the Domain's build |
-| `UNSUPPORTED` | The Kernel does not serve Query v7 |
-
-A refusal the caller handles by code is a declared error the Query raises from `output`; an
-expected case is a union in the output, not an error.
 
 ## Legacy
 
-Deprecated: V6 Query definitions (`Query.from`, `defineQuery<S>()((domain) => …)`,
-`defineCollectionQuery`, `defineCompositeQuery`) and `graph.query(definition)`. A maintenance or
-repair session serves no Query v7 and reads with V6 (`migration.md`); write every other read as a
-Query v7. `d.document(query)` reads one canonical v7 document whose rows are typed `unknown`: validate
-them in `output`, and prefer handles.
+Deprecated: V6 definitions (`Query.from`, `defineQuery<S>()((domain) => …)`,
+`defineCollectionQuery`, `defineCompositeQuery`) and `graph.query(definition)`. V6 is used only
+where v7 is not served (maintenance and repair sessions). `d.document(query)` reads one canonical v7
+document whose lists carry a `limit`; its rows are typed `unknown`, so `output` validates them.
+Prefer handles.

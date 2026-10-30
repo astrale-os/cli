@@ -1,42 +1,30 @@
 # Workflows
 
-Read to write, migrate, test, call or deploy a Workflow. A durable Workflow runs on the Kernel's
-workflow engine: it survives a crash, a redeploy or a wait of several days, never runs a finished
-Step again, retries each Step within its own budget, and lets a caller follow, signal or cancel it.
-The full reference ships in the `@astrale-os/sdk` package as `docs/durable-workflows.md`.
+A durable Workflow runs on the Kernel's workflow engine: it survives a crash, a redeploy or a
+multi-day wait, never reruns a finished Step, retries each Step within its own budget, and can be
+followed, signalled or cancelled. Full reference: `docs/durable-workflows.md` in `@astrale-os/sdk`.
 
 ## Action or Workflow
 
-| The operation… | Write |
+| The operation | Write |
 | --- | --- |
-| reads, then makes at most one effect, and answers at once | an Action (`actions.md`) |
-| makes two or more effects that cannot commit together | a durable Workflow |
+| reads, then makes at most one effect, answers at once | an Action (`actions.md`) |
+| makes ≥ 2 effects that cannot commit together | a durable Workflow |
 | waits: a delay, a decision, a payment | a durable Workflow |
-| must finish after a crash or a redeploy between two effects | a durable Workflow |
+| must finish after a crash or redeploy between two effects | a durable Workflow |
 
-- An effect is a Mutation, or a state-changing Integration, dependency or Kernel call. Reads never
-  make a Workflow, and two Mutations that can commit together are one Mutation.
-- The Schema decides whether a Workflow is durable, with `execution: { durable: true }` on its
-  method. Without it, the Workflow is inline, the previous API: its context is the Action context
-  plus a `step.run` that records nothing. It runs inside the request, and a failure leaves the
-  effects already made: nothing resumes, retries or compensates them. An inline Workflow guarantees
-  no more than an Action. Write no new one, and migrate existing ones (see Migrate an inline
-  Workflow).
-- A durable callable needs `auth: 'authenticated'` or `'authorized'`, a value input and output (no
-  binary, no stream), and a remote binding. It never runs inline.
-- A caller receives `ExecutionRef<Output>` at once, not the output: design the caller to follow the
-  run (see Callers).
-
-Default to an Action: a durable Workflow pays for its guarantees.
-
-- Each Step waits for the engine to record its result before the next one starts. N Steps in
-  sequence cost N + 2 requests from the engine to the Domain, each replaying the journal so far;
-  an Action is one request.
-- The caller follows an Execution instead of reading the output in the response.
-- The run acts as the Domain only, never as its caller.
-
-When a user waits on screen for the result, the callable is an Action unless it truly coordinates
-effects.
+- Effect = a Mutation, or a state-changing Integration, dependency or Kernel call. Reads never make
+  a Workflow; two Mutations that can commit together are one Mutation.
+- Durability is Schema-declared: `execution: { durable: true }` on the method. Without it the
+  Workflow is inline (legacy): the Action context plus a `step.run` that records nothing; a failure
+  leaves earlier effects, with no resume, retry or compensation. Write no new one (Migrate an
+  inline Workflow).
+- A durable callable needs `auth: 'authenticated' | 'authorized'`, value input and output (no
+  binary, no stream), and a remote binding; it never runs inline. `defineAction` refuses it.
+- Cost: N sequential Steps = N + 2 engine → Domain requests, each replaying the journal so far; an
+  Action is one request. The caller gets `ExecutionRef<Output>`, not the output, and follows the
+  Execution (Callers). The run acts as its Domain only, never as its caller. A user waiting on
+  screen calls an Action unless effects truly need coordination.
 
 ## Write one
 
@@ -103,38 +91,38 @@ export const confirmPayment = defineAction<typeof schema>()(
 )
 ```
 
-Register it in `functions/` like any Action. The build serves the workflow engine as soon as the
-Schema declares a durable callable; there is nothing else to wire.
+Registered in `functions/` like an Action; the build serves the engine once the Schema declares a
+durable callable, with nothing else to wire.
 
 ## The context
 
-| Member | Use |
+| Member | Semantics |
 | --- | --- |
-| `input`, `self`, `domain`, `error` | As in an Action. |
-| `step.query(id, definedQuery, input, { as: 'executor' })` | One Query, recorded: a resumed run reuses its result. |
-| `step.mutate(id, definedMutation, input, { as: 'executor' })` | One Mutation, keyed: a retry never writes twice. |
-| `step.run(id, (capabilities) => …)` | Any other call. The callback receives `query`, `mutate`, `kernel`, `graph`, `dependencies` and `integrations`, acting with the identity of the function (its Domain). |
-| `step.parallel((s) => [...])` | Independent Steps in one engine round trip; `s` takes the arguments of `step.*`. |
-| `sleep(ms)` | A durable timer, kept while the Domain is down. |
-| `awaitSignal(name, { timeoutMs? })` | Waits for a signal; with `timeoutMs`, answers `{ kind: 'signal', value }` or `{ kind: 'timeout' }`. |
-| `exhausted(error)`, `cancelled(error)` | Recognize a Step that spent its budget, or a cancellation, in a `catch`. |
-| `retryAfter(ms, cause?)` | Thrown inside a Step: the next attempt waits `ms` (at most one hour). It spends an attempt. |
-| `execution` | Facts on the run: `id` (record it in the graph), `function`, `kernel`, `initiator`, `receiver`. Data, never authority. |
+| `input`, `self`, `domain`, `error` | As in an Action |
+| `step.query(id, definedQuery, input, { as: 'executor' })` | One journaled Query; a resumed run reuses its result |
+| `step.mutate(id, definedMutation, input, { as: 'executor' })` | One keyed Mutation; a retry never writes twice |
+| `step.run(id, (capabilities) => …)` | Any other call; `capabilities` = `query`, `mutate`, `kernel`, `graph`, `dependencies`, `integrations`, as the executor |
+| `step.parallel((s) => [...])` | Independent Steps in one engine round trip; `s` takes the arguments of `step.*` |
+| `sleep(ms)` | Durable timer, kept while the Domain is down |
+| `awaitSignal(name, { timeoutMs? })` | With `timeoutMs`: `{ kind: 'signal', value } \| { kind: 'timeout' }` |
+| `exhausted(error)`, `cancelled(error)` | In a `catch`: a Step that spent its budget or was refused for good; a cancellation |
+| `retryAfter(ms, cause?)` | Thrown in a Step: next attempt waits `ms` (≤ 1 h); spends an attempt |
+| `execution` | `id` (record it in the graph), `function`, `kernel`, `initiator`, `receiver`: data, never authority |
 
-The context has no `query`, `mutate`, `kernel`, `graph`, `dependencies`, `integrations` or
-`caller`: the Kernel is reachable only inside a Step, and the run never acts as its caller. Any
-`step` argument may be `{ id, retry, timeoutMs }` instead of an id.
+No `query`, `mutate`, `kernel`, `graph`, `dependencies`, `integrations` or `caller` outside a Step:
+the Kernel is reachable only inside one. Any `step` id argument may be `{ id, retry, timeoutMs }`.
 
 ## Steps
 
-A finished Step is never run again: a resumed run takes its recorded result and continues. The
-code between Steps runs again on every resume. Every rule below follows from that.
+A finished Step never reruns: a resume takes its journaled result. Code between Steps reruns on
+every resume. Hence:
 
-- **One effect per Step.** When a second effect fails, the Workflow must know whether the first one
-  committed. `FNC-EFFECT-STEP` warns on a Step that can make two.
+- **One effect per Step.** After a second effect fails, the Workflow must know whether the first
+  committed. `FNC-EFFECT-STEP` warns on a Step that can make two, or repeat one in a loop.
 - **Read in an earlier Step than the effect.** An effect Step builds its request only from the
-  input and earlier Step results. A Step retried after its write committed would otherwise read its
-  own write, build another request, and be refused on every attempt. `FNC-STEP-READS` reports it.
+  input and earlier Step results. Retried after its write committed, a Step that read first sees
+  its own write, builds another request, and is refused `MUTATION_IDEMPOTENCY_CONFLICT` on every
+  attempt. `FNC-STEP-READS` reports it.
 
   ```ts
   // wrong: the read and the effect share one Step
@@ -148,42 +136,42 @@ code between Steps runs again on every resume. Every rule below follows from tha
   await step.mutate('record', recordReminder, { invoice: self, rank: sent.length + 1 }, { as: 'executor' })
   ```
 
-- **Refuse inside the Step.** A business refusal a Step detects is `throw error(code, details)`
-  inside that Step: the Execution ends `failed` with that code, without retry. Any other error is
-  retried until the Step spends its budget, and the Execution ends `STEP_EXHAUSTED` instead.
-- **Keep the code between Steps deterministic.** Read the clock, randomness and generated ids
-  inside a Step. `FNC-REPLAY-VALUES` warns on the clock and randomness (`Date.now()`, `new Date()`,
-  `Math.random()`, `crypto.randomUUID()`…) read outside one.
-- **Await one thing at a time, or use `step.parallel`.** Never combine Steps or waits with
-  `Promise.all`, `allSettled`, `race` or `any`: a Step or wait started while another runs is refused,
-  which pauses the run. `step.parallel` settles every Step, then returns their outputs in order or
-  throws the first failure: keep in sequence the effects a failure would make you compensate.
-  Independent reads may also share one Step, where `Promise.all` over its Kernel calls is fine.
-- **Steps never nest.** A helper that receives `query` or `mutate` runs inside a Step, with that
-  Step's capabilities. A helper that opens Steps receives the durable `step` and reads through
-  `step.query`.
-- **A Step per effect, not per item.** Each Step awaited alone costs one engine round trip. Write a
+- **Refuse inside the Step.** `throw error(code, details)` inside the Step that detects it ends the
+  Execution `failed` with that code, no retry. Any other error retries until the budget is spent,
+  then the Execution ends `STEP_EXHAUSTED`.
+- **Deterministic code between Steps.** Read the clock, randomness and generated ids inside a Step.
+  `FNC-REPLAY-VALUES` warns on `Date.now()`, `new Date()`, `Math.random()`, `crypto.randomUUID()`
+  outside one, Step-call arguments included.
+- **No `Promise.all`, `allSettled`, `race`, `any` over Steps or waits.** A Step or wait started while
+  another runs throws a `TypeError`, which pauses the run. `step.parallel` settles every Step, then
+  returns outputs in order or throws the first failure in declaration order; the others' effects
+  stand. Keep in sequence the effects a failure would make you compensate. Independent reads may
+  share one Step, inside which `Promise.all` over Kernel calls is fine.
+- **Steps never nest.** A helper receiving `query`/`mutate` runs inside a Step; a helper opening
+  Steps receives `step`.
+- **A Step per effect, not per item.** Each Step awaited alone is one engine round trip: write a
   collection in one Mutation, run items with `step.parallel`, or hand them to another durable call.
-- **Stable, unique ids; portable results.** Runs in flight replay by Step id and order. Return plain
-  values, never clients, responses or other live objects.
-- **A fact that must hold at commit is a precondition.** A recorded read is the value when its Step
-  ran. Use `mutation.expect` and map `MUTATION_PRECONDITION_FAILED` to a declared error.
+- **Stable unique ids, portable results.** In-flight runs replay by Step id and order. Return plain
+  values, never clients, responses or live objects.
+- **A journaled read is the value when its Step ran.** A fact that must hold at commit is a
+  `mutation.expect` guard; map `MUTATION_PRECONDITION_FAILED` to a declared error.
 
 ## What a retried Step repeats
 
 | Call inside a Step | On a retry |
 | --- | --- |
-| Mutation | Carries a key derived from the run and the Step: the Kernel answers with the first result. |
-| Durable callable of a dependency (`dependencies.x.self.invoke`) | Keyed too: the retry reaches the same child Execution. |
-| Any other callable | Runs again: make it idempotent, or declare it durable. `FNC-STEP-RETRY` warns. |
-| Integration operation `keyed`, source `execution` | The Provider receives the same `idempotencyKey` on every attempt. |
-| Integration operation `safe` | Runs again. |
-| Integration operation that may be `unsafe` | Absent from `integrations` inside a Step. |
+| Mutation | Keyed by the Execution, the Step and its position: the Kernel answers the first result |
+| Durable callable (`kernel.invoke`, `dependencies.x.self.invoke`) | Keyed: reaches the same child Execution, answers its `ExecutionRef` |
+| Any other callable | Runs again: make it idempotent or declare it durable. `FNC-STEP-RETRY` warns (also on an untyped Path, `fetch`) |
+| Integration operation `keyed`, source `execution` | Same `idempotencyKey` on every attempt |
+| Integration operation `keyed`, source `input` | The key the decision takes from the input |
+| Integration operation `safe` | Runs again |
+| Integration operation that may be `unsafe` | Absent from `integrations` inside a Step |
 
 ### Call an external system
 
-Declare the operation `keyed` so every attempt carries the same key. Give the Step its own budget,
-honor `429`, and take a fallback path when the budget is spent:
+Declare the operation `keyed`, give the Step its own budget, honor `429`, take a fallback path when
+the budget is spent:
 
 ```ts
 export const Payments = defineIntegration({
@@ -220,69 +208,67 @@ export const collect = defineWorkflow<typeof schema, typeof integrations>()(
 )
 ```
 
-The Provider receives the key as `idempotencyKey` in its second argument and forwards it, for
-instance as the service's `Idempotency-Key` header. `integrations.md` covers the contract and its
-Provider.
+The Provider receives the key as `idempotencyKey` (second argument) and forwards it, e.g. as an
+`Idempotency-Key` header (`integrations.md`).
 
 ### Call another Domain
 
-Inside a Step, `dependencies.<alias>.self.invoke(...)` of a durable callable returns its
-`ExecutionRef` and, keyed by the Step, reaches the same child on a retry. A Workflow does not wait
-for another Execution's outcome: record the reference in the graph, and let the business flow
-continue from there (a signal, a later call). From an Action, pass the key yourself:
+In a Step, `dependencies.<alias>.self.invoke(...)` of a durable callable returns its `ExecutionRef`,
+keyed by the Step. A Workflow never awaits another Execution's outcome: record the reference in the
+graph and continue the business flow from a signal or a later call. From an Action, pass the key:
 `dependencies.billing.caller.invoke(ref, receiver, input, { idempotencyKey })`.
 
 ## Waits and signals
 
-- `sleep` and `awaitSignal` are kept by the engine: the Domain may stop, redeploy or crash meanwhile.
-- A signal is delivered once per name. One sent before the wait is kept for it; a second one with
-  the same name is refused.
-- A signal comes from a business method of the owner Domain, under that method's Policy, as
-  `confirmPayment` does above: the run's caller can never signal or resume its own Execution. Record
-  `execution.id` in the graph so the method can find the run.
-- Signals are not typed: the Kernel checks neither name nor value, and a name no run awaits is never
-  read. Type the value at the `awaitSignal` and validate it if it comes from input.
-- Race a signal against time only through `awaitSignal(name, { timeoutMs })`, never `Promise.race`.
-- A Workflow waits on nothing else: no graph event and no other Execution. The Domain that observes
-  the event sends the signal.
+- `sleep` and `awaitSignal` are engine-kept: the Domain may stop, redeploy or crash meanwhile.
+- One delivery per signal name. A signal sent before the wait is kept for it; a second with the
+  same name is refused.
+- A signal comes from a business method of the owner Domain, under that method's Policy
+  (`confirmPayment` above): the run's caller cannot signal or resume its own Execution. Record
+  `execution.id` in the graph so the method finds the run.
+- Signals are untyped: the Kernel checks neither name nor value; a name no run awaits is never
+  read. Type the value at `awaitSignal`; validate it when it comes from input.
+- Race a signal against time only with `awaitSignal(name, { timeoutMs })`.
+- A run waits on nothing else: no graph event, no other Execution. The Domain observing the event
+  sends the signal.
 
 ## Retries, failures and outcomes
 
-- Each Step runs under the deployment's budget unless it declares its own: by default 10 attempts,
-  backoff from 1 s to 60 s, no time limit, 60 s per attempt. A Step overrides it with
-  `{ id, retry: { maxAttempts, maxDurationMs, initialIntervalMs, maxIntervalMs }, timeoutMs }`;
-  `timeoutMs` runs from one second to ten minutes.
-- Only the Step's own failures spend attempts: its code, a Provider, a deadline, `retryAfter`, and
-  any Kernel refusal not listed below.
-- An unavailable Kernel spends none. A refusal that prescribes a delay (capacity, draining,
-  maintenance), or a Query or keyed call that gets no answer, is waited out, each wait the longer of
-  the prescribed delay and the backoff, for as long as the outage lasts. Only `maxDurationMs` or a
-  cancel bounds that wait: declare `maxDurationMs` when the business has a deadline.
-- An attempt that ran an unkeyed `invoke` spends an attempt even on an outage, since the next attempt
-  runs it again.
-- A request the Kernel never accepts (malformed or invalid, a method not allowed or unsupported, an
-  expectation or callable fingerprint that no longer matches) fails the Step at once.
-- Set the deployment's defaults with the Environment's `durable` option in `astrale.config.ts`
-  (`retentionMs`, `retry`, `stepTimeoutMs`). They are frozen into the deployment: changing them
-  makes a new deployment, and running runs keep the old values.
-- A Step that spends its budget, or fails at once, throws into the Workflow. Catch it with
-  `exhausted(cause)` to take another path; uncaught, the Execution ends `failed` with `STEP_EXHAUSTED`, and
-  `details: { step, refusal?: { code, reason? } }` names the Step and the Kernel refusal, if any.
-- A declared `error(...)` ends the Execution `failed` with that code. A failed Execution is never
-  resumed; a new attempt is a new call.
+| Budget | Default | Override |
+| --- | --- | --- |
+| Step attempts | 10, backoff 1 s → 60 s, no duration limit | `retry: { maxAttempts (1–1,000), maxDurationMs, initialIntervalMs, maxIntervalMs }` |
+| Step attempt timeout | 60 s, Kernel calls included | `timeoutMs`, 1 s to 10 min |
+| Run attempts failing outside any Step | 20, then the run pauses | the deployment's `retry.maxAttempts` |
+| Outcome retention | 7 days | `retentionMs` |
+
+Deployment defaults: the Environment's `durable` option in `astrale.config.ts` (`retentionMs`,
+`retry`, `stepTimeoutMs`), frozen into the deployment; a change makes a new deployment and running
+runs keep the old values. A Step declaring `maxAttempts` or `maxDurationMs` replaces both.
+
+- Attempts are spent only by the Step's own failures: its code, a Provider, a deadline,
+  `retryAfter`, a Kernel refusal not listed below.
+- Spent nothing, waited out for as long as the outage lasts (each wait = max(prescribed delay,
+  backoff)): an unavailable Kernel, a refusal prescribing a delay (capacity, draining, maintenance),
+  a Query or keyed call that gets no answer. Only `maxDurationMs` or a cancel bounds that wait:
+  declare `maxDurationMs` when the business has a deadline. An attempt that ran an unkeyed `invoke`
+  spends an attempt even on an outage.
+- Fails the Step at once: a request the Kernel never accepts (malformed, invalid, method not allowed
+  or unsupported, a stale expectation or callable fingerprint).
+- A Step that spends its budget or fails at once throws into the Workflow; catch with
+  `exhausted(cause)`. Uncaught: `failed`, `STEP_EXHAUSTED`,
+  `details: { step, refusal?: { code, reason? } }`.
+- A declared `error(...)` ends `failed` with its code. A failed Execution never resumes; retrying is
+  a new call.
 - A failure outside any Step (an error between Steps, a journal the code no longer replays, an
-  output the Schema refuses, a deployment that does not answer) retries the whole run up to the
-  deployment's `retry.maxAttempts` (20 when it declares none), then pauses it. `resume`
-  attempts it again with the code served at its URL, so it helps when the cause was transient;
-  otherwise cancel it (see Cancellation and compensation).
-- The outcome is kept for the retention (7 days by default). Write anything needed later into the
-  graph from a Step.
+  output the Schema refuses, a deployment that does not answer) retries the whole run, then pauses
+  it. `resume` reattempts with the code served at its URL (useful when the cause was transient);
+  otherwise cancel.
+- Anything needed after retention is written into the graph from a Step.
 
 ## Cancellation and compensation
 
-Cancel is cooperative: the Workflow sees it at its next wait or Step, as an error `cancelled`
-recognizes. Compensate with Steps, then rethrow to end `cancelled`, or return a value to end
-`completed`.
+Cancel is cooperative: the Workflow sees it at its next wait or Step as an error `cancelled`
+recognizes. Compensate with Steps, then rethrow (`cancelled`) or return (`completed`).
 
 ```ts
 const executor = { as: 'executor' } as const
@@ -298,10 +284,9 @@ await step.mutate('confirm-order', confirmOrder, { order: self, hold }, executor
 ```
 
 A run that never reaches a wait or a Step (it fails outside any Step on every attempt, or its
-deployment no longer answers) cannot compensate: a cancel ends it once the engine has spent its run
-attempts. A forced cancel (`cancel({ force: true })`: owner Domain, Root, or the Kernel Role
-`execution.terminator`) ends any run at once. Both
-end it without compensation; external effects stay.
+deployment no longer answers) cannot compensate: a cancel ends it once its run attempts are spent.
+`cancel({ force: true })` (owner Domain, Root, `execution.terminator`) ends any run at once. Both end
+it without compensation; external effects stay.
 
 ## Callers
 
@@ -315,7 +300,7 @@ end it without compensation; external effects stay.
 | Force cancel, delete | | | `execution.cancel(ref, { force: true })`, `execution.delete(ref)` | Owner Domain, Root, `execution.terminator` |
 
 `execution.reader` and `execution.terminator` are Kernel Roles (`policies.md`); no Role signals or
-resumes. The owner Domain reaches these from any of its handlers through `kernel.execution`.
+resumes. The owner Domain reaches all of these from any handler through `kernel.execution`.
 
 ```tsx
 // A View refreshes when the run ends, not when the call returns
@@ -338,13 +323,13 @@ const run = await session.invoke(remind, { note: 'J+30' }, { idempotencyKey: 're
 const outcome = await session.execution.result(run, { waitMs: 30_000 }) // typed by the reference
 ```
 
-Give a client call an `idempotencyKey` when the caller may retry it: the same key returns the same
-Execution (`replayed: true`) instead of starting another.
+A client call the caller may retry takes an `idempotencyKey`: the same key returns the same
+Execution (`replayed: true`).
 
 ## Test
 
-`createTestWorkflowEngine` from `@astrale-os/sdk/testing` runs the Workflow in memory with the
-receiver a Host serves; only the engine is simulated. Timers follow a virtual clock.
+`createTestWorkflowEngine` (`@astrale-os/sdk/testing`) runs the Workflow in memory against the
+receiver a Host serves; only the engine is simulated, on a virtual clock.
 
 ```ts
 const engine = createTestWorkflowEngine()
@@ -368,17 +353,16 @@ await engine.advance(3 * 24 * 3_600_000)
 expect(overdue.outcome).toEqual({ kind: 'completed', value: { paid: false } })
 ```
 
-For each Workflow, prove that:
+Prove per Workflow:
 
-- each business refusal ends `failed` with its declared code, not `STEP_EXHAUSTED`
-  (`outcome`, and `failure` for what the last attempt threw);
+- each business refusal ends `failed` with its declared code, not `STEP_EXHAUSTED` (`outcome`;
+  `failure` holds what the last attempt threw);
 - each effect survives `interruptAfter` on its Step without a second write;
 - each scenario passes `replay()`;
-- each wait has a scenario where it times out (`advance`), and each cancel point compensates
-  (`cancel`).
+- each wait times out in one scenario (`advance`); each cancel point compensates (`cancel`).
 
-These tests prove the Workflow against replay, not crash recovery on a Host: run one live call with
-`astrale call … --wait` before claiming delivery.
+This proves replay, not crash recovery on a Host: run one live `astrale call … --wait` before
+claiming delivery.
 
 ## Deploy and evolve
 
@@ -386,36 +370,34 @@ A run finishes on the code of the deployment that started it.
 
 | Change | Running runs | Do |
 | --- | --- | --- |
-| New release installed | Finish on the old deployment; new calls start on the new one. Each deployment is its own issuer: the old one keeps calling the Kernel for its runs for 7 days at most, then their Kernel calls are refused. A run that only waits is unaffected. | Keep the old deployment served until its runs end (`adapter-astrale` gives each release its own URL). Keep runs that call the Kernel under 7 days. `--revoke-previous` at install cuts the old deployment, its runs included, at once. |
-| Code redeployed at the same URL | Resume with the new code; a renamed, moved or removed Step pauses them. | Avoid. Otherwise keep existing Steps in place, then `resume` the paused runs. |
-| Class, Function or Edge removed or narrowed | A Step that still uses it is refused, then ends `STEP_EXHAUSTED`. | Keep the Schema additive; remove once no run uses it. |
-| Deployment retired | Its runs stop progressing; their signals time out, and a cancel ends them without compensation. | Retire a deployment once its runs have ended. |
-| Durable callable removed | The Kernel cancels its runs within minutes, without compensation. | Remove a callable once its runs have ended. |
+| New release installed | Finish on the old deployment; new calls start on the new one. Each deployment is its own issuer: the old one keeps calling the Kernel for its runs for 7 days at most, then their Kernel calls are refused. A run that only waits is unaffected. | Keep the old deployment served until its runs end (`adapter-astrale` gives each release its own URL). Keep runs that call the Kernel under 7 days. `--revoke-previous` at install cuts the old deployment and its runs at once. |
+| Code redeployed at the same URL | Resume on the new code; a renamed, moved or removed Step pauses them | Avoid. Otherwise keep existing Steps in place, then `resume` the paused runs |
+| Class, Function or Edge removed or narrowed | A Step still using it is refused, then `STEP_EXHAUSTED` | Keep the Schema additive; remove once no run uses it |
+| Deployment retired | Runs stop; their signals time out; a cancel ends them without compensation | Retire once its runs ended |
+| Durable callable removed | The Kernel cancels its runs within minutes, without compensation | Remove once its runs ended |
 
 ## Migrate an inline Workflow
 
-Count the effects, not the Steps or the reads:
+Count effects, not Steps or reads:
 
-| The inline Workflow… | Becomes |
+| The inline Workflow | Becomes |
 | --- | --- |
-| makes no effect, or one (exclusive branches that each make one count as one) | an Action: most inline Workflows |
-| makes several writes that one Mutation can commit | an Action, with that one Mutation |
+| makes no effect, or one (exclusive branches each making one count as one) | an Action (most cases) |
+| makes several writes one Mutation can commit | an Action with that Mutation |
 | makes effects that cannot commit together, or waits | a durable Workflow |
 
-Do not make every inline Workflow durable. Declaring a read and one write durable buys an engine
-round trip per Step and an Execution the caller must follow, for no guarantee the Action lacks.
-
-An inline Workflow stays only when its effects cannot commit together and its caller needs the
-output in the response. It keeps the inline gap knowingly: make each effect safe to repeat, so that
+Making a read-and-one-write Workflow durable buys a round trip per Step and an Execution to follow,
+for no guarantee an Action lacks. An inline Workflow stays only when its effects cannot commit
+together and its caller needs the output in the response; then make each effect safe to repeat, so
 the caller's retry completes a call that failed halfway.
 
 ### To an Action
 
-The change is mechanical: `defineWorkflow` becomes `defineAction` from `@astrale-os/sdk/action`,
-and each `step.run` is unwrapped. The callable, its Schema and its callers stay the same.
+`defineWorkflow` → `defineAction` (`@astrale-os/sdk/action`), each `step.run` unwrapped; callable,
+Schema and callers unchanged.
 
 ```ts
-const executor = { as: 'executor' } as const // read and write as the Domain
+const executor = { as: 'executor' } as const
 
 // before: an inline Workflow
 export const editComment = defineWorkflow<typeof schema>()(
@@ -444,22 +426,21 @@ export const editComment = defineAction<typeof schema>()(
 )
 ```
 
-The effect stays last, after the reads it needs (`actions.md`). A fact that must still hold when it
-commits is a precondition of the Mutation (`mutation.expect`), not a read before it. Tests invoke
-the Action's `run` directly (`testing.md`); Step traces go away.
+The effect stays last (`actions.md`); a fact that must hold at commit is a `mutation.expect` guard.
+Tests invoke the Action's `run` directly (`testing.md`).
 
 ### To a durable Workflow
 
-1. Add `execution: { durable: true }` to its callable.
-2. Move every Kernel call into a Step: reads become `step.query`, writes `step.mutate`, anything else
+1. Add `execution: { durable: true }` to the callable.
+2. Move every Kernel call into a Step: `step.query`, `step.mutate`, else
    `step.run(id, ({ query, mutate, kernel, integrations, dependencies }) => …)`. Drop `caller` and
-   `{ as: 'caller' }`: the run reads and writes as the executor alone.
-3. Fix what the typecheck reports: each member the durable context lacks, and each caller that
-   reads the output (it now receives `ExecutionRef<Output>`).
-4. Check the three changes the typecheck cannot see: refusals thrown as `error(...)` inside their
-   Step, clock and randomness read inside a Step, and callers that refresh after the call now
-   follow the Execution (`useExecution`).
-5. Run `astrale-domain lint`, then the tests above.
+   `{ as: 'caller' }`.
+3. Fix what the typecheck reports: members the durable context lacks; callers reading the output
+   (a durable callable answers `ExecutionRef<Output>`).
+4. Check what it cannot see: refusals thrown as `error(...)` inside their Step; clock and
+   randomness inside a Step; callers that refreshed after the call follow the Execution
+   (`useExecution`).
+5. `astrale-domain lint`, then the tests above.
 
 ```ts
 const executor = { as: 'executor' } as const
@@ -489,10 +470,9 @@ async ({ input, self, step, error }) => {
 
 ## Limits
 
-- A run starts only from a call: no schedule, no trigger on a graph event.
-- A run waits only on a timer or a signal (see Waits and signals).
+- A run starts only from a call: no schedule, no graph-event trigger.
+- A run waits only on a timer or a signal.
 - A Domain cannot list its Executions: record each `execution.id` it needs in the graph.
-- No manual pause: `resume` only continues a run the engine paused.
-- A paused Execution's status gives no cause; read the Domain's logs.
-- The run acts with the identity of the function (its Domain), never its caller; the callable's
-  Policy is checked once, at the call.
+- No manual pause: `resume` continues only a run the engine paused. A paused Execution's status
+  gives no cause; read the Domain's logs.
+- The run acts as its Domain, never its caller; the callable's Policy is checked once, at the call.

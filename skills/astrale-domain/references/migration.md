@@ -1,204 +1,165 @@
 # Schema evolution and data migration
 
-Schema evolution and data migration are distinct decisions.
+Installing a target Schema never migrates stored data. Never hide a migration in Core data, Runtime
+initialization, a Provider or an undocumented repair Action; there is no Domain `Migration` hook.
 
-## Additive evolution
+## Classify the change
 
-Prefer additions that preserve origin and existing Definition keys: optional properties, new Classes,
-new Edges, and new callables. Rebuild and verify that the new Schema revision differs while unchanged
-callable/Class keys remain stable. Reinstall through the public installation path and prove existing
-data remains valid.
+| Change | Kind | Path |
+| --- | --- | --- |
+| Optional Property, new Class, Edge or callable, widened enum | additive | install online |
+| New required Property, minimum cardinality `1`, tightened bound, enum or cardinality | breaking: existing data may not satisfy it | online install if the data may already satisfy it, else a maintenance session |
+| Removed or renamed Property, Class, Edge or origin | breaking | maintenance session (default), or a staged online transition |
 
-Adding syntax is not necessarily compatible with existing data: a new required property or an Edge
-with minimum cardinality `1` can invalidate existing nodes. Such a change is breaking (below); a
-default in application code is not a persisted backfill.
+- Additive: keep origin and existing Definition keys. Rebuild, verify the revision changed while
+  unchanged callable/Class keys stayed stable, reinstall, prove existing data still valid.
+- A default in application code is not a persisted backfill.
+- Default for a breaking change: a [maintenance repair session](#maintenance-repair-sessions) as
+  Root. Rehearse it on a populated QA Instance, then run it on the real one with a recovery plan.
+  A [staged online transition](#staged-online-transition-expand-migrate-contract) only when the
+  Instance cannot close, or uncontrolled clients still write the old form. Disposable local data may
+  be reset; production data never.
 
-## Breaking changes: a Root maintenance session by default
+## How an install treats existing data
 
-A change is breaking when existing data may not satisfy the target: a removed or renamed property,
-Class, Edge or origin; a new required property; a tightened bound, enum or cardinality. Installing
-the target never migrates stored data. Do not conceal the migration in Core data, Runtime
-initialization, a Provider, or an undocumented repair Action.
+An install or uninstall is a durable Execution; its status `detail.class`:
 
-Migrate a breaking change in a [maintenance repair session](#maintenance-repair-sessions), as the
-Instance's Root: install the target with `--mode maintenance`, repair the data with Root raw graph
-mutations, then apply the target. During the session Root writes in the union of the source and
-target vocabularies, without the state rules (required properties, cardinality, accepted endpoints)
-of either Schema; `apply` validates the repaired data against the target and activates it in one
-step. The Instance is closed to ordinary traffic meanwhile, so no application writes the old form
-during the repair, and no intermediate Schema revision is needed.
+| `detail.class` | Meaning |
+| --- | --- |
+| `noop` | Nothing changes (reinstalling the same release) |
+| `immediate` | Applied without reading data: optional Property, new Class or Edge, widened enum, removed callable |
+| `revalidate` | Existing data validated before activation: tightened bound, new required Property, stricter cardinality. Incremental by default; `--validation-scope full` re-reads everything; `--validation-counts exact` counts every offender (small Classes only, see `apply`) |
 
-Rehearse the session on a populated QA Instance, then run it on the real Instance with a recovery
-plan. When the existing data may already satisfy a tightened rule, an online install proves it
-without closing the Instance; a refusal with `DATA_MIGRATION_REQUIRED` activates nothing, and the
-repair then goes through the maintenance session. Keep a
-[staged online transition](#staged-online-transition-expand-migrate-contract) for an Instance that
-cannot be closed for the repair, or for clients you do not control that still write the old form.
-For local iteration with disposable data, a direct change or deliberate reset may suffice; do not
-treat production data as disposable.
+- Online (default mode): the Instance stays open; it validates while applications write; only the
+  activation briefly pauses writes.
+- Data the target refuses: `failed`, `DATA_MIGRATION_REQUIRED` (CLI exit 2), nothing activated. Not
+  transient. Message and report name each requirement: operation (`populate-required`,
+  `remove-facts`, …), subject, observed facts. Repair in a maintenance session, delete facts that
+  should go, or migrate online and install again.
+- An Edge endpoint's lifetime is `onDelete: 'restrict' | 'detach'` (`schema.md`). Deleting a Node
+  detaches the Edges other Domains hold toward it; the Mutation result does not report them and
+  your Domain cannot query their Edge Classes to move them first. Agree a Class change that
+  recreates Nodes (rename, merge, split) with every dependent Domain. In a maintenance session that
+  delete is refused `MUTATION_POST_STATE_INVALID`.
+
+## Following an install
+
+- Keep the printed Execution, even when the CLI stops waiting first (exit 0 without `changed`).
+  Follow it with `astrale execution status|result <execution>` as the same identity, Root or an
+  `execution.reader`. Never resubmit an install to learn whether it worked.
+- Install needs the Kernel Role `domain.installer`, uninstall `domain.uninstaller` (or Root);
+  `release.md`, Authority an install needs.
+- After a transport failure the Kernel may already have accepted it: install again with a fresh
+  operation; while the first still changes the Schema the second is refused `SCHEMA_CHANGE_ACTIVE`,
+  naming that Execution.
+- An operation id names one request with a final outcome. Reusing it replays only that exact request
+  (`replayed`); anything else under it is refused `SCHEMA_OPERATION_CONFLICT`. A call refused before
+  dispatch (validation, authority, `SCHEMA_CHANGE_ACTIVE`) leaves the id free. After `failed` or
+  `cancelled`, use a fresh operation.
 
 ## Dependency compatibility and grouped activation
 
-A Domain retains the exact dependency revision against which it was authored. A current Kernel can
-bind it to another active revision when the structural comparison preserves its referenced schema,
-inheritance obligations and the callables and Classes its release scopes name (`policies.md`). A
-different revision alone does not require rebuilding every dependent. Inspect `SCHEMA_DEPENDENCY_INCOMPATIBLE` or
-`SCHEMA_DEPENDENTS_INCOMPATIBLE` for the affected keys and Domains; preserve their business meaning.
-
-Rebuild the incompatible consumers and their affected reverse dependents against the intended
-closure. Deploy all candidates first, then request the changed dependency and those consumers as
-explicit roots of one grouped install. Embedded dependencies are not automatically installed roots.
-A deploy never installs, and uninstalling a dependent is not a substitute for repairing compatibility.
+- A Domain keeps the exact dependency revision it was authored against. The Kernel binds it to
+  another active revision when the structural comparison preserves its referenced Schema,
+  inheritance obligations, and the callables and Classes its release scopes name (`policies.md`);
+  a new dependency revision alone does not force rebuilding dependents.
+- `SCHEMA_DEPENDENCY_INCOMPATIBLE` / `SCHEMA_DEPENDENTS_INCOMPATIBLE` name the affected keys and
+  Domains. Rebuild the incompatible consumers and their affected reverse dependents against the
+  intended closure; deploy all candidates; install the changed dependency and those consumers as
+  explicit roots of one grouped install. Embedded dependencies are not roots. Uninstalling a
+  dependent does not repair compatibility.
+- Grouped activation is atomic across its roots; the install Execution and manual repairs are not.
+  Consent to an issuer change only after checking it (`release.md`).
 
 ```sh
 astrale domain install "$URL_A" "$URL_B" -i staging
 astrale domain install a.example@2.1.0 b.example@3.0.0 -i production
 ```
 
-Grant issuer-change consent only after checking the intended issuer change. Grouped schema
-activation is atomic across its roots; the install Execution and manual data repairs have their own
-lifecycle (see below).
-
-## How an install treats existing data
-
-An install or uninstall is a durable Execution. Its status `detail.class` says what it does to the
-stored data:
-
-| Class | Meaning |
-| --- | --- |
-| `noop` | Nothing changes; reinstalling the same release ends here. |
-| `immediate` | Applied at once without reading the data: an optional property, a new Class or Edge, a widened enum, a removed callable. |
-| `revalidate` | The existing data is validated against the new rules before the activation: a tightened bound, a new required property, a stricter cardinality. Incremental by default; `--validation-scope full` re-reads everything and `--validation-counts exact` counts every offender (small Classes only, see `apply` below). |
-
-An online install (the default mode) keeps the Instance open: it validates while applications write,
-and only the activation briefly pauses writes. Data the target refuses ends the install `failed`
-with `DATA_MIGRATION_REQUIRED` (CLI exit 2) and activates nothing. Its message and report name each
-requirement (the operation, such as `populate-required` or `remove-facts`, its subject and the
-facts observed). Repair the data in a maintenance session (below), or, for facts that should go,
-delete them; migrate it online and install again only when the Instance must stay open. Do not treat
-this refusal as transient.
-
-## Following an install
-
-Keep the Execution an install prints, even when the CLI stops waiting before the outcome (exit 0
-with no `changed`). Follow it with `astrale execution status|result <execution>` as the same
-identity, Root, or a holder of the Kernel Role `execution.reader`; never submit the install again
-to discover whether it worked. An install needs the Role `domain.installer` and an uninstall
-`domain.uninstaller` (or Root). A transport
-failure can happen after the Kernel accepted it: install again with a fresh operation, and while the
-first one still changes the schema it is refused `SCHEMA_CHANGE_ACTIVE` naming that Execution.
-
-An operation id names one request and its outcome is final. Reusing it replays only that exact
-request, which the Kernel marks `replayed`; anything else under that id is refused
-`SCHEMA_OPERATION_CONFLICT`. A call refused before dispatch (validation, authority,
-`SCHEMA_CHANGE_ACTIVE`) leaves the id free. Once a run ended `failed` or `cancelled`, request the
-change again with a fresh operation.
-
 ## Staged online transition: expand, migrate, contract
 
-When the Instance must stay open during the transition, stage the change over compatible releases:
+Online, every write is checked against the active Schema.
 
-1. Expand the Schema to accept both representations. Deploy readers that understand both and writers
-   that produce the new form; keep old-data reads working throughout the transition.
-2. Move every producer off the old form, including older deployments, jobs, imports, and clients.
-   Migrate existing data in bounded, restart-safe batches without overwriting concurrent updates.
-3. Verify no old representation remains and no active producer can recreate it. Only then tighten
-   the Schema and remove compatibility code; a rollback must not reintroduce an incompatible writer.
+1. Expand: the Schema accepts both representations; readers read both, writers produce the new one.
+2. Move every producer off the old form (older deployments, jobs, imports, clients). Migrate data in
+   bounded, restart-safe batches that do not overwrite concurrent updates.
+3. Verify no old representation remains and no producer can recreate it; then tighten the Schema
+   and remove compatibility code. A rollback must not reintroduce an incompatible writer.
 
-Online, every write is checked against the active Schema. Deleting the only required Edge first
-violates the installed cardinality; removing its Class first leaves data in a retired Class. To
-remove a `1` relationship while retaining its nodes:
+Qualify each installed revision before the next stage. Deploying the final revision does not make a
+cleanup legal under the active one. Removing a required (`1`) relationship while keeping its Nodes:
 
-1. publish and install an intermediate Schema revision that loosens the endpoint cardinality from
-   `1` to optional (`0..1`);
-2. delete every existing instance of the Edge Class; and
-3. publish and install the final Schema revision that removes the Edge Class.
+1. install a revision loosening the endpoint from `1` to `0..1`;
+2. delete every Edge of that Class;
+3. install the revision removing the Edge Class.
 
-Qualify each installed revision before proceeding to the next stage. Update dependent Domains when
-the structural compatibility check requires it. Deploying the final revision does not make an
-intermediate data cleanup legal under the currently active schema. In a maintenance session the same
-change is one target: install the final revision, delete the Edges, apply.
-
-Changing the Class of existing nodes online (renaming, merging or splitting a Class) means creating
-new nodes and deleting the old ones, and a delete can remove other Domains' data. An Edge endpoint
-declares its lifetime with `onDelete: 'restrict' | 'detach'`. Undeclared, an endpoint that can hold
-another Domain's Node (a foreign Class, an `'open'` Class or a Class extending one) detaches, and
-every other endpoint restricts: deleting the Node first requires deleting the Edge. An endpoint
-that can hold another Domain's Node cannot declare `restrict`, and the Builder refuses it in an Edge
-Class with an endpoint that requires an Edge. So deleting your node also deletes the Edges that
-dependent Domains hold toward it. The Mutation result does not report them, and your Domain cannot
-query their Edge Classes to move them first. Agree such a change with every dependent Domain before
-recreating nodes. In a maintenance session the same delete is refused with
-`MUTATION_POST_STATE_INVALID`.
+In a maintenance session that is one target: install the final revision, delete the Edges, apply.
 
 ## Uninstalling a Domain with data
 
-`astrale domain uninstall` removes the selected Domains in one activation. Safe mode, the default,
-deletes nothing: it is refused (`remove-facts`) for each of their Classes that still holds facts,
-whatever their number. `--destructive` retires those Classes at the activation, whatever their
-size: their facts become invisible to every read and write, and the uninstall Execution then purges
-them in batches (`detail.phase` `purging`, `detail.purge: { removed, total? }`). Once the
-activation commits, the uninstall cannot be cancelled or deleted (`EXECUTION_EXIT_REFUSED`) and
-ends `completed`. In either mode, Edges of surviving Classes follow their lifetimes: a detaching
-Edge goes with the Node, and one that restricts at a leaving Node refuses the uninstall as
-`restricted-deletion` until you delete it. Surviving dependents block the uninstall. A refused
-uninstall deleted nothing.
+`astrale domain uninstall` removes the selected Domains in one activation.
+
+- Safe mode (default) deletes nothing: refused `remove-facts` for each of their Classes still
+  holding facts, whatever their number.
+- `--destructive` retires those Classes at activation, whatever their size: their facts become
+  invisible to every read and write, then the Execution purges them in batches (`detail.phase`
+  `purging`, `detail.purge: { removed, total? }`). After the activation commits it cannot be
+  cancelled or deleted (`EXECUTION_EXIT_REFUSED`) and ends `completed`.
+- Either mode: Edges of surviving Classes follow their lifetimes; a restricting Edge at a leaving
+  Node refuses the uninstall as `restricted-deletion` until deleted. Surviving dependents block it.
+  A refused uninstall deleted nothing.
 
 ## Maintenance repair sessions
 
-Maintenance requires Root as both executor and caller and closes the **whole Instance** to ordinary
-traffic. Root is the Instance's root identity: on an Instance you own, `astrale instance root import
-<slug>` saves it locally as `<slug>-root`, selected with `--as <slug>-root`. A Shell administrator or
-a business role is not Root. Record the identity, Instance, reason and effects of every Root use.
-Every other caller is refused `INSTANCE_MAINTENANCE`, a `BACKEND_UNAVAILABLE` (5001) with a retry
-delay (CLI exit 75 once its retries run out), and Root's writes are refused while `apply` validates:
-prepare the repair before entering, and warn the Instance's users.
+Requires Root as both executor and caller; closes the **whole Instance**. Every other caller is
+refused `INSTANCE_MAINTENANCE` (`BACKEND_UNAVAILABLE` 5001 with a retry delay; CLI exit 75 once its
+retries run out), and Root's writes are refused while `apply` validates. Prepare the repair before
+entering; warn the Instance's users.
 
-1. Retain the source revisions, exact target releases, representative node IDs/properties and Edge
-   endpoints. Decide how to repair toward both target and source before entering maintenance.
-2. Start the target install with `--mode maintenance` and a retained `--operation`. The CLI watches
-   the session until it has drained the Instance and awaits its first command, then prints it
-   (`--no-wait` returns at once with the Execution). Keep that Execution.
-3. After `--no-wait`, read its status until `detail.phase` is `awaiting`; stop and inspect a
-   terminal failure or cancellation instead of waiting indefinitely. A maintenance request with no schema change is
-   refused with `SCHEMA_INPUT_INVALID`. Repair data with Root raw graph mutations using the
-   session's source/target vocabulary; the state rules of neither Schema apply until `apply`
-   validates, so a rename is a copy into the target's key followed by a delete of the source's.
-   Application Actions remain closed even to Root. Record each committed batch; several mutations
-   are not one atomic migration.
-4. Send `domain installation apply`. It reads the command the session awaits (`detail.command`)
-   and sends exactly that one; while the session drains or attempts it sends nothing and is refused
-   `SESSION_NOT_AWAITING`. `apply` validates, activates the target and reopens the Instance on
-   success; it is not a dry-run validation. `--validation-scope full` revalidates every retained
-   fact. Keep the default sampled counts: with `--validation-counts exact`, a value rule (an enum,
-   a length, a type) that rejects thousands of distinct values can keep the attempt from reaching a
-   verdict, with the Instance still closed. The report's offenders and a Root Query locate the rest
-   (below). An accepted signal only acknowledges the command.
-5. Observe status/result. A refused validation leaves its report and returns the same session to
-   repair; fix the reported data and apply again. Reconnect to the same
-   Execution after a client restart rather than starting another install.
-6. Require a completed outcome and result, then verify active revisions, retained data and normal
-   non-Root reads/writes. An Execution ID, a successful status read or an accepted signal is not
-   evidence that the migration finished.
+- Root: on an Instance you own, `astrale instance root import <slug>` saves it as `<slug>-root`
+  (`--as <slug>-root`). A Shell administrator or business role is not Root. Record identity,
+  Instance, reason and effects of every Root use.
+- During the session Root writes raw graph Mutations in the union of the source and target
+  vocabularies, with the state rules (required Properties, cardinality, accepted endpoints) of
+  neither; `apply` validates against the target and activates in one step. No intermediate
+  revision. Application Actions stay closed, even to Root. The Kernel serves no Query v7 in a
+  session: read with Query V6.
+
+1. Retain source revisions, exact target releases, representative node ids/Properties and Edge
+   endpoints. Plan the repair toward both target and source before entering.
+2. `install --mode maintenance --operation <retained>`. The CLI waits until the Instance is drained
+   and the session awaits its first command (`--no-wait` returns the Execution at once). Keep it.
+3. After `--no-wait`, poll status until `detail.phase` is `awaiting`; stop on a terminal failure or
+   cancel. A maintenance request without a Schema change is refused `SCHEMA_INPUT_INVALID`.
+4. Repair: a rename is a copy into the target key plus a delete of the source key. Record each
+   committed batch; several Mutations are not one atomic migration.
+5. `astrale domain installation apply` sends exactly the command the session awaits
+   (`detail.command`); while the session drains or attempts it is refused `SESSION_NOT_AWAITING`.
+   `apply` validates, activates and reopens the Instance: it is not a dry run. An accepted signal
+   only acknowledges the command. `--validation-scope full` revalidates every retained fact. Keep
+   the default sampled counts: under `--validation-counts exact`, a value rule (enum, length, type)
+   rejecting thousands of distinct values can keep the attempt from a verdict, Instance closed.
+6. A refused validation leaves its report and returns the same session to repair; fix, apply
+   again. After a client restart, reconnect to the same Execution.
+7. Require a completed outcome and result, then verify active revisions, retained data, and normal
+   non-Root reads and writes. An Execution id, a status read or an accepted signal proves nothing.
 
 ```sh
 astrale instance root import "$INSTANCE" --yes
 astrale domain install "$TARGET_URL" -i "$INSTANCE" --as "$INSTANCE-root" \
   --operation "$OPERATION" --mode maintenance --no-wait --json
 astrale execution status "$EXECUTION" -i "$INSTANCE" --as "$INSTANCE-root" --json
-# Apply the repair mutations, then apply the target at the command the session awaits.
+# repair, then apply at the command the session awaits
 astrale domain installation apply "$EXECUTION" -i "$INSTANCE" --as "$INSTANCE-root" \
   --validation-scope full --json
 astrale execution result "$EXECUTION" --wait -i "$INSTANCE" --as "$INSTANCE-root" --json
 ```
 
-The online refusal's report, or `detail.report.summary` in the session status after a refused
-`apply`, lists each failing rule: its Class, property, count and at most 20 offenders (`truncated`
-when more exist). Past them, read the Class as Root (`astrale query --class`, Query V6: the
-Kernel serves no Query v7 in a session) and select the offenders yourself. A repair is an ordinary Mutation (`astrale mutate --as "$INSTANCE-root"`;
-`--dry` checks its form, not the data) keyed by full Property keys; a rename sets the target key
-and unsets the source's, `node.delete` and `edge.delete` (`edge: { source, target, class }`) remove
-facts:
+The online refusal's report, or `detail.report.summary` after a refused `apply`, lists each failing
+rule: Class, Property, count, ≤ 20 offenders (`truncated` past them). Beyond them, read the Class as
+Root (`astrale query --class`, V6) and select offenders yourself. A repair is an ordinary Mutation
+(`astrale mutate --as "$INSTANCE-root"`; `--dry` checks its form, not the data) keyed by full
+Property keys; `node.delete` and `edge.delete` (`edge: { source, target, class }`) remove facts:
 
 ```json
 { "operations": [{ "op": "node.update", "node": "@task-42", "class": "tasks.example:class.Task",
@@ -206,35 +167,32 @@ facts:
              "unset": ["tasks.example:class.Task.property.name"] } }] }
 ```
 
-A maintenance session has no rollback: neither `abort` nor `cancel` undoes committed repair
-mutations. `domain installation abort` stops the validation attempt the session runs toward its
-target and returns it to repair, and an attempt back to the source cannot be aborted. `astrale execution cancel` attempts to validate
-and reactivate the source schema, so it can also require data repair. `astrale execution resume`
-resumes a paused Execution; it is not a command to reopen the Instance. A live session has no forced exit: it ends by `apply`,
-a cooperative `cancel` or, without a command by `detail.expires`, an attempt back to its source; a forced
-cancel or a delete is refused `EXECUTION_EXIT_REFUSED`. Only the Host operator can release a stuck
-session. After a completed `apply`, going back is a new maintenance session that installs the
-previous release and reverses the repair.
+Exits:
 
-The repair lifecycle does not invent a Domain `Migration` hook. Domain-owned Query/Mutation
-operations remain explicit authorized operations; external effects require their own Workflow.
+| Command | Effect |
+| --- | --- |
+| `apply` | Validates the target, activates, reopens |
+| `domain installation abort` | Stops the validation attempt toward the target; back to repair. An attempt back to the source cannot be aborted |
+| `astrale execution cancel` | Validates and reactivates the source: may also require repair |
+| no command by `detail.expires` | An attempt back to the source |
+| forced cancel, delete | Refused `EXECUTION_EXIT_REFUSED`; only the Host operator releases a stuck session |
+| `astrale execution resume` | Resumes a paused Execution; does not reopen the Instance |
+
+No rollback: neither `abort` nor `cancel` undoes committed repairs. Going back after a completed
+`apply` is a new session installing the previous release and reversing the repair.
 
 ## External effects
 
-A migration involving a remote system is a multi-step Workflow with explicit failure and retry
-semantics; it cannot be one atomic graph Mutation. Preserve immutable evidence and do not claim
-exactly-once execution without a durable Workflow (`workflows.md`).
+A migration touching a remote system is a durable Workflow with explicit failure and retry
+semantics (`workflows.md`), never one atomic Mutation; preserve immutable evidence.
 
 ## Qualify a Schema revision
 
-For a change from the current revision to a candidate revision:
-
-1. retain the current origin/revision and representative data evidence;
-2. build and deploy the candidate, which installs nothing;
-3. verify the release its deployment serves, its Bundle, and its new revision;
-4. install it through the public CLI (`astrale domain install`) or Client APIs; for a breaking
-   change, run the whole maintenance session on a populated QA Instance and time the closure;
-5. repeat the same intent and prove convergence;
-6. read existing data and invoke retained behavior;
-7. exercise the added behavior;
-8. retain exact failures and avoid destructive cleanup until evidence is complete.
+1. Retain the current origin/revision and representative data.
+2. Build and deploy the candidate (installs nothing); verify the release its deployment serves, its
+   Bundle and its revision.
+3. Install through `astrale domain install` or Client APIs; for a breaking change, run the whole
+   maintenance session on a populated QA Instance and time the closure.
+4. Repeat the same intent and prove convergence.
+5. Read existing data, invoke retained behavior, exercise the added behavior.
+6. Retain exact failures; no destructive cleanup until the evidence is complete.
