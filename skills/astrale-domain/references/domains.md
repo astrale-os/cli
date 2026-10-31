@@ -6,8 +6,9 @@ Before adding vocabulary, check whether another Astrale Domain already owns it. 
 Domain when its identity and lifecycle are genuinely authoritative; do not copy its Classes or
 recreate its callable contracts locally for convenience.
 
-For sign-in users and shared groups, use Shell's public contract; read `users.md` for concrete
-subclasses, existing-node registration, invitation, and the traversal agreement Shell needs.
+For people who sign in and shared groups, use Shell's public contract: link your business record to
+the Shell account and test your own Roles; read `users.md` for the account processes, Domain Roles,
+Teams, and the release bindings they need.
 
 ## Graph-level dependency
 

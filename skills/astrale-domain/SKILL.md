@@ -34,7 +34,9 @@ phased workflow below; an existing public scaffold already satisfies its foundat
   a Workflow: read `references/workflows.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
 - Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
-- Model sign-in users, invite/register existing people, assign Shell groups, or make someone an instance administrator: read `references/users.md`.
+- Model people who sign in, link a business record to their Shell account, create or invite accounts,
+  declare Domain Roles and Teams, grant Roles, or make someone an instance administrator: read
+  `references/users.md`.
 - Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication mode, or Policy: read `references/policies.md`.
 - Build or review browser views, mounted UI, View access, View resolution, or frontend design: read
   `references/views.md` and apply `astrale-frontend-design` for product-interface layout,
@@ -58,8 +60,8 @@ order and load a reference only when its phase begins.
    `references/development.md`; read `references/domains.md` only when deciding whether to reuse a
    native Domain. When the workspace already declares the SDK, deployment adapter, Domain definition, and
    Runtime, keep that plumbing and move directly to Schema.
-2. **Schema:** Before authoring the schema, read `references/schema.md`; for sign-in users and groups,
-   also read `references/users.md` before inventing identity or onboarding vocabulary.
+2. **Schema:** Before authoring the schema, read `references/schema.md`; for people who sign in, Roles
+   and Teams, also read `references/users.md` before inventing identity or onboarding vocabulary.
 3. **Callables:** Before implementing callables, read `references/runtime.md` and
    `references/policies.md`. If an operation makes several effects or waits, also read
    `references/workflows.md`; if an external system is involved, `references/integrations.md`.

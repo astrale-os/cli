@@ -187,11 +187,15 @@ export const issueNotClosable = error({
 
 ## Installation requirements
 
-- A Schema dependency pins definitions, not capability. Declare the exact protected Kernel/foreign
-  Functions the Domain calls for its callers: `can_use` supplies the principal ceiling of that
-  delegation, while the caller must independently pass admission. A call the Domain makes as itself
-  is decided by the callable's Policy alone; a Kernel syscall's `canUseSyscall` Policy still asks it
-  for `can_use`, so declare those too. See `policies.md` and `users.md`.
+- A Schema dependency pins definitions, not capability. The release declares `requirements({ roles,
+  scopes })`. A `call` scope names each exact Kernel or foreign callable the Domain invokes: for a
+  call it makes for its caller, the scope is the principal ceiling of that delegation, and the caller
+  must independently pass admission. A call the Domain makes as itself is decided by the callable's
+  Policy alone, so the Domain holds the Role that Policy tests: Kernel `query` admits a holder of
+  `graph.reader`, `mutate` of `graph.writer`, `register` of `identity.registrar`; a Shell account
+  method, Shell `user.writer`. Bind such a Role with `members: [requirements.domain]`. The
+  `astrale-domain` lint rules expect a `call` scope for every remote invocation. See `policies.md`
+  and `users.md`.
 
 ```ts
 import { defineDomain, requirements } from '@astrale-os/sdk/domain'
@@ -200,19 +204,29 @@ import { schema } from '#schema'
 
 // Schema declares dependencies: { kernel: KernelSchema, messaging: MessagingSchema }.
 // Resolve that exact declared dependency, not a separately chosen foreign version.
-// This supplies Domain-principal usability; Messaging.send still checks its caller.
+// The scope bounds the delegation; Messaging.send still checks its caller.
 const Messaging = language.resolve(schema).dependencies.messaging
 
 export const domain = defineDomain({
   schema, runtime,
   requirements: requirements({
-    functions: [K.functions.query, K.functions.mutate, Messaging.functions.send],
+    roles: [
+      { role: K.core.nodes['graph.reader'], members: [requirements.domain] },
+      { role: K.core.nodes['graph.writer'], members: [requirements.domain] },
+    ],
+    scopes: [
+      { on: K.functions.query, operations: ['call'] },
+      { on: K.functions.mutate, operations: ['call'] },
+      { on: Messaging.functions.send, operations: ['call'] },
+    ],
   }),
 })
 ```
 
-- Add `K.functions.register` when using an admitted `auth.register(...)` capability. Inspect requested
-  and materialized authority for the Domain principal; do not grant the human rights to conceal a gap.
+- Add a `call` scope on `K.functions.register` when using an admitted `auth.register(...)`
+  capability, and Kernel `identity.registrar` when the Domain registers as itself; a Shell
+  administrator cannot grant that Role, so only Root installs such a release. Inspect requested and
+  materialized authority for the Domain principal; do not grant the human rights to conceal a gap.
 - Call an exact dependency with
   `dependencies.messaging.caller.invoke((messaging) => messaging.functions.send, input)` to act for
   the incoming caller; an instance Method
