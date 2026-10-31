@@ -211,8 +211,9 @@ export const domain = defineDomain({
 - Your Team may hold a dependency's Role (`{ role: agencies.core.nodes.reader, members: [own.it] }`),
   and a dependent Domain may name your Team member of its own Roles
   (`{ role: own.reader, members: [employees.core.nodes.it] }`). A holder is the Domain, one of its
-  own Core Identities, or (K1) a Core Identity of a Domain in its dependency closure; anything else
-  refuses the release.
+  own Core Identities, or (K1) a Core Identity of a Domain in its dependency closure — the last only
+  toward your own Roles (`A Core Identity of a dependency holds only the Domain's own Roles.`), so no
+  two Domains ever declare the same membership; anything else refuses the release.
 - **K1 is not everywhere yet.** `granters: [S.core.nodes['profile.admin']]` and a dependency's Team as
   member need a Host Kernel with K1, and an SDK on that Kernel cohort; an earlier SDK refuses them at
   Build with `A holder is the Domain or one of its own Core Identities.` Until both are available,
