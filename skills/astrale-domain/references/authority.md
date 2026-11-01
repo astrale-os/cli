@@ -68,9 +68,9 @@ The callable's `policy` decided the caller before the handler runs.
 ## What the Kernel checks
 
 - Under `executor`, the Domain needs the syscall's Kernel Role (`graph.reader` to query,
-  `graph.writer` to mutate) and passes like any caller: by ownership, or by the Class or callable
-  Policy. Its writes on a foreign Class are decided by that Class's write slot; no scope widens
-  them.
+  `graph.writer` to mutate; every Role: `roles.md`) and passes like any caller: by ownership, or by
+  the Class or callable Policy. Its writes on a foreign Class are decided by that Class's write
+  slot; no scope widens them.
 - Under `caller`, the user needs the syscall's Role and passes the Policy; the Domain meets its
   ceiling: the Role for a syscall, a scope for a dependency's callable or Class, ownership for its
   own Classes.

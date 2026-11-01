@@ -113,8 +113,8 @@ import { K } from '@astrale-os/sdk/schema'
 
 requirements({
   roles: [
-    { role: K.core.nodes['graph.reader'], members: ['domain'] },
-    { role: K.core.nodes['graph.writer'], members: ['domain'] },
+    { role: K.core.nodes['graph.reader'], members: [requirements.domain] },
+    { role: K.core.nodes['graph.writer'], members: [requirements.domain] },
   ],
   scopes: [
     { on: directory.functions.lookup, operations: ['call'] },
@@ -123,24 +123,13 @@ requirements({
 })
 ```
 
-- A Role is an Identity: Kernel-owned, a dependency's, or the Domain's own. Its `members` extend it
-  and hold what it holds; its `granters` may grant and revoke its membership. A holder is `'domain'`
-  or one of the Domain's own Core Identities. Joining a Role the Domain does not own requires Root
-  or a granter.
-- Syscall → Role: `query` `graph.reader`, `mutate` `graph.writer`, `download` `blob.reader`,
-  `upload` `blob.writer`, `install` `domain.installer`, `uninstall` `domain.uninstaller`, `journal`
-  `journal.reader`, `register` `identity.registrar`, `Identity.whois` `identity.resolver`,
-  `Identity.impersonate` `identity.impersonator`.
-- Kernel definition reads by Role: Class, Function, Policy, `extends`, `governed_by` by
-  `domain.reader`; View, `entrypoint` by `view.reader`; Execution, `created_by` by
-  `execution.reader`; Roles and composition, scope and meta-authority Edges by `authority.reader`.
-- Bundles hold one family (`graph.manager`, `blob.manager`, `domain.manager`, `identity.manager`,
-  `execution.manager`); profiles nest `reader` ⊂ `writer` ⊂ `admin`. `identity.impersonator` is in
-  no bundle. Ask for the narrowest Role.
+- `roles` bind a Role to its `members` and `granters`. Which Kernel Role each operation needs,
+  which to declare, bundles, installation and granting: `roles.md`.
 - A scope names a direct dependency's callable (`['call']`) or Class (`create`, `read`, `traverse`,
   `update`, `delete`). It never admits a caller; the Domain's own write on a foreign Class is
   decided by that Class's write rule. A Core Identity holds no scope. Installation poses a scope
-  toward another installed Domain's target; a scope toward a Kernel target requires Root.
+  toward another installed Domain's target; a scope toward a Kernel target requires Root, so never
+  scope a Kernel callable: its Role covers it (`roles.md`).
 - Each foreign Function or Method the Domain invokes, Shell's included, needs a `call` scope. It is
   only the Domain's ceiling: the caller (the Domain under `self`, the user under `caller`) still
   passes the callable's rule. Requirements grant a human caller nothing; a right a group supplies
@@ -154,7 +143,7 @@ requirements({
 
 | Legacy entry | Declare instead |
 | --- | --- |
-| `functions: [K.functions.<syscall>]` | the syscall's Role; Kernel definition reads need the reader Roles above |
+| `functions: [K.functions.<syscall>]` | the syscall's Role; Kernel definition reads need the reader Roles (`roles.md`) |
 | `functions: [<dependency callable>]` | `scopes: [{ on, operations: ['call'] }]` |
 | `classes: [{ class, operations }]` | the same Class scope; the Domain's own write needs the Class's write rule |
 | `authority: { grant, revoke }` | the Role's `granters` |

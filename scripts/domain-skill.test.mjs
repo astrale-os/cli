@@ -112,6 +112,15 @@ test('the guides keep the boundary rules a reader cannot derive', () => {
   assert.match(read('policies.md'), /Revocation lags by up to `maxAge`/)
   assert.match(read('schema.md'), /Only a Function takes bytes/)
   assert.match(read('schema.md'), /A durable callable\s+takes and answers values only/)
+  assert.match(read('roles.md'), /Never declare a `call` scope on a Kernel callable/)
+  assert.match(read('roles.md'), /`identity.impersonator` \| `Identity.impersonate`/)
+})
+
+test('the guides name the installed Domain as requirements.domain', () => {
+  for (const name of readdirSync(join(root, 'references'))) {
+    const source = readFileSync(join(root, 'references', name), 'utf8')
+    assert.doesNotMatch(source, /(?:members|granters):\s*\[[^\]]*'domain'/, name)
+  }
 })
 
 test('the shipped skills mention legacy capability authority only as deprecated', () => {

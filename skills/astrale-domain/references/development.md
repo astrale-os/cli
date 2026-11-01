@@ -67,8 +67,8 @@ export const domain = defineDomain({
   schema, runtime, frontend,
   requirements: requirements({
     roles: [
-      { role: K.core.nodes['graph.reader'], members: ['domain'] },
-      { role: K.core.nodes['graph.writer'], members: ['domain'] },
+      { role: K.core.nodes['graph.reader'], members: [requirements.domain] },
+      { role: K.core.nodes['graph.writer'], members: [requirements.domain] },
     ],
   }),
 })

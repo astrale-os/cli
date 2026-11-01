@@ -34,7 +34,8 @@ Load only the references the task needs.
 | An external API, an Integration/Provider, webhooks, side-effect and retry design | `references/integrations.md` |
 | Reuse or depend on another Domain instead of modelling its vocabulary | `references/domains.md` |
 | Sign-in users, invite or register people, Shell groups, instance administrators | `references/users.md` |
-| Secure a callable, View, client call or public endpoint; auth modes, Policies, Class rules, Roles and scopes | `references/policies.md` |
+| Secure a callable, View, client call or public endpoint; auth modes, Policies, Class rules, scopes | `references/policies.md` |
+| Which Kernel Role an operation needs; which Roles a Domain declares or a person holds; bundles, granting | `references/roles.md` |
 | Views, mounted UI, View access and resolution (and `astrale-frontend-design` for layout, interaction, copy) | `references/views.md` |
 | Schema revision, data transition, backfill, breaking change (Root maintenance session), install follow-up, refused data, uninstall with data | `references/migration.md` |
 | Round trips, Query shape and cost, call-pattern latency | `references/performance.md` |
@@ -51,9 +52,10 @@ Follow the applicable phases in order; load a reference when its phase begins.
    declaring the SDK, deployment adapter, Domain definition and Runtime keeps that plumbing.
 2. **Schema**: `references/schema.md`; for sign-in users and groups, `references/users.md` before
    inventing identity or onboarding vocabulary.
-3. **Callables**: `references/actions.md`, `references/authority.md`, `references/policies.md`, then
-   `references/queries.md` and `references/mutations.md`; `references/workflows.md` for several
-   effects or a wait; `references/integrations.md` for an external system.
+3. **Callables**: `references/actions.md`, `references/authority.md`, `references/policies.md`,
+   `references/roles.md`, then `references/queries.md` and `references/mutations.md`;
+   `references/workflows.md` for several effects or a wait; `references/integrations.md` for an
+   external system.
 4. **Views**: when the Domain owns a browser surface, `references/views.md`. Views are Schema
    declarations owned by their Domain; a Node screen is an internal route of its frontend.
 5. **Demo data**: for a meaningful sample graph, a small Dataset under `tests/`, referenced from
