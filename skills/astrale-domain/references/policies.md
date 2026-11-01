@@ -111,9 +111,10 @@ the ceiling scopes only a delegation.
 - For a human-principal session, inspect the human's Roles through their composition instead.
   Domain requirements do not grant that human authority, and a missing direct grant is not a reason
   to duplicate rights already supplied through `extends_with`.
-- `kernel.auth.register(...)` requires `K.functions.register` and must independently satisfy
-  its credential, target, and graph/Schema admission. Select the `caller` or `self` session explicitly; a Schema
-  dependency is not a capability, and granting the human rights is not Domain-owned execution.
+- `kernel.auth.register(...)` requires the Domain's membership of Kernel `identity.registrar` and
+  must independently satisfy its credential, target, and graph/Schema admission. Select the `caller`
+  or `self` session explicitly; a Schema dependency is not a capability, and granting the human
+  rights is not Domain-owned execution.
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'

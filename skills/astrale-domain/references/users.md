@@ -194,8 +194,6 @@ export const domain = defineDomain({
       { role: own.worker_operator, members: [own.sales], granters: [admin] },
     ],
     scopes: [
-      { on: K.functions.query, operations: ['call'] },
-      { on: K.functions.mutate, operations: ['call'] },
       { on: User.static.methods.create, operations: ['call'] },
       { on: User.static.methods.invite, operations: ['call'] },
       { on: User.methods.deactivate, operations: ['call'] },

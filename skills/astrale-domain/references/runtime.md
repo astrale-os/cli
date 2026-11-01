@@ -188,14 +188,15 @@ export const issueNotClosable = error({
 ## Installation requirements
 
 - A Schema dependency pins definitions, not capability. The release declares `requirements({ roles,
-  scopes })`. A `call` scope names each exact Kernel or foreign callable the Domain invokes: for a
-  call it makes for its caller, the scope is the principal ceiling of that delegation, and the caller
-  must independently pass admission. A call the Domain makes as itself is decided by the callable's
+  scopes })`. A `call` scope names each exact foreign callable the Domain invokes: for a call it
+  makes for its caller, the scope is the principal ceiling of that delegation, and the caller must
+  independently pass admission. A call the Domain makes as itself is decided by the callable's
   Policy alone, so the Domain holds the Role that Policy tests: Kernel `query` admits a holder of
   `graph.reader`, `mutate` of `graph.writer`, `register` of `identity.registrar`; a Shell account
-  method, Shell `user.writer`. Bind such a Role with `members: [requirements.domain]`. The
-  `astrale-domain` lint rules expect a `call` scope for every remote invocation. See `policies.md`
-  and `users.md`.
+  method, Shell `user.writer`. Bind such a Role with `members: [requirements.domain]`. Never scope a
+  Kernel callable: its Role also bounds the calls the Domain makes for a caller, and a scope toward a
+  Kernel target installs only under Root. The `astrale-domain` lint rules expect a `call` scope for
+  every invocation of another Domain's callable. See `policies.md` and `users.md`.
 
 ```ts
 import { defineDomain, requirements } from '@astrale-os/sdk/domain'
@@ -214,18 +215,14 @@ export const domain = defineDomain({
       { role: K.core.nodes['graph.reader'], members: [requirements.domain] },
       { role: K.core.nodes['graph.writer'], members: [requirements.domain] },
     ],
-    scopes: [
-      { on: K.functions.query, operations: ['call'] },
-      { on: K.functions.mutate, operations: ['call'] },
-      { on: Messaging.functions.send, operations: ['call'] },
-    ],
+    scopes: [{ on: Messaging.functions.send, operations: ['call'] }],
   }),
 })
 ```
 
-- Add a `call` scope on `K.functions.register` when using an admitted `auth.register(...)`
-  capability, and Kernel `identity.registrar` when the Domain registers as itself; a Shell
-  administrator cannot grant that Role, so only Root installs such a release. Inspect requested and
+- For `auth.register(...)`, bind the Domain to Kernel `identity.registrar`: the Role admits its own
+  call and bounds one it makes for a caller. A Shell administrator cannot grant that Role, so only
+  Root installs such a release. Inspect requested and
   materialized authority for the Domain principal; do not grant the human rights to conceal a gap.
 - Call an exact dependency with
   `dependencies.messaging.caller.invoke((messaging) => messaging.functions.send, input)` to act for

@@ -75,10 +75,6 @@ export const domain = defineDomain({
       { role: K.core.nodes['graph.reader'], members: [requirements.domain] },
       { role: K.core.nodes['graph.writer'], members: [requirements.domain] },
     ],
-    scopes: [
-      { on: K.functions.query, operations: ['call'] },
-      { on: K.functions.mutate, operations: ['call'] },
-    ],
   }),
 })
 ```

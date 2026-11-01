@@ -164,5 +164,9 @@ test('the reorganized guides retain current authority and exact Method semantics
   assert.match(schema, /Use `method.executable`/)
   assert.match(runtime, /A missing handler rejects the Runtime/)
   assert.match(schema, /Instance Methods require an instance of their exact declaring Class/)
-  assert.match(policies, /`kernel.auth.register\(\.\.\.\)` requires `K.functions.register`/)
+  assert.match(
+    policies,
+    /`kernel.auth.register\(\.\.\.\)` requires the Domain's membership of Kernel `identity.registrar`/,
+  )
+  assert.match(runtime, /Never scope a\s+Kernel callable/)
 })
