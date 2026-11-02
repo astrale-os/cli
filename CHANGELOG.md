@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.159](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.158...cli/v1.0.0-beta.159) (2026-11-02)
+
+
+### Bug Fixes
+
+* **studio:** rebuild Domain icons from an SVG allowlist ([#751](https://github.com/astrale-os/cli/issues/751)) ([5b3c521](https://github.com/astrale-os/cli/commit/5b3c52157c65b0c72e64f02a1633cdcf5c9d52a1))
+
 ## [1.0.0-beta.158](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.157...cli/v1.0.0-beta.158) (2026-11-02)
 
 
