@@ -172,7 +172,7 @@ describe('release workflow contract', () => {
     const build = binary.jobs.build.steps.find((step) => step.name === 'Build binary').run
     const source = binary.jobs.build.steps.find((step) => step.id === 'source')
     const pack = binary.jobs.build.steps.find((step) => step.name === 'Package asset').run
-    assert.equal(binary.env.BUN_VERSION, '1.4.2')
+    assert.equal(binary.env.BUN_VERSION, '1.4.4')
     assert.match(source.run, /git rev-parse HEAD/)
     assert.match(build, /bun scripts\/build-embedded-assets\.ts/)
     assert.doesNotMatch(build, /bun scripts\/build-viewer\.ts/)
@@ -384,7 +384,7 @@ describe('release workflow contract', () => {
     assert.match(guide, /Every push to\s+`main` runs \*\*Release Please\*\*/)
     assert.match(guide, /No manual dispatch or environment approval gates that\s+pull request/)
     assert.match(guide, /protected `cli-release` publication job/)
-    assert.match(guide, /Bun\s+1\.4\.2/)
+    assert.match(guide, /Bun\s+1\.4\.4/)
     assert.match(decision, /one consumer distribution/)
     assert.match(decision, /permanently discontinued/)
     assert.match(decision, /Every push to `main` runs Release Please automatically/)

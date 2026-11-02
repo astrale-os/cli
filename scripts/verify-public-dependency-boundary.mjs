@@ -146,7 +146,7 @@ assert.equal(
 const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
 assert.equal(
   (await readFile('.bun-version', 'utf8')).trim(),
-  '1.4.2',
+  '1.4.4',
   'CLI must pin the local Bun 1.4 runtime',
 )
 assert.equal(cliManifest.packageManager, 'pnpm@12.1.0', 'CLI must pin the qualification pnpm')
@@ -159,7 +159,7 @@ assert.equal(
 )
 assert.equal(
   cliManifest.devDependencies?.['bun-types'],
-  '1.4.2',
+  '1.4.4',
   'CLI root must pin the Bun 1.4 type package',
 )
 assert.equal(

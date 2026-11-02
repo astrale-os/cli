@@ -19,7 +19,7 @@ stable ingress lifecycle. Neither requires a CLI-bundled tunnel executable.
 3. That merge runs **Release Please** again. It creates the `cli/v<version>` tag
    and a draft release, then calls **CLI Release** without another manual
    dispatch or approval.
-4. **CLI Release** tests and builds the four Bun 1.4.2 toolchains. Each CLI
+4. **CLI Release** tests and builds the four Bun 1.4.4 toolchains. Each CLI
    embeds Studio, viewer assets, and the release's Skills. Current source has no
    provider binary pin, acquisition script, or separate provider license asset.
    Intel macOS builds receive an explicit ad-hoc signature because Bun's built-in
