@@ -208,10 +208,15 @@ Main command groups:
 
 | Group | What it covers |
 |-------|----------------|
-| Kernel | `get`, `download`, `mutate`, `call`, `execution`, `query`, `introspect`, `logs`, `view`, `token` |
+| Kernel | `get`, `upload`, `download`, `mutate`, `call`, `execution`, `query`, `introspect`, `logs`, `view`, `token` |
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `domain`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
+
+Files go through the Kernel: `astrale upload <file>` streams one (at most 100 MiB)
+and prints the receipt a blob property or a Domain callable's file field takes;
+`astrale call <path> --file <field>=<file>` uploads and passes the receipt in one
+step; `astrale download <node> <property> -o <file>` streams it back, verified.
 
 `astrale view <origin>` opens a Domain's entrypoint View (`--view <name>` picks
 another, `--list` prints them all); `astrale view /:<origin>:view.<name>` opens

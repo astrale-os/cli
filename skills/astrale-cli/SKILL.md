@@ -1,6 +1,6 @@
 ---
 name: astrale-cli
-description: Reference for the standalone Astrale CLI (`astrale`) - setup, graph reads and mutations, kernel calls, instances, domains, identities, delegation, journals, views, output, debugging, and local storage.
+description: Reference for the standalone Astrale CLI (`astrale`) - setup, graph reads and mutations, file upload and download, kernel calls, instances, domains, identities, delegation, journals, views, output, debugging, and local storage.
 ---
 
 # Astrale CLI
@@ -30,6 +30,7 @@ astrale status
 astrale whoami
 astrale use <name>
 astrale get <target>
+astrale upload <file> [--media-type <type>]
 astrale download <node> <property> -o <file>
 astrale query [sources...]
 astrale introspect <origin-or-path>
@@ -471,6 +472,60 @@ only when complete. `--json` describes the written file
 a redirected stdout (`-o -` forces it); a terminal is refused. Missing and
 unreadable files are both `BLOB_NOT_FOUND` or `FILE_NOT_FOUND`.
 
+### Files: `upload` and `call --file`
+
+A file goes to the Kernel first, then travels as a receipt. `upload` streams it
+from disk (never held in memory; at most 100 MiB) as the selected identity and
+prints the receipt:
+
+```bash
+astrale upload ./report.pdf                       # receipt, digest, media type, size, expiry
+astrale upload ./scan.bin --media-type image/png --json
+RECEIPT=$(astrale upload ./report.pdf --raw)      # the receipt alone
+```
+
+The media type follows the extension (`text/csv`, `application/pdf`, ...; no
+parameters; `application/octet-stream` when unknown); `--media-type` declares
+another, exactly as a blob property's `mediaTypes` lists it. `--json` prints
+`{ receipt, digest, mediaType, size, expiresAt, file }`. Nothing is attached by
+an upload. The receipt is:
+
+- the value a blob property accepts in `mutate` (`props` key set to the receipt
+  string): the Kernel checks the property's `maxBytes` and `mediaTypes` then;
+- the value of a Domain callable's file field: a string input field that
+  carries the receipt; the Domain attaches it for you (`ctx.kernel.caller`).
+
+A receipt binds to the identity that uploaded it: it works for that identity's
+`mutate` and for a Domain acting for that identity, never for anyone else. It
+expires (`expiresAt`; Kernels are moving to 15 minutes), so upload just before
+use. A refused or expired receipt (`MUTATION_BLOB_RECEIPT_INVALID`,
+`BLOB_RECEIPT_INVALID`) means upload again; the hint says so.
+
+`call --file <field>=<file>` uploads and calls in one step: each file is
+uploaded right before the call and its receipt is put at `<field>` of the input.
+`<field>` is a top-level key or a JSON Pointer (`/attachments/0`,
+`/attachments/-` appends, `/ast/operations/0/props/<key>`); it combines with
+`key=value`, `--data` and stdin input, must not already hold a value, and is
+repeatable:
+
+```bash
+astrale call /:sextant.so:class.TrialBalance:import fiscalYear=2026 --file balance=./tb.csv
+astrale call /:mail.example:function.send -d @mail.json \
+  --file /attachments/-=./a.pdf --file /attachments/-=./b.pdf
+astrale call /:sextant.so:class.TrialBalance:import --file balance=./tb.csv --dry-run  # placeholder, no upload
+```
+
+Coming with a Kernel release (not released yet): a DSL `file()` input field
+appears in `introspect` as `{ "type": "string", "x-astrale-value-kind": "file",
+"x-astrale-file": { "maxBytes"?, "mediaTypes"? } }`. `call --file` already reads
+that marker and refuses a file over `maxBytes` (`FILE_TOO_LARGE`) or of an
+unlisted media type (`FILE_MEDIA_TYPE_REFUSED`) before uploading; today's plain
+string fields are filled without checks.
+
+Local errors, before anything is sent: `FILE_MISSING`, `FILE_UNREADABLE`,
+`FILE_TOO_LARGE` (over 100 MiB), `MEDIA_TYPE_INVALID`, `FILE_INPUT_INVALID` (a
+malformed `--file`), `FILE_INPUT_CONFLICT` (the field already holds a value).
+
 ### `introspect`
 
 `introspect` reads the Kernel Schema syscall for one installed Domain.
@@ -523,6 +578,14 @@ astrale mutate --file mutation.v3.json --dry
 astrale mutate --file mutation.v3.json
 ```
 
+A blob property takes an upload receipt, never a Ref or bytes; `props` keys are
+full Property keys:
+
+```bash
+RECEIPT=$(astrale upload ./report.pdf --raw)
+astrale mutate --data '{"operations":[{"op":"node.create","as":"doc","class":"notes.example:class.Document","props":{"notes.example:class.Document.property.content":"'"$RECEIPT"'"}}]}'
+```
+
 ## Calls
 
 `astrale call` creates one Path-targeted Call. Input priority is `--data`,
@@ -553,6 +616,9 @@ astrale call /:assets.example:class.Asset:render id=123 --output asset.png
 astrale call /:blog.example:class.Author:create -d @author.json
 astrale call /:admin.astrale.ai:class.Instance:list --admin --json
 ```
+
+`--file <field>=<file>` uploads a file and passes its receipt at that input
+field; see [Files](#files-upload-and-call---file).
 
 Top-level `key=value` values coerce booleans, null, numbers, arrays, and
 objects. Use `--data` for nested or digits-only string values. `--data` also

@@ -38,6 +38,9 @@ Choose required versus optional from the business invariant, not fixture conveni
 native node properties rather than redeclaring them. Preserve timestamps and identities through
 SDK-owned canonical types.
 
+A file is a blob property, `property(schema.values.blob({ maxBytes, mediaTypes }))` with `schema`
+from `@astrale-os/sdk/schema`: it reads as its `Ref` and is written with an upload receipt. Read `files.md` for how a callable receives one.
+
 Declare `immutable` when the business invariant forbids rewriting a value, for example a contract
 file or a source digest: `property(schema, { immutable: 'create' })` accepts the value only when the
 node or edge is created; `property(schema, { required: false, immutable: 'once' })` also accepts one
