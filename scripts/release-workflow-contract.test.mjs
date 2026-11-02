@@ -79,30 +79,35 @@ describe('release workflow contract', () => {
     assert.match(summary.run, /ASTRALE_CHANNEL=\$\{\{ steps\.meta\.outputs\.channel \}\} sh/)
   })
 
-  it('updates the mutable channel ref through authenticated GitHub API calls', () => {
-    const channel = binary.jobs.publish.steps.find(
-      (step) => step.name === 'Publish channel release',
-    )
-    assert.equal(channel.env.BINARY_VERSION, '${{ steps.meta.outputs.binary_version }}')
-    assert.match(channel.run, /gh api --method PATCH/)
-    assert.match(channel.run, /gh api --method POST/)
-    assert.match(channel.run, /git\/refs\/tags\/\$CHANNEL/)
+  it('moves a channel only as a pointer file, after qualifying the immutable release', () => {
+    const steps = binary.jobs.publish.steps
+    const index = (name) => steps.findIndex((step) => step.name === name)
+    const channel = steps[index('Publish channel pointer')]
+    assert.equal(channel.if, "steps.meta.outputs.immutable_tag != ''")
+    assert.equal(channel.env.EXPECTED_COMMIT, '${{ steps.source.outputs.sha }}')
     assert.match(
       channel.run,
-      /node \.release-tooling\/scripts\/publish-release-assets\.mjs --mutable "\$CHANNEL" release-assets/,
+      /node \.release-tooling\/scripts\/publish-channel-pointer\.mjs "\$CHANNEL" release-assets\/manifest\.json/,
     )
-    assert.doesNotMatch(channel.run, /git push/)
-    assert.match(channel.run, /compare\/\$current_sha\.\.\.\$EXPECTED_COMMIT/)
-    assert.match(channel.run, /ahead\)/)
-    assert.match(channel.run, /identical\)/)
+    assert.ok(
+      index('Publish immutable version release') < index('Qualify the published version binary') &&
+        index('Qualify the published version binary') < index('Publish channel pointer'),
+    )
+    // GitHub seals an immutable release on any edit: nothing may edit, upload to or retag a channel.
+    const workflow = read('.github/workflows/cli-release.yml')
+    assert.doesNotMatch(workflow, /Publish channel release/u)
+    assert.doesNotMatch(workflow, /--mutable/u)
+    assert.doesNotMatch(workflow, /gh release (edit|upload|create) "\$CHANNEL"/u)
+    assert.doesNotMatch(workflow, /git\/refs\/tags\/\$CHANNEL/u)
+    assert.doesNotMatch(
+      read('scripts/promote.mjs'),
+      /'release',\s*previous|'edit'|git\/refs\/tags/u,
+    )
   })
 
   it('delegates immutable and channel asset publication to the qualified helper', () => {
     const immutable = binary.jobs.publish.steps.find(
       (step) => step.name === 'Publish immutable version release',
-    )
-    const channel = binary.jobs.publish.steps.find(
-      (step) => step.name === 'Publish channel release',
     )
     const toolingCheckouts = binary.jobs.publish.steps.filter(
       (step) =>
@@ -125,6 +130,7 @@ describe('release workflow contract', () => {
     const publish = immutable.run.indexOf('gh release edit "$TAG" --draft=false')
     assert.ok(upload >= 0 && publish > upload, 'assets must be uploaded before publication')
     assert.match(immutable.run, /releases\/tags\/\$TAG" --jq \.immutable/)
+    assert.match(immutable.run, /::error::\$TAG is published but not immutable[\s\S]*exit 1/u)
     assert.ok(
       immutable.run.indexOf(' --verify-tag "$TAG" "$EXPECTED_COMMIT"') <
         immutable.run.indexOf('gh release create'),
@@ -132,14 +138,6 @@ describe('release workflow contract', () => {
     )
     assert.doesNotMatch(immutable.run, /--clobber/)
     assert.doesNotMatch(immutable.run, /release upload .*release-assets\/\*/)
-    assert.doesNotMatch(channel.run, /release upload .*release-assets\/\*/)
-    assert.doesNotMatch(channel.run, /ahead\|identical/)
-    assert.equal(channel.run.match(/gh api --method PATCH/gu)?.length, 1)
-    assert.ok(
-      channel.run.indexOf('ahead)') < channel.run.indexOf('gh api --method PATCH') &&
-        channel.run.indexOf('gh api --method PATCH') < channel.run.indexOf('identical)'),
-      'an identical recovered channel ref must not be patched again',
-    )
     assert.deepEqual(binary.jobs.publish.concurrency, {
       group: 'cli-release-channel-publication',
       'cancel-in-progress': false,
@@ -158,7 +156,11 @@ describe('release workflow contract', () => {
     assert.equal(binary.jobs.publish.permissions.attestations, 'write')
     // A called workflow cannot exceed its caller: Release Please must grant every publish permission.
     for (const [scope, access] of Object.entries(binary.jobs.publish.permissions)) {
-      assert.equal(release.jobs.binary.permissions?.[scope], access, `release.yml must grant ${scope}`)
+      assert.equal(
+        release.jobs.binary.permissions?.[scope],
+        access,
+        `release.yml must grant ${scope}`,
+      )
     }
   })
 
@@ -312,9 +314,9 @@ describe('release workflow contract', () => {
     )
 
     const publishedQualification = binary.jobs.publish.steps.find(
-      (step) => step.name === 'Qualify the published channel binary',
+      (step) => step.name === 'Qualify the published version binary',
     )
-    assert.match(publishedQualification.run, /gh release download "\$CHANNEL"/)
+    assert.match(publishedQualification.run, /gh release download "\$TAG"/)
     assert.match(publishedQualification.run, /astrale-linux-x64\.tar\.gz/)
     assert.match(publishedQualification.run, /scripts\/qualification\/skills-update-e2e\.mjs/)
     assert.equal(
