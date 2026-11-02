@@ -1,8 +1,9 @@
 import type { ResolvedView } from '@astrale-os/shell'
 
 import { Path } from '@astrale-os/sdk/graph/path'
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 
+import * as connection from '../../connection'
 import { adminSessionOptions } from '../../connection/target'
 import { captureProcess, ExitError } from './fixtures/process'
 
@@ -16,6 +17,13 @@ const abMock = mock(async (_args: string[]) => ({
 const findAgentBrowserMock = mock(async () => '/usr/bin/agent-browser' as string | null)
 
 const io = captureProcess()
+
+// Bun patches an already-loaded module in place, and the patch reaches ./self through the
+// re-export: restore the real exports so later suites (connection/__tests__/self) see them.
+const realConnection = { ...connection }
+afterAll(() => {
+  mock.module('../../connection', () => realConnection)
+})
 
 // A module mock holds for the whole Bun process: other suites rely on the real Admin option filter.
 mock.module('../../connection', () => ({
