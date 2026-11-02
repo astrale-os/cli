@@ -16,7 +16,7 @@
     "build": "vite build",
     "start": "bun server/index.ts",
     "dev:client": "vite",
-    "test": "bun test client/src server shared",
+    "test": "bun test --isolate client/src server shared",
     "test:e2e": "pnpm build && playwright test",
     "typecheck": "tsgo --noEmit"
   },

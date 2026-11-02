@@ -6,6 +6,8 @@
   "prerelease-type": "beta",
   "tag-separator": "/",
   "always-update": true,
+  "draft": true,
+  "force-tag-creation": true,
   "packages": {
     ".": {}
   },

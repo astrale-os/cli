@@ -16,8 +16,9 @@ stable ingress lifecycle. Neither requires a CLI-bundled tunnel executable.
    pull request.
 2. Merge the release pull request when its version, changelog, `package.json`,
    and release manifest are ready. Release Please never merges it automatically.
-3. That merge runs **Release Please** again. It creates `cli/v<version>` and
-   calls **CLI Release** without another manual dispatch or approval.
+3. That merge runs **Release Please** again. It creates the `cli/v<version>` tag
+   and a draft release, then calls **CLI Release** without another manual
+   dispatch or approval.
 4. **CLI Release** tests and builds the four Bun 1.4.2 toolchains. Each CLI
    embeds Studio, viewer assets, and the release's Skills. Current source has no
    provider binary pin, acquisition script, or separate provider license asset.
@@ -25,9 +26,45 @@ stable ingress lifecycle. Neither requires a CLI-bundled tunnel executable.
    signer currently handles ARM64 only. macOS builds must pass strict code-signature
    verification both before execution and after archive extraction. A failing signature blocks publication; these
    ad-hoc signatures do not provide Developer ID or Apple notarization.
-5. The protected `cli-release` publication job uploads the immutable assets,
-   then advances the requested channel release. Its environment restricts allowed
-   branches; it currently requires no manual reviewer approval.
+5. The protected `cli-release` publication job attests the build provenance of
+   the four archives, uploads every asset to the draft and only then publishes
+   it: publication seals an immutable release, its tag and assets can no longer
+   change. It qualifies the published binary, then advances the requested
+   channel pointer. Its environment restricts allowed branches; it currently
+   requires no manual reviewer approval.
+
+## Immutable releases
+
+`cli/v<version>` releases are immutable once published: **Enable release
+immutability** must stay on in the repository settings (Settings → General →
+Releases). The publication job fails, and moves no channel, when a published
+version release is not immutable.
+
+## Channels
+
+A channel (`beta`, `latest`) is a pointer, never a release: GitHub seals an
+immutable release on any edit, including a release that predates the setting.
+Each channel is one file, `<channel>/manifest.json`, on the orphan
+`release-channels` branch. It holds the version's manifest with its `channel`
+and source `commit`. **CLI Release** writes the `beta` pointer after
+qualifying the immutable release, and only to a descendant of the commit it
+holds; promotion writes `latest`. The pointer only selects a version: clients
+download bytes from that `cli/v<version>` release.
+
+Never edit, upload to, or retag the historical `beta` and `latest` releases.
+Editing `beta` on 2026-11-02 sealed it on the 1.0.0-beta.155 archives, so
+binaries that still read `releases/download/beta` stay on that version, and
+`latest` stays on its last promoted version for binaries that read
+`releases/download/latest`. Both are complete and safe; such installations
+move on by reinstalling.
+
+The provenance of an archive is verifiable without trusting the release that
+serves it:
+
+```bash
+gh attestation verify astrale-linux-x64.tar.gz --repo astrale-os/cli \
+  --signer-workflow astrale-os/cli/.github/workflows/cli-release.yml
+```
 
 Never edit release versions or push release tags manually. `CLI Release` may be
 dispatched directly only to recover an existing version or create an explicit
@@ -38,14 +75,14 @@ canary; it has no push or tag trigger.
 ```bash
 gh run list --repo astrale-os/cli --workflow "Release Please" --limit 5
 gh release view --repo astrale-os/cli "cli/v<version>"
-gh release view --repo astrale-os/cli beta
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/release-channels/beta/manifest.json
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 astrale --version
 astrale update --check --json
 astrale skills status --json
 ```
 
-The immutable and movable releases must contain `manifest.json`,
+Every `cli/v<version>` release must contain `manifest.json`,
 `sha256sums.txt`, and all four platform archives (`darwin`/`linux` by
 `arm64`/`x64`). Every current archive contains exactly `astrale`. The manifest
 records the release version, compiled `binaryVersion`, channel, repository, and
@@ -119,10 +156,11 @@ rejected before any public write, including during rollback.
 From a checkout with Node and authenticated `gh`:
 
 ```bash
-# Discover exact cli/v tags; ignore the moving beta/latest channel releases.
+# Discover exact cli/v tags; ignore the historical beta/latest channel releases.
 gh release list --repo astrale-os/cli --limit 20 --json tagName,publishedAt
 
-# Read-only: qualify the source workflow, download all six assets, and verify their hashes.
+# Read-only: require an immutable release, qualify the source workflow, download all six
+# assets, and verify their hashes.
 node scripts/promote.mjs cli/v1.0.0-beta.133
 ```
 
@@ -140,7 +178,7 @@ gh workflow run promote.yml --repo astrale-os/cli --ref main \
 gh run list --repo astrale-os/cli --workflow promote.yml --limit 10 \
   --json databaseId,displayTitle,status,conclusion,url
 gh run watch <matching-run-id> --repo astrale-os/cli --exit-status
-gh release view latest --repo astrale-os/cli --json tagName,body,assets
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/release-channels/latest/manifest.json
 astrale update --channel latest --check --json
 ```
 
@@ -148,9 +186,9 @@ Apply uses the existing protected `cli-release` environment and `GITHUB_TOKEN`, 
 ordinary channel publication. The existing environment rules apply; promotion adds no new approval
 gate. The script checks a successful binary publication qualification
 on the exact release commit (including reusable CLI Release jobs within Release Please), all archive
-hashes, checksums, and the manifest. It copies the existing archives without rebuilding, sets only the
-copied manifest's `channel` to `latest`, and verifies the resulting ref and all six assets. It never
-executes tooling from the selected old release.
+hashes, checksums, and the manifest, and refuses a release that is not immutable. It then writes the
+`latest` pointer (that manifest with `channel: latest` and the release commit) and verifies it. It
+writes no release, asset or tag, and never executes tooling from the selected old release.
 
 ### First activation
 
@@ -171,12 +209,10 @@ No implicit fallback to beta is used when latest is absent or unavailable.
 
 ### Rerun and rollback
 
-Rerun the same promotion to finish an interrupted upload. To roll back, select a previous qualified single-binary
-`cli/v...` release with the same command. The manifest and archives retain that exact version;
-`astrale update --channel latest` permits moving to it even if older than the installed version.
-SDK and CLI releases are promoted separately: verify the intended pair against the deployed Kernel.
+Rerunning the same promotion writes nothing. To roll back, select a previous qualified, immutable
+`cli/v...` release with the same command; `astrale update --channel latest` permits moving to it
+even if older than the installed version. SDK and CLI releases are promoted separately: verify the
+intended pair against the deployed Kernel.
 
-GitHub channel refs and six release assets cannot change atomically. During replacement an installer
-may see inconsistent hashes and fail safely; retry after the promotion succeeds. A failed promotion
-may leave a partial channel, so rerun it before declaring success. Local `--apply` is for authorized
+A pointer is one file, so a promotion replaces it atomically. Local `--apply` is for authorized
 bootstrap/recovery using an existing `gh` login; do not run it concurrently with workflow publication.
