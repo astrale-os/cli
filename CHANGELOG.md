@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.158](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.157...cli/v1.0.0-beta.158) (2026-11-02)
+
+
+### Bug Fixes
+
+* **lib:** install from the version release a channel pointer names ([#742](https://github.com/astrale-os/cli/issues/742)) ([55f3da1](https://github.com/astrale-os/cli/commit/55f3da15a92afca2576a2a5cc13e33f37c665038))
+
 ## [1.0.0-beta.157](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.156...cli/v1.0.0-beta.157) (2026-11-02)
 
 
