@@ -59,15 +59,13 @@ native smoke mismatch fails `CLI Release` before publication.
 The installer and `astrale update` read a channel only for the version its
 pointer names (`<channel>/manifest.json` on the `release-channels` branch).
 They download the manifest, checksums and archive from that version's
-`cli/v<version>` release, and only once the GitHub API reports it as published
-and `immutable`; otherwise they refuse and leave the installation unchanged.
-They never download from a channel release.
-`astrale update --check` reads only the channel pointer. An
+`cli/v<version>` release, which GitHub seals once it is published, and refuse
+a release whose manifest describes another version. They never download from a
+channel release. `astrale update --check` reads only the channel pointer. An
 `ASTRALE_DOWNLOAD_BASE` or `ASTRALE_UPDATE_BASE` mirror is read as is.
 
-Releases published before immutability was enabled can no longer be
-installed. `install.sh` is served from `main`, so `latest` and `beta` must
-always point at immutable version releases.
+`install.sh` is served from `main` and reads the `latest` pointer by default,
+so that pointer must exist before this behavior reaches `main`.
 
 ## Compatibility
 

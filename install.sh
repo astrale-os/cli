@@ -15,8 +15,7 @@ set -eu
 #   ASTRALE_DOWNLOAD_BASE  direct asset base URL override (a mirror, read as is)
 #
 # A channel is a pointer file on the release-channels branch naming the version to install: the
-# executable comes from that version's published cli/v<version> release, which GitHub must report
-# as immutable.
+# executable comes from that version's published cli/v<version> release, which GitHub seals.
 
 BOLD="$(printf '\033[1m')"
 DIM="$(printf '\033[2m')"
@@ -89,8 +88,6 @@ resolve_download_base() {
   github="${github%/}"
   raw="${ASTRALE_GITHUB_RAW_URL:-https://raw.githubusercontent.com}"
   raw="${raw%/}"
-  api="${ASTRALE_GITHUB_API_URL:-https://api.github.com}"
-  api="${api%/}"
   if [ -n "${ASTRALE_VERSION:-}" ]; then
     version="${ASTRALE_VERSION#cli/v}"
     version="${version#v}"
@@ -106,10 +103,6 @@ resolve_download_base() {
   esac
 
   tag="cli/v$version"
-  download "$api/repos/$repo/releases/tags/$tag" "$tmp/release.json" ||
-    error "Could not verify that the Astrale CLI release $tag is immutable."
-  grep -Eq '"immutable"[[:space:]]*:[[:space:]]*true' "$tmp/release.json" ||
-    error "The Astrale CLI release $tag is not an immutable GitHub release; refusing to install it."
   base="$github/$repo/releases/download/$tag"
 }
 

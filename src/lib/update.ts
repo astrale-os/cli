@@ -36,9 +36,6 @@ const InstallMetadataSchema = z.object({
 
 export type InstallMetadata = z.infer<typeof InstallMetadataSchema>
 
-/** The fields of a GitHub release that decide whether its assets can still change. */
-const GitHubReleaseSchema = z.object({ draft: z.boolean(), immutable: z.boolean().optional() })
-
 const UpdateManifestSchema = z.object({
   version: z.string().min(1),
   binaryVersion: z.string().min(1),
@@ -168,8 +165,6 @@ async function assertOwnsInstallation(meta: InstallMetadata, executable: string)
 const githubUrl = () => (process.env.ASTRALE_GITHUB_URL ?? 'https://github.com').replace(/\/+$/, '')
 const githubRawUrl = () =>
   (process.env.ASTRALE_GITHUB_RAW_URL ?? 'https://raw.githubusercontent.com').replace(/\/+$/, '')
-const githubApiUrl = () =>
-  (process.env.ASTRALE_GITHUB_API_URL ?? 'https://api.github.com').replace(/\/+$/, '')
 
 function versionTag(version: string): string {
   return `cli/v${version.replace(/^cli\/v/, '').replace(/^v/, '')}`
@@ -188,44 +183,6 @@ export function releaseBase(
   return `${githubRawUrl()}/${repo}/release-channels/${request.channel ?? meta.channel}`
 }
 
-/**
- * The base the executable of `version` is downloaded from. A channel is a movable pointer; only
- * the published `cli/v<version>` release, once GitHub has made it immutable, guarantees the bytes
- * are the ones the release workflow uploaded.
- * An `ASTRALE_UPDATE_BASE` mirror is read as is.
- */
-async function immutableReleaseBase(
-  meta: Pick<InstallMetadata, 'repo' | 'channel'>,
-  version: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  const base = releaseBase(meta, { version })
-  if (process.env.ASTRALE_UPDATE_BASE) return base
-  const tag = versionTag(version)
-  let release: z.infer<typeof GitHubReleaseSchema>
-  try {
-    const url = `${githubApiUrl()}/repos/${meta.repo || DEFAULT_REPO}/releases/tags/${tag}`
-    release = GitHubReleaseSchema.parse(
-      JSON.parse((await download(url, signal, GITHUB_API_HEADERS)).toString('utf8')),
-    )
-  } catch (cause) {
-    throw new AstraleError(
-      'UPDATE_RELEASE_UNVERIFIED',
-      `Could not verify that the Astrale CLI release ${tag} is immutable.`,
-      cause instanceof Error ? cause.message : String(cause),
-      { cause },
-    )
-  }
-  if (release.draft || release.immutable !== true) {
-    throw new AstraleError(
-      'UPDATE_RELEASE_MUTABLE',
-      `The Astrale CLI release ${tag} is not an immutable GitHub release; refusing to install it.`,
-      'Only published, immutable cli/v<version> releases are installed.',
-    )
-  }
-  return base
-}
-
 function precedes(left: string, right: string): boolean {
   try {
     return compareVersions(left, right) < 0
@@ -235,19 +192,10 @@ function precedes(left: string, right: string): boolean {
   }
 }
 
-const GITHUB_API_HEADERS = {
-  accept: 'application/vnd.github+json',
-  'x-github-api-version': '2022-11-28',
-}
-
 /** GET a release file; `file://` bases serve local release directories. */
-async function download(
-  url: string,
-  signal?: AbortSignal,
-  headers?: Record<string, string>,
-): Promise<Buffer> {
+async function download(url: string, signal?: AbortSignal): Promise<Buffer> {
   if (url.startsWith('file://')) return readFile(new URL(url))
-  const response = await fetch(url, { signal, headers })
+  const response = await fetch(url, { signal })
   if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`)
   return Buffer.from(await response.arrayBuffer())
 }
@@ -372,7 +320,8 @@ export async function updateAstrale(request: UpdateRequest): Promise<UpdateResul
   }
   if (request.check) return { status: 'available', ...release }
 
-  const base = await immutableReleaseBase(meta, pointer.version, request.signal)
+  // Bytes come only from the version release, which GitHub seals once published.
+  const base = releaseBase(meta, { version: pointer.version })
   const manifest = base === pointerBase ? pointer : await readManifest(base, request.signal)
   if (manifest.version !== pointer.version) {
     throw new AstraleError(
