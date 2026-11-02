@@ -156,6 +156,10 @@ describe('release workflow contract', () => {
     assert.equal(steps[attest].with['subject-path'], 'release-assets/astrale-*.tar.gz')
     assert.equal(binary.jobs.publish.permissions['id-token'], 'write')
     assert.equal(binary.jobs.publish.permissions.attestations, 'write')
+    // A called workflow cannot exceed its caller: Release Please must grant every publish permission.
+    for (const [scope, access] of Object.entries(binary.jobs.publish.permissions)) {
+      assert.equal(release.jobs.binary.permissions?.[scope], access, `release.yml must grant ${scope}`)
+    }
   })
 
   it('builds every supported standalone platform exactly once per release run', () => {
