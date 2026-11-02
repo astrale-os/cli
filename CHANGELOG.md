@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.0-beta.157](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.156...cli/v1.0.0-beta.157) (2026-11-02)
+
+
+* cut the first release with channel pointers ([#749](https://github.com/astrale-os/cli/issues/749)) ([7655d6c](https://github.com/astrale-os/cli/commit/7655d6c31683435414c796d0afa0d3db7292d7dd))
+
 ## [1.0.0-beta.156](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.155...cli/v1.0.0-beta.156) (2026-11-02)
 
 
