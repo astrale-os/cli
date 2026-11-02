@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.0-beta.156](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.155...cli/v1.0.0-beta.156) (2026-11-02)
+
+
+* cut the first immutable CLI release ([#746](https://github.com/astrale-os/cli/issues/746)) ([906a916](https://github.com/astrale-os/cli/commit/906a916d2af45e49adc64a9f1d3deea98c9313d7))
+
 ## [1.0.0-beta.155](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.154...cli/v1.0.0-beta.155) (2026-10-27)
 
 
