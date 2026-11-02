@@ -12,7 +12,10 @@ set -eu
 #   ASTRALE_VERSION      exact release tag/version to install (for example 0.4.0-alpha.7)
 #   ASTRALE_CHANNEL      release channel when ASTRALE_VERSION is unset (latest|alpha|beta|rc|canary|stable)
 #   ASTRALE_REPO         GitHub repo override (default: astrale-os/cli)
-#   ASTRALE_DOWNLOAD_BASE  direct asset base URL override
+#   ASTRALE_DOWNLOAD_BASE  direct asset base URL override (a mirror, read as is)
+#
+# A channel is a pointer file on the release-channels branch naming the version to install: the
+# executable comes from that version's published cli/v<version> release, which GitHub seals.
 
 BOLD="$(printf '\033[1m')"
 DIM="$(printf '\033[2m')"
@@ -72,22 +75,35 @@ detect_arch() {
   esac
 }
 
+# Set base (the release the executable is downloaded from) and pointer_channel.
 resolve_download_base() {
+  pointer_channel=""
   if [ -n "${ASTRALE_DOWNLOAD_BASE:-}" ]; then
-    printf '%s' "${ASTRALE_DOWNLOAD_BASE%/}"
+    base="${ASTRALE_DOWNLOAD_BASE%/}"
     return
   fi
 
   repo="${ASTRALE_REPO:-astrale-os/cli}"
+  github="${ASTRALE_GITHUB_URL:-https://github.com}"
+  github="${github%/}"
+  raw="${ASTRALE_GITHUB_RAW_URL:-https://raw.githubusercontent.com}"
+  raw="${raw%/}"
   if [ -n "${ASTRALE_VERSION:-}" ]; then
     version="${ASTRALE_VERSION#cli/v}"
     version="${version#v}"
-    printf 'https://github.com/%s/releases/download/cli/v%s' "$repo" "$version"
-    return
+  else
+    channel="${ASTRALE_CHANNEL:-latest}"
+    download "$raw/$repo/release-channels/$channel/manifest.json" "$tmp/channel.json"
+    version="$(json_string_field "$tmp/channel.json" version)"
+    pointer_channel="$(json_string_field "$tmp/channel.json" channel)"
+    [ -n "$pointer_channel" ] || pointer_channel="$channel"
   fi
+  case "$version" in
+    '' | *[!A-Za-z0-9.+-]*) error "Invalid Astrale CLI release version: $version" ;;
+  esac
 
-  channel="${ASTRALE_CHANNEL:-latest}"
-  printf 'https://github.com/%s/releases/download/%s' "$repo" "$channel"
+  tag="cli/v$version"
+  base="$github/$repo/releases/download/$tag"
 }
 
 verify_checksum() {
@@ -166,7 +182,7 @@ main() {
   acquire_install_lock
 
   need tar
-  base="$(resolve_download_base)"
+  resolve_download_base
 
   printf '\n%sAstrale CLI installer%s\n' "$BOLD" "$NC"
   info "platform: ${os}/${arch}"
@@ -177,6 +193,10 @@ main() {
   download "$base/sha256sums.txt" "$tmp/sha256sums.txt"
   download "$base/manifest.json" "$tmp/manifest.json"
   verify_checksum "$tmp/$asset" "$tmp/sha256sums.txt"
+  if [ -n "${version:-}" ]; then
+    [ "$(json_string_field "$tmp/manifest.json" version)" = "$version" ] ||
+      error "The Astrale CLI release $tag describes another version."
+  fi
 
   # Keep the single-binary wire format understood by existing installations.
   schema_version="$(sed -n 's/^[[:space:]]*"schemaVersion"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p' "$tmp/manifest.json" | tr -d '[:space:]')"
@@ -205,7 +225,7 @@ main() {
   channel="${ASTRALE_CHANNEL:-latest}"
   repo="${ASTRALE_REPO:-astrale-os/cli}"
   release_version="$(json_string_field "$tmp/manifest.json" version)"
-  release_channel="$(json_string_field "$tmp/manifest.json" channel)"
+  release_channel="${pointer_channel:-$(json_string_field "$tmp/manifest.json" channel)}"
   [ -n "$release_version" ] || release_version="$installed_version"
   [ -n "$release_channel" ] || release_channel="$channel"
   escaped_channel="$(json_escape "$release_channel")"

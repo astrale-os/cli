@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,6 +9,8 @@ import { readInstallMetadata, releaseBase, updateAstrale, type UpdateRequest } f
 const roots: string[] = []
 afterEach(async () => {
   delete process.env.ASTRALE_UPDATE_BASE
+  delete process.env.ASTRALE_GITHUB_URL
+  delete process.env.ASTRALE_GITHUB_RAW_URL
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -236,6 +238,99 @@ describe('standalone update', () => {
     expect(releaseBase(meta, { version: 'cli/v1.2.3' })).toBe(
       'https://github.com/astrale-os/cli/releases/download/cli/v1.2.3',
     )
-    expect(releaseBase(meta, {})).toBe('https://github.com/astrale-os/cli/releases/download/latest')
+    expect(releaseBase(meta, {})).toBe(
+      'https://raw.githubusercontent.com/astrale-os/cli/release-channels/latest',
+    )
+  })
+})
+
+/**
+ * A script installation of 1.0.0 against a GitHub layout: the `beta` channel pointer names
+ * `pointerVersion`, `cli/v1.1.0` holds the release, and the legacy `beta` release serves
+ * `channelReports` bytes of its own.
+ */
+async function githubInstallation(channelReports = '1.1.0', pointerVersion = '1.1.0') {
+  const install = await installation('1.0.0', { version: '1.1.0', channel: 'beta' })
+  delete process.env.ASTRALE_UPDATE_BASE
+  const github = join(install.root, 'github')
+  const raw = join(install.root, 'raw')
+  const downloads = join(github, 'astrale-os', 'cli', 'releases', 'download')
+  await mkdir(join(downloads, 'cli'), { recursive: true })
+  await cp(join(install.root, 'release'), join(downloads, 'cli', 'v1.1.0'), { recursive: true })
+  await cp(join(install.root, 'release'), join(downloads, 'cli', 'v1.2.0'), { recursive: true })
+
+  // The legacy channel release carries a different, self-consistent archive and manifest.
+  const payload = join(install.root, 'channel-payload')
+  await mkdir(payload)
+  await mkdir(join(downloads, 'beta'))
+  await writeFile(join(payload, 'astrale'), script(channelReports, 'channel'), { mode: 0o755 })
+  const asset = join(downloads, 'beta', 'astrale-darwin-arm64.tar.gz')
+  expect(await Bun.spawn(['tar', '-C', payload, '-czf', asset, 'astrale']).exited).toBe(0)
+  const sha256 = new Bun.CryptoHasher('sha256').update(await readFile(asset)).digest('hex')
+  const legacy = {
+    version: '1.1.0',
+    binaryVersion: channelReports,
+    channel: 'beta',
+    assets: { 'darwin-arm64': { name: 'astrale-darwin-arm64.tar.gz', sha256 } },
+  }
+  await writeFile(join(downloads, 'beta', 'manifest.json'), JSON.stringify(legacy))
+  const pointer = join(raw, 'astrale-os', 'cli', 'release-channels', 'beta')
+  await mkdir(pointer, { recursive: true })
+  await writeFile(
+    join(pointer, 'manifest.json'),
+    JSON.stringify({ ...legacy, version: pointerVersion }),
+  )
+  process.env.ASTRALE_GITHUB_URL = `file://${github}`
+  process.env.ASTRALE_GITHUB_RAW_URL = `file://${raw}`
+  return install
+}
+
+describe('channel pointer resolution', () => {
+  test('a channel only names the version; the executable comes from its version release', async () => {
+    const install = await githubInstallation()
+    expect(await updateAstrale(install.request({ channel: 'beta' }))).toMatchObject({
+      status: 'updated',
+      currentVersion: '1.1.0',
+      channel: 'beta',
+    })
+    expect(await readFile(install.bin, 'utf8')).toContain('echo new')
+    expect(await readInstallMetadata(install.metadata)).toMatchObject({
+      version: '1.1.0',
+      channel: 'beta',
+    })
+  })
+
+  test('assets of a legacy channel release are never installed', async () => {
+    const install = await githubInstallation('6.6.6')
+    expect((await updateAstrale(install.request({ channel: 'beta' }))).status).toBe('updated')
+    expect(await readFile(install.bin, 'utf8')).toContain('echo new')
+  })
+
+  test('a version release describing another version leaves the installation unchanged', async () => {
+    const install = await githubInstallation('1.1.0', '1.2.0')
+    const before = await install.state()
+    await expect(updateAstrale(install.request({ channel: 'beta' }))).rejects.toMatchObject({
+      code: 'UPDATE_RELEASE_MISMATCH',
+    })
+    expect(await install.state()).toEqual(before)
+  })
+
+  test('a check reads only the channel pointer', async () => {
+    const install = await githubInstallation()
+    await rm(join(install.root, 'github'), { recursive: true })
+    expect(await updateAstrale(install.request({ channel: 'beta', check: true }))).toMatchObject({
+      status: 'available',
+      latestVersion: '1.1.0',
+    })
+  })
+
+  test('release URLs follow the GitHub bases', () => {
+    process.env.ASTRALE_GITHUB_URL = 'https://mirror.example/'
+    process.env.ASTRALE_GITHUB_RAW_URL = 'https://raw.example/'
+    const meta = { repo: 'astrale-os/cli', channel: 'beta' }
+    expect(releaseBase(meta, {})).toBe('https://raw.example/astrale-os/cli/release-channels/beta')
+    expect(releaseBase(meta, { version: '1.2.3' })).toBe(
+      'https://mirror.example/astrale-os/cli/releases/download/cli/v1.2.3',
+    )
   })
 })

@@ -91,6 +91,19 @@ four required asset digests. It uses the existing single-binary format (no
 introduce a new manifest API. A closure, version, checksum, or
 native smoke mismatch fails `CLI Release` before publication.
 
+## Installed bytes
+
+The installer and `astrale update` read a channel only for the version its
+pointer names (`<channel>/manifest.json` on the `release-channels` branch).
+They download the manifest, checksums and archive from that version's
+`cli/v<version>` release, which GitHub seals once it is published, and refuse
+a release whose manifest describes another version. They never download from a
+channel release. `astrale update --check` reads only the channel pointer. An
+`ASTRALE_DOWNLOAD_BASE` or `ASTRALE_UPDATE_BASE` mirror is read as is.
+
+`install.sh` is served from `main` and reads the `latest` pointer by default,
+so that pointer must exist before this behavior reaches `main`.
+
 ## Compatibility
 
 Compatibility is forward-only: an existing standalone installation can upgrade

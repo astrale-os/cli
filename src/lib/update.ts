@@ -47,6 +47,8 @@ const UpdateManifestSchema = z.object({
   ),
 })
 
+type UpdateManifest = z.infer<typeof UpdateManifestSchema>
+
 export type Platform = { os: 'darwin' | 'linux'; arch: 'arm64' | 'x64' }
 
 /** A Bun-compiled executable can replace itself; any other runtime is managed elsewhere. */
@@ -160,6 +162,14 @@ async function assertOwnsInstallation(meta: InstallMetadata, executable: string)
   }
 }
 
+const githubUrl = () => (process.env.ASTRALE_GITHUB_URL ?? 'https://github.com').replace(/\/+$/, '')
+const githubRawUrl = () =>
+  (process.env.ASTRALE_GITHUB_RAW_URL ?? 'https://raw.githubusercontent.com').replace(/\/+$/, '')
+
+function versionTag(version: string): string {
+  return `cli/v${version.replace(/^cli\/v/, '').replace(/^v/, '')}`
+}
+
 export function releaseBase(
   meta: Pick<InstallMetadata, 'repo' | 'channel'>,
   request: Pick<UpdateRequest, 'channel' | 'version'>,
@@ -167,10 +177,10 @@ export function releaseBase(
   if (process.env.ASTRALE_UPDATE_BASE) return process.env.ASTRALE_UPDATE_BASE.replace(/\/+$/, '')
   const repo = meta.repo || DEFAULT_REPO
   if (request.version) {
-    const version = request.version.replace(/^cli\/v/, '').replace(/^v/, '')
-    return `https://github.com/${repo}/releases/download/cli/v${version}`
+    return `${githubUrl()}/${repo}/releases/download/${versionTag(request.version)}`
   }
-  return `https://github.com/${repo}/releases/download/${request.channel ?? meta.channel}`
+  // A channel is a pointer file on the release-channels branch, never a release.
+  return `${githubRawUrl()}/${repo}/release-channels/${request.channel ?? meta.channel}`
 }
 
 function precedes(left: string, right: string): boolean {
@@ -208,6 +218,24 @@ async function extractBinary(archive: string, directory: string): Promise<string
   const binary = join(directory, 'astrale')
   await chmod(binary, 0o755)
   return binary
+}
+
+async function readManifest(base: string, signal?: AbortSignal): Promise<UpdateManifest> {
+  return UpdateManifestSchema.parse(
+    JSON.parse((await download(`${base}/manifest.json`, signal)).toString('utf8')),
+  )
+}
+
+function platformAsset(manifest: UpdateManifest, key: string): UpdateManifest['assets'][string] {
+  const asset = manifest.assets[key]
+  if (!asset) {
+    throw new AstraleError(
+      'UPDATE_ASSET_NOT_FOUND',
+      `No Astrale CLI release asset for ${key}.`,
+      `Available platforms: ${Object.keys(manifest.assets).join(', ')}`,
+    )
+  }
+  return asset
 }
 
 async function assertVersion(binary: string, expected: string): Promise<void> {
@@ -271,34 +299,37 @@ export async function updateAstrale(request: UpdateRequest): Promise<UpdateResul
   const currentVersion = meta.version ?? request.currentVersion
   const platform = request.platform ?? detectPlatform()
   const key = `${platform.os}-${platform.arch}`
-  const base = releaseBase(meta, {
+  // The requested release names the target version and channel. A channel release only points at
+  // a version: the executable and its digest come from that version's immutable release.
+  const pointerBase = releaseBase(meta, {
     channel: request.channel ?? meta.channel,
     version: request.version,
   })
-  const manifest = UpdateManifestSchema.parse(
-    JSON.parse((await download(`${base}/manifest.json`, request.signal)).toString('utf8')),
-  )
-  const asset = manifest.assets[key]
-  if (!asset) {
-    throw new AstraleError(
-      'UPDATE_ASSET_NOT_FOUND',
-      `No Astrale CLI release asset for ${key}.`,
-      `Available platforms: ${Object.keys(manifest.assets).join(', ')}`,
-    )
-  }
-  const release = { currentVersion, latestVersion: manifest.version, channel: manifest.channel }
-  if (currentVersion === manifest.version) return { status: 'up-to-date', ...release }
+  const pointer = await readManifest(pointerBase, request.signal)
+  platformAsset(pointer, key)
+  const release = { currentVersion, latestVersion: pointer.version, channel: pointer.channel }
+  if (currentVersion === pointer.version) return { status: 'up-to-date', ...release }
   // A beta installation ahead of `latest` waits for `latest` to catch up; the same channel moving
   // back (a rollback) is still followed.
   if (
     !request.explicit &&
-    manifest.channel !== meta.channel &&
-    precedes(manifest.version, currentVersion)
+    pointer.channel !== meta.channel &&
+    precedes(pointer.version, currentVersion)
   ) {
     return { status: 'up-to-date', ...release }
   }
   if (request.check) return { status: 'available', ...release }
 
+  // Bytes come only from the version release, which GitHub seals once published.
+  const base = releaseBase(meta, { version: pointer.version })
+  const manifest = base === pointerBase ? pointer : await readManifest(base, request.signal)
+  if (manifest.version !== pointer.version) {
+    throw new AstraleError(
+      'UPDATE_RELEASE_MISMATCH',
+      `The Astrale CLI release ${versionTag(pointer.version)} describes version ${manifest.version}.`,
+    )
+  }
+  const asset = platformAsset(manifest, key)
   const directory = await mkdtemp(join(tmpdir(), 'astrale-update-'))
   try {
     const bytes = await download(`${base}/${asset.name}`)
@@ -321,7 +352,7 @@ export async function updateAstrale(request: UpdateRequest): Promise<UpdateResul
         JSON.stringify(
           {
             ...meta,
-            channel: manifest.channel,
+            channel: pointer.channel,
             version: manifest.version,
             installedAt: new Date().toISOString(),
           },
@@ -334,7 +365,7 @@ export async function updateAstrale(request: UpdateRequest): Promise<UpdateResul
       status: 'updated',
       previousVersion: currentVersion,
       currentVersion: manifest.version,
-      channel: manifest.channel,
+      channel: pointer.channel,
       bin: meta.bin,
     }
   } finally {
