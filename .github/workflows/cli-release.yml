@@ -165,6 +165,9 @@ jobs:
     environment: cli-release
     permissions:
       contents: write
+      # Sigstore build provenance for every published archive.
+      id-token: write
+      attestations: write
     concurrency:
       group: cli-release-channel-publication
       cancel-in-progress: false
@@ -223,6 +226,10 @@ jobs:
             printf '\n  }\n'
             printf '}\n'
           } > manifest.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-assets/astrale-*.tar.gz
       - name: Publish immutable version release
         if: steps.meta.outputs.immutable_tag != ''
         env:
@@ -238,10 +245,19 @@ jobs:
           node .release-tooling/scripts/publish-release-assets.mjs --verify-tag "$TAG" "$EXPECTED_COMMIT"
           flags=""
           if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
+          # Release Please leaves the version release as a draft; a recovered version without a
+          # release is staged the same way. Assets are uploaded before publication because GitHub
+          # locks the tag and every asset of an immutable release once it is published.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "Astrale CLI $VERSION" --notes "Astrale CLI $VERSION" $flags
+            gh release create "$TAG" --verify-tag --draft --title "Astrale CLI $VERSION" --notes "Astrale CLI $VERSION" $flags
           fi
           node .release-tooling/scripts/publish-release-assets.mjs "$TAG" release-assets
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$TAG" --draft=false $flags
+          fi
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)" != "true" ]; then
+            echo "::warning::$TAG is published but not immutable; enable immutable releases for $GITHUB_REPOSITORY. Installers refuse it."
+          fi
       - name: Publish channel release
         env:
           GH_TOKEN: ${{ github.token }}
