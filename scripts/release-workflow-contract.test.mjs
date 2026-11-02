@@ -19,6 +19,10 @@ describe('release workflow contract', () => {
     assert.equal(config['prerelease-type'], 'beta')
     assert.equal(config['tag-separator'], '/')
     assert.equal(config['always-update'], true)
+    // GitHub seals an immutable release on publication: Release Please leaves a tagged draft and
+    // the binary publisher publishes it once every asset is uploaded.
+    assert.equal(config.draft, true)
+    assert.equal(config['force-tag-creation'], true)
     assert.deepEqual(
       config['changelog-sections'].find(({ type }) => type === 'docs'),
       { type: 'docs', hidden: true },
@@ -116,7 +120,11 @@ describe('release workflow contract', () => {
       immutable.run,
       /node \.release-tooling\/scripts\/publish-release-assets\.mjs --verify-tag "\$TAG" "\$EXPECTED_COMMIT"/,
     )
-    assert.match(immutable.run, /gh release create "\$TAG" --verify-tag/)
+    assert.match(immutable.run, /gh release create "\$TAG" --verify-tag --draft/)
+    const upload = immutable.run.indexOf('publish-release-assets.mjs "$TAG" release-assets')
+    const publish = immutable.run.indexOf('gh release edit "$TAG" --draft=false')
+    assert.ok(upload >= 0 && publish > upload, 'assets must be uploaded before publication')
+    assert.match(immutable.run, /releases\/tags\/\$TAG" --jq \.immutable/)
     assert.ok(
       immutable.run.indexOf(' --verify-tag "$TAG" "$EXPECTED_COMMIT"') <
         immutable.run.indexOf('gh release create'),
@@ -136,6 +144,18 @@ describe('release workflow contract', () => {
       group: 'cli-release-channel-publication',
       'cancel-in-progress': false,
     })
+  })
+
+  it('attests the provenance of every archive before publishing it', () => {
+    const steps = binary.jobs.publish.steps
+    const attest = steps.findIndex((step) =>
+      step.uses?.startsWith('actions/attest-build-provenance@'),
+    )
+    const publish = steps.findIndex((step) => step.name === 'Publish immutable version release')
+    assert.ok(attest >= 0 && attest < publish)
+    assert.equal(steps[attest].with['subject-path'], 'release-assets/astrale-*.tar.gz')
+    assert.equal(binary.jobs.publish.permissions['id-token'], 'write')
+    assert.equal(binary.jobs.publish.permissions.attestations, 'write')
   })
 
   it('builds every supported standalone platform exactly once per release run', () => {

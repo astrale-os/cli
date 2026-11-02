@@ -16,8 +16,9 @@ stable ingress lifecycle. Neither requires a CLI-bundled tunnel executable.
    pull request.
 2. Merge the release pull request when its version, changelog, `package.json`,
    and release manifest are ready. Release Please never merges it automatically.
-3. That merge runs **Release Please** again. It creates `cli/v<version>` and
-   calls **CLI Release** without another manual dispatch or approval.
+3. That merge runs **Release Please** again. It creates the `cli/v<version>` tag
+   and a draft release, then calls **CLI Release** without another manual
+   dispatch or approval.
 4. **CLI Release** tests and builds the four Bun 1.4.2 toolchains. Each CLI
    embeds Studio, viewer assets, and the release's Skills. Current source has no
    provider binary pin, acquisition script, or separate provider license asset.
@@ -25,9 +26,31 @@ stable ingress lifecycle. Neither requires a CLI-bundled tunnel executable.
    signer currently handles ARM64 only. macOS builds must pass strict code-signature
    verification both before execution and after archive extraction. A failing signature blocks publication; these
    ad-hoc signatures do not provide Developer ID or Apple notarization.
-5. The protected `cli-release` publication job uploads the immutable assets,
-   then advances the requested channel release. Its environment restricts allowed
-   branches; it currently requires no manual reviewer approval.
+5. The protected `cli-release` publication job attests the build provenance of
+   the four archives, uploads every asset to the draft and only then publishes
+   it: publication seals an immutable release, its tag and assets can no longer
+   change. It then advances the requested channel release. Its environment
+   restricts allowed branches; it currently requires no manual reviewer approval.
+
+## Immutable releases
+
+`cli/v<version>` releases are immutable once published: **Enable release
+immutability** must stay on in the repository settings (Settings → General →
+Releases). The publication job warns when a published version release is not
+immutable.
+
+The `latest` and `beta` channel releases predate that setting, so they stay
+mutable: they are moving pointers, not trusted bytes. A channel release created
+after the setting was enabled would be immutable and could never advance, so a
+new channel needs a decision before its first publication.
+
+The provenance of an archive is verifiable without trusting the release that
+serves it:
+
+```bash
+gh attestation verify astrale-linux-x64.tar.gz --repo astrale-os/cli \
+  --signer-workflow astrale-os/cli/.github/workflows/cli-release.yml
+```
 
 Never edit release versions or push release tags manually. `CLI Release` may be
 dispatched directly only to recover an existing version or create an explicit
