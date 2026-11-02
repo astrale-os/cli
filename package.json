@@ -78,7 +78,7 @@
     "bun-types": "1.4.4",
     "husky": "~9.1.7",
     "lint-staged": "17.3.0",
-    "oxfmt": "0.63.0",
+    "oxfmt": "0.67.0",
     "oxlint": "1.78.0",
     "typescript": "7.0.2"
   },
