@@ -356,7 +356,7 @@ Global skills live under `~/.agents/skills`. Their ecosystem-compatible lock is
 ## Development
 
 Contributors use Node.js 26.13.0 by default and pnpm 12.1.0. Release executables
-are compiled and qualified with Bun 1.4.2.
+are compiled and qualified with Bun 1.4.4.
 
 ```bash
 # From a standalone clone of this repository
