@@ -76,8 +76,10 @@ export const domain = defineDomain({
 
 - Providers initialize once from the admitted environment. No Provider I/O at module scope; no
   handlers, authorization or deployment effects in composition roots.
-- `requirements` is part of the Domain definition, not a `requirements/` layer: the Kernel Roles the
-  Domain holds and the scopes bounding what it does for callers (`policies.md`, `authority.md`).
+- `requirements` is part of the Domain definition, not a `requirements/` layer. Schema dependencies
+  pin definitions; the release's `roles` bind Kernel, dependency or own Roles to holders
+  (`requirements.domain` is the installed Domain) and its `scopes` bound what the Domain does for
+  callers (`roles.md`, `policies.md`, `authority.md`).
 
 ## defineProject and environments
 

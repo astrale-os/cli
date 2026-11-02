@@ -132,14 +132,18 @@ requirements({
   scope a Kernel callable: its Role covers it (`roles.md`).
 - Each foreign Function or Method the Domain invokes, Shell's included, needs a `call` scope. It is
   only the Domain's ceiling: the caller (the Domain under `self`, the user under `caller`) still
-  passes the callable's rule. Requirements grant a human caller nothing; a right a group supplies
-  through `extends_with` needs no direct copy.
+  passes the callable's rule. Under `self` the Domain passes it through the Role that rule tests,
+  so the release also binds the Domain to that Role (Shell `user.writer` for the account methods,
+  `users.md`). Requirements grant a human caller nothing; a right a group supplies through
+  `extends_with` needs no direct copy.
 - `kernel.auth.register(...)` admits a caller that extends `identity.registrar`, directly or through
   `identity.manager` or `admin`: declare that membership for the Domain; under `caller` the user
   needs it too. Register then verifies the credential evidence and needs `update` authority on each
   target's exact Class. Select the session explicitly; a Schema dependency grants nothing.
-- Users, registration and membership: `users.md`. Business graph ownership never justifies a shadow
-  User or a manual write to Shell's membership/authority pair.
+- Accounts, Domain Roles and Teams: `users.md`. Link a business record to the Shell account with a
+  Domain Edge; never extend Shell `User` or `Group`, or write Shell's memberships yourself.
+
+## Migrating from the legacy requirements
 
 | Legacy entry | Declare instead |
 | --- | --- |
@@ -191,15 +195,17 @@ export const rename = method({
 ## Groups
 
 `subject` is the caller's composition: the caller and every Identity it reaches through
-`extends_with`, at any depth (group membership, written by Shell `Group.assignMember`: `users.md`).
+`extends_with`, at any depth (group memberships and Role grants: `users.md`).
 The Kernel decides each Policy for every Identity of it. Domains author `extends_with` only
 (`authority.md`, Composition).
 
 - A fact a group holds is one Edge from or to `subject`. Never walk `extends_with` (one hop or a
-  `repeat`) or Shell's `member_of_group` from `subject`: the walk reads raw Edges, bypasses the
-  composition the Kernel decides, and spends a leaf and a variable of the budget.
-- Membership in a fixed group: `check(extendsGroup, ref(group))`. Keep the group a fixed `ref`: the
-  composition includes the caller, so an input object admits any caller passing its own id.
+  `repeat`) from `subject`: the walk reads raw Edges, bypasses the composition the Kernel decides,
+  and spends a leaf and a variable of the budget.
+- Membership in a fixed group: `check(extendsGroup, ref(group))`; holding a Role, the same check
+  with the Domain's own `hasRole` (`check(hasRole, ref(role))`, `users.md`). Keep the group or Role
+  a fixed `ref`: the composition includes the caller, so an input object admits any caller passing
+  its own id.
 - One Identity satisfies a whole branch. Two facts that may come from different groups (edit rights
   from one Team, management of the Project from another) are two checks; each tries the whole
   composition.

@@ -20,9 +20,9 @@ or consumer installation.
 
 ## Prepare the account and job
 
-1. Create the dedicated account through its business Domain and keep the returned Node id. For
-   Shell membership, use a supported User or concrete account type and inspect the installed
-   membership contract: a bare Kernel Identity is not a Shell member.
+1. Create the dedicated account through its business Domain and keep the returned Node id. A Shell
+   account (`User`) is a person's account, not a job's. A bare Kernel Identity holds nothing until
+   it is granted a Role.
 2. Generate a dedicated key and register it on that existing account through an authorized caller
    (`--via` when the owning Domain supplies registration authority). Registration must return that
    exact Node; on failure retry registration, never invent another account or key.
@@ -32,9 +32,9 @@ or consumer installation.
    astrale identity register background-job --node @ACCOUNT_NODE -i INSTANCE --as REGISTRAR
    ```
 
-3. Grant only the job's required authority through the Domain's or Shell's operations.
-   Registration grants nothing. `Group.assignMember` maintains membership and `extends_with`; never
-   replace it with a partial Edge write.
+3. Grant only the Roles the job needs, by their owner or granter: the business Domain's release or
+   its admin-guarded method, or a Shell administrator for Shell Roles (astrale-domain
+   `references/users.md`). Registration grants nothing.
 4. `service.json`: exact `KERNEL` and `TARGET`, the secret name `ACCOUNT_PRIVATE_JWK`, `crons: []`.
    `astrale identity export background-job <private-path>` writes an identity envelope; the secret
    value is its `privateJwk` object serialized as JSON, not the envelope. Keep both in protected

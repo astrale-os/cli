@@ -33,7 +33,7 @@ Load only the references the task needs.
 | Several effects, a wait, a signal; write, test, call, deploy or migrate a Workflow | `references/workflows.md` |
 | An external API, an Integration/Provider, webhooks, side-effect and retry design | `references/integrations.md` |
 | Reuse or depend on another Domain instead of modelling its vocabulary | `references/domains.md` |
-| Sign-in users, invite or register people, Shell groups, instance administrators | `references/users.md` |
+| People who sign in: link a business record to their Shell account, create or invite accounts, declare Domain Roles and Teams, grant Roles, instance administrators | `references/users.md` |
 | Secure a callable, View, client call or public endpoint; auth modes, Policies, Class rules, scopes | `references/policies.md` |
 | Which Kernel Role an operation needs; which Roles a Domain declares or a person holds; bundles, granting | `references/roles.md` |
 | Views, mounted UI, View access and resolution (and `astrale-frontend-design` for layout, interaction, copy) | `references/views.md` |
@@ -50,8 +50,8 @@ Follow the applicable phases in order; load a reference when its phase begins.
 1. **Foundation**: inspect the workspace. Without a public scaffold, read `references/development.md`
    (`references/domains.md` only to decide whether to reuse a native Domain). A workspace already
    declaring the SDK, deployment adapter, Domain definition and Runtime keeps that plumbing.
-2. **Schema**: `references/schema.md`; for sign-in users and groups, `references/users.md` before
-   inventing identity or onboarding vocabulary.
+2. **Schema**: `references/schema.md`; for people who sign in, Roles and Teams, `references/users.md`
+   before inventing identity or onboarding vocabulary.
 3. **Callables**: `references/actions.md`, `references/authority.md`, `references/policies.md`,
    `references/roles.md`, then `references/queries.md` and `references/mutations.md`;
    `references/workflows.md` for several effects or a wait; `references/integrations.md` for an

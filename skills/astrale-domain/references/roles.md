@@ -109,15 +109,20 @@ export const domain = defineDomain({
   granter of that Role. A Kernel Role's granters are only those a release names, so a release asking
   for a Kernel Role installs under Root unless the installer is among its `granters`.
 - A membership of the Domain's own Role installs ungated.
+- Shell's release names `profile.admin` granter of `reader`, `writer`, the `graph` and `blob` Roles,
+  `view.reader`, `domain.reader`, `execution.reader`, `journal.reader` and `authority.reader`: a
+  Shell administrator installs a release asking for those. Any other Kernel Role
+  (`identity.registrar`, for one) installs under Root.
 - Install itself needs `domain.installer` (`deployment.md`). An installer Domain such as Admin must
   also be a granter of every Kernel Role the Domains it installs ask for.
 
 ## What a person holds
 
 - A person holds Roles directly or through the groups they belong to, never through a Domain's
-  requirements (`users.md`). Give a group a profile: `reader` to see the graph, blobs, Domain
-  definitions and Views; `writer` to also write the graph and blobs; `admin` to also manage
-  Domains, Identities and Executions and read authority and the journal.
+  requirements (`users.md`). Each Shell profile holds the Kernel profile of its rank:
+  `profile.guest` holds `reader` (see the graph, blobs, Domain definitions and Views),
+  `profile.member` holds `writer` (also write the graph and blobs), `profile.admin` holds `admin`
+  (also manage Domains, Identities and Executions and read authority and the journal).
 - Opening Views in the Shell needs `view.reader` (`views.md`).
 - A person calling a Domain whose handler acts as `caller` needs the Kernel Role of each Kernel
   operation it makes for them.
@@ -128,8 +133,8 @@ export const domain = defineDomain({
 - At runtime, a granter adds a member by writing `member -[extends_with]-> role` in a Mutation,
   and removes one by deleting that Edge. The Domain owning a Role's concrete Class writes its
   memberships without being a granter (`users.md`).
-- A Domain Policy checks a Role the way it checks a group: `check(extendsGroup, ref(role))`
-  (`policies.md`, Groups). Never re-check a Kernel Role in a Domain Policy: the Kernel already
-  checked it for the operation.
+- A Domain Policy checks a Role with its own `hasRole` Policy, matching `sameNode(subject, object)`:
+  `check(hasRole, ref(role))` (`users.md`, `policies.md` Groups). Never re-check the Kernel Role of
+  an operation in a Domain Policy: the Kernel already checked it for that operation.
 - Inspect the Domain's installed memberships and scopes, and the live composition of human callers
   (`debugging.md`).

@@ -77,9 +77,8 @@ The callable's `policy` decided the caller before the handler runs.
 
 ## Composition
 
-- `extends_with` makes an Identity a member of another, holding what it holds, at any depth. Groups
-  (Shell `Group.assignMember`, `users.md`) and Role memberships (`requirements`, `policies.md`) are
-  both `extends_with`.
+- `extends_with` makes an Identity a member of another, holding what it holds, at any depth. Shell
+  groups, a Domain's Teams and Role memberships are all `extends_with` (`users.md`, `roles.md`).
 - `subject` already covers the caller's composition: a group's fact is one Edge from `subject`,
   never a walk of `extends_with` (`policies.md`, Groups).
 - Use `extends_with` alone. The Kernel also evaluates `constrained_by` (the constraint must satisfy

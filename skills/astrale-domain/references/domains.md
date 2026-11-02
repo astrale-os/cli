@@ -6,7 +6,9 @@ Read to decide whether to reuse another Astrale Domain, or to depend on and call
 
 - Before adding vocabulary, check whether another Domain owns it. Reuse it when its identity and
   lifecycle are authoritative; never copy its Classes or recreate its callable contracts locally.
-- Sign-in users and shared groups: Shell's public contract (`users.md`).
+- People who sign in and shared groups: Shell's public contract. Link your business record to the
+  Shell account and test your own Roles (`users.md`: account processes, Domain Roles, Teams, release
+  bindings).
 
 ## Schema dependency
 
