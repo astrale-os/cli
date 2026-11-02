@@ -256,7 +256,7 @@ jobs:
             gh release edit "$TAG" --draft=false $flags
           fi
           if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)" != "true" ]; then
-            echo "::error::$TAG is published but not immutable; installers refuse it, so no channel moves to it." >&2
+            echo "::error::$TAG is published but not immutable; no channel moves to a release whose assets can change." >&2
             exit 1
           fi
       - name: Qualify the published version binary
