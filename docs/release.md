@@ -56,11 +56,12 @@ native smoke mismatch fails `CLI Release` before publication.
 
 ## Installed bytes
 
-The installer and `astrale update` read a channel release only for the version
-its manifest names. They download the manifest, checksums and archive from
-that version's `cli/v<version>` release, and only once the GitHub API reports
-it as published and `immutable`; otherwise they refuse and leave the
-installation unchanged. A replaced channel asset is therefore never installed.
+The installer and `astrale update` read a channel only for the version its
+pointer names (`<channel>/manifest.json` on the `release-channels` branch).
+They download the manifest, checksums and archive from that version's
+`cli/v<version>` release, and only once the GitHub API reports it as published
+and `immutable`; otherwise they refuse and leave the installation unchanged.
+They never download from a channel release.
 `astrale update --check` reads only the channel pointer. An
 `ASTRALE_DOWNLOAD_BASE` or `ASTRALE_UPDATE_BASE` mirror is read as is.
 

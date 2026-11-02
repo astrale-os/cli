@@ -11,6 +11,7 @@ afterEach(async () => {
   delete process.env.ASTRALE_UPDATE_BASE
   delete process.env.ASTRALE_GITHUB_URL
   delete process.env.ASTRALE_GITHUB_API_URL
+  delete process.env.ASTRALE_GITHUB_RAW_URL
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -238,19 +239,23 @@ describe('standalone update', () => {
     expect(releaseBase(meta, { version: 'cli/v1.2.3' })).toBe(
       'https://github.com/astrale-os/cli/releases/download/cli/v1.2.3',
     )
-    expect(releaseBase(meta, {})).toBe('https://github.com/astrale-os/cli/releases/download/latest')
+    expect(releaseBase(meta, {})).toBe(
+      'https://raw.githubusercontent.com/astrale-os/cli/release-channels/latest',
+    )
   })
 })
 
 /**
- * A script installation of 1.0.0 against a GitHub layout: the `beta` channel release points at
- * `cli/v1.1.0` but serves `channelReports` bytes of its own, and the API reports `immutable`.
+ * A script installation of 1.0.0 against a GitHub layout: the `beta` channel pointer names
+ * `cli/v1.1.0`, the legacy `beta` release serves `channelReports` bytes of its own, and the API
+ * reports `immutable`.
  */
 async function githubInstallation(immutable: boolean | undefined, channelReports = '1.1.0') {
   const install = await installation('1.0.0', { version: '1.1.0', channel: 'beta' })
   delete process.env.ASTRALE_UPDATE_BASE
   const github = join(install.root, 'github')
   const api = join(install.root, 'api')
+  const raw = join(install.root, 'raw')
   const downloads = join(github, 'astrale-os', 'cli', 'releases', 'download')
   await mkdir(join(downloads, 'cli'), { recursive: true })
   await cp(join(install.root, 'release'), join(downloads, 'cli', 'v1.1.0'), { recursive: true })
@@ -263,15 +268,16 @@ async function githubInstallation(immutable: boolean | undefined, channelReports
   const asset = join(downloads, 'beta', 'astrale-darwin-arm64.tar.gz')
   expect(await Bun.spawn(['tar', '-C', payload, '-czf', asset, 'astrale']).exited).toBe(0)
   const sha256 = new Bun.CryptoHasher('sha256').update(await readFile(asset)).digest('hex')
-  await writeFile(
-    join(downloads, 'beta', 'manifest.json'),
-    JSON.stringify({
-      version: '1.1.0',
-      binaryVersion: channelReports,
-      channel: 'beta',
-      assets: { 'darwin-arm64': { name: 'astrale-darwin-arm64.tar.gz', sha256 } },
-    }),
-  )
+  const legacy = JSON.stringify({
+    version: '1.1.0',
+    binaryVersion: channelReports,
+    channel: 'beta',
+    assets: { 'darwin-arm64': { name: 'astrale-darwin-arm64.tar.gz', sha256 } },
+  })
+  await writeFile(join(downloads, 'beta', 'manifest.json'), legacy)
+  const pointer = join(raw, 'astrale-os', 'cli', 'release-channels', 'beta')
+  await mkdir(pointer, { recursive: true })
+  await writeFile(join(pointer, 'manifest.json'), legacy)
 
   const tags = join(api, 'repos', 'astrale-os', 'cli', 'releases', 'tags', 'cli')
   await mkdir(tags, { recursive: true })
@@ -280,6 +286,7 @@ async function githubInstallation(immutable: boolean | undefined, channelReports
   }
   process.env.ASTRALE_GITHUB_URL = `file://${github}`
   process.env.ASTRALE_GITHUB_API_URL = `file://${api}`
+  process.env.ASTRALE_GITHUB_RAW_URL = `file://${raw}`
   return install
 }
 
@@ -326,10 +333,13 @@ describe('immutable release resolution', () => {
     })
   })
 
-  test('release URLs follow the GitHub base', () => {
+  test('release URLs follow the GitHub bases', () => {
     process.env.ASTRALE_GITHUB_URL = 'https://mirror.example/'
-    expect(releaseBase({ repo: 'astrale-os/cli', channel: 'beta' }, {})).toBe(
-      'https://mirror.example/astrale-os/cli/releases/download/beta',
+    process.env.ASTRALE_GITHUB_RAW_URL = 'https://raw.example/'
+    const meta = { repo: 'astrale-os/cli', channel: 'beta' }
+    expect(releaseBase(meta, {})).toBe('https://raw.example/astrale-os/cli/release-channels/beta')
+    expect(releaseBase(meta, { version: '1.2.3' })).toBe(
+      'https://mirror.example/astrale-os/cli/releases/download/cli/v1.2.3',
     )
   })
 })

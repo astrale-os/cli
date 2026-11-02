@@ -287,6 +287,8 @@ function githubTransport(owner, immutable) {
       '#!/bin/sh',
       'printf "%s\\n" "$2" >> "$ASTRALE_TEST_URLS"',
       'case "$2" in',
+      '  https://raw.githubusercontent.com/astrale-os/cli/release-channels/*/manifest.json)',
+      '    cp "$ASTRALE_TEST_RELEASE/manifest.json" "$4" ;;',
       '  https://api.github.com/repos/astrale-os/cli/releases/tags/cli/v*)',
       `    printf '{\\n  "draft": false,\\n  "immutable": %s\\n}\\n' "$ASTRALE_TEST_IMMUTABLE" > "$4" ;;`,
       '  *) cp "$ASTRALE_TEST_RELEASE/${2##*/}" "$4" ;;',
@@ -326,9 +328,9 @@ test('bare installs resolve latest and retain its channel; explicit beta still w
     if (channel === 'beta') target.env.ASTRALE_CHANNEL = 'beta'
     const { result, urls } = install(target, channel)
     assert.equal(result.status, 0, result.stderr)
-    // The channel names the version; every installed byte comes from its immutable release.
+    // The channel pointer names the version; every installed byte comes from its immutable release.
     assert.deepEqual(urls.slice(0, 2), [
-      `${download}/${channel}/manifest.json`,
+      `https://raw.githubusercontent.com/astrale-os/cli/release-channels/${channel}/manifest.json`,
       'https://api.github.com/repos/astrale-os/cli/releases/tags/cli/v1.0.0-beta.test',
     ])
     assert.ok(urls.slice(2).every((url) => url.startsWith(`${download}/cli/v1.0.0-beta.test/`)))

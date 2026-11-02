@@ -166,6 +166,8 @@ async function assertOwnsInstallation(meta: InstallMetadata, executable: string)
 }
 
 const githubUrl = () => (process.env.ASTRALE_GITHUB_URL ?? 'https://github.com').replace(/\/+$/, '')
+const githubRawUrl = () =>
+  (process.env.ASTRALE_GITHUB_RAW_URL ?? 'https://raw.githubusercontent.com').replace(/\/+$/, '')
 const githubApiUrl = () =>
   (process.env.ASTRALE_GITHUB_API_URL ?? 'https://api.github.com').replace(/\/+$/, '')
 
@@ -179,14 +181,17 @@ export function releaseBase(
 ): string {
   if (process.env.ASTRALE_UPDATE_BASE) return process.env.ASTRALE_UPDATE_BASE.replace(/\/+$/, '')
   const repo = meta.repo || DEFAULT_REPO
-  const tag = request.version ? versionTag(request.version) : (request.channel ?? meta.channel)
-  return `${githubUrl()}/${repo}/releases/download/${tag}`
+  if (request.version) {
+    return `${githubUrl()}/${repo}/releases/download/${versionTag(request.version)}`
+  }
+  // A channel is a pointer file on the release-channels branch, never a release.
+  return `${githubRawUrl()}/${repo}/release-channels/${request.channel ?? meta.channel}`
 }
 
 /**
- * The base the executable of `version` is downloaded from. A channel release is a movable pointer
- * and its assets can be replaced; only the published `cli/v<version>` release, once GitHub has
- * made it immutable, guarantees the bytes are the ones the release workflow uploaded.
+ * The base the executable of `version` is downloaded from. A channel is a movable pointer; only
+ * the published `cli/v<version>` release, once GitHub has made it immutable, guarantees the bytes
+ * are the ones the release workflow uploaded.
  * An `ASTRALE_UPDATE_BASE` mirror is read as is.
  */
 async function immutableReleaseBase(

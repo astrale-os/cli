@@ -14,8 +14,9 @@ set -eu
 #   ASTRALE_REPO         GitHub repo override (default: astrale-os/cli)
 #   ASTRALE_DOWNLOAD_BASE  direct asset base URL override (a mirror, read as is)
 #
-# A channel release only names the version to install: the executable comes from that
-# version's published cli/v<version> release, which GitHub must report as immutable.
+# A channel is a pointer file on the release-channels branch naming the version to install: the
+# executable comes from that version's published cli/v<version> release, which GitHub must report
+# as immutable.
 
 BOLD="$(printf '\033[1m')"
 DIM="$(printf '\033[2m')"
@@ -86,6 +87,8 @@ resolve_download_base() {
   repo="${ASTRALE_REPO:-astrale-os/cli}"
   github="${ASTRALE_GITHUB_URL:-https://github.com}"
   github="${github%/}"
+  raw="${ASTRALE_GITHUB_RAW_URL:-https://raw.githubusercontent.com}"
+  raw="${raw%/}"
   api="${ASTRALE_GITHUB_API_URL:-https://api.github.com}"
   api="${api%/}"
   if [ -n "${ASTRALE_VERSION:-}" ]; then
@@ -93,7 +96,7 @@ resolve_download_base() {
     version="${version#v}"
   else
     channel="${ASTRALE_CHANNEL:-latest}"
-    download "$github/$repo/releases/download/$channel/manifest.json" "$tmp/channel.json"
+    download "$raw/$repo/release-channels/$channel/manifest.json" "$tmp/channel.json"
     version="$(json_string_field "$tmp/channel.json" version)"
     pointer_channel="$(json_string_field "$tmp/channel.json" channel)"
     [ -n "$pointer_channel" ] || pointer_channel="$channel"
