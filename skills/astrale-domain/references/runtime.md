@@ -45,6 +45,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   Pass `NodeId` directly to Queries/Mutations where accepted. Use `Path` only when the developer explicitly
   requests it or a called API contract requires it; convert at that call boundary, without maintaining
   parallel path/id APIs.
+- A file arrives as an upload receipt in a string input field, never as bytes: attach it to a blob
+  property through `graph.caller`, the identity the receipt is bound to. Read `files.md`.
 - Use resolved definitions or their refs where accepted, not reconstructed locator strings. Position
   matters: a Query Class source selects instances, while a projected Class Path names the definition node.
 

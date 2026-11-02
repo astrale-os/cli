@@ -1,3 +1,4 @@
+import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { acceptImmutable, BoundaryError } from '@astrale-os/sdk/value'
 import { CommanderError } from 'commander'
@@ -7,16 +8,33 @@ import type { AdminTargetSelection, ConnectionContext, KernelCommandOpts } from 
 import type { ExecutionReceipt } from '../connection/execution'
 import type { CommandDefinition } from '../program/index'
 
-import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
+import {
+  createPathCall,
+  expandSelfInCall,
+  runKernelCommand,
+  withAdminClientSession,
+  withClientSession,
+  withSelfHint,
+} from '../connection'
 import { TRY_LATER_EXIT } from '../connection/command'
 import { executionPending } from '../connection/errors'
 import { commandWait } from '../connection/session'
 import { AstraleError } from '../errors'
+import {
+  checkFileContract,
+  fileContract,
+  injectAt,
+  parseFileInput,
+  schemaAt,
+  type FileInput,
+} from '../lib/call-files'
 import { containsSelfRef } from '../lib/self'
 import { presentBinary, readBinaryBody } from '../lib/terminal/binary'
 import { failInput, log } from '../lib/terminal/log'
 import { isMachine, output, present } from '../lib/terminal/output'
+import { localFile, uploadFile, type LocalFile, type Uploaded } from '../lib/upload'
 import { executionReceipt } from './execution'
+import { parseIntrospectTarget, resolveCallableFromBundle } from './introspect'
 
 type CallOpts = KernelCommandOpts & {
   data?: string
@@ -28,14 +46,27 @@ type CallOpts = KernelCommandOpts & {
   domainIssuer?: string
   /** Wait for a durable call's outcome and present it as the call's own answer. */
   wait?: boolean
+  /** `<field>=<file>`, repeatable: upload the file and put its receipt at that input field. */
+  file?: string[]
 }
 
 type CallDependencies = {
   readonly runKernelCommand: typeof runKernelCommand
   readonly output: typeof output
+  /** Open a Session as the caller itself, on the same target as the call, for its uploads. */
+  readonly withCallerSession?: <Value>(
+    opts: CallOpts,
+    admin: AdminTargetSelection | undefined,
+    action: (context: ConnectionContext) => Promise<Value>,
+  ) => Promise<Value>
 }
 
-const dependencies: CallDependencies = { runKernelCommand, output }
+const dependencies: CallDependencies = { runKernelCommand, output, withCallerSession }
+
+/** One `--file`: the input field its receipt fills and the local file admitted for upload. */
+interface CallFile extends FileInput {
+  readonly file: LocalFile
+}
 
 type CallResult = Awaited<ReturnType<ConnectionContext['session']['dispatch']>>
 type BinaryCallResult = Extract<CallResult, { readonly kind: 'binary' }>
@@ -75,9 +106,11 @@ export async function callCommand(
 ): Promise<void> {
   const admin = adminCallTarget(opts)
   let params: Record<string, unknown>
+  let files: readonly CallFile[]
   try {
     Path.parse(path)
     params = admitCallInput(await parseParams(rawParams, opts.data))
+    files = await admitCallFiles(opts.file ?? [], params)
   } catch (error) {
     failInput(error, opts)
   }
@@ -86,7 +119,7 @@ export async function callCommand(
   const expansionParams = expandParameterSelf ? params : {}
 
   if (opts.dryRun && !requiresSelfExpansion(path, expansionParams)) {
-    adapters.output(createPathCall(path, params), opts)
+    adapters.output(createPathCall(path, withPlannedFiles(params, files)), opts)
     return
   }
 
@@ -99,12 +132,19 @@ export async function callCommand(
       : { principal: 'callable', path: Path.parse(path) },
     fn: async (ctx) => {
       const expanded = await expandSelfInCall(path, expansionParams, ctx)
-      const request = createPathCall(
-        expanded.path,
-        expandParameterSelf ? expanded.parameters : params,
-      )
-      if (opts.dryRun) return { kind: 'dry', call: request }
+      const input = expandParameterSelf ? expanded.parameters : params
+      if (opts.dryRun) {
+        return { kind: 'dry', call: createPathCall(expanded.path, withPlannedFiles(input, files)) }
+      }
       return withSelfHint(async () => {
+        // Upload just before the call: a receipt expires minutes after its upload.
+        const uploaded =
+          files.length === 0
+            ? []
+            : await (adapters.withCallerSession ?? withCallerSession)(opts, admin, (caller) =>
+                uploadCallFiles(caller, Path.parse(expanded.path), files),
+              )
+        const request = createPathCall(expanded.path, withReceipts(input, files, uploaded))
         const began = Date.now()
         const result = await ctx.session.dispatch(request)
         if (result.kind !== 'execution') return materializeCallResult(result)
@@ -171,6 +211,140 @@ function requiresSelfExpansion(path: string, params: Readonly<Record<string, unk
     containsSelfRef(path) ||
     Object.values(params).some((value) => typeof value === 'string' && containsSelfRef(value))
   )
+}
+
+// ── Files ───────────────────────────────────────────────────
+
+/**
+ * Parse every `--file` and admit its file before any connection: a missing or oversized file, a
+ * malformed field, or a field the other params already fill fails without sending anything.
+ */
+export async function admitCallFiles(
+  specs: readonly string[],
+  params: Readonly<Record<string, unknown>>,
+): Promise<readonly CallFile[]> {
+  const files: CallFile[] = []
+  for (const spec of specs) {
+    const input = parseFileInput(spec)
+    files.push(Object.freeze({ ...input, file: await localFile(input.path) }))
+  }
+  withPlannedFiles(params, files)
+  return Object.freeze(files)
+}
+
+/** The input a dry run shows: each file field holds a placeholder naming the file it would upload. */
+function withPlannedFiles(
+  params: Readonly<Record<string, unknown>>,
+  files: readonly CallFile[],
+): Record<string, unknown> {
+  return withReceipts(
+    params,
+    files,
+    files.map((file) => `<receipt of ${file.path}>`),
+  )
+}
+
+/** A copy of `params` with each file's receipt at its field. */
+function withReceipts(
+  params: Readonly<Record<string, unknown>>,
+  files: readonly CallFile[],
+  receipts: readonly (string | Uploaded)[],
+): Record<string, unknown> {
+  if (files.length === 0) return params as Record<string, unknown>
+  const input = structuredClone(params) as Record<string, unknown>
+  files.forEach((file, index) => {
+    const receipt = receipts[index]!
+    injectAt(input, file.pointer, typeof receipt === 'string' ? receipt : receipt.receipt)
+  })
+  return input
+}
+
+/**
+ * Upload each file as the caller, so its receipt binds to the user the callable's Domain acts for
+ * (`ctx.kernel.caller`). A file field the installed callable declares is checked first.
+ */
+export async function uploadCallFiles(
+  caller: Pick<ConnectionContext, 'session'>,
+  path: Path,
+  files: readonly CallFile[],
+): Promise<readonly Uploaded[]> {
+  const input = await declaredInput(caller, path)
+  for (const file of files) {
+    checkFileContract(file.pointer, file.file, fileContract(schemaAt(input, file.pointer)))
+  }
+  const uploaded: Uploaded[] = []
+  for (const file of files) uploaded.push(await uploadFile(caller.session, file.file))
+  return Object.freeze(uploaded)
+}
+
+/**
+ * The input schema the installed callable declares, or undefined when it cannot be read here: the
+ * call then reports what the Kernel decides.
+ */
+async function declaredInput(
+  caller: Pick<ConnectionContext, 'session'>,
+  path: Path,
+): Promise<unknown> {
+  let bundle: unknown
+  try {
+    bundle = await caller.session.schema.bundle(parseIntrospectTarget(path.raw).origin)
+  } catch {
+    return undefined
+  }
+  // Read the declaration as published first: a client older than the Kernel refuses the value
+  // kinds it does not know yet, such as a file field, when it admits the whole bundle.
+  const declared = declaredCallableInput(bundle, path)
+  if (declared !== undefined) return declared
+  try {
+    return resolveCallableFromBundle(path, bundle)?.callable.input
+  } catch {
+    return undefined
+  }
+}
+
+/** The input a bundle's root declares for the Function or own Method `path` names. */
+function declaredCallableInput(bundle: unknown, path: Path): unknown {
+  const root = field(bundle, 'root')
+  const last = path.ast.steps.at(-1)
+  if (last?.kind === 'projection' && last.projection.kind === 'function') {
+    return field(field(field(root, 'functions'), last.projection.name), 'input')
+  }
+  if (last?.kind !== 'method') return undefined
+  const owner = path.ast.steps.at(-2)
+  const className =
+    last.dispatch === 'instance'
+      ? ClassKey.ref(last.class).name
+      : owner?.kind === 'projection' && owner.projection.kind === 'class'
+        ? owner.projection.name
+        : undefined
+  if (className === undefined) return undefined
+  const methods = field(field(field(root, 'classes'), className), 'methods')
+  return field(field(methods, last.name), 'input')
+}
+
+function field(value: unknown, key: string): unknown {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)[key]
+    : undefined
+}
+
+function withCallerSession<Value>(
+  opts: CallOpts,
+  admin: AdminTargetSelection | undefined,
+  action: (context: ConnectionContext) => Promise<Value>,
+): Promise<Value> {
+  return admin === undefined
+    ? withClientSession(opts, action, { principal: 'caller' })
+    : withAdminClientSession(
+        {
+          ...opts,
+          admin: admin.admin,
+          adminUrl: admin.adminUrl,
+          domainIssuer: admin.domainIssuer,
+        },
+        action,
+        { principal: 'caller' },
+      )
 }
 
 /**
@@ -422,6 +596,21 @@ Self-reference:
 
   Callable input/output lives on astrale introspect <path>.
 
+Files:
+  --file <field>=<file> uploads the file (at most 100 MiB, streamed from
+  disk) as you, then puts its receipt string at that field of the input
+  before calling: the callable's Domain reads or attaches the file for you
+  through its caller session. <field> is a top-level key (balance) or a JSON
+  Pointer into the input (/attachments/0, /attachments/- appends). Repeat it
+  for several files. The field must not already hold a value; the media type
+  follows the file extension (use \`astrale upload --media-type\` and pass the
+  receipt yourself for another one). When the installed callable declares the
+  field as a file with a size or media type bound, a file it would refuse is
+  refused before upload. --dry-run shows a placeholder and uploads nothing.
+  Uploads happen right before the call because a receipt expires (Kernels
+  are moving to 15 minutes): a refused or expired receipt means run the
+  command again.
+
 Durable callables:
   A callable declared durable answers with the Execution it started, so
   call prints that Execution's observation receipt instead of a value. The
@@ -451,6 +640,8 @@ Examples:
   $ astrale call /:admin.astrale.ai:class.Instance:list --admin
   $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
   $ astrale call /:blog.acme.com:class.Author:create -d @author.json
+  $ astrale call /:sextant.so:class.TrialBalance:import fiscalYear=2026 --file balance=./tb.csv
+  $ astrale call /:mail.example:function.send -d @mail.json --file /attachments/-=./a.pdf
 `,
   arguments: [
     {
@@ -462,6 +653,12 @@ Examples:
   ],
   options: [
     { flags: '-d, --data <json>', description: 'Params as JSON: inline, - (stdin), or @<file>' },
+    {
+      flags: '--file <field=file>',
+      description:
+        'Upload a file and put its receipt at an input field (key or JSON Pointer); repeatable',
+      repeatable: true,
+    },
     { flags: '-o, --output <file>', description: 'Write binary/raw output to a file' },
     { flags: '--dry-run', description: 'Show what would be sent without executing' },
     {

@@ -117,7 +117,8 @@ Schema declares a durable callable; there is nothing else to wire.
 
 The context has no `query`, `mutate`, `kernel`, `graph`, `dependencies`, `integrations` or
 `caller`: the Kernel is reachable only inside a Step, and the run never acts as its caller. Any
-`step` argument may be `{ id, retry, timeoutMs }` instead of an id.
+`step` argument may be `{ id, retry, timeoutMs }` instead of an id. A user's upload receipt is
+therefore attached by an Action before the run starts; see `files.md`.
 
 ## Steps
 

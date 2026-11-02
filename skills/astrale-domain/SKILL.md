@@ -30,6 +30,8 @@ phased workflow below; an existing public scaffold already satisfies its foundat
   owns a development instance: read `references/release.md`.
 - Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/schema.md` first. Always read it for schema work.
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
+- Store, receive, read, or serve files (blob properties, upload receipts, `astrale call --file`):
+  read `references/files.md`.
 - Coordinate several effects, wait for a delay or a decision, or write, test, call, deploy, or migrate
   a Workflow: read `references/workflows.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.

@@ -16,6 +16,7 @@ import type { OperationRecovery, PendingFollowUp } from './command'
 
 import { AstraleError } from '../errors'
 import { log, printFailureDebug } from '../lib/terminal/log'
+import { RECEIPT_REFUSED_HINT, receiptRefused } from '../lib/upload'
 import {
   IncompleteInstallation,
   lifecycleFailureNotes,
@@ -261,8 +262,9 @@ function renderResponse(
     : removalHint && !machine
       ? 'Existing business data still uses schema definitions being removed.'
       : failure.message
-  const hint =
-    code === 'FUNCTION_INPUT_INVALID' && (machine || issues.length === 0)
+  const hint = receiptRefused(failure.reason)
+    ? RECEIPT_REFUSED_HINT
+    : code === 'FUNCTION_INPUT_INVALID' && (machine || issues.length === 0)
       ? 'Use `astrale introspect <path>` to see the callable input.'
       : (removalHint ??
         (upgrade
