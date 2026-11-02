@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.2
+  BUN_VERSION: 1.4.4
 
 jobs:
   test:
@@ -165,6 +165,9 @@ jobs:
     environment: cli-release
     permissions:
       contents: write
+      # Sigstore build provenance for every published archive.
+      id-token: write
+      attestations: write
     concurrency:
       group: cli-release-channel-publication
       cancel-in-progress: false
@@ -223,6 +226,10 @@ jobs:
             printf '\n  }\n'
             printf '}\n'
           } > manifest.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-assets/astrale-*.tar.gz
       - name: Publish immutable version release
         if: steps.meta.outputs.immutable_tag != ''
         env:
@@ -238,47 +245,25 @@ jobs:
           node .release-tooling/scripts/publish-release-assets.mjs --verify-tag "$TAG" "$EXPECTED_COMMIT"
           flags=""
           if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
+          # Release Please leaves the version release as a draft; a recovered version without a
+          # release is staged the same way. Assets are uploaded before publication because GitHub
+          # locks the tag and every asset of an immutable release once it is published.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "Astrale CLI $VERSION" --notes "Astrale CLI $VERSION" $flags
+            gh release create "$TAG" --verify-tag --draft --title "Astrale CLI $VERSION" --notes "Astrale CLI $VERSION" $flags
           fi
           node .release-tooling/scripts/publish-release-assets.mjs "$TAG" release-assets
-      - name: Publish channel release
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$TAG" --draft=false $flags
+          fi
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)" != "true" ]; then
+            echo "::error::$TAG is published but not immutable; no channel moves to a release whose assets can change." >&2
+            exit 1
+          fi
+      - name: Qualify the published version binary
+        if: steps.meta.outputs.immutable_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          CHANNEL: ${{ steps.meta.outputs.channel }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          BINARY_VERSION: ${{ steps.meta.outputs.binary_version }}
-          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
-          EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
-        run: |
-          set -eu
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$CHANNEL" >/dev/null 2>&1; then
-            current_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$CHANNEL" --jq .object.sha)"
-            relation="$(gh api "repos/$GITHUB_REPOSITORY/compare/$current_sha...$EXPECTED_COMMIT" --jq .status)"
-            case "$relation" in
-              ahead)
-                gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$CHANNEL" \
-                  -f sha="$EXPECTED_COMMIT" -F force=true >/dev/null
-                ;;
-              identical) ;;
-              *) echo "refusing to move $CHANNEL from $current_sha to non-successor $EXPECTED_COMMIT ($relation)" >&2; exit 1 ;;
-            esac
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/$CHANNEL" -f sha="$EXPECTED_COMMIT" >/dev/null
-          fi
-          flags=""
-          if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
-          if ! gh release view "$CHANNEL" >/dev/null 2>&1; then
-            gh release create "$CHANNEL" --title "Astrale CLI $CHANNEL" --notes "Current $CHANNEL build: $VERSION" $flags
-          else
-            gh release edit "$CHANNEL" --title "Astrale CLI $CHANNEL" --notes "Current $CHANNEL build: $VERSION" $flags
-          fi
-          node .release-tooling/scripts/publish-release-assets.mjs --mutable "$CHANNEL" release-assets
-      - name: Qualify the published channel binary
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHANNEL: ${{ steps.meta.outputs.channel }}
+          TAG: ${{ steps.meta.outputs.immutable_tag }}
           ASTRALE_E2E_SOURCE_REVISION: ${{ steps.source.outputs.sha }}
           NODE_AUTH_TOKEN: ''
           NPM_TOKEN: ''
@@ -286,13 +271,21 @@ jobs:
           set -eu
           qualification_dir="$(mktemp -d)"
           trap 'rm -rf "$qualification_dir"' EXIT
-          gh release download "$CHANNEL" \
+          gh release download "$TAG" \
             --pattern astrale-linux-x64.tar.gz \
             --dir "$qualification_dir"
           tar -C "$qualification_dir" -xzf "$qualification_dir/astrale-linux-x64.tar.gz"
           GH_TOKEN='' GITHUB_TOKEN='' \
           ASTRALE_E2E_CLI="$qualification_dir/astrale" \
             node scripts/qualification/skills-update-e2e.mjs
+      # A channel is a pointer file, never a release: GitHub seals an immutable release on any edit.
+      - name: Publish channel pointer
+        if: steps.meta.outputs.immutable_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
+        run: node .release-tooling/scripts/publish-channel-pointer.mjs "$CHANNEL" release-assets/manifest.json
       - name: Release summary
         run: |
           cat <<EOF >> "$GITHUB_STEP_SUMMARY"

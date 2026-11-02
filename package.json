@@ -1,6 +1,6 @@
 {
   "name": "@astrale-os/cli",
-  "version": "1.0.0-beta.155",
+  "version": "1.0.0-beta.158",
   "private": true,
   "description": "Astrale CLI — connect to existing Astrale kernels",
   "keywords": [
@@ -38,10 +38,10 @@
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
     "format:check": "pnpm exec oxfmt --check .",
-    "test": "pnpm run assets:ensure && node scripts/qualification/source-boundary.mjs --target && bun scripts/pin-agent-binaries.ts --check && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
+    "test": "pnpm run assets:ensure && node scripts/qualification/source-boundary.mjs --target && bun scripts/pin-agent-binaries.ts --check && bun test --isolate src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
     "test:skills-e2e": "pnpm run assets:ensure && node scripts/qualification/skills-update-e2e.mjs",
     "test:studio": "pnpm --dir studio test",
-    "test:watch": "pnpm run assets:ensure && bun test --watch src",
+    "test:watch": "pnpm run assets:ensure && bun test --isolate --watch src",
     "qualification:ui-search": "bun scripts/qualification/ui-search-provider.ts",
     "setup": "bash scripts/setup/setup.sh",
     "setup:codex": "AGENT_HARNESSES=codex bash scripts/setup/setup.sh",
@@ -73,12 +73,12 @@
     "@commitlint/cli": "21.2.2",
     "@commitlint/config-conventional": "21.2.2",
     "@playwright/test": "1.62.1",
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.10.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
-    "bun-types": "1.4.2",
+    "bun-types": "1.4.4",
     "husky": "~9.1.7",
     "lint-staged": "17.3.0",
-    "oxfmt": "0.63.0",
+    "oxfmt": "0.67.0",
     "oxlint": "1.78.0",
     "typescript": "7.0.2"
   },
@@ -99,7 +99,7 @@
     }
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24 <25 || >=26 <27"
   },
   "packageManager": "pnpm@12.1.0"
 }

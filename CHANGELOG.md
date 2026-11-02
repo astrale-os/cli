@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0-beta.158](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.157...cli/v1.0.0-beta.158) (2026-11-02)
+
+
+### Bug Fixes
+
+* **lib:** install from the version release a channel pointer names ([#742](https://github.com/astrale-os/cli/issues/742)) ([55f3da1](https://github.com/astrale-os/cli/commit/55f3da15a92afca2576a2a5cc13e33f37c665038))
+
+## [1.0.0-beta.157](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.156...cli/v1.0.0-beta.157) (2026-11-02)
+
+
+* cut the first release with channel pointers ([#749](https://github.com/astrale-os/cli/issues/749)) ([7655d6c](https://github.com/astrale-os/cli/commit/7655d6c31683435414c796d0afa0d3db7292d7dd))
+
+## [1.0.0-beta.156](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.155...cli/v1.0.0-beta.156) (2026-11-02)
+
+
+* cut the first immutable CLI release ([#746](https://github.com/astrale-os/cli/issues/746)) ([906a916](https://github.com/astrale-os/cli/commit/906a916d2af45e49adc64a9f1d3deea98c9313d7))
+
 ## [1.0.0-beta.155](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.154...cli/v1.0.0-beta.155) (2026-10-27)
 
 

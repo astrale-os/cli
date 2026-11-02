@@ -16,7 +16,7 @@
     "build": "vite build",
     "start": "bun server/index.ts",
     "dev:client": "vite",
-    "test": "bun test client/src server shared",
+    "test": "bun test --isolate client/src server shared",
     "test:e2e": "pnpm build && playwright test",
     "typecheck": "tsgo --noEmit"
   },
@@ -57,14 +57,14 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.0.6",
-    "@types/node": "^20.19.43",
+    "@types/node": "^24.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "@vitejs/plugin-react": "^6.0.5",
-    "bun-types": "1.4.2",
+    "bun-types": "1.4.4",
     "tailwindcss": "^4.0.6",
     "typescript": "~6.0.3",
-    "vite": "^8.2.1"
+    "vite": "^8.3.5"
   }
 }

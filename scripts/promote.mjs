@@ -1,21 +1,21 @@
 import { spawnSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { publishChannelPointer, readChannelPointer } from './publish-channel-pointer.mjs'
 import {
   CLI_RELEASE_ASSETS,
   localAssets,
-  publishReleaseAssets,
   resolveReleaseTagCommit,
   validateCliReleaseClosure,
 } from './publish-release-assets.mjs'
 
 const repository = 'astrale-os/cli'
 const api = `repos/${repository}`
-const runGh = (args) => spawnSync('gh', args, { encoding: 'utf8' })
+const runGh = (args, input) => spawnSync('gh', args, { encoding: 'utf8', input })
 
 export async function promote(release, { apply = false, gh = runGh } = {}) {
   if (
@@ -33,6 +33,8 @@ export async function promote(release, { apply = false, gh = runGh } = {}) {
   const json = (path) => JSON.parse(command(['api', path]))
   const metadata = json(`${api}/releases/tags/${release}`)
   if (metadata.draft || metadata.tag_name !== release) throw new Error('Release must be published')
+  // Installers refuse a release whose assets can still change.
+  if (metadata.immutable !== true) throw new Error('Release must be immutable')
   const commit = resolveReleaseTagCommit({ tag: release, repository, gh })
   const runs = json(`${api}/actions/runs?head_sha=${commit}&status=success&per_page=100`)
   const qualification = runs.workflow_runs.find((entry) => {
@@ -48,16 +50,12 @@ export async function promote(release, { apply = false, gh = runGh } = {}) {
         job.conclusion === 'success' &&
         job.steps.some(
           (step) =>
-            step.name === 'Qualify the published channel binary' && step.conclusion === 'success',
+            step.name === 'Qualify the published version binary' && step.conclusion === 'success',
         ),
     )
   })
   if (!qualification) throw new Error(`No successful CLI Release qualification for ${commit}`)
-  const current = gh(['api', `${api}/releases/tags/latest`])
-  if (current.status !== 0 && !current.stderr?.includes('(HTTP 404)')) {
-    throw new Error(current.stderr?.trim() || 'Could not inspect latest')
-  }
-  const previous = current.status === 0 ? JSON.parse(current.stdout) : undefined
+  const previous = readChannelPointer({ repository, channel: 'latest', gh })?.pointer
   const directory = await mkdtemp(join(tmpdir(), 'astrale-promote-'))
   try {
     command(['release', 'download', release, '--repo', repository, '--dir', directory])
@@ -87,7 +85,7 @@ export async function promote(release, { apply = false, gh = runGh } = {}) {
       release,
       commit,
       qualification: qualification.html_url,
-      previous: previous?.body ?? null,
+      previous: previous?.version ?? null,
       version,
       channel: 'latest',
       assets: assets.map(({ name, digest }) => ({ name, digest })),
@@ -101,66 +99,17 @@ export async function promote(release, { apply = false, gh = runGh } = {}) {
       )
     }
     if (!apply) return report
-    // Only channel metadata changes; the four archives and their checksums remain byte-identical.
-    await writeFile(
-      manifestPath,
-      `${JSON.stringify({ ...manifest, channel: 'latest' }, null, 2)}\n`,
-    )
-    const ref = gh(['api', `${api}/git/ref/tags/latest`])
-    if (ref.status === 0 && JSON.parse(ref.stdout).object?.sha !== commit) {
-      command([
-        'api',
-        '--method',
-        'PATCH',
-        `${api}/git/refs/tags/latest`,
-        '-f',
-        `sha=${commit}`,
-        '-F',
-        'force=true',
-      ])
-    } else if (ref.status === 0) {
-      // The selected commit is already retained.
-    } else if (ref.stderr?.includes('(HTTP 404)')) {
-      command([
-        'api',
-        '--method',
-        'POST',
-        `${api}/git/refs`,
-        '-f',
-        'ref=refs/tags/latest',
-        '-f',
-        `sha=${commit}`,
-      ])
-    } else throw new Error(ref.stderr?.trim() || 'Could not inspect latest ref')
-    const notes = `Promoted ${release} (${commit}). Qualification: ${qualification.html_url}`
-    if (!previous || previous.body !== notes || previous.prerelease !== metadata.prerelease) {
-      command([
-        'release',
-        previous ? 'edit' : 'create',
-        'latest',
-        '--repo',
-        repository,
-        '--title',
-        'Astrale CLI latest',
-        '--notes',
-        notes,
-        `--prerelease=${metadata.prerelease}`,
-        '--latest=false',
-      ])
-    }
-    await publishReleaseAssets({
-      tag: 'latest',
-      directory,
-      mutable: true,
-      requiredAssets: CLI_RELEASE_ASSETS,
-      expectedManifest: { version, binaryVersion: version, channel: 'latest', repo: repository },
-      gh: (args) => gh(args[0] === 'release' ? [...args, '--repo', repository] : args),
+    // `latest` is a pointer file naming this immutable release; no release or asset is written.
+    publishChannelPointer({
+      repository,
+      channel: 'latest',
+      manifest: { ...manifest, channel: 'latest' },
+      commit,
+      allowBackward: true,
+      gh,
     })
-    if (resolveReleaseTagCommit({ tag: 'latest', repository, gh }) !== commit) {
-      throw new Error('latest ref verification failed')
-    }
     if (process.env.GITHUB_STEP_SUMMARY)
-      appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\nLatest ref and all six assets verified.\n')
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\nlatest now points at ${release}.\n`)
     return report
   } finally {
     await rm(directory, { recursive: true, force: true })
