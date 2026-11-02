@@ -278,46 +278,81 @@ test('installer rejects an archive outside the exact archive closure before repl
   }
 })
 
-test('bare installs resolve latest and retain its channel; explicit beta still works', (t) => {
-  const owner = fixture()
-  t.after(() => rmSync(owner.root, { recursive: true, force: true }))
+/** Intercept only transport, without network access: the real installer builds every URL. */
+function githubTransport(owner, immutable) {
   const curl = join(owner.fakeBin, 'curl')
-  // The real installer builds the URL; intercept only transport, without network access.
   writeFileSync(
     curl,
-    '#!/bin/sh\nprintf "%s\\n" "$2" >> "$ASTRALE_TEST_URLS"\ncp "$ASTRALE_TEST_RELEASE/${2##*/}" "$4"\n',
+    [
+      '#!/bin/sh',
+      'printf "%s\\n" "$2" >> "$ASTRALE_TEST_URLS"',
+      'case "$2" in',
+      '  https://api.github.com/repos/astrale-os/cli/releases/tags/cli/v*)',
+      `    printf '{\\n  "draft": false,\\n  "immutable": %s\\n}\\n' "$ASTRALE_TEST_IMMUTABLE" > "$4" ;;`,
+      '  *) cp "$ASTRALE_TEST_RELEASE/${2##*/}" "$4" ;;',
+      'esac',
+      '',
+    ].join('\n'),
   )
   chmodSync(curl, 0o755)
-  for (const channel of ['latest', 'beta']) {
-    const manifestPath = join(owner.release, 'manifest.json')
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-    writeFileSync(manifestPath, JSON.stringify({ ...manifest, channel }, null, 2))
-    const target = installEnvironment(owner, platforms[0], channel)
+  return (target, name) => {
     delete target.env.ASTRALE_DOWNLOAD_BASE
-    delete target.env.ASTRALE_VERSION
-    delete target.env.ASTRALE_CHANNEL
-    if (channel === 'beta') target.env.ASTRALE_CHANNEL = 'beta'
-    const urls = join(owner.root, `urls-${channel}`)
+    const urls = join(owner.root, `urls-${name}`)
     const result = spawnSync('sh', ['install.sh'], {
       encoding: 'utf8',
       env: {
         ...target.env,
         ASTRALE_TEST_URLS: urls,
         ASTRALE_TEST_RELEASE: owner.release,
+        ASTRALE_TEST_IMMUTABLE: String(immutable),
       },
     })
+    return { result, urls: readFileSync(urls, 'utf8').trim().split('\n') }
+  }
+}
+
+test('bare installs resolve latest and retain its channel; explicit beta still works', (t) => {
+  const owner = fixture()
+  t.after(() => rmSync(owner.root, { recursive: true, force: true }))
+  const install = githubTransport(owner, true)
+  const download = 'https://github.com/astrale-os/cli/releases/download'
+  for (const channel of ['latest', 'beta']) {
+    const manifestPath = join(owner.release, 'manifest.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, channel }, null, 2))
+    const target = installEnvironment(owner, platforms[0], channel)
+    delete target.env.ASTRALE_VERSION
+    delete target.env.ASTRALE_CHANNEL
+    if (channel === 'beta') target.env.ASTRALE_CHANNEL = 'beta'
+    const { result, urls } = install(target, channel)
     assert.equal(result.status, 0, result.stderr)
-    assert.ok(
-      readFileSync(urls, 'utf8')
-        .trim()
-        .split('\n')
-        .every((url) =>
-          url.startsWith(`https://github.com/astrale-os/cli/releases/download/${channel}/`),
-        ),
-    )
+    // The channel names the version; every installed byte comes from its immutable release.
+    assert.deepEqual(urls.slice(0, 2), [
+      `${download}/${channel}/manifest.json`,
+      'https://api.github.com/repos/astrale-os/cli/releases/tags/cli/v1.0.0-beta.test',
+    ])
+    assert.ok(urls.slice(2).every((url) => url.startsWith(`${download}/cli/v1.0.0-beta.test/`)))
     assert.equal(
       JSON.parse(readFileSync(join(target.state, 'install.json'), 'utf8')).channel,
       channel,
     )
+  }
+})
+
+test('installer refuses a version release GitHub does not report as immutable', (t) => {
+  const owner = fixture()
+  t.after(() => rmSync(owner.root, { recursive: true, force: true }))
+  const install = githubTransport(owner, false)
+  for (const [name, env] of [
+    ['mutable-channel', {}],
+    ['mutable-version', { ASTRALE_VERSION: '1.0.0-beta.test' }],
+  ]) {
+    const target = installEnvironment(owner, platforms[0], name)
+    Object.assign(target.env, env)
+    const { result, urls } = install(target, name)
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /not an immutable GitHub release/u)
+    assert.ok(urls.every((url) => !url.endsWith('.tar.gz')))
+    assert.equal(existsSync(join(target.install, 'astrale')), false)
   }
 })

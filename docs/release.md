@@ -54,6 +54,20 @@ four required asset digests. It uses the existing single-binary format (no
 introduce a new manifest API. A closure, version, checksum, or
 native smoke mismatch fails `CLI Release` before publication.
 
+## Installed bytes
+
+The installer and `astrale update` read a channel release only for the version
+its manifest names. They download the manifest, checksums and archive from
+that version's `cli/v<version>` release, and only once the GitHub API reports
+it as published and `immutable`; otherwise they refuse and leave the
+installation unchanged. A replaced channel asset is therefore never installed.
+`astrale update --check` reads only the channel pointer. An
+`ASTRALE_DOWNLOAD_BASE` or `ASTRALE_UPDATE_BASE` mirror is read as is.
+
+Releases published before immutability was enabled can no longer be
+installed. `install.sh` is served from `main`, so `latest` and `beta` must
+always point at immutable version releases.
+
 ## Compatibility
 
 Compatibility is forward-only: an existing standalone installation can upgrade
