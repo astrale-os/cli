@@ -14,12 +14,15 @@ const root = join(
 test('the shipped frontend skill preserves the focused Domain UI contract', () => {
   const source = readFileSync(join(root, 'SKILL.md'), 'utf8')
 
-  assert.match(source, /focused product interface, not a landing page/)
+  assert.match(source, /focused product interface, never a landing\s+page/)
   assert.match(source, /Before writing UI code, sketch a high-level wireframe/)
-  assert.match(source, /Do not turn every element into a card/)
-  assert.match(source, /Never show multiple spinners or\s+progress bars for one action/)
-  assert.match(source, /Use optimistic list updates.*Roll back on failure/s)
-  assert.match(source, /clicks outside it or presses Escape/)
-  assert.match(source, /Make long labels and values part of layout testing/)
-  assert.match(source, /perform a dedicated text-reduction pass/)
+  assert.match(source, /Refused by default: a card per element/)
+  assert.match(source, /One indicator per action/)
+  assert.match(
+    source,
+    /Optimistic updates only when the result is predictable\. On failure: roll back/,
+  )
+  assert.match(source, /Dropdowns close on outside click and Escape/)
+  assert.match(source, /Long labels and values are layout cases/)
+  assert.match(source, /a dedicated pass reads every visible string in context/)
 })

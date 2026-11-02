@@ -1,25 +1,24 @@
 # Views
 
-Schema names the View; the Domain definition's frontend composition owns its URL, document, and handshake.
-The React host owns the session, not the business Domain's runtime.
+The Schema names a View; the Domain's `defineFrontend` owns its URL, document and handshake; the
+React host owns the session.
 
 ## Domain Views and internal routing
 
-- Every View belongs to its own Domain. The Shell opens it by declaration path
-  (`/:<origin>:view.<name>`) or as the Domain entrypoint, never for a Class or a node. Declare
-  `view({ description? })`; a View declaration names no Class.
-- A screen about one node (an issue, an invoice) is an internal route of the Domain frontend, such as
-  `/issues/$issue`. Read the node from the router (`useParams`, `useSearch`) and pass it to the named
-  Query. The Shell hands the View no node to render and cannot tell which View renders a node.
-- Link to another screen of the same Domain with the router. Open another Domain's View with
-  `openView({ view: '/:<origin>:view.<name>' })` (or its Domain entrypoint) and let that View route
-  internally; never pass it a node to render.
-- The handshake's `targetNodeId` is deprecated and always the Domain path; do not branch on it.
+- A View belongs to its Domain. The Shell opens it by path (`/:<origin>:view.<name>`) or as the
+  Domain entrypoint, never for a Class or a node. `view({ description? })` names no Class.
+- A screen about one node is an internal route of the Domain frontend (`/issues/$issue`): read the
+  node from the router (`useParams`, `useSearch`) and pass it to the Query. The Shell hands a View no
+  node and cannot tell which View renders a node.
+- Same Domain: link with the router. Another Domain:
+  `openView({ view: '/:<origin>:view.<name>' })` (or its entrypoint); it routes internally; never
+  pass it a node.
+- The handshake's `targetNodeId` is deprecated and always the Domain path: never branch on it.
 
 ## Declare the surface
 
 ```ts
-// schema/schema.ts: the Schema names the Domain and its entrypoint View.
+// schema/schema.ts
 export const schema = defineSchema('work.example', {
   name: 'Work',
   entrypoint: 'application',
@@ -37,37 +36,37 @@ export const frontend = defineFrontend({
 })
 ```
 
-- Every Schema declares the Domain `name` the Shell shows, and at most one `entrypoint` among its
-  Views: the View the Shell opens for the application. Both are projected into the graph (the Domain
-  Node `name`, an `entrypoint` Edge), where the Shell lists them; a Domain without an entrypoint is
-  not listed. `defineFrontend` no longer takes an `entrypoint`.
-
-- Use `handshake: 'shell'` for host-provided session/client access; `none` is for standalone public documents.
-  A View declaration has no callable auth mode: its graph reads and calls retain their own authorization.
-- Keep `frontend/` for browser entry/router/styles, `views/` for SDK hooks and screen orchestration,
-  and `ui/` for presentation. Leaf UI receives values/callbacks, not credentials or a Kernel client.
-- The SDK's Cloudflare adapter already manages caching for the frontends it serves; standalone
-  Workers do not inherit it. Verify the serving path before adding local cache headers. Long-lived
-  asset caching requires public files identified by the build as content-addressed, not a filename
-  regex. Keep HTML, API/auth, and cookie-bearing responses outside this asset policy, and preserve
-  existing `private`/`no-store` directives.
+- Every Schema declares `name` and at most one `entrypoint` View, projected into the graph (Domain
+  Node `name`, an `entrypoint` Edge). The Shell lists Domains with an entrypoint only.
+  `defineFrontend` takes no `entrypoint`.
+- A View Node carries its placement (URL, handshake). Reading a View Node or an `entrypoint` Edge
+  needs the Kernel Role `view.reader` (in `reader`): the Shell opens and lists only the Views its
+  caller reads.
+- `handshake: 'shell'`: host-provided session and client. `none`: standalone public documents. A
+  View has no callable auth mode; its reads and calls keep their own authorization.
+- `frontend/`: browser entry, router, styles. `views/`: SDK hooks, screen orchestration. `ui/`:
+  presentation; leaf UI receives values and callbacks, never credentials or a Kernel client.
+- The SDK's Cloudflare adapter manages caching of the frontends it serves; standalone Workers do
+  not inherit it. Long-lived caching only for files the build marks content-addressed (never a
+  filename regex); never for HTML, API/auth or cookie-bearing responses; keep `private`/`no-store`.
 
 ## React Shell and authentication
 
-- Use the public `@astrale-os/shell-react` package for React session/hooks; the SDK's `view` facade owns
-  frontend build declarations, not React providers. Declare the packages actually imported by the frontend.
-- `<Astrale>` defaults to the sandboxed child handshake and supplies loading/error boundaries.
-  Wrap projected Query/Mutation hooks in `<DomainProvider schema={schema}>`; keep the application's router.
-- `useSelf()` is the caller's identity, synchronous and free. `useUser()` reads the User node and may
-  suspend: use it only to show profile properties.
-- `useDomain(schema)` binds synchronously and asks the Kernel nothing. Pass its resolved callable
-  to `useAction`; do not reconstruct method keys, forge bound nodes, or resolve another client per component.
-- A local frontend compiled against another Schema revision than the installation fails at its first
-  request the Kernel refuses. Compare both revisions and update the coherent deployment; reloading or
-  casting the binding cannot fix it.
+- `@astrale-os/shell-react` owns React session and hooks; the SDK's `view` facade owns build
+  declarations only. Declare the packages the frontend imports.
+- `<Astrale>`: sandboxed child handshake, loading/error boundaries. `<DomainProvider schema>` wraps
+  projected Query/Mutation hooks; keep the application's router.
+- `useSelf()`: the caller's identity, synchronous, no read. `useUser()`: reads the User node and may
+  suspend; only for profile properties.
+- `useDomain(schema)`: binds synchronously, asks the Kernel nothing, one binding per origin and
+  revision per client. Pass its callables to `useAction`; never rebuild method keys, forge bound
+  nodes or resolve a client per component.
+- A frontend compiled against another Schema revision than the installed one fails at its first
+  request the Kernel refuses; fix the deployment coherence, not the binding.
+- `useAction(callable, { refresh })`: `refresh` defaults to `'all'`; `'none'` skips invalidation.
 
 ```tsx
-// frontend/src/main.tsx — router and schema are the application's existing owners.
+// frontend/src/main.tsx
 import { Astrale, DomainProvider } from '@astrale-os/shell-react'
 import { RouterProvider } from '@tanstack/react-router'
 import { createRoot } from 'react-dom/client'
@@ -82,7 +81,7 @@ createRoot(document.getElementById('root')!).render(
   </Astrale>,
 )
 
-// views/issue/use-close-issue.ts — Issue.close is the schema-declared instance callable.
+// views/issue/use-close-issue.ts: Issue.close is a schema-declared instance callable
 import { useAction, useDomain } from '@astrale-os/shell-react'
 import type { NodeId } from '@astrale-os/sdk/graph/node'
 
@@ -97,52 +96,47 @@ export function useCloseIssue() {
 }
 ```
 
-- The host authenticates the selected identity and supplies the child session through the handshake.
-  Do not put root keys, long-lived tokens, a second login, or an anonymous fallback in the View.
-- Opening the raw Service URL is not an authenticated mounted-View test. Use the CLI/Studio host;
-  registration and business membership on that instance are separate from local identity storage.
-- A frontend Policy probe or disabled button is presentation, never authorization. Kernel callable
-  admission remains authoritative, including after a role changes or the UI becomes stale.
+- The host authenticates and supplies the child session through the handshake. No root keys,
+  long-lived tokens, second login or anonymous fallback in a View.
+- The raw Service URL is not an authenticated mounted View: test through the CLI/Studio host.
+  Registration and business membership on the instance are separate from local identity storage.
+- A frontend Policy probe or disabled button is presentation; Kernel admission decides.
 
 ## Read, mutate, and refresh
 
-Choose the boundary from product semantics; callable access and direct graph access remain separate:
-
-| Intended contract | Use |
+| Contract | Use |
 | --- | --- |
-| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session; Policy evaluates its caller |
-| Read a Class for the user through the Domain's own scope | Direct Query with the Domain as principal: it must own the Class or hold its exact capability, and the rule still judges the user |
-| Expose a calculated, aggregated, redacted, or graph-independent stable result | Function with explicit callable admission; implement it as an Action or Workflow as appropriate |
+| Graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session (caller holds `graph.reader`); Policy judges the caller |
+| A Class read for the user through the Domain's own scope | Direct Query with the Domain as executor: both hold `graph.reader`; the Domain owns the Class, holds its `read`/`traverse` scopes, or itself passes the rule; the rule still judges the user |
+| Calculated, aggregated, redacted or graph-independent stable result | Function with explicit callable admission (Action or Workflow) |
 
-The host owns session selection, exchange, and refresh; View code keeps using the supplied client.
-See `policies.md` for the principal ceiling and the caller, and `debugging.md` for exchange mechanics.
+The host owns session selection, exchange and refresh (`authority.md`, `policies.md`,
+`debugging.md`).
 
-- Instance `useAction.run` accepts `{ id: NodeId }`; a returned ID does not require a second Class read
-  or a fabricated `BoundNode`. Validate only genuinely untrusted raw values entering that boundary.
-- After a successful call, refresh affected observations. Start with supported invalidation options,
-  then narrow costly refreshes; optimistic UI does not prove persistence and must recover on refusal.
-- Distinguish loading, empty, missing routed record, auth failure, expected error, and pending mutation.
-  Preserve editable input on failure; show safe actionable refusal details, not transport internals.
-- Keep IDs, digests, SHAs, and technical Paths out of product labels and fallback text; show business
-  names or a meaningful unavailable state. Reserve technical coordinates for explicitly developer-facing diagnostics.
+- Instance `useAction.run` takes `{ id: NodeId }`: no second Class read, no fabricated `BoundNode`.
+- Optimistic UI proves no persistence and must recover on refusal.
+- Distinguish loading, empty, missing routed record, auth failure, expected error, pending
+  mutation; keep editable input on failure; show actionable refusal details, not transport
+  internals.
+- No IDs, digests, SHAs or Paths in product labels or fallback text.
 
 ## Use Astrale UI
 
-Apply `astrale-frontend-design` for layout and interaction. Prefer `@astrale-os/ui` controls and supplied
-patterns; write custom UI only for product-specific presentation or a missing capability.
+`astrale-frontend-design` for layout and interaction. `@astrale-os/ui` controls and patterns first;
+custom UI only for product-specific presentation.
 
 ```sh
-# Run in the frontend project; inspect existing setup before initializing.
+# in the frontend project; inspect existing setup first
 astrale ui search "searchable table with row actions" --json
 astrale ui init --preset astrale
 astrale ui add pattern/chart/line-basic
 astrale ui doctor
 ```
 
-- Search results include exact demo code and a `packageImport` or add command. Read those references and
-  installed exports before inventing a wrapper, component API, or CSS convention.
-- Library primitives stay package imports; added patterns/themes are consumer-owned source. Preserve
-  the UI lock and local edits; do not reinitialize a configured frontend or overwrite it blindly.
+- Search results carry exact demo code and a `packageImport` or add command: read them and the
+  installed exports before inventing a wrapper, API or CSS convention.
+- Primitives stay package imports; added patterns/themes are consumer-owned source. Preserve the UI
+  lock and local edits; never reinitialize a configured frontend.
 
 ## Inspect and exercise the real View
 
@@ -158,7 +152,7 @@ astrale view --sessions
 astrale view --close <session-id>
 ```
 
-- Use explicit instance and identity; repeat with a second registered principal for access contrasts.
-  Root success is not Policy proof. Verify CLI flags with `--help` for the installed release.
-- Check actual records, navigation, keyboard use, narrow layout, console errors, and a refusal.
-  Distinguish local mock checks from installed-View evidence; never retain credentials in proof files.
+- Explicit instance and identity; repeat with a second registered Identity for access contrasts.
+  Root success is not Policy proof.
+- Check real records, navigation, keyboard, narrow layout, console errors and one refusal. Local
+  mocks are not installed-View evidence; never keep credentials in proof files.

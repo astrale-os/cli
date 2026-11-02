@@ -85,44 +85,42 @@ test('the CLI README says a deploy never installs and names no installation targ
   assert.match(readme, /`astrale domain install <url> -i <instance>`/)
 })
 
-test('the release guide is routed and states the three commands and their effects', () => {
+test('the deployment guide is routed and states the three commands and their effects', () => {
   const router = readFileSync(join(skillsRoot, 'astrale-domain', 'SKILL.md'), 'utf8')
   assert.match(
     router,
-    /Deploy, install, publish or yank a version[^\n]*\n[^\n]*`references\/release\.md`/,
+    /\| Deploy, install, publish or yank a version[^\n]*\| `references\/deployment\.md` \|/,
   )
 
-  const release = readFileSync(
-    join(skillsRoot, 'astrale-domain', 'references', 'release.md'),
+  const guide = readFileSync(
+    join(skillsRoot, 'astrale-domain', 'references', 'deployment.md'),
     'utf8',
   )
-  assert.match(release, /\| `astrale-domain deploy <environment>` \| yes \| no \| no \|/)
+  assert.match(guide, /\| `astrale-domain deploy <environment>` \| yes \| no \| no \|/)
   assert.match(
-    release,
-    /\| `astrale-domain publish <environment>` \| yes, deploy included \| yes, the `package\.json` version \| no \|/,
+    guide,
+    /\| `astrale-domain publish <environment>` \| yes \(deploy included\) \| yes, the `package\.json` version \| no \|/,
   )
   assert.match(
-    release,
+    guide,
     /\| `astrale domain install <reference>\.\.\. -i <instance>` \| no \| no \| yes \|/,
   )
-  assert.match(release, /Publishing never\s+installs/)
+  assert.match(guide, /Publishing never\s+installs/)
   // Consent classes (D7): same line bare, another line by origin, a terminal confirmation.
-  assert.match(release, /same line[^]*`--allow-issuer-change`;/)
-  assert.match(release, /another line[^]*`--allow-issuer-change=<origin>`/)
+  assert.match(guide, /\| Same line[^\n]*\| `--allow-issuer-change` \|/)
+  assert.match(guide, /\| Another line[^\n]*\| `--allow-issuer-change=<origin>` \|/)
+  assert.match(guide, /The origin follows `=` only/)
   // release-please (D5) and the publish order (tech [.73345]).
-  assert.match(release, /`Release-As: 2\.0\.0` footer or a `feat!:` commit/)
-  assert.match(release, /--allow-dirty/)
-  assert.match(release, /astrale-domain yank 1\.5\.0/)
+  assert.match(guide, /`Release-As: 2\.0\.0` footer\s+or a `feat!:` commit/)
+  assert.match(guide, /--allow-dirty/)
+  assert.match(guide, /astrale-domain yank 1\.5\.0/)
   // D18: one owner per instance.
-  assert.match(release, /Give each instance one owner, a developer\s+or CI, never both/)
+  assert.match(guide, /One owner per Instance, a developer or\s+CI, never both/)
   // AM-4': a deploy binds the current secrets to the new deployment only; rotation is in place.
-  assert.match(release, /binds the Environment's current secrets to the new deployment only/)
-  assert.match(release, /--admin -d @rotate\.json/)
-  assert.match(release, /--admin -d - --json/)
-  assert.match(
-    release,
-    /pnpm provider:platform-secret -- --label <label> --name <NAME> < value-file/,
-  )
+  assert.match(guide, /binds the Environment's current secrets to the new deployment only/)
+  assert.match(guide, /--admin -d @rotate\.json/)
+  assert.match(guide, /--admin -d - --json/)
+  assert.match(guide, /pnpm provider:platform-secret -- --label <label> --name <NAME> < value-file/)
 })
 
 test('Studio tells its agent and the env editor that a deploy never installs', () => {
