@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-beta.161](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.160...cli/v1.0.0-beta.161) (2026-11-03)
+
+
+### Bug Fixes
+
+* **deps:** move claude-agent-acp to 0.93.0 for zod 4.6.7 ([#765](https://github.com/astrale-os/cli/issues/765)) ([cd46916](https://github.com/astrale-os/cli/commit/cd46916c00fbe382a926e4233ade2dc0858ba8cc))
+* **deps:** move to SDK 0.6.0-beta.53 and zod 4.6.7 ([#762](https://github.com/astrale-os/cli/issues/762)) ([314e06e](https://github.com/astrale-os/cli/commit/314e06ee553e0bff5889d57ca853ffed48138929))
+* **deps:** move to Shell 0.7.0-beta.12 for zod 4.6.7 ([#764](https://github.com/astrale-os/cli/issues/764)) ([2f32305](https://github.com/astrale-os/cli/commit/2f32305c0f730a12827fba77a46e82a155deafb7))
+
 ## [1.0.0-beta.160](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.159...cli/v1.0.0-beta.160) (2026-11-03)
 
 
