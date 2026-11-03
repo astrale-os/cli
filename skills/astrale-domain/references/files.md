@@ -18,8 +18,8 @@ receipt at a `file()` input field, as a file object, and reads or attaches it fo
 
 A receipt is signed by the Kernel, bound to the user who uploaded it, valid for 15 minutes and
 reusable until then. It works for that user directly or for a Domain acting for them through
-`ctx.kernel.caller` / `ctx.graph.caller` / `mutate(..., { as: 'caller' })`, never for the Domain
-acting as itself (`self`, the default `mutate`) and never for another user. Read and attach in the
+`ctx.kernel.caller` / `mutate(..., { as: 'caller' })`, never for the Domain acting as itself
+(`ctx.kernel`, `{ as: 'executor' }`) and never for another user. Read and attach in the
 invocation that received it; keep the attached Node, never the receipt. The journal never stores a
 receipt. A digest or `Ref` grants nothing.
 
@@ -68,34 +68,34 @@ import: method({
 ```ts
 // mutations/report/create-report.ts
 import type { ReceivedFile } from '@astrale-os/sdk/action'
+import { LocalAlias } from '@astrale-os/sdk/graph'
+import { defineMutation } from '@astrale-os/sdk/mutation'
 
-export const createReport = defineMutation<typeof schema>()((domain) => ({
-  id: 'report.create',
-  build(input: { title: string; file: ReceivedFile }, mutation) {
-    mutation.createNode({
-      as: 'report',
-      class: domain.classes.Report,
-      props: { title: input.title, content: input.file }, // attaches the file's receipt
-    })
+const report = LocalAlias('report')
+
+export const createReport = defineMutation<typeof schema>()('report.create', {
+  build: (input: { readonly title: string; readonly file: ReceivedFile }, { Report }, mutation) => {
+    // attaches the file's receipt
+    mutation.createNode({ as: report, class: Report, props: { title: input.title, content: input.file } })
   },
-  project: (result) => ({ report: result.createdNodes.report! }),
-}))
+  output: (result) => ({ report: result.createdNodes[report]! }),
+})
 
 // functions/report/import-report.ts
 export const importReport = defineAction<typeof schema>()(
   'Report.import',
-  async ({ input, graph }) => {
+  async ({ input, mutate }) => {
     const csv = await input.file.text() // read as the caller, optional
     if (!csv.startsWith('account,')) throw new Error('Not a trial balance.')
-    return graph.caller.mutate(createReport, { title: input.title, file: input.file }) // as the caller
+    return mutate(createReport, { title: input.title, file: input.file }, { as: 'caller' })
   },
 )
 ```
 
-- Attach through `graph.caller.mutate(...)` or `mutate(definition, input, { as: 'caller' })`,
-  never the default `mutate`: the Domain's own authority is not the uploader, and the receipt is
-  refused. Attaching never reads the file. A raw `kernel.caller.mutate((m) => ...)` takes
-  `input.file.receipt`.
+- Attach as the caller, `mutate(mutation, input, { as: 'caller' })` (a Mutation of the deprecated
+  closure form: `graph.caller.mutate(...)`), never `{ as: 'executor' }`: the Domain's own authority
+  is not the uploader, and the receipt is refused. Attaching never reads the file. A raw
+  `kernel.caller.mutate((m) => ...)` takes `input.file.receipt`.
 - The caller needs the right to create or update the holder; a Policy that admits the call but not
   the write still refuses the attach.
 - To hand the file to a dependency's `file()` field, pass the receipt as the caller:
@@ -129,9 +129,9 @@ export const importReport = defineAction<typeof schema>()(
 | Upload over the Kernel's limit, or a malformed media type | `BLOB_TOO_LARGE`, `BLOB_MEDIA_TYPE_INVALID` |
 | Read of an expired, forged, or another user's receipt | `FUNCTION_INPUT_INVALID`, reason `BLOB_RECEIPT_INVALID` |
 | Attach of such a receipt, or of a `Ref` | `FUNCTION_INPUT_INVALID`, reason `MUTATION_BLOB_RECEIPT_INVALID` or `MUTATION_BLOB_RECEIPT_REQUIRED` |
-| Attach of a file outside the property's bounds | `FUNCTION_INPUT_INVALID`, reason `MUTATION_INPUT_INVALID` with the `property` |
+| Attach of a file outside the property's bounds | `FUNCTION_INPUT_INVALID`, reason `MUTATION_INPUT_INVALID`, issue `MUTATION_PROPERTY_INVALID` with the `property` |
 | Uncaught `FileReadError` | `LIMIT_EXCEEDED` (size) or `VALIDATION_ERROR` (media type), its code as reason |
-| Durable start, per field | `FUNCTION_INPUT_INVALID`, reason `BLOB_RECEIPT_INVALID`, `BLOB_TOO_LARGE` or `BLOB_MEDIA_TYPE_INVALID` with the field's pointer |
+| Durable start, per field | `FUNCTION_INPUT_INVALID`, reason `BLOB_RECEIPT_INVALID`, `BLOB_TOO_LARGE` or `BLOB_MEDIA_TYPE_INVALID`, the field's JSON Pointer as `path`; no Execution is recorded |
 
 A refused or expired receipt means upload again. `astrale call --file` refuses a file outside the
 field's bounds before uploading (`FILE_TOO_LARGE`, `FILE_MEDIA_TYPE_REFUSED`).
@@ -168,10 +168,15 @@ requirements: requirements({
 A durable run acts as its Domain and outlives a receipt. At the durable start the Kernel admits each
 `file()` receipt for the caller, checks the field's bounds, and replaces it with a reference bound
 to the Execution, valid while the run lasts (at most 7 days). The Workflow's input holds that
-reference string, not a file object. A Step uses it wherever a receipt goes, `download({ receipt })`
-or a blob property value, through the Step's own Domain session, never `ctx.kernel.caller` (a Step
-has none). It is refused to anyone else, after the run, and in a child durable call: attach the
-file, then pass the Node.
+reference string, not a file object, so the field's bounds are checked at the start and by the
+property at the attach, not on each read. A Step uses it wherever a receipt goes,
+`kernel.content.download({ receipt })` or a blob property value written with
+`step.mutate(id, mutation, input, { as: 'executor' })`: a Step acts as the Domain for this Execution
+and has no `caller`. It is refused to anyone else, after the run, and in a child durable call:
+attach the file in a Step, then pass the Node. Once the run ends only the attached Nodes keep the
+file. A replay of the same idempotency key compares each file by content, but still needs a valid
+receipt. Full contract: `docs/durable-workflows.md` in `@astrale-os/sdk`, "Files in a durable
+Workflow".
 
 ## Binary input
 
