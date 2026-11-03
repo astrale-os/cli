@@ -492,13 +492,14 @@ an upload. The receipt is:
 
 - the value a blob property accepts in `mutate` (`props` key set to the receipt
   string): the Kernel checks the property's `maxBytes` and `mediaTypes` then;
-- the value of a Domain callable's file field: a string input field that
-  carries the receipt; the Domain attaches it for you (`ctx.kernel.caller`).
+- the value of a Domain callable's `file()` field, which `introspect` shows as
+  `{ "type": "string", "x-astrale-value-kind": "file", "x-astrale-file":
+  { "maxBytes"?, "mediaTypes"? } }`; the Domain reads and attaches it as you.
 
 A receipt binds to the identity that uploaded it: it works for that identity's
 `mutate` and for a Domain acting for that identity, never for anyone else. It
-expires (`expiresAt`; Kernels are moving to 15 minutes), so upload just before
-use. A refused or expired receipt (`MUTATION_BLOB_RECEIPT_INVALID`,
+expires 15 minutes after the upload (`expiresAt`) and can be reused until then,
+so upload just before use. A refused or expired receipt (`MUTATION_BLOB_RECEIPT_INVALID`,
 `BLOB_RECEIPT_INVALID`) means upload again; the hint says so.
 
 `call --file <field>=<file>` uploads and calls in one step: each file is
@@ -515,12 +516,11 @@ astrale call /:mail.example:function.send -d @mail.json \
 astrale call /:sextant.so:class.TrialBalance:import --file balance=./tb.csv --dry-run  # placeholder, no upload
 ```
 
-Coming with a Kernel release (not released yet): a DSL `file()` input field
-appears in `introspect` as `{ "type": "string", "x-astrale-value-kind": "file",
-"x-astrale-file": { "maxBytes"?, "mediaTypes"? } }`. `call --file` already reads
-that marker and refuses a file over `maxBytes` (`FILE_TOO_LARGE`) or of an
-unlisted media type (`FILE_MEDIA_TYPE_REFUSED`) before uploading; today's plain
-string fields are filled without checks.
+For a `file()` field, `call --file` refuses a file over its `maxBytes`
+(`FILE_TOO_LARGE`) or of an unlisted media type (`FILE_MEDIA_TYPE_REFUSED`)
+before uploading; a plain string field is filled without checks. A durable
+callable refuses at its start a field whose file breaks those bounds
+(`BLOB_TOO_LARGE`, `BLOB_MEDIA_TYPE_INVALID`).
 
 Local errors, before anything is sent: `FILE_MISSING`, `FILE_UNREADABLE`,
 `FILE_TOO_LARGE` (over 100 MiB), `MEDIA_TYPE_INVALID`, `FILE_INPUT_INVALID` (a
