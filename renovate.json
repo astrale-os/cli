@@ -1,4 +1,83 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>astrale-os/config:packages/renovate/default"]
+  "extends": ["github>astrale-os/config:packages/renovate/default"],
+  "timezone": "Europe/Paris",
+  "semanticCommits": "enabled",
+  "semanticCommitScope": "deps",
+  "prConcurrentLimit": 6,
+  "prHourlyLimit": 0,
+  "postUpdateOptions": ["pnpmDedupe"],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["dependencies", "security"],
+    "minimumReleaseAge": "7 days"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "commitMessageAction": "refresh"
+  },
+  "packageRules": [
+    {
+      "description": "Dev-only non-major updates: one weekly PR.",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dev dependencies (non-major)",
+      "groupSlug": "dev-non-major",
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Runtime non-major updates: separate weekly PR, since fix(deps) cuts a release.",
+      "matchDepTypes": ["dependencies", "optionalDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "runtime dependencies (non-major)",
+      "groupSlug": "runtime-non-major",
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Published peer ranges must widen, never narrow, for consumers.",
+      "matchDepTypes": ["peerDependencies"],
+      "rangeStrategy": "widen"
+    },
+    {
+      "description": "Astrale publications bypass the quarantine (mirrors minimumReleaseAgeExclude) and keep the >=X.Y.Z <X+1.0.0 / exact-pin conventions.",
+      "matchPackageNames": [
+        "@astrale-os/**",
+        "@astrale/**",
+        "@astrale-domains/**",
+        "@jsr/astrale__**",
+        "create-astrale-domain"
+      ],
+      "groupName": "astrale packages",
+      "groupSlug": "astrale",
+      "minimumReleaseAge": null,
+      "rangeStrategy": "replace",
+      "schedule": ["at any time"]
+    },
+    {
+      "description": "cli only: Studio agent stack, also excluded from the pnpm quarantine.",
+      "matchPackageNames": [
+        "@agentclientprotocol/**",
+        "@anthropic-ai/claude-agent-sdk",
+        "@anthropic-ai/claude-agent-sdk-*",
+        "@openai/codex"
+      ],
+      "groupName": "studio agent stack",
+      "groupSlug": "agent-stack",
+      "minimumReleaseAge": null
+    },
+    {
+      "description": "Majors wait for a tick on the Dependency Dashboard (zod 4.6, happy-dom 21 class of breakage).",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "GitHub Actions digests: one monthly PR.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "groupSlug": "github-actions",
+      "schedule": ["before 6am on the first day of the month"]
+    }
+  ]
 }
