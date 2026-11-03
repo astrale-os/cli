@@ -1,4 +1,7 @@
-import * as acp from '@agentclientprotocol/sdk'
+// Studio speaks ACP v1 through the SDK's `/unstable` entrypoint, everywhere: it
+// forks sessions for side questions and reads a turn's `usage`, and the stable
+// entrypoint neither types those nor keeps unstable fields in what it parses.
+import * as acp from '@agentclientprotocol/sdk/unstable'
 import { readFileSync } from 'node:fs'
 
 import type {
