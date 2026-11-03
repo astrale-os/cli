@@ -70,7 +70,7 @@ export const KERNEL_DOMAIN: DomainSummary = {
 }
 
 /**
- * The Domains the schema canvas can draw: the workspace's, then the Kernel. Only the schema
+ * The Domains the schema canvas can draw: the Kernel, then the workspace's. Only the schema
  * canvas reads the Kernel; the agent, comments, Core, Tests and Process keep to the workspace.
  * A workspace that holds the Kernel's own sources already draws it from there.
  */
@@ -79,7 +79,7 @@ export function useSchemaDomains(): { data: DomainSummary[] | undefined } {
   const data = useMemo(() => {
     if (!workspace) return undefined
     if (workspace.some((domain) => domain.origin === KERNEL_ORIGIN)) return workspace
-    return [...workspace, KERNEL_DOMAIN]
+    return [KERNEL_DOMAIN, ...workspace]
   }, [workspace])
   return { data }
 }

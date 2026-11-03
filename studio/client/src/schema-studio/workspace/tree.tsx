@@ -1,6 +1,5 @@
 import { useSchemaDomains } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
-import { cn } from '@/lib/utils'
 
 import type { WorkspaceDomainProjection } from './projection'
 
@@ -66,7 +65,7 @@ export function WorkspaceDomainTree({
         const closed = !visible || !expanded.has(domainId)
 
         return (
-          <section key={domainId} className={cn(summary.readOnly && 'border-t')}>
+          <section key={domainId}>
             <DomainRow
               origin={summary.origin}
               domainId={domainId}

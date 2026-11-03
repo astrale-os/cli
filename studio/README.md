@@ -211,7 +211,7 @@ Process links each callable back to its node on the canvas.
 
 ### The Kernel
 
-The Domains rail ends with **`kernel.astrale.ai`**, marked read-only. Its eye
+The Domains rail starts with **`kernel.astrale.ai`**, marked by a grey lock. Its eye
 draws the Kernel on the canvas like any workspace Domain: its Classes, their
 relationships and inheritance, and its Functions; a click opens a Class, Policy or
 Function in the detail panel. Studio reads the Kernel Schema that a workspace

@@ -1,7 +1,7 @@
 import { expect, test } from './test'
 
 /**
- * The Kernel is listed under the workspace's Domains and drawn like one of them: its Classes,
+ * The Kernel heads the workspace's Domains and drawn like one of them: its Classes,
  * relationships and Functions on the canvas, its members in the detail panel. Nothing in it can
  * be changed, so it starts no thread.
  */
@@ -11,7 +11,9 @@ test('the read-only Kernel draws on the canvas and opens in the detail panel', a
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
 
   const rail = page.getByTestId('workspace-domain-tree')
-  await expect(rail.getByText('read-only')).toBeVisible()
+  // first in the rail, marked by a lock alone
+  await expect(rail.locator('section').first()).toContainText(origin)
+  await expect(rail.getByRole('img', { name: 'Read-only' })).toBeVisible()
   await rail.getByRole('button', { name: `Show ${origin} on the canvas` }).click()
   await expect(page.getByTestId('workspace-domain-@kernel')).toBeVisible({ timeout: 60_000 })
 
