@@ -10,7 +10,7 @@
  * Ids are the agent's own (`effort` for Claude, `reasoning_effort` for Codex);
  * only the CATEGORY is common, so that is what the lookups key on.
  */
-import type * as acp from '@agentclientprotocol/sdk'
+import type * as acp from '@agentclientprotocol/sdk/unstable'
 
 import type {
   AgentEffort,
