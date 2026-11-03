@@ -51,6 +51,32 @@ describe('session route file store', () => {
     })
   })
 
+  test('follows a redirect to a Function instance, whose witness names no declaration, and reuses it in a new process', async () => {
+    expect(await runFixture(path, 'function')).toEqual({
+      value: 'done',
+      sourceAttempts: 1,
+      destinationAttempts: 1,
+    })
+    const artifact = JSON.parse(await readFile(path, 'utf8')) as {
+      readonly entries: Record<string, { readonly route: { readonly via: unknown } }>
+    }
+    expect(Object.values(artifact.entries).map((entry) => entry.route.via)).toEqual([
+      {
+        kind: 'via',
+        function: {
+          id: 'session-route-fresh-process',
+          version: `sha256:${'2'.padStart(64, '0')}`,
+        },
+        issuer: 'https://source.kernel.test',
+      },
+    ])
+    expect(await runFixture(path, 'function')).toEqual({
+      value: 'done',
+      sourceAttempts: 0,
+      destinationAttempts: 1,
+    })
+  })
+
   test('publishes only complete owner-private artifacts under concurrent process writers', async () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => runFixture(path)))
     expect(results.every((result) => result.destinationAttempts === 1)).toBe(true)
@@ -108,10 +134,13 @@ interface FixtureResult {
   readonly destinationAttempts: number
 }
 
-/** One process that routes through the route file at `routePath`. */
-async function runFixture(routePath: string): Promise<FixtureResult> {
+/** One process that routes through the route file at `routePath`, by a release or Function witness. */
+async function runFixture(
+  routePath: string,
+  witness: 'release' | 'function' = 'release',
+): Promise<FixtureResult> {
   const fixture = join(import.meta.dir, 'fixtures', 'session-route-process.ts')
-  const child = Bun.spawn([process.execPath, fixture, routePath], {
+  const child = Bun.spawn([process.execPath, fixture, routePath, witness], {
     stdout: 'pipe',
     stderr: 'pipe',
   })
