@@ -1,5 +1,6 @@
-import { useWorkspace } from '@/lib/hooks'
+import { useSchemaDomains } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { cn } from '@/lib/utils'
 
 import type { WorkspaceDomainProjection } from './projection'
 
@@ -43,7 +44,7 @@ export function WorkspaceDomainTree({
   /** Per-member visibility inside one domain (a class or an edge), not the domain itself. */
   onToggleHidden: (domainId: string, ref: string) => void
 }) {
-  const { data: workspace } = useWorkspace()
+  const { data: workspace } = useSchemaDomains()
   const selected = useUI((state) => state.selectedClass)
   const selectionDomainId = useUI((state) => state.selectionDomainId)
   const collapsedByDomain = useSchemaWorkspace((state) => state.collapsedModules)
@@ -65,7 +66,7 @@ export function WorkspaceDomainTree({
         const closed = !visible || !expanded.has(domainId)
 
         return (
-          <section key={domainId}>
+          <section key={domainId} className={cn(summary.readOnly && 'border-t')}>
             <DomainRow
               origin={summary.origin}
               domainId={domainId}
@@ -77,6 +78,7 @@ export function WorkspaceDomainTree({
                     onToggleExpanded: () => toggleDomainExpanded(domainId),
                   }
                 : {})}
+              readOnly={summary.readOnly}
               showSelectionIndicator={shouldShowDomainSelectionIndicator({
                 holdsSelection: selectionDomainId === domainId,
                 closed,

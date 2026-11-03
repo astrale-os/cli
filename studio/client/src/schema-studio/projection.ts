@@ -5,6 +5,7 @@ import { EDGE_ARROW, edgeMarkers, formatCardinality } from './edge-markers'
 import { localEndpointTargets } from './external'
 import {
   isKernelClass,
+  KERNEL_ORIGIN,
   isKernelImplementationClass,
   type KernelRole,
   kernelRolesOfClass,
@@ -78,6 +79,10 @@ export function projectDomainCanvas(
       ),
     }))
     .filter((module) => module.classes.length > 0)
+  // The Classes a card can stand for. A relationship reaching a Class left off the canvas
+  // (the Kernel's own `Node`, drawn as the Kernel) has no end to attach to: an edge to a
+  // missing node makes the layout engine reject the whole graph.
+  const drawable = new Set(modules.flatMap((module) => module.classes))
   const nodes: Node[] = []
 
   for (const module of modules) {
@@ -154,8 +159,12 @@ export function projectDomainCanvas(
   for (const edgeClass of Object.values(ir.classes)) {
     if (edgeClass.type !== 'edge') continue
     const [sourceEndpoint, targetEndpoint] = edgeClass.endpoints ?? []
-    const left = localEndpointTargets(ir, sourceEndpoint)
-    const right = localEndpointTargets(ir, targetEndpoint)
+    const left = localEndpointTargets(ir, sourceEndpoint).filter(({ className }) =>
+      drawable.has(className),
+    )
+    const right = localEndpointTargets(ir, targetEndpoint).filter(({ className }) =>
+      drawable.has(className),
+    )
     const markers = edgeMarkers(edgeClass.orientation)
     const ends = {
       sourceEnd: endpointOf(sourceEndpoint),
@@ -205,8 +214,11 @@ export function projectDomainCanvas(
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node' || isHidden(classRef(className), hidden)) continue
       for (const parent of definition.extendsRefs ?? []) {
-        if (isKernelClass(parent)) continue
+        // Another Domain's Kernel base reads as a role badge on the card; only the Kernel
+        // itself draws its own inheritance, between the Classes it puts on the canvas.
+        if (isKernelClass(parent) && ir.domain !== KERNEL_ORIGIN) continue
         if (parent.origin !== ir.domain || ir.classes[parent.name]?.type !== 'node') continue
+        if (!drawable.has(className) || !drawable.has(parent.name)) continue
         const source = representative(className)
         const target = representative(parent.name)
         if (source === target) continue

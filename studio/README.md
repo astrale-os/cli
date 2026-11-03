@@ -209,6 +209,22 @@ accepts. Clicking it opens its contract; the Functions overview (⌘K) lists the
 grouped by those Classes, the Class detail names the ones that work on it, and
 Process links each callable back to its node on the canvas.
 
+### The Kernel
+
+The Domains rail ends with **`kernel.astrale.ai`**, marked read-only. Its eye
+draws the Kernel on the canvas like any workspace Domain: its Classes, their
+relationships and inheritance, and its Functions; a click opens a Class, Policy or
+Function in the detail panel. Studio reads the Kernel Schema that a workspace
+Domain's installed `@astrale-os/sdk` ships (`KernelSchema`), through the same
+extractor island as an authored Schema, so it is the exact Kernel that Domain is
+built against. The implementation bases every Class carries (`Node`, `Edge`,
+`Named`, `Timestamped`, `Descriptable`) stay off the canvas but remain in the rail.
+
+Nothing in the Kernel changes from Studio: it takes no comments, the agent never
+works on it, and Core, Tests and Process keep to the workspace. Ask (`A`) still
+answers questions about a Kernel element. Its canvas layout and hidden elements
+are kept on this machine, under `$ASTRALE_HOME/studio/kernel/`.
+
 ### New domains
 
 The `+` on the Domains rail opens one composer in the middle of the screen: a

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { ChevronDown, ChevronRight, Eye, EyeOff, PanelLeftClose, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, PanelLeftClose, Plus } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
 import { DomainInstalledChip } from '@/components/instance-domains'
@@ -67,6 +67,8 @@ interface DomainRowProps {
   onToggleVisible?: () => void
   /** Something is selected inside a collapsed hierarchy. */
   showSelectionIndicator?: boolean
+  /** The Kernel: no threads, installs or package updates of its own to show. */
+  readOnly?: boolean
 }
 
 /**
@@ -83,6 +85,7 @@ export function DomainRow({
   visible,
   onToggleVisible,
   showSelectionIndicator,
+  readOnly,
 }: DomainRowProps) {
   return (
     // Marked as a tree row so targeting mode can attach a thread to the whole domain.
@@ -92,7 +95,7 @@ export function DomainRow({
     <div
       data-tree-row=""
       data-comment-outline-inset=""
-      {...anchorData(domainAnchorRef(origin), origin, domainId)}
+      {...(readOnly ? {} : anchorData(domainAnchorRef(origin), origin, domainId))}
       aria-current={selected ? 'true' : undefined}
       className={cn(
         'group relative flex min-h-10 items-center gap-1.5 px-2 py-1.5 transition-colors',
@@ -151,14 +154,26 @@ export function DomainRow({
         />
       )}
 
-      <DomainInstalledChip origin={origin} />
-      <DomainPackageUpdates domainId={domainId} origin={origin} />
+      {readOnly ? (
+        <span
+          title="The Kernel every Domain is built on, as your installed SDK ships it. Read-only."
+          className="inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1 text-[10px] font-medium text-muted-foreground"
+        >
+          <Lock className="h-2.5 w-2.5" />
+          read-only
+        </span>
+      ) : (
+        <>
+          <DomainInstalledChip origin={origin} />
+          <DomainPackageUpdates domainId={domainId} origin={origin} />
 
-      <AnchorButton
-        domainId={domainId}
-        anchorRef={{ ref: domainAnchorRef(origin), kind: 'section' }}
-        excerpt={origin}
-      />
+          <AnchorButton
+            domainId={domainId}
+            anchorRef={{ ref: domainAnchorRef(origin), kind: 'section' }}
+            excerpt={origin}
+          />
+        </>
+      )}
 
       {onToggleVisible && (
         <button

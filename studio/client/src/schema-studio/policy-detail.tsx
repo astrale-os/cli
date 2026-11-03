@@ -6,7 +6,7 @@ import { FlaskConical, ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { EmptyState } from '@/components/studio-kit'
-import { useBundle, useWorkspace } from '@/lib/hooks'
+import { useBundle, useSchemaDomains } from '@/lib/hooks'
 import { indexPolicies, policyGuard, policyUsage, type PolicyUsage } from '@/lib/policy'
 import { useUI } from '@/lib/store'
 
@@ -122,7 +122,7 @@ export function SchemaPolicyDetail({
   policyKey: string
 }) {
   const ref = parseSchemaRefKey(policyKey)
-  const { data: workspace } = useWorkspace()
+  const { data: workspace } = useSchemaDomains()
   const ownerId = workspace?.find((domain) => domain.origin === ref?.origin)?.id ?? domainId
   const { data: bundle, isLoading } = useBundle(ownerId)
   if (isLoading) return <div className="p-5 text-sm text-muted-foreground">Loading policy…</div>

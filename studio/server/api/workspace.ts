@@ -4,6 +4,7 @@ import { allDomains, depsInstalled } from '../domain/registry'
 import { listInstances, setActiveInstance } from '../instances/active'
 import { listInstanceDomains } from '../instances/domains'
 import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../introspect/cache'
+import { invalidateKernel } from '../introspect/kernel'
 import { asString } from '../json'
 import { studioSettings, updateStudioSettings } from '../state/settings'
 import { readWorkspaceUiState, updateWorkspaceUiState } from '../state/workspace-ui'
@@ -62,6 +63,7 @@ export async function handleWorkspaceRoute(
 
   if (path === '/api/workspace/refresh' && req.method === 'POST') {
     const domains = allDomains()
+    invalidateKernel()
     await Promise.all(
       domains.map(async (handle) => {
         // Keep agent runs entirely outside this path. A manual refresh only replaces

@@ -132,3 +132,42 @@ test('badges Kernel roles at any depth and never shows Kernel parents as chips',
   })
   expect(card('Base')).toMatchObject({ roles: [], parents: [] })
 })
+
+test('draws the Kernel itself without its implementation scaffolding, inheritance included', () => {
+  const kernel = (name: string, input: Parameters<typeof nodeClass>[1] = {}) =>
+    nodeClass(name, {
+      origin: 'kernel.astrale.ai',
+      ref: classRef('kernel.astrale.ai', name),
+      ...input,
+    })
+  const fixture = bundle({
+    Node: kernel('Node'),
+    Identity: kernel('Identity', { extendsRefs: [classRef('kernel.astrale.ai', 'Node')] }),
+    Domain: kernel('Domain', { extendsRefs: [classRef('kernel.astrale.ai', 'Identity')] }),
+    // `Node` is never drawn on the canvas, so a relationship from it has no end to attach to.
+    created_by: edgeClass('created_by', [
+      { name: 'node', types: ['Node'] },
+      { name: 'creator', types: ['Identity'] },
+    ]),
+    of_domain: edgeClass('of_domain', [
+      { name: 'identity', types: ['Identity'] },
+      { name: 'domain', types: ['Domain'] },
+    ]),
+  })
+  fixture.ir!.domain = 'kernel.astrale.ai'
+
+  const result = projectDomainCanvas(fixture, new Set(), {}, true)
+  const ids = new Set(result.nodes.map((node) => node.id))
+  expect(result.nodes.filter((node) => node.type === 'classNode').map((node) => node.id)).toEqual([
+    'class.Domain',
+    'class.Identity',
+  ])
+  expect(result.edges.map((edge) => edge.id).sort()).toEqual([
+    'edge-of_domain__class.Identity__class.Domain',
+    'extends-Domain__Identity',
+  ])
+  // every edge lands on a drawn node: the layout engine rejects the graph otherwise
+  for (const edge of result.edges) {
+    expect(ids.has(edge.source) && ids.has(edge.target)).toBe(true)
+  }
+})
