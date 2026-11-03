@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.160](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.159...cli/v1.0.0-beta.160) (2026-11-03)
+
+
+### Features
+
+* **commands:** upload files and pass their receipts with call --file ([#753](https://github.com/astrale-os/cli/issues/753)) ([8d99e6c](https://github.com/astrale-os/cli/commit/8d99e6c57e2bb9f8b7a50dfdea246ea75dd23af8))
+
+
+### Bug Fixes
+
+* **deps:** move to adapter-cloudflare 0.5.0-beta.207 (Wrangler 4.153) ([#759](https://github.com/astrale-os/cli/issues/759)) ([f5cb50f](https://github.com/astrale-os/cli/commit/f5cb50fe083683804a2a75d77e3623ad9c84e1a3))
+
 ## [1.0.0-beta.159](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.158...cli/v1.0.0-beta.159) (2026-11-02)
 
 
