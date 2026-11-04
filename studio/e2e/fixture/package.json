@@ -6,8 +6,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@astrale-os/adapter-cloudflare": "0.5.0-beta.208",
-    "@astrale-os/sdk": "0.6.0-beta.53",
+    "@astrale-os/adapter-cloudflare": "0.5.0-beta.211",
+    "@astrale-os/sdk": "0.6.0-beta.56",
     "zod": "4.6.7"
   },
   "devDependencies": {
