@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.163](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.162...cli/v1.0.0-beta.163) (2026-11-04)
+
+
+### Bug Fixes
+
+* **commands:** describe upload receipts as usable by whoever presents them ([#777](https://github.com/astrale-os/cli/issues/777)) ([dfab432](https://github.com/astrale-os/cli/commit/dfab432230cf2d14918fd73d2227df4eb1e9e7a8))
+
 ## [1.0.0-beta.162](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.161...cli/v1.0.0-beta.162) (2026-11-04)
 
 
