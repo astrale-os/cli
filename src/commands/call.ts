@@ -287,7 +287,8 @@ async function declaredInput(
 ): Promise<unknown> {
   let bundle: unknown
   try {
-    bundle = await caller.session.schema.bundle(parseIntrospectTarget(path.raw).origin)
+    // The Schema API answers `{ domain, bundle }`: the declarations live in its `bundle`.
+    bundle = (await caller.session.schema.bundle(parseIntrospectTarget(path.raw).origin)).bundle
   } catch {
     return undefined
   }
