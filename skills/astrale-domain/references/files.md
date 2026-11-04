@@ -99,7 +99,7 @@ export const importReport = defineAction<typeof schema>()(
 - Attach to the Domain's own records as the Domain, `mutate(mutation, input, { as: 'executor' })`
   (a Mutation of the deprecated closure form: `graph.self.mutate(...)`): the callable's `policy`
   already decided the user, and the Domain owns the Class. Attaching never reads the file. A raw
-  `kernel.mutate((m) => ...)` takes `input.file.receipt`.
+  `kernel.self.mutate((m) => ...)` takes `input.file.receipt`.
 - `{ as: 'caller' }` also takes the receipt, but then the caller needs the right to create or
   update the holder.
 - To hand the file to a dependency's `file()` field, pass its receipt, as the caller or as the
