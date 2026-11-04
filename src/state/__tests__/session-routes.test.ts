@@ -87,7 +87,7 @@ describe('session route file store', () => {
       sourceAttempts: 0,
       destinationAttempts: 1,
     })
-  })
+  }, 30_000) // nine Bun processes; one cold start takes about 1.5 s on a CI runner
 
   test('auth logout clears every persisted bearer cache through the real CLI command', async () => {
     const routePath = join(directory, 'session', 'routes.json')
