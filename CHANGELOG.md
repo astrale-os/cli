@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.162](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.161...cli/v1.0.0-beta.162) (2026-11-04)
+
+
+### Features
+
+* **deps:** move Studio to ACP SDK 2 with claude-agent-acp 0.99.1 and codex-acp 2.5.0 ([#767](https://github.com/astrale-os/cli/issues/767)) ([80dc507](https://github.com/astrale-os/cli/commit/80dc5070ce331d72ebc725caede08bb21a3db613))
+* **studio:** show the read-only Kernel schema on the canvas ([#770](https://github.com/astrale-os/cli/issues/770)) ([7866277](https://github.com/astrale-os/cli/commit/7866277037c59d2a217e5cfd5e042e2506989357))
+
+
+### Bug Fixes
+
+* **deps:** move to SDK 0.6.0-beta.56 for hono 4.13.14 ([#771](https://github.com/astrale-os/cli/issues/771)) ([fbf9aff](https://github.com/astrale-os/cli/commit/fbf9aff6773d236266059639436daf9a80824739))
+* **deps:** update ip-address to 10.7.5 for its moderate advisories ([#772](https://github.com/astrale-os/cli/issues/772)) ([0a62b02](https://github.com/astrale-os/cli/commit/0a62b02153524811c17df4a024a94779b1528261))
+
 ## [1.0.0-beta.161](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.160...cli/v1.0.0-beta.161) (2026-11-03)
 
 
