@@ -47,8 +47,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   parallel path/id APIs.
 - A file arrives as an upload receipt at a `file()` input field, never as bytes: the handler gets a
   file object there, reads it (`text()`, `bytes()`, `stream()`) and attaches it to a blob property
-  as the caller (`mutate(..., { as: 'caller' })`), the identity the receipt is bound to. Read
-  `files.md`.
+  of its own Class as the Domain (`mutate(..., { as: 'executor' })`): a receipt serves whoever
+  presents it until it expires. Read `files.md`.
 - Use resolved definitions or their refs where accepted, not reconstructed locator strings. Position
   matters: a Query Class source selects instances, while a projected Class Path names the definition node.
 

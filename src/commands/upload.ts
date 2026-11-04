@@ -30,8 +30,8 @@ export async function uploadCommand(
   await adapters.runKernelCommand<Uploaded>({
     opts,
     label: `Upload ${path}`,
-    // A receipt binds to the caller that uploads it: the user, as `mutate` and the caller
-    // session of a Domain callable (`ctx.kernel.caller`) present it.
+    // The receipt names the user who uploads it; until it expires it serves whoever presents it:
+    // `mutate`, or the Domain callable the user passes it to.
     credential: { principal: 'caller' },
     fn: ({ session }) => uploadFile(session, file),
     format: (uploaded, format) => {
@@ -64,9 +64,9 @@ Behavior:
   receipt is what a blob property accepts in \`astrale mutate\`, and what a
   Domain callable's file field receives in \`astrale call\`.
 
-  A receipt works only for the identity that uploaded it, and only until
-  expiresAt (Kernels are moving to 15 minutes): upload just before using it,
-  or let \`astrale call --file\` upload and call in one step. Without
+  A receipt works on this instance only, for whoever presents it, until
+  expiresAt (15 minutes after the upload): keep it private, upload just before
+  using it, or let \`astrale call --file\` upload and call in one step. Without
   --media-type, the type follows the file extension (application/octet-stream
   when unknown). --json prints { receipt, digest, mediaType, size, expiresAt,
   file }; --raw prints the receipt alone.

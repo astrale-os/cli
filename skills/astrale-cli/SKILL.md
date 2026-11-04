@@ -494,12 +494,14 @@ an upload. The receipt is:
   string): the Kernel checks the property's `maxBytes` and `mediaTypes` then;
 - the value of a Domain callable's `file()` field, which `introspect` shows as
   `{ "type": "string", "x-astrale-value-kind": "file", "x-astrale-file":
-  { "maxBytes"?, "mediaTypes"? } }`; the Domain reads and attaches it as you.
+  { "maxBytes"?, "mediaTypes"? } }`; the Kernel checks the receipt and those
+  bounds when it admits the call, and the Domain attaches the file to its records.
 
-A receipt binds to the identity that uploaded it: it works for that identity's
-`mutate` and for a Domain acting for that identity, never for anyone else. It
-expires 15 minutes after the upload (`expiresAt`) and can be reused until then,
-so upload just before use. A refused or expired receipt (`MUTATION_BLOB_RECEIPT_INVALID`,
+A receipt names the identity that uploaded it and serves whoever presents it on
+this instance, like a short-lived share link: your `mutate`, the Domain you pass
+it to, or another user you hand it to. Keep it private. It expires 15 minutes
+after the upload (`expiresAt`) and can be reused until then, so upload just
+before use. A refused or expired receipt (`MUTATION_BLOB_RECEIPT_INVALID`,
 `BLOB_RECEIPT_INVALID`) means upload again; the hint says so.
 
 `call --file <field>=<file>` uploads and calls in one step: each file is

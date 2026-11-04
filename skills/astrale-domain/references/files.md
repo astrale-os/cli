@@ -2,7 +2,7 @@
 
 Read when a Domain stores, receives, reads, or serves files. The bytes always travel through the
 Kernel, streamed: a Domain never receives file bytes in a call. It receives the caller's upload
-receipt at a `file()` input field, as a file object, and reads or attaches it for that caller.
+receipt at a `file()` input field, as a file object, and attaches it to its own records as itself.
 
 ## The model
 
@@ -12,16 +12,20 @@ receipt at a `file()` input field, as a file object, and reads or attaches it fo
 2. **Call.** The client passes the receipt at the callable's `file()` field: `astrale call ...
    --file <field>=<file>`, the MCP `call`/`mutate` `files` argument, or a typed
    `session.invoke(reference, input)`, which uploads a `Blob`/`File` found at a `file()` field itself.
-3. **Read and attach.** The handler receives a file object at that field. It reads the file and
-   attaches it to a blob property as the caller; the Kernel then checks the property's `maxBytes`
-   and `mediaTypes` and stores the `Ref`.
+   The Kernel admits the call only if each `file()` field holds a valid receipt whose file fits the
+   field's `maxBytes` and `mediaTypes`.
+3. **Read and attach.** The handler receives a file object at that field. It reads the file if it
+   needs to, and attaches it to a blob property of its own Class as the Domain
+   (`mutate(..., { as: 'executor' })`); the Kernel then checks the property's `maxBytes` and
+   `mediaTypes` and stores the `Ref`.
 
-A receipt is signed by the Kernel, bound to the user who uploaded it, valid for 15 minutes and
-reusable until then. It works for that user directly or for a Domain acting for them through
-`ctx.kernel.caller` / `mutate(..., { as: 'caller' })`, never for the Domain acting as itself
-(`ctx.kernel`, `{ as: 'executor' }`) and never for another user. Read and attach in the
-invocation that received it; keep the attached Node, never the receipt. The journal never stores a
-receipt. A digest or `Ref` grants nothing.
+A receipt is signed by the Kernel, names the user who uploaded it, is valid for 15 minutes and
+reusable until then. Until it expires it serves whoever presents it to this instance, like a
+short-lived share link: the Domain the user hands it to (`{ as: 'executor' }` or
+`{ as: 'caller' }`), or another user. Only an authenticated identity of the instance can use it, so
+keep it out of logs. Read and attach in the invocation that received it; keep the attached Node,
+never the receipt. The journal never stores a receipt: it records the `Ref` and who uploaded it. A
+digest or `Ref` grants nothing.
 
 ## Declare the stored file
 
@@ -87,19 +91,19 @@ export const importReport = defineAction<typeof schema>()(
   async ({ input, mutate }) => {
     const csv = await input.file.text() // read as the caller, optional
     if (!csv.startsWith('account,')) throw new Error('Not a trial balance.')
-    return mutate(createReport, { title: input.title, file: input.file }, { as: 'caller' })
+    return mutate(createReport, { title: input.title, file: input.file }, { as: 'executor' })
   },
 )
 ```
 
-- Attach as the caller, `mutate(mutation, input, { as: 'caller' })` (a Mutation of the deprecated
-  closure form: `graph.caller.mutate(...)`), never `{ as: 'executor' }`: the Domain's own authority
-  is not the uploader, and the receipt is refused. Attaching never reads the file. A raw
-  `kernel.caller.mutate((m) => ...)` takes `input.file.receipt`.
-- The caller needs the right to create or update the holder; a Policy that admits the call but not
-  the write still refuses the attach.
-- To hand the file to a dependency's `file()` field, pass the receipt as the caller:
-  `dependencies.files.caller.invoke((d) => d.functions.scan, { file: input.file.receipt })`.
+- Attach to the Domain's own records as the Domain, `mutate(mutation, input, { as: 'executor' })`
+  (a Mutation of the deprecated closure form: `graph.self.mutate(...)`): the callable's `policy`
+  already decided the user, and the Domain owns the Class. Attaching never reads the file. A raw
+  `kernel.self.mutate((m) => ...)` takes `input.file.receipt`.
+- `{ as: 'caller' }` also takes the receipt, but then the caller needs the right to create or
+  update the holder.
+- To hand the file to a dependency's `file()` field, pass its receipt, as the caller or as the
+  Domain: `dependencies.files.self.invoke((d) => d.functions.scan, { file: input.file.receipt })`.
 
 ## Read a file
 
@@ -116,9 +120,9 @@ export const importReport = defineAction<typeof schema>()(
   `@astrale-os/sdk/action`) and resolve only once the whole file arrived and was verified. Read a
   larger file with `stream()`, which fails at its end if the bytes differ from the upload: write
   nothing lasting derived from it before it ends. Cancelling the stream cancels the download.
-- The SDK checks the field's `maxBytes` and `mediaTypes` on each read and throws `FileReadError`
-  (`FILE_TOO_LARGE`, `FILE_MEDIA_TYPE`, `FILE_MEMORY_LIMIT`). The Kernel never checks a field's
-  bounds on an ordinary call; a file attached unread is checked against the property's bounds only.
+- The Kernel checks the field's `maxBytes` and `mediaTypes` when it admits the call, and the SDK
+  checks them again on each read, throwing `FileReadError` (`FILE_TOO_LARGE`, `FILE_MEDIA_TYPE`,
+  `FILE_MEMORY_LIMIT`).
 - An attached file reads by holder: `kernel.caller.content.download({ node, property })` returns a
   streamed binary; consume it to its end and keep nothing on a short or failed read.
 
@@ -127,7 +131,8 @@ export const importReport = defineAction<typeof schema>()(
 | When | Error |
 | --- | --- |
 | Upload over the Kernel's limit, or a malformed media type | `BLOB_TOO_LARGE`, `BLOB_MEDIA_TYPE_INVALID` |
-| Read of an expired, forged, or another user's receipt | `FUNCTION_INPUT_INVALID`, reason `BLOB_RECEIPT_INVALID` |
+| Call whose `file()` field holds an expired, forged or foreign-instance receipt, or a file outside the field's bounds | `FUNCTION_INPUT_INVALID`, reason `BLOB_RECEIPT_INVALID`, `BLOB_TOO_LARGE` or `BLOB_MEDIA_TYPE_INVALID`, the field's JSON Pointer as `path`; the handler does not run |
+| Read of an expired or forged receipt | `FUNCTION_INPUT_INVALID`, reason `BLOB_RECEIPT_INVALID` |
 | Attach of such a receipt, or of a `Ref` | `FUNCTION_INPUT_INVALID`, reason `MUTATION_BLOB_RECEIPT_INVALID` or `MUTATION_BLOB_RECEIPT_REQUIRED` |
 | Attach of a file outside the property's bounds | `FUNCTION_INPUT_INVALID`, reason `MUTATION_INPUT_INVALID`, issue `MUTATION_PROPERTY_INVALID` with the `property` |
 | Uncaught `FileReadError` | `LIMIT_EXCEEDED` (size) or `VALIDATION_ERROR` (media type), its code as reason |
@@ -154,8 +159,7 @@ await expect(file.text()).resolves.toBe('account,amount\n512,10')
 
 Declare the exact Kernel Functions the Domain calls for its callers (see `runtime.md`):
 `K.functions.download` to read a file, `K.functions.mutate` to attach, and `K.functions.upload`
-when the Domain stores bytes it produces itself (it uploads as `self` and attaches as `self`: a
-receipt binds to whoever uploaded it).
+when the Domain stores bytes it produces itself (it uploads and attaches as `self`).
 
 ```ts
 requirements: requirements({
@@ -166,7 +170,7 @@ requirements: requirements({
 ## Durable Workflows
 
 A durable run acts as its Domain and outlives a receipt. At the durable start the Kernel admits each
-`file()` receipt for the caller, checks the field's bounds, and replaces it with a reference bound
+`file()` receipt, checks the field's bounds, and replaces it with a reference bound
 to the Execution, valid while the run lasts (at most 7 days). The Workflow's input holds that
 reference string, not a file object, so the field's bounds are checked at the start and by the
 property at the attach, not on each read. A Step uses it wherever a receipt goes,

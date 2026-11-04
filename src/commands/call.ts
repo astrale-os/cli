@@ -260,8 +260,8 @@ function withReceipts(
 }
 
 /**
- * Upload each file as the caller, so its receipt binds to the user the callable's Domain acts for
- * (`ctx.kernel.caller`). A file field the installed callable declares is checked first.
+ * Upload each file as the caller, so its receipt names the user the callable's Domain acts for. A
+ * file field the installed callable declares is checked first.
  */
 export async function uploadCallFiles(
   caller: Pick<ConnectionContext, 'session'>,
@@ -599,17 +599,16 @@ Self-reference:
 Files:
   --file <field>=<file> uploads the file (at most 100 MiB, streamed from
   disk) as you, then puts its receipt string at that field of the input
-  before calling: the callable's Domain reads or attaches the file for you
-  through its caller session. <field> is a top-level key (balance) or a JSON
+  before calling: the Kernel checks it against the field, and the callable's
+  Domain reads it and attaches it to its records. <field> is a top-level key (balance) or a JSON
   Pointer into the input (/attachments/0, /attachments/- appends). Repeat it
   for several files. The field must not already hold a value; the media type
   follows the file extension (use \`astrale upload --media-type\` and pass the
   receipt yourself for another one). When the installed callable declares the
   field as a file with a size or media type bound, a file it would refuse is
   refused before upload. --dry-run shows a placeholder and uploads nothing.
-  Uploads happen right before the call because a receipt expires (Kernels
-  are moving to 15 minutes): a refused or expired receipt means run the
-  command again.
+  Uploads happen right before the call because a receipt expires 15 minutes
+  after the upload: a refused or expired receipt means run the command again.
 
 Durable callables:
   A callable declared durable answers with the Execution it started, so
