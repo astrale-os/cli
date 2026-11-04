@@ -1,3 +1,4 @@
+import { KERNEL_DOMAIN_ID } from '../shared/contracts/workspace'
 /**
  * Studio JSON API composition root. It owns only the public `/api/` boundary,
  * cross-site mutation guard, workspace-vs-agent-vs-domain addressing, and final 404.
@@ -6,6 +7,7 @@
 import { handleAgentRoute } from './agent/routes'
 import { handleDomainRoute } from './api/domain'
 import { crossSiteBlocked, json, notFound, readJsonRecord, type Notify } from './api/http'
+import { handleKernelRoute } from './api/kernel'
 import { handleWorkspaceRoute } from './api/workspace'
 import { getDomain } from './domain/registry'
 
@@ -36,6 +38,7 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
   const match = path.match(/^\/api\/domain\/([^/]+)(\/.*)?$/)
   if (!match) return notFound()
   const id = decodeURIComponent(match[1])
+  if (id === KERNEL_DOMAIN_ID) return handleKernelRoute(req, match[2] ?? '')
   const handle = getDomain(id)
   if (!handle) return notFound()
 

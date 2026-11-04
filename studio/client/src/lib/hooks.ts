@@ -1,5 +1,7 @@
 import type { EnvName } from '@shared/contracts/schema'
+import type { DomainSummary } from '@shared/contracts/workspace'
 
+import { KERNEL_DOMAIN_ID, KERNEL_ORIGIN } from '@shared/contracts/workspace'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -53,6 +55,33 @@ const settled = (q: { data?: unknown; isError: boolean }) => q.data !== undefine
 
 export function useWorkspace() {
   return useQuery({ queryKey: qk.workspace, queryFn: api.workspace })
+}
+
+/** The read-only Kernel, as the schema canvas lists it beside the workspace's Domains. */
+export const KERNEL_DOMAIN: DomainSummary = {
+  id: KERNEL_DOMAIN_ID,
+  origin: KERNEL_ORIGIN,
+  path: '',
+  schemaDir: '',
+  depsInstalled: true,
+  hasGit: false,
+  configFile: '',
+  readOnly: true,
+}
+
+/**
+ * The Domains the schema canvas can draw: the Kernel, then the workspace's. Only the schema
+ * canvas reads the Kernel; the agent, comments, Core, Tests and Process keep to the workspace.
+ * A workspace that holds the Kernel's own sources already draws it from there.
+ */
+export function useSchemaDomains(): { data: DomainSummary[] | undefined } {
+  const { data: workspace } = useWorkspace()
+  const data = useMemo(() => {
+    if (!workspace) return undefined
+    if (workspace.some((domain) => domain.origin === KERNEL_ORIGIN)) return workspace
+    return [KERNEL_DOMAIN, ...workspace]
+  }, [workspace])
+  return { data }
 }
 export function useStudioRuntime() {
   return useQuery({

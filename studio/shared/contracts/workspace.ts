@@ -213,6 +213,8 @@ export interface DomainSummary {
   depsInstalled: boolean
   hasGit: boolean
   configFile: string
+  /** The Kernel Domain: drawn and inspected like any Domain, but nothing in it can change. */
+  readOnly?: boolean
 }
 
 /** The Studio surface selected inside one scanned workspace. */
@@ -286,3 +288,13 @@ export interface VisibilityState {
   /** Whether local Class inheritance edges are rendered. */
   showInheritedEdges: boolean
 }
+
+/** Origin of the Kernel Domain every Domain is built on. */
+export const KERNEL_ORIGIN = 'kernel.astrale.ai'
+
+/**
+ * Studio's id for the read-only Kernel Domain. Not a workspace Domain: it has no project on
+ * disk, so it never appears in `/api/workspace`. Workspace ids are `<name>-<hash>`, so this
+ * one cannot collide with them.
+ */
+export const KERNEL_DOMAIN_ID = '@kernel'

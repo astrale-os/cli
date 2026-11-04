@@ -21,17 +21,22 @@ interface AskParts {
   question: string
   ir: SchemaIR | null
   overlay?: SchemaOverlay
-  /** the domain the element lives in, so the answer reads the right repo */
-  domain?: { origin: string; path: string }
+  /**
+   * The domain the element lives in, so the answer reads the right repo. The Kernel has no
+   * path: it is read from the installed SDK, not from a project in the workspace.
+   */
+  domain?: { origin: string; path?: string }
 }
 
 /** Build one focused side-question prompt. */
 export function buildAskPrompt(parts: AskParts): string {
   const target = describeAnchor(parts.anchorRef, parts.ir, parts.overlay)
   const named = parts.excerpt && parts.excerpt !== parts.anchorRef ? ` (${parts.excerpt})` : ''
-  const where = parts.domain
-    ? ` in the domain \`${parts.domain.origin}\` (at \`${parts.domain.path}\`)`
-    : ' in this workspace'
+  const where = !parts.domain
+    ? ' in this workspace'
+    : parts.domain.path === undefined
+      ? ` in the read-only Kernel Domain \`${parts.domain.origin}\` (as the installed \`@astrale-os/sdk\` ships it)`
+      : ` in the domain \`${parts.domain.origin}\` (at \`${parts.domain.path}\`)`
   const lines = [`Quick question about \`${parts.anchorRef}\`${named}${where}.`]
   if (target) lines.push('', 'Target:', target)
   lines.push('', `Question: ${parts.question.trim()}`)

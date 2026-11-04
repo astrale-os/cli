@@ -8,7 +8,7 @@ import { ErrorBanner } from '@/components/error-banner'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { api, qk } from '@/lib/api'
 import { buildFunctionsModel } from '@/lib/functions'
-import { useWorkspace } from '@/lib/hooks'
+import { useSchemaDomains } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
 import { useUI } from '@/lib/store'
 import { isModuleRef } from '@/lib/targets'
@@ -32,7 +32,7 @@ import { useWorkspaceDomainInputs } from './use-domain-inputs'
 import { usePreparedWorkspaceDomains } from './use-prepared-domains'
 
 export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
-  const { data: domains } = useWorkspace()
+  const { data: domains } = useSchemaDomains()
   const { inputs, pending, errors } = useWorkspaceDomainInputs(domainIds, domains)
   const queryClient = useQueryClient()
   const selected = useUI((state) => state.selectedClass)

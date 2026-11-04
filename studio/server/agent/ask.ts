@@ -12,7 +12,9 @@ import type { AnchorRef } from '../../shared/contracts/workspace'
 import type { AskResult } from './harness/adapter'
 import type { AgentWorkspace } from './workspace'
 
+import { KERNEL_DOMAIN_ID, KERNEL_ORIGIN } from '../../shared/contracts/workspace'
 import { getBundle } from '../introspect/cache'
+import { getKernelBundle } from '../introspect/kernel'
 import { resolveChat } from './chats'
 import { getHarnessById } from './harness/registry'
 import { getHarness, resolveHarnessConfiguration } from './harness/selection'
@@ -71,16 +73,19 @@ export async function runAsk(
   const handle = body.domainId
     ? workspace.domains.find((candidate) => candidate.id === body.domainId)
     : undefined
-  const bundle = handle ? await getBundle(handle.id) : null
+  const kernel = body.domainId === KERNEL_DOMAIN_ID
+  const bundle = kernel ? await getKernelBundle() : handle ? await getBundle(handle.id) : null
   const prompt = buildAskPrompt({
     anchorRef: ref,
     excerpt: body.excerpt || ref,
     question,
     ir: bundle?.ir ?? null,
     overlay: bundle?.overlay,
-    ...(handle
-      ? { domain: { origin: domainOrigin(handle), path: domainRelativePath(workspace, handle) } }
-      : {}),
+    ...(kernel
+      ? { domain: { origin: KERNEL_ORIGIN } }
+      : handle
+        ? { domain: { origin: domainOrigin(handle), path: domainRelativePath(workspace, handle) } }
+        : {}),
   })
   return harness.ask({
     root: workspace.root,

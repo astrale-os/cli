@@ -1,5 +1,6 @@
 import type { AnchorRef } from '@shared/contracts/workspace'
 
+import { KERNEL_DOMAIN_ID } from '@shared/contracts/workspace'
 import { MessageSquarePlus } from 'lucide-react'
 import { type ReactNode } from 'react'
 
@@ -16,6 +17,30 @@ import { Popover, PopoverAnchor } from './ui/popover'
  * shared globally via store.openAnchorRef.
  */
 export function Commentable({
+  anchor,
+  excerpt,
+  children,
+  className,
+  domainId,
+}: {
+  anchor: AnchorRef
+  excerpt: string
+  children: ReactNode
+  className?: string
+  domainId: string
+}) {
+  // The Kernel is read-only: there is no thread to start on it.
+  if (domainId === KERNEL_DOMAIN_ID) {
+    return <span className={cn('relative block', className)}>{children}</span>
+  }
+  return (
+    <CommentableAnchor anchor={anchor} excerpt={excerpt} className={className} domainId={domainId}>
+      {children}
+    </CommentableAnchor>
+  )
+}
+
+function CommentableAnchor({
   anchor,
   excerpt,
   children,
