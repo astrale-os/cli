@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.164](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.163...cli/v1.0.0-beta.164) (2026-11-05)
+
+
+### Bug Fixes
+
+* **commands:** check a call --file field against the installed bundle before uploading ([#774](https://github.com/astrale-os/cli/issues/774)) ([ffa4893](https://github.com/astrale-os/cli/commit/ffa4893c56ca6e2a516fca01c81529749bf8d251))
+
 ## [1.0.0-beta.163](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.162...cli/v1.0.0-beta.163) (2026-11-04)
 
 
