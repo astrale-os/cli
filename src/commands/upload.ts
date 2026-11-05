@@ -65,7 +65,7 @@ Behavior:
   Domain callable's file field receives in \`astrale call\`.
 
   A receipt works on this instance only, for whoever presents it, until
-  expiresAt (15 minutes after the upload): keep it private, upload just before
+  expiresAt (one hour after the upload): keep it private, upload just before
   using it, or let \`astrale call --file\` upload and call in one step. Without
   --media-type, the type follows the file extension (application/octet-stream
   when unknown). --json prints { receipt, digest, mediaType, size, expiresAt,

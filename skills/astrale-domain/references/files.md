@@ -19,7 +19,7 @@ receipt at a `file()` input field, as a file object, and attaches it to its own 
    (`mutate(..., { as: 'executor' })`); the Kernel then checks the property's `maxBytes` and
    `mediaTypes` and stores the `Ref`.
 
-A receipt is signed by the Kernel, names the user who uploaded it, is valid for 15 minutes and
+A receipt is signed by the Kernel, names the user who uploaded it, is valid for one hour and
 reusable until then. Until it expires it serves whoever presents it to this instance, like a
 short-lived share link: the Domain the user hands it to (`{ as: 'executor' }` or
 `{ as: 'caller' }`), or another user. Only an authenticated identity of the instance can use it, so
@@ -169,18 +169,17 @@ requirements: requirements({
 
 ## Durable Workflows
 
-A durable run acts as its Domain and outlives a receipt. At the durable start the Kernel admits each
-`file()` receipt, checks the field's bounds, and replaces it with a reference bound
-to the Execution, valid while the run lasts (at most 7 days). The Workflow's input holds that
-reference string, not a file object, so the field's bounds are checked at the start and by the
-property at the attach, not on each read. A Step uses it wherever a receipt goes,
+A durable run acts as its Domain and may last far longer than a receipt. Its input holds each
+`file()` receipt as the caller sent it, a string, not a file object; the Kernel checked it against
+the field's bounds when it admitted the call. A Step uses it as the Domain,
 `kernel.content.download({ receipt })` or a blob property value written with
-`step.mutate(id, mutation, input, { as: 'executor' })`: a Step acts as the Domain for this Execution
-and has no `caller`. It is refused to anyone else, after the run, and in a child durable call:
-attach the file in a Step, then pass the Node. Once the run ends only the attached Nodes keep the
-file. A replay of the same idempotency key compares each file by content, but still needs a valid
-receipt. Full contract: `docs/durable-workflows.md` in `@astrale-os/sdk`, "Files in a durable
-Workflow".
+`step.mutate(id, mutation, input, { as: 'executor' })`, **only until it expires, one hour after the
+upload**: attach each file the run keeps to a Node in its first Steps, before any `sleep`,
+`awaitSignal` or slow call, then read it from that Node. A Step past the hour, a retry after a long
+engine outage included, is refused `BLOB_RECEIPT_INVALID` and the user must upload again. The
+Execution keeps no file: only the attached Nodes do. Never log or return the receipt. A replay of
+the same idempotency key compares each file by content. Full contract: `docs/durable-workflows.md`
+in `@astrale-os/sdk`, "Files in a durable Workflow".
 
 ## Binary input
 

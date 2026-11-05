@@ -499,7 +499,7 @@ an upload. The receipt is:
 
 A receipt names the identity that uploaded it and serves whoever presents it on
 this instance, like a short-lived share link: your `mutate`, the Domain you pass
-it to, or another user you hand it to. Keep it private. It expires 15 minutes
+it to, or another user you hand it to. Keep it private. It expires one hour
 after the upload (`expiresAt`) and can be reused until then, so upload just
 before use. A refused or expired receipt (`MUTATION_BLOB_RECEIPT_INVALID`,
 `BLOB_RECEIPT_INVALID`) means upload again; the hint says so.

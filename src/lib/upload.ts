@@ -199,7 +199,7 @@ export function formatBytes(bytes: number): string {
 
 /** The Kernel refuses a receipt it did not issue, or that expired. */
 export const RECEIPT_REFUSED_HINT =
-  'An upload receipt works only on the instance that issued it, and only until it expires (its expiresAt, 15 minutes after the upload). Upload the file again (`astrale upload`, or `astrale call --file`) and use the new receipt.'
+  'An upload receipt works only on the instance that issued it, and only until it expires (its expiresAt, one hour after the upload). Upload the file again (`astrale upload`, or `astrale call --file`) and use the new receipt.'
 
 /** Whether a Kernel failure reason names a refused upload receipt, at any depth. */
 export function receiptRefused(reason: unknown, depth = 0): boolean {

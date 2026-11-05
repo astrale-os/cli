@@ -608,7 +608,7 @@ Files:
   receipt yourself for another one). When the installed callable declares the
   field as a file with a size or media type bound, a file it would refuse is
   refused before upload. --dry-run shows a placeholder and uploads nothing.
-  Uploads happen right before the call because a receipt expires 15 minutes
+  Uploads happen right before the call because a receipt expires one hour
   after the upload: a refused or expired receipt means run the command again.
 
 Durable callables:
