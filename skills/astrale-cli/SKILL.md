@@ -512,10 +512,10 @@ uploaded right before the call and its receipt is put at `<field>` of the input.
 repeatable:
 
 ```bash
-astrale call /:sextant.so:class.TrialBalance:import fiscalYear=2026 --file balance=./tb.csv
+astrale call /:reports.example:class.Report:import title=Q3 --file file=./q3.csv
 astrale call /:mail.example:function.send -d @mail.json \
   --file /attachments/-=./a.pdf --file /attachments/-=./b.pdf
-astrale call /:sextant.so:class.TrialBalance:import --file balance=./tb.csv --dry-run  # placeholder, no upload
+astrale call /:reports.example:class.Report:import title=Q3 --file file=./q3.csv --dry-run  # placeholder, no upload
 ```
 
 For a `file()` field, `call --file` refuses a file over its `maxBytes`
