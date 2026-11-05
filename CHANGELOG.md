@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.165](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.164...cli/v1.0.0-beta.165) (2026-11-05)
+
+
+### Bug Fixes
+
+* **commands:** describe one-hour receipts and how durable runs use their files ([#780](https://github.com/astrale-os/cli/issues/780)) ([adc5c42](https://github.com/astrale-os/cli/commit/adc5c42dc3f15a0f408eabc3562da452b6061dfd))
+
 ## [1.0.0-beta.164](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.163...cli/v1.0.0-beta.164) (2026-11-05)
 
 
