@@ -118,8 +118,8 @@ Schema declares a durable callable; there is nothing else to wire.
 The context has no `query`, `mutate`, `kernel`, `graph`, `dependencies`, `integrations` or
 `caller`: the Kernel is reachable only inside a Step, and the run never acts as its caller. Any
 `step` argument may be `{ id, retry, timeoutMs }` instead of an id. A `file()` field reaches the
-Workflow as a reference bound to the Execution, which a Step reads or attaches as the Domain; see
-`files.md`.
+Workflow as the caller's upload receipt, which a Step reads or attaches as the Domain only within the
+hour after the upload: attach it in the first Steps; see `files.md`.
 
 ## Steps
 
