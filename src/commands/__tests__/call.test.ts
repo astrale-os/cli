@@ -326,7 +326,8 @@ describe('call --file', () => {
         schema: {
           async bundle() {
             if (declared === undefined) throw new Error('no bundle')
-            return declared
+            // The shape the Kernel Schema API answers, as `introspect --bundle` prints it.
+            return { domain: { origin: 'sextant.so' }, bundle: declared }
           },
         },
         content: {
