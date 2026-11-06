@@ -180,11 +180,12 @@ not present the existing gateway card for Codex yet; Codex uses its own login.
 
 ### View previews
 
-Studio opens the canonical `/:origin:view.slug` through `astrale view`. The CLI
-resolves the installed, verified View placement and owns the loopback Shell
-session, identity, delegation, and cleanup. Target-bound Views query the active
-instance first so Studio can pass an exact `@id`; Studio does not inject a local
-URL or override the View handshake.
+Studio opens a View by its canonical ViewPath, `/:<origin>:view.<name>`, built
+with the Kernel's Path grammar, through `astrale view` as the instance owner (see
+[View identities](#view-identities)). The CLI resolves the installed, verified
+View placement and owns the loopback Shell session, identity, delegation, and
+cleanup. A View that shows one node routes to it itself; Studio does not inject a
+local URL or override the View handshake.
 
 ## What it does
 
