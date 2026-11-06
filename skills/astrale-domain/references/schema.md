@@ -21,6 +21,7 @@ interface declaration kind. Create concrete descendants, not instances of the ab
 SDK-authored node Classes declare an icon: prefer `classIcon.lucide` with data from
 `@astrale-os/sdk/schema/icons`, or `classIcon.svg` for custom SVG. `classIcon.neutral` explicitly shows
 no glyph. Do not import React icons into Schema.
+The Domain's own icon is a separate, multi-size set declared on `defineDomain`: read `icons.md`.
 
 - Put a fact on a node when it describes that thing regardless of a relationship.
 - Put a fact on an Edge when it describes the relationship: role, confidence, applicability,
