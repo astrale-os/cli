@@ -69,7 +69,8 @@ outer shadow. Do not draw either into the artwork.
 Each size is a separate drawing, not an export of the same file at another size:
 
 - `small`: one bold silhouette, closer to a menu bar glyph than a Dock icon: strokes of at least 2
-  units on the 24 grid, no text, at most two colors. Snap edges to whole units so the glyph stays sharp at 1x.
+  units on the 24 grid, no text, at most two colors. Snap edges to whole units so the glyph stays
+  sharp at 1x.
 - `medium`: the same symbol with a little more detail, such as a second shape or a soft gradient.
 - `large`: the full Dock-style illustration. Gradients, highlights, and depth belong here.
 
