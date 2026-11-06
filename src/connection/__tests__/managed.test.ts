@@ -1,45 +1,40 @@
 import { expect, test } from 'bun:test'
 
-import type { ConnectionContext } from '../session'
-import type { AdminConnectionOptions } from '../target'
+import type { DirectoryReadOptions, InstanceDirectory } from '../../lib/admin/directory'
 
 import { lookupManagedInstance } from '../session'
 
-test('implicit managed target discovery keeps target credentials out of the Admin lookup', async () => {
-  const owned = {
-    id: 'owned-id',
-    slug: 'owned',
-    url: 'https://owned.eu.astrale.ai',
-    state: 'ready',
-  }
-  const opened: AdminConnectionOptions[] = []
-  const openAdmin = async <Value>(
-    options: AdminConnectionOptions,
-    action: (context: ConnectionContext) => Promise<Value>,
-  ): Promise<Value> => (opened.push(options), action({} as ConnectionContext))
-  const connect = async () => ({ list: async () => [owned] }) as never
+const PACE = {
+  organizationId: 'org_01PACE',
+  name: 'Pace',
+  url: 'https://pace.eu.astrale.ai',
+  slug: 'pace',
+  region: 'eu',
+}
+
+const reading =
+  (directory: InstanceDirectory, seen: DirectoryReadOptions[] = []) =>
+  async (options: DirectoryReadOptions = {}) => (seen.push(options), directory)
+
+test('implicit managed target discovery keeps target credentials out of the directory read', async () => {
+  const seen: DirectoryReadOptions[] = []
   const target = { as: 'target-identity', creds: 'target-delegation', timeout: '45000' }
 
-  await lookupManagedInstance('owned', target, openAdmin, connect)
-  expect(opened).toEqual([{ timeout: '45000' }])
+  await expect(
+    lookupManagedInstance('pace', target, reading({ instances: [PACE], truncated: false }, seen)),
+  ).resolves.toEqual({ slug: 'pace', url: 'https://pace.eu.astrale.ai' })
+  expect(seen).toEqual([{ timeout: '45000' }])
 })
 
-test('refuses a slug held in two Fleets instead of connecting to either', async () => {
-  const instance = (id: string, fleetId: string) => ({
-    id,
-    fleetId,
-    slug: 'shared-name',
-    url: `https://${id}.eu.astrale.ai`,
-    state: 'ready',
+test('an unknown slug is not found, and a slug held twice is refused', async () => {
+  const twice = {
+    instances: [PACE, { ...PACE, organizationId: 'org_02', url: 'https://pace.us.astrale.ai' }],
+    truncated: false,
+  }
+  await expect(
+    lookupManagedInstance('other', {}, reading({ instances: [PACE], truncated: false })),
+  ).rejects.toMatchObject({ code: 'INSTANCE_NOT_FOUND' })
+  await expect(lookupManagedInstance('pace', {}, reading(twice))).rejects.toMatchObject({
+    code: 'INSTANCE_AMBIGUOUS',
   })
-  const openAdmin = async <Value>(
-    _options: AdminConnectionOptions,
-    action: (context: ConnectionContext) => Promise<Value>,
-  ): Promise<Value> => action({} as ConnectionContext)
-  const connect = async () =>
-    ({ list: async () => [instance('@a', '@fleet-a'), instance('@b', '@fleet-b')] }) as never
-
-  await expect(lookupManagedInstance('shared-name', {}, openAdmin, connect)).rejects.toThrow(
-    'Instance slug is ambiguous.',
-  )
 })

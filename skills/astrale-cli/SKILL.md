@@ -209,14 +209,18 @@ astrale instance forget staging
 ```
 
 Use explicit `-i <instance>` in scripts. `-i` and `--url` always select the instance a command
-acts on; they never select the Admin kernel, and Admin operations (`instance list`, …) reject them; `domain list -i <instance>` lists what runs on that instance,
+acts on; they never select the Admin kernel, and Admin operations (`instance list --admin-only`, …) reject them; `domain list -i <instance>` lists what runs on that instance,
 `domain list` without them uses the active instance. Choose the Admin kernel with
 `--admin <bookmark>` or `--admin-url <url>`. `instance delete` affects an admin-managed instance; `instance forget`
 removes only the local bookmark.
 Deletion also cleans up the matching `<slug>-root` identity and unshared key, even with
 `--keep-bookmark`; retained credentials and cleanup errors are reported.
-`instance list` shows the Instances you own or were invited into, in every Fleet; `--fleet <id>`
-keeps one Fleet, and adds its whole inventory when you administer it.
+`instance list` shows your instances, those of every organization you belong to, plus your
+bookmarks (`SOURCE` is `workos` or `bookmark`; a bookmark of a listed instance merges into its
+row). It reads them from the sign-in directory, with no Admin account, and a slug passed to `-i`
+resolves the same way. Operators add `--admin-only`, `--fleet <id>` or `--include-retired` to read
+the Admin inventory instead: Node ids, state, Fleets and ownership. `--fleet <id>` keeps one Fleet,
+and adds its whole inventory when you administer it.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 `instance invite` requires authority to manage the exact Instance and grants
@@ -233,9 +237,10 @@ states, not completed access.
 The command requires the exact Invitation id and does not change its state.
 `instance invitation reconcile <id>` is diagnostic recovery, not the normal
 invitation journey.
-Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
-instances (key-backed identities have no Admin token). Use
-`astrale instance list --bookmarked`.
+The instance directory needs an `astrale auth login` sign-in: a key-backed identity sees only its
+bookmarks. If the directory is unreachable, `instance list` still shows bookmarks with a warning
+(`directory.status` in JSON); instance URLs (`--url`) and bookmarks always work. Without a
+deployed Admin Domain, the operator options cannot read the Admin inventory.
 
 Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
 JWKS with that exact CA. If two bookmarks point to the same normalized URL with

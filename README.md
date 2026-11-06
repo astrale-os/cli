@@ -409,9 +409,12 @@ list` lists the selected instance's readable installed releases, using the activ
 
 ## Fleet selection
 
-`instance list` shows the instances you own or reach through your organization memberships, in
-every Fleet, including an instance shared with you from a Fleet you cannot see. `--fleet` narrows
-the list to one Fleet; its administrators then see the Fleet's whole inventory.
+`instance list` shows the instances of every organization you belong to, read from the sign-in
+directory with no Admin account, plus your local bookmarks; a slug resolves the same way.
+Operators read the Admin inventory instead with `--admin-only`, `--fleet` or `--include-retired`:
+it adds the instances you own before joining their organization, their state and Fleet.
+`--fleet` narrows that inventory to one Fleet; its administrators then see the Fleet's whole
+inventory.
 
 `instance create` needs one Fleet. An explicit `--fleet <path>` keeps that exact target;
 authorization failure never falls back. Without it, the CLI reads the visible Fleet graph and

@@ -5,8 +5,11 @@ import type { InstanceInfo } from '../../admin/instance'
 
 import { AstraleError } from '../../errors'
 import {
+  buildDirectoryRows,
   buildInstanceRows,
   classifyAdminInventoryError,
+  listDirectory,
+  needsAdminInventory,
   readAdminInventory,
   type Bookmark,
 } from '../instance/list'
@@ -120,5 +123,76 @@ describe('Admin inventory failures', () => {
     await expect(readAdminInventory(draining, { sleep })).rejects.toThrow('retry later')
     expect(draining.attempts()).toBe(1)
     expect(delays).toEqual([])
+  })
+})
+
+describe('directory rows', () => {
+  const pace = {
+    organizationId: 'org_01PACE',
+    name: 'Pace Logistique',
+    url: 'https://pace.eu.astrale.ai',
+    slug: 'pace',
+    region: 'eu',
+  }
+  const bookmark = (overrides: Partial<Bookmark> = {}): Bookmark => ({
+    name: 'pace',
+    url: 'https://pace.eu.astrale.ai/api',
+    issuer: null,
+    active: false,
+    defaultIdentity: null,
+    caFile: null,
+    createdAt: null,
+    ...overrides,
+  })
+
+  test('a bookmark of a directory instance merges into its row, under its own name when it differs', () => {
+    expect(buildDirectoryRows([pace], [bookmark({ name: 'work', active: true })])).toEqual([
+      {
+        name: expect.stringMatching(/^pace \(bookmark work\) .*\*/u),
+        region: 'eu',
+        url: 'https://pace.eu.astrale.ai',
+        organization: 'Pace Logistique',
+        source: 'workos',
+      },
+    ])
+    const local = bookmark({ name: 'local', url: 'http://localhost:3001/api' })
+    expect(
+      buildDirectoryRows([pace], [bookmark(), local]).map(({ name, source }) => [name, source]),
+    ).toEqual([
+      ['pace', 'workos'],
+      ['local', 'bookmark'],
+    ])
+  })
+
+  test('only operator options read the Admin inventory', () => {
+    expect(needsAdminInventory({})).toBe(false)
+    expect(needsAdminInventory({ adminOnly: true })).toBe(true)
+    expect(needsAdminInventory({ fleet: '@fleet' })).toBe(true)
+    expect(needsAdminInventory({ includeRetired: true })).toBe(true)
+  })
+
+  test('a failed directory still lists bookmarks, and says why in machine output', async () => {
+    const written: string[] = []
+    const write = process.stdout.write
+    process.stdout.write = ((chunk: string) => (written.push(chunk), true)) as typeof write
+    try {
+      await listDirectory({ json: true }, 'local', [bookmark({ name: 'local' })], async () => {
+        throw new AstraleError('DIRECTORY_UNAVAILABLE', 'The instance directory answered HTTP 503.')
+      })
+    } finally {
+      process.stdout.write = write
+    }
+    expect(JSON.parse(written.join(''))).toMatchObject({
+      active: 'local',
+      bookmarks: [{ name: 'local' }],
+      instances: [],
+      directory: { status: 'unavailable', code: 'DIRECTORY_UNAVAILABLE' },
+    })
+    // Nothing to fall back to: the failure is the result.
+    await expect(
+      listDirectory({ json: true }, null, [], async () => {
+        throw new AstraleError('DIRECTORY_RATE_LIMITED', 'Too many reads.')
+      }),
+    ).rejects.toMatchObject({ code: 'DIRECTORY_RATE_LIMITED' })
   })
 })

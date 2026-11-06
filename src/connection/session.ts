@@ -12,15 +12,11 @@ import { ClientSession } from '@astrale-os/sdk/client/session'
 import type { AstraleConfig } from '../lib/config'
 import type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'
 
-import {
-  AdminInstanceNotFoundError,
-  connectAdminInstances,
-  findOwnedInstance,
-  type InstanceInfo,
-} from '../admin/instance'
 import { AstraleError } from '../errors'
+import { findDirectoryInstance, readInstanceDirectory } from '../lib/admin/directory'
 import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
+import { type ManagedInstance } from '../lib/instance/target'
 import { log } from '../lib/terminal/log'
 import { isMachine } from '../lib/terminal/output'
 import {
@@ -479,18 +475,26 @@ export function createClientSessionOptions(
   }
 }
 
+/**
+ * The instance a slug names among the user's instances, read from the instance directory: no Admin
+ * account and no Admin Kernel are needed. The lookup uses the default sign-in, never the target's
+ * own credential (`--as`, `--creds`), which belongs to the instance the command reaches.
+ */
 export async function lookupManagedInstance(
   slug: string,
   options: ConnectionOptions,
-  openAdmin: typeof withAdminClientSession = withAdminClientSession,
-  connect: typeof connectAdminInstances = connectAdminInstances,
-): Promise<InstanceInfo> {
-  return openAdmin(
+  read: typeof readInstanceDirectory = readInstanceDirectory,
+): Promise<ManagedInstance> {
+  const directory = await read(
     Object.freeze(options.timeout === undefined ? {} : { timeout: options.timeout }),
-    async (context) => {
-      const found = findOwnedInstance(await (await connect(context)).list(), slug)
-      if (found === undefined) throw new AdminInstanceNotFoundError(slug)
-      return found
-    },
   )
+  const found = findDirectoryInstance(directory, slug)
+  if (found === undefined) {
+    throw new AstraleError(
+      'INSTANCE_NOT_FOUND',
+      `None of your instances is named ${JSON.stringify(slug)}.`,
+      'Run `astrale instance list` to see your instances.',
+    )
+  }
+  return Object.freeze({ slug: found.slug, url: found.url })
 }

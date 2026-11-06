@@ -2,11 +2,10 @@ import type { IssuerId } from '@astrale-os/sdk/auth'
 
 import { issuer } from '@astrale-os/sdk/auth'
 
-import type { InstanceInfo } from '../admin/instance'
 import type { AdminTargetCommandOpts } from '../lib/admin/target'
 import type { AstraleConfig } from '../lib/config'
 import type { InstanceStore } from '../lib/instance/bookmarks'
-import type { ResolvedInstanceTarget } from '../lib/instance/target'
+import type { ManagedInstance, ResolvedInstanceTarget } from '../lib/instance/target'
 
 import { resolveInstanceTarget } from '../lib/instance/target'
 
@@ -45,7 +44,7 @@ export interface ConnectionTarget {
 
 interface TargetDependencies {
   readonly instances?: InstanceStore
-  readonly managed?: (slug: string) => Promise<InstanceInfo>
+  readonly managed?: (slug: string) => Promise<ManagedInstance>
 }
 
 /**
