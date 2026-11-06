@@ -57,12 +57,21 @@ The Shell picks `small` up to 24 px, `medium` up to 96 px, and `large` above. Wh
 missing, it uses the next larger size scaled down, else the next smaller one scaled up, else the
 Domain's initials.
 
+## Style
+
+Aim for the look of macOS Dock app icons: a full square tile with one clear, recognizable symbol,
+soft gradients, gentle light from above, and a hint of depth. Keep it calm and polished; no
+photographs, no busy scenes, no text.
+
+The Shell supplies what the operating system supplies on the Dock: the rounded corner shape and any
+outer shadow. Do not draw either into the artwork.
+
 Each size is a separate drawing, not an export of the same file at another size:
 
-- `small`: one bold silhouette, strokes of at least 2 units on the 24 grid, no text, at most two
-  colors. Snap edges to whole units so the glyph stays sharp at 1x.
+- `small`: one bold silhouette, closer to a menu bar glyph than a Dock icon: strokes of at least 2
+  units on the 24 grid, no text, at most two colors. Snap edges to whole units so the glyph stays sharp at 1x.
 - `medium`: the same symbol with a little more detail, such as a second shape or a soft gradient.
-- `large`: the full illustration. Gradients, highlights, and depth belong here.
+- `large`: the full Dock-style illustration. Gradients, highlights, and depth belong here.
 
 ## Layout
 
