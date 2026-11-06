@@ -7,34 +7,34 @@ of one image scaled up or down.
 ## Declaring the set
 
 The icon belongs to the Schema, like its `name`: declare it on `defineSchema` with `domainIcon`, and
-it enters the Schema revision. Each size is inline SVG text wrapped in `classIcon.svg(...)` (or a
-`classIcon.lucide(...)` glyph); there is no file path.
+it enters the Schema revision. Each size is inline SVG text; there is no file path.
 
 ```ts
 // schema/schema.ts
-import { classIcon, defineSchema, domainIcon } from '@astrale-os/sdk/schema'
+import { defineSchema, domainIcon } from '@astrale-os/sdk/schema'
 
 import { largeSvg, mediumSvg, smallDarkSvg, smallSvg } from './icon-art'
 
 export const schema = defineSchema('work.example', {
   name: 'Work',
   icon: domainIcon({
-    small: { svg: classIcon.svg(smallSvg), dark: classIcon.svg(smallDarkSvg) },
-    medium: classIcon.svg(mediumSvg),
-    large: classIcon.svg(largeSvg),
+    small: { svg: smallSvg, dark: smallDarkSvg },
+    medium: mediumSvg,
+    large: largeSvg,
   }),
   // ...
 })
 ```
 
-- Each size is either a `ClassIcon` or `{ svg, dark? }`, where `svg` is the light drawing and `dark`
+- Each size is either an SVG string or `{ svg, dark? }`, where `svg` is the light drawing and `dark`
   an optional drawing for dark themes, under the same limits. Without `dark`, the Shell shows the light
   drawing on both themes.
-- Every size is optional, but at least one is required. Declare `small`: the SDK linter warns when it
-  is missing, because a large drawing scaled down to 16 px rarely stays legible.
+- Every size is optional, but at least one is required. Declare `small`: the SDK linter warns
+  (`SCH-ICON-SMALL`) when it is missing, because a large drawing scaled down to 16 px rarely stays legible.
 - `defineDomain({ icon })` is deprecated: it only feeds the legacy `manifest.logo`. Move the icon to
   `defineSchema`. When both exist, the kernel refuses a release whose `logo` differs from `small`.
-- The SDK runs SVGO at build time (2 decimal places). Keep the source drawings readable.
+- The build does not rewrite icons, since they are part of the Schema revision. Optimize each SVG
+  yourself before publishing (see [Optimizing](#optimizing)).
 - The build also emits `small` as the legacy `manifest.logo`, so older kernels still show it.
 - Do not attach the icon after `defineSchema` (for example on the frontend): the frontend must share
   the same Schema value.
@@ -42,8 +42,7 @@ export const schema = defineSchema('work.example', {
   compatibility digest. The kernel projects it on the `Domain` node as `iconSmall`, `iconMedium`,
   and `iconLarge`.
 
-`domainIcon` is new: check the installed SDK's exports for its import path before trusting the one
-above. The admission rules live in the SDK's `class-icon-svg.ts`.
+The admission rules live in the SDK's `class-icon-svg.ts`.
 
 ## Sizes
 
@@ -118,11 +117,35 @@ refused, an icon that only works as a photo does not fit this format.
 The Shell always renders the icon as an image, or as a CSS mask for the single-color mode. It never
 inserts the SVG into the page, so a drawing cannot run code or load anything.
 
+## Optimizing
+
+Optimize each icon SVG, light and dark, by hand before publishing a release. The CLI warns when an
+icon is heavier than SVGO would make it: `Domain icon <size> is N bytes; SVGO (2 decimals) brings
+it to M. Optimize the source SVG.`
+
+Keep the `data-layer` groups: SVGO's `collapseGroups` would merge them. Use this config, saved as
+`svgo.config.mjs` next to the drawings:
+
+```js
+export default {
+  floatPrecision: 2,
+  plugins: [{ name: 'preset-default', params: { overrides: { collapseGroups: false } } }],
+}
+```
+
+```sh
+npx svgo@4 --config svgo.config.mjs icons/*.svg
+```
+
+A drawing without layers can use the defaults: `npx svgo@4 --precision 2 icon.svg`. Check that the
+`viewBox` and the `data-layer` attributes survive, then paste the optimized text into the Schema.
+
 ## Checklist
 
 1. Draw `small`, `medium`, and `large` on their artboards, background edge to edge, symbol in the
    80 % safe zone, layers `background` and `foreground`.
 2. Add `dark` where contrast needs it.
 3. Look at `small` at 16 px and 24 px at 1x; simplify until the silhouette reads.
-4. Build the Domain; fix the SDK's size and SVG refusals and its missing-`small` warning before
-   installing.
+4. Optimize every SVG with SVGO (below).
+5. Build the Domain; fix the SDK's size and SVG refusals and its `SCH-ICON-SMALL` warning before
+   publishing.
