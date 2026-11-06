@@ -8,6 +8,11 @@ import type { CommandDefinition } from '../../program/index'
 import { formatInstanceState, type InstanceInfo } from '../../admin/instance'
 import { AstraleError } from '../../errors'
 import {
+  readInstanceDirectory,
+  type DirectoryInstance,
+  type InstanceDirectory,
+} from '../../lib/admin/directory'
+import {
   listInstanceInventory,
   listInstanceInventoryWithOwnership,
 } from '../../lib/admin/instances'
@@ -49,12 +54,17 @@ const COLUMNS: Column[] = [
 
 export default {
   name: 'list',
-  description: 'List admin-managed instances and local bookmarks',
+  description:
+    'List your instances (every organization you belong to) and local bookmarks; --admin-only, --fleet and --include-retired read the Admin inventory',
   options: [
     ...ADMIN_TARGET_OPTIONS,
     FLEET_OPTION,
     { flags: '--bookmarked', description: 'Only show locally bookmarked kernel connections' },
-    { flags: '--admin-only', description: 'Only show instances returned by the admin kernel' },
+    {
+      flags: '--admin-only',
+      description:
+        'Only show the Admin inventory (operators): state, Fleet and ownership; needs an Admin account',
+    },
     {
       flags: '--include-retired',
       description: 'Include caller-visible retired Instance tombstones',
@@ -86,6 +96,12 @@ export default {
         caFile: entry.caFile ?? null,
         createdAt: entry.createdAt ?? null,
       }))
+
+      // Without an operator option, the list is the user's own instances, from the directory.
+      if (!opts.bookmarked && !needsAdminInventory(opts)) {
+        await listDirectory(opts, store.active || null, bookmarks)
+        return
+      }
 
       let managed: InstanceInfo[] = []
       if (!opts.bookmarked) {
@@ -127,6 +143,127 @@ export default {
     }
   },
 } satisfies CommandDefinition
+
+/** Operator views: state, Fleets, retired Instances and ownership come from the Admin inventory. */
+export function needsAdminInventory(
+  opts: Pick<ListOpts, 'adminOnly' | 'fleet' | 'includeRetired'>,
+): boolean {
+  return opts.adminOnly === true || opts.fleet !== undefined || opts.includeRetired === true
+}
+
+/**
+ * The user's instances from the directory, then their bookmarks. When the directory fails, the
+ * bookmarks are still listed with a warning; with no bookmark to show, the failure is the result.
+ */
+export async function listDirectory(
+  opts: ListOpts,
+  active: string | null,
+  bookmarks: Bookmark[],
+  read: typeof readInstanceDirectory = readInstanceDirectory,
+): Promise<void> {
+  const machine = isMachine(opts)
+  let directory: InstanceDirectory | undefined
+  let failure: AstraleError | undefined
+  try {
+    directory = await withSpinner('Fetching instances', !machine, () =>
+      read({
+        ...(opts.admin === undefined ? {} : { admin: opts.admin }),
+        ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
+        ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
+        ...(opts.as === undefined ? {} : { as: opts.as }),
+        ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+      }),
+    )
+  } catch (error) {
+    if (!(error instanceof AstraleError) || bookmarks.length === 0) throw error
+    failure = error
+  }
+  const instances = directory?.instances ?? []
+  if (machine) {
+    output(
+      {
+        active,
+        bookmarks,
+        instances,
+        truncated: directory?.truncated ?? false,
+        directory:
+          failure === undefined
+            ? { status: 'ok' }
+            : { status: 'unavailable', code: failure.code, message: failure.message },
+      },
+      opts,
+    )
+    return
+  }
+  if (failure !== undefined) {
+    log.warn(`${failure.message} Showing bookmarks only.`)
+    if (failure.hint) log.dim(`  ${failure.hint}`)
+  }
+  if (directory?.truncated) {
+    log.warn('You belong to more organizations than one listing returns; some are not shown.')
+  }
+  const rows = buildDirectoryRows(instances, bookmarks)
+  if (rows.length === 0) {
+    log.dim(
+      '  No instances. Ask to be invited into one, or run: astrale instance bookmark <name> --url <url>',
+    )
+    return
+  }
+  process.stdout.write(renderTable(rows, { columns: DIRECTORY_COLUMNS }) + '\n')
+}
+
+const DIRECTORY_COLUMNS: Column[] = [
+  { key: 'name', header: 'NAME', color: chalk.bold },
+  { key: 'region', header: 'REGION', color: chalk.dim },
+  { key: 'url', header: 'URL', color: chalk.dim },
+  { key: 'organization', header: 'ORGANIZATION' },
+  { key: 'source', header: 'SOURCE', color: chalk.dim },
+]
+
+/**
+ * One row per instance. A bookmark whose kernel URL is a directory instance's merges into that
+ * row: the directory's slug names it, the bookmark adds its active marker, and its own name when
+ * it differs. Every other bookmark gets its own row.
+ */
+export function buildDirectoryRows(
+  instances: readonly DirectoryInstance[],
+  bookmarks: readonly Bookmark[],
+): Array<Record<string, string>> {
+  const byUrl = new Map<string, Bookmark>()
+  for (const bookmark of bookmarks) {
+    if (bookmark.url === null) continue
+    const url = normalizeInstanceKernelUrl(bookmark.url)
+    // Two bookmarks of one instance: the active one wins the merge, the other keeps its own row.
+    if (!byUrl.has(url) || bookmark.active) byUrl.set(url, bookmark)
+  }
+  const merged = new Set<Bookmark>()
+  const rows: Array<Record<string, string>> = instances.map((instance) => {
+    const twin = byUrl.get(normalizeInstanceKernelUrl(instance.url))
+    if (twin !== undefined) merged.add(twin)
+    const name =
+      twin !== undefined && twin.name !== instance.slug
+        ? `${instance.slug} (bookmark ${twin.name})`
+        : instance.slug
+    return {
+      name: twin?.active ? `${name} ${chalk.green('*')}` : name,
+      region: instance.region ?? '',
+      url: instance.url,
+      organization: instance.name,
+      source: 'workos',
+    }
+  })
+  for (const bookmark of bookmarks) {
+    if (merged.has(bookmark)) continue
+    rows.push({
+      name: bookmark.active ? `${bookmark.name} ${chalk.green('*')}` : bookmark.name,
+      region: '',
+      url: bookmark.url ?? '',
+      organization: '',
+      source: 'bookmark',
+    })
+  }
+  return rows
+}
 
 /**
  * One row per instance. A bookmark that points at a managed instance (same
@@ -244,8 +381,8 @@ export function classifyAdminInventoryError(cause: unknown): AstraleError {
   if (code !== undefined && ADMIN_UNREACHABLE_CODES.has(code)) {
     return new AstraleError(
       'ADMIN_INVENTORY_UNAVAILABLE',
-      'Managed instance listing needs the Admin Domain and an IdP-backed identity. Admin is not deployed in this environment.',
-      'Use `astrale instance list --bookmarked` for local kernel bookmarks. Key-backed identities cannot mint an Admin Domain token.',
+      'The Admin inventory needs the Admin Domain and an IdP-backed identity. Admin is not deployed in this environment.',
+      'Without --admin-only, --fleet or --include-retired, `astrale instance list` reads your instances without Admin; `astrale instance list --bookmarked` shows local kernel bookmarks. Key-backed identities cannot mint an Admin Domain token.',
     )
   }
   if (cause instanceof ResponseError && cause.code === BACKEND_UNAVAILABLE) {

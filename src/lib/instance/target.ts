@@ -1,6 +1,6 @@
 import type { AstraleConfig } from '../config'
 
-import { AdminInstanceNotFoundError, type InstanceInfo } from '../../admin/instance/model'
+import { AdminInstanceNotFoundError } from '../../admin/instance/model'
 import { AstraleError } from '../../errors'
 import {
   DEFAULT_ADMIN_TARGET_NAME,
@@ -39,7 +39,13 @@ type ResolveInstanceTargetOpts = {
   config: AstraleConfig
   instances?: InstanceStore
   admin?: AdminTargetCommandOpts
-  managed?: (slug: string) => Promise<InstanceInfo>
+  managed?: (slug: string) => Promise<ManagedInstance>
+}
+
+/** What a managed lookup needs to reach an instance: its slug and its public URL. */
+export interface ManagedInstance {
+  readonly slug: string
+  readonly url: string
 }
 
 export async function resolveInstanceTarget(
@@ -91,7 +97,7 @@ async function resolveNamedInstanceTarget(
   }
   if (!opts.managed) throw notFound
 
-  let managed: InstanceInfo
+  let managed: ManagedInstance
   try {
     managed = await opts.managed(identifier)
   } catch (e) {
@@ -160,7 +166,10 @@ export const ADMIN_UNREACHABLE_CODES: ReadonlySet<string> = new Set([
 function isAdminDiscoveryFailure(error: unknown): boolean {
   return (
     error instanceof AstraleError &&
-    (ADMIN_UNREACHABLE_CODES.has(error.code) || error.code === 'ADMIN_INVENTORY_UNAVAILABLE')
+    (ADMIN_UNREACHABLE_CODES.has(error.code) ||
+      error.code === 'ADMIN_INVENTORY_UNAVAILABLE' ||
+      // A key identity has no sign-in, hence no instance directory: the name is simply unknown.
+      error.code === 'DIRECTORY_IDENTITY_UNSUPPORTED')
   )
 }
 
