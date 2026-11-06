@@ -58,6 +58,10 @@ disabled states before considering a flow complete.
 - Close an open dropdown when the user clicks outside it or presses Escape. Support keyboard
   navigation, expose the selected item, and return focus to the trigger when appropriate.
 - A styled native `<select>` keeps its arrow flush against the right border; `padding-right` does not help.
+- Use icon buttons, not text buttons, for secondary actions such as download, replace, or delete.
+  Give each an `aria-label` and a tooltip; keep a text label only for the primary action of a form or dialog.
+- When a table row has several action icons, reveal them on row hover and `:focus-within`, and keep
+  them visible on touch devices.
 - Make long labels and values part of layout testing. Wrap when reading matters; truncate only in
   genuinely fixed space and provide access to the full value. Never let text cover adjacent actions.
 - Keep dialogs, menus, forms, and inline actions usable by keyboard. Use visible focus, semantic
