@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.167](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.166...cli/v1.0.0-beta.167) (2026-11-06)
+
+
+### Features
+
+* **commands:** keep the last instance listing, so the directory never blocks a slug ([#790](https://github.com/astrale-os/cli/issues/790)) ([7d79f23](https://github.com/astrale-os/cli/commit/7d79f2343ffa394a94d5e95658853b3ec3bd47e0))
+
 ## [1.0.0-beta.166](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.165...cli/v1.0.0-beta.166) (2026-11-06)
 
 
