@@ -238,8 +238,12 @@ The command requires the exact Invitation id and does not change its state.
 `instance invitation reconcile <id>` is diagnostic recovery, not the normal
 invitation journey.
 The instance directory needs an `astrale auth login` sign-in: a key-backed identity sees only its
-bookmarks. If the directory is unreachable, `instance list` still shows bookmarks with a warning
-(`directory.status` in JSON); instance URLs (`--url`) and bookmarks always work. Without a
+bookmarks. The CLI keeps each sign-in's last listing (`~/.astrale/cache/instance-directory/`, no
+token): a slug resolves from a listing under five minutes old without a request, and while the
+directory is unavailable or rate-limited the last listing (up to seven days old) answers, with a
+warning giving its age (`directory.status: "stale"` and `listedAt` in JSON). With no listing kept,
+`instance list` still shows bookmarks with a warning (`directory.status: "unavailable"`); instance
+URLs (`--url`) and bookmarks always work. Sign-out forgets the listing. Without a
 deployed Admin Domain, the operator options cannot read the Admin inventory.
 
 Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and

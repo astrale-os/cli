@@ -410,7 +410,9 @@ list` lists the selected instance's readable installed releases, using the activ
 ## Fleet selection
 
 `instance list` shows the instances of every organization you belong to, read from the sign-in
-directory with no Admin account, plus your local bookmarks; a slug resolves the same way.
+directory with no Admin account, plus your local bookmarks; a slug resolves the same way. The
+last listing of each sign-in is kept: it answers a slug for five minutes, and stands in, with a
+warning, while the directory is unavailable (up to seven days).
 Operators read the Admin inventory instead with `--admin-only`, `--fleet` or `--include-retired`:
 it adds the instances you own before joining their organization, their state and Fleet.
 `--fleet` narrows that inventory to one Fleet; its administrators then see the Fleet's whole

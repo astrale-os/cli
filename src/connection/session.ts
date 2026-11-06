@@ -13,7 +13,12 @@ import type { AstraleConfig } from '../lib/config'
 import type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
-import { findDirectoryInstance, readInstanceDirectory } from '../lib/admin/directory'
+import { findDirectoryInstance, type DirectoryReadOptions } from '../lib/admin/directory'
+import {
+  describeAge,
+  readCachedInstanceDirectory,
+  type DirectoryRead,
+} from '../lib/admin/directory-cache'
 import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
 import { type ManagedInstance } from '../lib/instance/target'
@@ -479,16 +484,33 @@ export function createClientSessionOptions(
  * The instance a slug names among the user's instances, read from the instance directory: no Admin
  * account and no Admin Kernel are needed. The lookup uses the default sign-in, never the target's
  * own credential (`--as`, `--creds`), which belongs to the instance the command reaches.
+ *
+ * A listing read less than five minutes ago answers without a request; when the directory is
+ * unavailable or rate-limited, the last listing (up to seven days old) answers, with a warning.
  */
 export async function lookupManagedInstance(
   slug: string,
   options: ConnectionOptions,
-  read: typeof readInstanceDirectory = readInstanceDirectory,
+  read: (
+    options: DirectoryReadOptions,
+    mode: 'refresh' | 'prefer-fresh',
+  ) => Promise<DirectoryRead> = readCachedInstanceDirectory,
 ): Promise<ManagedInstance> {
-  const directory = await read(
-    Object.freeze(options.timeout === undefined ? {} : { timeout: options.timeout }),
+  const readOptions = Object.freeze(
+    options.timeout === undefined ? {} : { timeout: options.timeout },
   )
-  const found = findDirectoryInstance(directory, slug)
+  let result = await read(readOptions, 'prefer-fresh')
+  let found = findDirectoryInstance(result.directory, slug)
+  // A recent listing may predate a new instance: ask the directory before calling it unknown.
+  if (found === undefined && result.cached === true) {
+    result = await read(readOptions, 'refresh')
+    found = findDirectoryInstance(result.directory, slug)
+  }
+  if (result.stale !== undefined) {
+    log.warn(
+      `${result.stale.message} Using your instance list from ${describeAge(result.stale.listedAt)} ago.`,
+    )
+  }
   if (found === undefined) {
     throw new AstraleError(
       'INSTANCE_NOT_FOUND',

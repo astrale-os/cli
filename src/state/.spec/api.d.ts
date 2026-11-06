@@ -15,6 +15,8 @@ export interface Paths {
   readonly installations: string
   idpDir(name: string): string
   idpSession(identityName: string): string
+  /** The last instance directory listing read for one identity: no credential, ever. */
+  instanceDirectoryCache(identityName: string): string
 }
 
 /** Resolve every CLI state path from ASTRALE_HOME, ASTRALE_KEYS_DIR, or the platform home. */
