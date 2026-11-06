@@ -75,7 +75,9 @@ jobs:
             target_os: darwin
             target_arch: x64
             bun_target: bun-darwin-x64
-          - os: macos-14
+          # GitHub no longer runs macos-14 for this repository ("The configuration
+          # 'macos-14-arm64-us-default' is not supported", 2026-11-06).
+          - os: macos-15
             target_os: darwin
             target_arch: arm64
             bun_target: bun-darwin-arm64
