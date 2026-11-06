@@ -533,6 +533,8 @@ async function readIdpSessionFile(path: string, identityName: string): Promise<I
 
 export async function deleteIdpSession(identityName: string): Promise<void> {
   await unlink(idpSessionPath(identityName)).catch(() => undefined)
+  // The sign-in's last instance listing (`lib/admin/directory-cache.ts`) goes with it.
+  await unlink(paths.instanceDirectoryCache(identityName)).catch(() => undefined)
 }
 
 export async function listIdpSessions(): Promise<IdpSession[]> {

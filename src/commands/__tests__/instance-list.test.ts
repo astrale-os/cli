@@ -196,3 +196,42 @@ describe('directory rows', () => {
     ).rejects.toMatchObject({ code: 'DIRECTORY_RATE_LIMITED' })
   })
 })
+
+describe('instance list while the directory is down', () => {
+  test('shows the last known listing, and says when it was read', async () => {
+    const pace = {
+      organizationId: 'org_01PACE',
+      name: 'Pace',
+      url: 'https://pace.eu.astrale.ai',
+      slug: 'pace',
+      region: 'eu',
+    }
+    const written: string[] = []
+    const write = process.stdout.write
+    process.stdout.write = ((chunk: string) => (written.push(chunk), true)) as typeof write
+    try {
+      await listDirectory({ json: true }, null, [], async (_options, mode) => {
+        // `instance list` always asks the directory; the last listing only stands in.
+        expect(mode).toBe('refresh')
+        return {
+          directory: { instances: [pace], truncated: false },
+          stale: {
+            listedAt: '2026-11-06T12:00:00.000Z',
+            code: 'DIRECTORY_UNAVAILABLE',
+            message: 'The instance directory answered HTTP 503.',
+          },
+        }
+      })
+    } finally {
+      process.stdout.write = write
+    }
+    expect(JSON.parse(written.join(''))).toMatchObject({
+      instances: [pace],
+      directory: {
+        status: 'stale',
+        listedAt: '2026-11-06T12:00:00.000Z',
+        code: 'DIRECTORY_UNAVAILABLE',
+      },
+    })
+  })
+})

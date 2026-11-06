@@ -2,16 +2,17 @@ import { ResponseError, retryAfterOf } from '@astrale-os/sdk/client'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
+import type { DirectoryInstance, DirectoryReadOptions } from '../../lib/admin/directory'
 import type { Column } from '../../lib/terminal/table'
 import type { CommandDefinition } from '../../program/index'
 
 import { formatInstanceState, type InstanceInfo } from '../../admin/instance'
 import { AstraleError } from '../../errors'
 import {
-  readInstanceDirectory,
-  type DirectoryInstance,
-  type InstanceDirectory,
-} from '../../lib/admin/directory'
+  describeAge,
+  readCachedInstanceDirectory,
+  type DirectoryRead,
+} from '../../lib/admin/directory-cache'
 import {
   listInstanceInventory,
   listInstanceInventoryWithOwnership,
@@ -159,25 +160,34 @@ export async function listDirectory(
   opts: ListOpts,
   active: string | null,
   bookmarks: Bookmark[],
-  read: typeof readInstanceDirectory = readInstanceDirectory,
+  read: (
+    options: DirectoryReadOptions,
+    mode: 'refresh' | 'prefer-fresh',
+  ) => Promise<DirectoryRead> = readCachedInstanceDirectory,
 ): Promise<void> {
   const machine = isMachine(opts)
-  let directory: InstanceDirectory | undefined
+  let result: DirectoryRead | undefined
   let failure: AstraleError | undefined
   try {
-    directory = await withSpinner('Fetching instances', !machine, () =>
-      read({
-        ...(opts.admin === undefined ? {} : { admin: opts.admin }),
-        ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
-        ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
-        ...(opts.as === undefined ? {} : { as: opts.as }),
-        ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
-      }),
+    // The listing is always read afresh; the last one stands in only while the directory fails.
+    result = await withSpinner('Fetching instances', !machine, () =>
+      read(
+        {
+          ...(opts.admin === undefined ? {} : { admin: opts.admin }),
+          ...(opts.adminUrl === undefined ? {} : { adminUrl: opts.adminUrl }),
+          ...(opts.domainIssuer === undefined ? {} : { domainIssuer: opts.domainIssuer }),
+          ...(opts.as === undefined ? {} : { as: opts.as }),
+          ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+        },
+        'refresh',
+      ),
     )
   } catch (error) {
     if (!(error instanceof AstraleError) || bookmarks.length === 0) throw error
     failure = error
   }
+  const directory = result?.directory
+  const stale = result?.stale
   const instances = directory?.instances ?? []
   if (machine) {
     output(
@@ -187,9 +197,16 @@ export async function listDirectory(
         instances,
         truncated: directory?.truncated ?? false,
         directory:
-          failure === undefined
-            ? { status: 'ok' }
-            : { status: 'unavailable', code: failure.code, message: failure.message },
+          failure !== undefined
+            ? { status: 'unavailable', code: failure.code, message: failure.message }
+            : stale !== undefined
+              ? {
+                  status: 'stale',
+                  listedAt: stale.listedAt,
+                  code: stale.code,
+                  message: stale.message,
+                }
+              : { status: 'ok' },
       },
       opts,
     )
@@ -198,6 +215,11 @@ export async function listDirectory(
   if (failure !== undefined) {
     log.warn(`${failure.message} Showing bookmarks only.`)
     if (failure.hint) log.dim(`  ${failure.hint}`)
+  }
+  if (stale !== undefined) {
+    log.warn(
+      `${stale.message} Showing your instance list from ${new Date(stale.listedAt).toLocaleString()} (${describeAge(stale.listedAt)} ago).`,
+    )
   }
   if (directory?.truncated) {
     log.warn('You belong to more organizations than one listing returns; some are not shown.')
