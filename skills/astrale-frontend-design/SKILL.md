@@ -57,6 +57,7 @@ disabled states before considering a flow complete.
   and reconcile the interface with committed Kernel state.
 - Close an open dropdown when the user clicks outside it or presses Escape. Support keyboard
   navigation, expose the selected item, and return focus to the trigger when appropriate.
+- A styled native `<select>` keeps its arrow flush against the right border; `padding-right` does not help.
 - Make long labels and values part of layout testing. Wrap when reading matters; truncate only in
   genuinely fixed space and provide access to the full value. Never let text cover adjacent actions.
 - Keep dialogs, menus, forms, and inline actions usable by keyboard. Use visible focus, semantic
