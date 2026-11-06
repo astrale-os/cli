@@ -82,6 +82,17 @@ export async function human(
 
 const ENTRY = new URL('../../../../bin/astrale.ts', import.meta.url).pathname
 
+/**
+ * Time to budget for each `runCli` of a test. Each one starts Bun and loads the whole CLI from
+ * source: about 0.5 s on a laptop, 0.7 to 1.5 s on a CI runner (2026-11-06: a test of five runs took
+ * 3.5 to 4.4 s and once crossed Bun's 5 s default). Size a test's timeout by its runs, and keep a
+ * test to a few runs.
+ */
+export const CLI_RUN_MS = 2_500
+
+/** The timeout of a test that makes `runs` calls to `runCli`. */
+export const cliRuns = (runs: number): number => runs * CLI_RUN_MS
+
 /** Run the real CLI in a separate process against the CLI home `home`. */
 export async function runCli(
   home: string,

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { tokenEndpoint, writeIdp } from '../../lib/__tests__/idp.fixture'
-import { runCli } from './fixtures/process'
+import { cliRuns, runCli } from './fixtures/process'
 
 let tmp: string
 const runAuthToken = (...args: string[]) => runCli(tmp, ['auth', 'token', ...args])
@@ -51,80 +51,106 @@ afterEach(async () => {
 })
 
 describe('auth token command', () => {
-  test('prints the active IdP access token, or a selected token as JSON', async () => {
-    expect(await runAuthToken('--raw')).toEqual({
-      exitCode: 0,
-      stdout: 'access-token-123\n',
-      stderr: '',
-    })
-    const result = await runAuthToken('--idp', 'workos', '--type', 'id', '--json')
-    expect(result.exitCode).toBe(0)
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      identity: 'alice',
-      type: 'id',
-      token: 'id-token-123',
-    })
-  })
-
-  test('an expired token is refreshed unless --no-refresh, and an IdP outage asks no re-login', async () => {
-    const server = tokenEndpoint()
-    try {
-      await writeExpiredSessionWithIdp(server.url)
-
-      const cached = await runAuthToken('--raw', '--no-refresh')
-      expect(cached.stdout).toBe('expired-access-token\n')
-      expect(server.refreshCount()).toBe(0)
-
-      server.answer(() => Response.json({ error_description: 'unavailable' }, { status: 503 }))
-      const outage = await runAuthToken('--raw')
-      expect(outage.exitCode).toBe(1)
-      expect(outage.stderr).not.toContain('astrale auth login')
-
-      server.answer(undefined)
-      expect(await runAuthToken('--raw')).toMatchObject({
+  test(
+    'prints the active IdP access token, or a selected token as JSON',
+    async () => {
+      expect(await runAuthToken('--raw')).toEqual({
         exitCode: 0,
-        stdout: 'rotated-access-1\n',
+        stdout: 'access-token-123\n',
+        stderr: '',
       })
-    } finally {
-      await server.stop()
-    }
-  })
+      const result = await runAuthToken('--idp', 'workos', '--type', 'id', '--json')
+      expect(result.exitCode).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        identity: 'alice',
+        type: 'id',
+        token: 'id-token-123',
+      })
+    },
+    cliRuns(2),
+  )
+
+  test(
+    'an expired token is refreshed unless --no-refresh, and an IdP outage asks no re-login',
+    async () => {
+      const server = tokenEndpoint()
+      try {
+        await writeExpiredSessionWithIdp(server.url)
+
+        const cached = await runAuthToken('--raw', '--no-refresh')
+        expect(cached.stdout).toBe('expired-access-token\n')
+        expect(server.refreshCount()).toBe(0)
+
+        server.answer(() => Response.json({ error_description: 'unavailable' }, { status: 503 }))
+        const outage = await runAuthToken('--raw')
+        expect(outage.exitCode).toBe(1)
+        expect(outage.stderr).not.toContain('astrale auth login')
+
+        server.answer(undefined)
+        expect(await runAuthToken('--raw')).toMatchObject({
+          exitCode: 0,
+          stdout: 'rotated-access-1\n',
+        })
+      } finally {
+        await server.stop()
+      }
+    },
+    cliRuns(3),
+  )
 })
 
 describe('IdP configurations and sessions', () => {
-  test('a login persists the built-in WorkOS IdP, listed once beside configured IdPs', async () => {
-    const login = await runCli(tmp, [
-      'auth',
-      'login',
-      '--idp',
-      'workos',
-      '--client-credentials',
-      '--client-secret-env',
-      'UNSET_TEST_SECRET',
-      '--raw',
-    ])
-    expect(login.stderr).toContain('Client secret env var UNSET_TEST_SECRET is not set')
-    const index = JSON.parse(await readFile(join(tmp, 'idps', 'index.json'), 'utf8'))
-    expect(index.idps.workos).toMatchObject({ builtIn: true })
-    const listed = async () =>
-      JSON.parse((await runCli(tmp, ['idp', 'list', '--json'])).stdout).map(
-        ({ name }: { name: string }) => name,
-      )
-    expect(await listed()).toEqual(['workos'])
-    await writeIdp(tmp, 'https://idp.test')
-    expect(await listed()).toEqual(['test', 'workos'])
+  const listed = async () =>
+    JSON.parse((await runCli(tmp, ['idp', 'list', '--json'])).stdout).map(
+      ({ name }: { name: string }) => name,
+    )
 
-    const unknown = await runCli(tmp, ['auth', 'login', '--idp', 'nowhere', '--raw'])
-    expect(unknown.exitCode).not.toBe(0)
-    expect(unknown.stderr).toContain('IdP "nowhere" not found')
-    const status = await runCli(tmp, ['auth', 'status', '--json'])
-    expect(JSON.parse(status.stdout)).toEqual([
-      expect.objectContaining({
-        name: 'alice',
-        session: expect.objectContaining({ cached: true }),
-      }),
-    ])
-  })
+  test(
+    'a login persists the built-in WorkOS IdP, listed once',
+    async () => {
+      const login = await runCli(tmp, [
+        'auth',
+        'login',
+        '--idp',
+        'workos',
+        '--client-credentials',
+        '--client-secret-env',
+        'UNSET_TEST_SECRET',
+        '--raw',
+      ])
+      expect(login.stderr).toContain('Client secret env var UNSET_TEST_SECRET is not set')
+      const index = JSON.parse(await readFile(join(tmp, 'idps', 'index.json'), 'utf8'))
+      expect(index.idps.workos).toMatchObject({ builtIn: true })
+      expect(await listed()).toEqual(['workos'])
+    },
+    cliRuns(2),
+  )
+
+  test(
+    'the built-in WorkOS IdP is listed beside a configured IdP',
+    async () => {
+      await writeIdp(tmp, 'https://idp.test')
+      expect(await listed()).toEqual(['test', 'workos'])
+    },
+    cliRuns(1),
+  )
+
+  test(
+    'a login names an unknown IdP, and status still lists the cached session',
+    async () => {
+      const unknown = await runCli(tmp, ['auth', 'login', '--idp', 'nowhere', '--raw'])
+      expect(unknown.exitCode).not.toBe(0)
+      expect(unknown.stderr).toContain('IdP "nowhere" not found')
+      const status = await runCli(tmp, ['auth', 'status', '--json'])
+      expect(JSON.parse(status.stdout)).toEqual([
+        expect.objectContaining({
+          name: 'alice',
+          session: expect.objectContaining({ cached: true }),
+        }),
+      ])
+    },
+    cliRuns(2),
+  )
 })
 
 async function writeExpiredSessionWithIdp(issuer: string): Promise<void> {
