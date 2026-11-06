@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.166](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.165...cli/v1.0.0-beta.166) (2026-11-06)
+
+
+### Features
+
+* **commands:** list your instances from the sign-in directory, without Admin ([#782](https://github.com/astrale-os/cli/issues/782)) ([cd9451b](https://github.com/astrale-os/cli/commit/cd9451be5f9b3f7480c0c25e8ec68426660735c1))
+
 ## [1.0.0-beta.165](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.164...cli/v1.0.0-beta.165) (2026-11-05)
 
 
