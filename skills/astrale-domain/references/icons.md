@@ -6,22 +6,24 @@ of one image scaled up or down.
 
 ## Declaring the set
 
-Declare the set on `defineDomain` with `domainIcon`. Each size is inline SVG text wrapped in
-`classIcon.svg(...)` (or a `classIcon.lucide(...)` glyph); there is no file path.
+The icon belongs to the Schema, like its `name`: declare it on `defineSchema` with `domainIcon`, and
+it enters the Schema revision. Each size is inline SVG text wrapped in `classIcon.svg(...)` (or a
+`classIcon.lucide(...)` glyph); there is no file path.
 
 ```ts
-import { defineDomain, domainIcon } from '@astrale-os/sdk/domain'
-import { classIcon } from '@astrale-os/sdk/schema'
+// schema/schema.ts
+import { classIcon, defineSchema, domainIcon } from '@astrale-os/sdk/schema'
 
 import { largeSvg, mediumSvg, smallDarkSvg, smallSvg } from './icon-art'
 
-export const domain = defineDomain({
-  // ...
+export const schema = defineSchema('work.example', {
+  name: 'Work',
   icon: domainIcon({
     small: { svg: classIcon.svg(smallSvg), dark: classIcon.svg(smallDarkSvg) },
     medium: classIcon.svg(mediumSvg),
     large: classIcon.svg(largeSvg),
   }),
+  // ...
 })
 ```
 
@@ -30,11 +32,15 @@ export const domain = defineDomain({
   drawing on both themes.
 - Every size is optional, but at least one is required. Declare `small`: the SDK linter warns when it
   is missing, because a large drawing scaled down to 16 px rarely stays legible.
-- `icon: classIcon.svg(...)` on its own stays valid and counts as `small`.
+- `defineDomain({ icon })` is deprecated: it only feeds the legacy `manifest.logo`. Move the icon to
+  `defineSchema`. When both exist, the kernel refuses a release whose `logo` differs from `small`.
 - The SDK runs SVGO at build time (2 decimal places). Keep the source drawings readable.
 - The build also emits `small` as the legacy `manifest.logo`, so older kernels still show it.
-- The icon is presentation only. Changing it does not change the Schema's compatibility digest. The
-  kernel projects it on the `Domain` node as `iconSmall`, `iconMedium`, and `iconLarge`.
+- Do not attach the icon after `defineSchema` (for example on the frontend): the frontend must share
+  the same Schema value.
+- The icon is presentation only: changing it makes a new Schema revision but does not change its
+  compatibility digest. The kernel projects it on the `Domain` node as `iconSmall`, `iconMedium`,
+  and `iconLarge`.
 
 `domainIcon` is new: check the installed SDK's exports for its import path before trusting the one
 above. The admission rules live in the SDK's `class-icon-svg.ts`.
