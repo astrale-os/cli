@@ -36,6 +36,8 @@ phased workflow below; an existing public scaffold already satisfies its foundat
   a Workflow: read `references/workflows.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
 - Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
+- Draw or declare the Domain's icon (sizes, artboards, layers, dark variant, accepted SVG): read
+  `references/icons.md`.
 - Model sign-in users, invite/register existing people, assign Shell groups, or make someone an instance administrator: read `references/users.md`.
 - Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication mode, or Policy: read `references/policies.md`.
 - Build or review browser views, mounted UI, View access, View resolution, or frontend design: read
