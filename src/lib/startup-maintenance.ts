@@ -157,6 +157,15 @@ export function shouldRunStartupMaintenance(
   return !['update', 'skills', 'setup'].includes(args[0] ?? '')
 }
 
+/**
+ * The `astrale update` arguments that apply an offered release. The offer reads the installed
+ * channel, while `astrale update` alone targets `latest`: naming the offer's channel keeps a beta
+ * installation from being reported up to date against an older `latest`.
+ */
+export function releaseUpdateArgs(release: Pick<AvailableRelease, 'channel'>): string[] {
+  return ['update', '--no-deps', '--channel', release.channel]
+}
+
 async function updateAndReexec(
   release: AvailableRelease,
   argv: readonly string[],
@@ -165,7 +174,7 @@ async function updateAndReexec(
   if (execution.kind !== 'standalone') return false
   log.step(`Updating Astrale ${release.currentVersion} → ${release.latestVersion}`)
   const environment = { ...process.env, [REEXEC_ENV]: '1' }
-  const updated = await runInherit(execution.executable, ['update', '--no-deps'], {
+  const updated = await runInherit(execution.executable, releaseUpdateArgs(release), {
     env: environment,
   })
   if (updated !== 0) {
