@@ -1,7 +1,7 @@
 import { isDnsLabel } from '@astrale-os/sdk/value'
 import { z } from 'zod'
 
-import { ReservedSlugError } from '../errors'
+import { AstraleError, ReservedSlugError } from '../errors'
 
 // Shared validators + schema fragments used by both instance and identity
 // registries — kept in a leaf module to avoid circular imports.
@@ -14,7 +14,8 @@ export { RESERVED_SLUGS }
 
 export function validateName(name: string, entity: string): void {
   if (!name || !NAME_RE.test(name)) {
-    throw new Error(
+    throw new AstraleError(
+      'INVALID_NAME',
       `Invalid ${entity.toLowerCase()} name "${name}" — must be non-empty and contain only letters, digits, hyphens, underscores, and dots`,
     )
   }
@@ -24,7 +25,8 @@ export function validateSlug(slug: string): void {
   // Canonical Core DNS-label rule: a slug becomes a
   // hostname label, so reject anything not DNS-safe (§4.7).
   if (!slug || !isDnsLabel(slug)) {
-    throw new Error(
+    throw new AstraleError(
+      'INVALID_SLUG',
       `Invalid slug "${slug}" — must be a lowercase DNS label [a-z0-9-], ≤63 chars, no leading/trailing hyphen (§4.7)`,
     )
   }
@@ -34,24 +36,18 @@ export function validateSlug(slug: string): void {
 }
 
 export function validateUrl(url: string): void {
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new Error('not http(s)')
-    }
-  } catch {
-    throw new Error(`Invalid URL "${url}" — expected a valid http:// or https:// URL`)
+  if (!isHttpUrl(url)) {
+    throw new AstraleError(
+      'INVALID_URL',
+      `Invalid URL "${url}" — expected a valid http:// or https:// URL`,
+    )
   }
 }
 
 /** Non-throwing predicate form of `validateUrl`. */
 export function isHttpUrl(url: string): boolean {
-  try {
-    validateUrl(url)
-    return true
-  } catch {
-    return false
-  }
+  const parsed = URL.parse(url)
+  return parsed?.protocol === 'http:' || parsed?.protocol === 'https:'
 }
 
 /** `local` = only this machine. `remote` = mirrored via astrale cloud (§2.7). */

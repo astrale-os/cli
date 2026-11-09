@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, realpath, unlink } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
+import { AstraleError, IdpNotFoundError } from '../../errors'
 import { atomicWrite, IDPS_PATH, IDP_SESSIONS_DIR, paths } from '../../state/index'
 import { credentialLifetimeCovers } from '../credential-lifetime'
 import { log } from '../terminal/log'
@@ -16,7 +17,7 @@ import { validateName, validateUrl } from '../validation'
  * API audience per environment). Re-login does not help — callers must target
  * an instance whose audience equals `actual`, or reconfigure the IdP/bookmark.
  */
-export class IdpAudienceMismatchError extends Error {
+export class IdpAudienceMismatchError extends AstraleError {
   override readonly name = 'IdpAudienceMismatchError'
 
   constructor(
@@ -24,7 +25,34 @@ export class IdpAudienceMismatchError extends Error {
     readonly actual: string | undefined,
   ) {
     super(
+      'IDP_AUDIENCE_MISMATCH',
       `IdP minted an access token for audience ${actual ?? '(none)'} but ${requested} was required`,
+    )
+  }
+}
+
+/** No cached session file exists for the identity — only a login creates one. */
+export class IdpSessionMissingError extends AstraleError {
+  override readonly name = 'IdpSessionMissingError'
+
+  constructor(readonly identityName: string) {
+    super(
+      'IDP_SESSION_MISSING',
+      `No cached IdP session for "${identityName}"`,
+      `Run: astrale auth login --name ${identityName}`,
+    )
+  }
+}
+
+/** The session needs a refresh but never received a refresh token. */
+export class IdpSessionNoRefreshTokenError extends AstraleError {
+  override readonly name = 'IdpSessionNoRefreshTokenError'
+
+  constructor(readonly identityName: string) {
+    super(
+      'IDP_SESSION_NO_REFRESH_TOKEN',
+      `IdP session for "${identityName}" has no refresh token`,
+      `Run: astrale auth login --name ${identityName}`,
     )
   }
 }
@@ -35,10 +63,10 @@ export class IdpAudienceMismatchError extends Error {
  * callers can tell a definitively dead grant (`invalid_grant`) from a
  * transient outage — the message string alone cannot.
  */
-export class OAuthTokenError extends Error {
+export class OAuthTokenError extends AstraleError {
   override readonly name = 'OAuthTokenError'
   /** OAuth `error` code, e.g. `invalid_grant`. */
-  readonly code?: string
+  readonly oauthCode?: string
   /** OAuth `error_description`. */
   readonly description?: string
   /** HTTP status of the token response. */
@@ -46,9 +74,12 @@ export class OAuthTokenError extends Error {
 
   constructor(args: { code?: string; description?: string; status?: number }) {
     super(
+      'IDP_TOKEN_REFUSED',
       `OAuth token request failed: ${args.description ?? args.code ?? `HTTP ${args.status ?? '?'}`}`,
     )
-    Object.assign(this, args)
+    this.oauthCode = args.code
+    this.description = args.description
+    this.status = args.status
   }
 }
 
@@ -67,7 +98,7 @@ export function classifyRefreshFailure(e: unknown): RefreshFailureKind {
     ) {
       return 'org-rejected'
     }
-    if (e.code === 'invalid_grant') return 'session-ended'
+    if (e.oauthCode === 'invalid_grant') return 'session-ended'
     if (e.status !== undefined && (e.status >= 500 || e.status === 429)) return 'transient'
     return 'unknown'
   }
@@ -105,7 +136,7 @@ export const OidcMetadataSchema = z
   })
   .passthrough()
 
-type OidcMetadata = z.infer<typeof OidcMetadataSchema>
+export type OidcMetadata = z.infer<typeof OidcMetadataSchema>
 
 const IdpClientConfigSchema = z
   .object({
@@ -241,24 +272,36 @@ async function writeIdpStore(store: IdpStore): Promise<void> {
   await atomicWrite(IDPS_PATH, JSON.stringify(store, null, 2) + '\n')
 }
 
+/** The registry entry of `name`, never one inherited from the registry object's prototype. */
+function idpEntryIn(store: IdpStore, name: string): IdpIndexEntry | undefined {
+  return Object.hasOwn(store.idps, name) ? store.idps[name] : undefined
+}
+
 async function readIdpConfig(name: string): Promise<IdpConfig> {
   validateName(name, 'IdP')
-  const store = await readIdpStore()
-  const entry = store.idps[name]
-  if (!entry)
-    throw new Error(`IdP "${name}" not found. Run: astrale idp add ${name} --issuer <url>`)
-  const [metadataRaw, clientRaw] = await Promise.all([
-    readFile(idpMetadataPath(name), 'utf-8'),
-    readFile(idpClientPath(name), 'utf-8').catch((e) => {
-      if ((e as { code?: string }).code === 'ENOENT') return '{}'
-      throw e
-    }),
-  ])
-  return {
-    name,
-    entry,
-    metadata: OidcMetadataSchema.parse(JSON.parse(metadataRaw)),
-    client: IdpClientConfigSchema.parse(JSON.parse(clientRaw)),
+  const entry = idpEntryIn(await readIdpStore(), name)
+  if (entry === undefined) throw new IdpNotFoundError(name)
+  try {
+    const [metadataRaw, clientRaw] = await Promise.all([
+      readFile(idpMetadataPath(name), 'utf-8'),
+      readFile(idpClientPath(name), 'utf-8').catch((e) => {
+        if ((e as { code?: string }).code === 'ENOENT') return '{}'
+        throw e
+      }),
+    ])
+    return {
+      name,
+      entry,
+      metadata: OidcMetadataSchema.parse(JSON.parse(metadataRaw)),
+      client: IdpClientConfigSchema.parse(JSON.parse(clientRaw)),
+    }
+  } catch (cause) {
+    throw new AstraleError(
+      'IDP_STATE_INVALID',
+      `IdP "${name}" has an unreadable configuration in ${paths.idpDir(name)}.`,
+      `Add it again: astrale idp add ${name} --issuer <url>`,
+      { cause },
+    )
   }
 }
 
@@ -267,11 +310,8 @@ export async function readIdpConfigOrBuiltin(
   opts: { clientId?: string; persist?: boolean } = {},
 ): Promise<IdpConfig> {
   validateName(name, 'IdP')
-  const store = await readIdpStore()
-  if (store.idps[name]) return readIdpConfig(name)
-  if (name !== BUILTIN_WORKOS_IDP_NAME) {
-    throw new Error(`IdP "${name}" not found. Run: astrale idp add ${name} --issuer <url>`)
-  }
+  if (idpEntryIn(await readIdpStore(), name) !== undefined) return readIdpConfig(name)
+  if (name !== BUILTIN_WORKOS_IDP_NAME) throw new IdpNotFoundError(name)
   const builtin = builtinWorkosConfig(opts.clientId)
   return opts.persist ? upsertIdpConfig({ ...builtin, builtIn: true }) : builtin
 }
@@ -296,7 +336,7 @@ export async function upsertIdpConfig(args: {
   validateName(args.name, 'IdP')
   const store = await readIdpStore()
   const now = new Date().toISOString()
-  const existing = store.idps[args.name]
+  const existing = idpEntryIn(store, args.name)
   store.idps[args.name] = {
     issuer: args.metadata.issuer,
     builtIn: args.builtIn ?? existing?.builtIn,
@@ -315,9 +355,12 @@ export async function upsertIdpConfig(args: {
 export async function removeIdpConfig(name: string): Promise<void> {
   validateName(name, 'IdP')
   const store = await readIdpStore()
-  const entry = store.idps[name]
-  if (!entry) throw new Error(`IdP "${name}" not found`)
-  if (entry.builtIn) throw new Error(`Cannot remove built-in IdP "${name}"`)
+  const entry = idpEntryIn(store, name)
+  // The built-in IdP is listed before it is ever persisted: it is built in either way.
+  if (entry === undefined ? name === BUILTIN_WORKOS_IDP_NAME : entry.builtIn) {
+    throw new AstraleError('IDP_BUILT_IN', `Cannot remove built-in IdP "${name}".`)
+  }
+  if (entry === undefined) throw new IdpNotFoundError(name)
   delete store.idps[name]
   await writeIdpStore(store)
   await unlink(idpMetadataPath(name)).catch(() => undefined)
@@ -327,14 +370,20 @@ export async function removeIdpConfig(name: string): Promise<void> {
 export async function fetchOidcMetadata(issuer: string): Promise<OidcMetadata> {
   validateUrl(issuer)
   const discoveryUrl = new URL('/.well-known/openid-configuration', issuer)
-  const response = await fetch(discoveryUrl)
-  if (!response.ok) {
-    throw new Error(`OIDC discovery failed for ${issuer}: HTTP ${response.status}`)
+  let metadata: OidcMetadata
+  try {
+    const response = await fetch(discoveryUrl)
+    if (!response.ok) throw discoveryFailed(issuer, `HTTP ${response.status}`)
+    metadata = OidcMetadataSchema.parse(await response.json())
+  } catch (cause) {
+    if (cause instanceof AstraleError) throw cause
+    const reason =
+      cause instanceof z.ZodError ? 'malformed discovery document' : (cause as Error).message
+    throw discoveryFailed(issuer, reason, cause)
   }
-  const body = await response.json()
-  let metadata = OidcMetadataSchema.parse(body)
   if (normalizeIssuer(metadata.issuer) !== normalizeIssuer(issuer)) {
-    throw new Error(
+    throw new AstraleError(
+      'IDP_ISSUER_MISMATCH',
       `OIDC issuer mismatch: discovery returned ${metadata.issuer}, expected ${issuer}`,
     )
   }
@@ -343,6 +392,15 @@ export async function fetchOidcMetadata(issuer: string): Promise<OidcMetadata> {
     if (oauthMetadata) metadata = OidcMetadataSchema.parse({ ...metadata, ...oauthMetadata })
   }
   return metadata
+}
+
+function discoveryFailed(issuer: string, reason: string, cause?: unknown): AstraleError {
+  return new AstraleError(
+    'IDP_DISCOVERY_FAILED',
+    `OIDC discovery failed for ${issuer}: ${reason}`,
+    'Check the issuer URL.',
+    cause === undefined ? undefined : { cause },
+  )
 }
 
 export function workosAuthKitMetadata(
@@ -525,7 +583,11 @@ async function readIdpSessionFile(path: string, identityName: string): Promise<I
   } catch (e) {
     if ((e as { code?: string }).code === 'ENOENT') return null
     if (e instanceof z.ZodError) {
-      throw new Error(`Invalid IdP session cache for "${identityName}"`)
+      throw new AstraleError(
+        'IDP_SESSION_INVALID',
+        `Invalid IdP session cache for "${identityName}"`,
+        `Sign in again: astrale auth login --name ${identityName}`,
+      )
     }
     throw e
   }
@@ -617,7 +679,11 @@ export function withCachedToken(
 export function requireClientId(idp: IdpConfig, override?: string): string {
   const clientId = override ?? idp.client.client_id
   if (!clientId) {
-    throw new Error(`IdP "${idp.name}" has no client_id. Re-run idp add with --client-id.`)
+    throw new AstraleError(
+      'IDP_CLIENT_ID_MISSING',
+      `IdP "${idp.name}" has no client_id.`,
+      `Add it again with its client: astrale idp add ${idp.name} --client-id <id>`,
+    )
   }
   return clientId
 }
@@ -626,7 +692,9 @@ export function resolveClientSecret(idp: IdpConfig, overrideEnv?: string): strin
   const envName = overrideEnv ?? idp.client.client_secret_env
   if (!envName) return undefined
   const secret = process.env[envName]
-  if (!secret) throw new Error(`Client secret env var ${envName} is not set`)
+  if (!secret) {
+    throw new AstraleError('ENV_VAR_MISSING', `Client secret env var ${envName} is not set.`)
+  }
   return secret
 }
 
@@ -635,8 +703,7 @@ export async function refreshSession(
   session: IdpSession,
   opts: { readonly audience?: string; readonly organizationId?: string } = {},
 ): Promise<IdpSession> {
-  if (!session.refresh_token)
-    throw new Error(`IdP session for "${identityName}" has no refresh token`)
+  if (!session.refresh_token) throw new IdpSessionNoRefreshTokenError(identityName)
   const idp = await readIdpConfig(session.idp)
   const clientId = requireClientId(idp, session.clientId)
   const params = new URLSearchParams({
@@ -653,7 +720,9 @@ export async function refreshSession(
   const token = normalizeTokenResponse(
     await tokenResponseFrom(await fetch(idp.metadata.token_endpoint, post(params, idp))),
   )
-  if (!token.access_token) throw new Error('Refresh response did not include access_token')
+  if (!token.access_token) {
+    throw new AstraleError('IDP_PROTOCOL_ERROR', 'Refresh response did not include access_token.')
+  }
   const claims = decodeTokenClaims(token.id_token ?? token.access_token)
   const expiresAt = tokenExpiresAt(token)
   const next: IdpSession = {
@@ -702,7 +771,12 @@ export async function fetchWorkosApplication(args: {
   app: string
 }): Promise<WorkosApplication> {
   const apiKey = process.env[args.apiKeyEnv]
-  if (!apiKey) throw new Error(`WorkOS API key env var ${args.apiKeyEnv} is not set`)
+  if (!apiKey) {
+    throw new AstraleError(
+      'ENV_VAR_MISSING',
+      `WorkOS API key env var ${args.apiKeyEnv} is not set.`,
+    )
+  }
   const response = await fetch(
     `https://api.workos.com/connect/applications/${encodeURIComponent(args.app)}`,
     {
@@ -715,7 +789,8 @@ export async function fetchWorkosApplication(args: {
     connect_application?: WorkosApplication
   } & WorkosApplication
   if (!response.ok) {
-    throw new Error(
+    throw new AstraleError(
+      'IDP_DISCOVERY_FAILED',
       body.message ?? body.error ?? `WorkOS application fetch failed: HTTP ${response.status}`,
     )
   }

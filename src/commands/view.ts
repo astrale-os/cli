@@ -12,14 +12,14 @@ import type { ViewOwnerConfig, ViewServeConfig, ViewSessionRecord } from '../lib
 import type { CommandDefinition } from '../program/index'
 
 import { withClientSession } from '../connection'
-import { AstraleError } from '../errors'
+import { AgentBrowserMissingError, AstraleError, InternalError } from '../errors'
 import { notOwnerError } from '../lib/admin/ownership'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser/agent-browser'
 import { readInstances } from '../lib/instance/bookmarks'
 import { findFreePort } from '../lib/port'
 import { findOnPath, openUrl, run, spawnHandle } from '../lib/proc'
 import { selfInvocation } from '../lib/self-invocation'
-import { fatal, log, withSpinner } from '../lib/terminal/log'
+import { log, withSpinner } from '../lib/terminal/log'
 import { isMachine, output, outputForMachine, type RawOutputOpts } from '../lib/terminal/output'
 import { promptSelect } from '../lib/terminal/prompt'
 import { ensureViewerAssets } from '../lib/view/assets'
@@ -112,7 +112,10 @@ export async function resolveSession(
 ): Promise<{ view?: ResolvedView; candidates: ViewCandidate[] }> {
   const parsed = parseViewSpec(spec)
   if (parsed.kind === 'view' && opts.view) {
-    fatal(new Error('An explicit ViewPath cannot be combined with --view <name>'))
+    throw new AstraleError(
+      'INVALID_FLAG',
+      'An explicit ViewPath cannot be combined with --view <name>.',
+    )
   }
   const resolve = async (context: ViewResolutionContext): Promise<DomainViews> => {
     if (parsed.kind === 'view') {
@@ -239,7 +242,12 @@ async function ensureDevDist(entry: string, dist: string): Promise<void> {
   const built = await run(bun, [buildScript], { cwd: projectDir })
   if (built.stdout) process.stderr.write(built.stdout)
   if (built.stderr) process.stderr.write(built.stderr)
-  if (built.code !== 0) throw new Error(`Official CLI build failed with exit code ${built.code}.`)
+  if (built.code !== 0) {
+    throw new AstraleError(
+      'VIEW_START_FAILED',
+      `Official CLI build failed with exit code ${built.code}.`,
+    )
+  }
 }
 
 export async function devDistIsStale(entry: string, dist: string): Promise<boolean> {
@@ -287,8 +295,10 @@ export async function startViewSession(
   return withViewPortAllocationLock(async () => {
     const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
     if (port === null) {
-      throw new Error(
-        `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1} — close sessions with \`astrale view --close --all\``,
+      throw new AstraleError(
+        'VIEW_START_FAILED',
+        `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1}.`,
+        'Close sessions with: astrale view --close --all',
       )
     }
     const id = `v-${randomBytes(3).toString('hex')}`
@@ -313,7 +323,9 @@ export async function startViewSession(
     })
     child.unref()
     closeSync(logFd)
-    if (!child.pid) throw new Error('Failed to spawn the view session server')
+    if (!child.pid) {
+      throw new AstraleError('VIEW_START_FAILED', 'Failed to spawn the view session server.')
+    }
     const live = { ...record, pid: child.pid }
     await saveRecord(live)
 
@@ -336,7 +348,8 @@ export async function startViewSession(
     if (up) return live
     const tail = await readFile(logPath(id), 'utf8').catch(() => '')
     await closeSession(live)
-    throw new Error(
+    throw new AstraleError(
+      'VIEW_START_FAILED',
       `View session server did not come up.${tail ? `\n--- server log ---\n${tail.slice(-2000)}` : ''}`,
     )
   })
@@ -521,17 +534,22 @@ async function closeCommand(opts: ViewOpts): Promise<void> {
   if (opts.all) targets = sessions
   else if (typeof opts.close === 'string') {
     const match = sessions.find((s) => s.id === opts.close)
-    if (!match)
-      return fatal(new Error(`No view session "${opts.close}" — see \`astrale view --sessions\``))
+    if (!match) {
+      throw new AstraleError(
+        'VIEW_SESSION_NOT_FOUND',
+        `No view session "${opts.close}".`,
+        'Run: astrale view --sessions',
+      )
+    }
     targets = [match]
   } else if (sessions.length <= 1) targets = sessions
   else {
-    return fatal(
-      new Error(
-        `${sessions.length} sessions open — pass --close <id> or --close --all:\n${sessions
-          .map((s) => `  ${s.id}  /:${s.view.route.key}`)
-          .join('\n')}`,
-      ),
+    throw new AstraleError(
+      'VIEW_SESSION_AMBIGUOUS',
+      `${sessions.length} sessions open:\n${sessions
+        .map((s) => `  ${s.id}  /:${s.view.route.key}`)
+        .join('\n')}`,
+      'Pass --close <id> or --close --all.',
     )
   }
   for (const session of targets) await closeSession(session)
@@ -555,7 +573,11 @@ async function sessionsCommand(opts: ViewOpts): Promise<void> {
 async function refreshCommand(opts: ViewOpts): Promise<void> {
   const session = (await listSessions()).find((session) => session.id === opts.refresh)
   if (session === undefined) {
-    throw new AstraleError('VIEW_NOT_FOUND', `No view session "${opts.refresh}".`)
+    throw new AstraleError(
+      'VIEW_SESSION_NOT_FOUND',
+      `No view session "${opts.refresh}".`,
+      'Run: astrale view --sessions',
+    )
   }
   const response = await fetch(`${session.pageUrl}refresh`, {
     method: 'POST',
@@ -656,40 +678,33 @@ Examples:
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
     if (opts.refresh !== undefined) return refreshCommand(opts)
-    if (opts.close !== undefined) return closeCommand(opts).catch((error) => fatal(error, opts))
+    if (opts.close !== undefined) return closeCommand(opts)
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)
 
     if (!spec) {
-      return fatal(
-        new AstraleError(
-          'MISSING_ARG',
-          '`view` needs a ViewPath or Domain origin.',
-          'Run: astrale view crm.example.dev --snapshot',
-        ),
-        opts,
+      throw new AstraleError(
+        'MISSING_ARG',
+        '`view` needs a ViewPath or Domain origin.',
+        'Run: astrale view crm.example.dev --snapshot',
       )
     }
     const wantsAgentBrowser = !opts.list && !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
-      return fatal(
-        new Error('--snapshot/--screenshot need the agent-browser page (drop --browser/--no-open)'),
+      throw new AstraleError(
+        'INVALID_FLAG',
+        '--snapshot/--screenshot need the agent-browser page.',
+        'Drop --browser/--no-open.',
       )
     }
     if (wantsAgentBrowser && !(await findAgentBrowser())) {
-      log.error('agent-browser is not installed — it is the engine `astrale view` drives.')
-      log.dim('  npm install -g agent-browser && agent-browser install')
-      log.dim(`  npx skills add ${AGENT_BROWSER_REPO}`)
-      log.dim('  (or use --browser / --no-open)')
-      process.exit(1)
+      throw new AgentBrowserMissingError('view', AGENT_BROWSER_REPO, 'use --browser / --no-open')
     }
 
     if (opts.asOwner) {
-      opts = { ...opts, owner: await establishViewOwner(opts).catch((error) => fatal(error, opts)) }
+      opts = { ...opts, owner: await establishViewOwner(opts) }
     }
-    const { view, candidates } = await resolveSession(spec, opts).catch((error) =>
-      fatal(error, opts),
-    )
+    const { view, candidates } = await resolveSession(spec, opts)
     if (opts.list) {
       if (isMachine(opts)) output(candidates, opts)
       else if (candidates.length === 0) log.dim('This Domain publishes no views.')
@@ -702,9 +717,9 @@ Examples:
       }
       return
     }
-    if (!view) throw new Error('View resolution completed without a selected view')
+    if (!view) throw new InternalError('View resolution completed without a selected view')
 
-    const record = await startViewSession(view, opts).catch((error) => fatal(error, opts))
+    const record = await startViewSession(view, opts)
 
     let mode: 'agent' | 'system' | 'none' = 'none'
     if (wantsAgentBrowser) {
@@ -715,8 +730,9 @@ Examples:
       })
       if (!opened.ok) {
         await closeSession(record)
-        return fatal(
-          new Error(`agent-browser could not open the page: ${opened.error ?? 'unknown error'}`),
+        throw new AstraleError(
+          'VIEW_START_FAILED',
+          `agent-browser could not open the page: ${opened.error ?? 'unknown error'}`,
         )
       }
     } else if (opts.browser) {

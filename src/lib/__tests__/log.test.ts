@@ -36,18 +36,19 @@ describe('diagnostics', () => {
     }
   }
 
-  test('an unknown failure is an honest unexpected one; its evidence shows only under debug', () => {
-    const unexpected = {
-      error: 'UNEXPECTED_ERROR',
-      message: 'The CLI encountered an unexpected internal failure.',
-    }
-    expect(JSON.parse(failure(() => fatal(new AggregateError([], ''), { json: true })))).toEqual(
-      unexpected,
+  test('a typed refusal prints its code, hint and details; a typed failure is never blank', () => {
+    const refusal = new AstraleError(
+      'IDP_NOT_FOUND',
+      'IdP "acme" not found.',
+      'Run: astrale idp list',
     )
-    const cause = new AggregateError([new Error('provider rejected organization scope')], '')
-    const debug = failure(() => fatal(cause, { json: true, debug: true }))
-    expect(debug).toContain(JSON.stringify(unexpected))
-    expect(debug).toContain('aggregate: Error: provider rejected organization scope')
+    refusal.details = { name: 'acme' }
+    expect(JSON.parse(failure(() => fatal(refusal, { json: true })))).toEqual({
+      error: 'IDP_NOT_FOUND',
+      message: 'IdP "acme" not found.',
+      hint: 'Run: astrale idp list',
+      details: { name: 'acme' },
+    })
     expect(() => new AstraleError('INVALID_INPUT', '  ')).toThrow(TypeError)
   })
 
@@ -56,8 +57,9 @@ describe('diagnostics', () => {
       failInput(new TypeError('Authored value is invalid.'), { json: true }),
     )
     expect(JSON.parse(invalid)).toMatchObject({ error: 'INVALID_INPUT' })
-    const unexpected = failure(() => failInput(new AggregateError([], ''), { json: true }))
-    expect(JSON.parse(unexpected)).toMatchObject({ error: 'UNEXPECTED_ERROR' })
+    // Any other failure is not the caller's input: it propagates, unrendered, to the binary.
+    const unexpected = new AggregateError([], '')
+    expect(() => failInput(unexpected, { json: true })).toThrow(unexpected)
   })
 })
 

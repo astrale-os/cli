@@ -24,7 +24,7 @@ import {
 } from '../../lib/admin/target'
 import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance/bookmarks'
 import { ADMIN_UNREACHABLE_CODES } from '../../lib/instance/target'
-import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { log, withSpinner } from '../../lib/terminal/log'
 import { isMachine, output, type RawOutputOpts } from '../../lib/terminal/output'
 import { renderTable } from '../../lib/terminal/table'
 
@@ -72,76 +72,72 @@ export default {
     },
   ],
   action: async (opts: ListOpts) => {
-    try {
-      if (opts.fleet !== undefined && opts.bookmarked) {
-        throw new AstraleError(
-          'INVALID_FLAG',
-          '--fleet cannot be combined with --bookmarked.',
-          'Fleet selection applies to Admin-managed instances.',
-        )
-      }
-      if (opts.includeRetired && opts.bookmarked) {
-        throw new AstraleError(
-          'INVALID_FLAG',
-          '--include-retired cannot be combined with --bookmarked.',
-          'Retired Instance evidence comes from Admin, not local bookmarks.',
-        )
-      }
-      const store = await readInstances()
-      const bookmarks: Bookmark[] = Object.entries(store.instances).map(([name, entry]) => ({
-        name,
-        url: entry.url ?? null,
-        issuer: entry.issuer ?? null,
-        active: name === store.active,
-        defaultIdentity: entry.defaultIdentity ?? null,
-        caFile: entry.caFile ?? null,
-        createdAt: entry.createdAt ?? null,
-      }))
-
-      // Without an operator option, the list is the user's own instances, from the directory.
-      if (!opts.bookmarked && !needsAdminInventory(opts)) {
-        await listDirectory(opts, store.active || null, bookmarks)
-        return
-      }
-
-      let managed: InstanceInfo[] = []
-      if (!opts.bookmarked) {
-        // Machine output also says which Instances the caller owns in the Admin sense, decided
-        // in the same Admin session: Studio works only with those.
-        const read = isMachine(opts) ? listInstanceInventoryWithOwnership : listInstanceInventory
-        try {
-          managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
-            readAdminInventory(() => read(opts, opts.includeRetired ?? false)),
-          )
-        } catch (error) {
-          throw classifyAdminInventoryError(error)
-        }
-      }
-      if (isMachine(opts)) {
-        output(
-          {
-            active: store.active || null,
-            ...(opts.adminOnly ? {} : { bookmarks }),
-            ...(opts.bookmarked ? {} : { instances: managed }),
-          },
-          opts,
-        )
-        return
-      }
-
-      const rows = buildInstanceRows(managed, bookmarks, {
-        managed: !opts.bookmarked,
-        bookmarks: !opts.adminOnly,
-      })
-
-      if (rows.length === 0) {
-        log.dim('  No instances. Run: astrale instance bookmark <name> --url <url>')
-        return
-      }
-      process.stdout.write(renderTable(rows, { columns: COLUMNS }) + '\n')
-    } catch (e) {
-      fatal(e, opts)
+    if (opts.fleet !== undefined && opts.bookmarked) {
+      throw new AstraleError(
+        'INVALID_FLAG',
+        '--fleet cannot be combined with --bookmarked.',
+        'Fleet selection applies to Admin-managed instances.',
+      )
     }
+    if (opts.includeRetired && opts.bookmarked) {
+      throw new AstraleError(
+        'INVALID_FLAG',
+        '--include-retired cannot be combined with --bookmarked.',
+        'Retired Instance evidence comes from Admin, not local bookmarks.',
+      )
+    }
+    const store = await readInstances()
+    const bookmarks: Bookmark[] = Object.entries(store.instances).map(([name, entry]) => ({
+      name,
+      url: entry.url ?? null,
+      issuer: entry.issuer ?? null,
+      active: name === store.active,
+      defaultIdentity: entry.defaultIdentity ?? null,
+      caFile: entry.caFile ?? null,
+      createdAt: entry.createdAt ?? null,
+    }))
+
+    // Without an operator option, the list is the user's own instances, from the directory.
+    if (!opts.bookmarked && !needsAdminInventory(opts)) {
+      await listDirectory(opts, store.active || null, bookmarks)
+      return
+    }
+
+    let managed: InstanceInfo[] = []
+    if (!opts.bookmarked) {
+      // Machine output also says which Instances the caller owns in the Admin sense, decided
+      // in the same Admin session: Studio works only with those.
+      const read = isMachine(opts) ? listInstanceInventoryWithOwnership : listInstanceInventory
+      try {
+        managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
+          readAdminInventory(() => read(opts, opts.includeRetired ?? false)),
+        )
+      } catch (error) {
+        throw classifyAdminInventoryError(error)
+      }
+    }
+    if (isMachine(opts)) {
+      output(
+        {
+          active: store.active || null,
+          ...(opts.adminOnly ? {} : { bookmarks }),
+          ...(opts.bookmarked ? {} : { instances: managed }),
+        },
+        opts,
+      )
+      return
+    }
+
+    const rows = buildInstanceRows(managed, bookmarks, {
+      managed: !opts.bookmarked,
+      bookmarks: !opts.adminOnly,
+    })
+
+    if (rows.length === 0) {
+      log.dim('  No instances. Run: astrale instance bookmark <name> --url <url>')
+      return
+    }
+    process.stdout.write(renderTable(rows, { columns: COLUMNS }) + '\n')
   },
 } satisfies CommandDefinition
 

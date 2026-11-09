@@ -32,8 +32,13 @@ export async function resolveAdminFleet(context: {
   const fleets = await mapBounded(nodes, 8, async (node) => {
     const slug = node.props[slugKey]
     const name = node.props[K.classes.Named.properties.name.key]
-    if (typeof slug !== 'string' || typeof name !== 'string')
-      throw new Error('Fleet has no slug or name: migration required.')
+    if (typeof slug !== 'string' || typeof name !== 'string') {
+      throw new AstraleError(
+        'FLEET_UNAVAILABLE',
+        `Fleet @${node.id} has no slug or name: its Admin data needs a migration.`,
+        'Choose a Fleet explicitly with --fleet @<id>.',
+      )
+    }
     return {
       id: node.id,
       slug,

@@ -2,6 +2,7 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 
+import { InternalError } from '../errors'
 import {
   EMBEDDED_ASSET_ARCHIVE_BASE64,
   EMBEDDED_ASSET_DIGEST,
@@ -22,7 +23,7 @@ function archive(): EmbeddedArchive {
     gunzipSync(Buffer.from(EMBEDDED_ASSET_ARCHIVE_BASE64, 'base64')).toString('utf8'),
   ) as EmbeddedArchive
   if (parsed.format !== EMBEDDED_ASSET_FORMAT || parsed.version !== EMBEDDED_ASSET_VERSION) {
-    throw new Error('embedded Astrale asset archive is incompatible with this binary')
+    throw new InternalError('embedded Astrale asset archive is incompatible with this binary')
   }
   decoded = parsed
   return parsed
@@ -68,7 +69,7 @@ export async function materializeEmbeddedAssets(
     for (const file of embeddedFiles(group)) {
       const relative = file.path.slice(group.length + 1)
       if (!relative || relative.split('/').some((part) => part === '..' || part === '')) {
-        throw new Error(`unsafe embedded asset path: ${file.path}`)
+        throw new InternalError(`unsafe embedded asset path: ${file.path}`)
       }
       const target = join(staged, relative)
       await mkdir(dirname(target), { recursive: true })

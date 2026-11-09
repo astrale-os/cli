@@ -29,17 +29,15 @@ async function fetchDiscovery(
   fetchImpl: FetchLike = globalThis.fetch,
 ): Promise<DiscoveryDocument> {
   const discoveryUrl = url.replace(/\/+$/, '') + '/.well-known/openid-configuration'
-  try {
-    const r = await fetchImpl(discoveryUrl, { signal: AbortSignal.timeout(timeoutMs) })
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const body = (await r.json()) as { issuer?: string; jwks_uri?: string }
-    if (!body.issuer) throw new Error('discovery missing "issuer"')
-    const issuer = body.issuer
-    const jwksUri = body.jwks_uri ?? `${issuer.replace(/\/+$/, '')}/.well-known/jwks.json`
-    return { issuer, jwksUri }
-  } catch (e) {
-    throw new IssuerUnreachableError(discoveryUrl, (e as Error).message)
-  }
+  const body = await fetchIssuerJson<{ issuer?: string; jwks_uri?: string }>(
+    discoveryUrl,
+    timeoutMs,
+    fetchImpl,
+  )
+  if (!body?.issuer) throw new IssuerUnreachableError(discoveryUrl, 'discovery missing "issuer"')
+  const issuer = body.issuer
+  const jwksUri = body.jwks_uri ?? `${issuer.replace(/\/+$/, '')}/.well-known/jwks.json`
+  return { issuer, jwksUri }
 }
 
 async function fetchJwks(
@@ -47,14 +45,24 @@ async function fetchJwks(
   timeoutMs = 5_000,
   fetchImpl: FetchLike = globalThis.fetch,
 ): Promise<{ keys: JWK[] }> {
+  const body = await fetchIssuerJson<{ keys?: unknown }>(jwksUri, timeoutMs, fetchImpl)
+  if (!Array.isArray(body?.keys)) throw new IssuerUnreachableError(jwksUri, 'JWKS missing "keys"')
+  return { keys: body.keys as JWK[] }
+}
+
+/** The JSON body at `url`: no answer, a non-2xx status, or a non-JSON body is an unreachable issuer. */
+async function fetchIssuerJson<T>(
+  url: string,
+  timeoutMs: number,
+  fetchImpl: FetchLike,
+): Promise<T | null> {
   try {
-    const r = await fetchImpl(jwksUri, { signal: AbortSignal.timeout(timeoutMs) })
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const body = (await r.json()) as { keys?: unknown } | null
-    if (!Array.isArray(body?.keys)) throw new Error('JWKS missing "keys"')
-    return { keys: body.keys as JWK[] }
-  } catch (e) {
-    throw new IssuerUnreachableError(jwksUri, (e as Error).message)
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!response.ok) throw new IssuerUnreachableError(url, `HTTP ${response.status}`)
+    return (await response.json()) as T | null
+  } catch (error) {
+    if (error instanceof IssuerUnreachableError) throw error
+    throw new IssuerUnreachableError(url, error instanceof Error ? error.message : String(error))
   }
 }
 

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { fixtureFetch } from '../../../ui/search/__tests__/fixture'
+import { asBinary } from '../../__tests__/fixtures/process'
 import addCommand from '../add'
 import searchCommand from '../search'
 
@@ -83,7 +84,9 @@ describe('UI command machine contracts', () => {
   test('add rejects missing items without prompting in machine mode', async () => {
     process.argv = ['node', 'astrale', '--no-prompt', 'ui', 'add']
     const add = addCommand.action as (items: string[], options: { json?: boolean }) => Promise<void>
-    await expect(add([], { json: true })).rejects.toBeInstanceOf(ExitError)
+    await expect(asBinary(() => add([], { json: true }), { json: true })).rejects.toBeInstanceOf(
+      ExitError,
+    )
     expect(JSON.parse(stderr)).toMatchObject({ error: 'UI_ITEM_NOT_FOUND' })
     expect(stdout).toBe('')
   })
@@ -96,9 +99,8 @@ describe('UI command machine contracts', () => {
       query: string,
       options: { json?: boolean; limit?: string; offset?: string },
     ) => Promise<void>
-    await expect(
-      action('line basic', { json: true, limit: '5', offset: '0' }),
-    ).rejects.toBeInstanceOf(ExitError)
+    const opts = { json: true, limit: '5', offset: '0' }
+    await expect(asBinary(() => action('line basic', opts), opts)).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stderr)).toEqual({
       error: 'UI_SEARCH_UNAVAILABLE',
       message: 'The current public Astrale UI beta does not provide usable search artifacts.',

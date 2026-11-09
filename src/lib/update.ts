@@ -196,7 +196,9 @@ function precedes(left: string, right: string): boolean {
 async function download(url: string, signal?: AbortSignal): Promise<Buffer> {
   if (url.startsWith('file://')) return readFile(new URL(url))
   const response = await fetch(url, { signal })
-  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`)
+  if (!response.ok) {
+    throw new AstraleError('UPDATE_DOWNLOAD_FAILED', `GET ${url} failed: HTTP ${response.status}`)
+  }
   return Buffer.from(await response.arrayBuffer())
 }
 
@@ -204,16 +206,23 @@ async function download(url: string, signal?: AbortSignal): Promise<Buffer> {
 async function extractBinary(archive: string, directory: string): Promise<string> {
   const listed = await run('tar', ['-tzf', archive])
   if (listed.code !== 0) {
-    throw new Error(`Could not inspect update archive: ${listed.stderr.trim()}`)
+    throw new AstraleError(
+      'UPDATE_ARCHIVE_INVALID',
+      `Could not inspect update archive: ${listed.stderr.trim()}`,
+    )
   }
   if (listed.stdout !== 'astrale\n') {
-    throw new Error(
+    throw new AstraleError(
+      'UPDATE_ARCHIVE_INVALID',
       `Update archive closure is invalid: expected astrale, got ${listed.stdout.trim().split(/\r?\n/u).join(', ')}`,
     )
   }
   const extracted = await run('tar', ['-xzf', archive, '-C', directory])
   if (extracted.code !== 0) {
-    throw new Error(`Could not extract update archive: ${extracted.stderr.trim()}`)
+    throw new AstraleError(
+      'UPDATE_ARCHIVE_INVALID',
+      `Could not extract update archive: ${extracted.stderr.trim()}`,
+    )
   }
   const binary = join(directory, 'astrale')
   await chmod(binary, 0o755)
@@ -240,9 +249,17 @@ function platformAsset(manifest: UpdateManifest, key: string): UpdateManifest['a
 
 async function assertVersion(binary: string, expected: string): Promise<void> {
   const { code, stdout, stderr } = await run(binary, ['--version'])
-  if (code !== 0) throw new Error(`Updated binary failed --version: ${stderr.trim()}`)
+  if (code !== 0) {
+    throw new AstraleError(
+      'UPDATE_VERIFICATION_FAILED',
+      `Updated binary failed --version: ${stderr.trim()}`,
+    )
+  }
   if (stdout.trim() !== expected) {
-    throw new Error(`Updated binary reported version ${stdout.trim()}, expected ${expected}`)
+    throw new AstraleError(
+      'UPDATE_VERIFICATION_FAILED',
+      `Updated binary reported version ${stdout.trim()}, expected ${expected}`,
+    )
   }
 }
 

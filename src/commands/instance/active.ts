@@ -5,7 +5,7 @@ import type { CommandDefinition } from '../../program/index'
 import { findOwnedInstance } from '../../admin/instance'
 import { listOwnedInstances } from '../../lib/admin/instances'
 import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance/bookmarks'
-import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { log, withSpinner } from '../../lib/terminal/log'
 import {
   RAW_OUTPUT_OPTIONS,
   isMachine,
@@ -18,28 +18,24 @@ export default {
   description: 'Show the currently active instance',
   options: [...RAW_OUTPUT_OPTIONS],
   action: async (opts: RawOutputOpts) => {
-    try {
-      const isRaw = isMachine(opts)
-      const active = await resolveActiveForDisplay()
-      const { name } = active
-      const url = active.url ?? null
-      const createdAt = active.createdAt ?? null
-      const issuer = active.issuer ?? null
-      const defaultIdentity = active.defaultIdentity ?? null
-      const caFile = active.caFile ?? null
+    const isRaw = isMachine(opts)
+    const active = await resolveActiveForDisplay()
+    const { name } = active
+    const url = active.url ?? null
+    const createdAt = active.createdAt ?? null
+    const issuer = active.issuer ?? null
+    const defaultIdentity = active.defaultIdentity ?? null
+    const caFile = active.caFile ?? null
 
-      if (isRaw) {
-        output({ name, url, issuer, defaultIdentity, caFile, createdAt }, opts)
-        return
-      }
-
-      console.log(`${chalk.bold(name)} (${url ?? 'local'})`)
-      if (issuer && issuer !== url) log.dim(`  issuer:   ${issuer}`)
-      if (defaultIdentity) log.dim(`  identity: ${defaultIdentity}`)
-      if (caFile) log.dim(`  ca:       ${caFile}`)
-    } catch (e) {
-      fatal(e, opts)
+    if (isRaw) {
+      output({ name, url, issuer, defaultIdentity, caFile, createdAt }, opts)
+      return
     }
+
+    console.log(`${chalk.bold(name)} (${url ?? 'local'})`)
+    if (issuer && issuer !== url) log.dim(`  issuer:   ${issuer}`)
+    if (defaultIdentity) log.dim(`  identity: ${defaultIdentity}`)
+    if (caFile) log.dim(`  ca:       ${caFile}`)
   },
 } satisfies CommandDefinition
 

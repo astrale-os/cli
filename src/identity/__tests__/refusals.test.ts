@@ -36,7 +36,7 @@ afterAll(async () => {
 const unknown = (name: string) => ({
   error: 'NO_IDENTITY',
   message: `Identity "${name}" not found.`,
-  hint: `Run: astrale identity create ${name}`,
+  hint: 'Run: astrale identity list',
 })
 
 /** @evidence TEST-CLI-IDENTITY-REFUSALS-TYPED */

@@ -1,14 +1,13 @@
 import type { MutationResult } from '@astrale-os/sdk/mutation'
 
 import chalk from 'chalk'
-import { readFile } from 'node:fs/promises'
 
 import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../connection'
-import { AstraleError } from '../errors'
 import { prepareMutation } from '../graph/index'
+import { readInputFile } from '../lib/input-file'
 import { failInput } from '../lib/terminal/log'
 import { output } from '../lib/terminal/output'
 import { renderTable } from '../lib/terminal/table'
@@ -50,15 +49,7 @@ async function readDocument(opts: MutateOpts): Promise<unknown> {
   if (authored > 1) throw new TypeError('--data and --file are mutually exclusive')
   if (opts.data !== undefined) return parseJson(opts.data, '--data')
   if (opts.file !== undefined) {
-    let raw: string
-    try {
-      raw = await readFile(opts.file, 'utf8')
-    } catch (error) {
-      throw new AstraleError('FILE_READ_FAILED', `Cannot read --file ${opts.file}.`, undefined, {
-        cause: error,
-      })
-    }
-    return parseJson(raw, opts.file)
+    return parseJson(await readInputFile(opts.file, `--file ${opts.file}`), opts.file)
   }
   if (process.stdin.isTTY) {
     throw new TypeError('No mutation provided; use --data, --file, or stdin')

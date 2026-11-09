@@ -16,7 +16,7 @@ import {
 } from '../lib/sdk-deps'
 import { checkAstraleSkills, SKILL_CONFIGURE_COMMAND, type SkillCheckResult } from '../lib/skills'
 import { canPrompt } from '../lib/terminal/interactive'
-import { fatal, log, withSpinner } from '../lib/terminal/log'
+import { log, withSpinner } from '../lib/terminal/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/terminal/output'
 import { confirmDefaultYes } from '../lib/terminal/prompt'
 import { DEFAULT_UPDATE_CHANNEL, packageManagedUpdateError, updateAstrale } from '../lib/update'
@@ -295,105 +295,101 @@ Examples:
   $ astrale update --version 0.4.0-alpha.10
 `,
   action: async (opts: UpdateOpts) => {
-    try {
-      // Tooling path: a machine-readable `--check` (e.g. domain-studio's update
-      // badge polling `astrale update --check --json`) gets a unified,
-      // non-throwing staleness report and exits.
-      if (opts.check && isMachine(opts)) {
-        const cli = await cliStale(opts)
-        const skills: SkillCheckResult =
-          opts.skills === false ? { status: 'skipped' } : await checkAstraleSkills()
-        const sdk = await sdkStale()
-        const report: StaleReport = {
-          stale: cli.stale || skillCheckStale(skills) || sdk.stale,
-          cli,
-          skills,
-          sdk,
-        }
-        output(report, opts)
-        if (report.stale) process.exitCode = 10
-        return
+    // Tooling path: a machine-readable `--check` (e.g. domain-studio's update
+    // badge polling `astrale update --check --json`) gets a unified,
+    // non-throwing staleness report and exits.
+    if (opts.check && isMachine(opts)) {
+      const cli = await cliStale(opts)
+      const skills: SkillCheckResult =
+        opts.skills === false ? { status: 'skipped' } : await checkAstraleSkills()
+      const sdk = await sdkStale()
+      const report: StaleReport = {
+        stale: cli.stale || skillCheckStale(skills) || sdk.stale,
+        cli,
+        skills,
+        sdk,
       }
-
-      // Axis A — the standalone CLI binary.
-      const updateLabel = opts.check
-        ? 'Checking for Astrale updates'
-        : 'Checking and updating Astrale'
-      const result = await withSpinner(
-        updateLabel,
-        !isMachine(opts),
-        () =>
-          updateAstrale({
-            check: opts.check,
-            channel: opts.channel ?? DEFAULT_UPDATE_CHANNEL,
-            version: opts.version,
-            explicit: opts.channel !== undefined || opts.version !== undefined,
-            currentVersion: pkg.version,
-          }),
-        { longRunningText: `${updateLabel} — still working` },
-      )
-
-      // Machine mode WITHOUT --yes (e.g. `astrale update --json`): emit the binary
-      // result and stop — never silently refresh skills / edit deps for a pipe.
-      if (isMachine(opts) && !opts.yes) {
-        output(result, opts)
-        return
-      }
-
-      // `available` only happens under --check (a real run already swapped the
-      // binary and returns `updated`).
-      let anyAvailable = false
-      if (result.status === 'available') {
-        log.info(
-          `Astrale update available: ${result.currentVersion} -> ${result.latestVersion} (${result.channel})`,
-        )
-        anyAvailable = true
-      } else if (result.status === 'up-to-date') {
-        log.success(`Astrale is up to date: ${result.currentVersion}`)
-      } else if (result.status === 'updated') {
-        log.success(`Updated astrale ${result.previousVersion} -> ${result.currentVersion}`)
-        log.dim(`  channel: ${result.channel}`)
-        log.dim(`  binary: ${result.bin}`)
-      } else if (result.status === 'managed') {
-        const warning = packageManagedUpdateError(result.executable)
-        log.warn(
-          `${warning.code}: ${warning.message}${warning.hint ? `\n  hint: ${warning.hint}` : ''}`,
-        )
-      }
-
-      // Axis B — agent skills. A successful real update guarantees a verified
-      // latest cohort by running the newly installed binary, never the old
-      // process's embedded assets. --check remains read-only.
-      if (opts.skills !== false) {
-        const interactiveSkills = skillInstallPromptAllowed(opts)
-        const humanSkills = !isMachine(opts)
-        if (opts.check) {
-          const skills = await checkAstraleSkills()
-          logSkillCheck(skills)
-          if (skillCheckStale(skills)) anyAvailable = true
-        } else if (result.status === 'updated') {
-          if (humanSkills) log.step('Applying skills embedded in the updated CLI')
-          await refreshSkillsWithUpdatedBinary(result.bin, interactiveSkills)
-        } else {
-          await refreshSkills(interactiveSkills, humanSkills)
-        }
-      } else if (!opts.check) {
-        log.dim('  Astrale skills skipped (--no-skills)')
-      }
-
-      // The agents Studio runs are pinned per release: fetch the new ones now.
-      if (result.status === 'updated' && prefetchStudioAgents(result.bin) && !isMachine(opts))
-        log.dim('  Downloading the Studio agents pinned by this release in the background')
-
-      // Axis C — first-party @astrale-os/* deps in the current domain project.
-      // Runs on --check too (reports availability); --yes applies without a prompt.
-      if (opts.deps !== false && (await refreshSdkDeps(opts.check === true, opts.yes === true))) {
-        anyAvailable = true
-      }
-
-      if (opts.check && anyAvailable) process.exitCode = 10
-    } catch (e) {
-      fatal(e, opts)
+      output(report, opts)
+      if (report.stale) process.exitCode = 10
+      return
     }
+
+    // Axis A — the standalone CLI binary.
+    const updateLabel = opts.check
+      ? 'Checking for Astrale updates'
+      : 'Checking and updating Astrale'
+    const result = await withSpinner(
+      updateLabel,
+      !isMachine(opts),
+      () =>
+        updateAstrale({
+          check: opts.check,
+          channel: opts.channel ?? DEFAULT_UPDATE_CHANNEL,
+          version: opts.version,
+          explicit: opts.channel !== undefined || opts.version !== undefined,
+          currentVersion: pkg.version,
+        }),
+      { longRunningText: `${updateLabel} — still working` },
+    )
+
+    // Machine mode WITHOUT --yes (e.g. `astrale update --json`): emit the binary
+    // result and stop — never silently refresh skills / edit deps for a pipe.
+    if (isMachine(opts) && !opts.yes) {
+      output(result, opts)
+      return
+    }
+
+    // `available` only happens under --check (a real run already swapped the
+    // binary and returns `updated`).
+    let anyAvailable = false
+    if (result.status === 'available') {
+      log.info(
+        `Astrale update available: ${result.currentVersion} -> ${result.latestVersion} (${result.channel})`,
+      )
+      anyAvailable = true
+    } else if (result.status === 'up-to-date') {
+      log.success(`Astrale is up to date: ${result.currentVersion}`)
+    } else if (result.status === 'updated') {
+      log.success(`Updated astrale ${result.previousVersion} -> ${result.currentVersion}`)
+      log.dim(`  channel: ${result.channel}`)
+      log.dim(`  binary: ${result.bin}`)
+    } else if (result.status === 'managed') {
+      const warning = packageManagedUpdateError(result.executable)
+      log.warn(
+        `${warning.code}: ${warning.message}${warning.hint ? `\n  hint: ${warning.hint}` : ''}`,
+      )
+    }
+
+    // Axis B — agent skills. A successful real update guarantees a verified
+    // latest cohort by running the newly installed binary, never the old
+    // process's embedded assets. --check remains read-only.
+    if (opts.skills !== false) {
+      const interactiveSkills = skillInstallPromptAllowed(opts)
+      const humanSkills = !isMachine(opts)
+      if (opts.check) {
+        const skills = await checkAstraleSkills()
+        logSkillCheck(skills)
+        if (skillCheckStale(skills)) anyAvailable = true
+      } else if (result.status === 'updated') {
+        if (humanSkills) log.step('Applying skills embedded in the updated CLI')
+        await refreshSkillsWithUpdatedBinary(result.bin, interactiveSkills)
+      } else {
+        await refreshSkills(interactiveSkills, humanSkills)
+      }
+    } else if (!opts.check) {
+      log.dim('  Astrale skills skipped (--no-skills)')
+    }
+
+    // The agents Studio runs are pinned per release: fetch the new ones now.
+    if (result.status === 'updated' && prefetchStudioAgents(result.bin) && !isMachine(opts))
+      log.dim('  Downloading the Studio agents pinned by this release in the background')
+
+    // Axis C — first-party @astrale-os/* deps in the current domain project.
+    // Runs on --check too (reports availability); --yes applies without a prompt.
+    if (opts.deps !== false && (await refreshSdkDeps(opts.check === true, opts.yes === true))) {
+      anyAvailable = true
+    }
+
+    if (opts.check && anyAvailable) process.exitCode = 10
   },
 } satisfies CommandDefinition

@@ -12,7 +12,7 @@ import { ClientSession } from '@astrale-os/sdk/client/session'
 import type { AstraleConfig } from '../lib/config'
 import type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'
 
-import { AstraleError } from '../errors'
+import { AstraleError, InternalError } from '../errors'
 import { findDirectoryInstance, type DirectoryReadOptions } from '../lib/admin/directory'
 import {
   describeAge,
@@ -446,7 +446,7 @@ function openConnection(
       target,
       credentialPrincipal: () => {
         if (principal === undefined)
-          throw new Error('The Session has not selected an authenticated credential.')
+          throw new InternalError('The Session has not selected an authenticated credential.')
         return principal
       },
       ...(options.as === undefined ? {} : { identity: options.as }),

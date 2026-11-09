@@ -16,6 +16,7 @@ import type { OperationRecovery, PendingFollowUp } from './command'
 
 import { AstraleError } from '../errors'
 import { log, printFailureDebug } from '../lib/terminal/log'
+import { isMachine, type MachineOpts } from '../lib/terminal/output'
 import { RECEIPT_REFUSED_HINT, receiptRefused } from '../lib/upload'
 import {
   IncompleteInstallation,
@@ -35,6 +36,19 @@ import {
   schemaUpgradeDetails,
   schemaUpgradeHint,
 } from './reasons'
+
+/**
+ * Report a failure no command rendered, then exit 1: the binary's one report of whatever reached it.
+ * A typed failure prints its code, an SDK failure the code of its kind, and any other value
+ * UNEXPECTED_ERROR, with its evidence only under `debug`.
+ */
+export async function reportFailure(
+  error: unknown,
+  opts: MachineOpts & { readonly debug?: boolean } = {},
+): Promise<never> {
+  await formatKernelError(error, isMachine(opts), '', opts.debug)
+  process.exit(1)
+}
 
 /** Present one failure of a Kernel-touching command: typed for humans, one JSON line on stderr for machines. */
 export async function formatKernelError(
@@ -121,6 +135,7 @@ type FailureDiagnostic =
       readonly code: string
       readonly message: string
       readonly hint?: string
+      readonly details?: Readonly<Record<string, unknown>>
     }
   | {
       readonly kind: 'response'
@@ -137,7 +152,9 @@ type FailureDiagnostic =
     }
 
 export function classifyFailure(error: unknown): FailureDiagnostic {
-  if (error instanceof AstraleError) return simple(error.code, error.message, error.hint)
+  if (error instanceof AstraleError) {
+    return simple(error.code, error.message, error.hint, error.details)
+  }
   if (error instanceof TransportError) {
     return {
       kind: 'transport',
@@ -180,11 +197,17 @@ function lifecycleCode(value: TransportError['phase'] | SessionFailure): string 
   return value === 'cancelled' ? 'CANCELLED' : 'TRANSPORT_ERROR'
 }
 
-const simple = (code: string, message: string, hint?: string): FailureDiagnostic => ({
+const simple = (
+  code: string,
+  message: string,
+  hint?: string,
+  details?: Readonly<Record<string, unknown>>,
+): FailureDiagnostic => ({
   kind: 'simple',
   code,
   message,
   ...(hint === undefined ? {} : { hint }),
+  ...(details === undefined ? {} : { details }),
 })
 
 function renderFailure(
@@ -202,6 +225,7 @@ function renderFailure(
       error: failure.code,
       message: failure.message,
       hint: failure.hint,
+      details: failure.details,
     })
   log.error(`${chalk.bold(failure.code)}: ${failure.message}`)
   if (failure.hint) log.dim(`  ${failure.hint}`)

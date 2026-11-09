@@ -1,5 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
+import { AstraleError } from '../../errors'
 import {
   astraleSkillAgents,
   checkAstraleSkills,
@@ -14,7 +15,7 @@ import {
   type SkillOnboardingState,
 } from '../../lib/skills'
 import { canPrompt } from '../../lib/terminal/interactive'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import {
   isMachine,
   output,
@@ -76,7 +77,8 @@ export async function configureAstraleSkills(
   if (opts.source) {
     const skills = await checkAstraleSkills()
     if (skills.installed === undefined) {
-      throw new Error(
+      throw new AstraleError(
+        'SKILL_UPDATE_FAILED',
         `Astrale skills could not be inspected${skills.error ? `: ${skills.error}` : ''}`,
       )
     }
@@ -145,20 +147,16 @@ export default {
     ...RAW_OUTPUT_OPTIONS,
   ],
   action: async (opts: ConfigureOpts) => {
-    try {
-      const outcome = await configureAstraleSkills(opts)
-      if (isMachine(opts)) {
-        output(
-          outcome.status === 'applied'
-            ? { ...outcome.result, agents: outcome.agents, scope: 'global' }
-            : { status: outcome.status, scope: 'global' },
-          opts,
-        )
-        return
-      }
-      renderSkillConfigureOutcome(outcome)
-    } catch (error) {
-      fatal(error, opts)
+    const outcome = await configureAstraleSkills(opts)
+    if (isMachine(opts)) {
+      output(
+        outcome.status === 'applied'
+          ? { ...outcome.result, agents: outcome.agents, scope: 'global' }
+          : { status: outcome.status, scope: 'global' },
+        opts,
+      )
+      return
     }
+    renderSkillConfigureOutcome(outcome)
   },
 } satisfies CommandDefinition

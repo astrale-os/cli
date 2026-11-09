@@ -16,11 +16,11 @@ import { AstraleError, IdentityKeypairIncompleteError } from '../../errors'
 import { getIdentity, setRegistration, submitIdentityRegistration } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
 import { derivedIdempotencyKey } from '../../lib/idempotency'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import { output } from '../../lib/terminal/output'
 
 type RegisterOpts = KernelCommandOpts & {
-  node?: string
+  node: string
   via?: string
 }
 
@@ -62,7 +62,8 @@ Example:
   options: [
     {
       flags: '--node <nodePath>',
-      description: 'Existing Identity Node as @node-id (required)',
+      description: 'Existing Identity Node as @node-id',
+      required: true,
     },
     {
       flags: '--via <callablePath>',
@@ -70,68 +71,63 @@ Example:
     },
   ],
   action: async (name: string, opts: RegisterOpts) => {
-    try {
-      if (!opts.node) throw new TypeError('Missing required flag: --node <nodePath>')
-      const nodeId = registrationNodeId(opts.node)
-      const identity = await getIdentity(name)
-      if ((identity.source ?? 'key') !== 'key') {
-        throw new AstraleError(
-          'INVALID_IDENTITY_SOURCE',
-          `Identity "${name}" is IdP-backed and cannot be registered as a local key identity.`,
-          'Run: astrale identity create <local-name>',
-        )
-      }
-      const { privatePath, publicPath } = keypairPaths(identity.subject)
-      const [hasPrivateKey, hasPublicKey] = await Promise.all([
-        fileExists(privatePath),
-        fileExists(publicPath),
-      ])
-      if (!hasPrivateKey || !hasPublicKey) {
-        throw new IdentityKeypairIncompleteError(
-          identity.subject,
-          [!hasPrivateKey && 'private', !hasPublicKey && 'public'].filter(
-            (component): component is 'private' | 'public' => component !== false,
-          ),
-        )
-      }
-
-      const privateKey = await readJwk(privatePath)
-      const publicKey = jwk.acceptPublic(await readJwk(publicPath))
-
-      await runKernelCommand<IdentityRegistrationResult>({
-        opts,
-        ...(opts.via === undefined
-          ? {}
-          : { credential: { principal: 'callable', path: Path.parse(opts.via) } as const }),
-        label: `Register "${name}"`,
-        fn: async ({ auth, session, target }) => {
-          const registrationKey = registrationKeyForTarget(target)
-          const prepared = await prepareIdentityRegistration({
-            nodeId,
-            privateKey,
-            publicKey,
-            kernelIssuer: target.kernelIssuer,
-          })
-          const registered = await submitIdentityRegistration({
-            request: prepared.request,
-            nodeId,
-            expectedAuthentication: prepared.authentication,
-            ...(opts.via === undefined ? {} : { via: opts.via }),
-            direct: auth,
-            callable: session,
-          })
-          await setRegistration(name, registrationKey, {
-            iss: registered.iss,
-            sub: registered.sub,
-            registeredAt: new Date().toISOString(),
-          })
-          return registered
-        },
-        format: formatIdentityRegistration,
-      })
-    } catch (error) {
-      fatal(error, opts)
+    const nodeId = registrationNodeId(opts.node)
+    const identity = await getIdentity(name)
+    if ((identity.source ?? 'key') !== 'key') {
+      throw new AstraleError(
+        'INVALID_IDENTITY_SOURCE',
+        `Identity "${name}" is IdP-backed and cannot be registered as a local key identity.`,
+        'Run: astrale identity create <local-name>',
+      )
     }
+    const { privatePath, publicPath } = keypairPaths(identity.subject)
+    const [hasPrivateKey, hasPublicKey] = await Promise.all([
+      fileExists(privatePath),
+      fileExists(publicPath),
+    ])
+    if (!hasPrivateKey || !hasPublicKey) {
+      throw new IdentityKeypairIncompleteError(
+        identity.subject,
+        [!hasPrivateKey && 'private', !hasPublicKey && 'public'].filter(
+          (component): component is 'private' | 'public' => component !== false,
+        ),
+      )
+    }
+
+    const privateKey = await readJwk(privatePath)
+    const publicKey = jwk.acceptPublic(await readJwk(publicPath))
+
+    await runKernelCommand<IdentityRegistrationResult>({
+      opts,
+      ...(opts.via === undefined
+        ? {}
+        : { credential: { principal: 'callable', path: Path.parse(opts.via) } as const }),
+      label: `Register "${name}"`,
+      fn: async ({ auth, session, target }) => {
+        const registrationKey = registrationKeyForTarget(target)
+        const prepared = await prepareIdentityRegistration({
+          nodeId,
+          privateKey,
+          publicKey,
+          kernelIssuer: target.kernelIssuer,
+        })
+        const registered = await submitIdentityRegistration({
+          request: prepared.request,
+          nodeId,
+          expectedAuthentication: prepared.authentication,
+          ...(opts.via === undefined ? {} : { via: opts.via }),
+          direct: auth,
+          callable: session,
+        })
+        await setRegistration(name, registrationKey, {
+          iss: registered.iss,
+          sub: registered.sub,
+          registeredAt: new Date().toISOString(),
+        })
+        return registered
+      },
+      format: formatIdentityRegistration,
+    })
   },
 } satisfies CommandDefinition
 
@@ -150,7 +146,7 @@ export function formatIdentityRegistration(
 export function registrationNodeId(input: string): NodeId {
   const { anchor, steps } = Path.parse(input).ast
   if (anchor.kind !== 'id' || steps.length !== 0 || input === '@self') {
-    throw new TypeError('--node requires an explicit existing @node-id.')
+    throw new AstraleError('INVALID_FLAG', '--node requires an explicit existing @node-id.')
   }
   return anchor.id
 }

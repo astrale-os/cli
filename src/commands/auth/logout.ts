@@ -1,5 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
+import { AstraleError } from '../../errors'
 import { findIdentity, getDefault, readIdentities } from '../../identity/index'
 import { deleteIdpSession, listIdpSessions } from '../../lib/idp/provider'
 import { log } from '../../lib/terminal/log'
@@ -23,7 +24,10 @@ export default {
     } else {
       const identity = await getDefault()
       if ((identity.source ?? 'key') !== 'idp') {
-        throw new Error('Default identity is not IdP-backed. Pass --name or --all.')
+        throw new AstraleError(
+          'AUTH_ERROR',
+          'Default identity is not IdP-backed. Pass --name or --all.',
+        )
       }
       names = [identity.name]
     }

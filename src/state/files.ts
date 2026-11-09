@@ -11,6 +11,8 @@ import {
 import { chmod, mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
+import { AstraleError } from '../errors'
+
 /** Atomically publish one complete private state file through a same-directory temporary file. */
 export async function atomicWrite(path: string, data: string): Promise<void> {
   const directory = dirname(path)
@@ -98,7 +100,11 @@ export async function withFileLock<Value>(
     }
     if (await takeoverIfAbandoned(lockPath, staleAfterMs)) continue
     if (Date.now() >= deadline) {
-      throw new Error(`Timed out after ${timeoutMs}ms waiting for lock ${lockPath}`)
+      throw new AstraleError(
+        'STATE_LOCK_TIMEOUT',
+        `Timed out after ${timeoutMs}ms waiting for lock ${lockPath}`,
+        'Another astrale command holds this lock; retry once it finishes.',
+      )
     }
     await sleep(pollIntervalMs)
   }
