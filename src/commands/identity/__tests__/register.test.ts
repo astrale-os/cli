@@ -52,7 +52,7 @@ test.each([
     error: {
       error: 'NO_IDENTITY',
       message: 'Identity "missing" not found.',
-      hint: 'Run: astrale identity create missing',
+      hint: 'Run: astrale identity list',
     },
   },
   {

@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { removeInstance } from '../../lib/instance/bookmarks'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 
 export default {
   name: 'forget',
@@ -13,11 +13,7 @@ Behavior:
 `,
   arguments: [{ name: 'name', description: 'Bookmark name (slug or name)', required: true }],
   action: async (name: string) => {
-    try {
-      await removeInstance(name)
-      log.success(`Forgot bookmark "${name}" (no kernel-side change)`)
-    } catch (e) {
-      fatal(e)
-    }
+    await removeInstance(name)
+    log.success(`Forgot bookmark "${name}" (no kernel-side change)`)
   },
 } satisfies CommandDefinition

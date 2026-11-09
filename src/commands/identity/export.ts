@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { encodeIdentityExport, exportIdentity, writeIdentityExport } from '../../identity/index'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 import { readPassphrase } from '../../lib/terminal/prompt'
 
@@ -22,22 +22,18 @@ export default {
     ...RAW_OUTPUT_OPTIONS,
   ],
   action: async (name: string, path: string, opts: { encrypt?: boolean } & RawOutputOpts) => {
-    try {
-      const envelope = await exportIdentity(name)
-      const passphrase = opts.encrypt
-        ? await readPassphrase('Passphrase (min 8 chars)', { minLength: 8 })
-        : undefined
-      await writeIdentityExport(path, await encodeIdentityExport(envelope, passphrase))
+    const envelope = await exportIdentity(name)
+    const passphrase = opts.encrypt
+      ? await readPassphrase('Passphrase (min 8 chars)', { minLength: 8 })
+      : undefined
+    await writeIdentityExport(path, await encodeIdentityExport(envelope, passphrase))
 
-      if (outputForMachine({ name, path, encrypted: Boolean(opts.encrypt) }, opts)) return
-      log.success(`Exported identity "${name}" → ${path}${opts.encrypt ? ' (encrypted)' : ''}`)
-      if (!opts.encrypt) {
-        log.warn(
-          '  Plaintext private JWK — keep this file secure. Use --encrypt for passphrase wrapping.',
-        )
-      }
-    } catch (e) {
-      fatal(e, opts)
+    if (outputForMachine({ name, path, encrypted: Boolean(opts.encrypt) }, opts)) return
+    log.success(`Exported identity "${name}" → ${path}${opts.encrypt ? ' (encrypted)' : ''}`)
+    if (!opts.encrypt) {
+      log.warn(
+        '  Plaintext private JWK — keep this file secure. Use --encrypt for passphrase wrapping.',
+      )
     }
   },
 } satisfies CommandDefinition

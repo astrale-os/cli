@@ -103,11 +103,7 @@ export async function getDefault(): Promise<Identity & { readonly name: string }
   const store = await readIdentities()
   const identity = store.default === '' ? undefined : findIdentity(store, store.default)
   if (!identity) {
-    throw new AstraleError(
-      'NO_IDENTITY',
-      'No default identity.',
-      'Run: astrale identity create <name>',
-    )
+    throw new AstraleError('NO_IDENTITY', 'No default identity.', 'Run: astrale identity list')
   }
   return { ...identity, name: store.default }
 }

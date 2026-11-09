@@ -102,8 +102,17 @@ export function findOwnedInstance(
       instance.id === identifier ||
       (instance.id.startsWith('@') && instance.id.slice(1) === identifier),
   )
-  if (matches.length > 1) throw new Error('Instance slug is ambiguous.')
+  if (matches.length > 1) throw instanceAmbiguous(identifier)
   return matches[0]
+}
+
+/** Several Instances answer to `identifier`: only an id names one of them. */
+export function instanceAmbiguous(identifier: string): AstraleError {
+  return new AstraleError(
+    'INSTANCE_AMBIGUOUS',
+    `Instance slug "${identifier}" is ambiguous.`,
+    'Name the Instance by its @id: astrale instance list',
+  )
 }
 
 /** Human-readable non-ready lifecycle state for one Instance. */

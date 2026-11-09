@@ -16,7 +16,7 @@ import {
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { AstraleError } from '../../errors'
+import { AstraleError, InternalError } from '../../errors'
 import { EMBEDDED_SKILLS } from '../../generated/embedded-assets'
 import { paths } from '../../state'
 import { withFileLock } from '../../state/files'
@@ -156,7 +156,7 @@ async function embeddedSource(): Promise<AstraleSkillSource> {
   const compiledRevision =
     typeof __ASTRALE_SOURCE_REVISION__ === 'string' ? __ASTRALE_SOURCE_REVISION__ : undefined
   if (compiledRevision !== undefined && !/^[0-9a-f]{40}$/u.test(compiledRevision)) {
-    throw new Error('this Astrale binary has an invalid source revision')
+    throw new InternalError('this Astrale binary has an invalid source revision')
   }
   return {
     revision: compiledRevision ?? `cli:${skills.map((skill) => skill.tree).join(':')}`,
@@ -168,11 +168,11 @@ async function readSource(ctx: Context): Promise<AstraleSkillSource> {
   const source = await (ctx.options.resolveSource ?? embeddedSource)()
   const names = source.skills.map((skill) => skill.name)
   if (!source.revision || names.length === 0 || new Set(names).size !== names.length) {
-    throw new Error('invalid Astrale skill source')
+    throw new InternalError('invalid Astrale skill source')
   }
   for (const skill of source.skills) {
     if (!SAFE_NAME.test(skill.name) || !/^[0-9a-f]{40}$/u.test(skill.tree)) {
-      throw new Error(`invalid Astrale skill source entry: ${skill.name}`)
+      throw new InternalError(`invalid Astrale skill source entry: ${skill.name}`)
     }
   }
   return source
@@ -328,16 +328,20 @@ async function assertNoForeignSkills(ctx: Context, source: AstraleSkillSource): 
   for (const skill of source.skills) {
     const entry = lock?.skills[skill.name]
     if (entry && !isOwned(entry)) {
-      throw new Error(
-        `the global skill lock already assigns ${skill.name} to another source; remove or rename that skill, then retry`,
+      throw new AstraleError(
+        'SKILL_CONFLICT',
+        `The global skill lock already assigns ${skill.name} to another source.`,
+        'Remove or rename that skill, then retry.',
       )
     }
     if (
       (await lstat(join(ctx.canonical, skill.name)).catch(() => null)) &&
       !owned.has(skill.name)
     ) {
-      throw new Error(
-        `~/.agents/skills/${skill.name} already exists and is not managed by Astrale; move it aside, then retry`,
+      throw new AstraleError(
+        'SKILL_CONFLICT',
+        `~/.agents/skills/${skill.name} already exists and is not managed by Astrale.`,
+        'Move it aside, then retry.',
       )
     }
   }
@@ -349,7 +353,13 @@ async function configuredAgents(ctx: Context, names: readonly string[]): Promise
   const explicit = ctx.options.agents
   if (explicit) {
     const unknown = explicit.filter((name) => !registry.some((agent) => agent.name === name))
-    if (unknown.length > 0) throw new Error(`unknown skill agent: ${unknown.join(', ')}`)
+    if (unknown.length > 0) {
+      throw new AstraleError(
+        'INVALID_FLAG',
+        `Unknown skill agent: ${unknown.join(', ')}`,
+        `Known agents: ${registry.map((agent) => agent.name).join(', ')}`,
+      )
+    }
     return [...new Set(explicit)]
   }
   const { lock } = await readSkillLock(ctx.lockPath)
@@ -429,11 +439,11 @@ async function install(
       continue
     }
     if (!skill.files?.some((file) => file.path === 'SKILL.md')) {
-      throw new Error(`embedded skill ${skill.name} has no SKILL.md`)
+      throw new InternalError(`embedded skill ${skill.name} has no SKILL.md`)
     }
     for (const file of skill.files) {
       if (file.path.split('/').some((part) => part === '' || part === '.' || part === '..')) {
-        throw new Error(`unsafe skill path: ${file.path}`)
+        throw new InternalError(`unsafe skill path: ${file.path}`)
       }
       const destination = join(target, file.path)
       await mkdir(dirname(destination), { recursive: true })
@@ -617,7 +627,11 @@ export async function syncAstraleSkills(options: SkillSyncOptions = {}): Promise
       try {
         await install(ctx, source, agents, retired)
         if ((await inspectCohort(ctx, source)).state !== 'current') {
-          throw new Error('installed Astrale skills did not pass verification')
+          throw new AstraleError(
+            'SKILL_UPDATE_FAILED',
+            'Astrale installed its agent skills, but they did not pass verification.',
+            `Retry with \`${SKILL_INSTALL_HINT}\`.`,
+          )
         }
       } catch (error) {
         await restore(ctx, saved, initial.state)

@@ -139,8 +139,12 @@ describe('IdP configurations and sessions', () => {
     'a login names an unknown IdP, and status still lists the cached session',
     async () => {
       const unknown = await runCli(tmp, ['auth', 'login', '--idp', 'nowhere', '--raw'])
-      expect(unknown.exitCode).not.toBe(0)
-      expect(unknown.stderr).toContain('IdP "nowhere" not found')
+      expect(unknown.exitCode).toBe(1)
+      expect(JSON.parse(unknown.stderr)).toEqual({
+        error: 'IDP_NOT_FOUND',
+        message: 'IdP "nowhere" not found.',
+        hint: 'Run: astrale idp list',
+      })
       const status = await runCli(tmp, ['auth', 'status', '--json'])
       expect(JSON.parse(status.stdout)).toEqual([
         expect.objectContaining({

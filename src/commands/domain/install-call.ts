@@ -8,6 +8,7 @@ import type { InstallPrecheck } from './install-precheck'
 
 import { formatKernelError } from '../../connection/errors'
 import { failureExitCode, renderInterruptedWait } from '../../connection/installation-result'
+import { AstraleError } from '../../errors'
 import { formatElapsed } from '../../lib/terminal/format'
 import { fatal, log, spinner } from '../../lib/terminal/log'
 import { isMachine } from '../../lib/terminal/output'
@@ -100,7 +101,8 @@ export async function exitWithInstallFailure(
   failure: InstallFailure,
   opts: KernelCommandOpts,
 ): Promise<never> {
-  if (failure.render === 'input') fatal(failure.error, opts)
+  if (failure.render === 'input' && failure.error instanceof AstraleError)
+    fatal(failure.error, opts)
   const machine = isMachine(opts)
   await formatKernelError(failure.error, machine, undefined, opts.debug, {
     ...(failure.lifecycle === undefined ? {} : { lifecycle: failure.lifecycle }),

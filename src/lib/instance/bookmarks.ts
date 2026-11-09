@@ -274,7 +274,7 @@ export async function upsertInstance(
 ): Promise<{ entry: InstanceEntry; created: boolean }> {
   validateName(key, 'Instance')
   if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
-  if (!opts.url) throw new Error('Instance bookmarks require --url <url>')
+  if (!opts.url) throw new AstraleError('MISSING_ARG', 'Instance bookmarks require --url <url>.')
   const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
   validateUrl(normalizedUrl)
 

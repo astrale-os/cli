@@ -2,7 +2,6 @@ import type { CommandDefinition } from '../program/index'
 import type { SetupOpts } from '../setup/types'
 
 import { ADMIN_TARGET_OPTIONS } from '../lib/admin/target'
-import { fatal } from '../lib/terminal/log'
 import { RAW_OUTPUT_OPTIONS } from '../lib/terminal/output'
 import { runSetup } from '../setup/engine'
 
@@ -44,12 +43,8 @@ Examples:
   $ astrale setup --plan --json   # machine-readable plan for an agent
 `,
   action: async (slug: string | undefined, opts: SetupOpts) => {
-    try {
-      await runSetup(opts, slug)
-    } catch (e) {
-      // fatal() exits 130 quietly on Ctrl-C (ExitPromptError); each step's
-      // writes are atomic + idempotent, so nothing half-applied matters.
-      fatal(e)
-    }
+    // Ctrl-C at a prompt exits 130 quietly; each step's writes are atomic and idempotent, so
+    // nothing half-applied matters.
+    await runSetup(opts, slug)
   },
 } satisfies CommandDefinition

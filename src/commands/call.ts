@@ -19,7 +19,7 @@ import {
 import { TRY_LATER_EXIT } from '../connection/command'
 import { executionPending } from '../connection/errors'
 import { commandWait } from '../connection/session'
-import { AstraleError } from '../errors'
+import { AstraleError, InternalError } from '../errors'
 import {
   checkFileContract,
   fileContract,
@@ -200,7 +200,7 @@ export async function callCommand(
           if (result.running) process.exit(TRY_LATER_EXIT)
           return
         case 'redirect':
-          throw new Error('Client Session returned an unresolved redirect.')
+          throw new InternalError('Client Session returned an unresolved redirect.')
       }
     },
   })

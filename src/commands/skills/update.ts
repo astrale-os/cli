@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { syncAstraleSkills } from '../../lib/skills'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import {
   isMachine,
   output,
@@ -15,15 +15,11 @@ export default {
   description: 'Install, update, or repair embedded Astrale skills globally',
   options: [...RAW_OUTPUT_OPTIONS],
   action: async (opts: RawOutputOpts) => {
-    try {
-      const result = await syncAstraleSkills()
-      if (isMachine(opts)) {
-        output({ ...result, scope: 'global' }, opts)
-        return
-      }
-      log.success(SKILL_APPLY_MESSAGES[result.status])
-    } catch (error) {
-      fatal(error, opts)
+    const result = await syncAstraleSkills()
+    if (isMachine(opts)) {
+      output({ ...result, scope: 'global' }, opts)
+      return
     }
+    log.success(SKILL_APPLY_MESSAGES[result.status])
   },
 } satisfies CommandDefinition

@@ -1,6 +1,7 @@
 import { checkbox, input, password, select } from '@inquirer/prompts'
 import chalk from 'chalk'
 
+import { AstraleError } from '../../errors'
 import { canPrompt, canReadRequiredInput, type PromptGate } from './interactive'
 
 // All interactive prompts go through `@inquirer/prompts` so a single library
@@ -166,13 +167,18 @@ export async function readPassphrase(
   const configured = env.ASTRALE_PASSPHRASE
   if (configured) return configured
   if (!canReadRequiredInput(opts)) {
-    throw new Error(
-      'Passphrase required but the terminal is not interactive. Pipe via ASTRALE_PASSPHRASE env var.',
+    throw new AstraleError(
+      'PASSPHRASE_REQUIRED',
+      'Passphrase required but the terminal is not interactive.',
+      'Pipe it via the ASTRALE_PASSPHRASE env var.',
     )
   }
   const answer = (await ask(() => password({ message, mask: true }, promptContext()))).trim()
   if (opts.minLength && answer.length < opts.minLength) {
-    throw new Error(`Passphrase too short (min ${opts.minLength} chars)`)
+    throw new AstraleError(
+      'PASSPHRASE_TOO_SHORT',
+      `Passphrase too short (min ${opts.minLength} chars)`,
+    )
   }
   return answer
 }

@@ -5,7 +5,7 @@ import type { CommandDefinition } from '../program/index'
 import { AstraleError } from '../errors'
 import { findIdentity, readIdentities, setDefault } from '../identity/index'
 import { readInstances, resolveInstanceKey } from '../lib/instance/bookmarks'
-import { fatal, log } from '../lib/terminal/log'
+import { log } from '../lib/terminal/log'
 import instanceUseCommand from './instance/use'
 
 type UseOpts = {
@@ -65,49 +65,45 @@ Examples:
     { flags: '--skip-jwks-check', description: 'When using an instance, skip the JWKS check' },
   ],
   action: async (name: string, opts: UseOpts) => {
-    try {
-      if (opts.identity && opts.instance) {
-        throw new AstraleError('INVALID_FLAG', 'Choose either --identity or --instance, not both.')
-      }
-
-      if (opts.identity) {
-        await useIdentity(name)
-        return
-      }
-
-      if (opts.instance) {
-        await instanceUseCommand.action(name, opts)
-        return
-      }
-
-      const [instances, identities] = await Promise.all([readInstances(), readIdentities()])
-      const target = resolveUseTarget(name, instances, identities)
-
-      if (target.kind === 'identity') {
-        await useIdentity(target.name)
-        return
-      }
-
-      if (target.kind === 'instance') {
-        await instanceUseCommand.action(target.name, opts)
-        return
-      }
-
-      if (target.kind === 'ambiguous') {
-        throw new AstraleError(
-          'NAME_AMBIGUOUS',
-          `Both an identity and an instance are named "${name}".`,
-          `Use: astrale identity use ${name} or astrale instance use ${name}`,
-        )
-      }
-
-      throw new AstraleError(
-        'NAME_NOT_FOUND',
-        `No identity or instance named "${name}".`,
-        'Try: astrale identity list or astrale instance list',
-      )
-    } catch (e) {
-      fatal(e)
+    if (opts.identity && opts.instance) {
+      throw new AstraleError('INVALID_FLAG', 'Choose either --identity or --instance, not both.')
     }
+
+    if (opts.identity) {
+      await useIdentity(name)
+      return
+    }
+
+    if (opts.instance) {
+      await instanceUseCommand.action(name, opts)
+      return
+    }
+
+    const [instances, identities] = await Promise.all([readInstances(), readIdentities()])
+    const target = resolveUseTarget(name, instances, identities)
+
+    if (target.kind === 'identity') {
+      await useIdentity(target.name)
+      return
+    }
+
+    if (target.kind === 'instance') {
+      await instanceUseCommand.action(target.name, opts)
+      return
+    }
+
+    if (target.kind === 'ambiguous') {
+      throw new AstraleError(
+        'NAME_AMBIGUOUS',
+        `Both an identity and an instance are named "${name}".`,
+        `Use: astrale identity use ${name} or astrale instance use ${name}`,
+      )
+    }
+
+    throw new AstraleError(
+      'NAME_NOT_FOUND',
+      `No identity or instance named "${name}".`,
+      'Try: astrale identity list or astrale instance list',
+    )
   },
 } satisfies CommandDefinition

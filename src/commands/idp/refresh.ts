@@ -12,7 +12,7 @@ import { isMachine, outputForMachine, RAW_OUTPUT_OPTIONS } from '../../lib/termi
 export default {
   name: 'refresh',
   description: 'Refresh discovery metadata for an identity provider',
-  arguments: [{ name: 'name', description: 'Local IdP registry name' }],
+  arguments: [{ name: 'name', description: 'Local IdP registry name', required: true }],
   options: [...RAW_OUTPUT_OPTIONS],
   action: async (name: string, opts: { raw?: boolean; json?: boolean }) => {
     const existing = await readIdpConfigOrBuiltin(name)

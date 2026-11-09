@@ -16,34 +16,37 @@ export const log = {
   dim: (msg: string) => console.log(chalk.dim(msg)),
 }
 
-/** Report an error with hint (when present) and exit. `--json` / `--ci` / a
- *  non-TTY stdout always get one structured JSON line on stderr. */
-export function fatal(e: unknown, opts?: MachineOpts & { readonly debug?: boolean }): never {
-  // Ctrl-C at an interactive (@inquirer/prompts) prompt — exit quietly with the
-  // SIGINT convention, not a red error line.
-  if (e instanceof Error && e.name === 'ExitPromptError') process.exit(130)
-  const msg =
-    e instanceof AstraleError ? e.message : 'The CLI encountered an unexpected internal failure.'
-  const code = e instanceof AstraleError ? e.code : 'UNEXPECTED_ERROR'
+/**
+ * Refuse the command with one typed failure and exit 1: its code, message and hint, as one JSON line
+ * on stderr for `--json` / `--ci` / a non-TTY stdout. Only a typed failure is accepted here; any
+ * other value propagates to the binary's one report (`reportFailure`), which prints UNEXPECTED_ERROR.
+ */
+export function fatal(
+  error: AstraleError,
+  opts?: MachineOpts & { readonly debug?: boolean },
+): never {
   if (isMachine(opts)) {
-    const payload: Record<string, unknown> = { error: code, message: msg }
-    if (e instanceof AstraleError && e.hint) payload.hint = e.hint
-    if (e instanceof AstraleError && e.details) payload.details = e.details
+    const payload: Record<string, unknown> = { error: error.code, message: error.message }
+    if (error.hint) payload.hint = error.hint
+    if (error.details) payload.details = error.details
     process.stderr.write(JSON.stringify(payload) + '\n')
   } else {
-    // Same shape as `renderFailure` (connection/failure): bold code, then the
+    // Same shape as `renderFailure` (connection/errors): bold code, then the
     // hint as one dim detail line. Two renderers, one error to read.
-    log.error(`${chalk.bold(code)}: ${msg}`)
-    if (e instanceof AstraleError && e.hint) log.dim(`  ${e.hint}`)
+    log.error(`${chalk.bold(error.code)}: ${error.message}`)
+    if (error.hint) log.dim(`  ${error.hint}`)
   }
-  if (opts?.debug) printFailureDebug(e, '')
+  if (opts?.debug) printFailureDebug(error, '')
   process.exit(1)
 }
 
-/** Project only a caller-authored admission failure into the CLI input family. */
+/**
+ * Refuse a caller-authored admission failure as INVALID_INPUT: a TypeError raised while the
+ * command read its own arguments, flags or input. Any other failure is rethrown unchanged.
+ */
 export function failInput(error: unknown, opts?: MachineOpts): never {
   if (error instanceof AstraleError) fatal(error, opts)
-  if (!(error instanceof TypeError)) fatal(error, opts)
+  if (!(error instanceof TypeError)) throw error
   fatal(
     new AstraleError(
       'INVALID_INPUT',

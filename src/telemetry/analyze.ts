@@ -10,6 +10,7 @@ import { join } from 'node:path'
 
 import type { AnalyzedMarker, SessionSignals } from './types'
 
+import { AstraleError } from '../errors'
 import { defaultAdapters, discoverAll } from './adapters'
 import { extractSignals, hasSignals, readEvents } from './gate'
 import { tidySession } from './retention'
@@ -136,7 +137,13 @@ export async function analyzeSession(
   opts: { file?: boolean; model?: string; force?: boolean; auto?: boolean } = {},
 ): Promise<AnalyzeOutcome> {
   const info = inspectSession(id)
-  if (!info) throw new Error(`no session "${id}" under ~/.astrale/sessions`)
+  if (!info) {
+    throw new AstraleError(
+      'SESSION_NOT_FOUND',
+      `No session "${id}" under ~/.astrale/sessions`,
+      'Run: astrale session list',
+    )
+  }
   if (info.analyzed && !opts.force) return info.analyzed
 
   const events = readEvents(eventsPath(id))

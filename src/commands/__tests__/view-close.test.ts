@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 const cliRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const sessionModule = fileURLToPath(new URL('../../lib/view/session.ts', import.meta.url))
 const commandModule = fileURLToPath(new URL('../view.ts', import.meta.url))
+const errorsModule = fileURLToPath(new URL('../../connection/errors.ts', import.meta.url))
 const temporaryDirectories: string[] = []
 
 afterEach(async () => {
@@ -39,7 +40,9 @@ describe('view close command process failures', () => {
       closeSync(await openSessionLog(record.id))
       process.kill = () => { throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' }) }
       const { default: command } = await import(${JSON.stringify(commandModule)})
-      await command.action(undefined, { close: record.id, json: true })
+      const { reportFailure } = await import(${JSON.stringify(errorsModule)})
+      const opts = { close: record.id, json: true }
+      await command.action(undefined, opts).catch((error) => reportFailure(error, opts))
     `
     const child = Bun.spawn([process.execPath, '-e', script], {
       cwd: cliRoot,

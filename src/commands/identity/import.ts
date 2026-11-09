@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises'
-
 import type { CommandDefinition } from '../../program/index'
 
 import {
@@ -7,7 +5,8 @@ import {
   importIdentity,
   isEncryptedIdentityExport,
 } from '../../identity/index'
-import { fatal, log } from '../../lib/terminal/log'
+import { readInputFile } from '../../lib/input-file'
+import { log } from '../../lib/terminal/log'
 import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 import { readPassphrase } from '../../lib/terminal/prompt'
 
@@ -34,25 +33,21 @@ export default {
     path: string,
     opts: { name?: string; issuer?: string; replace?: boolean } & RawOutputOpts,
   ) => {
-    try {
-      const raw = await readFile(path, 'utf-8')
-      const passphrase = isEncryptedIdentityExport(raw)
-        ? await readPassphrase('Passphrase')
-        : undefined
-      const envelope = await decodeIdentityExport(raw, passphrase)
-      const name = opts.name ?? envelope.subject
-      const identity = await importIdentity(envelope, {
-        name,
-        issuer: opts.issuer,
-        replace: opts.replace,
-      })
+    const raw = await readInputFile(path)
+    const passphrase = isEncryptedIdentityExport(raw)
+      ? await readPassphrase('Passphrase')
+      : undefined
+    const envelope = await decodeIdentityExport(raw, passphrase)
+    const name = opts.name ?? envelope.subject
+    const identity = await importIdentity(envelope, {
+      name,
+      issuer: opts.issuer,
+      replace: opts.replace,
+    })
 
-      if (outputForMachine({ name, ...identity }, opts)) return
-      log.success(
-        `Imported identity "${name}" (subject=${identity.subject}, kid=${identity.kid ?? '?'})`,
-      )
-    } catch (e) {
-      fatal(e, opts)
-    }
+    if (outputForMachine({ name, ...identity }, opts)) return
+    log.success(
+      `Imported identity "${name}" (subject=${identity.subject}, kid=${identity.kid ?? '?'})`,
+    )
   },
 } satisfies CommandDefinition

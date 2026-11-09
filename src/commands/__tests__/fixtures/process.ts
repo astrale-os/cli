@@ -2,6 +2,10 @@ import { afterEach, beforeEach } from 'bun:test'
 import { createServer } from 'node:net'
 import { stripVTControlCharacters } from 'node:util'
 
+import type { MachineOpts } from '../../../lib/terminal/output'
+
+import { reportFailure } from '../../../connection/errors'
+
 /** `process.exit` made observable: a command that exits throws this instead. */
 export class ExitError extends Error {
   constructor(readonly code: number | string | null | undefined) {
@@ -78,6 +82,19 @@ export async function human(
     warnings: stripVTControlCharacters(warnings.join('\n')),
   }
   return { ...shown, all: `${shown.lines}\n${shown.warnings}` }
+}
+
+/**
+ * Run a command action in process as the binary runs it: a failure it throws gets the binary's one
+ * report, which ends in `process.exit(1)`. An action that already exited has made its own report.
+ */
+export async function asBinary(action: () => Promise<unknown>, opts: MachineOpts = {}) {
+  try {
+    await action()
+  } catch (error) {
+    if (error instanceof ExitError) throw error
+    await reportFailure(error, opts)
+  }
 }
 
 const ENTRY = new URL('../../../../bin/astrale.ts', import.meta.url).pathname

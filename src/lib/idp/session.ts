@@ -12,34 +12,14 @@ import {
   classifyRefreshFailure,
   idpSessionPath,
   idpSessionPathIn,
+  IdpSessionMissingError,
+  IdpSessionNoRefreshTokenError,
   OAuthTokenError,
   readIdpSession,
   readIdpSessionIn,
   refreshSession,
   type IdpSession,
 } from './provider'
-
-/** No cached session file exists for the identity — only a login creates one. */
-export class IdpSessionMissingError extends Error {
-  readonly identityName: string
-
-  constructor(identityName: string) {
-    super(`No cached IdP session for "${identityName}"`)
-    this.name = 'IdpSessionMissingError'
-    this.identityName = identityName
-  }
-}
-
-/** The session needs a refresh but never received a refresh token. */
-export class IdpSessionNoRefreshTokenError extends Error {
-  readonly identityName: string
-
-  constructor(identityName: string) {
-    super(`IdP session for "${identityName}" has no refresh token`)
-    this.name = 'IdpSessionNoRefreshTokenError'
-    this.identityName = identityName
-  }
-}
 
 /**
  * The session is a copy of one another CLI home still holds. Its cached access tokens remain
@@ -127,7 +107,10 @@ export async function ensureFreshSession(
         opts.organizationId &&
         !sessionServes(refreshed, opts.audience, minimumRemainingMs, opts.organizationId)
       )
-        throw new Error('IdP did not issue a usable token for the required organization.')
+        throw new AstraleError(
+          'IDP_ORGANIZATION_UNSERVED',
+          'IdP did not issue a usable token for the required organization.',
+        )
       return refreshed
     } catch (e) {
       // A bookmarked org can go stale (instance deleted/recreated elsewhere).
@@ -210,7 +193,7 @@ async function rescueAfterInvalidGrant(
   organizationId: string | undefined,
   error: unknown,
 ): Promise<IdpSession | undefined> {
-  if (!(error instanceof OAuthTokenError) || error.code !== 'invalid_grant') return undefined
+  if (!(error instanceof OAuthTokenError) || error.oauthCode !== 'invalid_grant') return undefined
   const latest = await readIdpSession(identityName).catch(() => null)
   if (!latest || latest.updatedAt === seen.updatedAt) return undefined
   if (!sessionServes(latest, audience, minimumRemainingMs, organizationId)) return undefined

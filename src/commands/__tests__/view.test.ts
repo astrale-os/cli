@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import * as connection from '../../connection'
 import { adminSessionOptions } from '../../connection/target'
-import { captureProcess, ExitError } from './fixtures/process'
+import { asBinary, captureProcess, ExitError } from './fixtures/process'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
 const bundleMock = mock(async (_origin: unknown): Promise<unknown> => installedDomain)
@@ -105,8 +105,9 @@ const installedDomain = {
 describe('view session resolution', () => {
   test('reports a missing installed View through the structured command error boundary', async () => {
     const command = (await import('../view')).default
+    const opts = { open: false, json: true }
     await expect(
-      command.action(`/:${ORIGIN}:view.absent`, { open: false, json: true }),
+      asBinary(() => command.action(`/:${ORIGIN}:view.absent`, opts), opts),
     ).rejects.toEqual(new ExitError(1))
     expect(io.failure()).toMatchObject({
       error: 'VIEW_NOT_FOUND',
