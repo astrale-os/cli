@@ -1,6 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { getDefault, readIdentities } from '../../identity/index'
+import { findIdentity, getDefault, readIdentities } from '../../identity/index'
 import { deleteIdpSession, listIdpSessions } from '../../lib/idp/provider'
 import { log } from '../../lib/terminal/log'
 import { output, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
@@ -43,7 +43,7 @@ export default {
     log.success(`Cleared IdP session${names.length === 1 ? '' : 's'}: ${names.join(', ')}`)
 
     const store = await readIdentities()
-    const stale = names.filter((name) => store.identities[name]?.source === 'idp')
+    const stale = names.filter((name) => findIdentity(store, name)?.source === 'idp')
     if (stale.length > 0) {
       log.dim(
         '  IdP identity records remain; delete them with `astrale identity delete <name>` if needed.',

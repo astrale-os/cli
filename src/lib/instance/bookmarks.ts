@@ -230,7 +230,7 @@ export function assertNoCollision(
 }
 
 export function resolveInstanceKey(store: InstanceStore, identifier: string): string | null {
-  if (store.instances[identifier]) return identifier
+  if (Object.hasOwn(store.instances, identifier)) return identifier
   for (const [key, entry] of Object.entries(store.instances)) {
     if (entry.slug === identifier || entry.name === identifier) return key
   }
@@ -408,11 +408,11 @@ function withoutDomainIssuer(entry: InstanceEntry): InstanceEntry {
   return rest
 }
 
-export async function removeInstance(key: string): Promise<void> {
-  const removed = await mutateInstances((store) => {
-    if (!store.instances[key]) throw new Error(`Instance "${key}" not found`)
-    return deleteBookmark(store, key)
-  })
+/** Remove the bookmark `identifier` names, by key, slug or name. */
+export async function removeInstance(identifier: string): Promise<void> {
+  const removed = await mutateInstances((store) =>
+    deleteBookmark(store, bookmarkKeyIn(store, identifier)),
+  )
   await forgetKernel(removed.issuer ?? removed.url!)
 }
 
@@ -463,15 +463,21 @@ function bookmarkCoordinate(value: string | undefined): string | undefined {
 
 export async function setActive(identifier: string): Promise<string> {
   return mutateInstances((store) => {
-    const key = resolveInstanceKey(store, identifier)
-    if (!key) {
-      throw new Error(
-        `Instance "${identifier}" is not bookmarked. Run: astrale instance bookmark ${identifier} --url <url>`,
-      )
-    }
+    const key = bookmarkKeyIn(store, identifier)
     store.active = key
     return key
   })
+}
+
+/** The key of the bookmark `identifier` names in `store`, or the refusal of an unknown name. */
+function bookmarkKeyIn(store: InstanceStore, identifier: string): string {
+  const key = resolveInstanceKey(store, identifier)
+  if (key) return key
+  throw new AstraleError(
+    'INSTANCE_NOT_FOUND',
+    `Instance "${identifier}" is not bookmarked.`,
+    'Run: astrale instance list',
+  )
 }
 
 /** The name of the active bookmark of `store`; there is always one to name, or this refuses. */

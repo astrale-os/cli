@@ -9,7 +9,7 @@ import type { ImportedInstanceRootIdentity } from './root-identity'
 import { formatKernelError } from '../../connection/errors'
 import { reasonCode } from '../../connection/reasons'
 import { AstraleError, AuthError } from '../../errors'
-import { readIdentities, type IdentityStore } from '../../identity/index'
+import { findIdentity, readIdentities, type IdentityStore } from '../../identity/index'
 import { activateInstance, type InstanceActivation } from '../admin/activation'
 import { createOwnedInstance } from '../admin/instances'
 import { randomOperationId } from '../idempotency'
@@ -339,7 +339,7 @@ function assertInstanceCreateIdentity(
   opts: Pick<ProvisionOpts, 'as'> = {},
 ): void {
   const name = opts.as ?? store.default
-  const identity = store.identities[name]
+  const identity = findIdentity(store, name)
   if (identity && identity.source === 'idp') return
   throw new AuthError(
     'WorkOS login required for `astrale instance create`',

@@ -58,6 +58,30 @@ export class IdentifierCollisionError extends AstraleError {
   }
 }
 
+/** A name the local identity registry does not hold. */
+export class IdentityNotFoundError extends AstraleError {
+  constructor(name: string) {
+    super('NO_IDENTITY', `Identity "${name}" not found.`, `Run: astrale identity create ${name}`)
+  }
+}
+
+const SOURCE_LABEL = { key: 'key-backed', idp: 'IdP-backed' } as const
+
+/** A name the local identity registry already holds, which the CLI never silently reuses. */
+export class IdentityExistsError extends AstraleError {
+  constructor(
+    name: string,
+    options: { readonly source?: 'key' | 'idp'; readonly hint?: string } = {},
+  ) {
+    const backing = options.source === undefined ? '' : ` and is ${SOURCE_LABEL[options.source]}`
+    super(
+      'IDENTITY_EXISTS',
+      `Identity "${name}" already exists${backing}.`,
+      options.hint ?? 'Pick a different identity name.',
+    )
+  }
+}
+
 export class IdentityKeyMissingError extends AstraleError {
   constructor(subject: string) {
     super(

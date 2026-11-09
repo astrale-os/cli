@@ -72,6 +72,12 @@ export function submitIdentityRegistration(
 
 export function readIdentities(): Promise<IdentityStore>
 
+/** The identity `store` holds under `name`; an Object.prototype member name is an ordinary name. */
+export function findIdentity(store: IdentityStore, name: string): Identity | undefined
+
+/** The identity `store` holds under `name`; an unknown name is refused with NO_IDENTITY. */
+export function identityIn(store: IdentityStore, name: string): Identity
+
 export function createIdentity(
   name: string,
   options?: {
