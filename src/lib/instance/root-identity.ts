@@ -15,6 +15,7 @@ import { AstraleError, IssuerUnreachableError } from '../../errors'
 import {
   createRootIdentityRecipient,
   decodeRootIdentityTransfer,
+  findIdentity,
   importIdentity,
   readIdentities,
 } from '../../identity'
@@ -106,7 +107,7 @@ export async function importInstanceRootIdentity(
 
   const name = `${retrieved.instance.slug}-root`
   const store = await deps.readIdentities()
-  const replaced = store.identities[name] !== undefined
+  const replaced = findIdentity(store, name) !== undefined
   const identity = await deps.importIdentity(envelope, {
     name,
     issuer,

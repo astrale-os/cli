@@ -2,7 +2,8 @@ import type { IdentityStore } from '../identity/index'
 import type { InstanceStore } from '../lib/instance/bookmarks'
 import type { CommandDefinition } from '../program/index'
 
-import { readIdentities, setDefault } from '../identity/index'
+import { AstraleError } from '../errors'
+import { findIdentity, readIdentities, setDefault } from '../identity/index'
 import { readInstances, resolveInstanceKey } from '../lib/instance/bookmarks'
 import { fatal, log } from '../lib/terminal/log'
 import instanceUseCommand from './instance/use'
@@ -26,7 +27,7 @@ export function resolveUseTarget(
   instances: InstanceStore,
   identities: IdentityStore,
 ): UseTarget {
-  const identityExists = !!identities.identities[name]
+  const identityExists = findIdentity(identities, name) !== undefined
   const instanceKey = resolveInstanceKey(instances, name)
 
   if (identityExists && instanceKey) return { kind: 'ambiguous', name }
@@ -66,7 +67,7 @@ Examples:
   action: async (name: string, opts: UseOpts) => {
     try {
       if (opts.identity && opts.instance) {
-        fatal('Choose either --identity or --instance, not both')
+        throw new AstraleError('INVALID_FLAG', 'Choose either --identity or --instance, not both.')
       }
 
       if (opts.identity) {
@@ -93,13 +94,17 @@ Examples:
       }
 
       if (target.kind === 'ambiguous') {
-        fatal(
-          `Both an identity and an instance are named "${name}". Use: astrale identity use ${name} or astrale instance use ${name}`,
+        throw new AstraleError(
+          'NAME_AMBIGUOUS',
+          `Both an identity and an instance are named "${name}".`,
+          `Use: astrale identity use ${name} or astrale instance use ${name}`,
         )
       }
 
-      fatal(
-        `No identity or instance named "${name}". Try: astrale identity list or astrale instance list`,
+      throw new AstraleError(
+        'NAME_NOT_FOUND',
+        `No identity or instance named "${name}".`,
+        'Try: astrale identity list or astrale instance list',
       )
     } catch (e) {
       fatal(e)

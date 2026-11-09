@@ -1,5 +1,6 @@
 import type { IdentityStore } from '../../identity'
 
+import { findIdentity } from '../../identity'
 import { removeKeypair } from '../../keys'
 import { ExchangeCredentialCache, SESSION_ROUTE_STORE, updateIdentityStore } from '../../state'
 
@@ -22,8 +23,8 @@ export async function removeDeletedInstanceRootIdentity(
   const name = `${target.slug}-root`
   try {
     const removed = await updateIdentityStore<IdentityRemoval>((store) => {
-      const entry = store.identities[name]
-      const expected = before.identities[name]
+      const entry = findIdentity(store, name)
+      const expected = findIdentity(before, name)
       let reason: string | undefined
       if (entry?.source === 'idp') reason = 'The identity is IdP-backed.'
       else if (entry && (!target.issuer || entry.issuer !== target.issuer))

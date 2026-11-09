@@ -1,8 +1,10 @@
 export {
   createIdentity,
   deleteIdentity,
+  findIdentity,
   getDefault,
   getIdentity,
+  identityIn,
   readIdentities,
   setDefault,
   setIdentityMode,
