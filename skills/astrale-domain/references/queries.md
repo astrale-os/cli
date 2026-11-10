@@ -162,7 +162,7 @@ What it refuses:
 | Compile time | No Class it reaches can start another of its Edges: `i.assignee.reachable()` | Walk a relation that returns to its own Classes. |
 | Build | Followed `incident` without `.distinct()` | Add `.distinct()`: an Edge reached from both ends lists Nodes only. |
 | Build | Directed and undirected Edge Classes together, or an undirected Edge whose roles accept different Classes | `{ direction: 'incident' }`. |
-| Kernel, `INPUT_INVALID` (tier `reachability`) | A walking relation condition decided at every Node of a Class | Write it on a root named by `id` or `path`, or read it in a `.with`. |
+| Kernel, `INPUT_INVALID` (tier `unanchored`) | A walking relation condition decided at every Node of a Class | Write it on a root named by `id` or `path`, or read it in a `.with`. |
 | Build | A Mutation guard whose range walks | Read the walk in a Query, then guard what it found. |
 | Run, `UNSUPPORTED` (`feature: 'reachable'`) | The Host predates it | Bridge with one step per level until the Host is upgraded. |
 
