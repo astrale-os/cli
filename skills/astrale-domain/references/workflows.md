@@ -61,11 +61,13 @@ confirmPayment: method({
 export const remind = defineWorkflow<typeof schema, typeof integrations>()(
   'Invoice.remind',
   async ({ input, self, execution, step, awaitSignal }) => {
-    await step.mutate('record-reminder', recordReminder, {
-      invoice: self,
-      note: input.note,
-      execution: execution.id, // lets confirmPayment find this run
-    })
+    // `execution` lets confirmPayment find this run
+    await step.mutate(
+      'record-reminder',
+      recordReminder,
+      { invoice: self, note: input.note, execution: execution.id },
+      { as: 'executor' },
+    )
 
     await step.parallel((s) => [
       s.run({ id: 'send-email', retry: { maxAttempts: 5 }, timeoutMs: 30_000 }, ({ integrations }) =>
@@ -78,10 +80,15 @@ export const remind = defineWorkflow<typeof schema, typeof integrations>()(
       timeoutMs: 3 * 24 * 3_600_000,
     })
     if (payment.kind === 'timeout') {
-      await step.mutate('flag-overdue', flagOverdue, { invoice: self })
+      await step.mutate('flag-overdue', flagOverdue, { invoice: self }, { as: 'executor' })
       return { paid: false }
     }
-    await step.mutate('record-payment', recordPayment, { invoice: self, amount: payment.value.amount })
+    await step.mutate(
+      'record-payment',
+      recordPayment,
+      { invoice: self, amount: payment.value.amount },
+      { as: 'executor' },
+    )
     return { paid: true }
   },
 )
@@ -90,7 +97,7 @@ export const remind = defineWorkflow<typeof schema, typeof integrations>()(
 export const confirmPayment = defineAction<typeof schema>()(
   'Invoice.confirmPayment',
   async ({ input, self, query, kernel }) => {
-    const reminder = await query(pendingReminderOf, { invoice: self })
+    const reminder = await query(pendingReminderOf, { invoice: self }, { as: 'executor' })
     await kernel.execution.signal(reminder.execution, { name: 'paid', value: { amount: input.amount } })
     return null
   },
@@ -105,9 +112,9 @@ Schema declares a durable callable; there is nothing else to wire.
 | Member | Use |
 | --- | --- |
 | `input`, `self`, `domain`, `error` | As in an Action. |
-| `step.query(id, query, input)` | One read, recorded: a resumed run reuses its result. |
-| `step.mutate(id, mutation, input)` | One Mutation, keyed: a retry never writes twice. |
-| `step.run(id, (capabilities) => …)` | Any other call. The callback receives `query`, `mutate`, `kernel`, `graph`, `dependencies` and `integrations`, acting with the identity of the function (its Domain). |
+| `step.query(id, query, input, { as: 'executor' })` | One read, recorded: a resumed run reuses its result. |
+| `step.mutate(id, mutation, input, { as: 'executor' })` | One Mutation, keyed: a retry never writes twice. |
+| `step.run(id, (capabilities) => …)` | Any other call. The callback receives `query`, `mutate`, `kernel`, `graph`, `dependencies` and `integrations`, acting with the identity of the function (its Domain): a Query or a defined Mutation there takes `{ as: 'executor' }`. |
 | `step.parallel((s) => [...])` | Independent Steps in one engine round trip; `s` takes the arguments of `step.*`. |
 | `sleep(ms)` | A durable timer, kept while the Domain is down. |
 | `awaitSignal(name, { timeoutMs? })` | Waits for a signal; with `timeoutMs`, answers `{ kind: 'signal', value }` or `{ kind: 'timeout' }`. |
@@ -135,13 +142,14 @@ code between Steps runs again on every resume. Every rule below follows from tha
   ```ts
   // wrong: the read and the effect share one Step
   await step.run('record', async ({ query, mutate }) => {
-    const sent = await query(remindersOf, { invoice: self })
-    return mutate(recordReminder, { invoice: self, rank: sent.length + 1 })
+    const sent = await query(remindersOf, { invoice: self }, { as: 'executor' })
+    return mutate(recordReminder, { invoice: self, rank: sent.length + 1 }, { as: 'executor' })
   })
 
   // right
-  const sent = await step.query('count-reminders', remindersOf, { invoice: self })
-  await step.mutate('record', recordReminder, { invoice: self, rank: sent.length + 1 })
+  const as = { as: 'executor' } as const
+  const sent = await step.query('count-reminders', remindersOf, { invoice: self }, as)
+  await step.mutate('record', recordReminder, { invoice: self, rank: sent.length + 1 }, as)
   ```
 
 - **Refuse inside the Step.** A business refusal a Step detects is `throw error(code, details)`
@@ -207,10 +215,10 @@ export const collect = defineWorkflow<typeof schema, typeof integrations>()(
       )
     } catch (cause) {
       if (!exhausted(cause)) throw cause
-      await step.mutate('flag-unpaid', flagUnpaid, { invoice: self })
+      await step.mutate('flag-unpaid', flagUnpaid, { invoice: self }, { as: 'executor' })
       throw error('CHARGE_FAILED', { invoice: self })
     }
-    await step.mutate('record-charge', recordCharge, { invoice: self, receipt })
+    await step.mutate('record-charge', recordCharge, { invoice: self, receipt }, { as: 'executor' })
     return { charged: true }
   },
 )
@@ -281,15 +289,16 @@ recognizes. Compensate with Steps, then rethrow to end `cancelled`, or return a 
 `completed`.
 
 ```ts
-const hold = await step.mutate('hold-stock', holdStock, { order: self, lines: input.lines })
+const as = { as: 'executor' } as const
+const hold = await step.mutate('hold-stock', holdStock, { order: self, lines: input.lines }, as)
 try {
   await awaitSignal('approved')
 } catch (cause) {
   if (!cancelled(cause)) throw cause
-  await step.mutate('release-stock', releaseStock, { hold })
+  await step.mutate('release-stock', releaseStock, { hold }, as)
   throw cause
 }
-await step.mutate('confirm-order', confirmOrder, { order: self, hold })
+await step.mutate('confirm-order', confirmOrder, { order: self, hold }, as)
 ```
 
 A run that never reaches a wait or a Step (it fails outside any Step on every attempt, or its
@@ -413,10 +422,11 @@ export const editComment = defineWorkflow<typeof schema>()(
   'Comment.edit',
   { errors },
   async ({ error, query, mutate, input, self, step }) => {
-    const comment = await step.run('read-comment', () => query(commentOf, self))
-    const issue = await step.run('read-issue', () => query(issueOf, comment.issue))
+    const as = { as: 'executor' } as const
+    const comment = await step.run('read-comment', () => query(commentOf, self, as))
+    const issue = await step.run('read-issue', () => query(issueOf, comment.issue, as))
     if (issue.archived) throw error('ISSUE_ARCHIVED', {})
-    return step.run('edit-comment', () => mutate(editBody, { comment: self, body: input.body }))
+    return step.run('edit-comment', () => mutate(editBody, { comment: self, body: input.body }, as))
   },
 )
 
@@ -425,10 +435,11 @@ export const editComment = defineAction<typeof schema>()(
   'Comment.edit',
   { errors },
   async ({ error, query, mutate, input, self }) => {
-    const comment = await query(commentOf, self)
-    const issue = await query(issueOf, comment.issue)
+    const as = { as: 'executor' } as const
+    const comment = await query(commentOf, self, as)
+    const issue = await query(issueOf, comment.issue, as)
     if (issue.archived) throw error('ISSUE_ARCHIVED', {})
-    return mutate(editBody, { comment: self, body: input.body })
+    return mutate(editBody, { comment: self, body: input.body }, as)
   },
 )
 ```
@@ -441,7 +452,8 @@ the Action's `run` directly (`testing.md`); Step traces go away.
 
 1. Add `execution: { durable: true }` to its callable.
 2. Move every Kernel call into a Step: reads become `step.query`, writes `step.mutate`, anything else
-   `step.run(id, ({ query, mutate, kernel, integrations, dependencies }) => …)`. Drop `caller`.
+   `step.run(id, ({ query, mutate, kernel, integrations, dependencies }) => …)`. Drop `caller`:
+   a durable Step reads and writes `{ as: 'executor' }`.
 3. Fix what the typecheck reports: each member the durable context lacks, and each caller that
    reads the output (it now receives `ExecutionRef<Output>`).
 4. Check the three changes the typecheck cannot see: refusals thrown as `error(...)` inside their
@@ -452,18 +464,20 @@ the Action's `run` directly (`testing.md`); Step traces go away.
 ```ts
 // before: an inline Workflow
 async ({ input, self, query, mutate, integrations, step, error }) => {
-  const invoice = await step.run('read-invoice', () => query(invoiceOf, { invoice: self }))
+  const as = { as: 'executor' } as const
+  const invoice = await step.run('read-invoice', () => query(invoiceOf, { invoice: self }, as))
   if (invoice.balance > 0) throw error('OPEN_BALANCE', { invoice: self })
-  await step.run('archive', () => mutate(markArchived, { invoice: self, reason: input.reason }))
+  await step.run('archive', () => mutate(markArchived, { invoice: self, reason: input.reason }, as))
   await step.run('notify', () => integrations.mailer.send({ invoice: self, template: 'archived' }))
   return null
 }
 
 // after: a durable Workflow
 async ({ input, self, step, error }) => {
-  const invoice = await step.query('read-invoice', invoiceOf, { invoice: self })
+  const as = { as: 'executor' } as const
+  const invoice = await step.query('read-invoice', invoiceOf, { invoice: self }, as)
   if (invoice.balance > 0) throw error('OPEN_BALANCE', { invoice: self })
-  await step.mutate('archive', markArchived, { invoice: self, reason: input.reason })
+  await step.mutate('archive', markArchived, { invoice: self, reason: input.reason }, as)
   await step.run('notify', ({ integrations }) =>
     integrations.mailer.send({ invoice: self, template: 'archived' }),
   )

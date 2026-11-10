@@ -7,7 +7,9 @@ Read when writing Domain fixtures, focused tests, demos, or live acceptance jour
 Use the smallest real boundary that proves the behavior:
 
 - test pure projection and rules as ordinary functions;
-- test a Query with a narrow `QueryClient` double and assert the exact AST and pagination behavior;
+- test a Query's bounds and declared crossings with `checkQuery(query, sampleInput, { domain })` from
+  `@astrale-os/sdk/testing`, without a Kernel, on an input that builds every optional condition; test
+  its `output` as an ordinary function; prove what it answers against a real Kernel;
 - test a Mutation with a narrow `MutationClient` double and assert the exact atomic document;
 - invoke an Action definition's `run` with an admitted, typed context when testing handler
   orchestration;
@@ -21,9 +23,12 @@ transactions, paging, and error semantics, while still proving none of them.
 
 ## Exercise the owner, not its registration
 
-Use `executeQuery(client, domain, recipe, input)` / `executeMutation(client, domain, recipe, input)`
-with narrow capability doubles. They exercise SDK recipe realization and projection; invoking a
-hand-copied builder or merely asserting an AST version bypasses the behavior being delivered.
+Use `executeMutation(client, domain, mutation, input)` from `@astrale-os/sdk/mutation` with a narrow
+`{ mutate(ast) }` double: it realizes the definition, its guards, and its `output` and `reject`;
+`MutationAST.encode(ast)` is the document to assert. Use `runQuery(client, domain, query, input)`
+from `@astrale-os/sdk/query` to read a Query through a real Client, for each authority whose answer
+differs. Invoking a hand-copied builder or merely asserting a document version bypasses the behavior
+being delivered. `checkQuery` checks the first step a Query builds: test later steps through a call.
 
 Assert the invariant-bearing operations and absence of unintended writes, not only call counts.
 A constructed stale-state precondition proves authoring; only transaction execution proves it rejects
@@ -31,9 +36,9 @@ a concurrent edit without partial writes.
 
 ## Actions and Workflows
 
-Use a fixture that crosses a page boundary for a “complete collection” claim; a tiny dataset cannot
-detect first-page truncation. Check a repeated cursor and an exhausted bound reject without publishing
-partial business output, rather than merely asserting that `.query` was called.
+Use a fixture that crosses a page boundary, and one past `max`, for a “complete collection” claim; a
+tiny dataset cannot detect truncation. Check that `all({ max })` or `query.all` raises `TOO_MANY`
+without publishing partial business output, rather than merely asserting that `query` was called.
 
 For a read→Rule→Mutation flow, change the guarded fact between observation and commit. The Rule's
 unit test cannot prove the Mutation rejects stale state; use the actual Kernel transaction for that claim.

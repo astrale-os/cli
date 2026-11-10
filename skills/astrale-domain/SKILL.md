@@ -30,6 +30,9 @@ phased workflow below; an existing public scaffold already satisfies its foundat
   owns a development instance: read `references/release.md`.
 - Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/schema.md` first. Always read it for schema work.
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
+- Write or review a Query or a Mutation guard: handles, verbs and bounds, conditions, relations,
+  following a relation any number of Edges with `.reachable()`, rows, `QueryError` codes, or moving
+  a Query V6 definition to v7: read `references/queries.md`.
 - Store, receive, read, or serve files (blob properties, `file()` input fields, upload receipts,
   `astrale call --file`): read `references/files.md`.
 - Coordinate several effects, wait for a delay or a decision, or write, test, call, deploy, or migrate
@@ -65,8 +68,9 @@ order and load a reference only when its phase begins.
 2. **Schema:** Before authoring the schema, read `references/schema.md`; for sign-in users and groups,
    also read `references/users.md` before inventing identity or onboarding vocabulary.
 3. **Callables:** Before implementing callables, read `references/runtime.md` and
-   `references/policies.md`. If an operation makes several effects or waits, also read
-   `references/workflows.md`; if an external system is involved, `references/integrations.md`.
+   `references/policies.md`; before writing their reads, `references/queries.md`. If an operation
+   makes several effects or waits, also read `references/workflows.md`; if an external system is
+   involved, `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition. Every View
    belongs to its Domain; node screens are internal routes of its frontend, not Class-bound Views.
