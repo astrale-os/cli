@@ -11,22 +11,28 @@ the same product invariant remains proven.
 
 ## Read through reusable Queries
 
-Author reusable reads with `defineQuery` or `defineCompositeQuery` from `@astrale-os/sdk/query` and
-execute them with the Action or Workflow's bound Client. Use resolved Schema Classes and Properties;
-do not copy Definition keys, parse paths, issue raw database queries, or recreate the canonical Query
-AST.
+Author reusable reads with `defineQuery` from `@astrale-os/sdk/query` (`queries.md`) and call them
+with the Action or Workflow's `query`. Read through the typed handles; do not copy Definition keys,
+parse paths, issue raw database queries, or hand-write canonical documents.
 
-- Use one Query when one graph observation answers the question.
-- Use a composite Query for a closed set of dependent reads with one final projection.
-- Declare complete pagination when completeness is required; let the SDK bound and validate cursors.
-- Project from the returned graph instead of re-reading each returned node.
+- Use one read when one graph observation answers the question: `.with` carries each row's
+  relations in the same read, at one snapshot.
+- Read independent lists as facets of one Query and dependent reads as `steps`. Each facet, step and
+  page is its own Kernel invocation at its own snapshot; a Query makes at most 32 reads.
+- State the smallest bound that is true on every verb. `exists()` and `count({ upTo })` answer
+  without listing; `.ref()` reads identities when the values are not needed.
+- Follow a hierarchy with `.reachable()` in one read instead of one step per level. Its bound limits
+  the rows answered, not the walk: the Kernel walks the whole closure, so narrow it with `through`.
+- Declare completeness with `all({ max })` or `query.all`; both raise `TOO_MANY` rather than truncate.
+- Project from the returned rows instead of re-reading each returned node.
 - Treat an absent visible node as unavailable; do not infer that it does not exist.
 
-Query execution owns remote response admission and pagination. A local projection should remain pure.
+The SDK checks a Query's bounds before it sends anything, and the linter's `QRY-ROWS` warns when
+constant bounds multiply past 10,000 rows. `output` should remain pure.
 
-Do not replace several observations with a composite expecting one network round trip: ordinary
-leaves still execute separately. A supported collection union can combine compatible Class collections;
-measure the actual calls rather than inferring batching from one `query(...)` in the handler.
+Do not expect facets to share one network round trip or one snapshot: each is a separate read.
+`d.A.union(d.B)` reads two Classes in one read; measure the actual calls rather than inferring
+batching from one `query(...)` in the handler.
 
 ## Write one invariant as one Mutation
 

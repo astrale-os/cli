@@ -72,11 +72,9 @@ test('the reorganized guides retain current authority and exact Method semantics
   const runtime = readFileSync(join(root, 'references', 'runtime.md'), 'utf8')
   const schema = readFileSync(join(root, 'references', 'schema.md'), 'utf8')
   const policies = readFileSync(join(root, 'references', 'policies.md'), 'utf8')
-  assert.match(
-    runtime,
-    /Default `query`, `mutate`, and `kernel` use the installed Domain authority/,
-  )
-  assert.match(runtime, /`graph.caller` or `kernel.caller`/)
+  assert.match(runtime, /A Query and a defined Mutation name their authority on every call/)
+  assert.match(runtime, /`kernel` and `graph` default to the installed\s+Domain authority/)
+  assert.match(runtime, /`kernel.caller` or `graph.caller`/)
   assert.match(runtime, /no `expect` or `schemaExpectation` option/)
   assert.match(schema, /Only abstract Method obligations are inherited/)
   assert.match(schema, /A concrete Class can declare `abstract: true`/)
