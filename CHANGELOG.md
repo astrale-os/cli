@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.169](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.168...cli/v1.0.0-beta.169) (2026-11-10)
+
+
+### Bug Fixes
+
+* **commands:** refuse every user-facing failure with a typed error ([#797](https://github.com/astrale-os/cli/issues/797)) ([36da644](https://github.com/astrale-os/cli/commit/36da64442fae71faf65a0ffc31f475eb09927ccc))
+* **commands:** refuse unknown identity and instance names with typed errors ([#795](https://github.com/astrale-os/cli/issues/795)) ([6b16774](https://github.com/astrale-os/cli/commit/6b16774eeea3476e9f893f8a123b1f15543e0f5c))
+
 ## [1.0.0-beta.168](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.167...cli/v1.0.0-beta.168) (2026-11-07)
 
 
