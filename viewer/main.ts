@@ -260,8 +260,9 @@ async function main(): Promise<void> {
 
   report('mounting')
   type ViewToken = { token: string; expiresAt: number }
-  const loadToken = async (path = '/token') => {
-    const next = await j<ViewToken>(path, { method: 'POST' })
+  // A mint follows its owner's signal: an answer that never comes must not pin the owner.
+  const loadToken = async (path = '/token', signal?: AbortSignal) => {
+    const next = await j<ViewToken>(path, { method: 'POST', signal })
     return { credential: next.token, expiresAt: next.expiresAt }
   }
   let tokens: Credentials | null = null
@@ -269,14 +270,14 @@ async function main(): Promise<void> {
   if (route.handshake === 'shell') {
     tokens = credentials({
       ttlSeconds: cfg.delegationTtlSeconds,
-      mint: () => loadToken(),
+      mint: (signal) => loadToken('/token', signal),
       initial: await loadToken(),
     })
     // The page outlives many credentials; anticipate rather than pay on the next user action.
     tokens.start()
     kernelTokens = credentials({
       ttlSeconds: cfg.delegationTtlSeconds,
-      mint: () => loadToken('/kernel-token'),
+      mint: (signal) => loadToken('/kernel-token', signal),
     })
   }
   const kernelUrl = new URL(cfg.kernelUrl, location.href).href
