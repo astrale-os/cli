@@ -28,6 +28,7 @@ test.afterAll(() => rmSync(temporary, { recursive: true, force: true }))
 
 async function mount(page: Page, context: BrowserContext) {
   let available = true
+  let hanging = false
   let tokens = 0
   let documents = 0
   const reports: string[] = []
@@ -75,6 +76,8 @@ async function mount(page: Page, context: BrowserContext) {
       })
     if (url.pathname === '/token') {
       tokens += 1
+      // A request lost while the machine slept: the issuer never answers it.
+      if (hanging) return
       if (!available)
         return route.fulfill({ status: 503, json: { message: 'Controlled issuer unavailable' } })
       const now = await page.evaluate(() => Date.now())
@@ -104,6 +107,9 @@ async function mount(page: Page, context: BrowserContext) {
     frame,
     available: (value: boolean) => {
       available = value
+    },
+    hanging: (value: boolean) => {
+      hanging = value
     },
     tokens: () => tokens,
     reports,
@@ -165,5 +171,25 @@ test('retry uses the Shell credential owner and preserves input after failure an
   await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'connected')
   await expect(page.locator('#session-error')).toBeHidden()
   await expect(view.frame.locator('output')).not.toHaveAttribute('data-refreshes', '0')
+  await view.preserved()
+})
+
+test('a renewal that never answers releases the session at its budget, then recovers', async ({
+  page,
+  context,
+}) => {
+  const view = await mount(page, context)
+  view.hanging(true)
+  await page.clock.fastForward(241_000)
+  await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'expired')
+  await view.preserved()
+
+  view.hanging(false)
+  const before = view.tokens()
+  // The lost request is abandoned at the mint budget; the scheduled retry then reaches the issuer.
+  await page.clock.fastForward(60_000)
+  await expect.poll(view.tokens).toBeGreaterThan(before)
+  await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'connected')
+  await expect(page.locator('#session-error')).toBeHidden()
   await view.preserved()
 })
