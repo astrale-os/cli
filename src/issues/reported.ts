@@ -133,7 +133,7 @@ export async function readReportedIssues(
     .map(({ updatedAt: _updatedAt, ...issue }) => issue)
 }
 
-/** Resolve a reference such as `ASTRALE-12` among the caller's own reports. */
+/** Resolve a reference such as `DEV-12` among the caller's own reports. */
 export function findReportedIssue(
   issues: readonly ReportedIssue[],
   reference: string,

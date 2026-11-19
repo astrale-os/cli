@@ -23,7 +23,7 @@ export async function showReportedIssueCommand(
 export default withIssueAdminOptions({
   name: 'show',
   description: 'Show one of your reports with the triage comments',
-  arguments: [{ name: 'reference', description: 'Issue reference, e.g. ASTRALE-12' }],
+  arguments: [{ name: 'reference', description: 'Issue reference, e.g. DEV-12' }],
   action: async (reference: string, options: ReportedIssueOptions) => {
     try {
       const issue = await showReportedIssueCommand(reference, options)

@@ -107,14 +107,14 @@ Evidence: request id, short log excerpt or stack trace.
 | `limitation` | Astrale works as designed but cannot do what the task needs, including capability requests. |
 | `friction` | The task succeeds, but the path is needlessly hard: misleading error, missing doc, extra steps. |
 
-The printed reference (`ASTRALE-12`) follows the report. The reporter sees and changes only its own
+The printed reference (`DEV-12`) follows the report. The reporter sees and changes only its own
 reports; status, priority and comments stay with triage:
 
 ```sh
 astrale issue list --json
-astrale issue show ASTRALE-12
-astrale issue edit ASTRALE-12 --body "Updated details"
-astrale issue archive ASTRALE-12
+astrale issue show DEV-12
+astrale issue edit DEV-12 --body "Updated details"
+astrale issue archive DEV-12
 ```
 
 `list` omits archived reports unless `--all`; `edit` takes `--title`, `--body` (it replaces the
