@@ -43,7 +43,7 @@ export async function editReportedIssueCommand(
 export default withIssueAdminOptions({
   name: 'edit',
   description: 'Edit the title or details of one of your reports',
-  arguments: [{ name: 'reference', description: 'Issue reference, e.g. ASTRALE-12' }],
+  arguments: [{ name: 'reference', description: 'Issue reference, e.g. DEV-12' }],
   options: [
     {
       flags: '--title <text>',
