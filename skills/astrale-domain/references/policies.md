@@ -138,6 +138,45 @@ export const rename = method({
 - Runtime dispatches `Project.rename` as an Action or Workflow. Its context facilities are not a second
   authorization decision; handler code must not replace Kernel admission with a role lookup.
 
+## Bind the Nodes a Policy relates
+
+With a Kernel DSL and SDK release that support named Policy inputs, declare the Node Class of each input.
+A transfer can require both supplied Resources to belong to the same Organization.
+
+```ts
+const sameOrganization = policy({
+  input: { from: Resource, to: Resource },
+  match: ({ subject, input, allOf, exists, edge }) =>
+    exists(({ node }) => {
+      const organization = node(Organization)
+      return allOf(
+        edge(can_access, { holder: subject, resource: input.from }),
+        edge(can_access, { holder: subject, resource: input.to }),
+        edge(belongs_to, { resource: input.from, organization }),
+        edge(belongs_to, { resource: input.to, organization }),
+      )
+    }),
+})
+
+const transfer = func({
+  auth: 'authorized',
+  input: z.object({ debit: path(Resource), credit: path(Resource) }),
+  output: z.boolean(),
+  policy: ({ check, input }) => check(sameOrganization, { from: input.debit, to: input.credit }),
+})
+```
+
+One Identity in the caller's composition must satisfy the entire check with the two supplied Nodes.
+Two separate checks can each succeed through a different group. The same Node may fill both names.
+Every branch connects every declared input to the subject. Composition requires matching names and Classes.
+The published `schema.limits.policy.inputs` is six.
+
+A Node Class slot supplies `object`. An Edge Class slot supplies `source` and `target`.
+An explicit check in a Node Class rule can bind `self` and fixed `ref(...)`s.
+Callable checks can also bind Node-valued Path fields. `check(P, node)` fills `object`.
+The existing `Identity.can` Method accepts `{ policy, input: { from, to } }`, including in
+an ordered batch alongside `{ policy, object }`. It accepts exact Node IDs and installed Registry Paths.
+
 ## Groups: `subject` is the caller's composition
 
 The caller's composition is the caller and every Identity it reaches through `extends_with` (group
@@ -214,7 +253,7 @@ policies: {
 - Method refs require a compatible SDK/DSL: `ref(methodHandle)` or `ref(() => methodHandle)` names an
   exact executable declaring Method, static or instance, including `abstract: true` on a concrete
   Class. Contract-only Methods on abstract Classes and inherited aliases are not Function projections; reference the executable declaration from the local or direct-dependency owner.
-- Every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
+- In a legacy declaration without `input`, every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
   Edge-Policy branch references `source`, `target`, or both. The `subject`, every referenced protected term,
   and every scoped existential variable must form one connected proof graph. A branch saying only “caller
   belongs to a group” is not resource-scoped and rejects; check membership instead (see Groups).
