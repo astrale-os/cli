@@ -13,8 +13,8 @@ Kernel Runtime defines and evaluates those semantics against the pinned installa
   nothing but what the handler does for it;
 - `authenticated` requires an authenticated actor;
 - `authorized` requires an authenticated actor. The principal of the active installed Kernel registration
-  bypasses the remaining callable gate; every other call requires the caller's admission and, for a
-  delegation, the principal's effective authority, as described below;
+  bypasses the remaining callable gate when acting for itself. A delegated call still requires the
+  caller's admission, as described below;
 - only `authorized` may declare a callable Policy. `authenticated` does not add a `can_use` or Policy gate.
 - Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
   a protected operation merely because its handler can access Domain-owned data.
@@ -41,9 +41,9 @@ For a non-Root principal, an authorized Function requires:
 1. The caller passes the intrinsic Root/Function-owner branch OR the declared callable Policy. Missing
    Policy supplies no alternative, and `true` admits every Identity. `can_use` is not an intrinsic
    bypass; giving the caller that capability does not defeat a business Policy.
-2. When the principal acts for another caller, its own Identity profile also supplies `can_use` or
-   exact Function ownership (the principal ceiling). A User may inherit `can_use` from a Group without
-   an individual capability Edge. The caller carried by a Domain session cannot supply this ceiling.
+2. When a non-Root principal acts for another caller, the principal must own the Function, hold
+   `can_use` on it, or satisfy its declared callable Policy with the same bound inputs. A User may
+   inherit `can_use` from a Group. The caller carried by a Domain session cannot supply this ceiling.
    An Identity acting for itself delegates nothing and meets no ceiling: its rule alone decides.
 
 This is the same rule as Class observation (Graph access below): the caller decides by its rule, and
@@ -169,7 +169,9 @@ const transfer = func({
 One Identity in the caller's composition must satisfy the entire check with the two supplied Nodes.
 Two separate checks can each succeed through a different group. The same Node may fill both names.
 Every branch connects every declared input to the subject. Composition requires matching names and Classes.
-The published `schema.limits.policy.inputs` is six.
+The published `schema.limits.policy.inputs` is six. The implicit `policy({ match })` form remains
+supported and is deprecated. If TypeScript reports a circular inference error in an implicit Policy
+that refers back to its own Class, annotate the declaration with `: Policy` from `@astrale-os/sdk/schema`.
 
 A Node Class slot supplies `object`. An Edge Class slot supplies `source` and `target`.
 An explicit check in a Node Class rule can bind `self` and fixed `ref(...)`s.
@@ -261,9 +263,8 @@ policies: {
   the admitted `source` and `target`. Constrain whichever endpoint owns access. A Policy Edge predicate is an
   existence test; do not use it as a surrogate identity check for the candidate Edge.
 
-- Each `check(policy, object)` evaluates one Policy against one protected object. Checks on `self` and input
-  refs are independent requirements, not a relationship between those objects; use callable `sameNode(...)`
-  for exact Node equality.
+- Each `check(...)` evaluates the Policy once with all its supplied Nodes. Bind both Nodes in the same
+  check when the Policy needs a shared witness. Use callable `sameNode(...)` for exact Node equality.
 - Every way callable checks or a Class rule can hold must pass through a `check`: `sameNode` compares two
   objects and names no caller. `sameNode(self, input.target)` alone, or as one `anyOf` branch, is refused
   (`PL_CONNECTIVITY`); put it in an `allOf` beside a `check`. An Identity acting for itself is decided by these
