@@ -4,6 +4,7 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { DEFAULT_TIMEOUT_MS, DEFAULT_WAIT_MS } from '../../connection/timeouts'
 import { buildProgram, normalizeRootVersionArgv } from '../index'
 
 const cliRoot = join(import.meta.dir, '../../..')
@@ -55,4 +56,19 @@ test('builds a fresh Commander root for each consumer', async () => {
   expect(second.commands.some((command) => command.name() === '__temporary-test-command')).toBe(
     false,
   )
+})
+
+test('--timeout says what it bounds: the request, and the wait of a command that waits', async () => {
+  const program = await buildProgram()
+  const timeout = (path: string) => {
+    const options = find(program, path).options.filter((option) => option.long === '--timeout')
+    expect(options).toHaveLength(1)
+    return options[0]!.description
+  }
+  for (const path of ['domain install', 'domain uninstall', 'call', 'execution result'])
+    expect(timeout(path)).toBe(
+      `Request timeout in ms (default: ${DEFAULT_TIMEOUT_MS}); while waiting for the outcome, it bounds the request and the wait together (default wait: ${DEFAULT_WAIT_MS})`,
+    )
+  for (const path of ['query', 'execution status', 'domain list'])
+    expect(timeout(path)).toBe(`Request timeout in ms (default: ${DEFAULT_TIMEOUT_MS})`)
 })

@@ -29,6 +29,7 @@ import { log } from '../../lib/terminal/log'
 import { output } from '../../lib/terminal/output'
 import { dangerPanel } from '../../lib/terminal/panel'
 import { confirmWithInput } from '../../lib/terminal/prompt'
+import { WAIT_TIMEOUT_OPTION } from '../../program/options'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
 import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
@@ -128,6 +129,7 @@ Examples:
       flags: '--no-wait',
       description: 'Return the durable execution state without waiting for completion',
     },
+    WAIT_TIMEOUT_OPTION,
   ],
   action: async (origins: [string, ...string[]], opts: UninstallOpts) => {
     const selected = canonicalOrigins(origins)

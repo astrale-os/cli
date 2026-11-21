@@ -20,6 +20,7 @@ import { commandWait } from '../connection/session'
 import { targetFlags } from '../connection/target'
 import { AstraleError } from '../errors'
 import { failInput } from '../lib/terminal/log'
+import { WAIT_TIMEOUT_OPTION } from '../program/options'
 
 type Method = 'status' | 'result' | 'cancel' | 'resume' | 'signal'
 type ExecutionOptions = KernelCommandOpts & { wait?: boolean; value?: string }
@@ -212,6 +213,7 @@ export const executionCommands: CommandDefinition[] = (Object.keys(descriptions)
               flags: '--wait',
               description: 'Wait for the terminal outcome up to --timeout (110000 ms without it)',
             },
+            WAIT_TIMEOUT_OPTION,
           ]
         : method === 'signal'
           ? [
