@@ -43,7 +43,9 @@ astrale issue "Title" --body "Context and details"
 ```
 
 - Shared Kernel options, where applicable: `--format`, `--json`, `--raw`, `--url`, `-i/--instance`,
-  `--timeout`, `--as`, `--creds`, `--anonymous`, `--debug`. A command creates one public Kernel
+  `--timeout`, `--as`, `--creds`, `--anonymous`, `--debug`. `--timeout` bounds one request (30000 ms
+  without it); on a command that waits for an outcome, it bounds the request and the wait together
+  (110000 ms without it). A command creates one public Kernel
   `Call`; its Client session owns remote routing, fresh credentials and one safe stale-route retry.
 - `--anonymous` omits the caller credential even when a local or bookmark-default identity exists;
   it excludes `--as` and `--creds`; an `authenticated` or `authorized` callable refuses it.
@@ -265,7 +267,8 @@ nothing). Project Environments name no instance and ignore the CLI's active inst
 
 ```text
 domain install <ref>... [-i <instance>] [--allow-issuer-change[=<origin>]] [--revoke-previous]
-               [--mode online|maintenance] [--operation <id>] [--timeout <ms>] [--no-wait]
+               [--mode online|maintenance] [--validation-scope incremental|full]
+               [--validation-counts sample|exact] [--operation <id>] [--timeout <ms>] [--no-wait]
 <ref> = https://… | http://… (local Host)   a deployment URL
       | <origin>@1.5.0 | <origin>@2.0.0-rc.1  exactly that version, pre-release or yanked included
       | <origin>@1.5                           the highest stable 1.5.x that is not yanked
@@ -286,6 +289,9 @@ domain uninstall <origin>... [--destructive] [--yes] [--operation <id>] [--no-wa
 - Several references install in ONE atomic operation, URLs and versions mixed: every Domain moves
   or none does (dependent Domains move together). The CLI pins the release digest it read and
   verifies the installed pins once the install completed.
+- Validation: `--validation-scope incremental` (default) validates incrementally, `full`
+  revalidates all retained data; `--validation-counts sample` (default) samples the failures,
+  `exact` counts them all.
 - An advisory pre-check reports installed Domains the change would break and proposes compatible
   published versions with the grouped command (`--json`: `precheck`). The install is still sent;
   the Kernel decides.
@@ -307,8 +313,9 @@ astrale domain uninstall crm.example -i staging
 astrale domain uninstall app.example shared.example --destructive --yes -i staging
 ```
 
-An install or uninstall is a durable Execution. The CLI waits up to `--timeout` (110 s by default;
-`--no-wait` returns at once) and reports success only from a completed outcome. Never rerun it to
+An install or uninstall is a durable Execution. `--timeout` bounds its request and the wait for its
+outcome together (110000 ms without it; the reads and the pre-check before it do not count;
+`--no-wait` returns at once), and the CLI reports success only from a completed outcome. Never rerun it to
 learn the outcome: `astrale execution status <execution>` or `result <execution> --wait`.
 
 | Exit | Meaning |
@@ -589,7 +596,8 @@ astrale mutate --data '{"operations":[{"op":"node.create","as":"doc","class":"no
 - A durable callable answers with the Execution it started: `call` prints the receipt, not a value.
   Save it (`--json > receipt.json`) and follow with `astrale execution status|result receipt.json`
   as the same identity (an `execution.reader` member reads any Execution); never repeat the call to
-  learn its outcome. `call --wait` waits up to `--timeout` (110 s by default): the value once
+  learn its outcome. `call --wait` waits for it, `--timeout` bounding the request and the wait
+  together (110000 ms without it): the value once
   completed; the Kernel's error, exit 1, once failed or cancelled; still running: the receipt,
   exit 75.
 - `astrale execution status|result|cancel|resume|signal` takes an Execution id or a receipt file.

@@ -14,13 +14,19 @@ below need the `astrale` CLI, `jq` and a POSIX shell; each step ends with the re
 
 ## What changes
 
+Two things are called a profile. The Shell's profile Roles, `workspace.admin` and
+`workspace.member`, are Core nodes a person holds by membership (`extends_with`), as Kernel `reader`
+is; member ⊂ admin. A profile Node, `UserProfile` or `GroupProfile`, holds the name, email and
+picture others see of one account or group, which links to it by a `user_profile` or
+`group_profile` Edge. Below, "profile" alone is always the Node; Roles are named.
+
 | Stored before | After the install | After the migrations |
 | --- | --- | --- |
 | Core group "Administrators" and its members | The group is a member of `workspace.admin`, by release: its members hold it with no data change | Same |
 | Core group "Members" | Member of `workspace.member` | Same |
-| Core groups "Applications", "View only" | Members of Kernel `reader`, with no profile | Same |
+| Core groups "Applications", "View only" | Members of Kernel `reader`, and of no profile Role | Same |
 | `member_of_group` | Still written beside `extends_with` when an account joins a legacy Core group, removed when it leaves any group | Same |
-| `claimedEmail`, `claimedName` on accounts | Kept; `email`, `name` absent | `email`, `name` written where absent; a profile for every account and named group |
+| `claimedEmail`, `claimedName` on accounts | Kept; `email`, `name` absent | `email`, `name` written where absent; a profile for every account and every named group of the Shell's own Classes |
 | The Shell's `view_access` Edges | Kept; the Kernel opens a View only through its own `view_access` | Copied to the Kernel's `view_access`, then deleted |
 
 For Domains built against the subclass model, and for administrators:
@@ -33,9 +39,23 @@ For Domains built against the subclass model, and for administrators:
   Shell writes its membership as the caller, not as itself: call it through the owner Domain's own
   callable. An administrator calling `Group.assignMember` on such a group directly is refused with
   an undeclared error (code 5000). Groups of the Shell's own Class are unaffected.
-- **Accounts of a `User` subclass are migrated with the Shell's own.** The account migration reads
-  every account, subclasses included, and gives each a profile; it reads and compares only the
-  Shell's properties, never the subclass's own (see [Duplicate people](#duplicate-people)).
+- **Accounts and groups of a subclass get no profile from Shell 0.2.1.** The account migration
+  reads every account, subclasses included, and reads and compares only the Shell's properties,
+  never the subclass's own (see [Duplicate people](#duplicate-people)). It then creates a profile
+  for each account and named group that has none, and drops a creation the Kernel refuses without
+  counting or reporting it. Observed on 0.2.1: accounts and groups of the Shell's own Classes get
+  theirs; those of a subclass get none, and a further call answers `migrated: 0, profiles: 0`.
+  [The account profiles](#the-account-profiles) lists them.
+- **What an account without a profile lacks.** In 0.2.1 every identity reads accounts (the `User`
+  read rule stays open for the Domains built against the earlier Shell), and the Shell's directory
+  shows each person's name and email from the account itself. The profile carries what is read
+  through it: the picture, and the name and email a reader of `UserProfile` (`user-profile.reader`,
+  which members hold) reads there.
+- **0.2.1 documents no way to give a subclass account its profile.** `UserProfile`, `GroupProfile` and
+  their Edges declare no write rule: only Shell writes them, and the Domain that owns the subclass
+  cannot. `User.update`, under `user.writer`, creates a missing profile only when it changes a
+  name, a given name, a family name or an email, through the same `user_profile` write as the
+  migration; it is not shown to succeed on a subclass account.
 - Calls of the deprecated forms keep working: `User.invite({ user, email })`, `User.recordProfile`,
   `listEntrypoints` and `assignViews`.
 
@@ -66,16 +86,35 @@ pages() {
   done
 }
 
-# The Shell's and the Kernel's view_access Edges, as (identity, View) pairs.
-for origin in shell.astrale.ai kernel.astrale.ai; do
-  printf '{"format":"astrale.graph.query","version":"v6","source":{"kind":"edge","terms":[{"kind":"class","class":{"origin":"%s","kind":"class","name":"view_access"}}],"bindings":{"source":"n0","edge":"e0","target":"n1"}},"steps":[],"select":{"kind":"edges","binding":"e0","projection":{"edge":"reference","source":"reference","target":"reference"}}}\n' \
-    "$origin" > "view-access.$origin.json"
-done
-PAIRS='.edges[] | [.source.value.id, .target.value.id] | @tsv'
+# edges <origin> <Edge Class>: a Query document selecting every Edge of one Class, as references.
+edges() {
+  printf '{"format":"astrale.graph.query","version":"v6","source":{"kind":"edge","terms":[{"kind":"class","class":{"origin":"%s","kind":"class","name":"%s"}}],"bindings":{"source":"n0","edge":"e0","target":"n1"}},"steps":[],"select":{"kind":"edges","binding":"e0","projection":{"edge":"reference","source":"reference","target":"reference"}}}\n' \
+    "$1" "$2" > "$1.$2.json"
+}
+edges shell.astrale.ai view_access; edges kernel.astrale.ai view_access
+edges shell.astrale.ai user_profile; edges shell.astrale.ai group_profile
+PAIRS='.edges[] | [.source.value.id, .target.value.id] | @tsv'   # (source, target) pairs
+
+# reach <id>: every Node <id> extends, directly or through its groups, as id<TAB>class.
+reach() {
+  printf '%s\n' "$1" > .reach.next; : > .reach.all
+  while [ -s .reach.next ]; do
+    while read -r node; do
+      pages '.graph.nodes[] | [.id, .class] | @tsv' "@$node" \
+        --edge /:kernel.astrale.ai:class.extends_with --direction outgoing
+    done < .reach.next | sort -u > .reach.step
+    comm -13 .reach.all .reach.step > .reach.new
+    sort -u .reach.all .reach.new -o .reach.all
+    cut -f1 .reach.new > .reach.next
+  done
+  cat .reach.all
+}
+TAB=$(printf '\t')
 ```
 
-`astrale query --edge` answers the neighbour Nodes of its source, never Edges; the two Query
-documents above select the Edges themselves, as `{ edge, source, target }` references.
+`astrale query --edge` answers the neighbour Nodes of its source, never Edges; the documents
+`edges` writes select the Edges themselves, as `{ edge, source, target }` references. An account
+holds every Role `reach` lists for it.
 
 ### The version and the release
 
@@ -86,18 +125,21 @@ instance's Root is not an Admin identity: under `--as "$ROOT"` both are refused
 deployment URL:
 
 ```sh
-VERSION=<version>
+# The newest 0.2 version that is neither a pre-release nor yanked: version, url, releaseDigest.
 astrale domain versions shell.astrale.ai --json \
-  | jq -r --arg v "$VERSION" '.publications[] | select(.version == $v) | [.url, .releaseDigest, .yanked] | @tsv'
-URL=<url>; DIGEST=<releaseDigest>
+  | jq -r '[.publications[] | select((.version | test("^0\\.2\\.[0-9]+$")) and (.yanked | not))][0]
+           | [.version, .url, .releaseDigest] | @tsv'
+VERSION=<version>; URL=<url>; DIGEST=<releaseDigest>
 
 # The installed Shell: --creds authenticates the instance only; the registry is read as you.
 astrale domain list -i "$SLUG" --creds "$(astrale token --raw -i "$SLUG" --as "$ROOT")" --json \
   | jq '.domains[] | select(.origin == "shell.astrale.ai") | {version, name, pin}'
 ```
 
-The page applies to an installed Shell without Roles (the `0.1` line); install a version whose
-`yanked` is `false`.
+The page applies to an installed Shell without Roles (the `0.1` line) and describes 0.2.1.
+Publications are listed highest first; take the newest stable version of the line that is not
+yanked. No change note is published with a version: neither the registry nor the release carries
+one. A Publication names the commit it was built from (`commit`) when its publisher recorded it.
 
 ### A recovery point
 
@@ -107,12 +149,21 @@ install:
 
 ```sh
 astrale instance status "$SLUG" --json | jq '{slug, id, hostId}' > before/instance.json
+# The other instances you see on the same Host (needs an Admin account): a restore rolls them back too.
+astrale instance list --admin-only --json \
+  | jq --arg host "$(jq -r .hostId before/instance.json)" \
+       '[.instances[] | select(.hostId == $host) | {slug, id, state}]'
 ```
+
+A restore rolls back every instance on the Host, not only this one, and `instance list` shows only
+the instances you may read: ask the Host operator which instances the Host holds, and agree on the
+restore with their owners before installing.
 
 ### A rehearsal
 
-Run the whole page first on an instance holding a representative number of accounts: the account
-migration's time grows with it.
+Run the whole page first on an instance holding a representative number of accounts: each call of
+the account migration reads every account, so its time grows with them ([Migrate the
+accounts](#migrate-the-accounts)).
 
 ### The baseline
 
@@ -124,8 +175,9 @@ for id in $(jq -r .id before/groups.jsonl); do
   pages '.graph.nodes[].id' "@$id" --edge /:kernel.astrale.ai:class.extends_with \
     --direction incoming | sort > "before/members/$id"
 done
-pages "$PAIRS" --file view-access.shell.astrale.ai.json | sort > before/view-access.tsv
+pages "$PAIRS" --file shell.astrale.ai.view_access.json | sort > before/view-access.tsv
 wc -l before/users.jsonl before/groups.jsonl before/view-access.tsv
+jq -r .class before/users.jsonl | sort | uniq -c       # accounts by Class
 ```
 
 The Group extent includes the four Core groups and every group of a Domain's `Group` subclass; each
@@ -137,6 +189,18 @@ for core in admin member applications view-only; do
   printf '%s %s\n' "$core" "$(pages '.graph.nodes[].id' "/:shell.astrale.ai:core.$core")"
 done | tee before/core-groups
 ```
+
+What a sample of accounts extends, one member of each group, through the groups and Roles of every
+Domain:
+
+```sh
+jq -r .id before/users.jsonl | sort > before/user-ids
+for f in before/members/*; do grep -Fx -f before/user-ids "$f" | head -n 1; done | sort -u > sample
+mkdir -p before/reach
+while read -r id; do reach "$id" > "before/reach/$id"; done < sample
+```
+
+Add to `sample` any account whose access matters, one per line, before reading it.
 
 ### The claimed emails
 
@@ -180,7 +244,11 @@ jq -rs '
   | [$claimer, $other.id, $other.class, .key, $email] | @tsv' before/users.jsonl
 ```
 
-The Domain that owns the subclass decides which account the person keeps, through its own callables.
+The migration can proceed: the claiming account gets the email, unless another account holds it as
+its Shell `email` (a conflict), and the other account keeps its own Property and gets no Shell
+email from this claim. The result is one person with two accounts,
+one in each model. The Domain that owns the subclass decides which one the person keeps, through its
+own callables, before or after the migration.
 
 ## Install
 
@@ -189,20 +257,28 @@ date -u +%Y-%m-%dT%H:%M:%SZ > before/instant      # the recovery point a restore
 astrale domain install "$URL" -i "$SLUG" --as "$ROOT" \
   --allow-issuer-change=shell.astrale.ai \
   --validation-scope full --validation-counts exact --json </dev/null > after/install.json
-jq '{changed, execution, follow, pins: [.references[]? | {expected: .pin.release, installed: .installed.pin.release}]}' \
-  after/install.json
+jq '{changed, execution, follow}' after/install.json
 ```
 
 - `--allow-issuer-change=shell.astrale.ai` consents to the new release being served by another
   issuer than the installed one.
 - Full validation re-checks every stored account and group against the new Schema and counts
   every failure; a refusal names them and changes nothing.
-- Exit 0 is done or still running. The install waits up to `--timeout`, 110 s without it, for the
-  whole install. Still running, the report has no `changed`: follow the Execution it names with
-  `astrale execution result <execution> --wait -i "$SLUG" --as "$ROOT" --json` until it completes.
-- **Verify:** `expected` and `installed` both equal `$DIGEST`, and `domain list` (above) answers
-  `version: <version>` with `pin.release` equal to `$DIGEST`: the registry names that exact
-  release.
+- Exit 0 is done or still running. `--timeout` bounds the install request and its wait together,
+  110000 ms without it. Still running, the report has no `changed` and its `references` are empty:
+  follow the Execution it names until it ends (exit 75: not ended yet, read again):
+
+```sh
+EXECUTION=$(jq -r '.execution // empty' after/install.json)
+while [ -n "$EXECUTION" ]; do
+  astrale execution result "$EXECUTION" --wait -i "$SLUG" --as "$ROOT" --json \
+    </dev/null > after/install-result.json
+  [ $? -eq 75 ] || break
+done
+```
+
+- **Verify**, once the install has ended: `domain list` (above) answers `version: <version>` with
+  `pin.release` equal to `$DIGEST`, the release the registry names.
 
 ## Migrate View access
 
@@ -224,8 +300,8 @@ astrale call /:shell.astrale.ai:function.legacyMigrateViewAccess -d '{}' --json 
 - **Verify:** no Shell Edge is left, and the Kernel gives every pair the Shell gave:
 
 ```sh
-pages "$PAIRS" --file view-access.shell.astrale.ai.json | wc -l              # 0
-pages "$PAIRS" --file view-access.kernel.astrale.ai.json | sort > after/view-access.tsv
+pages "$PAIRS" --file shell.astrale.ai.view_access.json | wc -l              # 0
+pages "$PAIRS" --file kernel.astrale.ai.view_access.json | sort > after/view-access.tsv
 comm -23 before/view-access.tsv after/view-access.tsv                        # empty
 ```
 
@@ -237,44 +313,82 @@ incoming -i "$SLUG" --as "$ROOT"`.
 
 Verify the [claimed emails](#the-claimed-emails) and read the [duplicate people](#duplicate-people) first.
 
-```sh
-until
-  if astrale call /:shell.astrale.ai:function.legacyMigrateAccounts -d '{}' --json \
-      -i "$SLUG" --as "$ROOT" </dev/null > after/migrate.json 2> after/migrate.err; then
-    jq -c '{migrated, profiles, conflicts: (.conflicts | length)}' after/migrate.json
-    jq -e '.migrated == 0 and .profiles == 0' after/migrate.json > /dev/null
-  elif grep -q '"code":4005' after/migrate.err; then
-    echo 'invocation deadline reached; calling again'; false
-  else
-    cat after/migrate.err >&2; true
-  fi
-do :; done
-```
-
 - Admitted to `workspace.admin` and Root. It answers `{ migrated, conflicts, profiles }`, each of
   this call only: the accounts it gave an `email` or a `name`, the accounts whose claimed email
   another account holds, and the profiles it created for accounts and groups that had none.
 - An account with no `claimedEmail`, or one that is not an email, gets no `email` and is not a
   conflict. A conflict gets neither `email` nor `name`.
-- It is an Action: on a large instance a call stops at the invocation deadline (about 25 s, code
-  4005, exit 1) and reports nothing; the work done before stays written. The loop calls again
-  until a call answers `migrated: 0` and `profiles: 0`; that last call still reads every account,
-  and its `conflicts` lists every conflict left. Any other failure stops the loop with its error.
-- **Verify** with state counts, not the answers:
+- One call reads every account, writes the emails and names, then reads each account's profile and
+  creates the missing ones, then does the same for the groups: groups come last, so a call cut off
+  before them leaves every group without a profile.
+- It is an Action: a call stops at the invocation deadline (about 25 s, code 4005, exit 1) and
+  reports nothing; the work done before stays written, and the next call starts again from the
+  first account. Each call reads every account and one profile per account, done or not: observed
+  on 0.2.1, a call with nothing left to do already takes most of the deadline at a few hundred
+  accounts of the Shell's Class.
+
+Count the progress between calls, since a cut-off call reports none: the accounts with an email
+and with a name, the account profiles and the group profiles.
+
+```sh
+progress() {
+  accounts=$(pages '.graph.nodes[].props | [has("shell.astrale.ai:class.User.property.email"), has("shell.astrale.ai:class.User.property.name")] | map(if . then 1 else 0 end) | @tsv' \
+    --class /:shell.astrale.ai:class.User | awk '{ e += $1; n += $2 } END { print e + 0, n + 0 }')
+  users=$(pages '.graph.nodes[].id' --class /:shell.astrale.ai:class.UserProfile | wc -l)
+  groups=$(pages '.graph.nodes[].id' --class /:shell.astrale.ai:class.GroupProfile | wc -l)
+  echo $accounts $users $groups     # emails, names, account profiles, group profiles
+}
+progress > after/progress
+while :; do
+  if astrale call /:shell.astrale.ai:function.legacyMigrateAccounts -d '{}' --json \
+      -i "$SLUG" --as "$ROOT" </dev/null > after/migrate.json 2> after/migrate.err; then
+    jq -c '{migrated, profiles, conflicts: (.conflicts | length)}' after/migrate.json
+    progress >> after/progress
+    jq -e '.migrated == 0 and .profiles == 0' after/migrate.json > /dev/null && break
+  elif grep -q '"code":4005' after/migrate.err; then
+    before=$(tail -n 1 after/progress); now=$(progress); echo "$now" >> after/progress
+    echo "deadline reached: $before -> $now"
+    [ "$now" != "$before" ] || { echo 'no progress: stop and report' >&2; break; }
+  else
+    cat after/migrate.err >&2; break
+  fi
+done
+```
+
+- Each call that reaches the deadline should raise a count. The loop ends when a call completes
+  with `migrated: 0` and `profiles: 0`, whose `conflicts` lists every conflict left.
+- **A call that reaches the deadline and raises no count is a stop**: the work left no longer fits
+  in one call. Do not call again; report the instance, its number of accounts by Class (from the
+  baseline) and `after/progress` to the Shell's maintainers. A Shell version that bounds the work of
+  each call makes progress on every call; install it, then run this section again.
+- Any other failure stops the loop with its error.
+
+### The account profiles
+
+Read who holds which profile, and the accounts and named groups left without one:
 
 ```sh
 pages '.graph.nodes[]' --class /:shell.astrale.ai:class.User > after/users.jsonl
-pages '.graph.nodes[].id' --class /:shell.astrale.ai:class.UserProfile | wc -l    # = accounts
-pages '.graph.nodes[].id' --class /:shell.astrale.ai:class.GroupProfile | wc -l   # = named groups
+pages "$PAIRS" --file shell.astrale.ai.user_profile.json | sort > after/user-profiles.tsv
+pages "$PAIRS" --file shell.astrale.ai.group_profile.json | sort > after/group-profiles.tsv
+cut -f1 after/user-profiles.tsv | sort > after/users-with-profile
+cut -f1 after/group-profiles.tsv | sort > after/groups-with-profile
+jq -r '[.id, .class] | @tsv' after/users.jsonl | sort -t "$TAB" -k1,1 \
+  | join -t "$TAB" -v 1 - after/users-with-profile > after/users-without-profile
+pages '.graph.nodes[] | select(.props["kernel.astrale.ai:class.Named.property.name"]) | [.id, .class] | @tsv' \
+  --class /:shell.astrale.ai:class.Group | sort -t "$TAB" -k1,1 \
+  | join -t "$TAB" -v 1 - after/groups-with-profile > after/groups-without-profile
+cut -f2 after/users-without-profile after/groups-without-profile | sort | uniq -c   # by Class
 jq -s '{accounts: length,
   email: map(select(.props["shell.astrale.ai:class.User.property.email"])) | length,
   unnamed: map(select((.props["shell.astrale.ai:class.User.property.name"] // .props["shell.astrale.ai:class.User.property.email"]) == null)) | length}' \
   after/users.jsonl
-jq -s '[.[] | select(.props["kernel.astrale.ai:class.Named.property.name"])] | length' before/groups.jsonl
 ```
 
-A profile the migration cannot create is not counted and not reported: a count below the accounts
-or the named groups names the gap; the next call retries it.
+Each line of `after/user-profiles.tsv` pairs an account with its profile, and of
+`after/group-profiles.tsv` a group with its profile. On 0.2.1, the accounts and groups left without
+one are those of a subclass ([What changes](#what-changes)); one of the Shell's own Class left
+without one is a gap the next call retries.
 
 ### Conflicts and unnamed accounts
 
@@ -322,10 +436,47 @@ diff -r before/members after/members
 
 ### Per person
 
-Root's success proves nothing about a person's access. Root holds `identity.impersonator`, the Kernel
-Role no bundle includes: `Identity.impersonate` gives it a short-lived credential bounded by one
-person's account, under which every call is decided as that person; issuing it writes no Node or
-Edge. Pick an account that is a member of each of the four Core groups, and decide its Roles as it:
+Root's success proves nothing about a person's access. Two reads show it: what each account of the
+sample extends, under Root, for any account; and the decisions of the Kernel under one person's own
+credential, for an account that has signed in.
+
+**Memberships.** The Role Core nodes the release added, then what each account of the
+[sample](#the-baseline) extends now:
+
+```sh
+for role in shell.astrale.ai:core.workspace.admin shell.astrale.ai:core.workspace.member \
+    kernel.astrale.ai:core.admin kernel.astrale.ai:core.reader; do
+  printf '%s\t%s\n' "$(pages '.graph.nodes[].id' "/:$role")" "$role"
+done | sort -t "$TAB" -k1,1 > after/roles
+mkdir -p after/reach
+while read -r id; do
+  reach "$id" > "after/reach/$id"
+  echo "$id lost: $(comm -23 "before/reach/$id" "after/reach/$id" | wc -l)"
+  sort -t "$TAB" -k1,1 "after/reach/$id" | join -t "$TAB" after/roles - | cut -f2 | sed 's/^/  holds /'
+done < sample
+```
+
+- `lost: 0` for every account: each group and Role it extended before, of the Shell or of a Domain
+  that owns a subclass, it still extends. The lines `comm -13 before/reach/<id> after/reach/<id>`
+  prints are what the install added: Role Core nodes of the Shell and of the Kernel only.
+- `holds`: a member of "Administrators" holds `workspace.admin`, `workspace.member` and Kernel
+  `admin`; of "Members", `workspace.member`; of "Applications" or "View only", Kernel `reader`.
+- The read lists memberships and decides no Policy: a decision is the Kernel's, below.
+
+**Decisions.** Root holds `identity.impersonator`, the Kernel Role no bundle includes:
+`Identity.impersonate` gives it a short-lived credential bounded by one person's account, under
+which every call is decided as that person; issuing it writes no Node or Edge. It names only an
+account that holds a registered issuer and subject (`iss` and `sub`: it has signed in once); any
+other is refused `IDENTITY_NOT_FOUND` (code 1003). `Identity.can` decides for the caller's own
+credential only, and takes no other subject. The accounts it applies to:
+
+```sh
+jq -r 'select(.props["kernel.astrale.ai:class.Identity.property.iss"] and .props["kernel.astrale.ai:class.Identity.property.sub"]) | .id' \
+  after/users.jsonl
+```
+
+Pick one that is a member of each of the four Core groups, where there is one, and decide its Roles
+as it:
 
 ```sh
 PERSON=$(astrale call /:kernel.astrale.ai:class.Identity:impersonate \
@@ -337,9 +488,11 @@ astrale call /:kernel.astrale.ai:class.Identity:can --json -i "$SLUG" --creds "$
   </dev/null | jq -c '[.decisions[].allowed]'
 ```
 
-`<account-id>` is a bare id from `before/members/<id>`, with `<id>` from `before/core-groups`. The
-credential lasts `ttlSeconds`, never beyond the credential that asked for it: impersonate again when
-it expires. Never print it.
+`<account-id>` is a bare id from that list that is also in `before/members/<id>`, with `<id>` from
+`before/core-groups`. Add one check per Role of a Domain that owns a subclass that the person should
+hold, `{"policy":"/:kernel.astrale.ai:policy.hasRole","object":"/:<origin>:core.<role>"}`. The
+credential lasts `ttlSeconds`, never beyond the credential that asked for it: impersonate again
+when it expires. Never print it.
 
 | Member of | Decisions | A call it is refused, as `--creds "$PERSON"` |
 | --- | --- | --- |
@@ -348,7 +501,8 @@ it expires. Never print it.
 | "Applications", "View only" | `[false,false,true]` | `query --class /:shell.astrale.ai:class.UserProfile --limit 2` answers at most its own profile, where a member reads every profile (`user-profile.reader`) |
 
 Run each refused call with `-i "$SLUG" --creds "$PERSON" </dev/null`, and one administrator task
-through the Shell methods as an administrator.
+through the Shell methods as an administrator. A Core group with no signed-in member is checked by
+its memberships alone.
 
 ## Roll back
 
@@ -361,8 +515,8 @@ such as the Shell `view_access` Edges.
 The rollback is a restore of the Host, by its operator. Give them `before/instance.json` (the
 instance's slug, `id` and `hostId`) and `before/instant`, and ask for the Host's newest recovery
 point at or before that instant. A restore rebuilds the whole Host on a new machine: the Host leaves
-service while it runs, every instance it holds returns to that point and loses every change made
-after it, and a person confirms it before the Host returns to service.
+service while it runs, every instance it holds ([A recovery point](#a-recovery-point)) returns to
+that point and loses every change made after it, and a person confirms it before the Host returns to service.
 
 After the restore, verify: `domain list` (above) answers the previous version, and the baseline reads
 (accounts, groups, `before/members`, `before/view-access.tsv`) give the same results as in

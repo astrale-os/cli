@@ -108,9 +108,9 @@ function variable(name: string): string {
 
 /**
  * The simple commands of one shell line, with variables (`$@` and `$1` included) and `$(...)`
- * expanded to fakes: words are
- * split on blanks outside quotes, commands on `|`, `;` and `&&`, and `< file` redirections and `#`
- * comments are dropped. A command substitution contributes its own commands too.
+ * expanded to fakes: words are split on blanks outside quotes, commands on `|`, `;` and `&&`, and
+ * redirections (`< file`, `2> file`, `2>&1`) and `#` comments are dropped. A command substitution
+ * contributes its own commands too.
  */
 function commands(text: string): string[][] {
   const out: string[][] = []
@@ -185,9 +185,16 @@ function commands(text: string): string[][] {
     } else if (char === '|' || char === ';' || char === '&') {
       endCommand()
       index += text[index + 1] === char ? 2 : 1
-    } else if ((char === '<' || char === '>') && !inWord && text[index + 1] === ' ') {
-      pushWord()
-      index += 2
+    } else if (
+      (char === '<' || char === '>') &&
+      (!inWord || /^[0-9]+$/.test(word)) &&
+      !/^<[a-z0-9-]+>/.test(text.slice(index))
+    ) {
+      // A redirection (`< file`, `</dev/null`, `2> err`, `>> log`, `2>&1`) and its target.
+      word = ''
+      inWord = false
+      while (text[index] === '<' || text[index] === '>' || text[index] === '&') index += 1
+      while (text[index] === ' ') index += 1
       while (index < text.length && text[index] !== ' ') index += 1
     } else {
       word += char
