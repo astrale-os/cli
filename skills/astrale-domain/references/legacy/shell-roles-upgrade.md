@@ -26,7 +26,7 @@ picture others see of one account or group, which links to it by a `user_profile
 | Core group "Members" | Member of `workspace.member` | Same |
 | Core groups "Applications", "View only" | Members of Kernel `reader`, and of no profile Role | Same |
 | `member_of_group` | Still written beside `extends_with` when an account joins a legacy Core group, removed when it leaves any group | Same |
-| `claimedEmail`, `claimedName` on accounts | Kept; `email`, `name` absent | `email`, `name` written where absent; a profile for every account and every named group of the Shell's own Classes |
+| `claimedEmail`, `claimedName` on accounts | Kept; `email`, `name` absent | On the Shell's own `User` and `Group` Nodes: `email`, `name` written where absent; a profile for every account and every named group |
 | The Shell's `view_access` Edges | Kept; the Kernel opens a View only through its own `view_access` | Copied to the Kernel's `view_access`, then deleted |
 
 For Domains built against the subclass model, and for administrators:
@@ -39,23 +39,23 @@ For Domains built against the subclass model, and for administrators:
   Shell writes its membership as the caller, not as itself: call it through the owner Domain's own
   callable. An administrator calling `Group.assignMember` on such a group directly is refused with
   an undeclared error (code 5000). Groups of the Shell's own Class are unaffected.
-- **Accounts and groups of a subclass get no profile from Shell 0.2.1.** The account migration
-  reads every account, subclasses included, and reads and compares only the Shell's properties,
-  never the subclass's own (see [Duplicate people](#duplicate-people)). It then creates a profile
-  for each account and named group that has none, and drops a creation the Kernel refuses without
-  counting or reporting it. Observed on 0.2.1: accounts and groups of the Shell's own Classes get
-  theirs; those of a subclass get none, and a further call answers `migrated: 0, profiles: 0`.
-  [The account profiles](#the-account-profiles) lists them.
-- **What an account without a profile lacks.** In 0.2.1 every identity reads accounts (the `User`
-  read rule stays open for the Domains built against the earlier Shell), and the Shell's directory
-  shows each person's name and email from the account itself. The profile carries what is read
-  through it: the picture, and the name and email a reader of `UserProfile` (`user-profile.reader`,
-  which members hold) reads there.
-- **0.2.1 documents no way to give a subclass account its profile.** `UserProfile`, `GroupProfile` and
+- **The account migration does not see the accounts and groups of a subclass.** A Query a Domain
+  runs reads only the Classes of its own closure, which for the Shell are the Kernel's and its own:
+  the migration reads the Shell's own `User` and `Group` Nodes alone. An account or a group of another
+  Domain's subclass is neither read, nor written, nor counted, nor reported: it gets no `email`,
+  no `name` and no profile, and its claim is not compared with the others (see [Duplicate
+  people](#duplicate-people)). [The account profiles](#the-account-profiles) lists them.
+- **What an account without a profile lacks.** The profile carries what is read through it: the
+  picture, and the name and email a reader of `UserProfile` (`user-profile.reader`, which members
+  hold) reads there. In 0.2.1 the `User` read rule stays open, for the Domains built against the
+  earlier Shell, so any identity may read the account itself; but the Shell's own reads, its
+  directory's included (a Shell Query over `User`), run under the same closure as the migration.
+  The Domain that owns the subclass shows its people from its own reads.
+- **0.2.1 has no way to give a subclass account its profile.** `UserProfile`, `GroupProfile` and
   their Edges declare no write rule: only Shell writes them, and the Domain that owns the subclass
-  cannot. `User.update`, under `user.writer`, creates a missing profile only when it changes a
-  name, a given name, a family name or an email, through the same `user_profile` write as the
-  migration; it is not shown to succeed on a subclass account.
+  cannot. The Shell methods that create a missing profile, `User.update` (under `user.writer`) and
+  `User.updateProfile` (the holder), first read the account through the same Shell Query, which does
+  not see a subclass account: they answer `USER_NOT_FOUND`.
 - Calls of the deprecated forms keep working: `User.invite({ user, email })`, `User.recordProfile`,
   `listEntrypoints` and `assignViews`.
 
@@ -162,7 +162,7 @@ restore with their owners before installing.
 ### A rehearsal
 
 Run the whole page first on an instance holding a representative number of accounts: each call of
-the account migration reads every account, so its time grows with them ([Migrate the
+the account migration reads every account of the Shell's Class, so its time grows with them ([Migrate the
 accounts](#migrate-the-accounts)).
 
 ### The baseline
@@ -222,13 +222,15 @@ jq -r '[.id, (.props["kernel.astrale.ai:class.Identity.property.iss"] // "-"),
 The migration writes an email only on an account that has none. After the install and before the
 migration, write the verified email on every account whose claim differs from it, with `User.update`
 ([Conflicts and unnamed accounts](#conflicts-and-unnamed-accounts)): the migration then leaves that
-account's email as written. Run the migration only once every remaining claim is verified.
+account's email as written. Run the migration only once every remaining claim is verified. The
+claim of an account of a subclass is listed too, but the migration does not use it.
 
 ### Duplicate people
 
-The migration compares a claimed email only with the Shell `email` of the other accounts. An account
-whose claimed email is held, under a Property of its own Domain, by an account of a `User` subclass
-is not reported: both stay, one person with two accounts. List such pairs:
+The migration compares a claimed email only with the Shell `email` of the other accounts of the
+Shell's Class. An account whose claimed email an account of a `User` subclass holds, under its
+Shell `email` or a Property of its own Domain, is not reported: both stay, one person with two
+accounts. List such pairs:
 
 ```sh
 jq -rs '
@@ -237,17 +239,16 @@ jq -rs '
   | .[] | select(.props["shell.astrale.ai:class.User.property.claimedEmail"] | type == "string")
   | (.props["shell.astrale.ai:class.User.property.claimedEmail"] | norm) as $email
   | .id as $claimer
-  | $all[] | select(.id != $claimer) | . as $other
+  | $all[] | select(.id != $claimer and .class != "shell.astrale.ai:class.User") | . as $other
   | .props | to_entries[]
-  | select((.key | startswith("shell.astrale.ai:") or startswith("kernel.astrale.ai:")) | not)
+  | select((.key | startswith("kernel.astrale.ai:") or test("\\.property\\.claimed")) | not)
   | select((.value | type) == "string" and (.value | norm) == $email)
   | [$claimer, $other.id, $other.class, .key, $email] | @tsv' before/users.jsonl
 ```
 
-The migration can proceed: the claiming account gets the email, unless another account holds it as
-its Shell `email` (a conflict), and the other account keeps its own Property and gets no Shell
-email from this claim. The result is one person with two accounts,
-one in each model. The Domain that owns the subclass decides which one the person keeps, through its
+The migration can proceed: a claiming account of the Shell's Class gets the email, unless another
+account of that Class holds it (a conflict), and the account of the subclass is untouched. The
+result is one person with two accounts, one in each model. The Domain that owns the subclass decides which one the person keeps, through its
 own callables, before or after the migration.
 
 ## Install
@@ -318,12 +319,13 @@ Verify the [claimed emails](#the-claimed-emails) and read the [duplicate people]
   another account holds, and the profiles it created for accounts and groups that had none.
 - An account with no `claimedEmail`, or one that is not an email, gets no `email` and is not a
   conflict. A conflict gets neither `email` nor `name`.
-- One call reads every account, writes the emails and names, then reads each account's profile and
+- One call reads every account of the Shell's Class, writes the emails and names, then reads each
+  account's profile and
   creates the missing ones, then does the same for the groups: groups come last, so a call cut off
   before them leaves every group without a profile.
 - It is an Action: a call stops at the invocation deadline (about 25 s, code 4005, exit 1) and
   reports nothing; the work done before stays written, and the next call starts again from the
-  first account. Each call reads every account and one profile per account, done or not: observed
+  first account. Each call reads every such account and one profile per account, done or not: observed
   on 0.2.1, a call with nothing left to do already takes most of the deadline at a few hundred
   accounts of the Shell's Class.
 
@@ -359,8 +361,9 @@ done
   with `migrated: 0` and `profiles: 0`, whose `conflicts` lists every conflict left.
 - **A call that reaches the deadline and raises no count is a stop**: the work left no longer fits
   in one call. Do not call again; report the instance, its number of accounts by Class (from the
-  baseline) and `after/progress` to the Shell's maintainers. A Shell version that bounds the work of
-  each call makes progress on every call; install it, then run this section again.
+  baseline) and `after/progress` to the Shell's maintainers. A Shell version whose migration reports
+  the work `remaining` bounds each call and progresses on every call; install it, then run this
+  section again.
 - Any other failure stops the loop with its error.
 
 ### The account profiles
@@ -387,8 +390,8 @@ jq -s '{accounts: length,
 
 Each line of `after/user-profiles.tsv` pairs an account with its profile, and of
 `after/group-profiles.tsv` a group with its profile. On 0.2.1, the accounts and groups left without
-one are those of a subclass ([What changes](#what-changes)); one of the Shell's own Class left
-without one is a gap the next call retries.
+one are those of a subclass, which the migration does not see ([What changes](#what-changes)); one
+of the Shell's own Class left without one is a gap the next call retries.
 
 ### Conflicts and unnamed accounts
 
