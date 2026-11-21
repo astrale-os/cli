@@ -37,8 +37,15 @@ For Domains built against the subclass model, and for administrators:
   Find the scripts and tools that mutate these Classes directly before installing.
 - **A group of a Domain's `Group` subclass changes members under the caller's own authority.**
   Shell writes its membership as the caller, not as itself: call it through the owner Domain's own
-  callable. An administrator calling `Group.assignMember` on such a group directly is refused with
-  an undeclared error (code 5000). Groups of the Shell's own Class are unaffected.
+  callable. An administrator calling `Group.assignMember` or `Group.unassignMember` on such a group
+  directly is refused `GROUP_DOMAIN_MANAGED` (family CONFLICT). Groups of the Shell's own Class are
+  unaffected.
+- **A member may be a service account.** `ServiceAccount`, a non-human Identity that signs in with
+  a key pair, is a final Class of its own, not a `User`: `Group.assignMember` and
+  `Group.unassignMember` accept it as `member`, and `member_of_group` accepts it as source. A reader
+  of memberships that expects only `User` and `Group` members meets that Class once a service
+  account joins a group; it reads the account only under `service-account.admin` or `user.reader`.
+  The account migration neither writes a service account nor gives it a profile.
 - **The account migration does not see the accounts and groups of a subclass.** A Query a Domain
   runs reads only the Classes of its own closure, which for the Shell are the Kernel's and its own:
   the migration reads the Shell's own `User` and `Group` Nodes alone. An account or a group of another
@@ -47,11 +54,11 @@ For Domains built against the subclass model, and for administrators:
   people](#duplicate-people)). [The account profiles](#the-account-profiles) lists them.
 - **What an account without a profile lacks.** The profile carries what is read through it: the
   picture, and the name and email a reader of `UserProfile` (`user-profile.reader`, which members
-  hold) reads there. In 0.2.1 the `User` read rule stays open, for the Domains built against the
+  hold) reads there. The `User` read rule stays open, for the Domains built against the
   earlier Shell, so any identity may read the account itself; but the Shell's own reads, its
   directory's included (a Shell Query over `User`), run under the same closure as the migration.
   The Domain that owns the subclass shows its people from its own reads.
-- **0.2.1 has no way to give a subclass account its profile.** `UserProfile`, `GroupProfile` and
+- **The Shell has no way to give a subclass account its profile.** `UserProfile`, `GroupProfile` and
   their Edges declare no write rule: only Shell writes them, and the Domain that owns the subclass
   cannot. The Shell methods that create a missing profile, `User.update` (under `user.writer`) and
   `User.updateProfile` (the holder), first read the account through the same Shell Query, which does
@@ -125,9 +132,9 @@ instance's Root is not an Admin identity: under `--as "$ROOT"` both are refused
 deployment URL:
 
 ```sh
-# The newest 0.2 version that is neither a pre-release nor yanked: version, url, releaseDigest.
+# The newest 0.3 version that is neither a pre-release nor yanked: version, url, releaseDigest.
 astrale domain versions shell.astrale.ai --json \
-  | jq -r '[.publications[] | select((.version | test("^0\\.2\\.[0-9]+$")) and (.yanked | not))][0]
+  | jq -r '[.publications[] | select((.version | test("^0\\.3\\.[0-9]+$")) and (.yanked | not))][0]
            | [.version, .url, .releaseDigest] | @tsv'
 VERSION=<version>; URL=<url>; DIGEST=<releaseDigest>
 
@@ -136,9 +143,10 @@ astrale domain list -i "$SLUG" --creds "$(astrale token --raw -i "$SLUG" --as "$
   | jq '.domains[] | select(.origin == "shell.astrale.ai") | {version, name, pin}'
 ```
 
-The page applies to an installed Shell without Roles (the `0.1` line) and describes 0.2.1.
-Publications are listed highest first; take the newest stable version of the line that is not
-yanked. No change note is published with a version: neither the registry nor the release carries
+The page applies to an installed Shell without Roles (the `0.1` line) and describes the `0.3`
+line. The `0.2` line is superseded: its account migration does not stop before the invocation
+deadline, so a call over many accounts can be ended with code 4005 before it answers. Publications
+are listed highest first; take the newest stable version of the line that is not yanked. No change note is published with a version: neither the registry nor the release carries
 one. A Publication names the commit it was built from (`commit`) when its publisher recorded it.
 
 ### A recovery point
@@ -161,9 +169,8 @@ restore with their owners before installing.
 
 ### A rehearsal
 
-Run the whole page first on an instance holding a representative number of accounts: each call of
-the account migration reads every account of the Shell's Class, so its time grows with them ([Migrate the
-accounts](#migrate-the-accounts)).
+Run the whole page first on an instance holding a representative number of accounts: the number of
+calls the account migration takes grows with them ([Migrate the accounts](#migrate-the-accounts)).
 
 ### The baseline
 
@@ -314,23 +321,24 @@ incoming -i "$SLUG" --as "$ROOT"`.
 
 Verify the [claimed emails](#the-claimed-emails) and read the [duplicate people](#duplicate-people) first.
 
-- Admitted to `workspace.admin` and Root. It answers `{ migrated, conflicts, profiles }`, each of
-  this call only: the accounts it gave an `email` or a `name`, the accounts whose claimed email
-  another account holds, and the profiles it created for accounts and groups that had none.
+- Admitted to `workspace.admin` and Root. It answers
+  `{ migrated, conflicts, profiles, unprofiled, remaining }`. The first four are of this call only:
+  the accounts it gave an `email` or a `name`; the accounts whose claimed email another account, or
+  another account's profile, holds; the profiles it created for accounts and groups that had none;
+  the accounts and groups whose profile the Kernel refused and that still have none, each
+  `{ node, reason, rule? }`. `remaining` counts the accounts and groups left for the next call.
 - An account with no `claimedEmail`, or one that is not an email, gets no `email` and is not a
-  conflict. A conflict gets neither `email` nor `name`.
-- One call reads every account of the Shell's Class, writes the emails and names, then reads each
-  account's profile and
-  creates the missing ones, then does the same for the groups: groups come last, so a call cut off
-  before them leaves every group without a profile.
-- It is an Action: a call stops at the invocation deadline (about 25 s, code 4005, exit 1) and
-  reports nothing; the work done before stays written, and the next call starts again from the
-  first account. Each call reads every such account and one profile per account, done or not: observed
-  on 0.2.1, a call with nothing left to do already takes most of the deadline at a few hundred
-  accounts of the Shell's Class.
+  conflict. A conflict gets neither `email` nor `name`, and still gets a profile if it has none.
+- One call reads the accounts, the groups and the profiles with their emails in three Queries, then
+  works only on the accounts and groups left, one of each in turn. Each Query reads at most 103
+  pages of 1,000; past that, the call is refused `QUERY_PAGINATION_LIMIT` and writes nothing. It starts none within 5 s of the
+  invocation deadline and answers; the first always runs. A write a concurrent change refused is
+  counted in `remaining` and read again by the next call. Every completed write stays, whole.
+- The migration is complete when a call answers `remaining: 0` and an empty `unprofiled`; that
+  call's `conflicts` lists every conflict left. Running it again then changes nothing.
 
-Count the progress between calls, since a cut-off call reports none: the accounts with an email
-and with a name, the account profiles and the group profiles.
+Count the progress between calls: the accounts with an email and with a name, the account profiles
+and the group profiles.
 
 ```sh
 progress() {
@@ -341,12 +349,17 @@ progress() {
   echo $accounts $users $groups     # emails, names, account profiles, group profiles
 }
 progress > after/progress
+last=
 while :; do
   if astrale call /:shell.astrale.ai:function.legacyMigrateAccounts -d '{}' --json \
       -i "$SLUG" --as "$ROOT" </dev/null > after/migrate.json 2> after/migrate.err; then
-    jq -c '{migrated, profiles, conflicts: (.conflicts | length)}' after/migrate.json
+    jq -c '{migrated, profiles, conflicts: (.conflicts | length), unprofiled: (.unprofiled | length), remaining}' \
+      after/migrate.json
     progress >> after/progress
-    jq -e '.migrated == 0 and .profiles == 0' after/migrate.json > /dev/null && break
+    now=$(jq '.remaining' after/migrate.json)
+    [ "$now" -eq 0 ] && break
+    [ -z "$last" ] || [ "$now" -lt "$last" ] || { echo 'remaining did not decrease: stop and report' >&2; break; }
+    last=$now
   elif grep -q '"code":4005' after/migrate.err; then
     before=$(tail -n 1 after/progress); now=$(progress); echo "$now" >> after/progress
     echo "deadline reached: $before -> $now"
@@ -355,15 +368,22 @@ while :; do
     cat after/migrate.err >&2; break
   fi
 done
+jq '{unprofiled, conflicts}' after/migrate.json
 ```
 
-- Each call that reaches the deadline should raise a count. The loop ends when a call completes
-  with `migrated: 0` and `profiles: 0`, whose `conflicts` lists every conflict left.
-- **A call that reaches the deadline and raises no count is a stop**: the work left no longer fits
-  in one call. Do not call again; report the instance, its number of accounts by Class (from the
-  baseline) and `after/progress` to the Shell's maintainers. A Shell version whose migration reports
-  the work `remaining` bounds each call and progresses on every call; install it, then run this
-  section again.
+- Each call lowers `remaining`. The loop ends at `remaining: 0`; read `unprofiled` and `conflicts`
+  from that last answer.
+- **A call that does not lower `remaining` is a stop.** Do not call again; report the instance, its
+  number of accounts by Class (from the baseline), `after/progress` and the last answer to the
+  Shell's maintainers.
+- A call the Kernel ends at the deadline (code 4005, exit 1) answers nothing, and the writes it
+  completed stay. Since each call stops before its deadline, this is a fallback: the loop compares
+  the counts instead, and a call that raises none is a stop as above.
+- `unprofiled` is not counted in `remaining`: each next call is refused alike until what refused it
+  changes. `reason: "MUTATION_POST_STATE_INVALID"` with `rule: "duplicate-key"` means the profile
+  would carry an email another account's profile holds; it is found from the read, without a
+  write. Settle it as a conflict ([Conflicts and unnamed accounts](#conflicts-and-unnamed-accounts)),
+  then run the loop again. Report any other reason with its `node`.
 - Any other failure stops the loop with its error.
 
 ### The account profiles
@@ -389,9 +409,10 @@ jq -s '{accounts: length,
 ```
 
 Each line of `after/user-profiles.tsv` pairs an account with its profile, and of
-`after/group-profiles.tsv` a group with its profile. On 0.2.1, the accounts and groups left without
-one are those of a subclass, which the migration does not see ([What changes](#what-changes)); one
-of the Shell's own Class left without one is a gap the next call retries.
+`after/group-profiles.tsv` a group with its profile. The accounts and groups left without one are
+those of a subclass, which the migration does not see ([What changes](#what-changes)), and those the
+last call answered in `unprofiled`. Any other one of the Shell's own Class left without one is a gap
+the next call retries.
 
 ### Conflicts and unnamed accounts
 
