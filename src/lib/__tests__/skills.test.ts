@@ -193,7 +193,8 @@ describe('Astrale skill reconciliation', () => {
     await writeFile(join(home.skill('astrale-cli'), 'SKILL.md'), 'foreign\n')
 
     await expect(syncAstraleSkills(home.options(source))).rejects.toMatchObject({
-      code: 'SKILL_UPDATE_FAILED',
+      code: 'SKILL_CONFLICT',
+      hint: 'Move it aside, then retry.',
     })
     await editLock(home, (lock) => {
       lock.skills['astrale-cli'] = {
@@ -203,7 +204,8 @@ describe('Astrale skill reconciliation', () => {
     })
     const before = await tree(dirname(home.home))
     await expect(syncAstraleSkills(home.options(source))).rejects.toMatchObject({
-      code: 'SKILL_UPDATE_FAILED',
+      code: 'SKILL_CONFLICT',
+      hint: 'Remove or rename that skill, then retry.',
     })
     expect(await tree(dirname(home.home))).toBe(before)
   })

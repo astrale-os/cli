@@ -12,15 +12,16 @@ import { ClientSession } from '@astrale-os/sdk/client/session'
 import type { AstraleConfig } from '../lib/config'
 import type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'
 
+import { AstraleError, InternalError } from '../errors'
+import { findDirectoryInstance, type DirectoryReadOptions } from '../lib/admin/directory'
 import {
-  AdminInstanceNotFoundError,
-  connectAdminInstances,
-  findOwnedInstance,
-  type InstanceInfo,
-} from '../admin/instance'
-import { AstraleError } from '../errors'
+  describeAge,
+  readCachedInstanceDirectory,
+  type DirectoryRead,
+} from '../lib/admin/directory-cache'
 import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
+import { type ManagedInstance } from '../lib/instance/target'
 import { log } from '../lib/terminal/log'
 import { isMachine } from '../lib/terminal/output'
 import {
@@ -445,7 +446,7 @@ function openConnection(
       target,
       credentialPrincipal: () => {
         if (principal === undefined)
-          throw new Error('The Session has not selected an authenticated credential.')
+          throw new InternalError('The Session has not selected an authenticated credential.')
         return principal
       },
       ...(options.as === undefined ? {} : { identity: options.as }),
@@ -479,18 +480,43 @@ export function createClientSessionOptions(
   }
 }
 
+/**
+ * The instance a slug names among the user's instances, read from the instance directory: no Admin
+ * account and no Admin Kernel are needed. The lookup uses the default sign-in, never the target's
+ * own credential (`--as`, `--creds`), which belongs to the instance the command reaches.
+ *
+ * A listing read less than five minutes ago answers without a request; when the directory is
+ * unavailable or rate-limited, the last listing (up to seven days old) answers, with a warning.
+ */
 export async function lookupManagedInstance(
   slug: string,
   options: ConnectionOptions,
-  openAdmin: typeof withAdminClientSession = withAdminClientSession,
-  connect: typeof connectAdminInstances = connectAdminInstances,
-): Promise<InstanceInfo> {
-  return openAdmin(
-    Object.freeze(options.timeout === undefined ? {} : { timeout: options.timeout }),
-    async (context) => {
-      const found = findOwnedInstance(await (await connect(context)).list(), slug)
-      if (found === undefined) throw new AdminInstanceNotFoundError(slug)
-      return found
-    },
+  read: (
+    options: DirectoryReadOptions,
+    mode: 'refresh' | 'prefer-fresh',
+  ) => Promise<DirectoryRead> = readCachedInstanceDirectory,
+): Promise<ManagedInstance> {
+  const readOptions = Object.freeze(
+    options.timeout === undefined ? {} : { timeout: options.timeout },
   )
+  let result = await read(readOptions, 'prefer-fresh')
+  let found = findDirectoryInstance(result.directory, slug)
+  // A recent listing may predate a new instance: ask the directory before calling it unknown.
+  if (found === undefined && result.cached === true) {
+    result = await read(readOptions, 'refresh')
+    found = findDirectoryInstance(result.directory, slug)
+  }
+  if (result.stale !== undefined) {
+    log.warn(
+      `${result.stale.message} Using your instance list from ${describeAge(result.stale.listedAt)} ago.`,
+    )
+  }
+  if (found === undefined) {
+    throw new AstraleError(
+      'INSTANCE_NOT_FOUND',
+      `None of your instances is named ${JSON.stringify(slug)}.`,
+      'Run `astrale instance list` to see your instances.',
+    )
+  }
+  return Object.freeze({ slug: found.slug, url: found.url })
 }

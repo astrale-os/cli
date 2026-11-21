@@ -15,6 +15,8 @@ export interface CommandOption {
   readonly default?: string
   readonly choices?: string[]
   readonly hidden?: boolean
+  /** The command does not run without it: Commander refuses its absence as a usage error. */
+  readonly required?: boolean
   /** Collect every occurrence, in order, into a string array. */
   readonly repeatable?: boolean
 }

@@ -239,7 +239,7 @@ export const CLI_CONNECTION_PUBLIC_SEMANTIC_REASON = defineLaw({
 export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
   id: 'CLI-CONNECTION-TYPED-ERROR-PRESENTATION',
   statement:
-    'The command boundary maps typed Client failure identity, transport context, phase, and invocation-only delivery evidence without parsing a private cause; acquisition never receives retry advice, unknown native failures have one non-blank unexpected diagnostic, and raw causes appear only under explicit debug output.',
+    'The command boundary maps typed Client failure identity, transport context, phase, and invocation-only delivery evidence without parsing a private cause; a typed CLI failure keeps its code, message, hint, and details; acquisition never receives retry advice, unknown native failures have one non-blank unexpected diagnostic, and raw causes appear only under explicit debug output.',
   tests: [
     {
       file: '__tests__/errors.test.ts',
@@ -252,6 +252,10 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
     {
       file: '__tests__/errors.test.ts',
       id: 'TEST-CLI-CONNECTION-ADMITS-BOUNDED-REASONS',
+    },
+    {
+      file: '__tests__/errors.test.ts',
+      id: 'TEST-CLI-CONNECTION-PRESENTS-TYPED-DETAILS',
     },
     {
       file: '__tests__/errors.test.ts',

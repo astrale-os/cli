@@ -31,12 +31,14 @@ test('a closed terminal never blocks: every prompt resolves to its default or no
 test('a passphrase comes from the environment, else refuses without a usable terminal', async () => {
   const env = { ASTRALE_PASSPHRASE: 's3cret' }
   expect(await readPassphrase('Passphrase', { ...closed, env })).toBe('s3cret')
-  await expect(readPassphrase('Passphrase', { ...closed, env: {} })).rejects.toThrow(
-    /ASTRALE_PASSPHRASE/,
-  )
+  const required = {
+    code: 'PASSPHRASE_REQUIRED',
+    hint: expect.stringContaining('ASTRALE_PASSPHRASE'),
+  }
+  await expect(readPassphrase('Passphrase', { ...closed, env: {} })).rejects.toMatchObject(required)
   // --ci promises that nothing blocks, so it refuses even at a live terminal.
   const argv = ['astrale', 'bin', 'identity', 'export', '--ci']
-  await expect(readPassphrase('Passphrase', { tty: true, argv, env: {} })).rejects.toThrow(
-    /ASTRALE_PASSPHRASE/,
+  await expect(readPassphrase('Passphrase', { tty: true, argv, env: {} })).rejects.toMatchObject(
+    required,
   )
 })

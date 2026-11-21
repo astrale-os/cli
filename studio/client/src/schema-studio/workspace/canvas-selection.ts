@@ -1,28 +1,30 @@
 import { useEffect, useMemo } from 'react'
 
-import { useWorkspace } from '@/lib/hooks'
+import { useSchemaDomains, useWorkspace } from '@/lib/hooks'
 
 import { useSchemaWorkspace } from './store'
 
 /**
- * The canvas only ever holds domains the workspace still has. On first open it shows the
- * first discovered domain; after that an empty canvas is a deliberate state we preserve.
+ * The canvas only ever holds domains the workspace still has, and the Kernel. On first open
+ * it shows the first discovered workspace domain; after that an empty canvas is a deliberate
+ * state we preserve.
  */
 export function useCanvasSelectionSync(enabled = true): void {
-  const { data: domains } = useWorkspace()
+  const { data: workspace } = useWorkspace()
+  const { data: domains } = useSchemaDomains()
   const replaceDomains = useSchemaWorkspace((state) => state.replaceDomains)
 
   useEffect(() => {
-    if (!enabled || !domains) return
+    if (!enabled || !workspace || !domains) return
     const { visibleDomainIds, initialized } = useSchemaWorkspace.getState()
     const valid = new Set(domains.map((domain) => domain.id))
     const next = visibleDomainIds.filter((id) => valid.has(id))
-    if (!initialized && domains.length > 0 && next.length === 0) {
-      replaceDomains([domains[0]!.id])
+    if (!initialized && workspace.length > 0 && next.length === 0) {
+      replaceDomains([workspace[0]!.id])
       return
     }
     if (next.length !== visibleDomainIds.length) replaceDomains(next)
-  }, [domains, enabled, replaceDomains])
+  }, [domains, enabled, replaceDomains, workspace])
 }
 
 interface CanvasDomainControls {

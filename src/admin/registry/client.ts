@@ -21,7 +21,7 @@ import type {
   YankResultV1,
 } from './model'
 
-import { AstraleError } from '../../errors'
+import { AstraleError, InternalError } from '../../errors'
 import { AdminContract, callAdminMethod, callAdminStaticMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import { observedPublication, publicationFromAdmin, publishedFromAdmin } from './decode'
@@ -313,7 +313,7 @@ async function writeFully(file: FileHandle, chunk: Uint8Array): Promise<void> {
   let offset = 0
   while (offset < chunk.byteLength) {
     const { bytesWritten } = await file.write(chunk, offset, chunk.byteLength - offset)
-    if (bytesWritten <= 0) throw new Error('The output file took no bytes.')
+    if (bytesWritten <= 0) throw new InternalError('The output file took no bytes.')
     offset += bytesWritten
   }
 }

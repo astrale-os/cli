@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.2
+  BUN_VERSION: 1.4.4
 
 jobs:
   agent-setup:
@@ -41,10 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['26', '24', '22']
-    env:
-      # Node is a contributor/test toolchain only; releases are Bun executables.
-      PNPM_CONFIG_RUNTIME_ON_FAIL: ${{ matrix.node-version == '22' && 'ignore' || 'error' }}
+        node-version: ['26', '24']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

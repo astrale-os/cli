@@ -114,7 +114,7 @@ import { defineQuery } from '@astrale-os/sdk/query'
 import type { schema } from '#schema'
 
 export const readAssignee = defineQuery<typeof schema>()('issues.issue.assignee', {
-  build: (issue: NodeId, d) => d.Issue.with((i) => ({ assignee: i.assignee.pick().find() })).get(issue),
+  build: (issue: NodeId, d) => d.Issue.with((i) => ({ assignee: i.assignee.ref().find() })).get(issue),
   output: (row) => row.assignee?.id,
 })
 
@@ -160,6 +160,10 @@ export const reassign = defineAction<typeof schema>()(
   `LIMIT_EXCEEDED`). Read it once, through its end; never `tee()` it or read it before handing it
   on. `kernel.content.upload(body, { mediaType })` takes it unread and streams it to the Kernel
   (`blob.writer`, `policies.md`); the upload is one attempt, never retried.
+- A file a caller sends arrives at a `file()` input field as an upload receipt, never as bytes: the
+  handler gets a file object (`text()`, `bytes()`, `stream()`) and attaches it to a blob Property of
+  its own Class as the Domain (`mutate(..., { as: 'executor' })`). A receipt serves whoever presents
+  it until it expires (`files.md`).
 - Storing a received file is two effects, the upload and the Mutation recording its receipt in the
   same invocation (receipts expire). A binary input excludes a durable Workflow: write an inline
   Workflow (`workflows.md`); after a failure, the caller sends the file again.

@@ -47,6 +47,19 @@ test.each([
     shown: ['--admin selects the Admin kernel.', 'Usage:\n  astrale call <path> [params...]'],
     hidden: ['Did you mean:'],
   },
+  {
+    name: 'prints a missing required option with its command usage, never suggestions',
+    error: () =>
+      new CommanderError(
+        1,
+        'commander.missingMandatoryOptionValue',
+        "error: required option '--url <url>' not specified",
+      ),
+    argv: ['instance', 'bookmark', 'staging'],
+    message: "error: required option '--url <url>' not specified",
+    shown: ['Usage:\n  astrale instance bookmark <name>'],
+    hidden: ['Did you mean:'],
+  },
 ])('$name', async ({ error, argv, message, shown, hidden }) => {
   const program = await buildProgram()
   // Chalk colors only a color-capable stdout: strip so the suite reads the same in CI.

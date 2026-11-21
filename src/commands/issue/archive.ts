@@ -26,7 +26,7 @@ export async function archiveReportedIssueCommand(
 export default withIssueAdminOptions({
   name: 'archive',
   description: 'Withdraw one of your reports (triage keeps its history)',
-  arguments: [{ name: 'reference', description: 'Issue reference, e.g. ASTRALE-12' }],
+  arguments: [{ name: 'reference', description: 'Issue reference, e.g. DEV-12' }],
   action: async (reference: string, options: ReportedIssueOptions) => {
     try {
       const result = await archiveReportedIssueCommand(reference, options)

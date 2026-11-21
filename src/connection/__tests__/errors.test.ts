@@ -3,6 +3,7 @@ import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 import { stripVTControlCharacters } from 'node:util'
 
+import { AstraleError } from '../../errors'
 import { formatKernelError } from '../errors'
 import { functionInputIssues, queryInputRepair } from '../reasons'
 import { transportFailure } from './failure-fixtures'
@@ -223,6 +224,22 @@ describe('client and unknown failures', () => {
     expect((await machine(unavailable)).json).toMatchObject({
       error: 'NODE_UNAVAILABLE',
       hint: expect.stringContaining('-i/--as'),
+    })
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-PRESENTS-TYPED-DETAILS */
+  test('a typed CLI failure keeps its code, message, hint, and details', async () => {
+    const refusal = new AstraleError(
+      'AGENT_BROWSER_NOT_INSTALLED',
+      'agent-browser is missing.',
+      'Install it.',
+    )
+    refusal.details = { repo: 'vercel-labs/agent-browser' }
+    expect((await machine(refusal)).json).toEqual({
+      error: 'AGENT_BROWSER_NOT_INSTALLED',
+      message: 'agent-browser is missing.',
+      hint: 'Install it.',
+      details: { repo: 'vercel-labs/agent-browser' },
     })
   })
 

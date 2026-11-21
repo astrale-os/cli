@@ -26,7 +26,7 @@ import {
 import { transportFailure } from '../../../connection/__tests__/failure-fixtures'
 import { DeploymentReadError } from '../../../lib/deployment/release'
 import { registerCommand } from '../../../program/registry'
-import { captureProcess, ExitError, human } from '../../__tests__/fixtures/process'
+import { asBinary, captureProcess, ExitError, human } from '../../__tests__/fixtures/process'
 import { admitIssuerChanges, issuerChangeConsent, issuerChangeLine } from '../issuer-consent'
 import { installByReference } from '../release-install'
 
@@ -288,7 +288,9 @@ async function refused(
   opts: Parameters<typeof installByReference>[1],
   run: ReturnType<typeof harness>,
 ): Promise<ReturnType<typeof io.failure>> {
-  await expect(installByReference(references, opts, run.deps)).rejects.toBeInstanceOf(ExitError)
+  await expect(
+    asBinary(() => installByReference(references, opts, run.deps), opts),
+  ).rejects.toBeInstanceOf(ExitError)
   return io.failure()
 }
 

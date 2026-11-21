@@ -26,6 +26,7 @@ export function registerCommand(parent: Command, def: CommandDefinition, isDefau
     if (opt.choices) option.choices(opt.choices)
     if (opt.default !== undefined) option.default(opt.default)
     if (opt.hidden) option.hideHelp()
+    if (opt.required) option.makeOptionMandatory()
     if (opt.repeatable) {
       // Commander stores `true` for an optional value written bare, replacing what was collected
       // before; a preset value keeps every occurrence in the array.

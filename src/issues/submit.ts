@@ -106,7 +106,7 @@ export async function submitIssue(input: {
   let pending: z.infer<typeof pendingSchema>
   if (input.retry !== undefined) {
     try {
-      if ((await stat(path)).size > 1_000_000) throw new Error('Oversized pending report')
+      if ((await stat(path)).size > 1_000_000) throw new RangeError('Oversized pending report')
       pending = pendingSchema.parse(JSON.parse(await readFile(path, 'utf8')))
     } catch (cause) {
       throw new AstraleError(

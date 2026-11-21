@@ -3,6 +3,7 @@ import { copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { InternalError } from '../../errors'
 import { embeddedAssetDir, materializeEmbeddedAssets } from '../embedded-assets'
 
 /**
@@ -48,7 +49,7 @@ export async function ensureViewerAssets(
       target: 'browser',
       minify: false,
     })
-    if (!result.success) throw new Error(`viewer build failed: ${result.logs.join('\n')}`)
+    if (!result.success) throw new InternalError(`viewer build failed: ${result.logs.join('\n')}`)
     await copyFile(join(srcDir, 'index.html'), join(dist, 'index.html'))
     return dist
   }

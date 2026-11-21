@@ -2,9 +2,14 @@ import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { getDefault, getIdentity, readIdentities } from '../../identity/index'
-import { isSessionExpired, readIdpSession, type IdpSession } from '../../lib/idp/provider'
+import {
+  IdpSessionMissingError,
+  isSessionExpired,
+  readIdpSession,
+  type IdpSession,
+} from '../../lib/idp/provider'
 import { ensureFreshSession } from '../../lib/idp/session'
-import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { log, withSpinner } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 
 type AuthTokenType = 'access' | 'id'
@@ -67,12 +72,9 @@ Examples:
   $ astrale auth token --name alice --type id --json
 `,
   action: async (opts: AuthTokenOpts) => {
-    let result: AuthTokenResult
-    try {
-      result = await withSpinner('Resolving token', !isMachine(opts), () => resolveAuthToken(opts))
-    } catch (error) {
-      fatal(error, opts)
-    }
+    const result: AuthTokenResult = await withSpinner('Resolving token', !isMachine(opts), () =>
+      resolveAuthToken(opts),
+    )
 
     if (opts.raw) {
       process.stdout.write(result.token + '\n')
@@ -92,11 +94,7 @@ Examples:
 async function resolveAuthToken(opts: AuthTokenOpts): Promise<AuthTokenResult> {
   const identityName = await resolveIdentityName(opts)
   const session = await readIdpSession(identityName)
-  if (!session) {
-    throw new Error(
-      `No cached IdP session for "${identityName}". Run: astrale auth login --name ${identityName}`,
-    )
-  }
+  if (!session) throw new IdpSessionMissingError(identityName)
 
   // ensureFreshSession serializes the (single-use) refresh-token exchange
   // across concurrent CLI processes and is a no-op while the token is fresh.
@@ -168,7 +166,9 @@ async function resolveIdentityName(opts: AuthTokenOpts): Promise<string> {
 function tokenFromSession(session: IdpSession, type: AuthTokenType): string {
   if (type === 'access') return session.access_token
   if (session.id_token) return session.id_token
-  throw new Error(
-    `Cached IdP session for "${session.identity}" has no id_token. Use --type access.`,
+  throw new AstraleError(
+    'IDP_ID_TOKEN_MISSING',
+    `Cached IdP session for "${session.identity}" has no id_token.`,
+    'Use --type access.',
   )
 }

@@ -1,5 +1,7 @@
+import { KERNEL_DOMAIN_ID } from '@shared/contracts/workspace'
 import { MousePointerClick, Sparkles } from 'lucide-react'
 import { useEffect } from 'react'
+import { toast } from 'sonner'
 
 import { useAsks } from '@/lib/ask'
 import { type CommentDraft, useUI } from '@/lib/store'
@@ -125,6 +127,10 @@ export function CommentModeOverlay() {
       const draft = resolveDraft(e.target as HTMLElement | null, mode, e.clientX, e.clientY)
       exit()
       if (!draft) return
+      if (draft.mode === 'comment' && draft.domainId === KERNEL_DOMAIN_ID) {
+        toast.info('The Kernel is read-only: comment on your own Domains, or Ask (A) about it.')
+        return
+      }
       // open on the next frame so this click finishes before the popover mounts —
       // otherwise Radix treats the opening click as an outside-dismiss and closes it.
       if (draft.mode === 'ask') {

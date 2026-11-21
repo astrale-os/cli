@@ -42,6 +42,11 @@ unauthorized and disabled states are modeled.
   reconcile with the committed Kernel state.
 - Dropdowns close on outside click and Escape, support keyboard navigation, expose the selected
   item and return focus to the trigger.
+- A styled native `<select>` keeps its arrow flush against the right border; `padding-right` does
+  not move it.
+- Secondary actions (download, replace, delete) are icon buttons with an `aria-label` and a tooltip;
+  a text label only for a form's or dialog's primary action. Several row action icons appear on row
+  hover and `:focus-within`, and stay visible on touch devices.
 - Dialogs, menus, forms and inline actions work by keyboard: visible focus, semantic controls,
   associated labels, announced status and errors.
 - Long labels and values are layout cases: wrap when read, truncate only in fixed space with access

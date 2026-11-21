@@ -65,7 +65,8 @@ function resolveStudioDir(): string {
   for (const c of candidates) {
     if (existsSync(join(c, 'server', 'index.ts'))) return resolve(c)
   }
-  throw new Error(
+  throw new AstraleError(
+    'STUDIO_START_FAILED',
     `Domain Studio assets not found (looked in: ${candidates.join(', ') || '<none>'}). ` +
       `Reinstall the astrale CLI, or set ASTRALE_STUDIO_DIR to a studio checkout.`,
   )
@@ -101,7 +102,8 @@ async function ensureBun(): Promise<void> {
   } catch {
     /* ENOENT — handled below */
   }
-  throw new Error(
+  throw new AstraleError(
+    'STUDIO_START_FAILED',
     'Domain Studio requires Bun on PATH. Install it from https://bun.sh, then re-run `astrale studio`.',
   )
 }
@@ -179,18 +181,31 @@ async function pickPort(
   if (explicit !== undefined) {
     // Strict decimal — reject '4e3', '0x10D7', whitespace-padded, etc.
     const p = /^\d+$/.test(explicit) ? Number(explicit) : NaN
-    if (!Number.isInteger(p) || p < 1 || p > 65535) throw new Error(`invalid --port: ${explicit}`)
+    if (!Number.isInteger(p) || p < 1 || p > 65535) {
+      throw new AstraleError(
+        'INVALID_FLAG',
+        `Invalid --port: ${explicit}`,
+        'Use a port in 1-65535.',
+      )
+    }
     // Explicit intent must NOT be silently relocated — probe once, error if busy.
     if (!(await portFree(p))) {
-      throw new Error(
-        `port ${p} is busy (another studio?). Pick a free --port, or omit it to auto-select.`,
+      throw new AstraleError(
+        'STUDIO_PORT_BUSY',
+        `Port ${p} is busy (another studio?).`,
+        'Pick a free --port, or omit it to auto-select.',
       )
     }
     return p
   }
   const p = await findFreePort(base, PORT_SPAN)
-  if (p === null)
-    throw new Error(`no free ${label} port in ${base}-${base + PORT_SPAN - 1}; pass --port`)
+  if (p === null) {
+    throw new AstraleError(
+      'STUDIO_PORT_BUSY',
+      `No free ${label} port in ${base}-${base + PORT_SPAN - 1}.`,
+      'Pass a free --port.',
+    )
+  }
   return p
 }
 
@@ -263,7 +278,9 @@ Examples:
   action: async (pathArg: string | undefined, opts: StudioOpts) => {
     try {
       const workspace = resolve(pathArg ?? process.cwd())
-      if (!existsSync(workspace)) throw new Error(`path not found: ${workspace}`)
+      if (!existsSync(workspace)) {
+        throw new AstraleError('FILE_NOT_FOUND', `Path not found: ${workspace}`)
+      }
       // Keep a config-file target exact in server arguments and the descriptor;
       // the OS working directory must be its containing directory instead.
       const workspaceDirectory = statSync(workspace).isFile() ? dirname(workspace) : workspace
@@ -286,13 +303,17 @@ Examples:
           log.dim(`  using ASTRALE_STUDIO_DIR=${studioDir}`)
         }
         if (!isDevSource(studioDir)) {
-          throw new Error(
+          throw new AstraleError(
+            'STUDIO_START_FAILED',
             '--dev needs the studio source checkout (cli/studio); the standalone executable runs prod only.',
           )
         }
         viteBin = resolveViteBin(studioDir)
         if (!viteBin)
-          throw new Error('Vite is not installed — run `pnpm install` at the workspace root.')
+          throw new AstraleError(
+            'STUDIO_START_FAILED',
+            'Vite is not installed — run `pnpm install` at the workspace root.',
+          )
       }
 
       const studioPort = await pickPort(opts.port, STUDIO_PORT_BASE, 'studio')
@@ -394,7 +415,8 @@ Examples:
         if (!(await waitForHttp(`http://127.0.0.1:${vitePort}/`))) {
           killAll()
           await new Promise((r) => setTimeout(r, 500)) // let SIGTERM land before we exit
-          throw new Error(
+          throw new AstraleError(
+            'STUDIO_START_FAILED',
             'Vite dev server did not start — run `pnpm install` at the workspace root, or use --prod.',
           )
         }
@@ -463,8 +485,9 @@ Examples:
           process.exitCode = code
           return
         }
-        throw new Error(
-          `the Domain Studio server stopped before it was ready (exit ${code}) — see its output above.`,
+        throw new AstraleError(
+          'STUDIO_START_FAILED',
+          `The Domain Studio server stopped before it was ready (exit ${code}) — see its output above.`,
         )
       }
       const ready = readiness === 'ready'

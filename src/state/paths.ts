@@ -15,6 +15,8 @@ export interface Paths {
   readonly installations: string
   idpDir(name: string): string
   idpSession(identityName: string): string
+  /** The last instance directory listing read for one identity (`lib/admin/directory-cache.ts`). */
+  instanceDirectoryCache(identityName: string): string
 }
 
 /** Resolve every CLI state path from the current environment. */
@@ -36,6 +38,8 @@ export function createPaths(): Paths {
     installations: join(base, 'session', 'installations.json'),
     idpDir: (name: string) => join(idpsDir, name),
     idpSession: (identityName: string) => join(idpSessionsDir, `${identityName}.json`),
+    instanceDirectoryCache: (identityName: string) =>
+      join(base, 'cache', 'instance-directory', `${identityName}.json`),
   })
 }
 

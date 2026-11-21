@@ -115,6 +115,10 @@ test('a targetless snapshot keeps the session management branches', async () => 
 
   const refreshed = await runView(['--refresh', 'v-missing', '--snapshot', '--json'])
   expect(refreshed.exitCode).toBe(1)
-  expect(refreshed.stderr).toContain('No view session "v-missing".')
-  expect(refreshed.stderr).not.toContain('MISSING_ARG')
+  expect(refreshed.stdout).toBe('')
+  expect(JSON.parse(refreshed.stderr)).toEqual({
+    error: 'VIEW_SESSION_NOT_FOUND',
+    message: 'No view session "v-missing".',
+    hint: 'Run: astrale view --sessions',
+  })
 })

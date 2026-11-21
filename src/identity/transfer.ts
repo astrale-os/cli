@@ -1,7 +1,7 @@
 import { compactDecrypt, CompactEncrypt, type JWK } from 'jose'
 import { z } from 'zod'
 
-import { AstraleError } from '../errors'
+import { AstraleError, IdentityExistsError } from '../errors'
 import { acceptKeypair, importKeypair, readKeypair, removeKeypair } from '../keys/index'
 import { validateName, validateUrl } from '../lib/validation'
 import {
@@ -13,6 +13,7 @@ import {
   type IdentityStoreOptions,
   type Registration,
 } from '../state/index'
+import { findIdentity, identityIn } from './registry'
 
 /** The version export writes. Import also admits V1, which carries no Kernel registrations. */
 const IDENTITY_EXPORT_VERSION = 2 as const
@@ -142,12 +143,12 @@ export async function exportIdentity(
   name: string,
   options: IdentityFileOptions = {},
 ): Promise<IdentityExport> {
-  const store = await readIdentityStore(options.state)
-  const identity = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
-  if (!identity)
-    throw new Error(`Identity "${name}" not found. Run: astrale identity create ${name}`)
+  const identity = identityIn(await readIdentityStore(options.state), name)
   if (identity.source === 'idp') {
-    throw new Error(`Identity "${name}" is IdP-backed and has no transferable local keypair`)
+    throw new AstraleError(
+      'INVALID_IDENTITY_SOURCE',
+      `Identity "${name}" is IdP-backed and has no transferable local keypair.`,
+    )
   }
   const pair = await readKeypair(identity.subject, options.keysDir)
   const envelope: IdentityExport = {
@@ -176,8 +177,12 @@ export async function importIdentity(
   if (options.issuer !== undefined) validateUrl(options.issuer)
 
   const imported = await updateIdentityStore(async (store) => {
-    const existing = Object.hasOwn(store.identities, name) ? store.identities[name] : undefined
-    if (existing && !options.replace) throw new Error(`Identity "${name}" already exists`)
+    const existing = findIdentity(store, name)
+    if (existing && !options.replace) {
+      throw new IdentityExistsError(name, {
+        hint: 'Pass --replace to replace it, or --name to import it under another name.',
+      })
+    }
     const issuer = options.issuer ?? envelope.issuer
     if (
       existing &&
@@ -190,9 +195,8 @@ export async function importIdentity(
         'Choose explicitly which root identity to recover with `astrale instance root import <instance>`.',
       )
     }
-    if (existing && existing.source === 'idp') {
-      throw new Error(`Identity "${name}" already exists and is IdP-backed`)
-    }
+    if (existing && existing.source === 'idp')
+      throw new IdentityExistsError(name, { source: 'idp' })
 
     const pair = await importKeypair(envelope.subject, envelope, options.keysDir)
     const identity: Identity = {

@@ -11,6 +11,7 @@ import { pipeline } from 'node:stream/promises'
 import type { ViewServeConfig } from './session'
 
 import { withClientSession } from '../../connection'
+import { AstraleError, InternalError } from '../../errors'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
 import { exchangeViewCredential } from './exchange-credential'
@@ -228,7 +229,10 @@ export function startViewServer(
             ? await mintGrant(config.kernel, view)
             : await owner.grant(config.owner?.as?.id, view)
         if (started !== revision)
-          throw new Error('View session changed; reload before requesting credentials.')
+          throw new AstraleError(
+            'VIEW_SESSION_CHANGED',
+            'View session changed; reload before requesting credentials.',
+          )
         if (forView) grantKind = fresh.kind
         return { credential: fresh.token, expiresAt: fresh.expiresAt }
       },
@@ -250,7 +254,10 @@ export function startViewServer(
         // nothing here: the View mounted from the old Kernel would receive a
         // bearer for another one.
         if (target.kernelIssuer !== proxy.issuer || target.url !== proxy.kernelUrl) {
-          throw new Error('The session bookmark now points to another Kernel. Open a new View.')
+          throw new AstraleError(
+            'VIEW_KERNEL_CHANGED',
+            'The session bookmark now points to another Kernel. Open a new View.',
+          )
         }
         // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
         if (
@@ -283,7 +290,7 @@ export function startViewServer(
     void route(req, res).catch((error: unknown) => {
       if (res.destroyed) return
       if (res.headersSent) {
-        res.destroy(error instanceof Error ? error : new Error(String(error)))
+        res.destroy(error instanceof Error ? error : new InternalError(String(error)))
         return
       }
       const message = error instanceof Error ? error.message : String(error)

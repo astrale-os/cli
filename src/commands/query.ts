@@ -1,13 +1,11 @@
 import type { QueryDirection } from '@astrale-os/sdk/query'
 
-import { readFile } from 'node:fs/promises'
-
 import type { KernelCommandOpts, SelfExpansionMeta } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
-import { AstraleError } from '../errors'
 import { prepareQuery, type QueryCommandInput } from '../graph/index'
+import { readInputFile } from '../lib/input-file'
 import { failInput } from '../lib/terminal/log'
 import { isMachine, output } from '../lib/terminal/output'
 
@@ -81,15 +79,7 @@ async function readAst(opts: QueryOpts): Promise<unknown | undefined> {
   }
   if (opts.ast !== undefined) return parseJson(opts.ast, '--ast')
   if (opts.file === undefined) return undefined
-  let raw: string
-  try {
-    raw = await readFile(opts.file, 'utf8')
-  } catch (error) {
-    throw new AstraleError('FILE_READ_FAILED', `Cannot read --file ${opts.file}.`, undefined, {
-      cause: error,
-    })
-  }
-  return parseJson(raw, opts.file)
+  return parseJson(await readInputFile(opts.file, `--file ${opts.file}`), opts.file)
 }
 
 function parseJson(raw: string, source: string): unknown {

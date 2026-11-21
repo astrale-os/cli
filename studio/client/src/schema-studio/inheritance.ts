@@ -1,9 +1,10 @@
 import type { IrClass, IrMethod, JsonSchema, StudioSchemaBundle } from '@shared/contracts/schema'
 import type { IrClassRef } from '@shared/schema/identity'
 
+import { KERNEL_ORIGIN } from '@shared/contracts/workspace'
 import { classRefKey } from '@shared/schema/identity'
 
-export const KERNEL_ORIGIN = 'kernel.astrale.ai'
+export { KERNEL_ORIGIN }
 
 const KERNEL_IMPLEMENTATION_CLASSES = new Set([
   'Timestamped',

@@ -15,29 +15,39 @@ import { FileSessionRouteStore } from '../../session-routes'
 
 const routePath = process.argv[2]
 if (routePath === undefined) throw new Error('route artifact path is required')
+/** `release` routes to an installed release; `function` to a Function instance, which has no declaration. */
+const witness = process.argv[3] ?? 'release'
 
 const sourceEndpoint = `https://source.kernel.test${invocationPath()}`
 const sourceIssuer = issuer.accept('https://source.kernel.test')
 const destinationEndpoint = 'https://destination.application.test/invoke'
-const target = Path.id(NodeId('session-route-fresh-process'))
+const targetId = NodeId('session-route-fresh-process')
+const target = Path.id(targetId)
 let sourceAttempts = 0
 let destinationAttempts = 0
 
 const route = invocation.acceptRoute({
   endpoint: { http: destinationEndpoint },
-  via: {
-    kind: 'via',
-    issuer: sourceIssuer,
-    release: {
-      origin: 'destination.application.test',
-      identity: {
-        issuer: 'https://destination.application.test',
-        subject: 'destination.application.test',
-      },
-      revision: `sha256:${'1'.padStart(64, '0')}`,
-      digest: `sha256:${'1'.padStart(64, '0')}`,
-    },
-  },
+  via:
+    witness === 'function'
+      ? {
+          kind: 'via',
+          function: { id: targetId, version: `sha256:${'2'.padStart(64, '0')}` },
+          issuer: sourceIssuer,
+        }
+      : {
+          kind: 'via',
+          issuer: sourceIssuer,
+          release: {
+            origin: 'destination.application.test',
+            identity: {
+              issuer: 'https://destination.application.test',
+              subject: 'destination.application.test',
+            },
+            revision: `sha256:${'1'.padStart(64, '0')}`,
+            digest: `sha256:${'1'.padStart(64, '0')}`,
+          },
+        },
 })
 const carrier = `e30.${Buffer.from(
   JSON.stringify({ exp: Math.floor(Date.now() / 1_000) + 600 }),

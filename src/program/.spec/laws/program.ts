@@ -27,3 +27,14 @@ export const CLI_PROGRAM_FRESH_ROOT = defineLaw({
     },
   ],
 })
+
+export const CLI_PROGRAM_TYPED_FAILURES = defineLaw({
+  id: 'CLI-PROGRAM-TYPED-FAILURES',
+  statement:
+    'A failure the person can act on MUST be refused with its own typed code, message, and hint, exit 1, before any connection or state change; any other failure MUST be reported once by the binary as UNEXPECTED_ERROR, exit 1, with no source or stack. CLI process code constructs no bare Error.',
+  tests: [
+    { file: '__tests__/typed-failures.test.ts', id: 'TEST-CLI-PROGRAM-NO-UNTYPED-ERRORS' },
+    { file: '__tests__/typed-failures.test.ts', id: 'TEST-CLI-PROGRAM-REFUSALS-TYPED' },
+    { file: '__tests__/typed-failures.test.ts', id: 'TEST-CLI-PROGRAM-UNTYPED-FAILURE-OPAQUE' },
+  ],
+})

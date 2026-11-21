@@ -1,6 +1,6 @@
 ---
 name: astrale-cli
-description: Reference for the standalone Astrale CLI (`astrale`) - setup, graph reads and mutations, kernel calls, instances, domains, identities, delegation, journals, views, output, debugging, and local storage.
+description: Reference for the standalone Astrale CLI (`astrale`) - setup, graph reads and mutations, file upload and download, kernel calls, instances, domains, identities, delegation, journals, views, output, debugging, and local storage.
 ---
 
 # Astrale CLI
@@ -22,6 +22,7 @@ astrale status
 astrale whoami
 astrale use <name>
 astrale get <target>
+astrale upload <file> [--media-type <type>]
 astrale download <node> <property> -o <file>
 astrale query [sources...]
 astrale introspect <origin-or-path>
@@ -95,14 +96,14 @@ Evidence: request id, short log excerpt or stack trace.
 | `limitation` | Astrale works as designed but cannot do what the task needs, including capability requests. |
 | `friction` | The task succeeds, but the path is needlessly hard: misleading error, missing doc, extra steps. |
 
-The report prints its reference (`ASTRALE-12`). The reporter sees and changes only its own reports;
+The report prints its reference (`DEV-12`). The reporter sees and changes only its own reports;
 status, priority and comments belong to triage.
 
 ```sh
 astrale issue list --json                              # archived ones only with --all
-astrale issue show ASTRALE-12
-astrale issue edit ASTRALE-12 --body "Updated details" # --title, --body (replaces), or both
-astrale issue archive ASTRALE-12                       # withdraws it; triage keeps its history
+astrale issue show DEV-12
+astrale issue edit DEV-12 --body "Updated details" # --title, --body (replaces), or both
+astrale issue archive DEV-12                       # withdraws it; triage keeps its history
 ```
 
 ## UI Projects
@@ -187,20 +188,26 @@ astrale instance forget staging
 ```
 
 - `-i` and `--url` select the instance a command acts on, never the Admin kernel; Admin operations
-  (`instance list`, …) refuse them. Admin kernel: `--admin <bookmark>` or `--admin-url <url>`.
-  Scripts pass `-i` explicitly. `domain list -i <instance>` lists that instance; without `-i` or
-  `--url`, the active one.
+  (`instance list --admin-only`, …) refuse them. Admin kernel: `--admin <bookmark>` or
+  `--admin-url <url>`. Scripts pass `-i` explicitly. `domain list -i <instance>` lists that
+  instance; without `-i` or `--url`, the active one.
 - `instance delete`: the Admin-managed Instance, plus the matching `<slug>-root` identity and
   unshared key, even with `--keep-bookmark`; retained credentials and cleanup errors are reported.
   `instance forget`: the local bookmark only.
-- `instance list`: Instances you own or were invited into, in every Fleet. `--fleet <path>` keeps
-  one Fleet, with its whole inventory when you administer it. Fleet administrators add
-  `--include-retired`: retired tombstones in the same shape, terminal `state: "deleted"` (excluded
-  by default). `issuer` appears only when Admin retained exact evidence. Unreachable ≠ retired.
-  `--admin-only` omits local bookmarks from the JSON envelope. `--fleet` and `--include-retired`
-  are refused with `--bookmarked`.
-- Without a deployed Admin Domain, `instance list` cannot fetch managed instances (a key-backed
-  identity has no Admin token): `instance list --bookmarked`.
+- `instance list`: your Instances, those of every organization you belong to, and your bookmarks
+  (`SOURCE` `workos` or `bookmark`; a bookmark of a listed Instance merges into its row), read from
+  the sign-in directory without an Admin account; a slug passed to `-i` resolves the same way. It
+  needs an `astrale auth login` sign-in: a key-backed identity sees only its bookmarks.
+- The last listing per sign-in is kept (`~/.astrale/cache/instance-directory/`, no token): a slug
+  resolves from a listing under five minutes old without a request; while the directory is
+  unavailable or rate-limited, the last listing (≤ 7 days) answers with a warning
+  (`directory.status: "stale"`, `listedAt`). With none kept, bookmarks only
+  (`directory.status: "unavailable"`). `--url` and bookmarks always work; sign-out forgets the
+  listing.
+- Operators read the Admin inventory instead (Node ids, state, Fleets, ownership) with
+  `--admin-only`, `--fleet <id>` (one Fleet, its whole inventory when you administer it) or
+  `--include-retired` (retired tombstones, terminal `state: "deleted"`). `issuer` appears only when
+  Admin retained exact evidence; unreachable ≠ retired. They need a deployed Admin Domain.
 - `instance status`: Admin-owned lifecycle; `--bookmarked` probes one bookmark's exact issuer, JWKS
   and TLS trust instead.
 - A bookmark keeps its own TLS trust (`--ca`); `instance use` probes OIDC and JWKS with that CA.
@@ -446,6 +453,62 @@ astrale download @doc content > report.pdf
   redirected stdout (`-o -` forces it); a terminal is refused.
 - Missing and unreadable files are indistinguishable: `BLOB_NOT_FOUND` or `FILE_NOT_FOUND`.
 
+### Files: `upload` and `call --file`
+
+A file goes to the Kernel first, then travels as a receipt. `upload` streams it
+from disk (never held in memory; at most 100 MiB) as the selected identity and
+prints the receipt:
+
+```bash
+astrale upload ./report.pdf                       # receipt, digest, media type, size, expiry
+astrale upload ./scan.bin --media-type image/png --json
+RECEIPT=$(astrale upload ./report.pdf --raw)      # the receipt alone
+```
+
+The media type follows the extension (`text/csv`, `application/pdf`, ...; no
+parameters; `application/octet-stream` when unknown); `--media-type` declares
+another, exactly as a blob property's `mediaTypes` lists it. `--json` prints
+`{ receipt, digest, mediaType, size, expiresAt, file }`. Nothing is attached by
+an upload. The receipt is:
+
+- the value a blob property accepts in `mutate` (`props` key set to the receipt
+  string): the Kernel checks the property's `maxBytes` and `mediaTypes` then;
+- the value of a Domain callable's `file()` field, which `introspect` shows as
+  `{ "type": "string", "x-astrale-value-kind": "file", "x-astrale-file":
+  { "maxBytes"?, "mediaTypes"? } }`; the Kernel checks the receipt and those
+  bounds when it admits the call, and the Domain attaches the file to its records.
+
+A receipt names the identity that uploaded it and serves whoever presents it on
+this instance, like a short-lived share link: your `mutate`, the Domain you pass
+it to, or another user you hand it to. Keep it private. It expires one hour
+after the upload (`expiresAt`) and can be reused until then, so upload just
+before use. A refused or expired receipt (`MUTATION_BLOB_RECEIPT_INVALID`,
+`BLOB_RECEIPT_INVALID`) means upload again; the hint says so.
+
+`call --file <field>=<file>` uploads and calls in one step: each file is
+uploaded right before the call and its receipt is put at `<field>` of the input.
+`<field>` is a top-level key or a JSON Pointer (`/attachments/0`,
+`/attachments/-` appends, `/ast/operations/0/props/<key>`); it combines with
+`key=value`, `--data` and stdin input, must not already hold a value, and is
+repeatable:
+
+```bash
+astrale call /:reports.example:class.Report:import title=Q3 --file file=./q3.csv
+astrale call /:mail.example:function.send -d @mail.json \
+  --file /attachments/-=./a.pdf --file /attachments/-=./b.pdf
+astrale call /:reports.example:class.Report:import title=Q3 --file file=./q3.csv --dry-run  # placeholder, no upload
+```
+
+For a `file()` field, `call --file` refuses a file over its `maxBytes`
+(`FILE_TOO_LARGE`) or of an unlisted media type (`FILE_MEDIA_TYPE_REFUSED`)
+before uploading; a plain string field is filled without checks. A durable
+callable refuses at its start a field whose file breaks those bounds
+(`BLOB_TOO_LARGE`, `BLOB_MEDIA_TYPE_INVALID`).
+
+Local errors, before anything is sent: `FILE_MISSING`, `FILE_UNREADABLE`,
+`FILE_TOO_LARGE` (over 100 MiB), `MEDIA_TYPE_INVALID`, `FILE_INPUT_INVALID` (a
+malformed `--file`), `FILE_INPUT_CONFLICT` (the field already holds a value).
+
 ### `introspect`
 
 Reads the Kernel Schema syscall for one installed Domain. A method or Function Path projects its
@@ -495,6 +558,14 @@ astrale mutate --file mutation.v3.json --dry
 astrale mutate --file mutation.v3.json
 ```
 
+A blob property takes an upload receipt, never a Ref or bytes; `props` keys are
+full Property keys:
+
+```bash
+RECEIPT=$(astrale upload ./report.pdf --raw)
+astrale mutate --data '{"operations":[{"op":"node.create","as":"doc","class":"notes.example:class.Document","props":{"notes.example:class.Document.property.content":"'"$RECEIPT"'"}}]}'
+```
+
 ## Calls
 
 `astrale call` creates one Path-targeted Call; its input/output contract is
@@ -529,6 +600,11 @@ astrale call /:assets.example:class.Asset:render id=123 --output asset.png
 astrale call /:blog.example:class.Author:create -d @author.json
 astrale call /:admin.astrale.ai:class.Instance:list --admin --json
 ```
+
+- Top-level `key=value` values coerce booleans, null, numbers, arrays and objects; `--data` for
+  nested or digits-only string values. `--data -` reads the JSON from stdin, `--data @<file>` from a
+  file: pass secrets only in those forms, never in argv or shell history.
+- `--file <field>=<file>` uploads a file and passes its receipt at that input field (Files).
 
 Admin target:
 

@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance/bookmarks'
-import { fatal, log } from '../../lib/terminal/log'
+import { removeInstance } from '../../lib/instance/bookmarks'
+import { log } from '../../lib/terminal/log'
 
 export default {
   name: 'forget',
@@ -13,14 +13,7 @@ Behavior:
 `,
   arguments: [{ name: 'name', description: 'Bookmark name (slug or name)', required: true }],
   action: async (name: string) => {
-    try {
-      const store = await readInstances()
-      const key = resolveInstanceKey(store, name)
-      if (!key) fatal(new Error(`Instance "${name}" not found`))
-      await removeInstance(key!)
-      log.success(`Forgot bookmark "${name}" (no kernel-side change)`)
-    } catch (e) {
-      fatal(e)
-    }
+    await removeInstance(name)
+    log.success(`Forgot bookmark "${name}" (no kernel-side change)`)
   },
 } satisfies CommandDefinition

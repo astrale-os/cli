@@ -112,6 +112,8 @@ durable callable, with nothing else to wire.
 
 No `query`, `mutate`, `kernel`, `graph`, `dependencies`, `integrations` or `caller` outside a Step:
 the Kernel is reachable only inside one. Any `step` id argument may be `{ id, retry, timeoutMs }`.
+A `file()` field reaches the Workflow as the caller's upload receipt, which a Step reads or attaches
+as the Domain only within the hour after the upload: attach it in the first Steps (`files.md`).
 
 ## Steps
 

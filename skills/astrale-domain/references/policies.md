@@ -27,8 +27,9 @@ An `authorized` call is decided twice:
    admits Root and the owner only; `true` admits every caller. A Role or scope the caller holds
    bypasses nothing: a Role admits only where a Policy checks it.
 2. **Executor ceiling**, only when a non-Root executor acts for another caller: the executor holds
-   `scope_call` toward the Function (Requirements), owns it exactly, or itself satisfies its
-   `policy`. A `true` policy needs no ceiling. A group the executor extends may supply the scope.
+   `scope_call` toward the Function (Requirements; Deprecated `can_use` still counts), owns it
+   exactly, or itself satisfies its `policy` with the same bound inputs. A `true` policy needs no
+   ceiling. A group the executor extends may supply the scope.
 
 The caller never raises the executor's ceiling; the executor's authority never enters the caller's
 rule. An Identity acting for itself delegates nothing: its rule alone decides.
@@ -192,6 +193,46 @@ export const rename = method({
 - `policy.allOf(...)` / `policy.anyOf(...)` take Policy operands only, no `description`: describe
   the operands.
 
+## Bind the Nodes a Policy relates
+
+A Policy may declare named Node inputs, each with its Class; one check binds them all, so one
+Identity of the caller's composition must satisfy the whole Policy with every supplied Node:
+
+```ts
+const sameOrganization = policy({
+  input: { from: Resource, to: Resource },
+  match: ({ subject, input, allOf, exists, edge }) =>
+    exists(({ node }) => {
+      const organization = node(Organization)
+      return allOf(
+        edge(can_access, { holder: subject, resource: input.from }),
+        edge(can_access, { holder: subject, resource: input.to }),
+        edge(belongs_to, { resource: input.from, organization }),
+        edge(belongs_to, { resource: input.to, organization }),
+      )
+    }),
+})
+
+const transfer = func({
+  auth: 'authorized',
+  input: z.object({ debit: path(Resource), credit: path(Resource) }),
+  output: z.boolean(),
+  policy: ({ check, input }) => check(sameOrganization, { from: input.debit, to: input.credit }),
+})
+```
+
+- Two separate checks may each succeed through a different group; one check needs one witness. The
+  same Node may fill several names. Every branch connects every declared input to `subject`.
+- Bindings: a Node Class slot supplies `object`; an Edge Class slot `source` and `target`; an
+  explicit check in a Node Class rule `self` and fixed `ref(...)`s; a callable check also
+  Node-valued Path fields. `check(P, node)` fills `object`.
+- Composition requires matching input names and Classes. At most `schema.limits.policy.inputs` (6)
+  inputs.
+- `Identity.can` accepts `{ policy, input: { from, to } }`, alone or in an ordered batch beside
+  `{ policy, object }`, with exact Node ids or installed Registry Paths.
+- The implicit `policy({ match })` form is deprecated. A circular inference error in an implicit
+  Policy referring back to its own Class: annotate it `: Policy` (`@astrale-os/sdk/schema`).
+
 ## Groups
 
 `subject` is the caller's composition: the caller and every Identity it reaches through
@@ -248,15 +289,16 @@ policy: ({ allOf, check, input, ref }) =>
   instance, including `abstract: true` on a concrete Class. Contract-only Methods of abstract Classes
   and inherited aliases are not Function projections: reference the executable declaration of the
   local or direct-dependency owner.
-- Each normalized branch uses one target mode: a Node Policy references `object`; an Edge Policy
+- In a Policy without `input`, each normalized branch uses one target mode: a Node Policy references `object`; an Edge Policy
   `source`, `target` or both. `subject`, every referenced protected term and every existential
   variable form one connected proof graph. A branch saying only "the caller belongs to a group" is
   not resource-scoped and is refused: check membership instead (Groups).
 - Query admission verifies a candidate Edge's exact Class, then evaluates its Policy on the admitted
   `source` and `target`. An Edge predicate in a Policy is an existence test, never an identity test
   of the candidate Edge.
-- `check(policy, object)` evaluates one Policy on one object; checks on `self` and on an input are
-  independent requirements, not a relation between them. Node equality is `sameNode(...)`.
+- `check(...)` evaluates the Policy once with all its supplied Nodes: bind both Nodes in one check
+  when they need a shared witness; two checks are independent requirements. Node equality is
+  `sameNode(...)`.
 - Every branch of a callable rule or Class rule passes through a `check`: `sameNode` names no
   caller, and a branch naming none admits everyone. `sameNode(self, input.target)` alone or as an
   `anyOf` branch is refused (`PL_CONNECTIVITY`); put it in an `allOf` beside a `check`.

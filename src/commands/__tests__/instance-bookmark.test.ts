@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { runCli } from './fixtures/process'
+import { cliRuns, runCli } from './fixtures/process'
 
 let tmp: string
 
@@ -79,4 +79,32 @@ describe('instance bookmark and active commands', () => {
     expect(active.exitCode).toBe(0)
     expect(JSON.parse(active.stdout)).toEqual({ name: 'stable', ...stable })
   })
+
+  test(
+    'forget drops a bookmark named by its slug, and refuses an unknown one with INSTANCE_NOT_FOUND',
+    async () => {
+      await store('stable', {
+        stable: { url: 'https://stable.example/kernel', slug: 'stable-slug' },
+        other: { url: 'https://other.example/kernel' },
+      })
+      const path = join(tmp, 'instances.json')
+
+      const forgot = await runCli(tmp, ['instance', 'forget', 'stable-slug'])
+      expect(forgot.exitCode, forgot.stderr).toBe(0)
+      const remaining = await readFile(path, 'utf8')
+      expect(Object.keys(JSON.parse(remaining).instances)).toEqual(['other'])
+
+      for (const name of ['missing', 'toString']) {
+        const refused = await runCli(tmp, ['--ci', 'instance', 'forget', name])
+        expect(refused.exitCode).toBe(1)
+        expect(JSON.parse(refused.stderr)).toEqual({
+          error: 'INSTANCE_NOT_FOUND',
+          message: `Instance "${name}" is not bookmarked.`,
+          hint: 'Run: astrale instance list',
+        })
+        expect(await readFile(path, 'utf8')).toBe(remaining)
+      }
+    },
+    cliRuns(3),
+  )
 })

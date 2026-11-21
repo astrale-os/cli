@@ -1,5 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
+import { AstraleError } from '../../errors'
 import { readIdentities } from '../../identity/index'
 import { removeIdpConfig } from '../../lib/idp/provider'
 import { log } from '../../lib/terminal/log'
@@ -9,7 +10,7 @@ export default {
   name: 'remove',
   aliases: ['rm'],
   description: 'Remove an identity provider',
-  arguments: [{ name: 'name', description: 'Local IdP registry name' }],
+  arguments: [{ name: 'name', description: 'Local IdP registry name', required: true }],
   options: [
     { flags: '--force', description: 'Remove even when IdP-backed identities exist' },
     ...RAW_OUTPUT_OPTIONS,
@@ -21,8 +22,10 @@ export default {
       .map(([identityName]) => identityName)
 
     if (dependents.length > 0 && !opts.force) {
-      throw new Error(
-        `IdP "${name}" is used by identities: ${dependents.join(', ')}. Re-run with --force or delete those identities first.`,
+      throw new AstraleError(
+        'IDP_IN_USE',
+        `IdP "${name}" is used by identities: ${dependents.join(', ')}.`,
+        'Re-run with --force or delete those identities first.',
       )
     }
 

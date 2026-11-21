@@ -17,10 +17,19 @@ parse paths, issue raw database queries or hand-write the canonical Query docume
 - One read when one observation answers; relations carried with `with`. Facets for independent
   reads; `steps` (2 to 8) when a read needs an earlier answer.
 - Each read is one Kernel invocation at its own snapshot: a Query of N reads is N round trips,
-  whatever one `query(...)` call suggests. `d.A.union(d.B)` reads two Classes in one read.
+  whatever one `query(...)` call suggests; a Query makes at most 32 reads. `d.A.union(d.B)` reads
+  two Classes in one read.
+- The smallest bound true on every verb. `exists()` and `count({ upTo })` answer without listing;
+  `.ref()` reads identities when the values are not needed.
+- A hierarchy is one `.reachable()` read, never one step per level. Its bound limits the rows
+  answered, not the walk: the Kernel walks the whole closure, so narrow it with `through`.
+- Completeness is `all({ max })` or `query.all`; both raise `TOO_MANY`, never truncate.
 - Project in `output` from the returned rows; never re-read a returned Node.
 - A read past the SDK's bounds or the Kernel's plan limits is refused before it runs, never slowed:
   narrow it or split it into steps.
+- The SDK checks a Query's bounds before sending it; the linter's `QRY-ROWS` warns when constant
+  bounds multiply past 10,000 rows.
+- An absent visible Node is unavailable, never proof that it does not exist.
 
 ## Writes
 

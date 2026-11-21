@@ -7,6 +7,13 @@ export const CLI_IDENTITY_REGISTRY_TRANSITIONS = defineLaw({
   tests: [{ file: '__tests__/registry.test.ts', id: 'TEST-CLI-IDENTITY-REGISTRY-JOURNEY' }],
 })
 
+export const CLI_IDENTITY_REFUSALS_TYPED = defineLaw({
+  id: 'CLI-IDENTITY-REFUSALS-TYPED',
+  statement:
+    'WHEN a command names an identity the registry does not hold, the CLI MUST refuse it with NO_IDENTITY naming that identity; a name the registry already holds, deletion of the default identity, and export of an IdP identity MUST be refused with their own codes. Each refusal exits 1 and leaves the registry unchanged.',
+  tests: [{ file: '__tests__/refusals.test.ts', id: 'TEST-CLI-IDENTITY-REFUSALS-TYPED' }],
+})
+
 export const CLI_IDENTITY_TRANSFER_ADMITTED = defineLaw({
   id: 'CLI-IDENTITY-TRANSFER-ADMITTED',
   statement:

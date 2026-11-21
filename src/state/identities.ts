@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import type { FileLockOptions } from './files'
 
+import { AstraleError } from '../errors'
 import { atomicWrite, withFileLock } from './files'
 import { paths } from './paths'
 
@@ -13,14 +14,14 @@ type IdentityStateErrorCode =
   | 'IDENTITY_STATE_VERSION_UNSUPPORTED'
   | 'IDENTITY_STATE_UNREADABLE'
 
-export class IdentityStateError extends Error {
-  readonly code: IdentityStateErrorCode
+/** The identity registry file cannot be admitted; it stays untouched for the person to repair. */
+export class IdentityStateError extends AstraleError {
+  declare readonly code: IdentityStateErrorCode
   readonly path: string
 
   constructor(code: IdentityStateErrorCode, path: string, message: string, cause?: unknown) {
-    super(message, { cause })
+    super(code, message, undefined, { cause })
     this.name = 'IdentityStateError'
-    this.code = code
     this.path = path
   }
 }

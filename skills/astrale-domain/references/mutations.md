@@ -167,7 +167,7 @@ build: (input: Reassign, d, mutation) => {
 ```
 
 Commit only what the user reviewed; the read used the same `where` and `orderBy`, with
-`.pick().includeWithheld()`:
+`.ref().includeWithheld()`:
 
 ```ts
 build: (input: ArchiveProject, d, mutation) => {

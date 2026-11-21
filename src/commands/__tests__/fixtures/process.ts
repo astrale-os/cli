@@ -2,6 +2,10 @@ import { afterEach, beforeEach } from 'bun:test'
 import { createServer } from 'node:net'
 import { stripVTControlCharacters } from 'node:util'
 
+import type { MachineOpts } from '../../../lib/terminal/output'
+
+import { reportFailure } from '../../../connection/errors'
+
 /** `process.exit` made observable: a command that exits throws this instead. */
 export class ExitError extends Error {
   constructor(readonly code: number | string | null | undefined) {
@@ -80,7 +84,31 @@ export async function human(
   return { ...shown, all: `${shown.lines}\n${shown.warnings}` }
 }
 
+/**
+ * Run a command action in process as the binary runs it: a failure it throws gets the binary's one
+ * report, which ends in `process.exit(1)`. An action that already exited has made its own report.
+ */
+export async function asBinary(action: () => Promise<unknown>, opts: MachineOpts = {}) {
+  try {
+    await action()
+  } catch (error) {
+    if (error instanceof ExitError) throw error
+    await reportFailure(error, opts)
+  }
+}
+
 const ENTRY = new URL('../../../../bin/astrale.ts', import.meta.url).pathname
+
+/**
+ * Time to budget for each `runCli` of a test. Each one starts Bun and loads the whole CLI from
+ * source: about 0.5 s on a laptop, 0.7 to 1.5 s on a CI runner (2026-11-06: a test of five runs took
+ * 3.5 to 4.4 s and once crossed Bun's 5 s default). Size a test's timeout by its runs, and keep a
+ * test to a few runs.
+ */
+export const CLI_RUN_MS = 2_500
+
+/** The timeout of a test that makes `runs` calls to `runCli`. */
+export const cliRuns = (runs: number): number => runs * CLI_RUN_MS
 
 /** Run the real CLI in a separate process against the CLI home `home`. */
 export async function runCli(

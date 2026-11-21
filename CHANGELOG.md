@@ -1,5 +1,115 @@
 # Changelog
 
+## [1.0.0-beta.169](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.168...cli/v1.0.0-beta.169) (2026-11-20)
+
+
+### Bug Fixes
+
+* **commands:** refuse every user-facing failure with a typed error ([#797](https://github.com/astrale-os/cli/issues/797)) ([36da644](https://github.com/astrale-os/cli/commit/36da64442fae71faf65a0ffc31f475eb09927ccc))
+* **commands:** refuse unknown identity and instance names with typed errors ([#795](https://github.com/astrale-os/cli/issues/795)) ([6b16774](https://github.com/astrale-os/cli/commit/6b16774eeea3476e9f893f8a123b1f15543e0f5c))
+* **host:** abandon a lost token request at the credential mint budget ([#799](https://github.com/astrale-os/cli/issues/799)) ([86ec85f](https://github.com/astrale-os/cli/commit/86ec85fc875b5321abf68975ceff787049a64be5))
+
+## [1.0.0-beta.168](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.167...cli/v1.0.0-beta.168) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** update @astrale-os/sdk to 0.6.0-beta.62 ([#792](https://github.com/astrale-os/cli/issues/792)) ([705b2cb](https://github.com/astrale-os/cli/commit/705b2cb3b6b09344f621e25b312e7c4033cf8ccc))
+
+## [1.0.0-beta.167](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.166...cli/v1.0.0-beta.167) (2026-11-06)
+
+
+### Features
+
+* **commands:** keep the last instance listing, so the directory never blocks a slug ([#790](https://github.com/astrale-os/cli/issues/790)) ([7d79f23](https://github.com/astrale-os/cli/commit/7d79f2343ffa394a94d5e95658853b3ec3bd47e0))
+
+## [1.0.0-beta.166](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.165...cli/v1.0.0-beta.166) (2026-11-06)
+
+
+### Features
+
+* **commands:** list your instances from the sign-in directory, without Admin ([#782](https://github.com/astrale-os/cli/issues/782)) ([cd9451b](https://github.com/astrale-os/cli/commit/cd9451be5f9b3f7480c0c25e8ec68426660735c1))
+
+## [1.0.0-beta.165](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.164...cli/v1.0.0-beta.165) (2026-11-05)
+
+
+### Bug Fixes
+
+* **commands:** describe one-hour receipts and how durable runs use their files ([#780](https://github.com/astrale-os/cli/issues/780)) ([adc5c42](https://github.com/astrale-os/cli/commit/adc5c42dc3f15a0f408eabc3562da452b6061dfd))
+
+## [1.0.0-beta.164](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.163...cli/v1.0.0-beta.164) (2026-11-05)
+
+
+### Bug Fixes
+
+* **commands:** check a call --file field against the installed bundle before uploading ([#774](https://github.com/astrale-os/cli/issues/774)) ([ffa4893](https://github.com/astrale-os/cli/commit/ffa4893c56ca6e2a516fca01c81529749bf8d251))
+
+## [1.0.0-beta.163](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.162...cli/v1.0.0-beta.163) (2026-11-04)
+
+
+### Bug Fixes
+
+* **commands:** describe upload receipts as usable by whoever presents them ([#777](https://github.com/astrale-os/cli/issues/777)) ([dfab432](https://github.com/astrale-os/cli/commit/dfab432230cf2d14918fd73d2227df4eb1e9e7a8))
+
+## [1.0.0-beta.162](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.161...cli/v1.0.0-beta.162) (2026-11-04)
+
+
+### Features
+
+* **deps:** move Studio to ACP SDK 2 with claude-agent-acp 0.99.1 and codex-acp 2.5.0 ([#767](https://github.com/astrale-os/cli/issues/767)) ([80dc507](https://github.com/astrale-os/cli/commit/80dc5070ce331d72ebc725caede08bb21a3db613))
+* **studio:** show the read-only Kernel schema on the canvas ([#770](https://github.com/astrale-os/cli/issues/770)) ([7866277](https://github.com/astrale-os/cli/commit/7866277037c59d2a217e5cfd5e042e2506989357))
+
+
+### Bug Fixes
+
+* **deps:** move to SDK 0.6.0-beta.56 for hono 4.13.14 ([#771](https://github.com/astrale-os/cli/issues/771)) ([fbf9aff](https://github.com/astrale-os/cli/commit/fbf9aff6773d236266059639436daf9a80824739))
+* **deps:** update ip-address to 10.7.5 for its moderate advisories ([#772](https://github.com/astrale-os/cli/issues/772)) ([0a62b02](https://github.com/astrale-os/cli/commit/0a62b02153524811c17df4a024a94779b1528261))
+
+## [1.0.0-beta.161](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.160...cli/v1.0.0-beta.161) (2026-11-03)
+
+
+### Bug Fixes
+
+* **deps:** move claude-agent-acp to 0.93.0 for zod 4.6.7 ([#765](https://github.com/astrale-os/cli/issues/765)) ([cd46916](https://github.com/astrale-os/cli/commit/cd46916c00fbe382a926e4233ade2dc0858ba8cc))
+* **deps:** move to SDK 0.6.0-beta.53 and zod 4.6.7 ([#762](https://github.com/astrale-os/cli/issues/762)) ([314e06e](https://github.com/astrale-os/cli/commit/314e06ee553e0bff5889d57ca853ffed48138929))
+* **deps:** move to Shell 0.7.0-beta.12 for zod 4.6.7 ([#764](https://github.com/astrale-os/cli/issues/764)) ([2f32305](https://github.com/astrale-os/cli/commit/2f32305c0f730a12827fba77a46e82a155deafb7))
+
+## [1.0.0-beta.160](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.159...cli/v1.0.0-beta.160) (2026-11-03)
+
+
+### Features
+
+* **commands:** upload files and pass their receipts with call --file ([#753](https://github.com/astrale-os/cli/issues/753)) ([8d99e6c](https://github.com/astrale-os/cli/commit/8d99e6c57e2bb9f8b7a50dfdea246ea75dd23af8))
+
+
+### Bug Fixes
+
+* **deps:** move to adapter-cloudflare 0.5.0-beta.207 (Wrangler 4.153) ([#759](https://github.com/astrale-os/cli/issues/759)) ([f5cb50f](https://github.com/astrale-os/cli/commit/f5cb50fe083683804a2a75d77e3623ad9c84e1a3))
+
+## [1.0.0-beta.159](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.158...cli/v1.0.0-beta.159) (2026-11-02)
+
+
+### Bug Fixes
+
+* **studio:** rebuild Domain icons from an SVG allowlist ([#751](https://github.com/astrale-os/cli/issues/751)) ([5b3c521](https://github.com/astrale-os/cli/commit/5b3c52157c65b0c72e64f02a1633cdcf5c9d52a1))
+
+## [1.0.0-beta.158](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.157...cli/v1.0.0-beta.158) (2026-11-02)
+
+
+### Bug Fixes
+
+* **lib:** install from the version release a channel pointer names ([#742](https://github.com/astrale-os/cli/issues/742)) ([55f3da1](https://github.com/astrale-os/cli/commit/55f3da15a92afca2576a2a5cc13e33f37c665038))
+
+## [1.0.0-beta.157](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.156...cli/v1.0.0-beta.157) (2026-11-02)
+
+
+* cut the first release with channel pointers ([#749](https://github.com/astrale-os/cli/issues/749)) ([7655d6c](https://github.com/astrale-os/cli/commit/7655d6c31683435414c796d0afa0d3db7292d7dd))
+
+## [1.0.0-beta.156](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.155...cli/v1.0.0-beta.156) (2026-11-02)
+
+
+* cut the first immutable CLI release ([#746](https://github.com/astrale-os/cli/issues/746)) ([906a916](https://github.com/astrale-os/cli/commit/906a916d2af45e49adc64a9f1d3deea98c9313d7))
+
 ## [1.0.0-beta.155](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.154...cli/v1.0.0-beta.155) (2026-10-27)
 
 

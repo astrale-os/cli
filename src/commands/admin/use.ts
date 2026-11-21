@@ -1,5 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
+import { AstraleError } from '../../errors'
 import {
   AdminTargetConfigSchema,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
@@ -7,7 +8,8 @@ import {
 } from '../../lib/admin/target'
 import { readConfig, writeConfig } from '../../lib/config'
 import { resolveInstance } from '../../lib/instance/bookmarks'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
+import { validateUrl } from '../../lib/validation'
 
 type AdminUseOpts = {
   url?: string
@@ -48,53 +50,61 @@ Examples:
     },
   ],
   action: async (bookmark: string | undefined, opts: AdminUseOpts) => {
-    try {
-      if (bookmark && opts.url) {
-        fatal('Choose either a bookmark argument or --url, not both')
-      }
+    if (bookmark && opts.url) {
+      throw new AstraleError(
+        'INVALID_FLAG',
+        'Choose either a bookmark argument or --url, not both.',
+      )
+    }
 
-      const config = await readConfig()
-      if (opts.url) {
-        if (opts.domainIssuer === undefined) {
-          fatal('Direct Admin targets require --domain-issuer <url> for token exchange.')
-        }
-        const name = opts.name ?? DEFAULT_ADMIN_TARGET_NAME
-        await writeConfig({
-          ...config,
-          admin: AdminTargetConfigSchema.parse({
-            name,
-            url: opts.url,
-            kernelIssuer: opts.kernelIssuer ?? opts.url,
-            domainIssuer: opts.domainIssuer,
-          }),
-        })
-        log.success(`Admin target: ${name} (${opts.url})`)
-        return
-      }
-
-      if (!bookmark) {
-        fatal(
-          'Missing admin target. Use: astrale admin use <bookmark> or astrale admin use --url <url>',
+    const config = await readConfig()
+    if (opts.url) {
+      if (opts.domainIssuer === undefined) {
+        throw new AstraleError(
+          'MISSING_ARG',
+          'Direct Admin targets require --domain-issuer <url> for token exchange.',
         )
       }
-
-      const resolved = await resolveInstance(bookmark)
-      if (resolved.domainIssuer === undefined) {
-        fatal(
-          `Admin bookmark "${resolved.name}" has no Domain issuer. Re-bookmark it with --domain-issuer <url>.`,
-        )
+      for (const url of [opts.url, opts.kernelIssuer, opts.domainIssuer]) {
+        if (url !== undefined) validateUrl(url)
       }
+      const name = opts.name ?? DEFAULT_ADMIN_TARGET_NAME
       await writeConfig({
         ...config,
         admin: AdminTargetConfigSchema.parse({
-          instance: resolved.name,
-          domainIssuer:
-            opts.domainIssuer ?? config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+          name,
+          url: opts.url,
+          kernelIssuer: opts.kernelIssuer ?? opts.url,
+          domainIssuer: opts.domainIssuer,
         }),
       })
-      log.success(`Admin target: ${resolved.name} (${resolved.url})`)
-    } catch (e) {
-      fatal(e)
+      log.success(`Admin target: ${name} (${opts.url})`)
+      return
     }
+
+    if (!bookmark) {
+      throw new AstraleError(
+        'MISSING_ARG',
+        'Missing admin target.',
+        'Use: astrale admin use <bookmark> or astrale admin use --url <url>',
+      )
+    }
+
+    const resolved = await resolveInstance(bookmark)
+    if (resolved.domainIssuer === undefined) {
+      throw new AstraleError(
+        'ADMIN_DOMAIN_ISSUER_MISSING',
+        `Admin bookmark "${resolved.name}" has no Domain issuer.`,
+        'Re-bookmark it with --domain-issuer <url>.',
+      )
+    }
+    await writeConfig({
+      ...config,
+      admin: AdminTargetConfigSchema.parse({
+        instance: resolved.name,
+        domainIssuer: opts.domainIssuer ?? config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+      }),
+    })
+    log.success(`Admin target: ${resolved.name} (${resolved.url})`)
   },
 } satisfies CommandDefinition

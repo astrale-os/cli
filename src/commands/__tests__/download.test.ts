@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import * as connection from '../../connection'
 import { captureProcess, ExitError } from './fixtures/process'
 
 const io = captureProcess()
@@ -51,6 +52,13 @@ const runKernelCommandMock = mock(
     }
   },
 )
+
+// Bun patches an already-loaded module in place, and the patch reaches ./self through the
+// re-export: restore the real exports so later suites (connection/__tests__/self) see them.
+const realConnection = { ...connection }
+afterAll(() => {
+  mock.module('../../connection', () => realConnection)
+})
 
 mock.module('../../connection', () => ({
   expandSelfInPath: expandSelfInPathMock,

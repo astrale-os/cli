@@ -25,7 +25,7 @@ import { targetFlags } from '../../connection/target'
 import { AstraleError } from '../../errors'
 import { shellCommand } from '../../lib/shell-command'
 import { canPrompt } from '../../lib/terminal/interactive'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import { output } from '../../lib/terminal/output'
 import { dangerPanel } from '../../lib/terminal/panel'
 import { confirmWithInput } from '../../lib/terminal/prompt'
@@ -131,16 +131,11 @@ Examples:
   ],
   action: async (origins: [string, ...string[]], opts: UninstallOpts) => {
     const selected = canonicalOrigins(origins)
-    let operation: OperationId
-    try {
-      operation =
-        opts.operation === undefined
-          ? createDomainOperationId('uninstall')
-          : acceptDomainOperationId(opts.operation, 'uninstall')
-      await confirmUninstall(selected, opts)
-    } catch (error) {
-      fatal(error, opts)
-    }
+    const operation: OperationId =
+      opts.operation === undefined
+        ? createDomainOperationId('uninstall')
+        : acceptDomainOperationId(opts.operation, 'uninstall')
+    await confirmUninstall(selected, opts)
 
     const command = uninstallKernelCommand(selected, opts, operation)
     const failure = await withClientSession(

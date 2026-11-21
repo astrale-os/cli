@@ -13,6 +13,7 @@ import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import { resolveAdminFleet } from '../selection'
 import {
   AdminInstanceNotFoundError,
+  instanceAmbiguous,
   type InvitationInfo,
   type InstanceInfo,
   type InstanceRootToken,
@@ -137,7 +138,7 @@ export async function connectAdminInstances(
       const candidates = nodes
         .map(instanceFromNode)
         .filter((instance) => instance.state !== 'deleted')
-      if (candidates.length > 1) throw new Error('Instance slug is ambiguous.')
+      if (candidates.length > 1) throw instanceAmbiguous(identifier)
       found = candidates[0]
     }
     if (found === undefined) throw new AdminInstanceNotFoundError(identifier)

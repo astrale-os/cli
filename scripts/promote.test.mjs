@@ -21,7 +21,14 @@ const release = 'cli/v1.0.0-beta.133'
 const digest = (value) => createHash('sha256').update(value).digest('hex')
 function fixture(
   t,
-  { corrupt = false, qualified = true, apiFailure = false, existing = false, retired = false } = {},
+  {
+    corrupt = false,
+    qualified = true,
+    apiFailure = false,
+    existing = false,
+    retired = false,
+    mutable = false,
+  } = {},
 ) {
   t.mock.method(console, 'log', () => {})
   const directory = mkdtempSync(join(tmpdir(), 'cli-promotion-test-'))
@@ -57,21 +64,33 @@ function fixture(
   }))
   if (corrupt) writeFileSync(join(directory, 'astrale-linux-x64.tar.gz'), 'tampered')
   const writes = []
-  const uploaded = new Map()
-  let latest = existing ? { body: 'Promoted cli/v1.0.0-beta.134', prerelease: true } : undefined
-  let latestCommit = existing ? 'b'.repeat(40) : undefined
+  const encode = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`).toString('base64')
+  let pointer = existing
+    ? { sha: 'blob-1', content: encode({ version: '1.0.0-beta.134', commit: 'b'.repeat(40) }) }
+    : undefined
   const json = (value) => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
   const missing = () => ({ status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' })
-  const gh = (args) => {
+  const gh = (args, input) => {
     if (args[0] === 'api') {
       const path = args[1]
       if (path === '--method') {
         writes.push(args)
-        latestCommit = args.find((arg) => arg.startsWith('sha=')).slice(4)
+        const body = JSON.parse(input)
+        assert.equal(args[2], 'PUT')
+        assert.ok(args[3].endsWith('/contents/latest/manifest.json'))
+        assert.equal(body.branch, 'release-channels')
+        assert.equal(body.sha, pointer?.sha)
+        pointer = { sha: `blob-${writes.length + 1}`, content: body.content }
         return json({})
       }
       if (path.endsWith(`/releases/tags/${release}`))
-        return json({ tag_name: release, draft: false, prerelease: true, assets })
+        return json({
+          tag_name: release,
+          draft: false,
+          prerelease: true,
+          immutable: !mutable,
+          assets,
+        })
       if (path.endsWith(`/git/ref/tags/${release}`))
         return json({ object: { type: 'commit', sha: commit } })
       if (path.includes('/actions/runs?'))
@@ -93,19 +112,18 @@ function fixture(
               conclusion: 'success',
               steps: [
                 {
-                  name: 'Qualify the published channel binary',
+                  name: 'Qualify the published version binary',
                   conclusion: qualified ? 'success' : 'skipped',
                 },
               ],
             },
           ],
         })
-      if (path.endsWith('/releases/tags/latest')) {
+      if (path.endsWith('/git/ref/heads/release-channels')) return json({ object: { sha: 'tip' } })
+      if (path.endsWith('/contents/latest/manifest.json?ref=release-channels')) {
         if (apiFailure) return { status: 1, stdout: '', stderr: 'HTTP 403' }
-        return latest ? json(latest) : missing()
+        return pointer ? json(pointer) : missing()
       }
-      if (path.endsWith('/git/ref/tags/latest'))
-        return latestCommit ? json({ object: { type: 'commit', sha: latestCommit } }) : missing()
     }
     if (args[0] === 'release') {
       if (args[1] === 'download') {
@@ -114,25 +132,12 @@ function fixture(
           copyFileSync(join(directory, name), join(target, name))
         return json({})
       }
-      if (['create', 'edit'].includes(args[1])) {
-        writes.push(args)
-        latest = { body: args[args.indexOf('--notes') + 1], prerelease: true }
-        return json({})
-      }
-      if (args[1] === 'view')
-        return json({ assets: [...uploaded.values()].map(({ bytes: _bytes, ...asset }) => asset) })
-      if (args[1] === 'upload') {
-        writes.push(args)
-        const path = args[3]
-        const name = path.split('/').at(-1)
-        const bytes = readFileSync(path)
-        uploaded.set(name, { name, size: bytes.length, digest: `sha256:${digest(bytes)}`, bytes })
-        return json({})
-      }
     }
     throw new Error(`Unexpected gh operation: ${args.join(' ')}`)
   }
-  return { gh, writes, uploaded, assets }
+  const latest = () =>
+    pointer && JSON.parse(Buffer.from(pointer.content, 'base64').toString('utf8'))
+  return { gh, writes, latest }
 }
 
 test('preview qualifies reusable workflow jobs and exact downloads without writes', async (t) => {
@@ -143,24 +148,30 @@ test('preview qualifies reusable workflow jobs and exact downloads without write
   assert.equal(state.writes.length, 0)
 })
 
-test('promotion copies archives unchanged, changes only manifest channel, and reruns without writes', async (t) => {
+test('promotion only points latest at the immutable release, and reruns without writes', async (t) => {
   const state = fixture(t)
   await promote(release, { gh: state.gh, apply: true })
-  assert.equal(state.uploaded.size, 6)
-  for (const source of state.assets.filter(({ name }) => name !== 'manifest.json')) {
-    assert.equal(state.uploaded.get(source.name).digest, source.digest)
-  }
-  assert.equal(JSON.parse(state.uploaded.get('manifest.json').bytes).channel, 'latest')
-  const writes = state.writes.length
+  assert.equal(state.writes.length, 1)
+  assert.deepEqual(
+    { ...state.latest(), assets: undefined },
+    {
+      version: '1.0.0-beta.133',
+      binaryVersion: '1.0.0-beta.133',
+      channel: 'latest',
+      repo: 'astrale-os/cli',
+      assets: undefined,
+      commit,
+    },
+  )
   await promote(release, { gh: state.gh, apply: true })
-  assert.equal(state.writes.length, writes)
-  assert.ok(state.writes.every((args) => !args.includes('beta')))
+  assert.equal(state.writes.length, 1)
 })
 
 for (const [name, options, error] of [
   ['retired two-binary release', { retired: true }, /schemaVersion is invalid/],
   ['corrupt archive', { corrupt: true }, /differs from immutable/],
   ['skipped qualification', { qualified: false }, /No successful/],
+  ['mutable release', { mutable: true }, /must be immutable/],
   ['GitHub API failure', { apiFailure: true }, /403/],
 ]) {
   test(`rejects ${name} before any mutation`, async (t) => {
@@ -192,7 +203,7 @@ test('workflow separates unprivileged preview from protected, serialized publica
 test('explicit rollback can move latest back to a previously qualified release', async (t) => {
   const state = fixture(t, { existing: true })
   const report = await promote(release, { gh: state.gh, apply: true })
-  assert.equal(report.previous, 'Promoted cli/v1.0.0-beta.134')
-  assert.ok(state.writes.some((args) => args.includes('PATCH') && args.includes(`sha=${commit}`)))
-  assert.equal(JSON.parse(state.uploaded.get('manifest.json').bytes).version, '1.0.0-beta.133')
+  assert.equal(report.previous, '1.0.0-beta.134')
+  assert.equal(state.latest().version, '1.0.0-beta.133')
+  assert.equal(state.latest().commit, commit)
 })

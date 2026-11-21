@@ -5,7 +5,7 @@
  * ACP over its stdio. They differ in how long they wait and what they report, but
  * not in how the process is started, watched, spoken to and put down: that is here.
  */
-import * as acp from '@agentclientprotocol/sdk'
+import * as acp from '@agentclientprotocol/sdk/unstable'
 import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 

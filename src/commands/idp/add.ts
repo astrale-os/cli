@@ -1,16 +1,17 @@
-import { readFile } from 'node:fs/promises'
-
 import type { CommandDefinition } from '../../program/index'
 
+import { AstraleError } from '../../errors'
 import {
   fetchOidcMetadata,
   fetchWorkosApplication,
   normalizeIssuer,
   OidcMetadataSchema,
   type IdpClientConfig,
+  type OidcMetadata,
   upsertIdpConfig,
   workosAuthKitMetadata,
 } from '../../lib/idp/provider'
+import { readInputFile } from '../../lib/input-file'
 import { log, withSpinner } from '../../lib/terminal/log'
 import { isMachine, outputForMachine, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 import { validateName, validateUrl } from '../../lib/validation'
@@ -34,7 +35,7 @@ type AddOpts = {
 export default {
   name: 'add',
   description: 'Add or update an OpenID Connect identity provider',
-  arguments: [{ name: 'name', description: 'Local IdP registry name' }],
+  arguments: [{ name: 'name', description: 'Local IdP registry name', required: true }],
   options: [
     { flags: '--issuer <url>', description: 'OIDC issuer URL' },
     { flags: '--metadata <path>', description: 'Read discovery metadata from a local JSON file' },
@@ -76,13 +77,16 @@ Security:
     validateName(name, 'IdP')
     const spin = !isMachine(opts)
     if (!opts.issuer && !opts.metadata && !opts.workosAuthkit) {
-      throw new Error('Either --issuer, --metadata, or --workos-authkit is required')
+      throw new AstraleError(
+        'MISSING_ARG',
+        'Either --issuer, --metadata, or --workos-authkit is required.',
+      )
     }
 
     let metadata = opts.workosAuthkit
       ? workosAuthKitMetadata(opts.workosApiHostname, opts.clientId)
       : opts.metadata
-        ? OidcMetadataSchema.parse(JSON.parse(await readFile(opts.metadata, 'utf-8')))
+        ? metadataFile(await readInputFile(opts.metadata, `--metadata ${opts.metadata}`))
         : await withSpinner(`Fetching discovery metadata from ${opts.issuer}`, spin, () =>
             fetchOidcMetadata(opts.issuer!),
           )
@@ -90,7 +94,8 @@ Security:
     if (opts.issuer) {
       validateUrl(opts.issuer)
       if (normalizeIssuer(metadata.issuer) !== normalizeIssuer(opts.issuer)) {
-        throw new Error(
+        throw new AstraleError(
+          'IDP_ISSUER_MISMATCH',
           `OIDC issuer mismatch: metadata has ${metadata.issuer}, expected ${opts.issuer}`,
         )
       }
@@ -142,4 +147,18 @@ Security:
 
 function isString(value: unknown): value is string {
   return typeof value === 'string'
+}
+
+/** The discovery metadata a `--metadata` file holds. */
+function metadataFile(text: string): OidcMetadata {
+  try {
+    return OidcMetadataSchema.parse(JSON.parse(text))
+  } catch (cause) {
+    throw new AstraleError(
+      'INVALID_INPUT',
+      '--metadata must hold an OIDC discovery document as JSON.',
+      undefined,
+      { cause },
+    )
+  }
 }

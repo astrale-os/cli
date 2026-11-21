@@ -70,7 +70,10 @@ export function renderCommanderError(
     )
   }
 
-  if (error.code === 'commander.conflictingOption') {
+  if (
+    error.code === 'commander.conflictingOption' ||
+    error.code === 'commander.missingMandatoryOptionValue'
+  ) {
     const usage = usageFor(matched.path, matched.command)
     return maybeMachine([error.message, '', 'Usage:', `  astrale ${usage}`].join('\n'), machine)
   }

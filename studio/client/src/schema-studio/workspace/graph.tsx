@@ -30,7 +30,7 @@ import {
 
 import { api, qk } from '@/lib/api'
 import { hasAnyUnsentDraft } from '@/lib/comments'
-import { useCatalog, useWorkspace } from '@/lib/hooks'
+import { useCatalog, useSchemaDomains } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { decodeFlowNodeId } from '@/lib/targets'
 import { cn } from '@/lib/utils'
@@ -146,7 +146,7 @@ export function WorkspaceSchemaGraph({
   const panZoomReady = useStore((state) => state.panZoom !== null)
   const [fitRequest, setFitRequest] = useState(0)
   const { data: catalog } = useCatalog()
-  const { data: workspace } = useWorkspace()
+  const { data: workspace } = useSchemaDomains()
   const selected = useUI((state) => state.selectedClass)
   const selectionDomainId = useUI((state) => state.selectionDomainId)
   // Every real selection carries its owner. The first drawn domain is only a harmless

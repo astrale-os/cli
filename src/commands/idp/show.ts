@@ -6,7 +6,7 @@ import { output, RAW_OUTPUT_OPTIONS } from '../../lib/terminal/output'
 export default {
   name: 'show',
   description: 'Show an identity provider configuration',
-  arguments: [{ name: 'name', description: 'Local IdP registry name' }],
+  arguments: [{ name: 'name', description: 'Local IdP registry name', required: true }],
   options: [
     { flags: '--format <type>', description: 'Output format', choices: ['yaml', 'json'] },
     ...RAW_OUTPUT_OPTIONS,

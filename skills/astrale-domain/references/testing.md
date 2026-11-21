@@ -7,8 +7,8 @@ Read for Domain tests, fixtures, demos and live acceptance.
 | Behavior | Smallest real boundary |
 | --- | --- |
 | Projection, Rules | Ordinary function calls |
-| A Query | `runQuery(client, domain, query, input)` with a narrow `QueryClient` double: assert the exact documents, page size and cursor. `checkQuery(query, sampleInput, { domain })` (`@astrale-os/sdk/testing`) checks its bounds and relation scopes without a Kernel |
-| A Mutation | `executeMutation(client, domain, mutation, input)` with a narrow `MutationClient` double: assert the exact atomic document |
+| A Query | `checkQuery(query, sampleInput, { domain })` (`@astrale-os/sdk/testing`) checks bounds and declared crossings without a Kernel, on an input that builds every optional condition; it checks the first step only. `output` as an ordinary function. What it answers: `runQuery(client, domain, query, input)` (`@astrale-os/sdk/query`) through a real Client, once per authority whose answer differs |
+| A Mutation | `executeMutation(client, domain, mutation, input)` (`@astrale-os/sdk/mutation`) with a narrow `{ mutate(ast) }` double: it realizes the definition, guards, `output` and `reject`; assert `MutationAST.encode(ast)` |
 | Action orchestration | The Action definition's `run` with an admitted, typed context (an Action has no Step API) |
 | Durable Workflow step order and values | `createTestWorkflowEngine` (`workflows.md`, Test) |
 | Inline Workflow step order and values | An inline Step implementation |
@@ -26,8 +26,8 @@ Read for Domain tests, fixtures, demos and live acceptance.
 - A constructed stale-state precondition proves authoring only. A refused concurrent edit without
   partial writes needs a Kernel transaction: for read → Rule → Mutation, change the guarded fact
   between the read and the commit.
-- A "complete collection" claim needs a fixture that crosses a page boundary, and a read past its
-  bound must raise `TOO_MANY` without publishing partial output.
+- A "complete collection" claim needs a fixture that crosses a page boundary and one past `max`:
+  `all({ max })` or `query.all` must raise `TOO_MANY` without publishing partial output.
 - An inline Workflow run in memory proves structure and step order; never durable replay,
   exactly-once effects, compensation or crash recovery. `createTestWorkflowEngine` proves replay
   against the code, not crash recovery on a Host.

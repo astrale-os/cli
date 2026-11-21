@@ -180,11 +180,12 @@ not present the existing gateway card for Codex yet; Codex uses its own login.
 
 ### View previews
 
-Studio opens the canonical `/:origin:view.slug` through `astrale view`. The CLI
-resolves the installed, verified View placement and owns the loopback Shell
-session, identity, delegation, and cleanup. Target-bound Views query the active
-instance first so Studio can pass an exact `@id`; Studio does not inject a local
-URL or override the View handshake.
+Studio opens a View by its canonical ViewPath, `/:<origin>:view.<name>`, built
+with the Kernel's Path grammar, through `astrale view` as the instance owner (see
+[View identities](#view-identities)). The CLI resolves the installed, verified
+View placement and owns the loopback Shell session, identity, delegation, and
+cleanup. A View that shows one node routes to it itself; Studio does not inject a
+local URL or override the View handshake.
 
 ## What it does
 
@@ -208,6 +209,22 @@ pills — wired by a dashed edge to every Class its Node-path input or output
 accepts. Clicking it opens its contract; the Functions overview (⌘K) lists them
 grouped by those Classes, the Class detail names the ones that work on it, and
 Process links each callable back to its node on the canvas.
+
+### The Kernel
+
+The Domains rail starts with **`kernel.astrale.ai`**, marked by a grey lock. Its eye
+draws the Kernel on the canvas like any workspace Domain: its Classes, their
+relationships and inheritance, and its Functions; a click opens a Class, Policy or
+Function in the detail panel. Studio reads the Kernel Schema that a workspace
+Domain's installed `@astrale-os/sdk` ships (`KernelSchema`), through the same
+extractor island as an authored Schema, so it is the exact Kernel that Domain is
+built against. The implementation bases every Class carries (`Node`, `Edge`,
+`Named`, `Timestamped`, `Descriptable`) stay off the canvas but remain in the rail.
+
+Nothing in the Kernel changes from Studio: it takes no comments, the agent never
+works on it, and Core, Tests and Process keep to the workspace. Ask (`A`) still
+answers questions about a Kernel element. Its canvas layout and hidden elements
+are kept on this machine, under `$ASTRALE_HOME/studio/kernel/`.
 
 ### New domains
 

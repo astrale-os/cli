@@ -2,6 +2,7 @@ import type { InstanceOwnership } from '../lib/admin/ownership'
 import type { ViewSessionRecord } from '../lib/view/session'
 import type { ViewOpts } from './view'
 
+import { InternalError } from '../errors'
 import { getActive, resetInstancesMemo } from '../lib/instance/bookmarks'
 import { resolveViewOwnership } from '../lib/view/owner'
 import { closeSession, listSessions } from '../lib/view/session'
@@ -90,7 +91,7 @@ export async function openStudioViewSession(
     serveRuntime: input.serveRuntime,
   }
   const { view } = await resolveSession(input.viewPath, options)
-  if (!view) throw new Error('View resolution completed without a selected view')
+  if (!view) throw new InternalError('View resolution completed without a selected view')
   return startViewSession(view, options)
 }
 

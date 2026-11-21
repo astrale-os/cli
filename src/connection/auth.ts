@@ -8,14 +8,11 @@ import {
   accessTokenForAudience,
   classifyRefreshFailure,
   IdpAudienceMismatchError,
-  readIdpSession,
-} from '../lib/idp/provider'
-import {
-  ensureFreshSession,
-  IdpSessionCopiedError,
   IdpSessionMissingError,
   IdpSessionNoRefreshTokenError,
-} from '../lib/idp/session'
+  readIdpSession,
+} from '../lib/idp/provider'
+import { ensureFreshSession, IdpSessionCopiedError } from '../lib/idp/session'
 import { KEYS_DIR } from '../state/index'
 
 /** The stable (issuer, subject) of the selected source identity, as the exchange cache keys it. */
@@ -200,7 +197,7 @@ async function resolveIdpAccessToken(
     resolved = await ensureFreshSession(identityName, { audience, minimumRemainingSeconds })
   } catch (e) {
     if (e instanceof IdpSessionMissingError) {
-      throw new Error(
+      throw new AuthError(
         `No cached IdP session for "${identityName}". Run: astrale auth login --idp ${identity.idp ?? '<idp>'}`,
       )
     }
@@ -219,7 +216,7 @@ async function resolveIdpAccessToken(
 
   const token = accessTokenForAudience(resolved, audience)
   if (!token) {
-    throw new Error(
+    throw new AuthError(
       `IdP token for "${identityName}" was not minted for target audience ${audience}. ` +
         `Run: astrale auth login --name ${identityName} --idp ${identity.idp ?? '<idp>'} --audience ${audience}`,
     )
@@ -297,7 +294,7 @@ function refreshFailureError(identityName: string, identity: Identity, cause: un
         `The IdP refused to scope "${identityName}" to this instance's organization (${reason}).`,
       )
     default:
-      return new Error(
+      return new AuthError(
         `IdP session for "${identityName}" could not be refreshed (${reason}). ` +
           `The cached session has expired or ended — run: astrale auth login --name ${identityName}${idpFlag}`,
       )

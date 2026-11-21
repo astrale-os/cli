@@ -27,15 +27,17 @@ Load only the references the task needs.
 | Deploy, install, publish or yank a version, roll back, rotate a deployment's secret, own a development instance | `references/deployment.md` |
 | Schema: vocabulary, Properties, Class/Edge choices, inheritance, keys, Edge lifetimes, Methods; always for Schema work | `references/schema.md` |
 | An Action handler; Action vs Workflow vs no callable; calling another callable or Domain | `references/actions.md` |
-| Read the graph: a Query, relations, pages, counts, limits | `references/queries.md` |
+| Read the graph: a Query, relations, `.reachable()`, pages, counts, limits, V6 → v7 | `references/queries.md` |
 | Write the graph: a Mutation, guards, refusals, transitions | `references/mutations.md` |
 | Whose authority a call uses (`executor`/`caller`, `.self`/`.caller`), Identities, composition | `references/authority.md` |
+| Files: blob Properties, `file()` input fields, upload receipts, `astrale call --file` | `references/files.md` |
 | Several effects, a wait, a signal; write, test, call, deploy or migrate a Workflow | `references/workflows.md` |
 | An external API, an Integration/Provider, webhooks, side-effect and retry design | `references/integrations.md` |
 | Reuse or depend on another Domain instead of modelling its vocabulary | `references/domains.md` |
 | People who sign in: link a business record to their Shell account, create or invite accounts, declare Domain Roles and Teams, grant Roles, instance administrators | `references/users.md` |
 | Secure a callable, View, client call or public endpoint; auth modes, Policies, Class rules, scopes | `references/policies.md` |
 | Which Kernel Role an operation needs; which Roles a Domain declares or a person holds; bundles, granting | `references/roles.md` |
+| The Domain's icon: sizes, artboards, layers, dark variant, accepted SVG | `references/icons.md` |
 | Views, mounted UI, View access and resolution (and `astrale-frontend-design` for layout, interaction, copy) | `references/views.md` |
 | Schema revision, data transition, backfill, breaking change (Root maintenance session), install follow-up, refused data, uninstall with data | `references/migration.md` |
 | Round trips, Query shape and cost, call-pattern latency | `references/performance.md` |

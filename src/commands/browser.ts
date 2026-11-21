@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 
 import type { CommandDefinition } from '../program/index'
 
+import { AgentBrowserMissingError, AstraleError } from '../errors'
 import {
   ab,
   AGENT_BROWSER_REPO,
@@ -15,7 +16,7 @@ import {
 } from '../lib/browser/agent-browser'
 import { sweepBrowserProfiles } from '../lib/browser/retention'
 import { readLocalStatus } from '../lib/local-status'
-import { fatal, log, withSpinner } from '../lib/terminal/log'
+import { log, withSpinner } from '../lib/terminal/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/terminal/output'
 
 type BrowserOpts = RawOutputOpts & {
@@ -62,33 +63,23 @@ async function resolveGuiOrigin(explicit?: string): Promise<string> {
     target = status.instance?.url ?? undefined
   }
   if (!target) {
-    fatal(
-      new Error(
-        'No target instance. Set one with `astrale instance use <name>`, or pass `--url <gui-url>`.',
-      ),
+    throw new AstraleError(
+      'INSTANCE_NOT_FOUND',
+      'No target instance.',
+      'Set one with `astrale instance use <name>`, or pass `--url <gui-url>`.',
     )
   }
-  try {
-    return new URL(target).origin
-  } catch {
-    return fatal(new Error(`Invalid instance URL: ${target}`))
+  const parsed = URL.parse(target)
+  if (parsed === null) {
+    throw new AstraleError('INVALID_URL', `Invalid instance URL "${target}".`)
   }
+  return parsed.origin
 }
 
-function requireAgentBrowser(machine: boolean, opts: RawOutputOpts): Promise<string> {
-  return findAgentBrowser().then((bin) => {
-    if (bin) return bin
-    if (machine) {
-      output({ error: 'agent-browser-not-installed', repo: AGENT_BROWSER_REPO }, opts)
-    } else {
-      log.error('agent-browser is not installed — it is the engine `astrale browser` drives.')
-      log.dim('  Install it:')
-      log.dim('    npm install -g agent-browser && agent-browser install')
-      log.dim('  Recommended — also install its agent skill so your coding agent knows it:')
-      log.dim(`    npx skills add ${AGENT_BROWSER_REPO}`)
-    }
-    process.exit(1)
-  })
+async function requireAgentBrowser(): Promise<string> {
+  const bin = await findAgentBrowser()
+  if (bin) return bin
+  throw new AgentBrowserMissingError('browser', AGENT_BROWSER_REPO)
 }
 
 function reportConnected(session: BrowserSession, machine: boolean, opts: RawOutputOpts): void {
@@ -147,7 +138,7 @@ Examples:
     const machine = isMachine(opts)
     const gui = await resolveGuiOrigin(opts.url)
     const host = new URL(gui).host
-    await requireAgentBrowser(machine, opts)
+    await requireAgentBrowser()
 
     // Retention runs BEFORE anything launches, so no profile we touch can be in
     // use by a browser this command started. Profiles held by someone else's
@@ -237,10 +228,10 @@ Examples:
       { safetyMs: LOGIN_TIMEOUT_MS },
     )
     if (!state.authed) {
-      fatal(
-        new Error(
-          `Sign-in not detected within ${LOGIN_TIMEOUT_MS / 1000}s. Re-run \`astrale browser\`.`,
-        ),
+      throw new AstraleError(
+        'BROWSER_SIGN_IN_TIMEOUT',
+        `Sign-in not detected within ${LOGIN_TIMEOUT_MS / 1000}s.`,
+        'Re-run `astrale browser`.',
       )
     }
     reportConnected(await persist(state), machine, opts)

@@ -14,9 +14,8 @@ export default {
   name: '__view-serve',
   hidden: true,
   description: 'Internal: run a view-session server from a config file',
-  options: [{ flags: '--config <path>', description: 'ViewServeConfig JSON path' }],
-  action: async (opts: { config?: string }) => {
-    if (!opts.config) throw new Error('--config is required')
+  options: [{ flags: '--config <path>', description: 'ViewServeConfig JSON path', required: true }],
+  action: async (opts: { config: string }) => {
     const config = JSON.parse(await readFile(opts.config, 'utf8')) as ViewServeConfig
     startViewServer(config)
     console.log(`view session ${config.session.id} listening on ${config.session.pageUrl}`)

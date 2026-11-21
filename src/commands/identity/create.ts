@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { createIdentity } from '../../identity/index'
-import { fatal, log } from '../../lib/terminal/log'
+import { log } from '../../lib/terminal/log'
 import { outputForMachine, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/terminal/output'
 
 export default {
@@ -18,15 +18,9 @@ export default {
     name: string,
     opts: { subject?: string; local?: boolean; remote?: boolean } & RawOutputOpts,
   ) => {
-    try {
-      const mode = opts.remote ? 'remote' : 'local'
-      const identity = await createIdentity(name, { subject: opts.subject, mode })
-      if (outputForMachine({ name, ...identity }, opts)) return
-      log.success(
-        `Created identity "${name}" (subject: ${identity.subject}, mode: ${identity.mode})`,
-      )
-    } catch (e) {
-      fatal(e, opts)
-    }
+    const mode = opts.remote ? 'remote' : 'local'
+    const identity = await createIdentity(name, { subject: opts.subject, mode })
+    if (outputForMachine({ name, ...identity }, opts)) return
+    log.success(`Created identity "${name}" (subject: ${identity.subject}, mode: ${identity.mode})`)
   },
 } satisfies CommandDefinition

@@ -278,46 +278,77 @@ test('installer rejects an archive outside the exact archive closure before repl
   }
 })
 
-test('bare installs resolve latest and retain its channel; explicit beta still works', (t) => {
-  const owner = fixture()
-  t.after(() => rmSync(owner.root, { recursive: true, force: true }))
+/** Intercept only transport, without network access: the real installer builds every URL. */
+function githubTransport(owner, pointerVersion) {
   const curl = join(owner.fakeBin, 'curl')
-  // The real installer builds the URL; intercept only transport, without network access.
   writeFileSync(
     curl,
-    '#!/bin/sh\nprintf "%s\\n" "$2" >> "$ASTRALE_TEST_URLS"\ncp "$ASTRALE_TEST_RELEASE/${2##*/}" "$4"\n',
+    [
+      '#!/bin/sh',
+      'printf "%s\\n" "$2" >> "$ASTRALE_TEST_URLS"',
+      'case "$2" in',
+      '  https://raw.githubusercontent.com/astrale-os/cli/release-channels/*/manifest.json)',
+      '    sed "s/\\"version\\": \\"[^\\"]*\\"/\\"version\\": \\"$ASTRALE_TEST_POINTER\\"/" "$ASTRALE_TEST_RELEASE/manifest.json" > "$4" ;;',
+      '  *) cp "$ASTRALE_TEST_RELEASE/${2##*/}" "$4" ;;',
+      'esac',
+      '',
+    ].join('\n'),
   )
   chmodSync(curl, 0o755)
-  for (const channel of ['latest', 'beta']) {
-    const manifestPath = join(owner.release, 'manifest.json')
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-    writeFileSync(manifestPath, JSON.stringify({ ...manifest, channel }, null, 2))
-    const target = installEnvironment(owner, platforms[0], channel)
+  return (target, name) => {
     delete target.env.ASTRALE_DOWNLOAD_BASE
-    delete target.env.ASTRALE_VERSION
-    delete target.env.ASTRALE_CHANNEL
-    if (channel === 'beta') target.env.ASTRALE_CHANNEL = 'beta'
-    const urls = join(owner.root, `urls-${channel}`)
+    const urls = join(owner.root, `urls-${name}`)
     const result = spawnSync('sh', ['install.sh'], {
       encoding: 'utf8',
       env: {
         ...target.env,
         ASTRALE_TEST_URLS: urls,
         ASTRALE_TEST_RELEASE: owner.release,
+        ASTRALE_TEST_POINTER: pointerVersion,
       },
     })
+    return { result, urls: readFileSync(urls, 'utf8').trim().split('\n') }
+  }
+}
+
+test('bare installs resolve latest and retain its channel; explicit beta still works', (t) => {
+  const owner = fixture()
+  t.after(() => rmSync(owner.root, { recursive: true, force: true }))
+  const install = githubTransport(owner, '1.0.0-beta.test')
+  const download = 'https://github.com/astrale-os/cli/releases/download'
+  for (const channel of ['latest', 'beta']) {
+    const manifestPath = join(owner.release, 'manifest.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, channel }, null, 2))
+    const target = installEnvironment(owner, platforms[0], channel)
+    delete target.env.ASTRALE_VERSION
+    delete target.env.ASTRALE_CHANNEL
+    if (channel === 'beta') target.env.ASTRALE_CHANNEL = 'beta'
+    const { result, urls } = install(target, channel)
     assert.equal(result.status, 0, result.stderr)
-    assert.ok(
-      readFileSync(urls, 'utf8')
-        .trim()
-        .split('\n')
-        .every((url) =>
-          url.startsWith(`https://github.com/astrale-os/cli/releases/download/${channel}/`),
-        ),
+    // The channel pointer names the version; every installed byte comes from its version release.
+    assert.equal(
+      urls[0],
+      `https://raw.githubusercontent.com/astrale-os/cli/release-channels/${channel}/manifest.json`,
     )
+    assert.ok(urls.slice(1).every((url) => url.startsWith(`${download}/cli/v1.0.0-beta.test/`)))
     assert.equal(
       JSON.parse(readFileSync(join(target.state, 'install.json'), 'utf8')).channel,
       channel,
     )
   }
+})
+
+test('installer refuses a version release that describes another version', (t) => {
+  const owner = fixture()
+  t.after(() => rmSync(owner.root, { recursive: true, force: true }))
+  const install = githubTransport(owner, '1.0.0-beta.other')
+  const target = installEnvironment(owner, platforms[0], 'mismatch')
+  delete target.env.ASTRALE_VERSION
+  delete target.env.ASTRALE_CHANNEL
+  const { result, urls } = install(target, 'mismatch')
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /describes another version/u)
+  assert.ok(urls.slice(1).every((url) => url.includes('/cli/v1.0.0-beta.other/')))
+  assert.equal(existsSync(join(target.install, 'astrale')), false)
 })

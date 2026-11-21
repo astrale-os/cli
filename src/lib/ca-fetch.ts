@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs'
 import { request as httpsRequest } from 'node:https'
 import { rootCertificates } from 'node:tls'
 
+import { InternalError } from '../errors'
+
 /** Create a Fetch capability whose HTTPS requests trust one CLI-selected CA file. */
 export function fetchWithCaFile(
   caFile: string,
@@ -103,7 +105,7 @@ async function writeBody(
     request.write(Buffer.from(await body.arrayBuffer()))
     return
   }
-  throw new Error('Unsupported request body type for CA-backed fetch')
+  throw new InternalError('Unsupported request body type for CA-backed fetch')
 }
 
 function headersInitToRecord(headers: HeadersInit | undefined): Record<string, string> {

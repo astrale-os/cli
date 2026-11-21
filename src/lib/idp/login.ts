@@ -1,3 +1,4 @@
+import { AstraleError } from '../../errors'
 import { upsertIdpIdentity } from '../../identity/registry'
 import { readIdentityStore } from '../../state/index'
 import { log, withSpinner } from '../terminal/log'
@@ -86,9 +87,12 @@ export async function loginViaIdp(opts: LoginFlowOpts): Promise<LoginResult> {
   const scope = opts.scope ?? idp.client.scope ?? 'openid profile email offline_access'
 
   const token = normalizeTokenResponse(await obtainToken(idp, { ...opts, clientId }, scope))
-  if (!token.access_token) throw new Error('IdP response did not include access_token')
+  if (!token.access_token) {
+    throw new AstraleError('IDP_PROTOCOL_ERROR', 'IdP response did not include access_token.')
+  }
   if (opts.audience && !tokenAudienceMatches(token.access_token, opts.audience)) {
-    throw new Error(
+    throw new AstraleError(
+      'IDP_AUDIENCE_MISMATCH',
       `IdP response access_token was not minted for requested audience ${opts.audience}`,
     )
   }
@@ -136,7 +140,11 @@ export async function resolveIdpName(name: string | undefined): Promise<string> 
   const names = Object.keys(store.idps)
   if (names.length === 1) return names[0]
   if (names.length === 0) return BUILTIN_WORKOS_IDP_NAME
-  throw new Error(`Multiple IdPs configured. Choose one with --idp: ${names.join(', ')}`)
+  throw new AstraleError(
+    'IDP_AMBIGUOUS',
+    'Multiple IdPs configured.',
+    `Choose one with --idp: ${names.join(', ')}`,
+  )
 }
 
 /** OAuth parameters of one request: the given fields that hold a value, beside the client id. */
@@ -159,7 +167,13 @@ async function obtainToken(
   const tokenEndpoint = idp.metadata.token_endpoint
   if (opts.clientCredentials) {
     const secret = resolveClientSecret(idp, opts.clientSecretEnv)
-    if (!secret) throw new Error('Client credentials flow requires a client secret env var')
+    if (!secret) {
+      throw new AstraleError(
+        'MISSING_ARG',
+        'Client credentials flow requires a client secret env var.',
+        'Pass --client-secret-env <name>.',
+      )
+    }
     return postForm(
       tokenEndpoint,
       oauthParams(clientId, {
@@ -172,7 +186,9 @@ async function obtainToken(
   }
 
   if (opts.code) {
-    if (!opts.redirectUri) throw new Error('--redirect-uri is required with --code')
+    if (!opts.redirectUri) {
+      throw new AstraleError('MISSING_ARG', '--redirect-uri is required with --code.')
+    }
     return postForm(
       tokenEndpoint,
       oauthParams(clientId, {
@@ -187,12 +203,16 @@ async function obtainToken(
 
   const endpoint = idp.metadata.device_authorization_endpoint
   if (!endpoint) {
-    throw new Error(`IdP "${idp.name}" does not advertise device_authorization_endpoint`)
+    throw new AstraleError(
+      'IDP_DEVICE_FLOW_UNSUPPORTED',
+      `IdP "${idp.name}" does not advertise device_authorization_endpoint.`,
+    )
   }
   const authorization = await fetch(endpoint, post(oauthParams(clientId, { scope, audience }), idp))
   const device = (await authorization.json()) as DeviceAuthorizationResponse
   if (!authorization.ok || device.error) {
-    throw new Error(
+    throw new AstraleError(
+      'IDP_LOGIN_FAILED',
       device.error_description ??
         device.error ??
         `Device authorization failed: HTTP ${authorization.status}`,
@@ -200,7 +220,10 @@ async function obtainToken(
   }
   const verificationUri = device.verification_uri ?? device.verification_uri_complete
   if (!verificationUri) {
-    throw new Error('IdP device authorization response did not include a verification URL')
+    throw new AstraleError(
+      'IDP_PROTOCOL_ERROR',
+      'IdP device authorization response did not include a verification URL.',
+    )
   }
   const verification: DeviceVerification = {
     verificationUri,
@@ -247,13 +270,18 @@ async function obtainToken(
           intervalMs += 5_000
           continue
         }
-        throw new Error(
+        throw new AstraleError(
+          'IDP_LOGIN_FAILED',
           body.error_description ??
             body.error ??
             `Device token request failed: HTTP ${response.status}`,
         )
       }
-      throw new Error('Device authorization expired before completion')
+      throw new AstraleError(
+        'IDP_LOGIN_FAILED',
+        'Device authorization expired before completion.',
+        'Sign in again.',
+      )
     },
     {
       safetyMs: device.expires_in * 1000,

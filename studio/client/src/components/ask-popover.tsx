@@ -174,8 +174,7 @@ function AskDot({ entry, pos }: { entry: AskEntry; pos: Point }) {
       modal={false}
       onOpenChange={(o) => {
         if (o) open(entry.key)
-        else if (entry.status === 'composing')
-          remove(entry.key) // closing a never-submitted composer cancels it
+        else if (entry.status === 'composing') remove(entry.key) // closing a never-submitted composer cancels it
         else collapse()
       }}
     >

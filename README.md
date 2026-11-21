@@ -187,9 +187,9 @@ Follow your own reports with the reference it returns:
 
 ```sh
 astrale issue list                 # your reports and their triage status (--all adds archived ones)
-astrale issue show ASTRALE-12      # one report with the triage comments
-astrale issue edit ASTRALE-12 --title "Clearer title" --body "Updated details"
-astrale issue archive ASTRALE-12   # withdraw it; triage keeps its history
+astrale issue show DEV-12      # one report with the triage comments
+astrale issue edit DEV-12 --title "Clearer title" --body "Updated details"
+astrale issue archive DEV-12   # withdraw it; triage keeps its history
 ```
 
 You see and change only the issues you reported. Status, priority and comments stay with triage.
@@ -208,10 +208,15 @@ Main command groups:
 
 | Group | What it covers |
 |-------|----------------|
-| Kernel | `get`, `download`, `mutate`, `call`, `execution`, `query`, `introspect`, `logs`, `view`, `token` |
+| Kernel | `get`, `upload`, `download`, `mutate`, `call`, `execution`, `query`, `introspect`, `logs`, `view`, `token` |
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `domain`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
+
+Files go through the Kernel: `astrale upload <file>` streams one (at most 100 MiB)
+and prints the receipt a blob property or a Domain callable's file field takes;
+`astrale call <path> --file <field>=<file>` uploads and passes the receipt in one
+step; `astrale download <node> <property> -o <file>` streams it back, verified.
 
 `astrale view <origin>` opens a Domain's entrypoint View (`--view <name>` picks
 another, `--list` prints them all); `astrale view /:<origin>:view.<name>` opens
@@ -355,8 +360,8 @@ Global skills live under `~/.agents/skills`. Their ecosystem-compatible lock is
 
 ## Development
 
-Contributors use Node.js 26.7.0 by default and pnpm 12.1.0. Release executables
-are compiled and qualified with Bun 1.4.2.
+Contributors use Node.js 26.13.0 by default and pnpm 12.1.0. Release executables
+are compiled and qualified with Bun 1.4.4.
 
 ```bash
 # From a standalone clone of this repository
@@ -404,9 +409,14 @@ list` lists the selected instance's readable installed releases, using the activ
 
 ## Fleet selection
 
-`instance list` shows the instances you own or reach through your organization memberships, in
-every Fleet, including an instance shared with you from a Fleet you cannot see. `--fleet` narrows
-the list to one Fleet; its administrators then see the Fleet's whole inventory.
+`instance list` shows the instances of every organization you belong to, read from the sign-in
+directory with no Admin account, plus your local bookmarks; a slug resolves the same way. The
+last listing of each sign-in is kept: it answers a slug for five minutes, and stands in, with a
+warning, while the directory is unavailable (up to seven days).
+Operators read the Admin inventory instead with `--admin-only`, `--fleet` or `--include-retired`:
+it adds the instances you own before joining their organization, their state and Fleet.
+`--fleet` narrows that inventory to one Fleet; its administrators then see the Fleet's whole
+inventory.
 
 `instance create` needs one Fleet. An explicit `--fleet <path>` keeps that exact target;
 authorization failure never falls back. Without it, the CLI reads the visible Fleet graph and

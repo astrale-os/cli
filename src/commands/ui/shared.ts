@@ -1,4 +1,4 @@
-import { fatal, withSpinner } from '../../lib/terminal/log'
+import { withSpinner } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 
 export type UiCommandOptions = { json?: boolean; project?: string }
@@ -15,14 +15,10 @@ export async function runUiCommand(
   operation: () => Promise<unknown>,
   label?: string,
 ): Promise<void> {
-  try {
-    const result = label
-      ? await withSpinner(label, !isMachine(options), operation)
-      : await operation()
-    output(result, { json: options.json })
-  } catch (error) {
-    fatal(error, { json: options.json })
-  }
+  const result = label
+    ? await withSpinner(label, !isMachine(options), operation)
+    : await operation()
+  output(result, { json: options.json })
 }
 
 export const UI_PROJECT_OPTION = {

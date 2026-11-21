@@ -7,7 +7,7 @@ import type { InstanceInfo } from '../../admin/instance'
 import type { KernelCommandOpts } from '../../connection'
 
 import { credentialRefused } from '../../connection/reasons'
-import { AstraleError } from '../../errors'
+import { AstraleError, AuthError } from '../../errors'
 import { readIdentities } from '../../identity'
 import { fetchWithCaFile } from '../ca-fetch'
 import { readConfig } from '../config'
@@ -144,7 +144,11 @@ async function activateAccount(
   const kernel = new URL(admin.kernelIssuer)
   const endpoint = adminEndpoint(admin.domainIssuer, '/v1/account-activation')
   if (!isKernelAudience(kernel) || endpoint === undefined) return 'unavailable'
-  const missing = () => new Error('No primary credential for the Admin audience is available.')
+  const missing = () =>
+    new AuthError(
+      'No primary credential for the Admin audience is available.',
+      `Run: astrale auth login --name ${identityName}`,
+    )
   // An Admin bookmark's CA file covers these requests as it covers the Admin connection.
   const fetch = admin.caFile ? fetchWithCaFile(admin.caFile) : globalThis.fetch
   try {

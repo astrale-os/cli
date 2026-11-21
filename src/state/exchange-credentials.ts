@@ -1,5 +1,6 @@
 import { credential, grant } from '@astrale-os/sdk/auth'
 
+import { AstraleError } from '../errors'
 import { credentialLifetimeCovers } from '../lib/credential-lifetime'
 import { exchangeCallerProof } from '../lib/exchange-grant'
 import { readPrivateStore, updatePrivateStore } from './files'
@@ -103,7 +104,8 @@ export class ExchangeCredentialCache {
       }
       const next = await refresh()
       if (!validEntry(key, next, now(), minimumRemainingSeconds)) {
-        throw new Error(
+        throw new AstraleError(
+          'TOKEN_EXCHANGE_PROTOCOL_ERROR',
           'Token exchange returned a credential inconsistent with its cache key or required lifetime.',
         )
       }

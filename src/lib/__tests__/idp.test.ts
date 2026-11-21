@@ -118,7 +118,8 @@ describe('OAuth token errors', () => {
       )
       expect(error).toBeInstanceOf(OAuthTokenError)
       expect(error).toMatchObject({
-        code: 'invalid_grant',
+        code: 'IDP_TOKEN_REFUSED',
+        oauthCode: 'invalid_grant',
         status: 400,
         message: expect.stringContaining('Refresh token already exchanged.'),
       })

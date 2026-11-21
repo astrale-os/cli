@@ -1,0 +1,21 @@
+# Security updates only. Without this file Dependabot opens each security fix from the directory
+# that declares the vulnerable package (`/studio`, `/studio/e2e/fixture`...), where it cannot see
+# the workspace lockfile: it bumps that package.json alone and the frozen install fails in CI.
+#
+# Starting from the workspace root updates every affected package.json and pnpm-lock.yaml together.
+# `open-pull-requests-limit: 0` turns off routine version updates; security updates keep their own
+# limit. Dependabot bypasses `minimumReleaseAge` for security fixes, but `minimumReleaseAgeStrict`
+# makes pnpm refuse its update of a transitive dependency: that one needs a manual PR.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      security:
+        applies-to: security-updates
+        patterns:
+          - '*'

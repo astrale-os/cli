@@ -23,7 +23,7 @@ import {
 } from '../../lib/instance/candidates'
 import { checkIssuerReachability } from '../../lib/meta'
 import { canPrompt, type PromptGate } from '../../lib/terminal/interactive'
-import { fatal, log, withSpinner } from '../../lib/terminal/log'
+import { log, withSpinner } from '../../lib/terminal/log'
 import { isMachine } from '../../lib/terminal/output'
 import { confirmDefaultYes, promptSelect } from '../../lib/terminal/prompt'
 import { validateSlug } from '../../lib/validation'
@@ -42,58 +42,52 @@ type UseOpts = {
 }
 
 async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
-  try {
-    if (!name) {
-      const active = await getActive()
-      console.log(`${active.name} (${active.url})`)
-      return
-    }
+  if (!name) {
+    const active = await getActive()
+    console.log(`${active.name} (${active.url})`)
+    return
+  }
 
-    const spin = !isMachine(opts)
-    const resolved = await withSpinner(`Resolving instance ${name}`, spin, () =>
-      resolveUseTarget(name, opts),
-    )
+  const spin = !isMachine(opts)
+  const resolved = await withSpinner(`Resolving instance ${name}`, spin, () =>
+    resolveUseTarget(name, opts),
+  )
 
-    if (!opts.skipJwksCheck) {
-      await withSpinner(`Checking ${resolved.name} is reachable`, spin, () =>
-        probeBookmark(resolved),
+  if (!opts.skipJwksCheck) {
+    await withSpinner(`Checking ${resolved.name} is reachable`, spin, () => probeBookmark(resolved))
+  }
+
+  await setActive(resolved.name)
+  log.success(`Active instance: ${resolved.name} (${resolved.url})`)
+
+  // §7.1 identity-adoption prompt (DX). Orthogonality preserved — we
+  // only switch on explicit user consent (or --adopt-default in CI).
+  const store = await readInstances()
+  const key = resolveInstanceKey(store, resolved.name)
+  const identityCandidate =
+    resolved.defaultIdentity ?? (key ? store.instances[key]?.defaultIdentity : undefined)
+  if (!identityCandidate) return
+  const active = await getDefault().catch(() => null)
+  if (active?.name === identityCandidate) return
+
+  if (!canPrompt(opts)) {
+    if (opts.adoptDefault) {
+      await setDefault(identityCandidate)
+      log.success(`Identity switched to "${identityCandidate}" (--adopt-default)`)
+    } else {
+      log.dim(
+        `  (instance default identity "${identityCandidate}" — keep active ${active?.name ?? 'none'})`,
       )
     }
+    return
+  }
 
-    await setActive(resolved.name)
-    log.success(`Active instance: ${resolved.name} (${resolved.url})`)
-
-    // §7.1 identity-adoption prompt (DX). Orthogonality preserved — we
-    // only switch on explicit user consent (or --adopt-default in CI).
-    const store = await readInstances()
-    const key = resolveInstanceKey(store, resolved.name)
-    const identityCandidate =
-      resolved.defaultIdentity ?? (key ? store.instances[key]?.defaultIdentity : undefined)
-    if (!identityCandidate) return
-    const active = await getDefault().catch(() => null)
-    if (active?.name === identityCandidate) return
-
-    if (!canPrompt(opts)) {
-      if (opts.adoptDefault) {
-        await setDefault(identityCandidate)
-        log.success(`Identity switched to "${identityCandidate}" (--adopt-default)`)
-      } else {
-        log.dim(
-          `  (instance default identity "${identityCandidate}" — keep active ${active?.name ?? 'none'})`,
-        )
-      }
-      return
-    }
-
-    const msg = `Instance "${resolved.name}" has default identity "${identityCandidate}". Active: "${active?.name ?? 'none'}". Switch identity too?`
-    if (await confirmDefaultYes(msg)) {
-      await setDefault(identityCandidate)
-      log.success(`Identity switched to "${identityCandidate}"`)
-    } else {
-      log.dim('  kept active identity (orthogonal)')
-    }
-  } catch (e) {
-    fatal(e)
+  const msg = `Instance "${resolved.name}" has default identity "${identityCandidate}". Active: "${active?.name ?? 'none'}". Switch identity too?`
+  if (await confirmDefaultYes(msg)) {
+    await setDefault(identityCandidate)
+    log.success(`Identity switched to "${identityCandidate}"`)
+  } else {
+    log.dim('  kept active identity (orthogonal)')
   }
 }
 

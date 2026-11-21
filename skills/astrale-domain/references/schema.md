@@ -16,6 +16,7 @@ storage layout or an anticipated UI.
   deliberate extension point.
 - A Node Class declares an icon: `classIcon.lucide` with data from `@astrale-os/sdk/schema/icons`,
   `classIcon.svg` for custom SVG, `classIcon.neutral` for no glyph. No React icons in a Schema.
+  The Domain's own icon is a separate multi-size set declared on `defineSchema` (`icons.md`).
 - A fact describing a relationship (role, confidence, applicability, effective date, ordering,
   coverage) is an Edge Property. Reify a relationship as a Node only for its own identity,
   lifecycle, permissions, provenance or relationships. Never a relationship hidden in string ids,
@@ -58,6 +59,9 @@ Each Edge endpoint declares or derives what deleting its Node does:
 
 - Inherited native Node Properties are reused, never redeclared; timestamps and identities use the
   SDK's canonical types.
+- A file is a blob Property, `property(schema.values.blob({ maxBytes, mediaTypes }))` with `schema`
+  from `@astrale-os/sdk/schema`: it reads as its `Ref` and is written with an upload receipt
+  (`files.md`).
 - `property(schema, { immutable: 'create' })` accepts a value only at creation;
   `property(schema, { required: false, immutable: 'once' })` also accepts one later write while the
   value is absent (a blob attached after creation). Neither is changed or unset afterwards: only

@@ -1,4 +1,4 @@
-import * as acp from '@agentclientprotocol/sdk'
+import * as acp from '@agentclientprotocol/sdk/unstable'
 
 import type { HarnessLoadout } from '../../../../shared/contracts/agent'
 import type { HarnessHealth, HarnessLoadoutOptions } from '../adapter'

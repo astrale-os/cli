@@ -216,38 +216,31 @@ export async function installByReference(
   dependencies: Partial<ReferenceInstallDependencies> = {},
 ): Promise<void> {
   const deps = { ...defaultDependencies, ...dependencies }
-  let written: readonly WrittenReference[]
-  let operation: string
-  let consent: IssuerChangeConsent
-  try {
-    consent = issuerChangeConsent(opts.allowIssuerChange, opts.revokePrevious)
-    written = references.map((reference): WrittenReference =>
-      isVersionReference(reference)
-        ? { kind: 'version', reference, version: admitVersionReference(reference) }
-        : { kind: 'url', reference: admitInstallUrl(reference) },
+  const consent = issuerChangeConsent(opts.allowIssuerChange, opts.revokePrevious)
+  const written = references.map((reference): WrittenReference =>
+    isVersionReference(reference)
+      ? { kind: 'version', reference, version: admitVersionReference(reference) }
+      : { kind: 'url', reference: admitInstallUrl(reference) },
+  )
+  // The syntax names the origin of a version, so two versions of one origin are refused before
+  // Admin is opened; a URL names its origin only once it is read.
+  refuseRepeated(
+    written.map((entry) => [
+      entry.kind === 'url' ? new URL(entry.reference).origin : entry.version.selector.origin,
+      entry.reference,
+    ]),
+  )
+  if (opts.token !== undefined && (written.length > 1 || written[0]!.kind !== 'url')) {
+    throw new AstraleError(
+      'INVALID_FLAG',
+      '--token is valid only with a single URL reference.',
+      'A delivery token is sent to one deployment; install private Domains one at a time.',
     )
-    // The syntax names the origin of a version, so two versions of one origin are refused before
-    // Admin is opened; a URL names its origin only once it is read.
-    refuseRepeated(
-      written.map((entry) => [
-        entry.kind === 'url' ? new URL(entry.reference).origin : entry.version.selector.origin,
-        entry.reference,
-      ]),
-    )
-    if (opts.token !== undefined && (written.length > 1 || written[0]!.kind !== 'url')) {
-      throw new AstraleError(
-        'INVALID_FLAG',
-        '--token is valid only with a single URL reference.',
-        'A delivery token is sent to one deployment; install private Domains one at a time.',
-      )
-    }
-    operation =
-      opts.operation === undefined
-        ? deps.createOperationId()
-        : acceptDomainOperationId(opts.operation, 'install')
-  } catch (error) {
-    fatal(error, opts)
   }
+  const operation =
+    opts.operation === undefined
+      ? deps.createOperationId()
+      : acceptDomainOperationId(opts.operation, 'install')
 
   const versions = written.flatMap((entry) => (entry.kind === 'version' ? [entry.version] : []))
   let sources: readonly ReleaseSource[]

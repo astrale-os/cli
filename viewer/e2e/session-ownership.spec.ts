@@ -15,7 +15,12 @@ import { fulfillKernel } from './kernel'
  */
 
 const NONCE = 'ownership'
-const GRACE_MS = 400
+// The reload below must come back within the grace. Production allows 10 s; a
+// shared CI runner can take more than half a second to boot the viewer, so the
+// test keeps a margin of its own instead of racing it.
+const GRACE_MS = 1_500
+// How long the test waits to prove the session outlived the grace.
+const PAST_GRACE_MS = GRACE_MS * 3
 const repository = fileURLToPath(new URL('../..', import.meta.url))
 const temporary = mkdtempSync(join(tmpdir(), 'astrale-view-ownership-'))
 
@@ -147,7 +152,7 @@ test('a popped-out View outlives the dialog that opened it, and ends with its ow
   await dialog.close()
 
   // Well past the grace, the tab is still a working View on a live session.
-  await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 5))
+  await new Promise((resolve) => setTimeout(resolve, PAST_GRACE_MS))
   expect(await alive()).toBe(true)
   await expect(popped.locator('#status-dot')).toHaveAttribute('data-state', 'plain')
   await expect(popped.locator('#error')).toBeHidden()
@@ -156,7 +161,7 @@ test('a popped-out View outlives the dialog that opened it, and ends with its ow
   // A reload of the tab is a page leaving and coming back; the session holds.
   await popped.reload()
   await expect(popped.locator('#status-dot')).toHaveAttribute('data-state', 'plain')
-  await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 5))
+  await new Promise((resolve) => setTimeout(resolve, PAST_GRACE_MS))
   expect(await alive()).toBe(true)
 
   // The operator closes their tab: the last page leaves and the session ends.
