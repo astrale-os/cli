@@ -13,7 +13,12 @@ stable ingress lifecycle. Neither requires a CLI-bundled tunnel executable.
 1. Merge conventional feature and fix pull requests into `main`. Every push to
    `main` runs **Release Please**, which creates or updates the beta release pull
    request automatically. No manual dispatch or environment approval gates that
-   pull request.
+   pull request. Only `feat`, `fix` and breaking commits make a release:
+   `docs`, `chore` and the other hidden types never do. Each CLI embeds the
+   release's Skills, so a change under `skills/` reaches customers only in a
+   release: type it `fix(skills)` or `feat(skills)`, never `docs`. A merged
+   change that no release carries gets one through a commit with a
+   `Release-As: <version>` footer.
 2. Merge the release pull request when its version, changelog, `package.json`,
    and release manifest are ready. Release Please never merges it automatically.
 3. That merge runs **Release Please** again. It creates the `cli/v<version>` tag
