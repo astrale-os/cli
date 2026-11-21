@@ -142,21 +142,23 @@ done | tee before/core-groups
 
 `claimedEmail` and `claimedName` are what each account recorded about itself through
 `User.recordProfile`; nothing records whether an identity provider verified them. The GUI records,
-at each sign-in, the email and name of the identity provider's session; any other client holding the
-account's credential can record any value. The migration makes the claimed email the account's
-`email`, the key that binds a first sign-in to it. Read which issuer each account authenticates with
-(`iss`) and which accounts claim an email:
+at each sign-in, the email and name of the identity provider's session, but any client holding the
+account's credential can record any value, whatever issuer the account authenticates with. The
+migration makes the claimed email the account's `email`, the key that binds a first sign-in to it.
+Check every claim against a source independent of the account, such as the identity provider's
+directory, before the migration. List the claims, with the issuer each account authenticates with
+(`iss`):
 
 ```sh
-jq -s 'group_by(.props["kernel.astrale.ai:class.Identity.property.iss"])
-  | map({iss: .[0].props["kernel.astrale.ai:class.Identity.property.iss"], accounts: length,
-         claiming: map(select(.props["shell.astrale.ai:class.User.property.claimedEmail"])) | length})' \
-  before/users.jsonl
+jq -r '[.id, (.props["kernel.astrale.ai:class.Identity.property.iss"] // "-"),
+        (.props["shell.astrale.ai:class.User.property.claimedEmail"] // "-")] | @tsv' \
+  before/users.jsonl > before/claims.tsv
 ```
 
-Accounts sharing the identity provider's issuer signed in through it; check by hand every claimed
-email of an account with another issuer or none (an operator key, an imported identity), and fix it
-after the migration with `User.update` ([Conflicts and unnamed accounts](#conflicts-and-unnamed-accounts)).
+The migration writes an email only on an account that has none. After the install and before the
+migration, write the verified email on every account whose claim differs from it, with `User.update`
+([Conflicts and unnamed accounts](#conflicts-and-unnamed-accounts)): the migration then leaves that
+account's email as written. Run the migration only once every remaining claim is verified.
 
 ### Duplicate people
 
@@ -233,7 +235,7 @@ incoming -i "$SLUG" --as "$ROOT"`.
 
 ## Migrate the accounts
 
-Read the [claimed emails](#the-claimed-emails) and the [duplicate people](#duplicate-people) first.
+Verify the [claimed emails](#the-claimed-emails) and read the [duplicate people](#duplicate-people) first.
 
 ```sh
 until
