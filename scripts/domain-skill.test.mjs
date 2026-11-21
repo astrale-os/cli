@@ -91,7 +91,13 @@ test('the Domain skill router reaches existing reference files without orphaned 
   for (const name of guideNames()) {
     assert.ok(references.includes(`references/${name}`), `unreachable guide: ${name}`)
   }
-  assert.doesNotMatch(entrypoint, /references\/legacy\//, 'the router links only target guides')
+  // The router reaches legacy guides only through the ledger, the index of migrations.
+  const legacyLinks = [...entrypoint.matchAll(/references\/legacy\/[\w./-]+/g)].map((m) => m[0])
+  assert.deepEqual(
+    [...new Set(legacyLinks)],
+    ['references/legacy/LEDGER.md'],
+    'the router links the legacy ledger, no legacy guide',
+  )
 })
 
 test("legacy guides are deprecated, ledgered and reached only from their target's migration section", () => {

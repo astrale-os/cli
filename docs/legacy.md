@@ -7,6 +7,11 @@ design. The Astrale repositories share it; this page adapts the SDK's
 [`docs/legacy.md`](https://github.com/astrale-os/sdk/blob/main/docs/legacy.md) to the CLI, whose
 legacy so far is documentation shipped in its skills.
 
+Every breaking change of the SDK, the Kernel or a native Domain that customers must act on gets its
+migration guide here, in the same change that ships it: what the old model was, what replaces it,
+and the steps that move code or an instance across, verified on a rehearsal. A guide lives as long
+as some installed Domain or instance may still need it, then is deleted.
+
 The aim is that removing the old behaviour later is a deletion: delete each legacy file, the one
 link or call that reaches it and its ledger row, and nothing else changes.
 
@@ -25,7 +30,8 @@ link or call that reaches it and its ledger row, and nothing else changes.
    `@deprecated <what it keeps> (<ledger id>). Replaced by <target symbol>. Removal: <condition>.`
 4. **One seam per owner.** A legacy guide is reached by exactly one link: the "Migrating from …"
    section of the page that replaced it, which maps old names to new ones. A skill's router
-   (`SKILL.md`) and every other page link only target pages. For code, target code reaches legacy
+   (`SKILL.md`) links the ledger once, as the index of migrations, and no legacy guide; every other
+   page links only target pages. For code, target code reaches legacy
    code through one explicit, named call per owner.
 5. **Ledger.** Each skill with legacy guides keeps `references/legacy/LEDGER.md`; code keeps
    `legacy/LEDGER.md` at the repository root. One row per item:
@@ -43,7 +49,9 @@ link or call that reaches it and its ledger row, and nothing else changes.
 ## Adding a legacy item
 
 1. Write the target page first, as if the old model never existed, with a short "Migrating from …"
-   section that maps old names to new ones.
+   section that maps old names to new ones. For a breaking change, write the migration guide itself
+   in `legacy/`: the steps, the refusals a reader meets, how to verify and how to roll back, each
+   checked by running it.
 2. Move the old page to `legacy/` next to the target page, retitle it and add its banner.
 3. Link it once, from the migration section. Remove every other link to it.
 4. Add the ledger row and run `node --test scripts/domain-skill.test.mjs` (or `pnpm test`).

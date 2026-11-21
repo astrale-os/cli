@@ -1,8 +1,10 @@
 # Legacy ledger — `astrale-domain` skill references
 
-Guides kept for Domains and instances that still run a previous model, by the method of
-[`docs/legacy.md`](../../../../docs/legacy.md) in the CLI repository. Removing an item deletes its
-file, its row and the one link its seam holds; nothing else in the skill changes.
+Guides for Domains and instances that still run a previous model, and for moving them across a
+breaking change, by the method of [`docs/legacy.md`](../../../../docs/legacy.md) in the CLI
+repository. Find the row whose legacy item names what the code or instance still uses, and follow
+its guide; paths are relative to `references/`. Removing an item deletes its file, its row and the
+one link its seam holds; nothing else in the skill changes.
 
 | id | legacy item (file) | replaced by | seam | removal condition | evidence (test) |
 | --- | --- | --- | --- | --- | --- |
