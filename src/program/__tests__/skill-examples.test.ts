@@ -36,7 +36,23 @@ function skillFiles(root: string): string[] {
     .sort()
 }
 
-/** Every shell line of every fenced block whose language is a shell, continuations joined. */
+/** Whether a shell line ends inside a single- or double-quoted string, so the next line continues it. */
+function quoteOpen(text: string): boolean {
+  let quote: string | undefined
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]!
+    if (quote === undefined && char === '#' && (index === 0 || /\s/.test(text[index - 1]!))) break
+    if (quote === '"' && char === '\\') index += 1
+    else if (quote === undefined && (char === "'" || char === '"')) quote = char
+    else if (char === quote) quote = undefined
+  }
+  return quote !== undefined
+}
+
+/**
+ * Every shell line of every fenced block whose language is a shell, continuations joined: a line
+ * continues after a trailing backslash or while a quoted string is open.
+ */
 function shellLines(path: string): { readonly line: number; readonly text: string }[] {
   const lines = readFileSync(path, 'utf8').split('\n')
   const out: { line: number; text: string }[] = []
@@ -46,6 +62,7 @@ function shellLines(path: string): { readonly line: number; readonly text: strin
     const marker = /^\s*```(\S*)/.exec(raw)
     if (marker !== null) {
       fence = fence === undefined ? marker[1]! : undefined
+      pending = undefined
       return
     }
     if (fence === undefined || !SHELL_FENCES.has(fence)) return
@@ -56,7 +73,7 @@ function shellLines(path: string): { readonly line: number; readonly text: strin
       pending === undefined
         ? { line: index + 1, text: body }
         : { ...pending, text: `${pending.text} ${body.trim()}` }
-    if (!continued) {
+    if (!continued && !quoteOpen(pending.text)) {
       out.push({ line: pending.line, text: pending.text.trim() })
       pending = undefined
     }
@@ -90,9 +107,10 @@ function variable(name: string): string {
 }
 
 /**
- * The simple commands of one shell line, with variables and `$(...)` expanded to fakes: words are
- * split on blanks outside quotes, commands on `|`, `;` and `&&`, and `< file` redirections and `#`
- * comments are dropped. A command substitution contributes its own commands too.
+ * The simple commands of one shell line, with variables (`$@` and `$1` included) and `$(...)`
+ * expanded to fakes: words are split on blanks outside quotes, commands on `|`, `;` and `&&`, and
+ * redirections (`< file`, `2> file`, `2>&1`) and `#` comments are dropped. A command substitution
+ * contributes its own commands too.
  */
 function commands(text: string): string[][] {
   const out: string[][] = []
@@ -115,6 +133,7 @@ function commands(text: string): string[][] {
       let depth = 1
       let end = at + 2
       while (depth > 0) {
+        if (end >= text.length) throw new Error(`unterminated substitution: ${text}`)
         if (text[end] === '(') depth += 1
         if (text[end] === ')') depth -= 1
         end += 1
@@ -125,7 +144,8 @@ function commands(text: string): string[][] {
       return end
     }
     const braced = text[at + 1] === '{'
-    const name = /^[A-Za-z_][A-Za-z0-9_]*/.exec(text.slice(at + (braced ? 2 : 1)))?.[0] ?? ''
+    const name =
+      /^(?:[A-Za-z_][A-Za-z0-9_]*|[@*#?0-9])/.exec(text.slice(at + (braced ? 2 : 1)))?.[0] ?? ''
     word += variable(name)
     inWord = true
     return at + (braced ? 3 : 1) + name.length
@@ -135,6 +155,7 @@ function commands(text: string): string[][] {
     const char = text[index]!
     if (char === "'") {
       const end = text.indexOf("'", index + 1)
+      if (end === -1) throw new Error(`unterminated quote: ${text}`)
       word += text.slice(index + 1, end)
       inWord = true
       index = end + 1
@@ -142,6 +163,7 @@ function commands(text: string): string[][] {
       inWord = true
       index += 1
       while (text[index] !== '"') {
+        if (index >= text.length) throw new Error(`unterminated quote: ${text}`)
         if (text[index] === '\\') {
           word += text[index + 1]
           index += 2
@@ -163,9 +185,16 @@ function commands(text: string): string[][] {
     } else if (char === '|' || char === ';' || char === '&') {
       endCommand()
       index += text[index + 1] === char ? 2 : 1
-    } else if ((char === '<' || char === '>') && !inWord && text[index + 1] === ' ') {
-      pushWord()
-      index += 2
+    } else if (
+      (char === '<' || char === '>') &&
+      (!inWord || /^[0-9]+$/.test(word)) &&
+      !/^<[a-z0-9-]+>/.test(text.slice(index))
+    ) {
+      // A redirection (`< file`, `</dev/null`, `2> err`, `>> log`, `2>&1`) and its target.
+      word = ''
+      inWord = false
+      while (text[index] === '<' || text[index] === '>' || text[index] === '&') index += 1
+      while (text[index] === ' ') index += 1
       while (index < text.length && text[index] !== ' ') index += 1
     } else {
       word += char

@@ -332,7 +332,7 @@ An instance moves in two independent steps:
 | --- | --- |
 | `User`/`Group` subclasses in the Domain | Business record + `holds_account`; a Team Identity; a Domain `Role` |
 | `member_of_group` | `extends_with` |
-| Core groups "Administrators", "Members" | `workspace.admin`, `workspace.member`; each group is a member of its profile |
+| Core groups "Administrators", "Members" | `workspace.admin`, `workspace.member`; each group is a member of its profile Role |
 | Core groups "View only", "Applications" | Kernel `reader` and the Views given by `view_access`; the Domain's Roles, by release |
 | `creationKey`, `claimedEmail`, `claimedName` | Unique `email`, `name` |
 | `User.recordProfile` at each sign-in | `User.updateProfile` by the account holder |
