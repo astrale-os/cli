@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.170](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.169...cli/v1.0.0-beta.170) (2026-11-21)
+
+
+### Bug Fixes
+
+* **commands:** say what --timeout bounds on commands that wait for an outcome ([#803](https://github.com/astrale-os/cli/issues/803)) ([d94506b](https://github.com/astrale-os/cli/commit/d94506b5fbf4765cb5205dc1d42a194c1d2f2446))
+
 ## [1.0.0-beta.169](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.168...cli/v1.0.0-beta.169) (2026-11-20)
 
 
