@@ -42,8 +42,8 @@ import { createInstalledIssuer, type InstalledIssuer } from './installed-issuer'
 import { credentialRefused } from './reasons'
 import { resendingClients } from './resend'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
+import { DEFAULT_TIMEOUT_MS, DEFAULT_WAIT_MS } from './timeouts'
 
-const DEFAULT_TIMEOUT_MS = 30_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
 
 function warnMissingExplicitTarget(options: ConnectionOptions, target: ConnectionTarget): void {
@@ -381,9 +381,6 @@ export function resolveTimeoutMs(raw: string | undefined): number {
   }
   return value
 }
-
-/** How long a command that waits for an Execution's outcome waits without --timeout. */
-const DEFAULT_WAIT_MS = 110_000
 
 /**
  * The wait of a command that waits for an Execution's outcome. --timeout bounds the whole command,

@@ -33,6 +33,7 @@ import { presentBinary, readBinaryBody } from '../lib/terminal/binary'
 import { failInput, log } from '../lib/terminal/log'
 import { isMachine, output, present } from '../lib/terminal/output'
 import { localFile, uploadFile, type LocalFile, type Uploaded } from '../lib/upload'
+import { WAIT_TIMEOUT_OPTION } from '../program/options'
 import { executionReceipt } from './execution'
 import { parseIntrospectTarget, resolveCallableFromBundle } from './introspect'
 
@@ -665,6 +666,7 @@ Examples:
       flags: '--wait',
       description: "Wait for a durable call's outcome up to --timeout (110000 ms without it)",
     },
+    WAIT_TIMEOUT_OPTION,
     {
       flags: '--admin [bookmark]',
       description: 'Call on the Admin kernel: the configured one, or this Admin bookmark',
