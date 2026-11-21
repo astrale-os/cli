@@ -1,6 +1,7 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin/target'
+import { WAIT_TIMEOUT_OPTION } from '../../program/options'
 import { installByReference, type ReferenceInstallOpts } from './release-install'
 
 export default {
@@ -156,6 +157,7 @@ Examples:
       description:
         'With an issuer change, cut the replaced issuer at the activation instead of draining it',
     },
+    WAIT_TIMEOUT_OPTION,
   ],
   action: async (references: [string, ...string[]], opts: ReferenceInstallOpts) => {
     await installByReference(references, opts)
