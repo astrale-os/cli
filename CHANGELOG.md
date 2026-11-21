@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.171](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.170...cli/v1.0.0-beta.171) (2026-11-21)
+
+
+### Bug Fixes
+
+* **skills:** ship the Shell 0.3 upgrade guide in a release ([#806](https://github.com/astrale-os/cli/issues/806)) ([bdb4db9](https://github.com/astrale-os/cli/commit/bdb4db98e4d961ac4fc21b551fcba5da4f3135e8))
+
 ## [1.0.0-beta.170](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.169...cli/v1.0.0-beta.170) (2026-11-21)
 
 
