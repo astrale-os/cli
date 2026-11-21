@@ -274,7 +274,10 @@ domain uninstall <origin>... [--destructive] [--yes] [--operation <id>] [--no-wa
 ```
 
 - Versions resolve in the Admin registry under your own identity; a private Domain needs
-  `domain_installer` or `domain_admin`, directly or through a Group.
+  `domain_installer` or `domain_admin`, directly or through a Group. An identity that is no Admin
+  account, such as an instance's Root, is refused `REGISTRY_FORBIDDEN`: install the Publication's
+  deployment URL (`domain versions <origin> --json`) instead, and compare the pin the install
+  reports with its `releaseDigest`.
 - Install and uninstall are Kernel syscalls sent as you, decided by Kernel Roles, not by those Admin
   rights. Install: `domain.installer` plus the right to grant every Kernel Role membership the
   release requests (a scope toward a Kernel target needs Root). Uninstall: `domain.uninstaller` plus
@@ -348,7 +351,9 @@ that instance's Kernel pins to a deployment you can read.
 - Partial by nature: built-in, local and unreadable Domains never appear; an absent origin is
   unknown, not "not installed".
 - The registry is read as you (`--as` or your default identity) on the Admin kernel; `--creds` and
-  `--anonymous` apply to the instance only. `--json`: one `astrale.installed-list` document.
+  `--anonymous` apply to the instance only. `--json`: one `astrale.installed-list` document. To list
+  as an identity that is no Admin account, present its token on the instance and read the registry
+  as your default identity: `--creds "$(astrale token --raw -i <instance> --as <identity>)"`.
 
 ```bash
 astrale domain list -i staging
