@@ -44,7 +44,7 @@ Load only the references the task needs.
 | Demo data: the Datasets under `tests/` the Studio draws and proves Policies on | `references/datasets.md` |
 | Tests, fixtures, demo flows, smoke scenarios | `references/testing.md` |
 | A failing live Domain, issuer/discovery confusion, invocation routing, runtime drift | `references/debugging.md` |
-| Code or an instance still on a previous model (a deprecated SDK API, legacy `requirements`, a Shell before Roles); an upgrade across a breaking change | `references/legacy/LEDGER.md`: the row naming that model, then its guide. Never start new work from a legacy guide |
+| Code or an instance still on a previous model (a deprecated SDK API, legacy `requirements`, a Shell before Roles); an upgrade across a breaking change | `references/legacy/LEDGER.md`: the row naming that model, then its guide; for a deprecated SDK API, also the installed SDK's `docs/legacy/` (`node_modules/@astrale-os/sdk/docs/legacy/`). Never start new work from a legacy guide |
 
 ## New Domain
 
