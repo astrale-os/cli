@@ -5,24 +5,22 @@ description: Deploy and manage Cloudflare-backed Services on Astrale's Admin ins
 
 # Astrale Services
 
-Use the installed `services.astrale.ai` Domain on the Admin instance. `CloudflareService` is the
-stable resource for one `(project, environment)`; `CloudflareDeployment` is one immutable release
-of it. The Service URL and crons follow its current deployment. A deployment URL keeps serving its
-own release until retired. Services hosts Workers; it never installs or uninstalls a Domain on a
-consumer Kernel.
+The installed `services.astrale.ai` Domain on the Admin instance:
 
-Choose the workflow the user needs:
+- `CloudflareService`: the stable resource for one `(project, environment)`. Its URL and crons
+  follow its current deployment.
+- `CloudflareDeployment`: one immutable release of it. Its own URL serves that release until it is
+  retired.
+- Services hosts Workers. It never installs or uninstalls a Domain on a consumer Kernel.
 
-- Generic Worker, API, or cron: [workflows.md](references/workflows.md) covers the published
-  scaffolder and deployment adapter. A plain Worker needs no Domain Schema or installation.
-- Background job calling an installed Domain as a dedicated account:
-  [service-account-cron.md](references/service-account-cron.md).
-- Turn existing code or requirements into a callable Domain release, with installation only on
-  requested consumers: [deployer-agent.md](references/deployer-agent.md).
-- Operate an existing Service (promote/roll back, secrets, crons, logs, transfer, retire/delete):
-  [workflows.md](references/workflows.md).
-- Understand ownership, wire payloads, and result interpretation:
-  [schema.md](references/schema.md).
+| Task | Reference |
+| --- | --- |
+| Generic Worker, API or cron (no Domain Schema, no installation) | [workflows.md](references/workflows.md) |
+| Background job calling an installed Domain as a dedicated account | [service-account-cron.md](references/service-account-cron.md) |
+| Existing code or requirements → a callable Domain release, installed only on requested consumers | [deployer-agent.md](references/deployer-agent.md) |
+| Operate a Service: promote or roll back, secrets, crons, logs, transfer, retire or delete | [workflows.md](references/workflows.md) |
+| Ownership, wire payloads, results | [schema.md](references/schema.md) |
 
-Use the exact returned Service and deployment IDs. A successful deploy, a published package, and an
-installed consumer release are separate facts; verify each one needed for the requested outcome.
+- Use the exact returned Service and deployment ids.
+- A successful deploy, a published package and an installed consumer release are three separate
+  facts: verify each one the outcome needs.

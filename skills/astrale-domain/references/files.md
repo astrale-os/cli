@@ -157,14 +157,19 @@ await expect(file.text()).resolves.toBe('account,amount\n512,10')
 
 ## Requirements
 
-Declare the exact Kernel Functions the Domain calls for its callers (see `runtime.md`):
-`K.functions.download` to read a file, `K.functions.mutate` to attach, and `K.functions.upload`
-when the Domain stores bytes it produces itself (it uploads and attaches as `self`).
+Declare the Kernel Roles the Domain needs for the file syscalls (`roles.md`): `blob.reader` to read
+a file (`download`), `graph.writer` to attach one (`mutate`), and `blob.writer` when the Domain
+stores bytes it produces itself (it uploads and attaches as the Domain). Under `caller`, the user
+needs the same Roles.
 
 ```ts
-requirements: requirements({
-  functions: [K.functions.query, K.functions.mutate, K.functions.download],
-}),
+requirements({
+  roles: [
+    { role: K.core.nodes['graph.reader'], members: [requirements.domain] },
+    { role: K.core.nodes['graph.writer'], members: [requirements.domain] },
+    { role: K.core.nodes['blob.reader'], members: [requirements.domain] },
+  ],
+})
 ```
 
 ## Durable Workflows

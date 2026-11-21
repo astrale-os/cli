@@ -2,39 +2,38 @@
 
 ## New generic Worker
 
-The published `@astrale-domains/services` 0.8.2 package ships `create-astrale-service`. Use that
-version or a deliberately selected newer compatible release; inspect the generated README and
-pinned dependencies rather than assuming an old installed package has the current scaffold.
+`create-astrale-service` ships in `@astrale-domains/services` ≥ 0.8.2. Inspect the generated
+README and pinned dependencies.
 
 ```sh
-npm exec --package @astrale-domains/services@0.8.2 -- create-astrale-service nightly-report
+npm exec --package @astrale-domains/services@0.9.1 -- create-astrale-service nightly-report
 npm --prefix nightly-report install
 ```
 
-The generator creates local source only and refuses an existing directory. It writes
-`src/index.js` (health and private cron entry), `src/job.js`, optional account-session code,
-`service.json`, and build/deploy scripts. It neither registers an account nor grants access.
-For an HTTP API, adapt the entry and job and remove account secrets/vars you do not need.
-
-Edit `service.json`: project, compatibility date/flags, plain vars, secret **names**, readiness
-paths, and crons. Provide declared values through its ignored environment file; only when that file is absent
-does the scaffold use process environment values (it does not merge missing file entries). Start with `crons: []` until the real job is verified. Run in the project directory:
+- The generator writes local source only and refuses an existing directory: `src/index.js` (health
+  and the private cron entry), `src/job.js`, optional account-session code, `service.json`, build
+  and deploy scripts. It registers no account and grants no access. For an HTTP API, adapt the
+  entry and job and drop the account secrets and vars.
+- `service.json`: project, compatibility date and flags, plain vars, secret **names**, readiness
+  paths, crons. Start with `crons: []` until the job is verified.
+- Secret values come from `.env.<environment>` when that file exists, otherwise from the process
+  environment; the two never merge.
 
 ```sh
-npm run deploy -- production
-# Alternatives: --admin <bookmark>, --as <identity>, --no-promote
+npm run deploy -- production [--admin <bookmark>] [--as <identity>] [--no-promote]
 ```
 
-This builds and deploys through Admin's Services, then replaces Service crons with the declared
-set when promoting. `--no-promote` leaves current routing and crons alone. Read both deployment and
-schedule outcomes: a created Worker does not prove schedule configuration succeeded. The script
-prints Service/deployment IDs, deployment label/URL, current status, and secret-write status.
+- Builds and deploys through Admin's Services, then, when promoting, replaces the Service's crons
+  with `service.json`'s set. `--no-promote` leaves routing and crons unchanged.
+- Prints the Service and deployment ids, label, URL, current status and secret-write status. Read
+  both the deployment and the schedule outcome: a created Worker does not prove the schedule
+  succeeded.
 
 ## Existing Worker artifacts
 
-Use `@astrale-os/adapter-astrale/services` in the project's pinned dependency set. Bundle the entry
-and runtime dependencies first. The adapter constructs the canonical request and sends secrets on
-stdin through the authenticated CLI; do not build an obsolete flat deploy payload.
+Bundle the entry and its runtime dependencies first, then deploy with
+`@astrale-os/adapter-astrale/services` from the project's pinned dependencies. It builds the
+canonical request and sends secrets on stdin through the authenticated CLI.
 
 ```js
 import { deployWorker, readWorkerDirectory } from '@astrale-os/adapter-astrale/services'
@@ -57,19 +56,19 @@ console.log({ state, serviceId: deployment.serviceId, deploymentId: deployment.i
   label: deployment.label, url: deployment.url, current: deployment.current })
 ```
 
-The example assumes the Worker implements `/health` and returns
-`x-astrale-worker-version: env.ASTRALE_VERSION_METADATA.id`; adapt readiness to its real contract.
-It requests no Domain record, signer, router, or installation. Pass adapter options
-`{ admin: '<bookmark>', identity: '<local CLI identity>' }` as the second argument when needed.
-For a candidate use `promote: false`; on a first deploy this leaves no current deployment, so
-promote its returned label before current-only logs, secrets, or schedules can be used.
-Load declared secret values from protected files or a secret manager in your own deploy script;
-the standalone adapter example does not include a secret loader.
+- Readiness assumes the Worker serves `/health` with
+  `x-astrale-worker-version: env.ASTRALE_VERSION_METADATA.id`; adapt it to the real contract. The
+  example requests no Domain record, signer, router or installation.
+- Adapter options go second: `{ admin: '<bookmark>', identity: '<local CLI identity>' }`.
+- `promote: false` deploys a candidate. On a first deploy it leaves no current deployment: promote
+  its label before using current-only logs, secrets or schedules.
+- The adapter loads no secrets: read declared values from protected files or a secret manager in
+  the deploy script.
 
 ## Inspect and operate
 
-Service calls target Admin. Prefix each returned bare node ID with `@` to form its canonical path;
-do not substitute a slug or compute a graph ID:
+Calls target Admin. A canonical path is `@` + the returned bare node id; never a slug or a computed
+id.
 
 ```sh
 SERVICE_PATH='@<returned-service-id>'
@@ -79,26 +78,20 @@ astrale call /:services.astrale.ai:class.CloudflareService:list \
   project=nightly-report environment=production --admin --json
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.logs" \
   --admin --data '{"tail":50}' --json
-```
-
-`logs` accepts optional deployment `label` and numeric `since`; without a label it reads the current
-deployment. `list` includes `current` and lifecycle state. Set `PREVIOUS_LABEL` to the label of
-the chosen active deployment from that listing before promoting it.
-
-```sh
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.promote" \
   label="$PREVIOUS_LABEL" --admin --json
 ```
 
-Promotion changes the stable Service endpoint and cron target. Rollback promotes an older active
-deployment; it does not overwrite immutable code or change what a consumer Kernel has installed.
-Inspect the returned result and verify the exact URL/version and application behavior after moving it.
+- `logs({ label?, tail?, since? })`: without a label, the current deployment. `list` includes
+  `current` and the lifecycle state; take `PREVIOUS_LABEL` from an active row.
+- Promotion moves the stable endpoint and the cron target. Rollback promotes an older active
+  deployment; it never rewrites immutable code or changes a consumer Kernel's installation. Verify
+  the exact URL, version and application behavior afterwards.
 
 ### Secrets and schedules
 
-Use a protected file outside the repository or piped stdin for `{"name":"API_TOKEN","value":...}`:
-
 ```sh
+# {"name":"API_TOKEN","value":...} from a protected file outside the repository, or stdin
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.setSecret" \
   --admin --data @/private/path/secret-input.json --json
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.secrets" \
@@ -109,63 +102,54 @@ astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.metho
   --admin --data '{}' --json
 ```
 
-The current deployment must declare the secret. Rotation keeps its code/URL/key, propagates
-asynchronously, and affects no other deployment. Update the source of secret values used by future
-deploys too, or a redeploy can restore the old value. New/removed names require a new configuration.
-Recheck current after success and verify behavior after propagation; the secret-only reply does
-not identify a deployment when promotion races with rotation. For another active generic Worker
-deployment, redeploy its exact original Worker/configuration/record with updated
-values and `promote: false` (`--no-promote` in the scaffold); check the same label/URL, `reused`, and
-secrets `updated`. Preserve all declared secret values. Changed artifacts create a different
-deployment, and a normal promoting redeploy moves the stable endpoint and cron target.
+- `setSecret`: the current deployment must declare the name. Rotation keeps the code, URL and key,
+  propagates asynchronously and touches no other deployment. Update the source of future deploy
+  values too, or a redeploy restores the old value. The reply does not identify the deployment when
+  a promotion races the rotation: recheck `current`, then verify behavior after propagation.
+- Another active generic Worker deployment: redeploy its exact original Worker, configuration and
+  record with updated values (all declared values preserved) and `promote: false` (`--no-promote`);
+  expect the same label and URL, `reused`, secrets `updated`. Changed artifacts make another
+  deployment, and a promoting redeploy moves the endpoint and cron target.
+- `setSchedule` replaces the whole set: at most 24 five-field UTC expressions; `[]` disables. Every
+  promoting scaffold deploy re-applies `service.json.crons`, overwriting a manual `setSchedule`:
+  enable a cron by editing the file and redeploying after verification
+  ([service-account-cron.md](service-account-cron.md)).
+- Keep bounded evidence; never log secret or business payloads.
 
-Schedules replace the complete set (up to 24 five-field UTC expressions), not append to it.
-`{"crons":[]}` disables it. Keep `service.json.crons` aligned: every promoting scaffold deploy
-replaces schedules with that declared set. Enable cron by editing that file and redeploying after
-verification; a manual `setSchedule` is overwritten by the next deploy if the file still says `[]`.
-See [service-account-cron.md](service-account-cron.md) for the private
-entry and real-tick verification. Retain bounded evidence without logging secret or business payloads.
-
-### Ownership, view, retirement, deletion
-
-Transfer requires authority over the existing Service and the intended new owner. Its `owner`
-input is a bare Identity node ID, without `@` (the result formats it as a Path):
+### Ownership, View, retirement, deletion
 
 ```sh
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.transfer" \
   --admin --data '{"owner":"<new-owner-id>"}' --json
 astrale view /:services.astrale.ai:view.application -i <admin-bookmark>
-```
-
-The View belongs to the Domain; it needs no fabricated Service target. Use an actual Admin bookmark
-for `view`, whose `-i` selection is distinct from `call --admin`.
-
-```sh
 astrale call "${DEPLOYMENT_PATH}::services.astrale.ai:class.CloudflareDeployment.method.retire" \
   --admin --data '{}' --json
 astrale call "${SERVICE_PATH}::services.astrale.ai:class.CloudflareService.method.delete" \
   --admin --data '{}' --json
 ```
 
-Run only the lifecycle operation requested. Retirement permanently withdraws one deployment;
-current cannot retire alone, so first promote another active deployment or delete the Service.
-Deleting a Domain Service retires all its deployments, including published versions; registry
-installs and pinned consumers can then fail. Inventory those consumers before deleting.
-Retirement/deletion converge in phases: retain the same exact target, respect `retryAfterMs`, and
-repeat within a bounded window until `retired` / `deleted`. Do not interpret a `retiring` / `deleting`
-receipt as completion. Deletion stops Service routing/crons, retires all deployments, then removes
-the graph resource and frees its name. Verify externally visible withdrawal separately from graph
-state. Neither operation uninstalls any consumer Domain or removes a business account.
+- `transfer` needs authority over the Service and the new owner; `owner` is a bare node id (no
+  `@`), and the result formats it as a Path.
+- The View belongs to the Domain and takes no Service target. `view -i` needs an actual Admin
+  bookmark; it is distinct from `call --admin`.
+- Run only the requested lifecycle operation. Retirement permanently withdraws one deployment; the
+  current one cannot be retired alone: promote another active deployment first, or delete the
+  Service.
+- Deleting a Domain Service retires all its deployments, published versions included: registry
+  installs and pinned consumers can then fail. Inventory them first.
+- Both converge in phases: keep the exact target, respect `retryAfterMs`, repeat within a bounded
+  window until `retired` / `deleted`. A `retiring` / `deleting` receipt is not completion.
+- Deletion stops routing and crons, retires every deployment, removes the graph resource and frees
+  the name. Verify external withdrawal separately from graph state. Neither operation uninstalls a
+  consumer Domain or removes a business account.
 
 ## Domain releases
 
-For a Domain project, use `astrale-domain deploy <environment>` with
-`@astrale-os/adapter-astrale`, then deliberately install the returned immutable deployment URL:
-
 ```sh
+astrale-domain deploy <environment>          # with @astrale-os/adapter-astrale
 astrale domain install "$DEPLOYMENT_URL" -i "$CONSUMER_INSTANCE"
 ```
 
-An Environment selects deployment configuration, never a consumer instance. Each consumer pins and
-upgrades independently; promotion of the Service's stable URL does not move an existing pin.
-See [deployer-agent.md](deployer-agent.md) for verification and handoff.
+An Environment selects deployment configuration, never a consumer. Each consumer pins and upgrades
+independently; promoting the Service's stable URL never moves an existing pin. Verification and
+handoff: [deployer-agent.md](deployer-agent.md).

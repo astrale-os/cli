@@ -35,7 +35,7 @@ and never installs; `astrale domain install <url> -i <instance>` pins that
 release on an instance. An Environment names no instance. The Astrale adapter
 deploys on the Admin instance's Services; the Cloudflare adapter deploys in the
 author's Cloudflare account. Domain development runs no local Worker or ingress.
-The astrale-domain skill's `references/release.md` describes deploy, install,
+The astrale-domain skill's `references/deployment.md` describes deploy, install,
 publish and yank.
 
 ## Quickstart

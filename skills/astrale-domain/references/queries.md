@@ -1,9 +1,9 @@
 # Queries
 
 Read for the read grammar: handles, verbs and their bounds, conditions, relations, `.reachable()`,
-rows, refusals, and the ranges a Mutation guards on. `runtime.md` owns where a Query lives and how a
-handler calls it. The installed SDK's types decide: a Class, Property or relation the Domain cannot
-name does not compile.
+rows, refusals, and the ranges a Mutation guards on. `actions.md` owns where a Query lives,
+`authority.md` which authority a call names. The installed SDK's types decide: a Class, Property
+or relation the Domain cannot name does not compile.
 
 ## Shape
 
@@ -42,7 +42,8 @@ Mutations: dot-separated segments of lowercase letters, digits and `-`.
 - **Bounded before it reads.** Every verb carries its bound; the SDK refuses a Query past its bounds
   before anything is sent.
 - **One snapshot per read.** Each read is one Kernel invocation. Facets, steps and pages of one
-  Query share no snapshot.
+  Query share no snapshot. A root `id.in` past 32,768 ids is sent in consecutive parts, each at its
+  own snapshot, rows merged in Kernel order.
 - **Authority-neutral.** A Query names no authority; each call names it with `{ as }`.
 - **One `QueryError` per refusal**, by code. Business refusals are the Query's declared `errors`.
 
@@ -104,11 +105,26 @@ filter is written in place: `filter.author && i.author.is(filter.author)`.
 | `rel.some(cond?)`, `rel.none(cond?)`, `rel.every(cond)` | Over the Nodes it reaches. |
 | `rel.atLeast(n, cond?)`, `rel.atMost(n, cond?)`, `rel.exactly(n, cond?)` | How many it reaches. |
 
+Terms by the Property's value kind:
+
+| Kind | Terms |
+| --- | --- |
+| text, instant | `eq` `in` `gt` `gte` `lt` `lte` `between` `startsWith` `isSet` `isMissing` `asc` `desc` |
+| number | `eq` `in` `gt` `gte` `lt` `lte` `between` `isSet` `isMissing` `asc` `desc` |
+| enum, boolean | `eq` `in` `isSet` `isMissing` `asc` `desc` |
+| JSON value | `eq` `isSet` `isMissing` |
+| set (array of unique items) | `isSet` `isMissing` |
+
 A relation condition's callback receives `(node, edge)`: conditions on the far Node and on the
 Edge's Properties.
 
 `orderBy` takes one key or a list: `orderBy((i) => [i.updatedAt.desc(), i.title.asc()])`. Rows
 without the value sort last; `asc({ missing: 'first' })` sorts them first.
+
+- Rows follow the keys, with identity breaking every tie: `first(n)` and each page are
+  deterministic.
+- On a union whose Classes map one name to different Properties, that name filters but does not
+  order. A set or JSON Property never orders.
 
 ## Relations
 
@@ -174,8 +190,11 @@ A depth, or an order by depth, is not expressed: read one level per step with `i
 - A Node row is portable JSON: `id`, `$class`, and every Property by name. An optional Property may
   be absent; `null` is a stored null. `$class` is the Class or any subclass the Domain can name.
 - A Property whose name the SDK takes is under `$prop`: `row.$prop.id`, `handle.$prop.path`.
+- Two parents' Properties of one name that the Class does not redeclare are grouped by owner, in
+  lower camel case: `row.$record.title`.
 - An Edge read at the root answers `{ $class, $source, $target }`, its Properties, both ends' rows
-  under their roles, and `$slug` when it has one. `edgeKey(row)` gives the
+  under their roles, and `$slug` when it has one. Its `get()`, `find()` and `exists()` take no
+  target; its `first(n)` takes no `{ more }`. `edgeKey(row)` gives the
   `{ source, target, class }` a Mutation names an Edge by.
 - From a Node, a direction along an undirected Edge names a role, never a stored end: `'outgoing'`
   reads the Edges where the Node takes the first declared role.
@@ -218,6 +237,10 @@ again: `{ errors: { ...query.errors } }`.
 | `query.all(q, input, { as, max })` | Every row of a page Query, page after page; `TOO_MANY` past `max`. |
 | `step.query(id, q, input, { as: 'executor' })` | A durable Workflow: journaled, replayed from the journal. |
 
+In `step.query`, a `QueryError` other than `REFUSED` fails the Step at once and a replay throws it
+again. `REFUSED` is a failed attempt: a permanent one exhausts the Step, a stale snapshot spends no
+attempt.
+
 `{ as: 'caller' }` answers only what both the caller and the Domain may observe and leaves out the
 rest without saying so. An `auth: 'anonymous'` callable reads as `executor` only.
 
@@ -234,16 +257,16 @@ rest without saying so. An `auth: 'anonymous'` callable reads as `executor` only
 - **`checkQuery(query, sampleInput, { domain, as? })`** from `@astrale-os/sdk/testing` runs both
   checks in a test, without a Kernel. Give it an input that builds every optional condition.
 
-| `QueryError` code | When |
-| --- | --- |
-| `NOT_FOUND` | A root `get` found nothing. |
-| `NOT_READABLE` | `get` or `find` met a fact the reader may not read. |
-| `INTEGRITY` | A relation's `get` found none, or a second row came where one is allowed. |
-| `TOO_MANY` | Past a verb's `max`, `query.all`'s, the Query's rows or reads, or the answer's bytes. |
-| `REFUSED` | The Kernel refused the read; `retryable` says whether a retry may succeed. |
-| `INPUT_INVALID` | The SDK or the Kernel refused the document before reading. |
-| `OUTDATED` | The Host's Registry does not match the Domain's build. |
-| `UNSUPPORTED` | The Host does not serve the `feature`: `'v7'`, `'classes'` or `'reachable'`. |
+| `QueryError` code | When | Details |
+| --- | --- | --- |
+| `NOT_FOUND` | A root `get` found nothing. | `class`; `target` |
+| `NOT_READABLE` | `get` or `find` met a fact the reader may not read. | `class`; `id`, a Node id or an Edge key |
+| `INTEGRITY` | A relation's `get` found none, or a second row came where one is allowed. | `relation`; `parent`; `found: 0 \| 2` |
+| `TOO_MANY` | Past a verb's `max`, `query.all`'s, the Query's rows or reads, or the answer's bytes. | `limit: 'max' \| 'rows' \| 'reads' \| 'bytes'`; `bound` |
+| `REFUSED` | The Kernel refused the read. | `kernelCode`; `retryable` |
+| `INPUT_INVALID` | The SDK or the Kernel refused the document before reading. | `kernelCode`, `phase`, `path`; `limit: 'in'` |
+| `OUTDATED` | The Host's Registry does not match the Domain's build. | `kernelCode: 'QUERY_EXPECTATION_MISMATCH'` |
+| `UNSUPPORTED` | The Host does not serve the `feature`. | `feature: 'v7' \| 'classes' \| 'reachable'` |
 
 `isQueryError(error, code?)` recognizes one. The Domain linter reads Queries too: `QRY-CLOCK` (no
 clock in `build` or `output`; take now in the input), `QRY-ROWS` (constant bounds multiply past
@@ -282,7 +305,7 @@ Bridge inside the Query, with a step or in `output`; the bridge counts toward it
 ## Guard ranges
 
 A Mutation guards its write on a range: a Class handle after `where`, `union` and `orderBy`
-(`runtime.md`, Mutations). A read (`first`, `exists`, `count`…) and a rendered set (`with`, `ref`)
+(`mutations.md`). A read (`first`, `exists`, `count`…) and a rendered set (`with`, `ref`)
 are refused there, since their verb, size or rendering would not reach the guard; so is a range
 whose condition walks with `.reachable()`.
 
@@ -291,8 +314,8 @@ whose condition walks with `.reachable()`.
 `defineQuery<Schema>()((domain) => ({ id, build, project }))` with `Query.from(…)`,
 `defineCompositeQuery`, `defineCollectionQuery`, `queryResult` and `mutation.expect.query` are the
 deprecated V6 forms. They keep their meaning; write nothing new with them, with one exception:
-Query v7 is not served in maintenance or repair sessions, so a migration that runs there reads
-with V6.
+Query v7 is not served in maintenance or repair sessions (`INSTANCE_MAINTENANCE`), so a migration
+that runs there reads with V6 (`migration.md`).
 
 | V6 | v7 |
 | --- | --- |
