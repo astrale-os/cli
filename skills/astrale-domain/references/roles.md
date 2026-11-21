@@ -24,7 +24,8 @@ authority a call uses: `authority.md`. Scopes and the rest of a release's requir
 | `domain.reader` | reading Class, Function and Policy Nodes, `extends` and `governed_by` Edges | `domain.manager`, `reader` |
 | `domain.installer` | `install` | `domain.manager` |
 | `domain.uninstaller` | `uninstall` | `domain.manager` |
-| `view.reader` | reading View Nodes and `entrypoint` Edges; the deprecated `View.resolve` | `reader` |
+| `view.reader` | reading View Nodes and `entrypoint` Edges; the deprecated `View.resolve` | `reader`, `view.manager` |
+| `view.manager` | creating and deleting `view_access` Edges: opening or closing one View to an Identity | `admin` |
 | `authority.reader` | reading Role properties and every `extends_with`, `constrained_by`, `excluded_from`, scope and grant Edge | `admin` |
 | `identity.resolver` | `Identity.whois`: an Identity from its issuer and subject | `identity.manager` |
 | `identity.registrar` | `register`: Authentication on an existing Identity | `identity.manager` |
@@ -44,7 +45,7 @@ Bundles, each a member of the Roles it lists:
 | `execution.manager` | `execution.reader`, `execution.terminator` |
 | `reader` | `graph.reader`, `blob.reader`, `domain.reader`, `view.reader` |
 | `writer` | `reader`, `graph.writer`, `blob.writer` |
-| `admin` | `writer`, `domain.manager`, `identity.manager`, `execution.manager`, `authority.reader`, `journal.reader` |
+| `admin` | `writer`, `domain.manager`, `identity.manager`, `execution.manager`, `view.manager`, `authority.reader`, `journal.reader` |
 
 - The reader Roles restrict reading Kernel Nodes and Edges only; the Domain's own Classes are read
   under their own Policies (`policies.md`). A Role Node is traversed by every caller; its properties
@@ -69,6 +70,7 @@ The installed Domain needs a Kernel Role for each Kernel operation its handlers 
 | Resolve an Identity from an issuer and subject | `identity.resolver` |
 | Read installed Classes, Functions or Policies | `domain.reader` |
 | Read Views | `view.reader` |
+| Give or withdraw a View (`view_access`) | `view.manager` |
 | Read other Identities' memberships, scopes or grants | `authority.reader` |
 | Install or uninstall Domains | `domain.installer`, `domain.uninstaller` |
 | Read the Kernel journal | `journal.reader` |
@@ -109,20 +111,21 @@ export const domain = defineDomain({
   granter of that Role. A Kernel Role's granters are only those a release names, so a release asking
   for a Kernel Role installs under Root unless the installer is among its `granters`.
 - A membership of the Domain's own Role installs ungated.
-- Shell's release names `profile.admin` granter of `reader`, `writer`, the `graph` and `blob` Roles,
-  `view.reader`, `domain.reader`, `execution.reader`, `journal.reader` and `authority.reader`: a
-  Shell administrator installs a release asking for those. Any other Kernel Role
-  (`identity.registrar`, for one) installs under Root.
+- Shell's release names `workspace.admin` granter of `reader`, `writer`, the `graph` and `blob`
+  Roles, `view.reader`, `view.manager`, `domain.reader`, `execution.reader`, `journal.reader` and
+  `authority.reader`: a Shell administrator installs a release asking for those. Kernel `admin` and
+  any other Kernel Role (`identity.registrar`, for one) install under Root.
 - Install itself needs `domain.installer` (`deployment.md`). An installer Domain such as Admin must
   also be a granter of every Kernel Role the Domains it installs ask for.
 
 ## What a person holds
 
 - A person holds Roles directly or through the groups they belong to, never through a Domain's
-  requirements (`users.md`). Each Shell profile holds the Kernel profile of its rank:
-  `profile.guest` holds `reader` (see the graph, blobs, Domain definitions and Views),
-  `profile.member` holds `writer` (also write the graph and blobs), `profile.admin` holds `admin`
-  (also manage Domains, Identities and Executions and read authority and the journal).
+  requirements (`users.md`). Each Shell profile holds the Kernel bundle of its rank:
+  `workspace.member` holds `writer` (read and write the graph and blobs, read Domain definitions and
+  Views), `workspace.admin` holds `workspace.member` and `admin` (also manage Domains, Identities and
+  Executions, and read authority and the journal). Whoever only opens the Views it is given holds
+  `reader` and a `view_access` to each, with no profile.
 - Opening Views in the Shell needs `view.reader` (`views.md`).
 - A person calling a Domain whose handler acts as `caller` needs the Kernel Role of each Kernel
   operation it makes for them.

@@ -7,7 +7,7 @@
 > still run that model. **Replaced by** [the accounts reference](../users.md): a business record
 > linked to the final Shell `User` by a Domain Edge, Domain Roles tested with `check(hasRole, …)`,
 > and memberships declared in the release. **Removal:** the Shell major release that makes `User`
-> and `Group` final and deletes Shell's `legacy/` (delivery step 5). Do not start new work from it;
+> and `Group` final and deletes its legacy layer. Do not start new work from it;
 > to move, follow the "Migrating from the subclass model" section of the accounts reference.
 
 Read when a Domain owns people who sign in, invites existing business users, or assigns group access.

@@ -142,6 +142,8 @@ test('target guides show only the Roles model of accounts and requirements', () 
     /requirements\(\{\s*(?:functions|classes|authority|core)\s*:/,
     /\bfunctions:\s*\[\s*K\.functions\./,
     /\bS\.core\.nodes\.(?:admin|member)\b/,
+    /\bUser(?:\.static\.methods)?\.invite\b/,
+    /\bprofile\.(?:admin|member|guest)\b/,
   ]
   for (const path of markdownFiles(skills)) {
     if (path.startsWith(legacyRoot)) continue
@@ -152,9 +154,9 @@ test('target guides show only the Roles model of accounts and requirements', () 
   const accounts = readFileSync(join(root, 'references', 'users.md'), 'utf8')
   assert.match(accounts, /check\(hasRole, ref\(/)
   assert.match(accounts, /holds_account/)
-  assert.match(accounts, /S\.core\.nodes\['profile\.admin'\]/)
+  assert.match(accounts, /S\.core\.nodes\['workspace\.admin'\]/)
+  assert.match(accounts, /Invitation\.static\.methods\.send/)
   assert.match(accounts, /requirements\.domain/)
-  assert.match(accounts, /K1/)
 })
 
 test('the reorganized guides retain current authority and exact Method semantics', () => {

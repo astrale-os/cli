@@ -253,7 +253,7 @@ Invitations:
   recipient's own credential, then adds Instance membership.
 - `instance invitation status <id>`: one read-only observation of the exact Invitation. `user` is
   the Shell account reserved on the Instance, to which an Instance administrator can grant the Shell
-  `profile.admin` Role (astrale-domain `references/users.md`). Only `completed` means access is
+  `workspace.admin` profile (astrale-domain `references/users.md`). Only `completed` means access is
   materialized; `accepted`, `registering`, `registered` are intermediate.
 - `instance invitation reconcile <id>`: diagnostic recovery, not the normal invitation journey.
 

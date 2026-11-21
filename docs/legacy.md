@@ -58,4 +58,5 @@ anything else has to change, the item was not fully isolated: record that in the
 [`skills/astrale-domain/references/legacy/LEDGER.md`](../skills/astrale-domain/references/legacy/LEDGER.md)
 lists the items. L-CLI-1 keeps the guide of the Shell subclass model (Domains extending Shell `User`
 and `Group`, `member_of_group`, Core groups) until the Shell major release that makes `User` and
-`Group` final (delivery step 5 of the accounts, groups and Roles design).
+`Group` final. L-CLI-2 keeps the operator upgrade of an instance to a Shell with Roles until that
+Shell major removes its two migration Functions.

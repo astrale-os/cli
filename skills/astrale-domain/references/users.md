@@ -14,20 +14,24 @@ composition and Roles; your Domain owns its business record, its Roles and its b
   what it admits: `roles.md`.
 - **Your Domain links, it does not inherit.** Its record of a person (an Employee) is an ordinary
   Class linked to the account by its own Edge, and its Policies test its own Roles.
-- **Profiles.** Shell gives each person one of `profile.guest` (reads what Domains let it read,
-  lands on its Views), `profile.member` (the workspace, sees accounts and groups) or
-  `profile.admin` (manages accounts, groups, Roles and Domains, and grants Roles). The atomic Shell
-  Roles a Domain may ask for are `user.reader`, `user.writer`, `group.reader` and `group.writer`.
+- **Profiles.** An administrator gives a person one of two Shell profiles: `workspace.member`
+  (opens the workspace, reads every person's and group's profile) or `workspace.admin` (also manages
+  accounts, groups, Roles and Domains, and grants every Shell Role). There is no guest profile:
+  whoever only opens the Views it is given holds Kernel `reader` and a `view_access` to each.
+- **Atomic Shell Roles** a release may ask for: `user.reader`, `user.writer`, `group.reader`,
+  `group.writer`, `directory.provisioner`, `user-profile.reader`, `group-profile.reader` and
+  `os.viewer`. `user-profile.self-writer` lets a person change their own name and picture; an
+  administrator grants it to `workspace.member` or leaves it off.
 - **Directory.** An external directory (Entra ID through WorkOS) may provide accounts and groups.
   It writes no Role and no business record, and your Domain code is the same with or without it.
 
 ## Prerequisites
 
-A Shell release that declares the Shell `Role` Class and the `profile.*` Core Roles, and an SDK whose
-`requirements` from `@astrale-os/sdk/domain` accepts `roles` and `scopes` (its
-`docs/requirements.md` describes them). Naming a dependency's Core Identity as a holder (K1 below)
-also needs a Host Kernel with K1 and an SDK on that Kernel cohort. Check the installed Shell
-callables with `astrale introspect` before calling them.
+A Shell release that declares the Shell `Role` Class and the `workspace.*` Core Roles, and an SDK
+whose `requirements` from `@astrale-os/sdk/domain` accepts `roles` and `scopes` (its
+`docs/requirements.md` describes them). An instance on a Shell before Roles is upgraded first
+(Migrating from the subclass model, below). Check the installed Shell callables with
+`astrale introspect` before calling them.
 
 ## Wire a Domain
 
@@ -35,11 +39,11 @@ callables with `astrale introspect` before calling them.
 | --- | --- |
 | P1 | The business record is a Class of the Domain, not an Identity. A Domain Edge links it to `S.classes.User`. |
 | P2 | "It is me": the record points to the subject through that Edge. |
-| P3 | Its Roles are Core nodes of its own final `Role` Class, which declares its read (R7). Policies test them with `check(hasRole, ref(role))`, at any depth. |
-| P4 | It creates accounts with `S.User.create`, invites with `S.User.invite`, deactivates with `S.User.deactivate`. Its release asks for `user.writer`. |
+| P3 | Its Roles are Core nodes of its own final `Role` Class, which declares its own read. Policies test them with `check(hasRole, ref(role))`, at any depth. |
+| P4 | It creates accounts with `S.User.create`, invites with `S.Invitation.send`, deactivates with `S.User.deactivate`. Its release asks for `user.writer`. |
 | P5 | A business grouping that confers rights (a Team) is an Identity of the Domain. Its members are Shell accounts or groups; it holds Roles and carries business Edges. |
 | P6 | Every composition the Domain ships (a Team holding a Role, the Domain or a dependency's Identity holding one of its Roles, its Team holding a dependency's Role) is a binding of its release, never a Core Edge and never a bootstrap function. |
-| P7 | Its release names Shell `profile.admin` granter of each of its Roles (K1): an admin grants them from the Shell Roles screen and installs Domains that ask for them. |
+| P7 | Its release names Shell `workspace.admin` granter of each of its Roles: an administrator grants them from the Shell Roles screen and installs Domains that ask for them. |
 
 Each Domain declares its own `hasRole`: `check()` accepts only local Policies, so Shell's `hasRole`
 cannot be checked from your Schema. A Core Edge toward a Role is refused too (`DV_CORE_EDGE_CLASS`:
@@ -132,7 +136,7 @@ export const Team = nodeClass({
       auth: 'authorized',
       input: z.strictObject({ member: z.string().min(1), held: z.boolean() }), // NodeId
       output: z.object({}),
-      policy: ({ check, ref }) => check(hasRole, ref(S.core.nodes['profile.admin'].ref)),
+      policy: ({ check, ref }) => check(hasRole, ref(S.core.nodes['workspace.admin'].ref)),
     }),
   },
 })
@@ -159,10 +163,10 @@ export const schema = defineSchema('employees.example', {
   walk `extends_with` by hand (see `policies.md`).
 - `Team.setMembership` writes or deletes `member -[extends_with]-> team` with a `self` Mutation: the
   Domain owns the Team Class. Guard it with an administrator check, since the Kernel admits any write
-  the Team's owner makes. An admin adds a provided Shell group (`1Pact Sales`) to a Team this way,
-  and its members follow the directory.
-- A Shell administrator reads your data only through your Roles (R6): declare `read` on every Class
-  whose nodes are not for every guest.
+  the Team's owner makes. An administrator adds a provided Shell group (`Sales`) to a Team this
+  way, and its members follow the directory.
+- A Shell administrator reads your data only through your Roles: declare `read` on every Class
+  whose nodes are not for every holder of Kernel `reader`.
 
 ## Release
 
@@ -176,7 +180,7 @@ import { schema } from '#schema'
 import runtime from './runtime.js'
 
 const own = language.resolve(schema).core.nodes
-const admin = S.core.nodes['profile.admin']
+const admin = S.core.nodes['workspace.admin']
 const User = S.classes.User
 
 export const domain = defineDomain({
@@ -188,14 +192,14 @@ export const domain = defineDomain({
       { role: K.core.nodes['graph.reader'], members: [requirements.domain] },
       { role: K.core.nodes['graph.writer'], members: [requirements.domain] },
       { role: S.core.nodes['user.writer'], members: [requirements.domain] },
-      // Its Roles: the Team matrix (P6) and Shell admin as granter (P7, K1).
+      // Its Roles: the Team matrix (P6) and Shell admin as granter (P7).
       { role: own.administrator, members: [own.it], granters: [admin] },
       { role: own.reader, members: [own.it, own.sales], granters: [admin] },
       { role: own.worker_operator, members: [own.sales], granters: [admin] },
     ],
     scopes: [
       { on: User.static.methods.create, operations: ['call'] },
-      { on: User.static.methods.invite, operations: ['call'] },
+      { on: S.classes.Invitation.static.methods.send, operations: ['call'] },
       { on: User.methods.deactivate, operations: ['call'] },
       { on: User.methods.reactivate, operations: ['call'] },
     ],
@@ -203,19 +207,19 @@ export const domain = defineDomain({
 })
 ```
 
-- `user.writer` is installable because Shell `profile.admin` is its granter: the installer must be
-  able to grant every Role the release asks for (R3). Ask `user.reader` only if the Domain reads
-  accounts.
+- `user.writer` is installable because Shell `workspace.admin` is its granter: the installer must
+  be able to grant every Role the release asks for (`roles.md`, Installing). Ask `user.reader` only
+  if the Domain reads accounts.
 - Your Team may hold a dependency's Role (`{ role: agencies.core.nodes.reader, members: [own.it] }`),
   and a dependent Domain may name your Team member of its own Roles
   (`{ role: own.reader, members: [employees.core.nodes.it] }`). A holder is the Domain, one of its
-  own Core Identities, or (K1) a Core Identity of a Domain in its dependency closure — the last only
+  own Core Identities, or a Core Identity of a Domain in its dependency closure — the last only
   toward your own Roles (`A Core Identity of a dependency holds only the Domain's own Roles.`), so no
   two Domains ever declare the same membership; anything else refuses the release.
-- **K1 is not everywhere yet.** `granters: [S.core.nodes['profile.admin']]` and a dependency's Team as
-  member need a Host Kernel with K1, and an SDK on that Kernel cohort; an earlier SDK refuses them at
-  Build with `A holder is the Domain or one of its own Core Identities.` Until both are available,
-  omit those holders and grant your Roles through an admin-guarded method like `Team.setMembership`.
+- A dependency's Identity as granter or member needs an SDK and a Host Kernel that accept it; an
+  SDK that does not refuses it at Build with `A holder is the Domain or one of its own Core
+  Identities.` Then omit those holders and grant your Roles through an admin-guarded method like
+  `Team.setMembership`.
 - Release bindings are projected again at each install: a membership removed by hand comes back.
 
 ## Processes
@@ -229,7 +233,7 @@ export const activate = defineWorkflow<typeof schema>()(
   'Employee.activate',
   async ({ self, step }) => {
     const employee = await step.query('read-employee', employeeContact, { employee: self })
-    // Idempotent on the email (U1): returns the existing account, invited or directory-provided.
+    // Idempotent on the email: returns the existing account, invited or directory-provided.
     const { user } = await step.run('create-account', ({ dependencies }) =>
       dependencies.shell.self.invoke((s) => s.classes.User.static.methods.create, {
         email: employee.email,
@@ -239,10 +243,7 @@ export const activate = defineWorkflow<typeof schema>()(
     await step.mutate('link-account', linkAccount, { employee: self, account: user })
     await step.mutate('join-workers', joinWorkersTeam, { account: user }) // extends_with → Team workers
     await step.run('invite', ({ dependencies }) =>
-      dependencies.shell.self.invoke((s) => s.classes.User.static.methods.invite, {
-        user,
-        profile: 'guest',
-      }),
+      dependencies.shell.self.invoke((s) => s.classes.Invitation.static.methods.send, { user }),
     )
     return { user }
   },
@@ -250,23 +251,25 @@ export const activate = defineWorkflow<typeof schema>()(
 ```
 
 - `User.create({ email, name, givenName?, familyName? })` answers `{ user, created }`; `user` is the
-  account's `@<NodeId>` Path, accepted as is by `invite`. Convert it where a Mutation takes a NodeId.
-- `User.invite({ user, profile? })` grants the profile (`member` by default) and has Admin send the
-  invitation to the account's email. A Domain grants `guest` or `member`; `admin` needs a caller
-  holding `profile.admin` (`PROFILE_NOT_HELD`). A deactivated account is refused (`USER_SUSPENDED`):
-  reactivate it first. At the first sign-in, Admin binds the verified login to the account of that
-  email (U8); the Domain registers nothing.
+  account's `@<NodeId>` Path, accepted as is by `Invitation.send`. Convert it where a Mutation takes a
+  NodeId. Another account holding the email answers `USER_EMAIL_TAKEN`.
+- `Invitation.send({ user })` is durable: it records an `Invitation`, has Admin email the account,
+  and ends `accepted`, `cancelled` or `expired`. An account has at most one pending invitation; a
+  new one to the same email resends it. It grants nothing: the person holds what the Domain's Teams
+  give and the profile an administrator grants. A deactivated account is refused (`USER_SUSPENDED`),
+  so is one without an email (`USER_EMAIL_INVALID`). At the first sign-in, Admin binds the verified
+  login to the account of that email; the Domain registers nothing.
 - Deactivate on archive and reactivate on return:
   `dependencies.shell.self.invoke((s) => s.classes.User.methods.deactivate, accountId, {})`, and
-  `methods.reactivate` the same way. A frozen account can no longer sign in. Shell refuses an
-  account holding an administration Role (`USER_ADMINISTRATOR_PROTECTED`) and the last active
-  administrator (`USER_LAST_ADMINISTRATOR`). Teams and the record stay.
+  `methods.reactivate` the same way. A frozen account can no longer sign in. Only an administrator
+  changes an administrator's account (`USER_ADMINISTRATOR_PROTECTED`), and the last active
+  administrator stays (`USER_LAST_ADMINISTRATOR`). Teams and the record stay.
 - A record that never signs in (a client organization) has no account, no Role and no Identity.
 
 ## With or without a directory
 
-A Domain does not know whether a directory runs (A5). `User.create` returns the account the
-directory already provided, and the directory adopts a local account of the same email (A2): the
+A Domain does not know whether a directory runs. `User.create` returns the account the
+directory already provided, and the directory adopts a local account of the same email: the
 same activation works in both cases. The directory decides no business record: the Domain's process
 creates it. To follow the directory's organization, an admin makes a provided Shell group a member of
 a Team. The name and email of a provided account change only in the directory
@@ -279,17 +282,17 @@ a Team. The name and email of a provided account change only in the directory
 - Write memberships from a bootstrap, `initialize` or migration function, or as Core Edges: declare
   them in the release (P6).
 - Write `extends_with` toward Shell Roles or Shell groups yourself: you neither own nor grant them
-  (R1). Shell groups change only through `Group.assignMember`/`unassignMember`, by `group.writer`, and
-  a group that holds a Role only by an admin (G3).
+  (`roles.md`). Shell groups change only through `Group.assignMember`/`unassignMember`, by
+  `group.writer`, and a group that holds a Role only by an administrator (`GROUP_ROLE_PROTECTED`).
 - Check Shell's `hasRole`, or walk `extends_with` by hand: `subject` is already the composition.
 - Register a login onto an account, or treat your record's email as the login.
 
 ## Limits
 
 - `user.writer` covers the whole instance: a compromised Domain could deactivate any ordinary
-  account. Administration Roles are protected (U4).
-- A guest reads every Class that declares no `read` Policy, and every profile opens every View: a
-  View is a door, its Domain's Policies still guard its data.
+  account. Administrators' accounts are protected.
+- Every holder of Kernel `reader` reads every Class that declares no `read` Policy. A View is a
+  door: its Domain's Policies still guard its data.
 - The Kernel admits a membership on the owner's word alone: whoever writes into your Team gets its
   Roles. Keep Team writes behind an admin check.
 - A holder of a Role's revocation can delete a membership the release projected; it returns at the
@@ -303,8 +306,8 @@ Use an authorized operator and IDs from the same instance:
 astrale introspect /:shell.astrale.ai:class.User:create -i staging --as operator
 astrale call /:shell.astrale.ai:class.User:create \
   email=alice@example.com name="Alice Martin" -i staging --as operator
-astrale call /:shell.astrale.ai:class.User:invite \
-  user=@user-id profile=member -i staging --as operator
+astrale call /:shell.astrale.ai:class.Invitation:send \
+  user=@user-id -i staging --as operator
 ```
 
 Verify the same account before and after sign-in, its `holds_account` Edge, and a real allowed and
@@ -317,23 +320,35 @@ Domains written before Shell Roles extend `Shell.User` and `Shell.Group`, mainta
 and write memberships from bootstrap functions. The previous guide is kept, deprecated, at
 [legacy/users.md](legacy/users.md); do not start new work from it.
 
+An instance moves in two independent steps:
+
+1. **The instance's Shell.** An operator installs a Shell with Roles and runs its two account
+   migrations: [legacy/shell-roles-upgrade.md](legacy/shell-roles-upgrade.md). Domains built against
+   the subclass model stay installed, unrebuilt; the few behaviours that change for them are listed
+   there.
+2. **Each Domain.** Its authors move it to the model above, in a release of their own.
+
 | Before | Now |
 | --- | --- |
 | `User`/`Group` subclasses in the Domain | Business record + `holds_account`; a Team Identity; a Domain `Role` |
 | `member_of_group` | `extends_with` |
-| Core groups "Administrators", "Members", "View only" | `profile.admin`, `profile.member`, `profile.guest` |
-| Core group "Applications" | The Domain's Roles, by release |
+| Core groups "Administrators", "Members" | `workspace.admin`, `workspace.member`; each group is a member of its profile |
+| Core groups "View only", "Applications" | Kernel `reader` and the Views given by `view_access`; the Domain's Roles, by release |
 | `creationKey`, `claimedEmail`, `claimedName` | Unique `email`, `name` |
 | `User.recordProfile` at each sign-in | `User.updateProfile` by the account holder |
-| `listEntrypoints`, `assignViews` | A Query of the visitor's composition; a Mutation on `view_access` |
+| `User.invite({ user, email })` | `Invitation.send({ user })` |
+| `listEntrypoints`, `assignViews` | A Query of the visitor's composition; a Mutation on Kernel `view_access` |
 | `belongsToGroup`, `administersShellClass`, `ownsClass`, `usesFunction` | `check(hasRole, ref(role))` on Shell or Domain Roles |
 | `holdsIdentity` (`extends_with` walks), `administrates`/`reads`/`operates` Edges | `check(hasRole, ref(role))` |
 | Self Policy on the subclass, Shell traversal Policies, registration Functions | Removed: `signsInAsEmployee`, Shell `traverse: true` |
-| Bootstrap membership matrix, `Role.setMembership`, `assignMember` calls | Release bindings (P6, P7, K1); `extends_with` written by its owner |
+| Bootstrap membership matrix, `Role.setMembership`, `assignMember` calls | Release bindings (P6, P7); `extends_with` written by its owner |
 | `requirements({ functions, classes, authority, core })` | `requirements({ roles, scopes })` |
 
 Move a Domain in this order: declare `Role`, `hasRole` and the Core Roles and Teams; switch the
-release to Roles and scopes; add the record Class and `holds_account`; migrate each person (create or
-find the account, link it, delete the old Identity so the next sign-in binds the login to the account
-by email, U8); then drop the subclasses. Switching a release to Roles and scopes revokes every
-capability of its legacy shape, so declare everything the Domain still uses.
+release to Roles and scopes; add the record Class and `holds_account`; link each person's record to
+their account. Switching a release to Roles and scopes revokes every capability of its legacy shape,
+so declare everything the Domain still uses.
+
+A subclass account is the node its person signs in to: deleting it, or the subclass, cuts that
+login. Plan how logins move before dropping the subclasses, and raise it with `astrale issue` when no
+installed callable covers it.
