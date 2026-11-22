@@ -64,7 +64,14 @@ An install or uninstall is a durable Execution; its status `detail.class`:
 - A Domain keeps the exact dependency revision it was authored against. The Kernel binds it to
   another active revision when the structural comparison preserves its referenced Schema,
   inheritance obligations, and the callables and Classes its release scopes name (`policies.md`);
-  a new dependency revision alone does not force rebuilding dependents.
+  a new dependency revision alone does not force rebuilding dependents, with one exception below.
+- A build pins the fingerprint of each dependency callable it invokes: key, owner, static and
+  abstract flags, execution mode, and semantic input and output (authorization excluded). A call
+  whose pinned fingerprint differs from the installed callable's is refused
+  `CALLABLE_FINGERPRINT_MISMATCH` (4001), even for a widening. Installs do not compare
+  fingerprints: either side installs alone and the call fails afterwards. Rebuild each dependent
+  that invokes a changed callable and install it with the dependency as roots of one grouped
+  install.
 - `SCHEMA_DEPENDENCY_INCOMPATIBLE` / `SCHEMA_DEPENDENTS_INCOMPATIBLE` name the affected keys and
   Domains. Rebuild the incompatible consumers and their affected reverse dependents against the
   intended closure; deploy all candidates; install the changed dependency and those consumers as
