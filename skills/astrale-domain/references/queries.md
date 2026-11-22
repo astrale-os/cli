@@ -313,7 +313,9 @@ whose condition walks with `.reachable()`.
 
 `defineQuery<Schema>()((domain) => ({ id, build, project }))` with `Query.from(…)`,
 `defineCompositeQuery`, `defineCollectionQuery`, `queryResult` and `mutation.expect.query` are the
-deprecated V6 forms. They keep their meaning; write nothing new with them, with one exception:
+deprecated V6 forms. They keep their meaning, but write nothing new with them, and move each V6
+Query of a Domain to v7 when the Domain is next changed (the installed SDK's
+`docs/legacy/query-v6.md` maps every form), with one exception:
 Query v7 is not served in maintenance or repair sessions (`INSTANCE_MAINTENANCE`), so a migration
 that runs there reads with V6 (`migration.md`).
 
