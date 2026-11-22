@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { shouldRunStartupMaintenance } from '../startup-maintenance'
+import { releaseUpdateArgs, shouldRunStartupMaintenance } from '../startup-maintenance'
 
 describe('startup maintenance admission', () => {
   test('runs only for ordinary interactive commands', () => {
@@ -25,5 +25,16 @@ describe('startup maintenance admission', () => {
     expect(
       shouldRunStartupMaintenance(['astrale', 'bin', 'get'], { ASTRALE_UPDATE_REEXEC: '1' }, true),
     ).toBe(false)
+  })
+})
+
+describe('startup release update', () => {
+  test('applies the offered release from the channel it was read on', () => {
+    expect(releaseUpdateArgs({ channel: 'beta' })).toEqual([
+      'update',
+      '--no-deps',
+      '--channel',
+      'beta',
+    ])
   })
 })
