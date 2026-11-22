@@ -1,25 +1,25 @@
 {
-  "version": "1.0.0-beta.171",
-  "binaryVersion": "1.0.0-beta.171",
+  "version": "1.0.0-beta.172",
+  "binaryVersion": "1.0.0-beta.172",
   "channel": "beta",
   "repo": "astrale-os/cli",
   "assets": {
     "darwin-arm64": {
       "name": "astrale-darwin-arm64.tar.gz",
-      "sha256": "85e5d6a29ac19bf4b13560f99c333607c8cef689fecf5460c06f14ec048bae2a"
+      "sha256": "7ce92903a24541963a0aa177b112d553b24607612b9ef79cd8f62094c31c27be"
     },
     "darwin-x64": {
       "name": "astrale-darwin-x64.tar.gz",
-      "sha256": "c0f84032dd1edd5e81937f1d7a18958553779bf1dbc9c7e3f7ceed2ee92e40d0"
+      "sha256": "a06e70645ecde459fba344d19e846e5744502509be8f4457e7bfb633b9d241e6"
     },
     "linux-arm64": {
       "name": "astrale-linux-arm64.tar.gz",
-      "sha256": "2e324665f3bb13cf7bd4ef871d48771ae16616bf7e07327d48931c4de140f4ac"
+      "sha256": "a357b73782f437c65dea4ae3d4bc316e8875821e6ba7dd6ee68daa83beb6597b"
     },
     "linux-x64": {
       "name": "astrale-linux-x64.tar.gz",
-      "sha256": "f1f5e944c036b47602820e3d78985acbdf83ff22af31853b4f1ac6d1aa820340"
+      "sha256": "6a33989cecfbbb260c945d3d8a4876931e3e0d9f58fba67d6bb4f7cb3ea8e2ab"
     }
   },
-  "commit": "787b3ebd3efed7f02d0e03f692f3bf79805b76e7"
+  "commit": "e0219e7c244ae709edfbe9362aecbd44b5383020"
 }
