@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.172](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.171...cli/v1.0.0-beta.172) (2026-11-22)
+
+
+### Bug Fixes
+
+* **skills:** rebuild the Domains that call the Shell and install them with it ([#808](https://github.com/astrale-os/cli/issues/808)) ([01ad63f](https://github.com/astrale-os/cli/commit/01ad63f2c5b0b7e4c5d3c7ce58d49091912ccd04))
+
 ## [1.0.0-beta.171](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.170...cli/v1.0.0-beta.171) (2026-11-21)
 
 
