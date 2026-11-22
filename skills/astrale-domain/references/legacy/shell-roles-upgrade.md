@@ -51,23 +51,24 @@ For Domains built against the subclass model, and for administrators:
   of memberships that expects only `User` and `Group` members meets that Class once a service
   account joins a group; it reads the account only under `service-account.admin` or `user.reader`.
   The account migration neither writes a service account nor gives it a profile.
-- **The account migration does not see the accounts and groups of a subclass.** A Query a Domain
-  runs reads only the Classes of its own closure, which for the Shell are the Kernel's and its own:
-  the migration reads the Shell's own `User` and `Group` Nodes alone. An account or a group of another
-  Domain's subclass is neither read, nor written, nor counted, nor reported: it gets no `email`,
-  no `name` and no profile, and its claim is not compared with the others (see [Duplicate
-  people](#duplicate-people)). [The account profiles](#the-account-profiles) lists them.
+- **The account migration sees an account or a group of a subclass only if the Shell may read it.**
+  The migration reads the `User` and `Group` Nodes under the Shell's own authority: those of its own
+  Classes, and those of another Domain's subclass whose `read` and `traverse` rules admit the Shell
+  (as a subclass whose memberships the Shell maintains declares). One it does not see is neither
+  read, nor written, nor counted, nor reported: it gets no `email`, no `name` and no profile, and its
+  claim is not compared with the others (see [Duplicate people](#duplicate-people)). One it sees is
+  migrated like the Shell's own. [The account profiles](#the-account-profiles) lists both.
 - **What an account without a profile lacks.** The profile carries what is read through it: the
   picture, and the name and email a reader of `UserProfile` (`user-profile.reader`, which members
   hold) reads there. The `User` read rule stays open, for the Domains built against the
   earlier Shell, so any identity may read the account itself; but the Shell's own reads, its
   directory's included (a Shell Query over `User`), run under the same closure as the migration.
   The Domain that owns the subclass shows its people from its own reads.
-- **The Shell has no way to give a subclass account its profile.** `UserProfile`, `GroupProfile` and
+- **The Shell has no way to give a subclass account it does not see its profile.** `UserProfile`, `GroupProfile` and
   their Edges declare no write rule: only Shell writes them, and the Domain that owns the subclass
   cannot. The Shell methods that create a missing profile, `User.update` (under `user.writer`) and
-  `User.updateProfile` (the holder), first read the account through the same Shell Query, which does
-  not see a subclass account: they answer `USER_NOT_FOUND`.
+  `User.updateProfile` (the holder), first read the account through the same Shell Query: on a subclass
+  account it does not see, they answer `USER_NOT_FOUND`.
 - Calls of the deprecated forms keep working: `User.invite({ user, email })`, `User.recordProfile`,
   `listEntrypoints` and `assignViews`.
 
@@ -128,7 +129,8 @@ TAB=$(printf '\t')
 `astrale query --edge` answers the neighbour Nodes of its source, never Edges; the documents
 `edges` writes select the Edges themselves, as `{ edge, source, target }` references. An account
 holds every Role `reach` lists for it. A read that fails prints `read failed:` with its arguments:
-an empty file or a count of 0 after such a line is no result.
+an empty file or a count of 0 after such a line is no result. Run every block of this page in this
+same shell session: the functions and variables above are its state.
 
 ### The version and the release
 
@@ -150,8 +152,9 @@ astrale domain list -i "$SLUG" --creds "$(astrale token --raw -i "$SLUG" --as "$
   | jq '.domains[] | select(.origin == "shell.astrale.ai") | {version, name, pin}'
 ```
 
-The page applies to an installed Shell without Roles (the `0.1` line) and describes the `0.3`
-line. The `0.2` line is superseded: its account migration does not stop before the invocation
+The page applies to an installed Shell of the `0.1` line, without Roles, and of the `0.2` line,
+which has them; it describes the `0.3` line. From the `0.2` line every step runs as written, and the
+migrations do what the earlier ones left. The `0.2` line is superseded: its account migration does not stop before the invocation
 deadline. Publications are listed highest first; take the newest stable version of the line that
 is not yanked. No change note is published with a version: neither the registry nor the release
 carries one. A Publication names the commit it was built from (`commit`) when its publisher
@@ -179,7 +182,8 @@ The callables whose contract changed, by the line that changed it:
 | `User.create` | `0.3` | New optional `operationId` |
 
 A Domain built against the `0.1` line that calls any of the four rows is rebuilt; one built against
-the `0.2` line, for the two `0.3` rows. A release lists the callables of other Domains it is
+the `0.2` line, for the two `0.3` rows. The line a Domain was built against is the
+`@astrale-domains/shell` version its source pins. A release lists the callables of other Domains it is
 granted to call as itself, in its release manifest: `requirements.capabilities.scopes` with the
 `call` operation, or `requirements.capabilities.functions` for a build of an earlier SDK. List them
 for every installed Domain:
@@ -206,9 +210,12 @@ Each owner rebuilds their Domain from its own source, without changing anything 
 1. Set `@astrale-domains/shell` to the exact new version, and `@astrale-os/sdk` to a release its
    peer range accepts whose Kernel is the instance's (an install refused
    `SCHEMA_DEPENDENCY_INCOMPATIBLE` names the Kernel revision the build carried).
-2. `pnpm install`, then the project's typecheck, tests and build: a call whose input the Shell
-   changed fails to compile until it is written for the new contract.
-3. Deploy, and keep the URL it prints: `pnpm run deploy <environment>`.
+2. `pnpm install`, then the project's typecheck, tests (a project without tests has none to run)
+   and build: a call whose input the Shell changed fails to compile until it is written for the new
+   contract.
+3. Commit, then deploy, and keep the URL and the `Release:` digest it prints:
+   `pnpm run deploy <environment>`. A deployment is named after the commit (`-dirty` for uncommitted
+   changes); a build identical to a deployed one reuses that deployment, its URL and its name.
 
 The `0.2` line gives `User` the properties `attributes`, `directory`, `directoryActive`, `email`,
 `externalId`, `familyName`, `givenName`, `name` and `suspended`, and `Group` the properties
@@ -306,7 +313,8 @@ jq -r '[.id, (.props["kernel.astrale.ai:class.Identity.property.iss"] // "-"),
   before/users.jsonl > before/claims.tsv
 ```
 
-Export the users of every identity provider into one `idp.tsv`, as `<issuer><TAB><subject><TAB><email>`
+If no account has a claim (the last column of `before/claims.tsv` is `-` on every line), the rest of
+this section does not apply. Otherwise, export the users of every identity provider into one `idp.tsv`, as `<issuer><TAB><subject><TAB><email>`
 lines: the issuer is the accounts' `iss`, the provider's user id their `sub`. A sign-in names an
 account by both, so two providers may hold the same subject. Then list every claim that differs from
 the provider's email, or that no provider user confirms:
@@ -351,7 +359,8 @@ jq -rs '
 ```
 
 The migration can proceed: a claiming account of the Shell's Class gets the email, unless another
-account of that Class holds it (a conflict), and the account of the subclass is untouched. The
+account of that Class holds it (a conflict), and an account of a subclass it does not see is
+untouched. The
 result is one person with two accounts, one in each model. The Domain that owns the subclass decides which one the person keeps, through its
 own callables, before or after the migration.
 
@@ -374,8 +383,8 @@ date -u +%Y-%m-%dT%H:%M:%SZ > before/instant      # the recovery point a restore
 astrale domain install "$@" -i "$SLUG" --as "$ROOT" \
   --allow-issuer-change=shell.astrale.ai \
   --validation-scope full --validation-counts exact --json </dev/null > after/install.json
-jq '{changed, execution, follow, origins: [.receipt.transitions[]? | {origin: .intent.origin, state}]}' \
-  after/install.json
+jq '{changed, execution, follow, operation: .receipt.operation,
+     origins: [.receipt.transitions[]? | {origin: .intent.origin, state}]}' after/install.json
 ```
 
 - With no rebuilt Domain, `DEPENDENTS=` leaves the Shell alone in the install.
@@ -388,7 +397,7 @@ jq '{changed, execution, follow, origins: [.receipt.transitions[]? | {origin: .i
   follow the Execution it names until it ends (exit 75: not ended yet, read again):
 
 ```sh
-EXECUTION=$(jq -r '.execution // empty' after/install.json)
+EXECUTION=$(jq -r 'select(has("changed") | not) | .execution // empty' after/install.json)
 while [ -n "$EXECUTION" ]; do
   astrale execution result "$EXECUTION" --wait -i "$SLUG" --as "$ROOT" --json \
     </dev/null > after/install-result.json
@@ -398,7 +407,8 @@ done
 
 - **Verify**, once the install has ended: `domain list` (above) answers `version: <version>` with
   `pin.release` equal to `$DIGEST`, the release the registry names, and each rebuilt Domain answers
-  the release its URL serves.
+  `pin.release` equal to the `Release:` digest its deploy printed (`version` stays empty for a
+  release no registry publishes), and every origin of `origins` is `committed`.
 - **Call each rebuilt Domain** once, through one of its own callables that calls a changed Shell
   callable, as its users do: it answers as before the install. A 4001 names the callable and the
   fingerprint the build pinned: that Domain was not rebuilt against the installed Shell. Rebuild,
@@ -532,7 +542,7 @@ jq -s '{accounts: length,
 
 Each line of `after/user-profiles.tsv` pairs an account with its profile, and of
 `after/group-profiles.tsv` a group with its profile. The accounts and groups left without one are
-those of a subclass, which the migration does not see ([What changes](#what-changes)), and those the
+those of a subclass the migration does not see ([What changes](#what-changes)), and those the
 last call answered in `unprofiled`. Any other one of the Shell's own Class left without one is a gap
 the next call retries.
 
@@ -620,8 +630,8 @@ jq -r 'select(.props["kernel.astrale.ai:class.Identity.property.iss"] and .props
   after/users.jsonl
 ```
 
-Pick one that is a member of each of the four Core groups, where there is one, and decide its Roles
-as it:
+For each of the four Core groups, pick one of its members from that list, where there is one, and
+decide its Roles as it:
 
 ```sh
 PERSON=$(astrale call /:kernel.astrale.ai:class.Identity:impersonate \
@@ -646,9 +656,9 @@ when it expires. Never print it.
 | "Members" | `[false,true,true]` | `call "@<its own id>::shell.astrale.ai:class.User.method.update" -d '{}'`: `User.update` needs `user.writer`; an administrator gets `{}` and nothing is written |
 | "Applications", "View only" | `[false,false,true]` | `query --class /:shell.astrale.ai:class.UserProfile --limit 2` answers at most its own profile, where a member reads every profile (`user-profile.reader`) |
 
-Run each refused call with `-i "$SLUG" --creds "$PERSON" </dev/null`, and one administrator task
-through the Shell methods as an administrator. A Core group with no signed-in member is checked by
-its memberships alone.
+Run each refused call with `-i "$SLUG" --creds "$PERSON" </dev/null`; the refused impersonation
+answers code 2004. As the member of "Administrators", also run the "Members" row's call: it answers
+`{}`. A Core group with no signed-in member is checked by its memberships alone.
 
 ## Roll back
 
