@@ -9,8 +9,11 @@
 > `legacyMigrateAccounts` and `legacyMigrateViewAccess`.
 
 The move is one install and two calls, by an operator, one instance at a time, under the instance's
-Root. Domains that extend Shell `User` or `Group` stay installed and are not rebuilt. The commands
-below need the `astrale` CLI, `jq` and a POSIX shell; each step ends with the read that verifies it.
+Root. A Domain that calls a Shell callable whose contract the new Shell changed is rebuilt against
+it and installed in the same operation as the Shell ([The Domains that call the
+Shell](#the-domains-that-call-the-shell)); every other Domain stays installed as it is. The commands
+below need the `astrale` CLI, `jq`, `curl` and bash or zsh; each step ends with the read that
+verifies it.
 
 ## What changes
 
@@ -37,7 +40,9 @@ For Domains built against the subclass model, and for administrators:
   Find the scripts and tools that mutate these Classes directly before installing.
 - **A group of a Domain's `Group` subclass changes members under the caller's own authority.**
   Shell writes its membership as the caller, not as itself: call it through the owner Domain's own
-  callable. An administrator calling `Group.assignMember` or `Group.unassignMember` on such a group
+  callable, which calls `Group.assignMember` or `Group.unassignMember` and so works only once the
+  owner Domain is rebuilt against the new Shell ([The Domains that call the
+  Shell](#the-domains-that-call-the-shell)). An administrator calling either method on such a group
   directly is refused `GROUP_DOMAIN_MANAGED` (family CONFLICT). Groups of the Shell's own Class are
   unaffected.
 - **A member may be a service account.** `ServiceAccount`, a non-human Identity that signs in with
@@ -77,16 +82,17 @@ a scope on the Kernel `extends_with` Class: every command below runs under the i
 astrale instance root import <slug> --yes   # imports the identity <slug>-root
 SLUG=<slug>; ROOT="$SLUG-root"
 mkdir -p shell-upgrade/before shell-upgrade/after && cd shell-upgrade
+set -o pipefail    # a failed read fails its pipeline instead of counting 0
 
 # pages <jq filter> <query arguments...>: one Query across every page, under Root.
 pages() {
   filter=$1; shift; cursor=
   while :; do
     if [ -z "$cursor" ]; then
-      page=$(astrale query "$@" --limit 500 --json -i "$SLUG" --as "$ROOT" </dev/null) || return 1
+      page=$(astrale query "$@" --limit 500 --json -i "$SLUG" --as "$ROOT" </dev/null)
     else
-      page=$(astrale query "$@" --limit 500 --cursor "$cursor" --json -i "$SLUG" --as "$ROOT" </dev/null) || return 1
-    fi
+      page=$(astrale query "$@" --limit 500 --cursor "$cursor" --json -i "$SLUG" --as "$ROOT" </dev/null)
+    fi || { echo "read failed: $*" >&2; return 1; }
     printf '%s\n' "$page" | jq -rc "$filter"
     cursor=$(printf '%s\n' "$page" | jq -r '.page.next // empty')
     [ -n "$cursor" ] || return 0
@@ -121,7 +127,8 @@ TAB=$(printf '\t')
 
 `astrale query --edge` answers the neighbour Nodes of its source, never Edges; the documents
 `edges` writes select the Edges themselves, as `{ edge, source, target }` references. An account
-holds every Role `reach` lists for it.
+holds every Role `reach` lists for it. A read that fails prints `read failed:` with its arguments:
+an empty file or a count of 0 after such a line is no result.
 
 ### The version and the release
 
@@ -145,9 +152,65 @@ astrale domain list -i "$SLUG" --creds "$(astrale token --raw -i "$SLUG" --as "$
 
 The page applies to an installed Shell without Roles (the `0.1` line) and describes the `0.3`
 line. The `0.2` line is superseded: its account migration does not stop before the invocation
-deadline, so a call over many accounts can be ended with code 4005 before it answers. Publications
-are listed highest first; take the newest stable version of the line that is not yanked. No change note is published with a version: neither the registry nor the release carries
-one. A Publication names the commit it was built from (`commit`) when its publisher recorded it.
+deadline. Publications are listed highest first; take the newest stable version of the line that
+is not yanked. No change note is published with a version: neither the registry nor the release
+carries one. A Publication names the commit it was built from (`commit`) when its publisher
+recorded it.
+
+### The Domains that call the Shell
+
+Each build of a Domain pins, for every callable of another Domain it invokes, a fingerprint of that
+callable's contract: its key, owner and dispatch, its input and output and its execution mode, not
+its authorization. At each call the Kernel compares the pin with the installed callable and refuses
+any difference, a widened input included, with `CALLABLE_FINGERPRINT_MISMATCH` (code 4001, family
+CONFLICT); the refusal names the callable and both fingerprints, and nothing runs. An install
+compares no fingerprint: it accepts the new Shell beside a Domain built against the installed one,
+and a Domain built against the new Shell beside the installed one. Either way, every call of a
+changed callable is refused until the Shell and the Domain are built against the same release. Only
+one install of both leaves no moment where those calls fail.
+
+The callables whose contract changed, by the line that changed it:
+
+| Callable | Line | Change |
+| --- | --- | --- |
+| `User.invite` | `0.2` | `email` is optional; new optional `profile` |
+| `listEntrypoints` | `0.2` | Each entry has an `icon` |
+| `Group.assignMember`, `Group.unassignMember` | `0.3` | `member` accepts a `ServiceAccount` |
+| `User.create` | `0.3` | New optional `operationId` |
+
+A Domain built against the `0.1` line that calls any of the four rows is rebuilt; one built against
+the `0.2` line, for the two `0.3` rows. A release lists the callables of other Domains it is
+granted to call as itself, in its release manifest: `requirements.capabilities.scopes` with the
+`call` operation, or `requirements.capabilities.functions` for a build of an earlier SDK. List them
+for every installed Domain:
+
+```sh
+astrale domain list -i "$SLUG" --creds "$(astrale token --raw -i "$SLUG" --as "$ROOT")" --json \
+  | jq -r '.domains[] | select(.origin != "shell.astrale.ai") | [.origin, .url] | @tsv' \
+  | while IFS="$(printf '\t')" read -r origin url; do
+      curl -fsS "$url/.well-known/astrale/release.json" \
+        | jq -r --arg origin "$origin" '.requirements.capabilities
+            | ((.functions // [])[]), ((.scopes // [])[] | select(.operations | index("call")) | .on)
+            | select(startswith("shell.astrale.ai:")) | [$origin, .] | @tsv' \
+        || echo "$origin: release unreadable" >&2
+    done | tee before/shell-callers.tsv
+```
+
+The list names what each Domain calls as itself. A Domain also pins what its Views and clients call
+as the person (`dependencies.shell.caller`, a Shell reference in View code): search its source for
+the four callables too. A release served privately needs the owner's `--token`, or the owner's
+answer.
+
+Each owner rebuilds their Domain from its own source, without changing anything else:
+
+1. Set `@astrale-domains/shell` to the exact new version, and `@astrale-os/sdk` to a release its
+   peer range accepts whose Kernel is the instance's (an install refused
+   `SCHEMA_DEPENDENCY_INCOMPATIBLE` names the Kernel revision the build carried).
+2. `pnpm install`, then the project's typecheck, tests and build: a call whose input the Shell
+   changed fails to compile until it is written for the new contract.
+3. Deploy, and keep the URL it prints: `pnpm run deploy <environment>`.
+
+The install below takes those URLs; the rebuilt Domains are installed in no other way.
 
 ### A recovery point
 
@@ -166,6 +229,10 @@ astrale instance list --admin-only --json \
 A restore rolls back every instance on the Host, not only this one, and `instance list` shows only
 the instances you may read: ask the Host operator which instances the Host holds, and agree on the
 restore with their owners before installing.
+
+A restore goes back to the newest recovery point at or before the instant it is given, and loses
+everything written after that point. Ask the operator for the time of the newest point, or for a
+backup taken now, and install only once a point is newer than the last change to keep.
 
 ### A rehearsal
 
@@ -197,12 +264,16 @@ for core in admin member applications view-only; do
 done | tee before/core-groups
 ```
 
-What a sample of accounts extends, one member of each group, through the groups and Roles of every
-Domain:
+What a sample of accounts extends, one member of each group and one member of "Members" who is not
+an administrator, through the groups and Roles of every Domain:
 
 ```sh
 jq -r .id before/users.jsonl | sort > before/user-ids
-for f in before/members/*; do grep -Fx -f before/user-ids "$f" | head -n 1; done | sort -u > sample
+for f in before/members/*; do grep -Fx -f before/user-ids "$f" | head -n 1; done > sample
+ADMINS=before/members/$(awk '$1 == "admin" { print $2 }' before/core-groups)
+MEMBERS=before/members/$(awk '$1 == "member" { print $2 }' before/core-groups)
+comm -23 "$MEMBERS" "$ADMINS" | grep -Fx -f before/user-ids | head -n 1 >> sample
+sort -u sample -o sample
 mkdir -p before/reach
 while read -r id; do reach "$id" > "before/reach/$id"; done < sample
 ```
@@ -217,14 +288,29 @@ at each sign-in, the email and name of the identity provider's session, but any 
 account's credential can record any value, whatever issuer the account authenticates with. The
 migration makes the claimed email the account's `email`, the key that binds a first sign-in to it.
 Check every claim against a source independent of the account, such as the identity provider's
-directory, before the migration. List the claims, with the issuer each account authenticates with
-(`iss`):
+directory, before the migration. List the claims, with the issuer and subject each account
+authenticates with (`iss`, `sub`):
 
 ```sh
 jq -r '[.id, (.props["kernel.astrale.ai:class.Identity.property.iss"] // "-"),
+        (.props["kernel.astrale.ai:class.Identity.property.sub"] // "-"),
         (.props["shell.astrale.ai:class.User.property.claimedEmail"] // "-")] | @tsv' \
   before/users.jsonl > before/claims.tsv
 ```
+
+Export from each identity provider its users as `<subject><TAB><email>` lines, `idp.tsv` (the
+provider's user id is the account's `sub`), then list every claim that differs from the provider's
+email, or that no provider user confirms:
+
+```sh
+awk -F '\t' 'NR == FNR { email[$1] = tolower($2); next }
+  $4 != "-" { got = ($3 in email) ? email[$3] : "(no provider user)"
+              if (got != tolower($4)) print $1 "\t" $4 "\t" got }' idp.tsv before/claims.tsv \
+  > before/claims-unverified.tsv
+```
+
+Each line is an account, its claim and what the provider holds. An account without `sub` lists
+`(no provider user)`: confirm its email with the person.
 
 The migration writes an email only on an account that has none. After the install and before the
 migration, write the verified email on every account whose claim differs from it, with `User.update`
@@ -260,16 +346,30 @@ own callables, before or after the migration.
 
 ## Install
 
+The Shell and every rebuilt Domain go in one install, one operation the Kernel commits whole or not
+at all:
+
 ```sh
+# The deployment URL of each rebuilt Domain, with its origin: one "<origin> <url>" per line.
+DEPENDENTS="<origin> <url>
+<origin> <url>"
+set -- "$URL"
+while read -r origin url; do
+  [ -n "$url" ] && set -- "$@" "$url" "--allow-issuer-change=$origin"
+done <<EOF
+$DEPENDENTS
+EOF
 date -u +%Y-%m-%dT%H:%M:%SZ > before/instant      # the recovery point a restore goes back to
-astrale domain install "$URL" -i "$SLUG" --as "$ROOT" \
+astrale domain install "$@" -i "$SLUG" --as "$ROOT" \
   --allow-issuer-change=shell.astrale.ai \
   --validation-scope full --validation-counts exact --json </dev/null > after/install.json
-jq '{changed, execution, follow}' after/install.json
+jq '{changed, execution, follow, origins: [.receipt.transitions[]? | {origin: .intent.origin, state}]}' \
+  after/install.json
 ```
 
-- `--allow-issuer-change=shell.astrale.ai` consents to the new release being served by another
-  issuer than the installed one.
+- With no rebuilt Domain, `DEPENDENTS=` leaves the Shell alone in the install.
+- `--allow-issuer-change=<origin>` consents to the new release of that origin being served by
+  another issuer than the installed one: one for the Shell, one for each rebuilt Domain.
 - Full validation re-checks every stored account and group against the new Schema and counts
   every failure; a refusal names them and changes nothing.
 - Exit 0 is done or still running. `--timeout` bounds the install request and its wait together,
@@ -286,7 +386,12 @@ done
 ```
 
 - **Verify**, once the install has ended: `domain list` (above) answers `version: <version>` with
-  `pin.release` equal to `$DIGEST`, the release the registry names.
+  `pin.release` equal to `$DIGEST`, the release the registry names, and each rebuilt Domain answers
+  the release its URL serves.
+- **Call each rebuilt Domain** once, through one of its own callables that calls a changed Shell
+  callable, as its users do: it answers as before the install. A 4001 names the callable and the
+  fingerprint the build pinned: that Domain was not rebuilt against the installed Shell. Rebuild,
+  deploy and install it; until then every call of that callable is refused and writes nothing.
 
 ## Migrate View access
 
@@ -324,16 +429,20 @@ Verify the [claimed emails](#the-claimed-emails) and read the [duplicate people]
 - Admitted to `workspace.admin` and Root. It answers
   `{ migrated, conflicts, profiles, unprofiled, remaining }`. The first four are of this call only:
   the accounts it gave an `email` or a `name`; the accounts whose claimed email another account, or
-  another account's profile, holds; the profiles it created for accounts and groups that had none;
-  the accounts and groups whose profile the Kernel refused and that still have none, each
+  another account's profile, holds; the profiles it created for groups and for accounts it gave
+  neither (an account given an `email` or a `name` gets its profile in that same write, counted in
+  `migrated` only); the accounts and groups whose profile the Kernel refused and that still have none, each
   `{ node, reason, rule? }`. `remaining` counts the accounts and groups left for the next call.
 - An account with no `claimedEmail`, or one that is not an email, gets no `email` and is not a
   conflict. A conflict gets neither `email` nor `name`, and still gets a profile if it has none.
 - One call reads the accounts, the groups and the profiles with their emails in three Queries, then
   works only on the accounts and groups left, one of each in turn. Each Query reads at most 103
-  pages of 1,000; past that, the call is refused `QUERY_PAGINATION_LIMIT` and writes nothing. It starts none within 5 s of the
-  invocation deadline and answers; the first always runs. A write a concurrent change refused is
-  counted in `remaining` and read again by the next call. Every completed write stays, whole.
+  pages of 1,000; past that, the call is refused `QUERY_PAGINATION_LIMIT` and writes nothing. It
+  starts none within 5 s of the invocation deadline and answers; the first always runs. A write a
+  concurrent change refused is counted in `remaining` and read again by the next call. Every
+  completed write stays, whole.
+- A call over many accounts can still be ended at the deadline (code 4005) before it answers. The
+  loop below reads the counts instead and calls again.
 - The migration is complete when a call answers `remaining: 0` and an empty `unprofiled`; that
   call's `conflicts` lists every conflict left. Running it again then changes nothing.
 
@@ -349,10 +458,12 @@ progress() {
   echo $accounts $users $groups     # emails, names, account profiles, group profiles
 }
 progress > after/progress
-last=
+last=; n=0
 while :; do
+  n=$((n + 1)); out=after/migrate-$n      # each call keeps its own answer and error
   if astrale call /:shell.astrale.ai:function.legacyMigrateAccounts -d '{}' --json \
-      -i "$SLUG" --as "$ROOT" </dev/null > after/migrate.json 2> after/migrate.err; then
+      -i "$SLUG" --as "$ROOT" </dev/null > "$out.json" 2> "$out.err"; then
+    cp "$out.json" after/migrate.json     # the last answer
     jq -c '{migrated, profiles, conflicts: (.conflicts | length), unprofiled: (.unprofiled | length), remaining}' \
       after/migrate.json
     progress >> after/progress
@@ -360,12 +471,12 @@ while :; do
     [ "$now" -eq 0 ] && break
     [ -z "$last" ] || [ "$now" -lt "$last" ] || { echo 'remaining did not decrease: stop and report' >&2; break; }
     last=$now
-  elif grep -q '"code":4005' after/migrate.err; then
+  elif grep -q '"code":4005' "$out.err"; then
     before=$(tail -n 1 after/progress); now=$(progress); echo "$now" >> after/progress
-    echo "deadline reached: $before -> $now"
+    echo "call $n: deadline reached: $before -> $now"
     [ "$now" != "$before" ] || { echo 'no progress: stop and report' >&2; break; }
   else
-    cat after/migrate.err >&2; break
+    cat "$out.err" >&2; break
   fi
 done
 jq '{unprofiled, conflicts}' after/migrate.json
@@ -377,8 +488,8 @@ jq '{unprofiled, conflicts}' after/migrate.json
   number of accounts by Class (from the baseline), `after/progress` and the last answer to the
   Shell's maintainers.
 - A call the Kernel ends at the deadline (code 4005, exit 1) answers nothing, and the writes it
-  completed stay. Since each call stops before its deadline, this is a fallback: the loop compares
-  the counts instead, and a call that raises none is a stop as above.
+  completed stay: the loop compares the counts instead, and a call that raises none is a stop as
+  above. Several such calls in a row are expected on a large instance.
 - `unprofiled` is not counted in `remaining`: each next call is refused alike until what refused it
   changes. `reason: "MUTATION_POST_STATE_INVALID"` with `rule: "duplicate-key"` means the profile
   would carry an email another account's profile holds; it is found from the read, without a
@@ -456,8 +567,6 @@ done
 diff -r before/members after/members
 ```
 
-(`diff <(…)` needs bash or zsh; in a plain POSIX shell, write both sides to files first.)
-
 ### Per person
 
 Root's success proves nothing about a person's access. Two reads show it: what each account of the
@@ -483,8 +592,9 @@ done < sample
 - `lost: 0` for every account: each group and Role it extended before, of the Shell or of a Domain
   that owns a subclass, it still extends. The lines `comm -13 before/reach/<id> after/reach/<id>`
   prints are what the install added: Role Core nodes of the Shell and of the Kernel only.
-- `holds`: a member of "Administrators" holds `workspace.admin`, `workspace.member` and Kernel
-  `admin`; of "Members", `workspace.member`; of "Applications" or "View only", Kernel `reader`.
+- `holds`: a member of "Administrators" holds `workspace.admin`, `workspace.member`, Kernel `admin`
+  and Kernel `reader`; of "Members", `workspace.member` and Kernel `reader`; of "Applications" or
+  "View only", Kernel `reader`.
 - The read lists memberships and decides no Policy: a decision is the Kernel's, below.
 
 **Decisions.** Root holds `identity.impersonator`, the Kernel Role no bundle includes:
@@ -514,7 +624,8 @@ astrale call /:kernel.astrale.ai:class.Identity:can --json -i "$SLUG" --creds "$
 
 `<account-id>` is a bare id from that list that is also in `before/members/<id>`, with `<id>` from
 `before/core-groups`. Add one check per Role of a Domain that owns a subclass that the person should
-hold, `{"policy":"/:kernel.astrale.ai:policy.hasRole","object":"/:<origin>:core.<role>"}`. The
+hold, `{"policy":"/:kernel.astrale.ai:policy.hasRole","object":"/:<origin>:core.<role>"}`, or
+`"object":"@<id>"` for a Role or group that is not a Core node (an id from `before/members`). The
 credential lasts `ttlSeconds`, never beyond the credential that asked for it: impersonate again
 when it expires. Never print it.
 
