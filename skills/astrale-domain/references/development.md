@@ -15,6 +15,10 @@ npx create-astrale-domain@beta issues \
 
 - Keep an existing scaffold's plumbing. Reproducible checks: an exact scaffolder/SDK/adapter cohort
   and the lockfile.
+- An adapter release depends on one exact SDK version (`npm view @astrale-os/adapter-astrale@<version>
+  dependencies`). Move the SDK and the adapter together, to the adapter release whose SDK is the
+  one the project pins: a project resolving two SDK versions builds, but its deployment is refused
+  as not admitted. `pnpm why @astrale-os/sdk` lists one version.
 - Import only `@astrale-os/sdk/*` facades, never Kernel packages or private SDK paths. Depend on the
   chosen adapter only, not its transitive implementation adapter.
 - Declare what source imports: the SDK-compatible exact `zod` (a second, structurally equal copy

@@ -205,11 +205,16 @@ as the person (`dependencies.shell.caller`, a Shell reference in View code): sea
 the four callables too. A release served privately needs the owner's `--token`, or the owner's
 answer.
 
-Each owner rebuilds their Domain from its own source, without changing anything else:
+Each owner rebuilds their Domain from its own source, changing nothing but what the new versions
+require:
 
 1. Set `@astrale-domains/shell` to the exact new version, and `@astrale-os/sdk` to a release its
    peer range accepts whose Kernel is the instance's (an install refused
-   `SCHEMA_DEPENDENCY_INCOMPATIBLE` names the Kernel revision the build carried).
+   `SCHEMA_DEPENDENCY_INCOMPATIBLE` names the Kernel revision the build carried). Move the adapter
+   with the SDK and satisfy every peer range `pnpm install` reports
+   ([development.md](../development.md)). A move across many SDK releases meets deprecated forms:
+   they keep working, and [the ledger](LEDGER.md) and the installed SDK's `docs/legacy/` name their
+   replacement; a deprecated Query form is moved to Query v7 ([queries.md](../queries.md#query-v6)).
 2. `pnpm install`, then the project's typecheck, tests (a project without tests has none to run)
    and build: a call whose input the Shell changed fails to compile until it is written for the new
    contract.
