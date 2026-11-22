@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.174](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.173...cli/v1.0.0-beta.174) (2026-11-22)
+
+
+### Bug Fixes
+
+* **skills:** move the adapter with the SDK and Query V6 to v7 ([#812](https://github.com/astrale-os/cli/issues/812)) ([f33115e](https://github.com/astrale-os/cli/commit/f33115e3e1950bcfd314141fa0c833a6a27c246f))
+
 ## [1.0.0-beta.173](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.172...cli/v1.0.0-beta.173) (2026-11-22)
 
 
