@@ -220,10 +220,14 @@ Each owner rebuilds their Domain from its own source, without changing anything 
 The `0.2` line gives `User` the properties `attributes`, `directory`, `directoryActive`, `email`,
 `externalId`, `familyName`, `givenName`, `name` and `suspended`, and `Group` the properties
 `attributes`, `directory` and `externalId`. A subclass that declares a property of the same name
-keeps it under its own key, but its short name no longer types: every read and write of it fails to
-compile. Which of the two then holds the value, and how the stored values move, is a change of that
-Domain's model: its owner decides and builds it before the upgrade, and the rebuild is not
-mechanical.
+keeps it under its own key, but the short name no longer names one property: a write or a property
+lookup by it fails to compile, and a write by it that no type checks (a dataset record, a fixture)
+is refused at run time as ambiguous. Naming the subclass's property by its key
+(`<origin>:class.<Class>.property.<name>`) at those sites keeps the value where it is stored and
+what it means: the rebuild stays mechanical. Compare the release's own Schema with the installed
+one (it must not change), and check what each read by the short name answers on a node holding
+both properties. Moving the value to the Shell's property, or merging the two, is a change of that
+Domain's model: its owner decides and builds it before the upgrade.
 
 The install below takes those URLs; the rebuilt Domains are installed in no other way.
 
