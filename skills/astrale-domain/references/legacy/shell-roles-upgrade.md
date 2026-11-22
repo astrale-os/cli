@@ -210,6 +210,14 @@ Each owner rebuilds their Domain from its own source, without changing anything 
    changed fails to compile until it is written for the new contract.
 3. Deploy, and keep the URL it prints: `pnpm run deploy <environment>`.
 
+The `0.2` line gives `User` the properties `attributes`, `directory`, `directoryActive`, `email`,
+`externalId`, `familyName`, `givenName`, `name` and `suspended`, and `Group` the properties
+`attributes`, `directory` and `externalId`. A subclass that declares a property of the same name
+keeps it under its own key, but its short name no longer types: every read and write of it fails to
+compile. Which of the two then holds the value, and how the stored values move, is a change of that
+Domain's model: its owner decides and builds it before the upgrade, and the rebuild is not
+mechanical.
+
 The install below takes those URLs; the rebuilt Domains are installed in no other way.
 
 ### A recovery point
