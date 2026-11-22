@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.173](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.172...cli/v1.0.0-beta.173) (2026-11-22)
+
+
+### Bug Fixes
+
+* **lib:** apply a startup update from the channel it was offered on ([#794](https://github.com/astrale-os/cli/issues/794)) ([93cc0ef](https://github.com/astrale-os/cli/commit/93cc0ef258986dec1bf687cb869437e1a20391cf))
+* **skills:** name a subclass property by its key when the Shell declares the same name ([#811](https://github.com/astrale-os/cli/issues/811)) ([6d0e2ce](https://github.com/astrale-os/cli/commit/6d0e2cef8130dca4087d1050b903b0b714b17649))
+
 ## [1.0.0-beta.172](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.171...cli/v1.0.0-beta.172) (2026-11-22)
 
 
