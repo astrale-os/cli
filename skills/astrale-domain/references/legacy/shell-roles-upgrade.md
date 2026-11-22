@@ -298,19 +298,22 @@ jq -r '[.id, (.props["kernel.astrale.ai:class.Identity.property.iss"] // "-"),
   before/users.jsonl > before/claims.tsv
 ```
 
-Export from each identity provider its users as `<subject><TAB><email>` lines, `idp.tsv` (the
-provider's user id is the account's `sub`), then list every claim that differs from the provider's
-email, or that no provider user confirms:
+Export the users of every identity provider into one `idp.tsv`, as `<issuer><TAB><subject><TAB><email>`
+lines: the issuer is the accounts' `iss`, the provider's user id their `sub`. A sign-in names an
+account by both, so two providers may hold the same subject. Then list every claim that differs from
+the provider's email, or that no provider user confirms:
 
 ```sh
-awk -F '\t' 'NR == FNR { email[$1] = tolower($2); next }
-  $4 != "-" { got = ($3 in email) ? email[$3] : "(no provider user)"
+[ -s idp.tsv ] || echo 'idp.tsv is empty: export the provider users first' >&2
+awk -F '\t' 'FILENAME == ARGV[1] { email[$1 FS $2] = tolower($3); next }
+  $4 != "-" { key = $2 FS $3; got = (key in email) ? email[key] : "(no provider user)"
               if (got != tolower($4)) print $1 "\t" $4 "\t" got }' idp.tsv before/claims.tsv \
   > before/claims-unverified.tsv
 ```
 
-Each line is an account, its claim and what the provider holds. An account without `sub` lists
-`(no provider user)`: confirm its email with the person.
+Each line is an account, its claim and what the provider holds. An account without `iss` or `sub`,
+or of a provider missing from the export, lists `(no provider user)`: confirm its email with the
+person.
 
 The migration writes an email only on an account that has none. After the install and before the
 migration, write the verified email on every account whose claim differs from it, with `User.update`
