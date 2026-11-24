@@ -128,7 +128,7 @@ globalThis.fetch = (async (input, init) => {
         }),
         {
           headers: {
-            'content-type': new Headers(init?.headers).get('accept')!,
+            'content-type': 'application/vnd.astrale+json',
             'cache-control': 'no-store',
           },
         },

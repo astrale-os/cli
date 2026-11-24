@@ -741,7 +741,7 @@ function network(
       requests.push(
         `kernel ${url}${inspected} as ${body.credential.startsWith(SOURCE_HEADER) ? 'source' : 'other'}`,
       )
-      const contentType = new Headers(init?.headers).get('accept')!
+      const contentType = 'application/vnd.astrale+json'
       if (kernel.kind === 'refuses') {
         return answered(url, refusal(body.requestId, kernel.code, contentType, kernel.reason))
       }

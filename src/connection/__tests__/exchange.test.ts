@@ -232,7 +232,7 @@ function exchangeFetch(
         body.call.input && Object.keys(body.call.input).length === 0
           ? { id: options.user ?? 'user-1' }
           : 'kernel-destination-envelope',
-        new Headers(init?.headers).get('accept')!,
+        'application/vnd.astrale+json',
       )
     }
     if (options.unreachable !== undefined) throw options.unreachable
