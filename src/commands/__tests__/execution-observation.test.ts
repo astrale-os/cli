@@ -63,7 +63,7 @@ function executionSession(wire: unknown[]) {
         {
           headers: {
             'cache-control': 'no-store',
-            'content-type': new Headers(init?.headers).get('accept')!,
+            'content-type': 'application/vnd.astrale+json',
           },
         },
       )

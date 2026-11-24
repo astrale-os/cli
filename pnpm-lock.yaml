@@ -153,11 +153,11 @@ importers:
         specifier: '>=0.1.3 <1.0.0'
         version: 0.1.3(oxfmt@0.67.0)(oxlint@1.78.0)
       '@astrale-os/sdk':
-        specifier: 0.6.0-beta.62
-        version: 0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
+        specifier: 0.6.0-beta.71
+        version: 0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
       '@astrale-os/shell':
         specifier: 0.7.0-beta.22
-        version: 0.7.0-beta.22(@astrale-os/sdk@0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7))
+        version: 0.7.0-beta.22(@astrale-os/sdk@0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7))
       '@astrale-os/ui':
         specifier: 1.0.0-beta.48
         version: 1.0.0-beta.48(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -228,11 +228,11 @@ importers:
         specifier: 2.1.0
         version: 2.1.0(zod@4.6.7)
       '@astrale-os/sdk':
-        specifier: 0.6.0-beta.62
-        version: 0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
+        specifier: 0.6.0-beta.71
+        version: 0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
       '@astrale-os/shell':
         specifier: 0.7.0-beta.22
-        version: 0.7.0-beta.22(@astrale-os/sdk@0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7))
+        version: 0.7.0-beta.22(@astrale-os/sdk@0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7))
       '@dagrejs/dagre':
         specifier: ^3.0.0
         version: 3.1.1
@@ -352,11 +352,11 @@ importers:
   studio/e2e/fixture:
     dependencies:
       '@astrale-os/adapter-cloudflare':
-        specifier: 0.5.0-beta.211
-        version: 0.5.0-beta.211(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(@types/node@24.19.2)(oxlint@1.78.0)(zod@4.6.7)
+        specifier: 0.5.0-beta.226
+        version: 0.5.0-beta.226(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(@types/node@24.19.2)(oxlint@1.78.0)(zod@4.6.7)
       '@astrale-os/sdk':
-        specifier: 0.6.0-beta.62
-        version: 0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
+        specifier: 0.6.0-beta.71
+        version: 0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -371,11 +371,11 @@ importers:
   studio/e2e/fixture/peer:
     dependencies:
       '@astrale-os/adapter-cloudflare':
-        specifier: 0.5.0-beta.211
-        version: 0.5.0-beta.211(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(@types/node@24.19.2)(oxlint@1.78.0)(zod@4.6.7)
+        specifier: 0.5.0-beta.226
+        version: 0.5.0-beta.226(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(@types/node@24.19.2)(oxlint@1.78.0)(zod@4.6.7)
       '@astrale-os/sdk':
-        specifier: 0.6.0-beta.62
-        version: 0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
+        specifier: 0.6.0-beta.71
+        version: 0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
 
 packages:
 
@@ -458,43 +458,26 @@ packages:
       zod:
         optional: true
 
-  '@astrale-os/adapter-cloudflare@0.5.0-beta.211':
-    resolution: {integrity: sha512-7faoqumJlZHTPvS3Tile7UVZko8V8a8hQCVzxMBgDkd+N1YFTG4eUcq7mzk001tyCh2apL2Yd2EE1FfhTeIvqQ==, tarball: https://registry.npmjs.org/@astrale-os/adapter-cloudflare/-/adapter-cloudflare-0.5.0-beta.211.tgz}
+  '@astrale-os/adapter-cloudflare@0.5.0-beta.226':
+    resolution: {integrity: sha512-BJZgapD3LPKo20Tddqqt+EYlHQNZ61K5HlCtcTCmVUJEYQBQSqWc0OPYn2SXWhMfNBTeWhOFKggMdu6DpvoHNg==, tarball: https://registry.npmjs.org/@astrale-os/adapter-cloudflare/-/adapter-cloudflare-0.5.0-beta.226.tgz}
     engines: {node: '>=24'}
 
-  '@astrale-os/kernel-client@1.0.0-beta.38':
-    resolution: {integrity: sha512-D5qgYZgFlfUPE2im1fHtk5l00ZWYkOTpsmYcpW9/Ub/EgGDZuDC8L2pvlY+v4KCw06engMJM2zGPkZpSfUsDpw==, tarball: https://registry.npmjs.org/@astrale-os/kernel-client/-/kernel-client-1.0.0-beta.38.tgz}
+  '@astrale-os/kernel-client@1.0.0-beta.49':
+    resolution: {integrity: sha512-xViztG2YwimdXhqqx9PiO527xAU8cFK/DprCyIe6hllS+pKnnRrz9DjWmu8YSN9cP3HUeHPVtyLs/Ku5OIdURA==, tarball: https://registry.npmjs.org/@astrale-os/kernel-client/-/kernel-client-1.0.0-beta.49.tgz}
 
-  '@astrale-os/kernel-client@1.0.0-beta.42':
-    resolution: {integrity: sha512-Uh26oUnpyPmLB8dos0+aoL8g9UmhLQVc4rISYQcNipN36Pmdbdzb0ASXJoCs3A5FrXfwt1/MbmNTy6ffnmfFaA==, tarball: https://registry.npmjs.org/@astrale-os/kernel-client/-/kernel-client-1.0.0-beta.42.tgz}
-
-  '@astrale-os/kernel-core@1.0.0-beta.35':
-    resolution: {integrity: sha512-0wBTeFWncCAa+vqOpQBVrv2MCjqyvWkWcpMFGmtW4rEyp6yiaa1xgFZcvaH3r7hwZzSv6qHIkZ/8etNkc1zc+w==, tarball: https://registry.npmjs.org/@astrale-os/kernel-core/-/kernel-core-1.0.0-beta.35.tgz}
+  '@astrale-os/kernel-core@1.0.0-beta.46':
+    resolution: {integrity: sha512-qjChhLl3qEj210XxXUk6Spc5K5OiHpy7hOOFDbOIGNDsFM3Ph/bsWyAbpZL7y99dNqoRiPxoPq0BM8MoKTtcFQ==, tarball: https://registry.npmjs.org/@astrale-os/kernel-core/-/kernel-core-1.0.0-beta.46.tgz}
     peerDependencies:
       zod: ^4.6.7
 
-  '@astrale-os/kernel-core@1.0.0-beta.39':
-    resolution: {integrity: sha512-1qAuq91syF4Ll+kk3GTfJs3IsbbtfogYs9rBpXCmo0ZTazEMb7OVWb8p5r1+ihAc8/1Bb4uDjvCiVYz7hmJHMg==, tarball: https://registry.npmjs.org/@astrale-os/kernel-core/-/kernel-core-1.0.0-beta.39.tgz}
-    peerDependencies:
-      zod: ^4.6.7
+  '@astrale-os/kernel-dsl@1.0.0-beta.34':
+    resolution: {integrity: sha512-R8WCyVo9WgqzncS3+BOQS6fEhg6cLRRNiB19oL1slMqdI3RjtjXfZmeF4Wfg5Upm4MEyQydQBAHVyXBMkpF+kg==, tarball: https://registry.npmjs.org/@astrale-os/kernel-dsl/-/kernel-dsl-1.0.0-beta.34.tgz}
 
-  '@astrale-os/kernel-dsl@1.0.0-beta.23':
-    resolution: {integrity: sha512-BKR9XGWuGl5h9Hb3jHmRmot0Z7BXA/Q7Lp+QxkiBQlVgdpFfF0EeWklnAWHamwHxiVzzTeziGOYFmy6/1BLy5g==, tarball: https://registry.npmjs.org/@astrale-os/kernel-dsl/-/kernel-dsl-1.0.0-beta.23.tgz}
+  '@astrale-os/kernel-protocol@1.0.0-beta.46':
+    resolution: {integrity: sha512-ch5qqbu9KF5gqS4oet2OfJGk2ly9jejme40TxtMGeFkV9siKvDBCLRhXDeBadBdPcp1O9mtJNCRO1APQiJ5zTw==, tarball: https://registry.npmjs.org/@astrale-os/kernel-protocol/-/kernel-protocol-1.0.0-beta.46.tgz}
 
-  '@astrale-os/kernel-dsl@1.0.0-beta.27':
-    resolution: {integrity: sha512-s/nW6BcA3q8TWAjUfoDnC7SutdgxeWDP6zQguQjsBMyq1ocwvBYX5Gvn2IS41PG0bmRklb4hujlOJNnCX8a2Dg==, tarball: https://registry.npmjs.org/@astrale-os/kernel-dsl/-/kernel-dsl-1.0.0-beta.27.tgz}
-
-  '@astrale-os/kernel-protocol@1.0.0-beta.35':
-    resolution: {integrity: sha512-Pbf96+mUCI9G2EKjk4agVL1ErGqRbU2aATNvnOKh01jQvoPUEIkmyhEJb1ijKdhziOWwPxDYeMEhsFYdSRF6Bw==, tarball: https://registry.npmjs.org/@astrale-os/kernel-protocol/-/kernel-protocol-1.0.0-beta.35.tgz}
-
-  '@astrale-os/kernel-protocol@1.0.0-beta.39':
-    resolution: {integrity: sha512-Cz1DI+Uwzt4gkDbpc6bBL63nglrBnY9wdcnj0WSEd6xrBHwG4L3r7x+0S2dB0mr8ZlLP1ZuvWRQPMFJAx4cG8g==, tarball: https://registry.npmjs.org/@astrale-os/kernel-protocol/-/kernel-protocol-1.0.0-beta.39.tgz}
-
-  '@astrale-os/kernel-server@1.0.0-beta.35':
-    resolution: {integrity: sha512-ILQRZ47X78VRjumDQfroNPYhTYKpQOJA1hIHmbuoag4bQplHwt4sB2RzPL869ff30ryjFqdAfhpZVFhfWhwpyA==, tarball: https://registry.npmjs.org/@astrale-os/kernel-server/-/kernel-server-1.0.0-beta.35.tgz}
-
-  '@astrale-os/kernel-server@1.0.0-beta.39':
-    resolution: {integrity: sha512-6wliSC12SJgBskF4QDLVqPzt2P4IPUXvn2OM8jumjSoWoGh5y1GfivJOKfrp6OoRF0Gi9lywsrCe30o02jU/dA==, tarball: https://registry.npmjs.org/@astrale-os/kernel-server/-/kernel-server-1.0.0-beta.39.tgz}
+  '@astrale-os/kernel-server@1.0.0-beta.46':
+    resolution: {integrity: sha512-yRm89gzhIopyhbb49E+aI5mYAjqC36/bstydtyKWaxTmEh/SGMrkRhX7+gIZRQLcwaOQM3NAAEEfY5hpjUiyZg==, tarball: https://registry.npmjs.org/@astrale-os/kernel-server/-/kernel-server-1.0.0-beta.46.tgz}
 
   '@astrale-os/ox@0.1.3':
     resolution: {integrity: sha512-PEFhieFsADuU2h93AgSO4kBkIyrMA4RwY/VE68iHeq4ySemnnfEaLT6Mp4t2ll5+n/bpg1awLWWz5rTQeaxQ2Q==, tarball: https://registry.npmjs.org/@astrale-os/ox/-/ox-0.1.3.tgz}
@@ -502,25 +485,8 @@ packages:
       oxfmt: '>=0.1.0'
       oxlint: '>=1.0.0'
 
-  '@astrale-os/sdk@0.6.0-beta.56':
-    resolution: {integrity: sha512-2Lq4W005FL1PxKQDg/4eyOBMRohOkoNntuR12n2UwWNT7L5w1NrLyenKCfo2OyQn9Og8aie/X/wYXQcADQlRJA==, tarball: https://registry.npmjs.org/@astrale-os/sdk/-/sdk-0.6.0-beta.56.tgz}
-    engines: {node: '>=24'}
-    hasBin: true
-    peerDependencies:
-      '@astrale-os/ox': '>=0.1.3 <1.0.0'
-      '@hono/node-server': ^1.19.0 || ^2.1.1
-      oxlint: '>=1.78.0 <2.0.0'
-      zod: 4.6.7
-    peerDependenciesMeta:
-      '@astrale-os/ox':
-        optional: true
-      '@hono/node-server':
-        optional: true
-      oxlint:
-        optional: true
-
-  '@astrale-os/sdk@0.6.0-beta.62':
-    resolution: {integrity: sha512-EuGSBHlORsr/dZR/rcW4j20QQUNwBN6Gze6PfZMHxmGkjXLCLjJ6CpJ0iBC9QLThHWeJq7EoYSru3lwN0cHlfg==, tarball: https://registry.npmjs.org/@astrale-os/sdk/-/sdk-0.6.0-beta.62.tgz}
+  '@astrale-os/sdk@0.6.0-beta.71':
+    resolution: {integrity: sha512-ZChrZ9cGViXujW9aYDIpiR40HsOp/4k/UigrNoj29vCxzgTdAXT1seBB71Xlp8kk5ojnimx2Iusy9ZR9IuFhGw==, tarball: https://registry.npmjs.org/@astrale-os/sdk/-/sdk-0.6.0-beta.71.tgz}
     engines: {node: '>=24'}
     hasBin: true
     peerDependencies:
@@ -4520,9 +4486,9 @@ snapshots:
     optionalDependencies:
       zod: 4.6.7
 
-  '@astrale-os/adapter-cloudflare@0.5.0-beta.211(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(@types/node@24.19.2)(oxlint@1.78.0)(zod@4.6.7)':
+  '@astrale-os/adapter-cloudflare@0.5.0-beta.226(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(@types/node@24.19.2)(oxlint@1.78.0)(zod@4.6.7)':
     dependencies:
-      '@astrale-os/sdk': 0.6.0-beta.56(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
+      '@astrale-os/sdk': 0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
       '@noble/hashes': 2.3.0
       '@restatedev/restate-sdk-cloudflare-workers': 1.17.0
       hono: 4.13.14
@@ -4538,82 +4504,42 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@astrale-os/kernel-client@1.0.0-beta.38(zod@4.6.7)':
+  '@astrale-os/kernel-client@1.0.0-beta.49(zod@4.6.7)':
     dependencies:
-      '@astrale-os/kernel-core': 1.0.0-beta.35(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.23
-      '@astrale-os/kernel-protocol': 1.0.0-beta.35(zod@4.6.7)
+      '@astrale-os/kernel-core': 1.0.0-beta.46(zod@4.6.7)
+      '@astrale-os/kernel-dsl': 1.0.0-beta.34
+      '@astrale-os/kernel-protocol': 1.0.0-beta.46(zod@4.6.7)
       '@tanstack/pacer': 0.20.1
     transitivePeerDependencies:
       - zod
 
-  '@astrale-os/kernel-client@1.0.0-beta.42(zod@4.6.7)':
+  '@astrale-os/kernel-core@1.0.0-beta.46(zod@4.6.7)':
     dependencies:
-      '@astrale-os/kernel-core': 1.0.0-beta.39(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.27
-      '@astrale-os/kernel-protocol': 1.0.0-beta.39(zod@4.6.7)
-      '@tanstack/pacer': 0.20.1
-    transitivePeerDependencies:
-      - zod
-
-  '@astrale-os/kernel-core@1.0.0-beta.35(zod@4.6.7)':
-    dependencies:
-      '@astrale-os/kernel-dsl': 1.0.0-beta.23
+      '@astrale-os/kernel-dsl': 1.0.0-beta.34
       '@noble/hashes': 2.3.0
       '@types/json-schema': 7.0.15
       dequal: 2.0.3
       zod: 4.6.7
 
-  '@astrale-os/kernel-core@1.0.0-beta.39(zod@4.6.7)':
-    dependencies:
-      '@astrale-os/kernel-dsl': 1.0.0-beta.27
-      '@noble/hashes': 2.3.0
-      '@types/json-schema': 7.0.15
-      dequal: 2.0.3
-      zod: 4.6.7
-
-  '@astrale-os/kernel-dsl@1.0.0-beta.23':
+  '@astrale-os/kernel-dsl@1.0.0-beta.34':
     dependencies:
       '@noble/hashes': 2.3.0
       jsonc-parser: 3.3.1
       zod: 4.6.7
 
-  '@astrale-os/kernel-dsl@1.0.0-beta.27':
+  '@astrale-os/kernel-protocol@1.0.0-beta.46(zod@4.6.7)':
     dependencies:
-      '@noble/hashes': 2.3.0
-      jsonc-parser: 3.3.1
-      zod: 4.6.7
-
-  '@astrale-os/kernel-protocol@1.0.0-beta.35(zod@4.6.7)':
-    dependencies:
-      '@astrale-os/kernel-core': 1.0.0-beta.35(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.23
+      '@astrale-os/kernel-core': 1.0.0-beta.46(zod@4.6.7)
+      '@astrale-os/kernel-dsl': 1.0.0-beta.34
       '@noble/hashes': 2.3.0
     transitivePeerDependencies:
       - zod
 
-  '@astrale-os/kernel-protocol@1.0.0-beta.39(zod@4.6.7)':
+  '@astrale-os/kernel-server@1.0.0-beta.46(zod@4.6.7)':
     dependencies:
-      '@astrale-os/kernel-core': 1.0.0-beta.39(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.27
-      '@noble/hashes': 2.3.0
-    transitivePeerDependencies:
-      - zod
-
-  '@astrale-os/kernel-server@1.0.0-beta.35(zod@4.6.7)':
-    dependencies:
-      '@astrale-os/kernel-core': 1.0.0-beta.35(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.23
-      '@astrale-os/kernel-protocol': 1.0.0-beta.35(zod@4.6.7)
-      hono: 4.13.14
-    transitivePeerDependencies:
-      - zod
-
-  '@astrale-os/kernel-server@1.0.0-beta.39(zod@4.6.7)':
-    dependencies:
-      '@astrale-os/kernel-core': 1.0.0-beta.39(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.27
-      '@astrale-os/kernel-protocol': 1.0.0-beta.39(zod@4.6.7)
+      '@astrale-os/kernel-core': 1.0.0-beta.46(zod@4.6.7)
+      '@astrale-os/kernel-dsl': 1.0.0-beta.34
+      '@astrale-os/kernel-protocol': 1.0.0-beta.46(zod@4.6.7)
       hono: 4.13.14
     transitivePeerDependencies:
       - zod
@@ -4623,33 +4549,13 @@ snapshots:
       oxfmt: 0.67.0
       oxlint: 1.78.0
 
-  '@astrale-os/sdk@0.6.0-beta.56(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)':
+  '@astrale-os/sdk@0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)':
     dependencies:
-      '@astrale-os/kernel-client': 1.0.0-beta.38(zod@4.6.7)
-      '@astrale-os/kernel-core': 1.0.0-beta.35(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.23
-      '@astrale-os/kernel-protocol': 1.0.0-beta.35(zod@4.6.7)
-      '@astrale-os/kernel-server': 1.0.0-beta.35(zod@4.6.7)
-      '@lucide/icons': 1.34.0
-      '@typescript/native-preview': 7.0.0-dev.20260707.2
-      cross-spawn: 7.0.6
-      hono: 4.13.14
-      jose: 6.2.9
-      semver: 7.8.5
-      typescript: 6.0.3
-      zod: 4.6.7
-    optionalDependencies:
-      '@astrale-os/ox': 0.1.3(oxfmt@0.67.0)(oxlint@1.78.0)
-      '@hono/node-server': 2.1.5(hono@4.13.14)
-      oxlint: 1.78.0
-
-  '@astrale-os/sdk@0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)':
-    dependencies:
-      '@astrale-os/kernel-client': 1.0.0-beta.42(zod@4.6.7)
-      '@astrale-os/kernel-core': 1.0.0-beta.39(zod@4.6.7)
-      '@astrale-os/kernel-dsl': 1.0.0-beta.27
-      '@astrale-os/kernel-protocol': 1.0.0-beta.39(zod@4.6.7)
-      '@astrale-os/kernel-server': 1.0.0-beta.39(zod@4.6.7)
+      '@astrale-os/kernel-client': 1.0.0-beta.49(zod@4.6.7)
+      '@astrale-os/kernel-core': 1.0.0-beta.46(zod@4.6.7)
+      '@astrale-os/kernel-dsl': 1.0.0-beta.34
+      '@astrale-os/kernel-protocol': 1.0.0-beta.46(zod@4.6.7)
+      '@astrale-os/kernel-server': 1.0.0-beta.46(zod@4.6.7)
       '@lucide/icons': 1.34.0
       '@typescript/native-preview': 7.0.0-dev.20260707.2
       cross-spawn: 7.0.6
@@ -4664,9 +4570,9 @@ snapshots:
       '@hono/node-server': 2.1.5(hono@4.13.14)
       oxlint: 1.78.0
 
-  '@astrale-os/shell@0.7.0-beta.22(@astrale-os/sdk@0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7))':
+  '@astrale-os/shell@0.7.0-beta.22(@astrale-os/sdk@0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7))':
     dependencies:
-      '@astrale-os/sdk': 0.6.0-beta.62(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
+      '@astrale-os/sdk': 0.6.0-beta.71(@astrale-os/ox@0.1.3(oxfmt@0.67.0)(oxlint@1.78.0))(@hono/node-server@2.1.5(hono@4.13.14))(oxlint@1.78.0)(zod@4.6.7)
       jose: 6.2.9
       zod: 4.6.7
 

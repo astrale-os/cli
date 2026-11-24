@@ -50,8 +50,10 @@ export async function readBounded(
   return bytes
 }
 
-function sizeError(url: URL, maximum: number): RangeError {
-  return new RangeError(`GET ${url.href} exceeded ${maximum} bytes`)
+export class DocumentSizeError extends RangeError {}
+
+function sizeError(url: URL, maximum: number): DocumentSizeError {
+  return new DocumentSizeError(`GET ${url.href} exceeded ${maximum} bytes`)
 }
 
 export async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {

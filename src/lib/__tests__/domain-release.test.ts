@@ -1,6 +1,15 @@
-import { MEDIA_TYPE } from '@astrale-os/sdk/release'
+import { issuer } from '@astrale-os/sdk/auth'
+import {
+  compactBundleLink,
+  compactBundleUrl,
+  COMPACT_BUNDLE_MEDIA_TYPE,
+  MEDIA_TYPE,
+  seal,
+} from '@astrale-os/sdk/release'
 import { defineSchema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
+import { brotliCompressSync } from 'node:zlib'
 
 import { deploymentReleaseFor } from '../../__tests__/fixtures/publication'
 import {
@@ -33,7 +42,9 @@ function serve(routes: Record<string, () => Response>) {
       redirect: init?.redirect,
     })
     const route = routes[new URL(url).pathname]
-    return route === undefined ? new Response('missing', { status: 404 }) : route()
+    const response = route === undefined ? new Response('missing', { status: 404 }) : route()
+    Object.defineProperty(response, 'url', { value: url })
+    return response
   }
   return { seen, fetch }
 }
@@ -81,6 +92,20 @@ describe('deployment pre-read', () => {
     expect(seen).toHaveLength(1)
   })
 
+  test.each([
+    { url: URL_V4 + '/.well-known/astrale/release.json', redirected: true },
+    { url: 'https://another.example/.well-known/astrale/release.json', redirected: false },
+  ])('refuses a Release response that reports a different route (%o)', async (reported) => {
+    const response = releaseResponse()
+    Object.defineProperties(response, {
+      url: { value: reported.url },
+      redirected: { value: reported.redirected },
+    })
+    await expect(readServedDeployment(URL_V4, undefined, async () => response)).rejects.toThrow(
+      'did not return the exact requested URL',
+    )
+  })
+
   test('marks a 503 (not serving yet) retryable, with its Retry-After', async () => {
     const { fetch } = serve({
       '/.well-known/astrale/release.json': () =>
@@ -99,6 +124,100 @@ describe('release bundle read (install pre-check)', () => {
   const mediaType = release.schema.bundle.ref.mediaType
   const bundleResponse = (bytes: Uint8Array<ArrayBuffer> = bundleBytes, type: string = mediaType) =>
     new Response(bytes, { headers: { 'content-type': type } })
+
+  test.each(['ok', 'corrupt', 'missing', 'denied'] as const)(
+    'uses the pinned alternate on precheck and retries eligible failures only (%s)',
+    async (mode) => {
+      const compact = brotliCompressSync(bundleBytes)
+      const digest = `sha256:${createHash('sha256').update(compact).digest('hex')}` as const
+      const href = compactBundleUrl(URL_V4, digest)
+      const link = compactBundleLink(URL_V4, release.schema.bundle.href, digest)
+      const { seen, fetch } = serve({
+        '/.well-known/astrale/release.json': () => {
+          const response = releaseResponse()
+          response.headers.set('link', link)
+          return response
+        },
+        [new URL(href).pathname]: () => {
+          if (mode === 'denied' || mode === 'missing')
+            return new Response(null, { status: mode === 'denied' ? 403 : 404 })
+          return new Response(mode === 'ok' ? compact : compact.subarray(1), {
+            headers: { 'content-type': COMPACT_BUNDLE_MEDIA_TYPE, etag: `"${digest}"` },
+          })
+        },
+        [bundlePath]: () => bundleResponse(),
+      })
+      const served = await readServedDeployment(URL_V4, undefined, fetch)
+      expect(served.bundleLink).toBe(link)
+      const result = readReleaseBundle(served.release, URL_V4, undefined, fetch, served.bundleLink)
+      if (mode === 'denied') await expect(result).rejects.toThrow('403')
+      else expect((await result).root.origin).toBe(release.origin)
+      expect(seen.slice(1).map(({ url }) => url)).toEqual(
+        mode === 'corrupt' || mode === 'missing' ? [href, release.schema.bundle.href] : [href],
+      )
+    },
+  )
+
+  test('keeps a historical v1 publisher with opaque HTTP validators readable', async () => {
+    const canonical = bundleResponse()
+    canonical.headers.set('etag', 'W/"canonical-cache"')
+    const discovery = releaseResponse()
+    discovery.headers.set('etag', 'W/"release-cache"')
+    discovery.headers.set('link', '<https://other.example/>; rel="alternate"')
+    const { fetch, seen } = serve({
+      '/.well-known/astrale/release.json': () => discovery,
+      [bundlePath]: () => canonical,
+    })
+    const served = await readServedDeployment(URL_V4, undefined, fetch)
+    expect(served.bundleLink).toBeUndefined()
+    const result = await readReleaseBundle(
+      served.release,
+      URL_V4,
+      undefined,
+      fetch,
+      served.bundleLink,
+    )
+    expect(result.root.origin).toBe(release.origin)
+    expect(seen).toHaveLength(2)
+  })
+
+  test.each(['identity.example', 'urn:crm:deployment', URL_V4 + '?identity=crm'])(
+    'keeps canonical discovery and Bundle reads for identity issuer %s',
+    async (identityIssuer) => {
+      const { digest: _digest, ...content } = release
+      const historical = seal({
+        ...content,
+        identity: { ...content.identity, issuer: issuer.accept(identityIssuer) },
+      })
+      const discovery = new Response(JSON.stringify(historical), {
+        headers: { 'content-type': MEDIA_TYPE },
+      })
+      if (identityIssuer !== 'identity.example')
+        discovery.headers.set(
+          'link',
+          compactBundleLink(URL_V4, release.schema.bundle.href, release.digest),
+        )
+      const { fetch, seen } = serve({
+        '/.well-known/astrale/release.json': () => discovery,
+        [bundlePath]: () => bundleResponse(),
+      })
+      const served = await readServedDeployment(URL_V4, undefined, fetch)
+      expect(served.release.digest).toBe(historical.digest)
+      expect(served.bundleLink).toBeUndefined()
+      const verified = await readReleaseBundle(
+        served.release,
+        URL_V4,
+        undefined,
+        fetch,
+        served.bundleLink,
+      )
+      expect(verified.root.origin).toBe(historical.origin)
+      expect(seen.map(({ url }) => url)).toEqual([
+        URL_V4 + '/.well-known/astrale/release.json',
+        historical.schema.bundle.href,
+      ])
+    },
+  )
 
   test('reads the bundle the release names, from its own origin, without redirects', async () => {
     const { seen, fetch } = serve({ [bundlePath]: () => bundleResponse() })
