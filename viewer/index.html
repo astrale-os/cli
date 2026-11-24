@@ -5,13 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>astrale view</title>
     <style>
+      /*
+        The reset is a layer, declared first: the node selector's stylesheet, loaded on demand,
+        lays its own layers above it. The chrome's rules stay unlayered and name only the chrome.
+      */
+      @layer viewer {
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+      }
       :root {
         color-scheme: dark light;
-      }
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
       }
       html,
       body {
@@ -20,12 +26,16 @@
       body {
         display: flex;
         flex-direction: column;
+        background: #101014;
+      }
+      header,
+      #error,
+      #session-error {
         font:
           12px ui-monospace,
           SFMono-Regular,
           Menlo,
           monospace;
-        background: #101014;
         color: #c8c8d0;
       }
       header {

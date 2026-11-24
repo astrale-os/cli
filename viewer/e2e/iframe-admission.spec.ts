@@ -1,11 +1,8 @@
 import { TRUSTED_VIEW_IFRAME_PROFILE } from '@astrale-os/shell'
 import { test, expect } from '@playwright/test'
-import { readFileSync } from 'node:fs'
 
+import { fulfillHostPage } from './host'
 import { fulfillKernel } from './kernel'
-
-const hostHtml = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8')
-const hostScript = readFileSync(new URL('../dist/main.js', import.meta.url), 'utf8')
 
 test('remote legacy iframe options cannot broaden the fixed shared browser profile', async ({
   page,
@@ -48,10 +45,7 @@ test('remote legacy iframe options cannot broaden the fixed shared browser profi
         json: { token: 'browser-fixture', expiresAt: Date.now() + 240_000, kind: 'minted' },
       })
     if (url.pathname === '/status') return route.fulfill({ json: { revision: 0 } })
-    return route.fulfill({
-      contentType: url.pathname === '/main.js' ? 'application/javascript' : 'text/html',
-      body: url.pathname === '/main.js' ? hostScript : hostHtml,
-    })
+    return fulfillHostPage(route, url.pathname)
   })
   await page.goto('https://host.example/')
   await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'plain')

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import {
   mkdtemp,
   mkdir,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -87,6 +88,30 @@ describe('viewer asset resolution', () => {
     await utimes(join(source, 'main.ts'), future, future)
     await ensureViewerAssets(module, join(root, 'bin', 'astrale'))
     expect(await readFile(join(dist, 'main.js'), 'utf8')).toContain('fresh viewer')
+
+    // A module the page loads on demand is a source too, however deep.
+    await mkdir(join(source, 'finder'))
+    await writeFile(join(source, 'finder', 'island.ts'), 'export const island = "first island"\n')
+    await writeFile(
+      join(source, 'main.ts'),
+      'void import("./finder/island").then(({ island }) => console.log(island))\n',
+    )
+    const later = new Date(Date.now() + 4_000)
+    await utimes(join(source, 'main.ts'), later, later)
+    await ensureViewerAssets(module, join(root, 'bin', 'astrale'))
+    const chunk = async () => {
+      const files = await readdir(dist)
+      const chunks = files.filter((file) => /^chunk-[a-z0-9]+\.js$/u.test(file))
+      expect(chunks).toHaveLength(1)
+      return readFile(join(dist, chunks[0]!), 'utf8')
+    }
+    expect(await chunk()).toContain('first island')
+
+    await writeFile(join(source, 'finder', 'island.ts'), 'export const island = "next island"\n')
+    const latest = new Date(Date.now() + 6_000)
+    await utimes(join(source, 'finder', 'island.ts'), latest, latest)
+    await ensureViewerAssets(module, join(root, 'bin', 'astrale'))
+    expect(await chunk()).toContain('next island')
   })
 
   test('uses the bundled module location when invoked through a global bin symlink', async () => {

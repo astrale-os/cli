@@ -2,10 +2,11 @@ import { credential } from '@astrale-os/sdk/auth'
 import { K } from '@astrale-os/sdk/schema'
 import { describe, expect, setSystemTime, test } from 'bun:test'
 
-import { runsOnKernelCredential } from '../view/grant'
+import { exchangedIssuer } from '../view/grant'
 import { createOwnerAccess, identityLabel, listIdentities } from '../view/owner'
 import {
   DOMAIN_VIEW,
+  EXECUTED_VIEW,
   instanceKernel,
   KERNEL,
   KERNEL_VIEW,
@@ -17,10 +18,11 @@ import {
 import { mintedCredential } from './view.fixture'
 
 describe('owner-mode View authority', () => {
-  test('a View the Kernel issues, or a Shell View, runs on a Kernel credential; any other is exchanged', () => {
-    expect(runsOnKernelCredential(KERNEL_VIEW, KERNEL)).toBe(true)
-    expect(runsOnKernelCredential(SHELL_VIEW, KERNEL)).toBe(true)
-    expect(runsOnKernelCredential(DOMAIN_VIEW, KERNEL)).toBe(false)
+  test('a View the Kernel issues or executes, or a Shell View, runs on a Kernel credential; any other is exchanged', () => {
+    expect(exchangedIssuer(KERNEL_VIEW, KERNEL)).toBeUndefined()
+    expect(exchangedIssuer(EXECUTED_VIEW, KERNEL)).toBeUndefined()
+    expect(exchangedIssuer(SHELL_VIEW, KERNEL)).toBeUndefined()
+    expect(String(exchangedIssuer(DOMAIN_VIEW, KERNEL))).toBe('https://issues.example')
   })
 
   test('runs as root by default: one Admin round trip, every grant derived from root', async () => {
@@ -30,9 +32,16 @@ describe('owner-mode View authority', () => {
       access.grant(undefined, DOMAIN_VIEW),
       access.grant(undefined, KERNEL_VIEW),
       access.grant(undefined, SHELL_VIEW),
+      access.grant(undefined, EXECUTED_VIEW),
       access.grant(undefined),
     ])
-    expect(grants.map(({ kind }) => kind)).toEqual(['exchanged', 'minted', 'minted', 'minted'])
+    expect(grants.map(({ kind }) => kind)).toEqual([
+      'exchanged',
+      'minted',
+      'minted',
+      'minted',
+      'minted',
+    ])
     expect(grants[0]!.token).toBe('exchanged:root@https://issues.example')
     expect(credential.inspect(grants[1]!.token).sub).toBe('grant:root')
     expect(kernel.rootToken).toHaveBeenCalledTimes(1)

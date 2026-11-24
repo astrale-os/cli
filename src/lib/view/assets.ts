@@ -1,10 +1,9 @@
-import { existsSync, statSync } from 'node:fs'
-import { copyFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { InternalError } from '../../errors'
 import { embeddedAssetDir, materializeEmbeddedAssets } from '../embedded-assets'
+import { buildViewerBundle } from './viewer-bundle'
 
 /**
  * Resolve the viewer from source/development layouts or the standalone cache.
@@ -39,18 +38,8 @@ export async function ensureViewerAssets(
   const dist = viewerDistDir(moduleUrl, entry)
   const srcDir = join(dist, '..')
   if (hasViewerBundle(dist) && !viewerSourceIsNewer(srcDir, dist)) return dist
-  const bun = (
-    globalThis as { Bun?: { build: (o: object) => Promise<{ success: boolean; logs: unknown[] }> } }
-  ).Bun
-  if (bun && hasViewerSource(srcDir)) {
-    const result = await bun.build({
-      entrypoints: [join(srcDir, 'main.ts')],
-      outdir: dist,
-      target: 'browser',
-      minify: false,
-    })
-    if (!result.success) throw new InternalError(`viewer build failed: ${result.logs.join('\n')}`)
-    await copyFile(join(srcDir, 'index.html'), join(dist, 'index.html'))
+  if ('Bun' in globalThis && hasViewerSource(srcDir)) {
+    await buildViewerBundle({ source: srcDir, outdir: dist, minify: false })
     return dist
   }
   return materializeEmbeddedAssets('viewer')
@@ -64,12 +53,18 @@ function hasViewerSource(directory: string): boolean {
   return existsSync(join(directory, 'main.ts')) && existsSync(join(directory, 'index.html'))
 }
 
+/** The page's sources: everything under `viewer/` but its output and its browser tests. */
+const NOT_VIEWER_SOURCE = /^(?:dist|e2e|node_modules)(?:\/|$)/u
+
 function viewerSourceIsNewer(source: string, dist: string): boolean {
   if (!hasViewerSource(source)) return false
   if (!hasViewerBundle(dist)) return true
   const newestSource = Math.max(
-    statSync(join(source, 'main.ts')).mtimeMs,
-    statSync(join(source, 'index.html')).mtimeMs,
+    ...readdirSync(source, { recursive: true, withFileTypes: true })
+      .filter((file) => file.isFile())
+      .map((file) => join(file.parentPath, file.name))
+      .filter((file) => !NOT_VIEWER_SOURCE.test(relative(source, file).split(sep).join('/')))
+      .map((file) => statSync(file).mtimeMs),
   )
   const oldestOutput = Math.min(
     statSync(join(dist, 'main.js')).mtimeMs,

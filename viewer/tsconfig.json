@@ -7,7 +7,8 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
-  "include": ["*.ts", "e2e/**/*.ts"]
+  "include": ["*.ts", "finder/**/*.ts", "finder/**/*.tsx", "e2e/**/*.ts"]
 }

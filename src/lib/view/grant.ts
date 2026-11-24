@@ -1,6 +1,6 @@
 import type { ResolvedView } from '@astrale-os/shell'
 
-import { credential } from '@astrale-os/sdk/auth'
+import { credential, issuer as issuerId, type IssuerId } from '@astrale-os/sdk/auth'
 
 import { viewKeyOrigin } from './resolve'
 
@@ -17,15 +17,16 @@ export type TokenGrant = { token: string; expiresAt: number; kind: GrantKind }
 const SHELL_ORIGIN = 'shell.astrale.ai'
 
 /**
- * Whether a View runs on a Kernel credential of the caller rather than on its Domain's exchanged
- * credential. Shell's own rule for a root host: a View the Kernel itself issues has no Domain
- * principal, and the Shell's own Views act for the caller itself; every other View receives its
- * Domain's credential, exchanged for the caller.
+ * The issuer of the Domain credential a View runs on, exchanged for the caller; nothing when it runs
+ * on a Kernel credential of the caller. Shell's own rule for a root host: a View of a Domain the
+ * Kernel executes (no issuer of its own, or the Kernel's) has no Domain principal, and the Shell's
+ * own Views act for the caller itself; every other View receives its Domain's credential.
  */
-export function runsOnKernelCredential(view: ResolvedView, kernelIssuer: string): boolean {
-  return (
-    view.route.issuer === kernelIssuer || viewKeyOrigin(String(view.route.key)) === SHELL_ORIGIN
-  )
+export function exchangedIssuer(view: ResolvedView, kernelIssuer: string): IssuerId | undefined {
+  const issuer = view.route.issuer
+  if (issuer === undefined || issuer === kernelIssuer) return undefined
+  if (viewKeyOrigin(String(view.route.key)) === SHELL_ORIGIN) return undefined
+  return issuerId.accept(issuer)
 }
 
 /**

@@ -19,7 +19,7 @@ export const KERNEL = 'https://kernel.test'
 export const OWNER = { instance: '@admin-instance', admin: { timeout: '5000' } }
 export const seconds = (fromNow: number) => Math.floor(Date.now() / 1_000) + fromNow
 
-export const view = (key: string, issuer: string): View =>
+export const view = (key: string, issuer: string | undefined): View =>
   ({
     target: `/:${key.slice(0, key.indexOf(':view.'))}`,
     route: {
@@ -27,7 +27,7 @@ export const view = (key: string, issuer: string): View =>
       declaration: { target: { kind: 'domain' } },
       href: `https://views.test/${key}`,
       handshake: 'shell',
-      issuer,
+      ...(issuer === undefined ? {} : { issuer }),
       release: `sha256:${'a'.repeat(64)}`,
       revision: `sha256:${'b'.repeat(64)}`,
     },
@@ -35,6 +35,8 @@ export const view = (key: string, issuer: string): View =>
 
 export const DOMAIN_VIEW = view('issues.example:view.board', 'https://issues.example')
 export const KERNEL_VIEW = view('local.example:view.board', KERNEL)
+/** A View of a Domain the Kernel executes: no issuer of its own. */
+export const EXECUTED_VIEW = view('notes.example:view.board', undefined)
 export const SHELL_VIEW = view('shell.astrale.ai:view.application', 'https://shell.astrale.ai')
 
 export const node = (id: string, cls: string, props: Record<string, unknown>): Node =>

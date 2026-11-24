@@ -1,15 +1,12 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
-import { readFileSync } from 'node:fs'
 
+import { fulfillHostPage } from './host'
 import { fulfillKernel } from './kernel'
 
 /**
  * The owner-mode identity picker of the View host page: "Open as" Root, a User, or another
  * Identity of the instance, switching and reloading through the session server.
  */
-
-const hostHtml = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8')
-const hostScript = readFileSync(new URL('../dist/main.js', import.meta.url), 'utf8')
 
 const IDENTITIES = [
   { id: null, label: 'Root', kind: 'root' },
@@ -73,10 +70,7 @@ async function serve(page: Page, context: BrowserContext, listing = true) {
       return route.fulfill({ json: { revision } })
     }
     if (url.pathname === '/status') return route.fulfill({ json: { revision } })
-    return route.fulfill({
-      contentType: url.pathname === '/main.js' ? 'application/javascript' : 'text/html',
-      body: url.pathname === '/main.js' ? hostScript : hostHtml,
-    })
+    return fulfillHostPage(route, url.pathname)
   })
   await page.goto('https://host.example/')
   await expect(page.locator('#status-dot')).toHaveAttribute('data-state', 'plain')
