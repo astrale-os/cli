@@ -85,14 +85,15 @@ SOFTWARE.
 This notice is provided to satisfy the attribution requirement of the EPL-2.0;
 it does not alter the Apache-2.0 license of `@astrale-os/cli`'s own code.
 
-## Manrope (font)
+## Hanken Grotesk (font)
 
-- **Files:** `manrope-latin-wght-normal.woff2`, `manrope-latin-ext-wght-normal.woff2`, shipped
-  by `@astrale-os/ui` and served by `astrale view` with the node selector (`viewer/dist/fonts`)
+- **Files:** `hanken-grotesk-latin-wght-normal.woff2`, `hanken-grotesk-latin-ext-wght-normal.woff2`,
+  shipped by `@astrale-os/ui` and served by `astrale view` with the node selector
+  (`viewer/dist/fonts`)
 - **License:** SIL Open Font License 1.1 (OFL-1.1)
-- **Copyright:** © 2019 The Manrope Project Authors
-- **Source:** https://github.com/sharanda/manrope
-- **License text:** `viewer/dist/fonts/Manrope-OFL.txt`, shipped beside the fonts
+- **Copyright:** © 2021 The Hanken Grotesk Project Authors
+- **Source:** https://github.com/marcologous/hanken-grotesk
+- **License text:** `viewer/dist/fonts/HankenGrotesk-OFL.txt`, shipped beside the fonts
 
 The fonts are distributed unmodified, under their own license.
 

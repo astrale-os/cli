@@ -110,12 +110,14 @@ describe('astrale view node selector', () => {
     expect(viewerFileContentType('/main.js')).toBe('text/javascript; charset=utf-8')
     expect(viewerFileContentType('/chunk-ab12cd34.js')).toBe('text/javascript; charset=utf-8')
     expect(viewerFileContentType('/finder.css')).toBe('text/css; charset=utf-8')
-    expect(viewerFileContentType('/fonts/manrope-latin-wght-normal.woff2')).toBe('font/woff2')
+    expect(viewerFileContentType('/fonts/hanken-grotesk-latin-wght-normal.woff2')).toBe(
+      'font/woff2',
+    )
     for (const path of [
       '/',
       '/index.html',
       '/config.json',
-      '/fonts/Manrope-OFL.txt',
+      '/fonts/HankenGrotesk-OFL.txt',
       '/fonts/../main.js',
       '/chunk-../../etc.js',
       '/chunk-AB.js',
@@ -125,7 +127,7 @@ describe('astrale view node selector', () => {
     ]) {
       expect(viewerFileContentType(path)).toBeUndefined()
     }
-    for (const path of ['index.html', 'main.js', 'fonts/Manrope-OFL.txt', 'finder.css']) {
+    for (const path of ['index.html', 'main.js', 'fonts/HankenGrotesk-OFL.txt', 'finder.css']) {
       expect(isViewerFile(path)).toBe(true)
     }
     for (const path of ['main.js.map', 'island.js', 'fonts/x.ttf', 'nested/main.js']) {
