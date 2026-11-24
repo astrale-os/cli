@@ -1,8 +1,10 @@
+import { issuer } from '@astrale-os/sdk/auth'
 import {
   compactBundleLink,
   compactBundleUrl,
   COMPACT_BUNDLE_MEDIA_TYPE,
   MEDIA_TYPE,
+  seal,
 } from '@astrale-os/sdk/release'
 import { defineSchema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
@@ -164,6 +166,44 @@ describe('release bundle read (install pre-check)', () => {
     expect(result.root.origin).toBe(release.origin)
     expect(seen).toHaveLength(2)
   })
+
+  test.each(['identity.example', 'urn:crm:deployment', URL_V4 + '?identity=crm'])(
+    'keeps canonical discovery and Bundle reads for identity issuer %s',
+    async (identityIssuer) => {
+      const { digest: _digest, ...content } = release
+      const historical = seal({
+        ...content,
+        identity: { ...content.identity, issuer: issuer.accept(identityIssuer) },
+      })
+      const discovery = new Response(JSON.stringify(historical), {
+        headers: { 'content-type': MEDIA_TYPE },
+      })
+      if (identityIssuer !== 'identity.example')
+        discovery.headers.set(
+          'link',
+          compactBundleLink(URL_V4, release.schema.bundle.href, release.digest),
+        )
+      const { fetch, seen } = serve({
+        '/.well-known/astrale/release.json': () => discovery,
+        [bundlePath]: () => bundleResponse(),
+      })
+      const served = await readServedDeployment(URL_V4, undefined, fetch)
+      expect(served.release.digest).toBe(historical.digest)
+      expect(served.bundleLink).toBeUndefined()
+      const verified = await readReleaseBundle(
+        served.release,
+        URL_V4,
+        undefined,
+        fetch,
+        served.bundleLink,
+      )
+      expect(verified.root.origin).toBe(historical.origin)
+      expect(seen.map(({ url }) => url)).toEqual([
+        URL_V4 + '/.well-known/astrale/release.json',
+        historical.schema.bundle.href,
+      ])
+    },
+  )
 
   test('reads the bundle the release names, from its own origin, without redirects', async () => {
     const { seen, fetch } = serve({ [bundlePath]: () => bundleResponse() })

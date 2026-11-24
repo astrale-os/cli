@@ -10,7 +10,6 @@ import {
   isCompactBundleRepresentationError,
   MEDIA_TYPE,
   PATH,
-  url as releaseDocumentUrl,
   type ArtifactRef,
   type CompactBundleHint,
   type DomainRelease,
@@ -84,10 +83,11 @@ export async function readServedDeployment(
     const link = response.headers.get('link')
     const etag = response.headers.get('etag')
     const exact =
+      link !== null &&
+      release.identity.issuer === origin &&
       (etag === null || etag === `"${release.digest}"`) &&
       !response.redirected &&
-      response.url === releaseUrl.href &&
-      releaseDocumentUrl(release.identity.issuer) === releaseUrl.href
+      response.url === releaseUrl.href
     return served(release, exact ? link : null)
   }
   await cancel(response.body)
@@ -147,9 +147,10 @@ export async function readReleaseBundle(
 ): Promise<bundle.Bundle> {
   const descriptor = release.schema.bundle
   const bundleUrl = new URL(descriptor.href)
-  if (bundleUrl.origin !== new URL(url).origin) {
+  const origin = new URL(url).origin
+  if (bundleUrl.origin !== origin) {
     throw new DeploymentReadError(
-      `The release served by ${new URL(url).origin} names its bundle on another origin (${bundleUrl.origin}).`,
+      `The release served by ${origin} names its bundle on another origin (${bundleUrl.origin}).`,
     )
   }
   if (descriptor.ref.size > defaultLimits.maxBytes) {
@@ -157,8 +158,11 @@ export async function readReleaseBundle(
       `Bundle exceeded the decoded limit of ${defaultLimits.maxBytes} bytes.`,
     )
   }
-  const hint = compactBundleHint(release.identity.issuer, descriptor.href, bundleLink)
-  if (hint !== undefined && new URL(hint.href).origin === bundleUrl.origin) {
+  const hint =
+    release.identity.issuer === origin
+      ? compactBundleHint(origin, descriptor.href, bundleLink)
+      : undefined
+  if (hint !== undefined) {
     try {
       return await readCompact(release, hint, fetchImpl, signal)
     } catch (cause) {
