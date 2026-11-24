@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.176](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.175...cli/v1.0.0-beta.176) (2026-11-24)
+
+
+### Bug Fixes
+
+* **lib:** admit UI registry items one by one under the install contract ([#814](https://github.com/astrale-os/cli/issues/814)) ([4c0c539](https://github.com/astrale-os/cli/commit/4c0c5397a773d7b52d29af74d17eddfdb3caa0ef))
+
 ## [1.0.0-beta.175](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.174...cli/v1.0.0-beta.175) (2026-11-24)
 
 
