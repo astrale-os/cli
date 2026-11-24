@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { readUiRegistryItem, readUiReleaseSnapshot } from '../../src/ui/release'
 import { searchUi } from '../../src/ui/search'
 
 const uiRoot = path.resolve(process.argv[2] ?? '')
@@ -48,8 +49,32 @@ await Bun.write(
   }),
 )
 
+/** Serves `generated` artifacts, then the UI checkout, as the snapshot of `commit`. */
+function snapshot(commit: string, generated: Map<string, string>, fetched = new Set<string>()) {
+  return (async (input: string | URL | Request) => {
+    const url = String(input)
+    const marker = `/${commit}/`
+    const position = url.indexOf(marker)
+    if (position < 0) return new Response('not found', { status: 404 })
+    const relative = url.slice(position + marker.length)
+    fetched.add(relative)
+    const artifact = generated.get(relative)
+    if (artifact !== undefined) return new Response(artifact)
+    const target = path.resolve(uiRoot, relative)
+    const within = path.relative(uiRoot, target)
+    if (within === '..' || within.startsWith(`..${path.sep}`) || path.isAbsolute(within)) {
+      return new Response('not found', { status: 404 })
+    }
+    return readFile(target).then(
+      (source) => new Response(source),
+      () => new Response('not found', { status: 404 }),
+    )
+  }) as typeof fetch
+}
+
 try {
   const reports = []
+  const handedOff = new Set<string>()
   for (const [layoutName, options, commit] of [
     ['single', {}, 'a'.repeat(40)],
     ['partitioned', { maxSingleArtifactRawBytes: 1 }, 'b'.repeat(40)],
@@ -70,25 +95,7 @@ try {
     )
 
     const fetched = new Set<string>()
-    const fetcher = (async (input: string | URL | Request) => {
-      const url = String(input)
-      const marker = `/${commit}/`
-      const position = url.indexOf(marker)
-      if (position < 0) return new Response('not found', { status: 404 })
-      const relative = url.slice(position + marker.length)
-      fetched.add(relative)
-      const generated = artifact.files.get(relative)
-      if (generated !== undefined) return new Response(generated)
-      const target = path.resolve(uiRoot, relative)
-      const within = path.relative(uiRoot, target)
-      if (within === '..' || within.startsWith(`..${path.sep}`) || path.isAbsolute(within)) {
-        return new Response('not found', { status: 404 })
-      }
-      return readFile(target).then(
-        (source) => new Response(source),
-        () => new Response('not found', { status: 404 }),
-      )
-    }) as typeof fetch
+    const fetcher = snapshot(commit, artifact.files, fetched)
 
     for (const document of artifact.corpus.documents) {
       const response = await searchUi(
@@ -97,6 +104,8 @@ try {
         { fetcher, cacheRoot },
       )
       assert.equal(response.results[0]?.address, document.address)
+      const command = response.results[0]?.command
+      if (command) handedOff.add(command.slice('astrale ui add '.length))
       assert.equal(
         createHash('sha256').update(response.results[0]!.code.source).digest('hex'),
         document.code.sha256,
@@ -125,7 +134,21 @@ try {
       fetchedFiles: fetched.size,
     })
   }
-  process.stdout.write(`${JSON.stringify({ provider: uiRoot, reports }, null, 2)}\n`)
+
+  // The add journey must accept every item the release publishes and every command search returns.
+  const commit = 'c'.repeat(40)
+  const fetcher = snapshot(commit, new Map())
+  const release = await readUiReleaseSnapshot(
+    { version: packageDocument.version, ref: `v${packageDocument.version}`, commit },
+    fetcher,
+  )
+  assert.deepEqual(release.registry.refused, [], 'the CLI refuses published UI registry items')
+  for (const item of release.registry.items) await readUiRegistryItem(release, item, fetcher)
+  const admitted = new Set(release.registry.items.map((item) => item.meta.canonicalAddress))
+  const unadmitted = [...handedOff].filter((address) => !admitted.has(address))
+  assert.deepEqual(unadmitted, [], 'search hands off add commands the registry does not admit')
+  const registry = { items: admitted.size, handedOff: handedOff.size }
+  process.stdout.write(`${JSON.stringify({ provider: uiRoot, reports, registry }, null, 2)}\n`)
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

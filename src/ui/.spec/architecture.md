@@ -6,7 +6,11 @@ graph.
 
 One UI operation resolves one immutable UI commit. During the V1 prerelease, operations
 without an explicit version resolve the npm `beta` dist-tag; the `latest` dist-tag is not a V1
-source. Package compatibility and registry reads use that commit. Patterns and blocks invoke the
+source. Package compatibility and registry reads use that commit. Each registry item is admitted on
+its own against the install contract: consumer-owned files under `components/astrale/` and npm
+package requirements only. A refused item is reported with its reason when requested and does not
+affect the others. The UI release gate and CLI CI both run the search provider qualification, which
+requires every published item and every search handoff to be admitted. Patterns and blocks invoke the
 release-qualified shadcn CLI on demand through the detected package manager. Released themes copy
 the exact admitted embedded CSS directly, while a local playground export is admitted and copied
 without registry or shadcn. Both theme paths install consumer-owned source and activate it through

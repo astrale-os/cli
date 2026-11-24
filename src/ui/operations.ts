@@ -784,6 +784,20 @@ function findItem(release: UiRelease, address: string): UiRegistryItem {
     item.meta.canonicalAddress.endsWith('/' + normalized),
   )
   if (shorthand.length === 1) return shorthand[0]!
+  const refused = release.registry.refused.filter(
+    (item) =>
+      item.name === normalized ||
+      item.address === normalized ||
+      (shorthand.length === 0 && item.address?.endsWith('/' + normalized)),
+  )
+  if (refused.length === 1) {
+    const named = refused[0]!.address ?? refused[0]!.name ?? address
+    throw new UiError(
+      'UI_ITEM_REFUSED',
+      `UI ${release.version} item "${named}" cannot be installed safely: ${refused[0]!.reason}.`,
+      'Choose another item; run astrale ui search to discover alternatives.',
+    )
+  }
   throw new UiError(
     'UI_ITEM_NOT_FOUND',
     shorthand.length > 1
