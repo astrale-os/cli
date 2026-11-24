@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.178](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.177...cli/v1.0.0-beta.178) (2026-11-24)
+
+
+### Features
+
+* **install:** verify compact Domain Bundles during precheck ([#821](https://github.com/astrale-os/cli/issues/821)) ([da7c9ef](https://github.com/astrale-os/cli/commit/da7c9efd8a56a700f920a3a71a05f6b6fdbcaa03))
+
 ## [1.0.0-beta.177](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.176...cli/v1.0.0-beta.177) (2026-11-24)
 
 
