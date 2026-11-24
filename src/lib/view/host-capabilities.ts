@@ -2,6 +2,9 @@ import type { HostCapabilities } from '@astrale-os/shell'
 
 import { admitHostCapabilities } from '@astrale-os/shell'
 
+/** The most Nodes a View hosted here may ask the caller to select at once. */
+export const NODE_SELECTOR_MAXIMUM = 16
+
 /** Build the exact host grant handed to a CLI-hosted View session. */
 export function viewHostCapabilities(externalOrigins: readonly string[]): HostCapabilities {
   return admitHostCapabilities({
@@ -13,5 +16,6 @@ export function viewHostCapabilities(externalOrigins: readonly string[]): HostCa
     actions: {},
     browser: {},
     access: {},
+    graph: { select: { maximumNodes: NODE_SELECTOR_MAXIMUM } },
   })
 }

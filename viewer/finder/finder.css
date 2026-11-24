@@ -1,0 +1,10 @@
+/*
+  The node selector's styles, loaded with the island on the first `graph.select` request. Only
+  the island's own sources are scanned; the runtime package's `theme.css` ships its own compiled
+  utilities. The host page keeps its unlayered chrome rules, which these layers never override.
+*/
+@import 'tailwindcss' source(none);
+@source './';
+@import '@astrale-os/ui/theme.css';
+@import '@astrale-os/ui/presets/astrale.css';
+@import '@astrale-os/ui/tailwind.css';

@@ -28,7 +28,7 @@ import { resolveInstanceOwnership, retrieveInstanceRootToken } from '../admin/in
 import { kernelKey } from '../admin/ownership'
 import { fetchWithCaFile } from '../ca-fetch'
 import { readConfig } from '../config'
-import { mintedExpiry, runsOnKernelCredential, type TokenGrant } from './grant'
+import { exchangedIssuer, mintedExpiry, type TokenGrant } from './grant'
 import { reresolveView } from './refresh'
 
 /**
@@ -216,8 +216,9 @@ export function createOwnerAccess(
     },
     async grant(identity: string | undefined, view?: ResolvedView): Promise<TokenGrant> {
       const session = sessionAs(identity)
-      if (view !== undefined && !runsOnKernelCredential(view, kernel.issuer)) {
-        const exchanged = await session.exchange(view.route.issuer, {
+      const domainIssuer = view === undefined ? undefined : exchangedIssuer(view, kernel.issuer)
+      if (domainIssuer !== undefined) {
+        const exchanged = await session.exchange(domainIssuer, {
           ttlSeconds: GRANT_TTL_SECONDS,
         })
         return { token: exchanged.credential, expiresAt: exchanged.expiresAt, kind: 'exchanged' }

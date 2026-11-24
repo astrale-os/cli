@@ -3,6 +3,7 @@ import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
 import { credentials, type Credentials } from '@astrale-os/sdk/client/session'
 import {
   createIframeShellAdapter,
+  createNodeSelectorRequests,
   createShell,
   openExternalBrowserWindow,
   rejectIntent,
@@ -18,14 +19,15 @@ import { accessibleIframeAdapter, viewTitle } from './frame'
  * contract. Its nonce-scoped server supplies one Domain-bound Host placement;
  * this page never reconstructs parallel URL, target, key, or handshake inputs.
  * A View it hosts may open another View of a Domain (`view.open`); it never opens
- * a View for a node.
+ * a View for a node. It may ask the caller to select Nodes (`graph.select`): the
+ * node selector, a React island, is fetched with its stylesheet on the first ask.
  */
 
 type Config = {
   view: ResolvedView
   /** Direct kernel URL (public https) or the nonce-scoped local proxy. */
   kernelUrl: string
-  kernelIssuer: ResolvedView['route']['issuer']
+  kernelIssuer: string
   identity: string | null
   instance: string | null
   sessionId: string
@@ -149,6 +151,25 @@ function errorMessage(error: unknown): string {
     return error.message
   }
   return String(error)
+}
+
+function loadStylesheet(href: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = href
+    link.onload = () => resolve()
+    link.onerror = () => {
+      link.remove()
+      reject(new Error(`${href} did not load.`))
+    }
+    document.head.append(link)
+  })
+}
+
+/** `/:issues.astrale.ai` → `issues.astrale.ai`: a View always renders its own Domain. */
+function domainOrigin(target: string): string {
+  return target.startsWith('/:') ? target.slice(2) : target
 }
 
 function showPlacement(view: ResolvedView): void {
@@ -282,6 +303,33 @@ async function main(): Promise<void> {
   }
   const kernelUrl = new URL(cfg.kernelUrl, location.href).href
 
+  // The node selector reads the graph as this session's caller: the Shell's own Kernel client.
+  const nodeSelectorRequests = createNodeSelectorRequests()
+  let nodeSelector: Promise<void> | undefined
+  const showNodeSelector = (): Promise<void> => {
+    nodeSelector ??= Promise.all([
+      import('./finder/island'),
+      loadStylesheet(`${base}/finder.css`),
+    ]).then(
+      ([island]) =>
+        island.mountFinderIsland({
+          requests: nodeSelectorRequests,
+          kernel: shell.kernel,
+          askerOrigin: (sender) => {
+            const asker = shell.windows.get(sender)
+            return asker === undefined ? undefined : domainOrigin(asker.view.target)
+          },
+          place: { instance: cfg.instance ?? cfg.kernelIssuer, identity: cfg.identity ?? '' },
+        }),
+      (error: unknown) => {
+        // The next request tries again.
+        nodeSelector = undefined
+        throw new Error('The node selector did not load.', { cause: error })
+      },
+    )
+    return nodeSelector
+  }
+
   const shell = createShell({
     mode: 'standalone',
     session: {
@@ -300,6 +348,15 @@ async function main(): Promise<void> {
     adapter: accessibleIframeAdapter(createIframeShellAdapter()),
     // Every View receives the Shell's fixed browser profile, including nested Views.
     externalOpen: (request) => openExternalBrowserWindow(window, request),
+    selectNodes: async (request, context) => {
+      try {
+        await showNodeSelector()
+      } catch (error) {
+        showIntentError(error)
+        throw error
+      }
+      return nodeSelectorRequests.select(request, context)
+    },
   })
   await shell.init()
 

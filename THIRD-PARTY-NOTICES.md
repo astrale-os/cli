@@ -85,9 +85,20 @@ SOFTWARE.
 This notice is provided to satisfy the attribution requirement of the EPL-2.0;
 it does not alter the Apache-2.0 license of `@astrale-os/cli`'s own code.
 
+## Manrope (font)
+
+- **Files:** `manrope-latin-wght-normal.woff2`, `manrope-latin-ext-wght-normal.woff2`, shipped
+  by `@astrale-os/ui` and served by `astrale view` with the node selector (`viewer/dist/fonts`)
+- **License:** SIL Open Font License 1.1 (OFL-1.1)
+- **Copyright:** © 2019 The Manrope Project Authors
+- **Source:** https://github.com/sharanda/manrope
+- **License text:** `viewer/dist/fonts/Manrope-OFL.txt`, shipped beside the fonts
+
+The fonts are distributed unmodified, under their own license.
+
 ## Other bundled dependencies
 
-The remaining components bundled in `studio/client/dist` are distributed under
+The remaining components bundled in `studio/client/dist` and `viewer/dist` are distributed under
 permissive licenses (MIT, Apache-2.0, BSD, ISC), which require only preservation
 of their copyright and permission notices. A complete, machine-generated
 inventory can be produced at build time via a license-extraction plugin.

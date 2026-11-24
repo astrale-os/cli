@@ -42,6 +42,8 @@ allowBuilds:
   lightningcss: true
   # wrangler's runtime, reached through the Studio fixtures' Cloudflare adapter.
   workerd: true
+  # The Tailwind CLI's file watcher: the viewer build compiles once and never watches.
+  '@parcel/watcher': false
 # Third-party `.d.ts` files reach their peer `@types` packages by walking parent
 # directories, which only works while dependencies live inside the project tree.
 # A machine-level global virtual store relocates them outside it and silently

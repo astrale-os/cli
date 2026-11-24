@@ -15,10 +15,11 @@ import { AstraleError, InternalError } from '../../errors'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
 import { exchangeViewCredential } from './exchange-credential'
-import { type GrantKind, mintedExpiry, runsOnKernelCredential, type TokenGrant } from './grant'
+import { exchangedIssuer, type GrantKind, mintedExpiry, type TokenGrant } from './grant'
 import { createOwnerAccess, ROOT_IDENTITY, type OwnerAccess, type ViewIdentity } from './owner'
 import { refreshViewPlacement } from './refresh'
 import { removeSessionFiles, saveRecord } from './session'
+import { viewerFileContentType } from './viewer-files'
 
 /**
  * The view-session server: serves the host page, hands it config and fresh
@@ -260,14 +261,12 @@ export function startViewServer(
           )
         }
         // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
-        if (
-          view !== undefined &&
-          !runsOnKernelCredential(view, target.kernelIssuer) &&
-          kernel.creds === undefined
-        ) {
+        const domainIssuer =
+          view === undefined ? undefined : exchangedIssuer(view, target.kernelIssuer)
+        if (domainIssuer !== undefined && kernel.creds === undefined) {
           const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
             { ...kernel, ...(identity === undefined ? {} : { as: identity }) },
-            { ...target, domainIssuer: view.route.issuer },
+            { ...target, domainIssuer },
           )
           return { ...exchanged, kind: 'exchanged' as const }
         }
@@ -347,8 +346,9 @@ export function startViewServer(
       await serveAsset(res, join(hostDir, 'index.html'), 'text/html; charset=utf-8')
       return
     }
-    if (sub === '/main.js') {
-      await serveAsset(res, join(hostDir, 'main.js'), 'text/javascript; charset=utf-8')
+    const assetType = viewerFileContentType(sub)
+    if (assetType !== undefined) {
+      await serveAsset(res, join(hostDir, sub), assetType)
       return
     }
     if (sub === '/config.json' && req.method === 'GET') {

@@ -32,6 +32,8 @@ const DIRECTORY_INPUTS = [
   { path: 'skills', excludedDirectories: new Set<string>() },
   { path: join('studio', 'client'), excludedDirectories: new Set(['dist']) },
   { path: join('studio', 'shared'), excludedDirectories: new Set<string>() },
+  // The node selector island, with its stylesheet, which no module imports.
+  { path: join('viewer', 'finder'), excludedDirectories: new Set<string>() },
 ] as const
 
 const FILE_INPUTS = [
@@ -43,6 +45,7 @@ const FILE_INPUTS = [
   join('scripts', 'build-viewer.ts'),
   join('scripts', 'embedded-assets-cache.ts'),
   join('scripts', 'generate-embedded-assets.ts'),
+  join('src', 'lib', 'view', 'viewer-bundle.ts'),
   join('studio', 'package.json'),
   join('studio', 'tsconfig.json'),
   join('studio', 'vite.config.ts'),

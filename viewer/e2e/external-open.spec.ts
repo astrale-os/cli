@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { fulfillHostPage } from './host'
 import { fulfillKernel } from './kernel'
 
 const temporary = mkdtempSync(join(tmpdir(), 'astrale-view-browser-'))
@@ -21,8 +22,6 @@ execFileSync(
   { stdio: 'pipe' },
 )
 const child = readFileSync(childFile, 'utf8')
-const hostHtml = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8')
-const hostScript = readFileSync(new URL('../dist/main.js', import.meta.url), 'utf8')
 
 test.afterAll(() => rmSync(temporary, { recursive: true, force: true }))
 
@@ -81,10 +80,7 @@ test('published requirements grant only each mounted View and isolate its provid
         json: { token: 'browser-fixture', expiresAt: Date.now() + 240_000, kind: 'minted' },
       })
     if (url.pathname === '/status') return route.fulfill({ json: { revision } })
-    return route.fulfill({
-      contentType: url.pathname === '/main.js' ? 'application/javascript' : 'text/html',
-      body: url.pathname === '/main.js' ? hostScript : hostHtml,
-    })
+    return fulfillHostPage(route, url.pathname)
   })
   await page.goto('https://host.example/')
   const frame = page.frameLocator('#frame iframe').first()
