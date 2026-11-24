@@ -1,10 +1,14 @@
 import { fetchBounded, fetchJson, HttpStatusError } from './fetch'
 import { isSafeRelative } from './files'
 import {
+  isRecord,
   RELEASE_VERSION,
+  UI_ITEM_ADDRESS,
   UiError,
   type UiCompatibility,
+  type UiRefusedItem,
   type UiRegistry,
+  type UiRegistryItem,
   type UiRelease,
   type UiReleaseIdentity,
 } from './model'
@@ -139,24 +143,37 @@ async function readRegistry(commit: string, fetcher: Fetch): Promise<UiRegistry>
   const candidate = RAW + '/' + commit + '/registry.json'
   const root = await json<RegistrySource>(fetcher, candidate, 'UI registry')
   const items = await resolveRegistryItems(root, candidate, commit, fetcher, new Set([candidate]))
-  const publicItems = items.filter(
-    (item) =>
-      !(item && typeof item === 'object' && (item as { type?: unknown }).type === 'registry:base'),
-  )
-  if (!publicItems.every(isInstallableItem)) {
-    throw unavailable('UI registry contains an invalid installable item.')
+  const installable: UiRegistryItem[] = []
+  const refused: UiRefusedItem[] = []
+  for (const item of items) {
+    if (isRecord(item) && item.type === 'registry:base') continue
+    const reason = uiItemRefusal(item)
+    if (reason === undefined) installable.push(item as UiRegistryItem)
+    else refused.push({ ...identityOf(item), reason })
   }
-  const installable = publicItems
   if (installable.length === 0) {
     throw unavailable('UI registry has no installable items.')
   }
-  if (
-    new Set(installable.map((item) => item.name)).size !== installable.length ||
-    new Set(installable.map((item) => item.meta.canonicalAddress)).size !== installable.length
-  ) {
-    throw unavailable('UI registry contains duplicate item identities.')
+  const identities = [
+    ...installable.map((item) => ({ name: item.name, address: item.meta.canonicalAddress })),
+    ...refused,
+  ]
+  for (const key of ['name', 'address'] as const) {
+    const values = identities.flatMap((identity) => identity[key] ?? [])
+    if (new Set(values).size !== values.length) {
+      throw unavailable('UI registry contains duplicate item identities.')
+    }
   }
-  return { name: root.name ?? 'astrale-ui', homepage: root.homepage, items: installable }
+  return { name: root.name ?? 'astrale-ui', homepage: root.homepage, items: installable, refused }
+}
+
+function identityOf(item: unknown): Omit<UiRefusedItem, 'reason'> {
+  if (!isRecord(item)) return {}
+  const address = isRecord(item.meta) ? item.meta.canonicalAddress : undefined
+  return {
+    ...(typeof item.name === 'string' ? { name: item.name } : {}),
+    ...(typeof address === 'string' ? { address } : {}),
+  }
 }
 
 async function resolveRegistryItems(
@@ -233,75 +250,113 @@ function qualifyRegistryItemPaths(item: unknown, sourceDirectory: string): unkno
   }
 }
 
-function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
-  if (!item || typeof item !== 'object') return false
-  const candidate = item as Partial<UiRegistry['items'][number]>
-  const address = candidate.meta?.canonicalAddress
-  const isTheme =
-    candidate.type === 'registry:theme' &&
-    typeof candidate.name === 'string' &&
-    /^theme-[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(candidate.name) &&
-    typeof address === 'string' &&
-    /^theme\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(address)
-  const isComposition =
-    candidate.type === 'registry:block' &&
-    typeof candidate.name === 'string' &&
-    /^(?:pattern|block)-[a-z0-9-]+$/u.test(candidate.name) &&
-    typeof address === 'string' &&
-    /^(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+$/u.test(address)
-  const isComponent =
-    candidate.type === 'registry:component' &&
-    typeof candidate.name === 'string' &&
-    /^component-[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(candidate.name) &&
-    typeof address === 'string' &&
-    /^component\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(address)
+const OWNED_FOLDER = 'components/astrale/'
+const THEME_FOLDER = OWNED_FOLDER + 'theme/'
+const ITEM_TYPE = {
+  theme: 'registry:theme',
+  component: 'registry:component',
+  pattern: 'registry:block',
+  block: 'registry:block',
+} as const
+const SOURCE_FILE_TYPES = new Set([
+  'registry:component',
+  'registry:ui',
+  'registry:lib',
+  'registry:hook',
+])
+/** An npm package name and a version range: never a URL, path, workspace, or alias source. */
+const PACKAGE_REQUIREMENT =
+  /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[~^<>=|0-9A-Za-z.* -]+$/u
+
+function isEmptyField(value: unknown): boolean {
   return (
-    (isTheme || isComposition || isComponent) &&
-    (candidate.dependencies === undefined ||
-      (Array.isArray(candidate.dependencies) &&
-        candidate.dependencies.every(
-          (dependency) =>
-            typeof dependency === 'string' &&
-            /^(?:@[a-z0-9-]+\/)?[a-z0-9-]+@[~^<>=0-9A-Za-z.* -]+$/u.test(dependency),
-        ))) &&
-    Array.isArray(candidate.files) &&
-    candidate.files.length > 0 &&
-    candidate.files.every(
-      (file) =>
-        file &&
-        typeof file.path === 'string' &&
-        isSafeRelative(file.path) &&
-        typeof file.type === 'string' &&
-        typeof file.target === 'string' &&
-        file.target.startsWith('components/astrale/') &&
-        isSafeRelative(file.target) &&
-        (!isTheme ||
-          (candidate.files?.length === 1 &&
-            file.type === 'registry:file' &&
-            file.target ===
-              'components/astrale/theme/' + address!.slice('theme/'.length) + '.css')) &&
-        (!isComponent || file.target.startsWith('components/astrale/component/')),
-    ) &&
-    typeof address === 'string'
+    value === undefined ||
+    (Array.isArray(value) && value.length === 0) ||
+    (isRecord(value) && Object.keys(value).length === 0)
   )
+}
+
+/**
+ * Why the CLI cannot install `item` from a release, or undefined when the item is admitted.
+ *
+ * An admitted item writes only consumer-owned files under `components/astrale/`, each at one safe
+ * relative target that shadcn places verbatim, declares only npm package requirements, and has no
+ * effect that fetches another registry item, writes environment files, or edits Tailwind config.
+ */
+function uiItemRefusal(item: unknown): string | undefined {
+  if (!isRecord(item)) return 'the item is not an object'
+  const address = isRecord(item.meta) ? item.meta.canonicalAddress : undefined
+  if (typeof address !== 'string') return 'the item has no canonical address'
+  if (!UI_ITEM_ADDRESS.test(address)) {
+    return 'canonical address ' + address + ' is not a UI item address'
+  }
+  const kind = address.slice(0, address.indexOf('/')) as keyof typeof ITEM_TYPE
+  if (item.name !== address.replaceAll('/', '-')) return 'name does not spell its canonical address'
+  if (item.type !== ITEM_TYPE[kind]) return 'a ' + kind + ' item must have type ' + ITEM_TYPE[kind]
+  for (const field of ['dependencies', 'devDependencies'] as const) {
+    const requirements = item[field]
+    if (requirements === undefined) continue
+    if (!Array.isArray(requirements)) return field + ' is not a list'
+    const invalid = requirements.find(
+      (requirement) => typeof requirement !== 'string' || !PACKAGE_REQUIREMENT.test(requirement),
+    )
+    if (invalid !== undefined) {
+      return 'dependency ' + String(invalid) + ' is not an npm package with a version range'
+    }
+  }
+  for (const field of ['registryDependencies', 'envVars', 'tailwind'] as const) {
+    if (!isEmptyField(item[field])) return 'the item declares ' + field
+  }
+  const files = item.files
+  if (!Array.isArray(files) || files.length === 0) return 'the item has no files'
+  if (kind === 'theme' && files.length !== 1) return 'a theme has exactly one file'
+  const targets = new Set<string>()
+  for (const file of files as unknown[]) {
+    if (!isRecord(file) || typeof file.path !== 'string' || !isSafeRelative(file.path)) {
+      return 'a file has no safe source path'
+    }
+    const target = file.target
+    if (typeof target !== 'string' || !isSafeRelative(target)) {
+      return 'file ' + file.path + ' has no safe target'
+    }
+    if (targets.has(target)) return 'target ' + target + ' is declared twice'
+    targets.add(target)
+    if (kind === 'theme') {
+      if (file.type !== 'registry:file') return 'a theme file must have type registry:file'
+      if (target !== THEME_FOLDER + address.slice('theme/'.length) + '.css') {
+        return 'theme target ' + target + ' is not its owned stylesheet'
+      }
+      continue
+    }
+    if (typeof file.type !== 'string' || !SOURCE_FILE_TYPES.has(file.type)) {
+      return 'file ' + file.path + ' has unsupported type ' + String(file.type)
+    }
+    if (!target.startsWith(OWNED_FOLDER)) return 'target ' + target + ' is outside ' + OWNED_FOLDER
+    if (target.startsWith(THEME_FOLDER)) return 'target ' + target + ' is reserved for themes'
+  }
+  return undefined
 }
 
 export async function readUiRegistryItem(
   release: UiRelease,
-  expected: UiRegistry['items'][number],
+  expected: UiRegistryItem,
   fetcher: Fetch = fetch,
-): Promise<UiRegistry['items'][number]> {
+): Promise<UiRegistryItem> {
   const item = await json<unknown>(
     fetcher,
     registryItemUrl(release, expected.name),
     'UI registry item ' + expected.name,
   )
+  const reason = uiItemRefusal(item)
+  if (reason !== undefined) {
+    throw unavailable('UI registry item ' + expected.name + ' is not installable: ' + reason + '.')
+  }
+  const admitted = item as UiRegistryItem
   if (
-    !isInstallableItem(item) ||
-    item.name !== expected.name ||
-    item.meta.canonicalAddress !== expected.meta.canonicalAddress ||
-    item.files.length !== expected.files.length ||
-    item.files.some((file, index) => {
+    admitted.name !== expected.name ||
+    admitted.meta.canonicalAddress !== expected.meta.canonicalAddress ||
+    admitted.files.length !== expected.files.length ||
+    admitted.files.some((file, index) => {
       const declared = expected.files[index]
       return (
         typeof file.content !== 'string' ||
@@ -317,7 +372,7 @@ export async function readUiRegistryItem(
       'UI registry item ' + expected.name + ' does not match the admitted release index.',
     )
   }
-  return item
+  return admitted
 }
 
 export function registryItemUrl(release: UiRelease, itemName: string): string {

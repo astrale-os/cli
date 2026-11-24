@@ -79,7 +79,16 @@ export type UiRegistryItem = {
   meta: { canonicalAddress: string; ownership?: string }
 }
 
-export type UiRegistry = { name: string; homepage?: string; items: UiRegistryItem[] }
+/** A release item this CLI does not install, with the admission rule it breaks. */
+export type UiRefusedItem = { name?: string; address?: string; reason: string }
+
+/** The admitted items of one release; `refused` names the items left out and why. */
+export type UiRegistry = {
+  name: string
+  homepage?: string
+  items: UiRegistryItem[]
+  refused: UiRefusedItem[]
+}
 
 export type UiLockItem = {
   address: string
@@ -112,6 +121,7 @@ export type UiErrorCode =
   | 'UI_CONFIG_MISSING'
   | 'UI_REGISTRY_UNAVAILABLE'
   | 'UI_ITEM_NOT_FOUND'
+  | 'UI_ITEM_REFUSED'
   | 'UI_ITEM_CONFLICT'
   | 'UI_LOCAL_CHANGES'
   | 'UI_DEPENDENCY_INSTALL_FAILED'
@@ -140,3 +150,11 @@ export function isSha256(value: unknown): value is string {
 }
 
 export const RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u
+
+/**
+ * A UI item's canonical address: its kind, then lowercase kebab-case segments. A theme has exactly
+ * one segment, starting with a letter, which names its stylesheet. Registry admission and the lock
+ * file read addresses by this one grammar.
+ */
+export const UI_ITEM_ADDRESS =
+  /^(?:theme\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*|(?:component|pattern|block)(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)+)$/u

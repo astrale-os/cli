@@ -117,7 +117,7 @@ and Tailwind CSS v4, initialized at the exact published UI release:
 astrale ui init --preset astrale
 astrale ui search "editable chart with export"
 astrale ui request "accessible async combobox with creation"
-astrale ui add pattern/chart/line-basic
+astrale ui add pattern/date-picker/range
 astrale ui add theme/observatory
 astrale ui add ./my-playground-export.css
 astrale ui doctor

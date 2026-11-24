@@ -129,7 +129,7 @@ custom UI only for product-specific presentation.
 # in the frontend project; inspect existing setup first
 astrale ui search "searchable table with row actions" --json
 astrale ui init --preset astrale
-astrale ui add pattern/chart/line-basic
+astrale ui add pattern/date-picker/range
 astrale ui doctor
 ```
 

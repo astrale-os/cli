@@ -17,7 +17,7 @@ const VERSION = '0.3.0-beta.0'
 const PACKAGE_CSS =
   "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n"
 const CHART = 'pattern/chart/line/basic'
-const CHART_FILE = 'components/astrale/pattern/chart/line-basic.tsx'
+const CHART_FILE = 'components/astrale/components/chart/line-basic.tsx'
 
 const chart: UiRegistryItem = {
   name: 'pattern-chart-line-basic',
@@ -33,15 +33,43 @@ const sidebar: UiRegistryItem = {
     {
       path: 'sidebar.tsx',
       type: 'registry:component',
-      target: 'components/astrale/component/sidebar/sidebar.tsx',
+      target: 'components/astrale/components/sidebar/sidebar.tsx',
     },
     {
       path: 'use-mobile.ts',
       type: 'registry:hook',
-      target: 'components/astrale/component/sidebar/use-mobile.ts',
+      target: 'components/astrale/components/sidebar/use-mobile.ts',
     },
   ],
   meta: { canonicalAddress: 'component/sidebar' },
+}
+const support: UiRegistryItem = {
+  name: 'component-avatar-avatar-12',
+  type: 'registry:component',
+  dependencies: ['@astrale-os/ui@^0.3.0-beta.0', 'lucide-react@1.32.0', 'react@19.2.8'],
+  files: [
+    {
+      path: 'avatar-12.tsx',
+      type: 'registry:component',
+      target: 'components/astrale/components/avatar/avatar-12.tsx',
+    },
+    {
+      path: 'support/assets/svg/badge-check.tsx',
+      type: 'registry:component',
+      target: 'components/astrale/assets/svg/badge-check.tsx',
+    },
+    {
+      path: 'support/components/ui/rating.tsx',
+      type: 'registry:ui',
+      target: 'components/astrale/components/ui/rating.tsx',
+    },
+    {
+      path: 'support/hooks/use-pagination.ts',
+      type: 'registry:hook',
+      target: 'components/astrale/hooks/use-pagination.ts',
+    },
+  ],
+  meta: { canonicalAddress: 'component/avatar/avatar-12' },
 }
 const theme: UiRegistryItem = {
   name: 'theme-observatory',
@@ -326,16 +354,8 @@ describe('UI release', () => {
           items: [{ ...chart, files: [{ ...chart.files[0], path: unsafe }] }],
         }),
       })),
-      {
-        '/registry/family/registry.json': Response.json({
-          items: [
-            {
-              ...sidebar,
-              files: [{ ...sidebar.files[0], target: 'components/astrale/pattern/sidebar.tsx' }],
-            },
-          ],
-        }),
-      },
+      { '/registry/family/registry.json': Response.json({ items: [{ ...chart, type: 'x' }] }) },
+      { '/registry/family/registry.json': Response.json({ items: [chart, { ...chart }] }) },
     ]
     for (const routes of hostile) {
       const seen: string[] = []
@@ -354,6 +374,129 @@ describe('UI release', () => {
       'theme/observatory',
       'component/sidebar',
     ])
+    expect(resolved.registry.refused).toEqual([])
+  })
+
+  /** @evidence TEST-CLI-UI-ITEM-ADMISSION */
+  test('admits each item by the install contract and names every refused item with its broken rule', async () => {
+    const refusals: Array<[Partial<UiRegistryItem> & Record<string, unknown>, string]> = [
+      [{ files: [{ ...support.files[1]!, target: 'components/ui/calendar.tsx' }] }, 'outside'],
+      [{ files: [{ ...support.files[1]!, target: 'hooks/use-pagination.ts' }] }, 'outside'],
+      [
+        { files: [{ ...support.files[1]!, target: 'components/astrale/theme/x.tsx' }] },
+        'reserved for themes',
+      ],
+      [{ files: [{ ...support.files[1]!, target: 'components/astrale/../x.tsx' }] }, 'safe target'],
+      [{ files: [{ ...support.files[1]!, type: 'registry:page' }] }, 'unsupported type'],
+      [{ files: [support.files[1]!, support.files[1]!] }, 'declared twice'],
+      [{ files: [] }, 'no files'],
+      [{ dependencies: ['xlsx@https://cdn.example.invalid/xlsx.tgz'] }, 'not an npm package'],
+      [{ dependencies: ['left-pad@git+ssh://example.invalid/left-pad'] }, 'not an npm package'],
+      [{ dependencies: ['left-pad@file:../left-pad'] }, 'not an npm package'],
+      [{ dependencies: ['left-pad@npm:right-pad@1.0.0'] }, 'not an npm package'],
+      [{ dependencies: ['left-pad'] }, 'not an npm package'],
+      [{ devDependencies: ['left-pad@link:../left-pad'] }, 'not an npm package'],
+      [{ registryDependencies: ['https://example.invalid/r/item.json'] }, 'registryDependencies'],
+      [{ envVars: { SECRET: 'value' } }, 'envVars'],
+      [{ tailwind: { config: { plugins: ['x'] } } }, 'tailwind'],
+      [{ type: 'registry:block' }, 'must have type registry:component'],
+      [{ name: 'component-avatar' }, 'does not spell'],
+      [{ meta: { canonicalAddress: 'widget/avatar/avatar-12' } }, 'not a UI item address'],
+    ]
+    const refused = refusals.map(([change], index) => {
+      const address = `component/refused/case-${index}`
+      return {
+        ...support,
+        name: address.replaceAll('/', '-'),
+        meta: { canonicalAddress: address },
+        ...change,
+      } as UiRegistryItem
+    })
+    const twoThemeFiles = { ...theme, files: [theme.files[0]!, theme.files[0]!] }
+    const resolved = await resolveUiRelease(VERSION, release([theme, support, chart, ...refused]))
+
+    expect(resolved.registry.items.map((item) => item.meta.canonicalAddress)).toEqual([
+      'theme/observatory',
+      'component/avatar/avatar-12',
+      CHART,
+    ])
+    expect(resolved.registry.refused).toHaveLength(refusals.length)
+    for (const [index, [, reason]] of refusals.entries()) {
+      expect(resolved.registry.refused[index]?.reason).toContain(reason)
+    }
+    expect(
+      (await resolveUiRelease(VERSION, release([chart, twoThemeFiles]))).registry.refused,
+    ).toEqual([{ name: theme.name, address: 'theme/observatory', reason: expect.any(String) }])
+
+    const fixture = await project({ locked: true })
+    const tools = runner()
+    const fetcher = release([support, ...refused])
+    await expect(
+      addUi(
+        ['component/refused/case-0'],
+        { project: fixture.root },
+        { fetcher, runner: tools.run },
+      ),
+    ).rejects.toMatchObject({
+      code: 'UI_ITEM_REFUSED',
+      message: expect.stringContaining('outside'),
+    })
+    await expect(
+      addUi(['case-7'], { project: fixture.root }, { fetcher, runner: tools.run }),
+    ).rejects.toMatchObject({
+      code: 'UI_ITEM_REFUSED',
+      message: expect.stringContaining('"component/refused/case-7"'),
+    })
+    expect(tools.calls).toEqual([])
+    const planned = await addUi(
+      ['component/avatar/avatar-12'],
+      { project: fixture.root, dryRun: true },
+      { fetcher, runner: tools.run },
+    )
+    expect((planned.sources as Array<{ files: string[] }>)[0]?.files).toEqual([
+      'components/astrale/components/avatar/avatar-12.tsx',
+      'components/astrale/assets/svg/badge-check.tsx',
+      'components/astrale/components/ui/rating.tsx',
+      'components/astrale/hooks/use-pagination.ts',
+    ])
+
+    const builtRefusal = release([support], {
+      [`/r/${support.name}.json`]: Response.json({
+        ...built(support),
+        dependencies: ['xlsx@https://cdn.example.invalid/xlsx.tgz'],
+      }),
+    })
+    await expect(
+      addUi(['component/avatar/avatar-12'], { project: fixture.root }, { fetcher: builtRefusal }),
+    ).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+      message: expect.stringContaining('not an npm package'),
+    })
+
+    const shadcn = runner(async (_file, args) => {
+      if (args[0] !== 'dlx') return
+      for (const file of support.files) {
+        await mkdir(path.dirname(fixture.at(file.target!)), { recursive: true })
+        await writeFile(fixture.at(file.target!), 'export {}\n')
+      }
+    })
+    await addUi(
+      ['component/avatar/avatar-12'],
+      { project: fixture.root, yes: true },
+      { fetcher, runner: shadcn.run },
+    )
+    const lock = parseUiLock(JSON.parse(await fixture.read('astrale-ui.lock.json')))
+    expect(Object.keys(lock.items)).toEqual(['component/avatar/avatar-12'])
+    expect((await doctorUi(fixture.root)).healthy).toBe(true)
+    for (const address of [
+      'component/Avatar',
+      'theme/observatory/dark',
+      'theme/2026',
+      'block/x/',
+    ]) {
+      const record = { address, sourceDigest: 'b'.repeat(64), files: {} }
+      expect(() => parseUiLock(lockOf({ [address]: record }))).toThrow(UiError)
+    }
   })
 })
 
@@ -765,7 +908,7 @@ describe('UI source operations', () => {
         {
           path: 'summary.tsx',
           type: 'registry:component',
-          target: 'components/astrale/pattern/chart/summary.tsx',
+          target: 'components/astrale/components/chart/summary.tsx',
         },
       ],
     }
@@ -778,7 +921,7 @@ describe('UI source operations', () => {
         if (args[0] === 'dlx') {
           await writeFile(fixture.at(CHART_FILE), 'partial overwrite\n')
           await writeFile(
-            fixture.at('components/astrale/pattern/chart/summary.tsx'),
+            fixture.at('components/astrale/components/chart/summary.tsx'),
             'partial create\n',
           )
           const manifest = JSON.parse(await fixture.read('package.json'))
@@ -803,7 +946,9 @@ describe('UI source operations', () => {
         before,
       )
       expect(await fixture.read(CHART_FILE)).toBe('consumer original\n')
-      expect(await exists(fixture.at('components/astrale/pattern/chart/summary.tsx'))).toBe(false)
+      expect(await exists(fixture.at('components/astrale/components/chart/summary.tsx'))).toBe(
+        false,
+      )
       expect(await exists(fixture.at('pnpm-lock.yaml'))).toBe(false)
     }
   })

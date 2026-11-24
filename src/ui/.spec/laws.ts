@@ -35,6 +35,13 @@ export const CLI_UI_EXACT_ITEM_SOURCE = defineLaw({
   tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-EXACT-ITEM-SOURCE' }],
 })
 
+export const CLI_UI_ITEM_ADMISSION = defineLaw({
+  id: 'CLI-UI-ITEM-ADMISSION',
+  statement:
+    'A release admits each registry item on its own: an admitted item writes only consumer-owned files at unique safe targets under components/astrale/, declares only npm package requirements, and fetches no other item, writes no environment file, and edits no Tailwind configuration. A refused item is named with the rule it breaks and never reaches project tooling, while the other items stay installable.',
+  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-ITEM-ADMISSION' }],
+})
+
 export const CLI_UI_THEME_OWNERSHIP = defineLaw({
   id: 'CLI-UI-THEME-OWNERSHIP',
   statement:

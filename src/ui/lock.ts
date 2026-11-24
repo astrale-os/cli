@@ -6,6 +6,7 @@ import {
   UI_LOCK_FILE,
   UI_PACKAGE,
   UI_PRESETS,
+  UI_ITEM_ADDRESS,
   UI_REPOSITORY,
   UiError,
   isRecord,
@@ -13,8 +14,6 @@ import {
   type UiLock,
 } from './model'
 
-const ITEM_ADDRESS =
-  /^(?:component\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*|(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+|theme\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/u
 const EXACT_VERSION = /^\d+\.\d+\.\d+$/u
 
 function invalid(detail: string): UiError {
@@ -42,7 +41,7 @@ export function parseUiLock(value: unknown): UiLock {
   }
   for (const [address, item] of Object.entries(lock.items)) {
     if (
-      !ITEM_ADDRESS.test(address) ||
+      !UI_ITEM_ADDRESS.test(address) ||
       !isRecord(item) ||
       item.address !== address ||
       !isSha256(item.sourceDigest) ||
