@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.175](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.174...cli/v1.0.0-beta.175) (2026-11-24)
+
+
+### Features
+
+* **lib:** select Nodes in the viewer with the Finder of @astrale-os/ui ([#815](https://github.com/astrale-os/cli/issues/815)) ([5c163e1](https://github.com/astrale-os/cli/commit/5c163e1bc134e5a1c5b7b3945251ab3c80c8fd5a))
+
 ## [1.0.0-beta.174](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.173...cli/v1.0.0-beta.174) (2026-11-22)
 
 
