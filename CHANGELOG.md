@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.177](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.176...cli/v1.0.0-beta.177) (2026-11-24)
+
+
+### Bug Fixes
+
+* **lib:** admit UI themes in the layout the UI generator writes ([#819](https://github.com/astrale-os/cli/issues/819)) ([4bcad5a](https://github.com/astrale-os/cli/commit/4bcad5a2a99b4c9544b45d4d60c5269011d3ec42))
+
 ## [1.0.0-beta.176](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.175...cli/v1.0.0-beta.176) (2026-11-24)
 
 
