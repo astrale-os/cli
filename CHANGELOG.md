@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.179](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.178...cli/v1.0.0-beta.179) (2026-11-24)
+
+
+### Features
+
+* **commands:** draw the node selector in Spatial (@astrale-os/ui 1.0.0-beta.51) ([#823](https://github.com/astrale-os/cli/issues/823)) ([771141c](https://github.com/astrale-os/cli/commit/771141cf96b2988a95ab345f0a8cbbcac9cc434f))
+
 ## [1.0.0-beta.178](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.177...cli/v1.0.0-beta.178) (2026-11-24)
 
 
