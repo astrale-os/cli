@@ -12,6 +12,7 @@ import {
   type UiRelease,
   type UiReleaseIdentity,
 } from './model'
+import { themeCssRefusal } from './theme'
 
 const NPM_PACKAGE = 'https://registry.npmjs.org/@astrale-os/ui'
 const GITHUB_API = 'https://api.github.com/repos/astrale-os/ui'
@@ -371,6 +372,17 @@ export async function readUiRegistryItem(
     throw unavailable(
       'UI registry item ' + expected.name + ' does not match the admitted release index.',
     )
+  }
+  if (admitted.type === 'registry:theme') {
+    const refusal = themeCssRefusal(
+      admitted.files[0]!.content!,
+      admitted.meta.canonicalAddress.slice('theme/'.length),
+    )
+    if (refusal !== undefined) {
+      throw unavailable(
+        'UI registry item ' + expected.name + ' is not installable: ' + refusal + '.',
+      )
+    }
   }
   return admitted
 }

@@ -8,9 +8,10 @@ import type { UiRunner } from '../model'
 
 import { sha256 } from '../files'
 import { parseUiLock } from '../lock'
-import { THEME_TOKENS, UiError, type UiLock, type UiRegistry, type UiRegistryItem } from '../model'
+import { UiError, type UiLock, type UiRegistry, type UiRegistryItem } from '../model'
 import { addUi, applyPreset, doctorUi, initUi } from '../operations'
 import { resolveUiRelease } from '../release'
+import { THEME_MODE_TOKENS, THEME_SHARED_TOKENS, themeCssRefusal } from '../theme'
 
 const COMMIT = 'a'.repeat(40)
 const VERSION = '0.3.0-beta.0'
@@ -83,12 +84,29 @@ const theme: UiRegistryItem = {
   ],
   meta: { canonicalAddress: 'theme/observatory' },
 }
-const themeCss = [
-  '/* Consumer-owned after installation. */',
-  `:root, [data-ui-theme='observatory'] { ${THEME_TOKENS.map((token) => `--ui-${token}: 1;`).join(' ')} }`,
-  `[data-ui-theme='observatory'].dark { ${THEME_TOKENS.map((token) => `--ui-${token}: 2;`).join(' ')} }`,
-  '',
-].join('\n')
+const declare = (tokens: readonly string[], value: string) =>
+  tokens.map((token) => `  --ui-${token}: ${value};`)
+/** A theme laid out as the UI generator writes it: shared tokens in the light rule only. */
+function themeStylesheet(
+  slug = 'observatory',
+  light: readonly string[] = [...THEME_MODE_TOKENS, ...THEME_SHARED_TOKENS],
+  dark: readonly string[] = THEME_MODE_TOKENS,
+) {
+  return [
+    `/* Generated from ${slug}.astrale-theme.json. Consumer-owned after installation. */`,
+    `:root,\n[data-ui-preset='${slug}'],\n[data-ui-theme='${slug}'] {`,
+    '  color-scheme: light;',
+    ...declare(light, '1'),
+    '}',
+    '',
+    `:root.dark,\n[data-ui-preset='${slug}'].dark,\n[data-ui-theme='${slug}'].dark {`,
+    '  color-scheme: dark;',
+    ...declare(dark, '2'),
+    '}',
+    '',
+  ].join('\n')
+}
+const themeCss = themeStylesheet()
 const compatibility = { version: 1, shadcn: '4.18.0', base: 'base', style: 'nova', baseUi: '1.7.0' }
 
 function built(item: UiRegistryItem) {
@@ -787,6 +805,71 @@ describe('UI source operations', () => {
       files: { 'components/astrale/theme/observatory.css': sha256(themeCss) },
     })
     expect((await doctorUi(fixture.root)).healthy).toBe(true)
+  })
+
+  /** @evidence TEST-CLI-UI-THEME-ADMISSION */
+  test('a theme is admitted by the layout the UI generator writes, whatever its origin', async () => {
+    const everyToken = [...THEME_MODE_TOKENS, ...THEME_SHARED_TOKENS]
+    expect(themeCssRefusal(themeCss, 'observatory')).toBeUndefined()
+    // Earlier releases repeat the shared tokens in the dark rule as well.
+    expect(
+      themeCssRefusal(themeStylesheet('observatory', everyToken, everyToken), 'observatory'),
+    ).toBeUndefined()
+    const refusals: Array<[string, string]> = [
+      [themeStylesheet('console'), "it has no [data-ui-theme='observatory'] rule"],
+      [
+        themeStylesheet('observatory', everyToken, THEME_MODE_TOKENS.slice(0, -1)),
+        "its [data-ui-theme='observatory'].dark rule omits --ui-shadow-panel",
+      ],
+      [
+        themeStylesheet('observatory', THEME_MODE_TOKENS, everyToken),
+        "its [data-ui-theme='observatory'] rule omits --ui-font-body",
+      ],
+      [
+        themeCss.replace('Consumer-owned after installation.', ''),
+        'it is not marked consumer-owned',
+      ],
+      [themeCss + "@import 'https://example.invalid/theme.css';\n", 'it loads another resource'],
+      [
+        themeCss + '.x { background: url(https://example.invalid/x.png) }\n',
+        'it loads another resource',
+      ],
+      [`@media (width > 1px) {\n${themeCss}}\n`, 'it holds more than plain style rules'],
+      [themeCss + ' '.repeat(131_072), 'it exceeds 128 KiB'],
+    ]
+    for (const [source, reason] of refusals) {
+      expect(themeCssRefusal(source, 'observatory')).toBe(reason)
+    }
+
+    const fixture = await project({ locked: true })
+    const unadmitted = themeStylesheet('observatory', THEME_MODE_TOKENS, THEME_MODE_TOKENS)
+    const served = built(theme)
+    await expect(
+      addUi(
+        ['theme/observatory'],
+        { project: fixture.root },
+        {
+          fetcher: release([theme], {
+            '/r/theme-observatory.json': Response.json({
+              ...served,
+              files: [{ ...served.files[0]!, content: unadmitted }],
+            }),
+          }),
+          runner: runner().run,
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+      message:
+        "UI registry item theme-observatory is not installable: its [data-ui-theme='observatory'] rule omits --ui-font-body.",
+    })
+    await writeFile(fixture.at('observatory.css'), unadmitted)
+    await expect(addUi(['./observatory.css'], { project: fixture.root })).rejects.toMatchObject({
+      code: 'UI_ITEM_CONFLICT',
+      message:
+        "Local theme CSS is not an admitted Astrale playground export: its [data-ui-theme='observatory'] rule omits --ui-font-body.",
+    })
+    expect(await exists(fixture.at('components/astrale/theme/observatory.css'))).toBe(false)
   })
 
   /** @evidence TEST-CLI-UI-THEME-OWNERSHIP */
