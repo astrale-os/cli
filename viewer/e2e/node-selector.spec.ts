@@ -4,6 +4,7 @@ import { classIcon, defineSchema, K, KernelSchema, nodeClass } from '@astrale-os
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -33,6 +34,20 @@ execFileSync(
 const child = readFileSync(childFile, 'utf8')
 
 test.afterAll(() => rmSync(temporary, { recursive: true, force: true }))
+
+/** The UI preset's body and heading families, and the font files it ships. */
+const preset = readFileSync(
+  createRequire(import.meta.url).resolve('@astrale-os/ui/presets/astrale.css'),
+  'utf8',
+)
+const presetFamily = (token: string): RegExp => {
+  const [, family = ''] = new RegExp(`${token}:\\s*'([^']+)'`, 'u').exec(preset) ?? []
+  return new RegExp(`^"?${family}"?,`, 'u')
+}
+const [, shippedFamily = ''] = /font-family:\s*'([^']+)'/u.exec(preset) ?? []
+const shippedFiles = [...preset.matchAll(/url\('\.\.\/fonts\/([a-z0-9-]+\.woff2)'\)/gu)].map(
+  ([, file]) => `/fonts/${file}`,
+)
 
 const ORIGIN = 'browser-fixture.example'
 const DOMAIN = 'kernel.astrale.ai:class.Domain'
@@ -240,16 +255,18 @@ test('a View asks for Nodes: the island loads on the first ask and answers cance
   await expect(frame.locator('#status')).toHaveText('asking')
   expect(fetched).toContain('/finder.css')
   expect(fetched.filter((path) => path.startsWith('/chunk-')).length).toBeGreaterThan(eager.length)
-  // The island draws in the preset's type, its heading in the font it ships; the chrome keeps its own.
+  // The island draws in the preset's type and loads the font it ships; the chrome keeps its own.
   await expect
     .poll(() => dialog.evaluate((element) => getComputedStyle(element).fontFamily))
-    .toContain('Avenir Next')
+    .toMatch(presetFamily('--ui-font-body'))
   const title = dialog.getByRole('heading', { name: 'Link issues' })
   await expect
     .poll(() => title.evaluate((element) => getComputedStyle(element).fontFamily))
-    .toMatch(/^"?Manrope"?,/u)
-  await expect.poll(() => page.evaluate(() => document.fonts.check('16px Manrope'))).toBe(true)
-  expect(fetched.some((path) => /^\/fonts\/manrope-[a-z-]+\.woff2$/u.test(path))).toBe(true)
+    .toMatch(presetFamily('--ui-font-heading'))
+  await expect
+    .poll(() => page.evaluate((family) => document.fonts.check(`16px "${family}"`), shippedFamily))
+    .toBe(true)
+  expect(fetched.some((path) => shippedFiles.includes(path))).toBe(true)
   expect(await header.evaluate((element) => getComputedStyle(element).font)).toBe(chromeFont)
   // Every read runs as the session's caller: the fixture refuses any other credential.
   expect(calls.length).toBeGreaterThan(0)
