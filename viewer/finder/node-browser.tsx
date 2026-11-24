@@ -235,7 +235,7 @@ export function NodeBrowser({
         onConfirm={onConfirm}
         onCancel={onCancel}
         className={cn(
-          'flex h-full min-h-0 min-w-0 flex-col bg-popover text-sm text-popover-foreground',
+          '@container/finder flex h-full min-h-0 min-w-0 flex-col bg-popover text-sm text-popover-foreground',
           className,
         )}
         style={style}
@@ -246,10 +246,14 @@ export function NodeBrowser({
           titleId={titleId ?? fallbackTitleId}
           descriptionId={descriptionId ?? fallbackDescriptionId}
         />
-        <div data-slot="block-finder-body" className="relative flex min-h-0 flex-1 border-t">
+        {/* Narrower than 42rem, the Domains and the Classes become strips above the table. */}
+        <div
+          data-slot="block-finder-body"
+          className="relative flex min-h-0 flex-1 border-t @max-2xl/finder:flex-col"
+        >
           <DomainsColumn />
           <ClassesColumn />
-          <div data-slot="block-finder-main" className="flex min-w-0 flex-1 flex-col">
+          <div data-slot="block-finder-main" className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Toolbar />
             <RulesBar />
             <NodesTable />
@@ -270,9 +274,9 @@ const iconSmall =
 const iconDomain =
   'grid size-5 shrink-0 place-items-center overflow-hidden rounded-[5px] [&_img]:size-full [&_img]:object-contain data-fallback:bg-muted data-fallback:ring-1 data-fallback:ring-border data-fallback:ring-inset data-fallback:text-[0.5625rem] data-fallback:font-semibold data-fallback:text-muted-foreground'
 const column =
-  'group/list flex w-40 shrink-0 flex-col gap-px overflow-y-auto border-r p-1.5 outline-none focus-visible:bg-accent/30 lg:w-52'
+  'group/list flex w-40 shrink-0 flex-col gap-px overflow-y-auto border-r p-1.5 outline-none focus-visible:bg-accent/30 @4xl/finder:w-52 @max-2xl/finder:w-auto @max-2xl/finder:flex-row @max-2xl/finder:overflow-x-auto @max-2xl/finder:overflow-y-hidden @max-2xl/finder:border-r-0 @max-2xl/finder:border-b @max-2xl/finder:data-[status=idle]:border-b-0 @max-2xl/finder:data-[status=idle]:p-0 @max-2xl/finder:[&>[data-slot=finder-loading]]:flex'
 const option =
-  'group/option flex min-h-8 cursor-default items-center gap-2 rounded-md px-2 py-1 select-none hover:bg-accent/50 data-selected:bg-accent data-selected:text-accent-foreground group-focus-visible/list:data-active:ring-1 group-focus-visible/list:data-active:ring-ring/60 group-focus-visible/list:data-active:ring-inset'
+  'group/option flex min-h-8 cursor-default items-center gap-2 rounded-md px-2 py-1 select-none hover:bg-accent/50 data-selected:bg-accent data-selected:text-accent-foreground group-focus-visible/list:data-active:ring-1 group-focus-visible/list:data-active:ring-ring/60 group-focus-visible/list:data-active:ring-inset @max-2xl/finder:max-w-56 @max-2xl/finder:shrink-0'
 const field =
   'h-7 min-w-0 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 dark:bg-input/30'
 const iconButton =
@@ -333,7 +337,11 @@ function ClassIcon({ icon, className }: { icon: FinderImage | undefined; classNa
 
 function ListSkeleton({ rows = 5 }: { rows?: number }) {
   return Array.from({ length: rows }, (_, index) => (
-    <div key={index} data-slot="block-finder-skeleton" className="flex h-8 items-center gap-2 px-2">
+    <div
+      key={index}
+      data-slot="block-finder-skeleton"
+      className="flex h-8 items-center gap-2 px-2 @max-2xl/finder:w-28 @max-2xl/finder:shrink-0"
+    >
       <Skeleton className="size-4 rounded-[3px]" />
       <Skeleton className="h-3 flex-1" style={{ maxWidth: `${80 - index * 9}%` }} />
     </div>
@@ -488,7 +496,7 @@ function DomainsColumn() {
           )}
           <Glyph
             path={CHEVRON}
-            className="size-3 text-muted-foreground group-data-selected/option:text-current"
+            className="size-3 text-muted-foreground group-data-selected/option:text-current @max-2xl/finder:hidden"
           />
         </FinderOption>
       )}
@@ -516,7 +524,7 @@ function ClassesColumn() {
             {item.description ? (
               <span
                 data-slot="block-finder-option-description"
-                className="truncate text-xs text-muted-foreground group-data-selected/option:text-current"
+                className="truncate text-xs text-muted-foreground group-data-selected/option:text-current @max-2xl/finder:hidden"
               >
                 {item.description}
               </span>
@@ -796,7 +804,7 @@ function PreviewPanel() {
   return (
     <FinderPreview
       aria-label={m.preview}
-      className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l bg-popover p-4 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-2 max-lg:shadow-lg data-[status=loading]:[&_[data-slot=block-finder-preview-detail]]:opacity-60"
+      className="flex w-72 max-w-full shrink-0 flex-col gap-4 overflow-y-auto border-l bg-popover p-4 @max-5xl/finder:absolute @max-5xl/finder:inset-y-0 @max-5xl/finder:right-0 @max-5xl/finder:z-2 @max-5xl/finder:shadow-lg data-[status=loading]:[&_[data-slot=block-finder-preview-detail]]:opacity-60"
     >
       {(preview) =>
         preview.status === 'error' ? (
