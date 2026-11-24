@@ -151,7 +151,12 @@ export interface ReferenceInstallDependencies {
   ) => Promise<Value>
   readonly readDeployment: (url: string, signal?: AbortSignal) => Promise<ServedDeployment>
   /** Reads the Schema Bundle a served release names, for the pre-check. */
-  readonly readBundle: typeof readReleaseBundle
+  readonly readBundle: (
+    release: ServedDeployment['release'],
+    url: string,
+    signal: AbortSignal,
+    bundleLink?: string,
+  ) => ReturnType<typeof readReleaseBundle>
   readonly now: () => number
   readonly sleep: (ms: number) => Promise<void>
 }
@@ -165,7 +170,8 @@ const defaultDependencies: ReferenceInstallDependencies = {
       work(connectAdminRegistry(context)),
     ),
   readDeployment: readServedDeployment,
-  readBundle: readReleaseBundle,
+  readBundle: (release, url, signal, link) =>
+    readReleaseBundle(release, url, signal, globalThis.fetch, link),
   now: Date.now,
   sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 }
@@ -699,6 +705,7 @@ async function precheckReferences(
           served.release,
           source.url,
           AbortSignal.timeout(10_000),
+          served.bundleLink,
         )
         return {
           kind: 'release',
