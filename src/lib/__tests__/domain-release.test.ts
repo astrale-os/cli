@@ -142,6 +142,29 @@ describe('release bundle read (install pre-check)', () => {
     },
   )
 
+  test('keeps a historical v1 publisher with opaque HTTP validators readable', async () => {
+    const canonical = bundleResponse()
+    canonical.headers.set('etag', 'W/"canonical-cache"')
+    const discovery = releaseResponse()
+    discovery.headers.set('etag', 'W/"release-cache"')
+    discovery.headers.set('link', '<https://other.example/>; rel="alternate"')
+    const { fetch, seen } = serve({
+      '/.well-known/astrale/release.json': () => discovery,
+      [bundlePath]: () => canonical,
+    })
+    const served = await readServedDeployment(URL_V4, undefined, fetch)
+    expect(served.bundleLink).toBeUndefined()
+    const result = await readReleaseBundle(
+      served.release,
+      URL_V4,
+      undefined,
+      fetch,
+      served.bundleLink,
+    )
+    expect(result.root.origin).toBe(release.origin)
+    expect(seen).toHaveLength(2)
+  })
+
   test('reads the bundle the release names, from its own origin, without redirects', async () => {
     const { seen, fetch } = serve({ [bundlePath]: () => bundleResponse() })
 

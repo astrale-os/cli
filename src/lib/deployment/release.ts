@@ -83,10 +83,8 @@ export async function readServedDeployment(
     const release = await acceptRelease(response, releaseUrl)
     const link = response.headers.get('link')
     const etag = response.headers.get('etag')
-    if (etag !== null && etag !== `"${release.digest}"`) {
-      throw new DeploymentReadError(`GET ${releaseUrl.href} returned a mismatched release ETag.`)
-    }
     const exact =
+      (etag === null || etag === `"${release.digest}"`) &&
       !response.redirected &&
       response.url === releaseUrl.href &&
       releaseDocumentUrl(release.identity.issuer) === releaseUrl.href
@@ -259,8 +257,9 @@ async function artifactBytes(
   const etag = response.headers.get('etag')
   const encoding = response.headers.get('content-encoding')
   if (
-    (etag !== null && etag !== `"${ref.digest}"`) ||
-    (compact && encoding !== null && encoding.toLowerCase() !== 'identity')
+    compact &&
+    ((etag !== null && etag !== `"${ref.digest}"`) ||
+      (encoding !== null && encoding.toLowerCase() !== 'identity'))
   ) {
     await cancel(response.body)
     throw new invalid(`GET ${url.href} returned incompatible Bundle headers.`)
