@@ -3,6 +3,7 @@ import { isSafeRelative } from './files'
 import {
   isRecord,
   RELEASE_VERSION,
+  UI_ITEM_ADDRESS,
   UiError,
   type UiCompatibility,
   type UiRefusedItem,
@@ -251,8 +252,6 @@ function qualifyRegistryItemPaths(item: unknown, sourceDirectory: string): unkno
 
 const OWNED_FOLDER = 'components/astrale/'
 const THEME_FOLDER = OWNED_FOLDER + 'theme/'
-const SEGMENT = '[a-z0-9]+(?:-[a-z0-9]+)*'
-const ADDRESS = new RegExp(`^(theme|component|pattern|block)/${SEGMENT}(?:/${SEGMENT})*$`, 'u')
 const ITEM_TYPE = {
   theme: 'registry:theme',
   component: 'registry:component',
@@ -288,10 +287,10 @@ function uiItemRefusal(item: unknown): string | undefined {
   if (!isRecord(item)) return 'the item is not an object'
   const address = isRecord(item.meta) ? item.meta.canonicalAddress : undefined
   if (typeof address !== 'string') return 'the item has no canonical address'
-  const kind = ADDRESS.exec(address)?.[1] as keyof typeof ITEM_TYPE | undefined
-  if (!kind || (kind === 'theme' && address.split('/').length !== 2)) {
+  if (!UI_ITEM_ADDRESS.test(address)) {
     return 'canonical address ' + address + ' is not a UI item address'
   }
+  const kind = address.slice(0, address.indexOf('/')) as keyof typeof ITEM_TYPE
   if (item.name !== address.replaceAll('/', '-')) return 'name does not spell its canonical address'
   if (item.type !== ITEM_TYPE[kind]) return 'a ' + kind + ' item must have type ' + ITEM_TYPE[kind]
   for (const field of ['dependencies', 'devDependencies'] as const) {

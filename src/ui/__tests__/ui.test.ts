@@ -472,6 +472,31 @@ describe('UI release', () => {
       code: 'UI_REGISTRY_UNAVAILABLE',
       message: expect.stringContaining('not an npm package'),
     })
+
+    const shadcn = runner(async (_file, args) => {
+      if (args[0] !== 'dlx') return
+      for (const file of support.files) {
+        await mkdir(path.dirname(fixture.at(file.target!)), { recursive: true })
+        await writeFile(fixture.at(file.target!), 'export {}\n')
+      }
+    })
+    await addUi(
+      ['component/avatar/avatar-12'],
+      { project: fixture.root, yes: true },
+      { fetcher, runner: shadcn.run },
+    )
+    const lock = parseUiLock(JSON.parse(await fixture.read('astrale-ui.lock.json')))
+    expect(Object.keys(lock.items)).toEqual(['component/avatar/avatar-12'])
+    expect((await doctorUi(fixture.root)).healthy).toBe(true)
+    for (const address of [
+      'component/Avatar',
+      'theme/observatory/dark',
+      'theme/2026',
+      'block/x/',
+    ]) {
+      const record = { address, sourceDigest: 'b'.repeat(64), files: {} }
+      expect(() => parseUiLock(lockOf({ [address]: record }))).toThrow(UiError)
+    }
   })
 })
 

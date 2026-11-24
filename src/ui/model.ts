@@ -150,3 +150,11 @@ export function isSha256(value: unknown): value is string {
 }
 
 export const RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u
+
+/**
+ * A UI item's canonical address: its kind, then lowercase kebab-case segments. A theme has exactly
+ * one segment, starting with a letter, which names its stylesheet. Registry admission and the lock
+ * file read addresses by this one grammar.
+ */
+export const UI_ITEM_ADDRESS =
+  /^(?:theme\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*|(?:component|pattern|block)(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)+)$/u

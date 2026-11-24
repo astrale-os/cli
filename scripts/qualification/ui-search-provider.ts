@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { parseUiLock } from '../../src/ui/lock'
+import { UI_PACKAGE, UI_REPOSITORY } from '../../src/ui/model'
 import { readUiRegistryItem, readUiReleaseSnapshot } from '../../src/ui/release'
 import { searchUi } from '../../src/ui/search'
 
@@ -147,6 +149,37 @@ try {
   const admitted = new Set(release.registry.items.map((item) => item.meta.canonicalAddress))
   const unadmitted = [...handedOff].filter((address) => !admitted.has(address))
   assert.deepEqual(unadmitted, [], 'search hands off add commands the registry does not admit')
+
+  // Every admitted item must fit the lock the CLI writes and the lock schema the release publishes.
+  const records = [...admitted].map((address) => [
+    address,
+    { address, sourceDigest: '0'.repeat(64), files: {} },
+  ])
+  parseUiLock({
+    version: 1,
+    package: { name: UI_PACKAGE, version: release.version },
+    registry: { repository: UI_REPOSITORY, ref: release.ref, commit: release.commit },
+    tooling: {
+      shadcn: release.compatibility.shadcn,
+      base: release.compatibility.base,
+      style: release.compatibility.style,
+      baseUi: release.compatibility.baseUi,
+    },
+    preset: 'astrale',
+    items: Object.fromEntries(records),
+  })
+  const lockSchema = JSON.parse(
+    await readFile(path.join(uiRoot, 'schemas/ui-lock.schema.json'), 'utf8'),
+  )
+  const lockItems = lockSchema.properties.items
+  const schemaAddresses = [
+    new RegExp(lockItems.propertyNames.pattern, 'u'),
+    new RegExp(lockItems.additionalProperties.properties.address.pattern, 'u'),
+  ]
+  const unrecordable = [...admitted].filter((address) =>
+    schemaAddresses.some((pattern) => !pattern.test(address)),
+  )
+  assert.deepEqual(unrecordable, [], 'the UI lock schema refuses admitted item addresses')
   const registry = { items: admitted.size, handedOff: handedOff.size }
   process.stdout.write(`${JSON.stringify({ provider: uiRoot, reports, registry }, null, 2)}\n`)
 } finally {
