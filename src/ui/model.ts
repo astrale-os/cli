@@ -7,45 +7,6 @@ export const UI_REPOSITORY = 'astrale-os/ui'
 export const UI_LOCK_FILE = 'astrale-ui.lock.json'
 export const UI_PRESETS = ['astrale', 'compact', 'expressive'] as const
 
-/** Custom properties every theme defines once for light and once for dark. */
-export const THEME_TOKENS = [
-  'background',
-  'foreground',
-  'card',
-  'card-foreground',
-  'popover',
-  'popover-foreground',
-  'primary',
-  'primary-foreground',
-  'secondary',
-  'secondary-foreground',
-  'muted',
-  'muted-foreground',
-  'accent',
-  'accent-foreground',
-  'destructive',
-  'destructive-foreground',
-  'border',
-  'input',
-  'ring',
-  'chart-1',
-  'chart-2',
-  'chart-3',
-  'chart-4',
-  'chart-5',
-  'font-body',
-  'font-heading',
-  'radius',
-  'radius-panel',
-  'control-height',
-  'control-height-sm',
-  'control-height-lg',
-  'shadow-control',
-  'shadow-panel',
-  'motion-fast',
-  'motion-standard',
-] as const
-
 export type UiPreset = (typeof UI_PRESETS)[number]
 export type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun'
 

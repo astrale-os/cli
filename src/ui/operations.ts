@@ -9,7 +9,6 @@ import {
   UI_LOCK_FILE,
   UI_PACKAGE,
   UI_PRESETS,
-  THEME_TOKENS,
   UI_REPOSITORY,
   UiError,
   type PackageManager,
@@ -32,13 +31,13 @@ import {
   registryItemUrl,
   resolveUiRelease,
 } from './release'
+import { themeCssRefusal } from './theme'
 
 type Dependencies = { fetcher?: typeof fetch; runner?: UiRunner }
 type SourceOptions = { dryRun?: boolean; overwrite?: boolean }
 
 const defaultRunner: UiRunner = (file, args, cwd) => run(file, args, { cwd })
 
-const LOCAL_THEME_MAX_BYTES = 131_072
 const THEME_SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u
 const PACKAGE_CSS_IMPORT =
   /^@import\s+['"]@astrale-os\/ui\/(?:theme\.css|presets\/[a-z-]+\.css)['"];?\s*$/u
@@ -64,25 +63,6 @@ async function installDependencies(project: UiProject, runner: UiRunner, context
 
 function isLocalThemeAddress(address: string): boolean {
   return (address.startsWith('./') || address.startsWith('../')) && address.endsWith('.css')
-}
-
-function admitThemeCss(source: string, slug: string): void {
-  if (new TextEncoder().encode(source).byteLength > LOCAL_THEME_MAX_BYTES) {
-    throw new UiError('UI_ITEM_CONFLICT', 'Local theme CSS exceeds 128 KiB.')
-  }
-  if (
-    !source.includes('Consumer-owned after installation.') ||
-    !source.includes("[data-ui-theme='" + slug + "']") ||
-    !source.includes("[data-ui-theme='" + slug + "'].dark") ||
-    /@import\b|url\s*\(/iu.test(source) ||
-    THEME_TOKENS.some((token) => source.match(new RegExp(`--ui-${token}:`, 'gu'))?.length !== 2)
-  ) {
-    throw new UiError(
-      'UI_ITEM_CONFLICT',
-      'Local theme CSS is not an admitted Astrale playground export.',
-      'Export the CSS from the Astrale UI playground, keep its filename aligned with the theme name, and try again.',
-    )
-  }
 }
 
 function themeImport(project: UiProject, target: string): string {
@@ -533,7 +513,14 @@ async function addLocalTheme(
     )
   }
   const source = await readFile(sourcePath, 'utf8')
-  admitThemeCss(source, slug)
+  const refusal = themeCssRefusal(source, slug)
+  if (refusal !== undefined) {
+    throw new UiError(
+      'UI_ITEM_CONFLICT',
+      'Local theme CSS is not an admitted Astrale playground export: ' + refusal + '.',
+      'Export the CSS from the Astrale UI playground, keep its filename aligned with the theme name, and try again.',
+    )
+  }
   return installTheme(slug, source, sha256(source), address, project, options)
 }
 
@@ -542,13 +529,10 @@ async function addReleasedTheme(
   project: UiProject,
   options: SourceOptions,
 ): Promise<Record<string, unknown>> {
+  // `readUiRegistryItem` admitted the theme's one stylesheet.
   const address = document.meta.canonicalAddress
+  const source = document.files[0]!.content!
   const slug = address.slice('theme/'.length)
-  const source = document.files[0]?.content
-  if (typeof source !== 'string') {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'The released theme has no admitted CSS source.')
-  }
-  admitThemeCss(source, slug)
   return installTheme(slug, source, sha256(JSON.stringify(document)), address, project, options)
 }
 

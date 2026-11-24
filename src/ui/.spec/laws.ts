@@ -49,6 +49,13 @@ export const CLI_UI_THEME_OWNERSHIP = defineLaw({
   tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-THEME-OWNERSHIP' }],
 })
 
+export const CLI_UI_THEME_ADMISSION = defineLaw({
+  id: 'CLI-UI-THEME-ADMISSION',
+  statement:
+    'A released or locally exported theme is admitted only as a bounded, consumer-owned stylesheet of plain style rules that loads no other resource, whose light theme rule declares every mode and shared token and whose dark theme rule declares every mode token again; a released theme that is not admitted is a refused registry item.',
+  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-THEME-ADMISSION' }],
+})
+
 export const CLI_UI_SEARCH_LOCKED_RELEASE = defineLaw({
   id: 'CLI-UI-SEARCH-LOCKED-RELEASE',
   statement:
