@@ -131,11 +131,15 @@ test('a CLI ignoring SIGTERM is reaped at its deadline with its children and par
 
 test('the capture leader reaps an attached HTTP child even after the original CLI exits', async () => {
   const root = installCli((root) => {
+    // The port is renamed into place, so the file exists only once it holds the whole port.
     const child = `
-      import { writeFileSync } from 'node:fs'
+      import { renameSync, writeFileSync } from 'node:fs'
       import { createServer } from 'node:http'
       const server = createServer((_req, res) => res.end('alive'))
-      server.listen(0, '127.0.0.1', () => writeFileSync(${JSON.stringify(join(root, 'port'))}, String(server.address().port)))
+      server.listen(0, '127.0.0.1', () => {
+        writeFileSync(${JSON.stringify(join(root, 'port.partial'))}, String(server.address().port))
+        renameSync(${JSON.stringify(join(root, 'port.partial'))}, ${JSON.stringify(join(root, 'port'))})
+      })
       process.on('SIGTERM', () => {})
     `
     return `
