@@ -78,6 +78,7 @@ export async function readServedDeployment(
   } catch (cause) {
     throw new DeploymentReadError(`GET ${releaseUrl.href} failed.`, { cause })
   }
+  await requireRequestedUrl(response, releaseUrl)
   if (response.status === 200 && hasMediaType(response, MEDIA_TYPE)) {
     const release = await acceptRelease(response, releaseUrl)
     const link = response.headers.get('link')
@@ -86,7 +87,6 @@ export async function readServedDeployment(
       link !== null &&
       release.identity.issuer === origin &&
       (etag === null || etag === `"${release.digest}"`) &&
-      !response.redirected &&
       response.url === releaseUrl.href
     return served(release, exact ? link : null)
   }
@@ -239,10 +239,7 @@ async function artifactBytes(
   } catch (cause) {
     throw new DeploymentReadError(`GET ${url.href} failed.`, { cause })
   }
-  if (response.redirected || ((compact || response.url !== '') && response.url !== url.href)) {
-    await cancel(response.body)
-    throw new DeploymentReadError(`GET ${url.href} did not return the exact requested URL.`)
-  }
+  await requireRequestedUrl(response, url, compact)
   if (response.status !== 200) {
     await cancel(response.body)
     const failure =
@@ -280,6 +277,18 @@ async function artifactBytes(
     if (cause instanceof DeploymentReadError) throw cause
     throw new DeploymentReadError(`GET ${url.href} failed.`, { cause })
   }
+}
+
+/** Injected v1 transports can omit their response URL. An advertised alternate needs an exact URL. */
+async function requireRequestedUrl(
+  response: Response,
+  url: URL,
+  requireUrl = false,
+): Promise<void> {
+  if (!response.redirected && (response.url === url.href || (!requireUrl && response.url === '')))
+    return
+  await cancel(response.body)
+  throw new DeploymentReadError(`GET ${url.href} did not return the exact requested URL.`)
 }
 
 /** `Retry-After` in delta-seconds; an HTTP date or an invalid value is ignored. */

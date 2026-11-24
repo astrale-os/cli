@@ -92,6 +92,20 @@ describe('deployment pre-read', () => {
     expect(seen).toHaveLength(1)
   })
 
+  test.each([
+    { url: URL_V4 + '/.well-known/astrale/release.json', redirected: true },
+    { url: 'https://another.example/.well-known/astrale/release.json', redirected: false },
+  ])('refuses a Release response that reports a different route (%o)', async (reported) => {
+    const response = releaseResponse()
+    Object.defineProperties(response, {
+      url: { value: reported.url },
+      redirected: { value: reported.redirected },
+    })
+    await expect(readServedDeployment(URL_V4, undefined, async () => response)).rejects.toThrow(
+      'did not return the exact requested URL',
+    )
+  })
+
   test('marks a 503 (not serving yet) retryable, with its Retry-After', async () => {
     const { fetch } = serve({
       '/.well-known/astrale/release.json': () =>
