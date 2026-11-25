@@ -54,7 +54,7 @@ This combined example stands for separate Schema owner files; imports between th
 
 ```ts
 import { S, ShellSchema } from '@astrale-domains/shell'
-import type { NodeClass } from '@astrale-os/sdk/schema'
+import type { NamedPolicy, NodeClass } from '@astrale-os/sdk/schema'
 import {
   K,
   KernelSchema,
@@ -72,7 +72,8 @@ import { z } from 'zod'
 // schema/policies/has-role.ts: the Kernel meaning, declared locally.
 export const hasRole = policy({
   description: 'The caller holds this Role: it is the Role or extends it, at any depth.',
-  match: ({ object, sameNode, subject }) => sameNode(subject, object),
+  input: { object: K.classes.Role },
+  match: ({ input, sameNode, subject }) => sameNode(subject, input.object),
 })
 
 // schema/modules/role/classes/role.ts: final; a Class inherits no Policy, so it declares its read.
@@ -105,7 +106,7 @@ export const Employee = nodeClass({
   properties: { email: z.string().email(), employeeNumber: z.string().min(1) },
   policies: {
     read: ({ anyOf, check, ref, self }) =>
-      anyOf(check(hasRole, ref(roles.reader)), check(signsInAsEmployee, self)),
+      anyOf(check(hasRole, ref(roles.reader)), check(signsInAsEmployee, { employee: self })),
     traverse: true,
   },
 })
@@ -120,9 +121,11 @@ export const holds_account = edgeClass.directed({
 })
 
 // schema/modules/employee/policies/signs-in-as-employee.ts: "it is me".
-export const signsInAsEmployee = policy({
+export const signsInAsEmployee: NamedPolicy<'employee'> = policy({
   description: 'The caller is the Shell account this Employee holds.',
-  match: ({ edge, object, subject }) => edge(holds_account, { employee: object, account: subject }),
+  input: { employee: () => Employee },
+  match: ({ edge, input, subject }) =>
+    edge(holds_account, { employee: input.employee, account: subject }),
 })
 
 // schema/modules/team/classes/team.ts: a business grouping that holds Roles.
