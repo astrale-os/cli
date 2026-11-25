@@ -184,18 +184,6 @@ export function retrieveOwnedInstanceRootIdentity(
   )
 }
 
-/** Invite one external member to an exact caller-managed Instance. */
-export function inviteOwnedInstance(
-  options: AdminConnectionOptions,
-  identifier: string,
-  email: string,
-  expiresInDays?: number,
-) {
-  return withAdminInstances(options, (instances) =>
-    instances.invite(identifier, email, expiresInDays),
-  )
-}
-
 /** Observe one retained Instance Invitation without reconciling or mutating it. */
 export const statusManagedInvitation = (options: AdminConnectionOptions, invitation: string) =>
   withAdminInstances(options, (instances) => instances.statusInvitation(invitation))

@@ -249,10 +249,14 @@ astrale get @self -i development --as development-root --json
 
 Invitations:
 
-- `instance invite` needs authority to manage that exact Instance, grants only Instance member
-  access and returns the durable Invitation at once. WorkOS acceptance grants nothing: when the
-  recipient signs in from the invitation link, Admin registers the child Shell user with the
-  recipient's own credential, then adds Instance membership.
+- `instance invite <instance> <email> [--profile member|admin] [--name <name>]` acts on the
+  instance itself, as you, like its console: Shell `User.create` (finds the account of the email or
+  creates it), the profile for a new account (`workspace.member` by default), then Shell
+  `Invitation.send`. The Shell asks Admin to send the email and records you as the inviter. You need
+  `user.writer` on the instance (its administrators have it); a Fleet administrator who is not one
+  uses `--as <slug>-root`. An existing account keeps its profiles. The run (`execution status`)
+  keeps the invitation 7 days; inviting again resends. Rerun with the printed `--operation` within
+  one hour to resume on the account it created.
 - `instance invitation status <id>`: one read-only observation of the exact Invitation. `user` is
   the Shell account reserved on the Instance, to which an Instance administrator can grant the Shell
   `workspace.admin` profile (astrale-domain `references/users.md`). Only `completed` means access is
