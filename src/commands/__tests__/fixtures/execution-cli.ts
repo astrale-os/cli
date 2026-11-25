@@ -118,7 +118,13 @@ globalThis.fetch = (async (input, init) => {
                     ? { kind: 'completed', value: 42 }
                     : target.endsWith('.signal')
                       ? {}
-                      : { id: 'alice' },
+                      : {
+                          id: 'alice',
+                          iss: kernel,
+                          sub: 'alice',
+                          frozen: false,
+                          requiredClaims: [],
+                        },
             }
       response = new Response(
         JSON.stringify({
