@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { prepareQuery } from '../query'
+import { prepareQuery, prepareQueryDocument } from '../query'
 
 const NOTE = '/:notes.example.dev:class.Note'
 const ISSUE = { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' }
@@ -95,5 +95,44 @@ describe('prepareQuery', () => {
     expect(() => prepareQuery({ sources: [], class: '/:notes.example.dev:view.note' })).toThrow(
       '--class must be one canonical Class Path',
     )
+  })
+})
+
+describe('prepareQueryDocument', () => {
+  test('the Named search and its raw document request the same page', () => {
+    const direct = prepareQueryDocument({
+      sources: [],
+      search: 'elo mar',
+      class: NOTE,
+      cursor: 'resume',
+      limit: '7',
+    })!
+    expect(direct.document).toMatchObject({
+      list: {
+        nodes: ['notes.example.dev:class.Note'],
+        where: {
+          op: 'search',
+          properties: ['kernel.astrale.ai:class.Named.property.name'],
+          text: 'elo mar',
+        },
+        orderBy: [{ relevance: 'elo mar', missing: 'last' }],
+      },
+    })
+    expect(direct.paging).toEqual({ sizes: [{ at: [], size: 7 }], after: 'resume' })
+    expect(
+      prepareQueryDocument({ sources: [], ast: direct.document, limit: '7', cursor: 'resume' }),
+    ).toEqual(direct)
+    expect(prepareQueryDocument({ sources: [NOTE] })).toBeUndefined()
+    expect(() => prepareQueryDocument({ sources: [NOTE], search: 'elo' })).toThrow()
+    expect(() =>
+      prepareQueryDocument({ sources: [], search: 'elo', ast: direct.document }),
+    ).toThrow()
+    expect(() =>
+      prepareQueryDocument({
+        sources: [],
+        ast: { query: 'astrale.query/7', count: {} },
+        limit: '7',
+      }),
+    ).toThrow()
   })
 })

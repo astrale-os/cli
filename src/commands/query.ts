@@ -4,12 +4,13 @@ import type { KernelCommandOpts, SelfExpansionMeta } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
-import { prepareQuery, type QueryCommandInput } from '../graph/index'
+import { prepareQuery, prepareQueryDocument, type QueryCommandInput } from '../graph/index'
 import { readInputFile } from '../lib/input-file'
 import { failInput } from '../lib/terminal/log'
 import { isMachine, output } from '../lib/terminal/output'
 
 type QueryOpts = KernelCommandOpts & {
+  search?: string
   ast?: string
   file?: string
   class?: string
@@ -27,6 +28,7 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
       sources,
       ...(ast === undefined ? {} : { ast }),
       class: opts.class,
+      search: opts.search,
       edge: opts.edge,
       direction: opts.direction,
       limit: opts.limit,
@@ -38,6 +40,16 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
 
   let prepared
   try {
+    const request = prepareQueryDocument(input)
+    if (request !== undefined) {
+      return runKernelCommand({
+        opts,
+        label: 'Query',
+        credential: { principal: 'caller' },
+        fn: (context) => context.graph.query(request.document, { paging: request.paging }),
+        format: (result, format) => output(result, format),
+      })
+    }
     prepared = prepareQuery(input)
   } catch (error) {
     failInput(error, opts)
@@ -92,13 +104,16 @@ function parseJson(raw: string, source: string): unknown {
 
 export default {
   name: 'query',
-  description: 'Run one canonical Query V6 graph read',
+  description: 'Read the graph or search Named Nodes by words',
   afterHelpText: `
 Behavior:
   Positional Paths and --class author a finite Query V6 read. --edge adds
   one exact Edge-Class expansion; --direction defaults to outgoing. --ast and
   --file accept a complete canonical astrale.graph.query/v6 document, including
-  Property ordering and Node or Edge reference/value projections. --cursor resumes
+  Property ordering and Node or Edge reference/value projections. A v7 document
+  uses "query": "astrale.query/7". --search searches Named.name by relevance.
+  A v7 list with complete=false has list.cursor even when empty. Pass it back
+  with --cursor, or refine the search. --cursor resumes
   one caller-bound query scope. Machine output adds page.next only when another
   page exists; pass that opaque value back through --cursor.
 
@@ -106,6 +121,7 @@ Behavior:
   V2 query contracts and are not accepted.
 
 Examples:
+  $ astrale query --search "elo mar" --limit 20
   $ astrale query /:notes.example.dev:class.Note --limit 50
   $ astrale query --class /:notes.example.dev:class.Note --limit 50
   $ astrale query @note --edge /:notes.example.dev:class.references --direction outgoing --limit 25
@@ -113,8 +129,15 @@ Examples:
 `,
   arguments: [{ name: 'sources...', description: 'Canonical source Paths', required: false }],
   options: [
-    { flags: '--ast <json>', description: 'Canonical Query V6 JSON document' },
-    { flags: '-f, --file <path>', description: 'Read a canonical Query V6 document from a file' },
+    {
+      flags: '--search <text>',
+      description: 'Search Named.name by word prefixes, ordered by relevance',
+    },
+    { flags: '--ast <json>', description: 'Canonical Query v7 or V6 JSON document' },
+    {
+      flags: '-f, --file <path>',
+      description: 'Read a canonical Query v7 or V6 document from a file',
+    },
     {
       flags: '--class <path>',
       description: 'Select Nodes satisfying one exact Class',

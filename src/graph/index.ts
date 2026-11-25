@@ -1,2 +1,2 @@
 export { prepareMutation } from './mutation'
-export { prepareQuery, type QueryCommandInput } from './query'
+export { prepareQuery, prepareQueryDocument, type QueryCommandInput } from './query'
