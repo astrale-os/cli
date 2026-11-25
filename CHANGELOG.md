@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.0-beta.180](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.179...cli/v1.0.0-beta.180) (2026-11-25)
+
+
+* release the skills that declare every Policy's input ([#829](https://github.com/astrale-os/cli/issues/829)) ([1d02382](https://github.com/astrale-os/cli/commit/1d023823c03f7c0c0d5d4f526934938a71995a52))
+
 ## [1.0.0-beta.179](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.178...cli/v1.0.0-beta.179) (2026-11-24)
 
 
