@@ -70,7 +70,7 @@ being the Node, or the Edge in an Edge Class rule.
 | Slot | Accepts | Absent |
 | --- | --- | --- |
 | Node `read`, `traverse` | a Policy, `false`, or checks over `self` and `ref` members | every caller |
-| Edge `read`, `traverse` | a Policy or `false` | every caller |
+| Edge `read`, `traverse` | a Policy, `false`, or checks over `self`, the Edge, and `ref` members | every caller |
 | `update`, `delete` | a Policy, `true`, or checks over `self` and `ref` members | the owning Domain only |
 | Node `create` | `true`, or checks over `ref` members only (no `self` yet) | the owning Domain only |
 | Edge `create` | a Policy, `true`, or checks over `self`, the Edge | the owning Domain only |
@@ -79,6 +79,35 @@ being the Node, or the Edge in an Edge Class rule.
 `{ as: 'executor' }`, which passes by installed ownership; the Function's `policy` decides the user.
 Declare `create`, `update` or `delete` only for a cross-Domain write the developer explicitly asks
 for: another Domain, or its users under `caller`, writing the Class directly.
+
+### A Policy or checks: two facts in one slot
+
+Every slot that accepts checks, Node or Edge, takes the same check tree as a callable `policy`.
+Each `check` is decided under its own binder, over the caller's whole composition, exactly as in a
+callable rule. A slot that needs two facts which different Identities of the composition may supply
+(an access the user holds through a group, a Role the user holds directly) is an `allOf` of two
+checks:
+
+```ts
+export const Fleet = nodeClass({
+  policies: {
+    // The caller (or one of its groups) uses this Fleet AND the caller holds console.member.
+    read: ({ allOf, check, ref, self }) =>
+      allOf(check(usesFleet, self), check(hasRole, ref(roles.consoleMember))),
+    traverse: ({ allOf, check, ref, self }) =>
+      allOf(check(usesFleet, self), check(hasRole, ref(roles.consoleMember))),
+  },
+})
+```
+
+- A Policy placed in the slot (`read: managesProject`) is decided as one check: one Identity of
+  the composition must satisfy each whole branch.
+- Inside one `match`, `allOf(sameNode(subject, ref(role)), edge(uses, { user: subject, ... }))`
+  holds only when the same Identity is the Role member and holds the Edge. When the two facts may
+  come from different Identities, move them into two checks; never chain `extends_with` hops to
+  bring them back together.
+- A slot is never "pattern only": if a rule seems to need a combination a single Policy cannot
+  express, write it as checks before proposing a workaround or a Kernel change.
 
 - On a Class, the caller passes as Root, by installed ownership of the Class, or by the slot's rule,
   never by a scope. An executor acting for another caller also meets its ceiling: `scope_<op>`
@@ -240,6 +269,10 @@ const transfer = func({
 The Kernel decides each Policy for every Identity of it. Domains author `extends_with` only
 (`authority.md`, Composition).
 
+- `member -[extends_with]-> group` is the composition Edge. The Kernel closes it at any depth for
+  each bound Identity, conjoins the constraints (`constrained_by`) and lets exclusions
+  (`excluded_from`) deny. The `repeat` bound of 3 is a pattern limit, not a depth limit of the
+  composition.
 - A fact a group holds is one Edge from or to `subject`. Never walk `extends_with` (one hop or a
   `repeat`) from `subject`: the walk reads raw Edges, bypasses the composition the Kernel decides,
   and spends a leaf and a variable of the budget.
@@ -277,6 +310,20 @@ export const extendsGroup = policy({
 policy: ({ allOf, check, input, ref }) =>
   allOf(check(extendsGroup, ref(editors)), check(managesProject, input.project)),
 ```
+
+## Before concluding the DSL cannot express a rule
+
+1. Name each fact the rule needs and which Identity of the caller's composition may hold it.
+2. Facts that need one shared witness (the same Identity, the same Node): one Policy, with named
+   `input`s if it relates several Nodes.
+3. Facts that may come from different Identities: one `check` each, combined with `allOf`, in a
+   callable `policy` or in any Class slot (Node or Edge, observation or write).
+4. Never re-walk `extends_with`, never duplicate a group's fact on each member, never move the
+   decision into a handler.
+5. Only if 2 and 3 cannot express it, check the installed DSL (`dsl/v1/builder/.spec/api.d.ts`,
+   `ClassRuleBuilder`, `EdgeRuleBuilder`, `PolicyCheckContext`) before claiming a Kernel limit.
+6. Prove it with a Dataset or e2e pair: the fact inherited from a group plus the Role held
+   directly passes; each fact missing alone fails.
 
 ## Composition rules
 
