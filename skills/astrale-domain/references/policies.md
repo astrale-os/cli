@@ -161,14 +161,16 @@ Deprecated: `can_use`, `can_read`, `can_traverse`, `can_create`, `can_update`, `
 ## Writing a Policy
 
 ```ts
-import { method, policy } from '@astrale-os/sdk/schema'
+import { method, type NamedPolicy, policy } from '@astrale-os/sdk/schema'
 import { z } from 'zod'
 
+import { Project } from './project.js' // `read` and `traverse` check `managesProject`
 import { manages } from './relationships.js' // ends `manager` and `project`
 
-export const managesProject = policy({
+export const managesProject: NamedPolicy<'object'> = policy({
   description: 'The caller manages this Project.',
-  match: ({ edge, subject, object }) => edge(manages, { manager: subject, project: object }),
+  input: { object: () => Project },
+  match: ({ edge, input, subject }) => edge(manages, { manager: subject, project: input.object }),
 })
 
 export const rename = method({
@@ -195,8 +197,9 @@ export const rename = method({
 
 ## Bind the Nodes a Policy relates
 
-A Policy may declare named Node inputs, each with its Class; one check binds them all, so one
-Identity of the caller's composition must satisfy the whole Policy with every supplied Node:
+A Policy declares each Node input it relates by name and Class, a single input included; one check
+binds them all, so one Identity of the caller's composition must satisfy the whole Policy with every
+supplied Node:
 
 ```ts
 const sameOrganization = policy({
@@ -222,16 +225,24 @@ const transfer = func({
 ```
 
 - Two separate checks may each succeed through a different group; one check needs one witness. The
-  same Node may fill several names. Every branch connects every declared input to `subject`.
-- Bindings: a Node Class slot supplies `object`; an Edge Class slot `source` and `target`; an
-  explicit check in a Node Class rule `self` and fixed `ref(...)`s; a callable check also
-  Node-valued Path fields. `check(P, node)` fills `object`.
-- Composition requires matching input names and Classes. At most `schema.limits.policy.inputs` (6)
-  inputs.
+  same Node may fill several names. Every branch connects every declared input to `subject`
+  (Composition rules).
+- Input names: a Node Class `read`/`traverse` slot supplies `object`, so its Policy declares
+  `input: { object: C }`; an Edge Class slot supplies `source` and `target`, and its Policy declares
+  the ends it reads. A Policy checked only by callables and rules names each input by its business
+  role (`from`, `to`, `group`).
+- Bindings: an explicit check in a Node Class rule binds `self` and fixed `ref(...)`s; a callable
+  check also Node-valued Path fields. `check(P, node)` binds a sole `object` input; every other
+  Policy takes `{ name: node }` for each input.
+- Composition requires matching input names and Classes; a mismatch, in a declaration or in check
+  bindings, is refused (`PL_USE`). At most `schema.limits.policy.inputs` (6) inputs.
 - `Identity.can` accepts `{ policy, input: { from, to } }`, alone or in an ordered batch beside
-  `{ policy, object }`, with exact Node ids or installed Registry Paths.
-- The implicit `policy({ match })` form is deprecated. A circular inference error in an implicit
-  Policy referring back to its own Class: annotate it `: Policy` (`@astrale-os/sdk/schema`).
+  `{ policy, object }` for a sole `object` input, with exact Node ids or installed Registry Paths;
+  a missing input fails `CAPABILITY_TARGET_INVALID`. `useCan(policy, object)`
+  (`@astrale-os/shell-react`) binds `object` only: ask any other Policy through `useAuth().can`.
+- `policy({ match })` without `input` is deprecated. A Policy and the Class it reads referring to
+  each other fail type inference: annotate the Policy with its input names, `NamedPolicy<'object'>`
+  (`@astrale-os/sdk/schema`).
 
 ## Groups
 
@@ -243,10 +254,10 @@ The Kernel decides each Policy for every Identity of it. Domains author `extends
 - A fact a group holds is one Edge from or to `subject`. Never walk `extends_with` (one hop or a
   `repeat`) from `subject`: the walk reads raw Edges, bypasses the composition the Kernel decides,
   and spends a leaf and a variable of the budget.
-- Membership in a fixed group: `check(extendsGroup, ref(group))`; holding a Role, the same check
-  with the Domain's own `hasRole` (`check(hasRole, ref(role))`, `users.md`). Keep the group or Role
-  a fixed `ref`: the composition includes the caller, so an input object admits any caller passing
-  its own id.
+- Membership in a fixed group: `check(extendsGroup, { group: ref(editors) })`; holding a Role, the
+  Domain's own `hasRole` (`check(hasRole, ref(role))`, `users.md`). Keep the group or Role a fixed
+  `ref`: the composition includes the caller, so a group taken from the call's input admits any
+  caller passing its own id.
 - One Identity satisfies a whole branch. Two facts that may come from different groups (edit rights
   from one Team, management of the Project from another) are two checks; each tries the whole
   composition.
@@ -256,12 +267,13 @@ The Kernel decides each Policy for every Identity of it. Domains author `extends
 ```ts
 // Wrong: re-walks the composition by hand.
 export const extendsGroupManagingProject = policy({
-  match: ({ allOf, edge, exists, object, subject }) =>
+  input: { object: () => Project },
+  match: ({ allOf, edge, exists, input, subject }) =>
     exists(({ node }) => {
       const holder = node()
       return allOf(
         edge(K.classes.extends_with, { subject, extension: holder }, { repeat: { min: 0, max: 2 } }),
-        edge(manages, { manager: holder, project: object }),
+        edge(manages, { manager: holder, project: input.object }),
       )
     }),
 })
@@ -270,12 +282,13 @@ export const extendsGroupManagingProject = policy({
 
 // The caller is the group or a member of it, at any depth.
 export const extendsGroup = policy({
-  match: ({ object, sameNode, subject }) => sameNode(subject, object),
+  input: { group: K.classes.Identity },
+  match: ({ input, sameNode, subject }) => sameNode(subject, input.group),
 })
 
 // Two facts, possibly from two groups: one check each.
 policy: ({ allOf, check, input, ref }) =>
-  allOf(check(extendsGroup, ref(editors)), check(managesProject, input.project)),
+  allOf(check(extendsGroup, { group: ref(editors) }), check(managesProject, input.project)),
 ```
 
 ## Composition rules
@@ -289,10 +302,10 @@ policy: ({ allOf, check, input, ref }) =>
   instance, including `abstract: true` on a concrete Class. Contract-only Methods of abstract Classes
   and inherited aliases are not Function projections: reference the executable declaration of the
   local or direct-dependency owner.
-- In a Policy without `input`, each normalized branch uses one target mode: a Node Policy references `object`; an Edge Policy
-  `source`, `target` or both. `subject`, every referenced protected term and every existential
-  variable form one connected proof graph. A branch saying only "the caller belongs to a group" is
-  not resource-scoped and is refused: check membership instead (Groups).
+- Each normalized branch references every declared input; `subject`, the inputs and every
+  existential variable form one connected proof graph (`PL_CONNECTIVITY`). A branch saying only
+  "the caller belongs to a group" is not resource-scoped and is refused: check membership instead
+  (Groups).
 - Query admission verifies a candidate Edge's exact Class, then evaluates its Policy on the admitted
   `source` and `target`. An Edge predicate in a Policy is an existence test, never an identity test
   of the candidate Edge.

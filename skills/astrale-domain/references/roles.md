@@ -136,7 +136,8 @@ export const domain = defineDomain({
 - At runtime, a granter adds a member by writing `member -[extends_with]-> role` in a Mutation,
   and removes one by deleting that Edge. The Domain owning a Role's concrete Class writes its
   memberships without being a granter (`users.md`).
-- A Domain Policy checks a Role with its own `hasRole` Policy, matching `sameNode(subject, object)`:
+- A Domain Policy checks a Role with its own `hasRole` Policy, declaring
+  `input: { object: K.classes.Role }` and matching `sameNode(subject, input.object)`:
   `check(hasRole, ref(role))` (`users.md`, `policies.md` Groups). Never re-check the Kernel Role of
   an operation in a Domain Policy: the Kernel already checked it for that operation.
 - Inspect the Domain's installed memberships and scopes, and the live composition of human callers

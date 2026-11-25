@@ -204,6 +204,32 @@ test('the guides keep the boundary rules a reader cannot derive', () => {
   assert.match(read('roles.md'), /`identity.impersonator` \| `Identity.impersonate`/)
 })
 
+/** Each `policy({ ... })` call in a text, up to its balancing parenthesis. */
+function policyDeclarations(text) {
+  return [...text.matchAll(/\bpolicy\(\{/g)].map(({ index }) => {
+    let depth = 0
+    for (let end = index + 'policy'.length; end < text.length; end++) {
+      if (text[end] === '(') depth++
+      else if (text[end] === ')' && --depth === 0) return text.slice(index, end + 1)
+    }
+    return text.slice(index)
+  })
+}
+
+test('target guides declare every Policy input by name, a single one included', () => {
+  let declared = 0
+  for (const path of markdownFiles(skills)) {
+    if (path.startsWith(legacyRoot)) continue
+    for (const [, code] of readFileSync(path, 'utf8').matchAll(/```tsx?\n([^]*?)```/g)) {
+      for (const declaration of policyDeclarations(code)) {
+        declared++
+        assert.match(declaration, /\binput:\s*\{/, `${path}: ${declaration}`)
+      }
+    }
+  }
+  assert.ok(declared > 0)
+})
+
 test('the guides name the installed Domain as requirements.domain', () => {
   for (const name of guideNames()) {
     const source = readFileSync(join(root, 'references', name), 'utf8')
