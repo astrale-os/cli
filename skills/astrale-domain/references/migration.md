@@ -202,8 +202,11 @@ anything. `abort` undoes nothing: it only stops the attempt toward the target. `
 why there is no copy (`SESSION_COPY_UNSUPPORTED`, `SESSION_COPY_SPACE`, `SESSION_COPY_TIMEOUT`,
 `SESSION_COPY_CONNECTIONS`, `SESSION_COPY_DISABLED`, `SESSION_COPY_FAILED`, `SESSION_COPY_ABSENT`,
 `SESSION_COPY_CONSUMED`, `SESSION_OPENED_WITHOUT_COPY`): then neither `abort` nor `cancel` undoes
-committed repairs. Going back after a completed `apply` is a new session installing the previous
-release and reversing the repair.
+committed repairs. A cancel whose copy the Host cannot put back, because a session of another role
+on the Instance's database did not end within 10 s, keeps your writes the same way and ends with
+`restore: none` (`SESSION_COPY_CONNECTIONS`), so that no other session can keep you in the
+maintenance session. Going back after a completed `apply` is a new session installing the
+previous release and reversing the repair.
 
 ## External effects
 
