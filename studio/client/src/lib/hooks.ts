@@ -1,5 +1,5 @@
 import type { EnvName } from '@shared/contracts/schema'
-import type { DomainSummary } from '@shared/contracts/workspace'
+import type { DomainSummary, InstanceSchedules, ScheduleAction } from '@shared/contracts/workspace'
 
 import { KERNEL_DOMAIN_ID, KERNEL_ORIGIN } from '@shared/contracts/workspace'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -114,6 +114,64 @@ export function useInstanceDomains(name: string | null | undefined, enabled = tr
     staleTime: 60_000,
   })
 }
+/**
+ * The Schedules of one Domain on one instance. A read spawns the CLI once per Schedule and twice
+ * more: fetched only while the popover that shows them is open.
+ */
+export function useInstanceSchedules(name: string | undefined, origin: string, enabled: boolean) {
+  return useQuery({
+    queryKey: qk.instanceSchedules(name ?? '', origin),
+    queryFn: () => api.instanceSchedules(name!, origin),
+    enabled: !!name && enabled,
+    staleTime: 30_000,
+  })
+}
+
+/** Pause or resume one Schedule, or run its callable now, on one instance. */
+export function useScheduleActions(name: string, origin: string) {
+  const client = useQueryClient()
+  const key = qk.instanceSchedules(name, origin)
+  const failed = (what: string) => (error: unknown) =>
+    toast.error(`Couldn't ${what}: ${error instanceof Error ? error.message : String(error)}`)
+  return {
+    act: useMutation({
+      mutationFn: (v: { schedule: string; action: ScheduleAction }) =>
+        api.scheduleAction(name, v.schedule, v.action),
+      onError: failed('change the Schedule'),
+      onSuccess: (result, { schedule, action }) => {
+        if (!result.ok || !result.status) {
+          toast.error(`Couldn't ${action} the Schedule: ${result.error ?? 'refused'}`)
+          return
+        }
+        client.setQueryData<InstanceSchedules>(key, (data) =>
+          data === undefined
+            ? data
+            : {
+                ...data,
+                schedules: data.schedules.map((item) =>
+                  item.id === schedule
+                    ? { ...item, status: result.status, error: undefined }
+                    : item,
+                ),
+              },
+        )
+      },
+    }),
+    run: useMutation({
+      mutationFn: (v: { call: string; input: unknown; label: string }) =>
+        api.runSchedule(name, v.call, v.input),
+      onError: failed('start the run'),
+      onSuccess: (result, { label }) => {
+        if (result.ok && result.execution) {
+          toast.success(`Started ${label} (execution ${result.execution})`)
+          return
+        }
+        toast.error(`Couldn't run ${label}: ${result.error ?? 'refused'}`)
+      },
+    }),
+  }
+}
+
 export function useBundle(id?: string) {
   return useQuery({ ...bundleQueryOptions(id ?? ''), enabled: !!id })
 }

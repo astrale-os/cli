@@ -73,6 +73,17 @@ test('domain routes validate their bodies', async () => {
     next: { x: 1, y: 2 },
   })
   expect((await route('/api/instances/use', post({ name: ' ' })))?.status).toBe(400)
+  // Schedules: a Domain origin to list, a Schedule id to act on, a callable to run; else nothing.
+  const schedules = '/api/instances/schedules'
+  expect((await route(`${schedules}?name=mine&origin=-i%20x`))?.status).toBe(400)
+  for (const body of [
+    { name: 'mine', action: 'delete', schedule: 's1' },
+    { name: 'mine', action: 'pause', schedule: '@s1 --as root' },
+    { name: 'mine', action: 'run', call: '@s1::kernel.astrale.ai:class.Schedule.method.delete' },
+    { name: ' ', action: 'pause', schedule: 's1' },
+  ]) {
+    expect((await route(schedules, post(body)))?.status).toBe(400)
+  }
 
   // a comment entry, once written, is never rewritten through the API
   const comment = upsertComment(handle.root, {
