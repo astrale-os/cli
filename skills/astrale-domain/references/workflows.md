@@ -367,6 +367,154 @@ Prove per Workflow:
 This proves replay, not crash recovery on a Host: run one live `astrale call … --wait` before
 claiming delivery.
 
+## Run on a schedule
+
+A durable callable can start on its own: `trigger: onSchedule(...)` beside `execution`. Every
+instance that installs the Domain starts one Execution per matching instant, acting as the Domain
+(executor and caller: its installation Identity), with no Worker, account or key to keep.
+
+```ts
+import { func, method, onSchedule } from '@astrale-os/sdk/schema'
+
+// schema: at 07:00 Paris time on weekdays
+digest: func({
+  auth: 'authorized',
+  policy: false, // Root and the Domain only: no user starts it by hand
+  input: z.object({ audience: z.enum(['team', 'all']) }),
+  output: z.object({ sent: z.number() }),
+  execution: { durable: true },
+  trigger: onSchedule({ cron: '0 7 * * 1-5', timezone: 'Europe/Paris', input: { audience: 'team' } }),
+}),
+
+// in a Class: a static Method with two named schedules
+sweep: method({
+  static: true,
+  auth: 'authorized',
+  policy: false,
+  input: z.object({ depth: z.enum(['quick', 'full']) }),
+  output: z.object({ removed: z.number() }),
+  execution: { durable: true },
+  trigger: [
+    onSchedule({ name: 'quick', cron: '*/15 * * * *', input: { depth: 'quick' } }),
+    onSchedule({ name: 'full', cron: '30 3 * * sun', timezone: 'Europe/Paris', input: { depth: 'full' }, maxDelay: 6 * 3_600 }),
+  ],
+}),
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `cron` | required | `minute hour day month weekday`: `*`, lists, ranges, steps, English names (`jan`, `mon`), weekday `7` = Sunday. Restricting both the day of the month and the weekday is refused. The accepted Schema keeps a canonical calendar, not the text |
+| `timezone` | `'UTC'` | An IANA zone from the DSL's pinned list; its offsets are resolved at each tick |
+| `name` | `'default'` | The schedule's identity within the callable, required when it has several. Renaming makes another schedule; editing its cron does not |
+| `input` | `{}` | Recorded on every tick, checked against the callable's input when the Schema is accepted; no file field |
+| `overlap` | `'skip'` | `'allow'`: a tick starts while the previous tick of the same schedule is still open |
+| `maxDelay` | no limit | Seconds (60 to one year) a tick may still start late; later, it is counted missed |
+
+- Only on a durable standalone Function or executable static Method: never an instance Method (a
+  tick has no receiver), an abstract one, or a Function created by Mutation. Never inherited.
+- A trigger enters the Domain revision, not the callable's fingerprint: adding, changing or removing
+  one is a patch for dependents. A Release declaring one needs a Kernel that schedules; an older
+  Kernel refuses it.
+- The Policy decides every tick like any call of the Domain. `auth: 'authorized', policy: false`
+  keeps the job internal; a schedule on an `authenticated` callable is also a button any user can
+  press.
+
+### What a tick guarantees
+
+- **One Execution per instant**, keyed by the Schedule and the instant, whatever the restarts.
+  Steps inside it keep the rules above.
+- **Nothing before install**: a schedule fires only instants after the activation that created it.
+  A tick starts within about 30 s of its instant while the instance is open; none fires during
+  maintenance or under the break-glass mark.
+- **Daylight saving**: a local time inside a spring-forward gap fires at the first instant after
+  the gap; a repeated local time fires once, at its first occurrence. A tick's identity is its UTC
+  instant.
+- **Catch-up is the latest instant only.** After downtime or maintenance, the most recent missed
+  instant starts once if it is at most `maxDelay` late; earlier ones are counted `missed`, never
+  replayed. A job that needs every interval derives its window from `scheduledAt` and its own
+  watermark.
+- **Overlap**: under `skip`, a tick due while the previous one is open is counted `skipped`; a
+  paused previous tick leaves the schedule `blocked` until it is resumed or cancelled.
+- **Upgrades**: a changed cron or zone applies to instants after the activation; a tick in flight
+  finishes on its deployment. A schedule that keeps its name keeps its pause and counters; removing
+  the trigger, its callable or the Domain removes it.
+
+### Key effects on `scheduledAt`
+
+A tick's run receives `execution.trigger = { kind: 'schedule', schedule, scheduledAt }`:
+`scheduledAt` is the nominal instant (ISO 8601 UTC), the same on every attempt and replay. A run
+started by a call, run now included, carries no schedule trigger. Compute windows and business
+keys from it, never from the clock: after a database restore, the latest instant may run once more,
+and its key makes that a no-op.
+
+```ts
+async ({ execution, step }) => {
+  const trigger = execution.trigger
+  const at =
+    trigger?.kind === 'schedule' ? trigger.scheduledAt : await step.run('now', () => new Date().toISOString())
+  const day = at.slice(0, 10)
+  const pending = await step.query('pending', pendingDigests, { day }, { as: 'executor' })
+  // a Digest keyed by its day: a second run of the same instant writes nothing
+  await step.mutate('record-digest', recordDigest, { day, count: pending.length }, { as: 'executor' })
+  return { sent: pending.length }
+}
+```
+
+### Test a schedule
+
+`createTestWorkflowEngine` starts ticks as the Kernel does: the schedule's input, the Domain as
+initiator, `execution.trigger` naming the schedule and the instant. Full reference: Scheduled
+Workflows in `docs/durable-workflows.md` of `@astrale-os/sdk`.
+
+```ts
+import { createTestWorkflowEngine, schedule } from '@astrale-os/sdk/testing'
+
+const engine = createTestWorkflowEngine({ now: Date.parse('2027-03-29T04:00:00Z') })
+const tick = await engine.fire(digest, { schema: Billing, at: '2027-03-29T05:00:00Z' }) // 07:00 in Paris
+expect(await engine.fire(digest, { schema: Billing, at: '2027-03-29T05:00:00Z' })).toBe(tick) // one per instant
+expect(schedule.next(Billing.functions.digest, { from: '2027-03-27T00:00:00Z', count: 2 })).toEqual([
+  '2027-03-29T05:00:00.000Z', // Monday: the weekend is skipped
+  '2027-03-30T05:00:00.000Z',
+])
+const kept = engine.schedule(sweep, { schema: Billing, name: 'quick' })
+await engine.advance(60 * 60_000) // fires each due tick; `kept.executions`, `kept.skipped`
+```
+
+- `fire` refuses an instant the schedule is not due at; the `trigger` option of `start` runs a
+  runtime Schedule's tick.
+- The engine never misses an instant: it does not exercise catch-up after an outage.
+
+### Runtime Schedules
+
+A Function consents to Schedules created at runtime with `schedulable: { minInterval }` (seconds,
+at least 300; a Host may require more). Whoever its Policy admits then calls `Function.schedule`
+with `{ cron, timezone?, name?, input?, overlap?, maxDelay? }` and receives `{ id }`. Each tick is
+the creator's call through the app it used, admitted again every time; three refusals in a row
+pause it. `Schedule.update` and `Schedule.delete` act on a runtime Schedule only (a declared one
+answers `SCHEDULE_DECLARED`). A refused creation answers `SCHEDULE_REFUSED` with its `cause`:
+`NOT_DURABLE`, `NOT_SCHEDULABLE`, `INTERVAL` (more often than `minInterval`) or `LIMIT` (the
+creator's quota). Its creator cannot list Schedules by Query yet: keep each Schedule's id on your
+own node.
+
+```sh
+astrale call '/:alerts.example:function.check::kernel.astrale.ai:class.Function.method.schedule' \
+  --data '{"cron":"0 8 * * 1","timezone":"Europe/Paris","input":{"alert":"@<alert>"}}'
+```
+
+### Operate
+
+| Operation | CLI | Who |
+| --- | --- | --- |
+| See before install | `astrale domain install` lists each root's schedules (`+` new, `~` changed, `-` removed) and asks at a terminal when one is new or changed; `--yes` skips the question | The installer |
+| List | `astrale query --class /:kernel.astrale.ai:class.Schedule --edge /:kernel.astrale.ai:class.schedule_of`; Studio: the installed version beside a Domain | Root, `schedule.reader` |
+| Status | `astrale call '@<schedule>::kernel.astrale.ai:class.Schedule.method.status'`: cron, zone, `state` (`active`, `paused`, `blocked`), `next`, `cursor` (last instant decided), `lastExecution`, `missed`, `skipped`, `refused` | Root, the owning Domain, the creator; `schedule.reader` |
+| Pause | `…class.Schedule.method.pause`: a tick in flight continues | Root, the owning Domain, the creator |
+| Resume | `…class.Schedule.method.resume`: from now; no instant of the pause fires | Root, the owning Domain, the creator |
+| Run now | `astrale call /:<origin>:function.<name> --data '<input>' --wait`: an ordinary call | The callable's Policy |
+| Follow a tick | `astrale execution status <lastExecution>` | As any Execution |
+
+A Method of a Schedule refused to its caller answers `SCHEDULE_DENIED`.
+
 ## Deploy and evolve
 
 A run finishes on the code of the deployment that started it.
@@ -473,7 +621,7 @@ async ({ input, self, step, error }) => {
 
 ## Limits
 
-- A run starts only from a call: no schedule, no graph-event trigger.
+- A run starts from a call or a Schedule (`onSchedule`, runtime Schedules); no graph-event trigger.
 - A run waits only on a timer or a signal.
 - A Domain cannot list its Executions: record each `execution.id` it needs in the graph.
 - No manual pause: `resume` continues only a run the engine paused. A paused Execution's status

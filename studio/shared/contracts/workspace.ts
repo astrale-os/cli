@@ -50,6 +50,69 @@ export interface InstanceDomains {
   error?: string
 }
 
+/** What `Schedule.status` reports of one Schedule (ADR-10): its definition and firing state. */
+export interface ScheduleStatus {
+  /** Declared by its Domain's Release, as opposed to created at runtime by `Function.schedule`. */
+  declared: boolean
+  /** The canonical calendar as one cron text. */
+  cron: string
+  timezone: string
+  overlap: 'skip' | 'allow'
+  /** Seconds a tick may still start late; absent means no limit. */
+  maxDelay?: number
+  state: 'active' | 'paused' | 'blocked'
+  /** Why a blocked Schedule acts as nobody: its Function or its creator is gone. */
+  blocked?: string
+  /** The next instant due, ISO 8601; absent until the Kernel derived its ledger row. */
+  next?: string
+  /** The last instant decided (fired, skipped, missed or refused), ISO 8601. */
+  cursor?: string
+  pausedAt?: string
+  /** The Execution of its last started tick. */
+  lastExecution?: string
+  missed: number
+  skipped: number
+  refused: number
+}
+
+/** One Schedule of an installed Domain: a `K.Schedule` linked to its Function by `schedule_of`. */
+export interface InstanceSchedule {
+  id: string
+  name: string
+  /** The callable it starts: a Function's name, or `Class.method` for a static Method. */
+  callable: string
+  /** The Path a run-now call addresses; absent when the callable's member was not readable. */
+  call?: string
+  /** The input every tick records; run now sends the same. */
+  input: unknown
+  status?: ScheduleStatus
+  /** Why `Schedule.status` could not be read. */
+  error?: string
+}
+
+/** The Schedules of one Domain on one instance, or why they could not be read. */
+export interface InstanceSchedules {
+  ok: boolean
+  schedules: InstanceSchedule[]
+  error?: string
+}
+
+export type ScheduleAction = 'pause' | 'resume'
+
+/** The answer of `Schedule.pause` or `Schedule.resume`: the Schedule's status after it. */
+export interface ScheduleActionResult {
+  ok: boolean
+  status?: ScheduleStatus
+  error?: string
+}
+
+/** The answer of a run-now call: the Execution it started. */
+export interface ScheduleRunResult {
+  ok: boolean
+  execution?: string
+  error?: string
+}
+
 export type ThreadRole = 'user' | 'author'
 export type ThreadEntryType = 'text' | 'choice'
 

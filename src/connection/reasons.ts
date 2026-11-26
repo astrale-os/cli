@@ -383,6 +383,42 @@ export function conflictDetails(reason: unknown): {
   }
 }
 
+/** Why the Kernel refused a runtime Schedule (SCHEDULE_REFUSED `details.cause`, ADR-10). */
+const SCHEDULE_REFUSED_HINTS: ReadonlyMap<unknown, string> = new Map([
+  ['NOT_DURABLE', 'Only a durable Function (`execution: { durable: true }`) can be scheduled.'],
+  [
+    'NOT_SCHEDULABLE',
+    'The Function does not consent to runtime Schedules: its declaration needs `schedulable: { minInterval }`.',
+  ],
+  [
+    'INTERVAL',
+    "The cron fires more often than the Function's minInterval, or the Host's floor, allows: space its instants further apart.",
+  ],
+  [
+    'LIMIT',
+    'You hold as many runtime Schedules as this Host allows: delete one before creating another.',
+  ],
+])
+
+/** What to do about a refusal of a Schedule Method or of `Function.schedule` (ADR-10). */
+export function scheduleRefusalHint(reason: unknown): string | undefined {
+  switch (reasonCode(reason)) {
+    case 'SCHEDULE_DENIED':
+      return "Only Root, the Domain that owns the Schedule's Function and, for a runtime Schedule, its creator act on it; schedule.reader only reads its status."
+    case 'SCHEDULE_DECLARED':
+      return 'A declared Schedule changes through a Release of its Domain: change its onSchedule trigger and install that release. Pause and resume still act on it.'
+    case 'SCHEDULE_REFUSED': {
+      const cause = record(reason) && record(reason.details) ? reason.details.cause : undefined
+      return (
+        SCHEDULE_REFUSED_HINTS.get(cause) ??
+        'The Function does not consent to this Schedule: check its durability, its `schedulable` interval and your runtime Schedules.'
+      )
+    }
+    default:
+      return undefined
+  }
+}
+
 export function schemaDataRemovalHint(reason: unknown): string | undefined {
   if (!reasonWithCode(reason, 'DATA_MIGRATION_REQUIRED')) return undefined
   const requirements = reason.details.requirements

@@ -39,10 +39,14 @@ import type {
   DomainCatalogEntry,
   DomainSummary,
   InstanceDomains,
+  InstanceSchedules,
   InstancesState,
   LayoutState,
   MergeResult,
   NodePosition,
+  ScheduleAction,
+  ScheduleActionResult,
+  ScheduleRunResult,
   ThreadEntry,
   VisibilityState,
   WorkspaceUiState,
@@ -95,6 +99,14 @@ export const api = {
   instances: () => get<InstancesState>('/api/instances'),
   instanceDomains: (name: string) =>
     get<InstanceDomains>(`/api/instances/domains?name=${encodeURIComponent(name)}`),
+  instanceSchedules: (name: string, origin: string) =>
+    get<InstanceSchedules>(
+      `/api/instances/schedules?name=${encodeURIComponent(name)}&origin=${encodeURIComponent(origin)}`,
+    ),
+  scheduleAction: (name: string, schedule: string, action: ScheduleAction) =>
+    post<ScheduleActionResult>('/api/instances/schedules', { name, schedule, action }),
+  runSchedule: (name: string, call: string, input: unknown) =>
+    post<ScheduleRunResult>('/api/instances/schedules', { name, action: 'run', call, input }),
   switchInstance: (name: string) =>
     post<{ ok: boolean; active: string | null; output: string }>('/api/instances/use', { name }),
 
@@ -295,6 +307,8 @@ export const qk = {
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,
   instanceDomains: (name: string) => ['instance-domains', name] as const,
+  instanceSchedules: (name: string, origin: string) =>
+    ['instance-schedules', name, origin] as const,
   bundle: (id: string) => ['bundle', id] as const,
   introspection: ['workspace-introspection'] as const,
   core: (id: string) => ['core', id] as const,

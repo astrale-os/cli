@@ -2,13 +2,15 @@ import type { InstalledRelease } from '@astrale-os/sdk/client/schema'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type { DomainRelease } from '@astrale-os/sdk/release'
 
+import { ResponseError } from '@astrale-os/sdk/client'
 import { capabilityKeys } from '@astrale-os/sdk/release'
-import { Key, schema, type bundle, type Revision } from '@astrale-os/sdk/schema'
+import { Key, renderCron, schema, type bundle, type Revision } from '@astrale-os/sdk/schema'
 import { acceptVersion, compatibleDependentVersion } from '@astrale-os/sdk/versioning'
 
 import type { AdminRegistryApi } from '../../admin/registry'
 
 import { registryFailure } from '../../admin/registry/failure'
+import { reasonCode } from '../../connection/reasons'
 import { mapBounded } from '../../lib/concurrency'
 
 /**
@@ -127,10 +129,15 @@ export interface InstallPrecheck {
    * that needed them were not made; the Kernel still makes them.
    */
   readonly unevaluated: readonly string[]
+  /**
+   * For each root that declares a schedule before or after the install, what its triggers
+   * become (ADR-10). Absent from a pre-check that could not run.
+   */
+  readonly schedules?: readonly ScheduleListing[]
 }
 
 /** The engine's verdict before the registry is read for proposals. */
-export type PrecheckVerdict = Omit<InstallPrecheck, 'proposals' | 'command'> & {
+export type PrecheckVerdict = Omit<InstallPrecheck, 'proposals' | 'command' | 'schedules'> & {
   /**
    * For each broken dependent, the upgraded dependencies it breaks on but reaches only through
    * another Domain (outside its direct dependencies). Not part of `--json`.
@@ -513,6 +520,208 @@ function urlOrigin(input: string): string | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * What one declared schedule makes the Kernel do, as the pre-check shows it: the calendar as one
+ * cron text, the zone it is read in, and the options a tick follows. `overlap` and `input` are
+ * spelled out with the defaults an accepted Schema omits (`skip`, `{}`).
+ */
+export interface ScheduleDeclaration {
+  readonly cron: string
+  readonly timezone: string
+  readonly overlap: 'skip' | 'allow'
+  /** Seconds a tick may still start late; absent means no limit. */
+  readonly maxDelay?: number
+  readonly input: unknown
+}
+
+/** One schedule of a root, and what the install does to it. */
+export interface ScheduleEntry {
+  /** The callable it starts: a Function's name, or `Class.method` for a static Method. */
+  readonly callable: string
+  /** Its stable name within the callable (`default` when the declaration names none). */
+  readonly name: string
+  /**
+   * `added` when the active Bundle declares no schedule of that callable and name, or could not
+   * be read (the listing says so); `removed` when only the active Bundle declares it.
+   */
+  readonly change: 'added' | 'changed' | 'removed' | 'unchanged'
+  /** What the install leaves declared; absent for a removed schedule. */
+  readonly declared?: ScheduleDeclaration
+  /** What the active Bundle declares; present for a changed or removed schedule. */
+  readonly previous?: ScheduleDeclaration
+  /** What a changed schedule changes, in declaration order. */
+  readonly changed?: readonly (keyof ScheduleDeclaration)[]
+}
+
+/** The schedules one root declares before and after the install, each acting as that root. */
+export interface ScheduleListing {
+  readonly origin: string
+  /**
+   * `read`: compared with the active Bundle; `absent`: a first install, so every schedule is new;
+   * `unread`: the caller could not read the active Bundle, so every schedule is listed as added.
+   */
+  readonly active: 'read' | 'absent' | 'unread'
+  readonly schedules: readonly ScheduleEntry[]
+}
+
+/**
+ * The schedules each root of the install declares, compared with its active Bundle: what is new,
+ * changed or removed. A trigger enters the Domain revision, so a root installed again at its
+ * active revision changes none and its active Bundle is not read. The Kernel neither asks for nor
+ * records a consent to schedules (ADR-10, decision 5): this only informs the operator. A root
+ * whose own Bundle could not be read is not listed: its schedules are unknown.
+ */
+export async function precheckSchedules(
+  roots: readonly PrecheckRoot[],
+  installed: readonly InstalledRelease[],
+  kernel: Pick<PrecheckKernel, 'bundle'>,
+): Promise<readonly ScheduleListing[]> {
+  const listings = await Promise.all(
+    roots.map(async (root): Promise<ScheduleListing | undefined> => {
+      if (root.kind !== 'release') return undefined
+      const candidate = declaredSchedules(root.bundle.root)
+      const listed = installed.find((entry) => entry.origin === root.origin)
+      if (listed?.revision === root.release.schema.revision) {
+        return scheduleListing(root.origin, 'read', candidate, candidate)
+      }
+      let active: readonly DeclaredSchedule[]
+      try {
+        active = declaredSchedules((await kernel.bundle(root.origin as Key.Origin)).bundle.root)
+      } catch (error) {
+        // The listing omits builtin and local installations: only the Kernel says none is there.
+        const absent = listed === undefined && isAbsentDomain(error)
+        return scheduleListing(root.origin, absent ? 'absent' : 'unread', candidate, [])
+      }
+      return scheduleListing(root.origin, 'read', candidate, active)
+    }),
+  )
+  return listings.filter(
+    (listing): listing is ScheduleListing => listing !== undefined && listing.schedules.length > 0,
+  )
+}
+
+/**
+ * Whether reading an origin found no installed Domain: the Kernel answers an origin that is not
+ * installed with 1003 and reason SCHEMA_NOT_FOUND. An exact 3002 says the same.
+ */
+export function isAbsentDomain(error: unknown): boolean {
+  if (!(error instanceof ResponseError)) return false
+  return (
+    error.code === 3002 || (error.code === 1003 && reasonCode(error.reason) === 'SCHEMA_NOT_FOUND')
+  )
+}
+
+/** One declared schedule, keyed by its callable and name. */
+interface DeclaredSchedule {
+  readonly callable: string
+  readonly name: string
+  readonly declaration: ScheduleDeclaration
+}
+
+/**
+ * Every schedule a Schema declares: each trigger of a Function and of a static Method of one of
+ * its Classes. The accepted Schema keeps them in Unicode order of their names, each with a
+ * canonical calendar (never cron text) that `renderCron` spells as the Kernel's `Schedule.status`
+ * does, an explicit name and zone, `overlap` only as `allow`, and `input` and `maxDelay` only
+ * when declared.
+ */
+function declaredSchedules(root: schema.DomainSchema): readonly DeclaredSchedule[] {
+  const callables = [
+    ...Object.entries(root.functions).map(([name, definition]) => [name, definition] as const),
+    ...Object.entries(root.classes).flatMap(([owner, definition]) =>
+      Object.entries('methods' in definition ? definition.methods : {})
+        .filter(([, method]) => method.static)
+        .map(([name, method]) => [`${owner}.${name}`, method] as const),
+    ),
+  ].sort(([left], [right]) => compareText(left, right))
+  return callables.flatMap(([callable, definition]) =>
+    (definition.trigger ?? []).map((trigger) => ({
+      callable,
+      name: trigger.name,
+      declaration: {
+        cron: renderCron(trigger.calendar),
+        timezone: trigger.timezone,
+        overlap: trigger.overlap ?? 'skip',
+        ...(trigger.maxDelay === undefined ? {} : { maxDelay: trigger.maxDelay }),
+        input: trigger.input ?? {},
+      },
+    })),
+  )
+}
+
+function scheduleListing(
+  origin: string,
+  active: ScheduleListing['active'],
+  candidate: readonly DeclaredSchedule[],
+  current: readonly DeclaredSchedule[],
+): ScheduleListing {
+  const key = ({ callable, name }: DeclaredSchedule) => `${callable}\u0000${name}`
+  const before = new Map(current.map((schedule) => [key(schedule), schedule] as const))
+  const after = new Set(candidate.map(key))
+  const schedules: ScheduleEntry[] = candidate.map((schedule): ScheduleEntry => {
+    const previous = before.get(key(schedule))
+    const base = {
+      callable: schedule.callable,
+      name: schedule.name,
+      declared: schedule.declaration,
+    }
+    if (previous === undefined) return { ...base, change: 'added' }
+    const changed = changedMembers(previous.declaration, schedule.declaration)
+    return changed.length === 0
+      ? { ...base, change: 'unchanged' }
+      : { ...base, change: 'changed', previous: previous.declaration, changed }
+  })
+  for (const schedule of current) {
+    if (after.has(key(schedule))) continue
+    schedules.push({
+      callable: schedule.callable,
+      name: schedule.name,
+      change: 'removed',
+      previous: schedule.declaration,
+    })
+  }
+  schedules.sort(
+    (left, right) =>
+      compareText(left.callable, right.callable) || compareText(left.name, right.name),
+  )
+  return { origin, active, schedules }
+}
+
+function changedMembers(
+  before: ScheduleDeclaration,
+  after: ScheduleDeclaration,
+): readonly (keyof ScheduleDeclaration)[] {
+  return (['cron', 'timezone', 'overlap', 'maxDelay', 'input'] as const).filter(
+    (member) => !sameValue(before[member], after[member]),
+  )
+}
+
+/** Structural equality of two portable values, whatever the order of their object members. */
+function sameValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (typeof left !== 'object' || typeof right !== 'object' || left === null || right === null) {
+    return false
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => sameValue(item, right[index]))
+    )
+  }
+  const leftKeys = Object.keys(left)
+  const rightRecord = right as Record<string, unknown>
+  return (
+    leftKeys.length === Object.keys(right).length &&
+    leftKeys.every(
+      (member) =>
+        Object.hasOwn(rightRecord, member) &&
+        sameValue((left as Record<string, unknown>)[member], rightRecord[member]),
+    )
+  )
 }
 
 function byOrigin(left: { readonly origin?: string }, right: { readonly origin?: string }): number {

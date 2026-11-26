@@ -1,8 +1,10 @@
 /** Workspace-wide routes that do not require a DomainHandle. */
+import { admitRunTarget } from '../../../src/commands/studio-schedules'
 import { agentWorkspace } from '../agent/workspace'
 import { allDomains, depsInstalled } from '../domain/registry'
 import { listInstances, setActiveInstance } from '../instances/active'
 import { listInstanceDomains } from '../instances/domains'
+import { actOnSchedule, listInstanceSchedules, runScheduleNow } from '../instances/schedules'
 import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../introspect/cache'
 import { invalidateKernel } from '../introspect/kernel'
 import { asString } from '../json'
@@ -13,6 +15,9 @@ import { createDomain } from '../workspace/create'
 import { detectGit } from '../workspace/git'
 import { getStudioRuntime } from '../workspace/runtime'
 import { badRequest, json, readJsonRecord, type Notify } from './http'
+
+const DOMAIN_ORIGIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/u
+const NODE_ID = /^[A-Za-z0-9._-]{1,255}$/u
 
 export async function handleWorkspaceRoute(
   req: Request,
@@ -118,6 +123,30 @@ export async function handleWorkspaceRoute(
     const name = (new URL(req.url).searchParams.get('name') ?? '').trim()
     if (!name) return badRequest('name is required')
     return json(await listInstanceDomains(name))
+  }
+  if (path === '/api/instances/schedules' && req.method === 'GET') {
+    const params = new URL(req.url).searchParams
+    const name = (params.get('name') ?? '').trim()
+    const origin = (params.get('origin') ?? '').trim()
+    if (!name) return badRequest('name is required')
+    if (!DOMAIN_ORIGIN.test(origin)) return badRequest('origin must be a Domain origin')
+    return json(await listInstanceSchedules(name, origin))
+  }
+  if (path === '/api/instances/schedules' && req.method === 'POST') {
+    const body = await readJsonRecord(req)
+    const name = (asString(body.name) ?? '').trim()
+    if (!name) return badRequest('name is required')
+    if (body.action === 'pause' || body.action === 'resume') {
+      const schedule = asString(body.schedule) ?? ''
+      if (!NODE_ID.test(schedule)) return badRequest('schedule must be a Schedule id')
+      return json(await actOnSchedule(name, schedule, body.action))
+    }
+    if (body.action === 'run') {
+      const call = admitRunTarget(body.call)
+      if (!call) return badRequest('call must name a Function or a static Method')
+      return json(await runScheduleNow(name, call, body.input ?? {}))
+    }
+    return badRequest('action must be pause, resume or run')
   }
   if (path === '/api/instances/use' && req.method === 'POST') {
     const body = await readJsonRecord(req)
