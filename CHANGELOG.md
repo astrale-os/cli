@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.181](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.180...cli/v1.0.0-beta.181) (2026-11-26)
+
+
+### Bug Fixes
+
+* **lib:** issue each window the credential of the release it runs ([#833](https://github.com/astrale-os/cli/issues/833)) ([1fd0246](https://github.com/astrale-os/cli/commit/1fd02466565a39808d26e798de77dfa38886c283))
+
 ## [1.0.0-beta.180](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.179...cli/v1.0.0-beta.180) (2026-11-25)
 
 
