@@ -1,16 +1,19 @@
 import type { ClassRef } from '@astrale-os/sdk/graph/class'
 import type {
   NodeQueryBuilder,
+  QueryDocument,
   QueryAST as QueryASTValue,
   QueryDirection,
   QueryNodeInput,
 } from '@astrale-os/sdk/query'
 
+import { isQueryInputInvalid } from '@astrale-os/sdk/client'
 import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query, QueryAST } from '@astrale-os/sdk/query'
 
 export interface QueryCommandInput {
+  readonly search?: string
   readonly sources: readonly string[]
   readonly class?: string
   readonly ast?: unknown
@@ -25,7 +28,86 @@ interface PreparedQuery {
   readonly page: Readonly<{ readonly size: number; readonly after?: string }>
 }
 
+interface PreparedDocument {
+  readonly document: QueryDocument
+  readonly paging: {
+    readonly sizes?: readonly { readonly at: readonly string[]; readonly size: number }[]
+    readonly after?: string
+  }
+}
+
 const DEFAULT_LIMIT = 100
+
+/** The Kernel admits the v7 document against its live Registry. Source and Edge arguments
+ * belong to the V6 builder. Text search uses the standard name and description Properties. */
+export function prepareQueryDocument(input: QueryCommandInput): PreparedDocument | undefined {
+  const ast = input.ast
+  const v7 =
+    ast !== null && typeof ast === 'object' && 'query' in ast && ast.query === 'astrale.query/7'
+  if (input.search === undefined && !v7) return undefined
+  if (
+    input.sources.length ||
+    input.direction !== undefined ||
+    input.edge !== undefined ||
+    (input.ast !== undefined && (input.search !== undefined || input.class !== undefined))
+  )
+    throw new TypeError('Use a v7 document alone or --search with an optional --class.')
+  const document = v7 ? (ast as QueryDocument) : searchDocument(input.search!, input.class)
+  if (!('list' in document) && (input.limit !== undefined || input.cursor !== undefined))
+    throw new TypeError('--limit and --cursor require a list')
+  if (input.cursor === '') throw new TypeError('--cursor must contain a continuation')
+  const size = positiveInteger(input.limit, '--limit', DEFAULT_LIMIT)
+  const sizes =
+    'list' in document && (input.limit !== undefined || input.search !== undefined)
+      ? [{ at: [], size }]
+      : undefined
+  return {
+    document,
+    paging: { ...(sizes && { sizes }), ...(input.cursor && { after: input.cursor }) },
+  }
+}
+
+function searchDocument(text: string, source?: string): QueryDocument {
+  const named = 'kernel.astrale.ai:class.Named'
+  const descriptable = 'kernel.astrale.ai:class.Descriptable'
+  const name = `${named}.property.name`
+  return {
+    query: 'astrale.query/7',
+    list: {
+      nodes:
+        source === undefined
+          ? [named, descriptable]
+          : [ClassKey.of(classReference(source, '--class'))],
+      where: { op: 'search', properties: [name, `${descriptable}.property.description`], text },
+      orderBy: [{ property: name, relevance: text, missing: 'last' }],
+      select: 'value',
+    },
+  }
+}
+
+/** A class with no Named Nodes has no name order. Its cursors are sealed to the unordered document. */
+export async function readQueryDocument<Result>(
+  document: QueryDocument,
+  input: { readonly search?: string; readonly class?: string; readonly cursor?: string },
+  read: (document: QueryDocument) => Promise<Result>,
+): Promise<Result> {
+  if (input.search === undefined || input.class === undefined || !('list' in document))
+    return read(document)
+  try {
+    return await read(document)
+  } catch (error) {
+    if (!isQueryInputInvalid(error)) throw error
+    const details = error.reason.details
+    if (details.phase !== 'plan') throw error
+    const missingName =
+      details.issue === 'QUERY_PROPERTY_FAMILY' &&
+      details.path === '/document/list/orderBy/0/property'
+    const otherCursor = input.cursor !== undefined && details.issue === 'QUERY_CURSOR_INVALID'
+    if (!missingName && !otherCursor) throw error
+    const { orderBy: _nameOrder, ...list } = document.list
+    return read({ ...document, list })
+  }
+}
 
 /** Admit canonical Query V6 or author the intentionally small Path/Class/one-edge subset. */
 export function prepareQuery(input: QueryCommandInput): PreparedQuery {

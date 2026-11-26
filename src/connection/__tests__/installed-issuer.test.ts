@@ -762,7 +762,13 @@ function network(
         invocation(
           body.requestId,
           call && Object.keys(call).length === 0
-            ? { id: user }
+            ? {
+                id: user,
+                iss: 'https://workos.example',
+                sub: user,
+                frozen: false,
+                requiredClaims: [],
+              }
             : call?.ast !== undefined
               ? { result: { kind: 'nodes', nodes: [] }, page: {} }
               : `kernel-destination-envelope:${user}`,

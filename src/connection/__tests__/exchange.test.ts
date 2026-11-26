@@ -230,7 +230,13 @@ function exchangeFetch(
       return invocationResponse(
         body.requestId,
         body.call.input && Object.keys(body.call.input).length === 0
-          ? { id: options.user ?? 'user-1' }
+          ? {
+              id: options.user ?? 'user-1',
+              iss: 'https://workos.example',
+              sub: options.user ?? 'user-1',
+              frozen: false,
+              requiredClaims: [],
+            }
           : 'kernel-destination-envelope',
         'application/vnd.astrale+json',
       )
