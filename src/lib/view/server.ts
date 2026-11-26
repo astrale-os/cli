@@ -390,6 +390,8 @@ export function startViewServer(
     }
     const sub = url.pathname.slice(base.length) || '/'
 
+    // What a host-only request posts, read before it is admitted.
+    let body: Record<string, unknown> | null = null
     // A custom header prevents cross-origin simple requests; no preflight is admitted here.
     if (HOST_ONLY_ROUTES.includes(sub)) {
       const address = server.address()
@@ -404,6 +406,9 @@ export function startViewServer(
         json(res, 403, { error: 'This operation is restricted to the View host.' })
         return
       }
+      // A request is admitted on the revision in force once it has arrived whole: its body may
+      // arrive after another page finished switching.
+      if (req.method === 'POST') body = await readJson(req)
       // Only a page acting on the identity in force has to agree on the revision:
       // reading the config is how a fresh page learns it, listing identities acts
       // on none, and a host releasing a session holds no page revision at all.
@@ -484,7 +489,7 @@ export function startViewServer(
         json(res, 200, { token: fresh.credential, expiresAt: fresh.expiresAt, kind: 'minted' })
         return
       }
-      const view = requestedView(await readJson(req))
+      const view = requestedView(body)
       if (view === undefined) {
         json(res, 400, { error: 'Name the View release the credential is for.' })
         return
@@ -497,11 +502,10 @@ export function startViewServer(
       return
     }
     if (sub === '/identity' && req.method === 'POST' && owner !== undefined) {
-      await switchAsOwner(req, res, owner)
+      await switchAsOwner(body, res, owner)
       return
     }
     if (sub === '/identity' && req.method === 'POST') {
-      const body = await readJson(req)
       const identity = body?.identity
       if (
         typeof identity !== 'string' ||
@@ -513,11 +517,6 @@ export function startViewServer(
       }
       if (switching || refreshing) {
         json(res, 409, { error: 'View session update in progress.' })
-        return
-      }
-      // The body may have arrived after another page finished switching.
-      if (req.headers['x-astrale-view-revision'] !== String(revision)) {
-        json(res, 409, { error: 'View session changed; reload before continuing.' })
         return
       }
       switching = true
@@ -546,7 +545,6 @@ export function startViewServer(
       return
     }
     if (sub === '/release' && req.method === 'POST') {
-      const body = await readJson(req)
       const page = asString(body?.page)
       released = true
       if (page !== undefined) {
@@ -598,11 +596,10 @@ export function startViewServer(
    * identity the instance lists right now, read as root, is admitted.
    */
   async function switchAsOwner(
-    req: IncomingMessage,
+    body: Record<string, unknown> | null,
     res: ServerResponse,
     access: OwnerAccess,
   ): Promise<void> {
-    const body = await readJson(req)
     const wanted = body?.identity
     if (wanted !== null && typeof wanted !== 'string') {
       json(res, 403, { error: 'Identity was not allowed for this View session.' })
@@ -610,11 +607,6 @@ export function startViewServer(
     }
     if (switching || refreshing) {
       json(res, 409, { error: 'View session update in progress.' })
-      return
-    }
-    // The body may have arrived after another page finished switching.
-    if (req.headers['x-astrale-view-revision'] !== String(revision)) {
-      json(res, 409, { error: 'View session changed; reload before continuing.' })
       return
     }
     switching = true

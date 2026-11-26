@@ -253,6 +253,42 @@ async function withIdentityView(
   })
 }
 
+/**
+ * A host page's POST to `path` on revision 0, admitted by the server before its body is sent: the
+ * body arrives only with `finish`.
+ */
+async function slowRequest(origin: string, path: string) {
+  const slow = httpRequest(`${origin}/s/refresh/${path}`, {
+    method: 'POST',
+    headers: {
+      origin,
+      expect: '100-continue',
+      'x-astrale-view-host': '1',
+      'x-astrale-view-revision': '0',
+    },
+  })
+  const response = new Promise<{ status: number; text: string }>((resolve, reject) => {
+    slow.on('response', (result) => {
+      const chunks: Buffer[] = []
+      result.on('data', (chunk: Buffer) => chunks.push(chunk))
+      result.on('end', () =>
+        resolve({ status: result.statusCode!, text: Buffer.concat(chunks).toString('utf8') }),
+      )
+    })
+    slow.on('error', reject)
+  })
+  const admitted = once(slow, 'continue')
+  slow.flushHeaders()
+  await admitted
+  return {
+    finish: (json: object) => {
+      slow.end(JSON.stringify(json))
+      return response
+    },
+    destroy: () => slow.destroy(),
+  }
+}
+
 describe('View identity switching', () => {
   test('uses the newly resolved View issuer on identity switch and refresh', () => {
     const route = fixture(true).session.view.route
@@ -350,30 +386,28 @@ describe('View identity switching', () => {
 
   test('rejects a stale switch whose body arrives after another switch commits', () =>
     withIdentityView({}, async ({ request, records, origin }) => {
-      const slow = httpRequest(`${origin}/s/refresh/identity`, {
-        method: 'POST',
-        headers: {
-          origin,
-          expect: '100-continue',
-          'x-astrale-view-host': '1',
-          'x-astrale-view-revision': '0',
-        },
-      })
-      const response = new Promise<number>((resolve, reject) => {
-        slow.on('response', (result) => {
-          result.resume()
-          resolve(result.statusCode!)
-        })
-        slow.on('error', reject)
-      })
+      const slow = await slowRequest(origin, 'identity')
       try {
-        const admitted = once(slow, 'continue')
-        slow.flushHeaders()
-        await admitted
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
-        slow.end(JSON.stringify({ identity: 'alice' }))
-        expect(await response).toBe(409)
+        expect((await slow.finish({ identity: 'alice' })).status).toBe(409)
         expect(records).toEqual(['bob'])
+      } finally {
+        slow.destroy()
+      }
+    }))
+
+  test("refuses a page the credential whose request arrives whole after another page's switch commits", () =>
+    withIdentityView({}, async ({ request, callers, origin }) => {
+      const { view } = await (await request('config.json', 0)).json()
+      const slow = await slowRequest(origin, 'token')
+      try {
+        expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
+        const switched = [...callers]
+        const answer = await slow.finish({ view })
+        expect(answer.status).toBe(409)
+        expect(answer.text).not.toContain('credential-bob')
+        // Nothing is resolved or minted for the stale page.
+        expect(callers).toEqual(switched)
       } finally {
         slow.destroy()
       }
