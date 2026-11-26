@@ -4,7 +4,7 @@ import type { DomainRelease } from '@astrale-os/sdk/release'
 
 import { ResponseError } from '@astrale-os/sdk/client'
 import { capabilityKeys } from '@astrale-os/sdk/release'
-import { Key, schema, type bundle, type Revision } from '@astrale-os/sdk/schema'
+import { Key, renderCron, schema, type bundle, type Revision } from '@astrale-os/sdk/schema'
 import { acceptVersion, compatibleDependentVersion } from '@astrale-os/sdk/versioning'
 
 import type { AdminRegistryApi } from '../../admin/registry'
@@ -621,32 +621,11 @@ interface DeclaredSchedule {
 }
 
 /**
- * A trigger as an accepted Schema keeps it on a Function or static Method (kernel-dsl
- * `ScheduleTrigger`): a canonical calendar, never cron text; `timezone` and `name` explicit;
- * `overlap` only as `allow`; `input` and `maxDelay` only when declared.
- */
-interface ScheduleTrigger {
-  readonly kind: 'schedule'
-  readonly name: string
-  readonly calendar: Calendar
-  readonly timezone: string
-  readonly input?: unknown
-  readonly overlap?: 'allow'
-  readonly maxDelay?: number
-}
-
-/** The canonical calendar of a trigger (kernel-dsl `Calendar`): absent fields match every value. */
-interface Calendar {
-  readonly minute?: readonly number[]
-  readonly hour?: readonly number[]
-  readonly day?: readonly number[]
-  readonly month?: readonly number[]
-  readonly weekday?: readonly number[]
-}
-
-/**
  * Every schedule a Schema declares: each trigger of a Function and of a static Method of one of
- * its Classes. The accepted Schema keeps them in Unicode order of their names.
+ * its Classes. The accepted Schema keeps them in Unicode order of their names, each with a
+ * canonical calendar (never cron text) that `renderCron` spells as the Kernel's `Schedule.status`
+ * does, an explicit name and zone, `overlap` only as `allow`, and `input` and `maxDelay` only
+ * when declared.
  */
 function declaredSchedules(root: schema.DomainSchema): readonly DeclaredSchedule[] {
   const callables = [
@@ -658,7 +637,7 @@ function declaredSchedules(root: schema.DomainSchema): readonly DeclaredSchedule
     ),
   ].sort(([left], [right]) => compareText(left, right))
   return callables.flatMap(([callable, definition]) =>
-    triggersOf(definition).map((trigger) => ({
+    (definition.trigger ?? []).map((trigger) => ({
       callable,
       name: trigger.name,
       declaration: {
@@ -669,18 +648,6 @@ function declaredSchedules(root: schema.DomainSchema): readonly DeclaredSchedule
         input: trigger.input ?? {},
       },
     })),
-  )
-}
-
-/**
- * The triggers a callable declares. `trigger` is part of the accepted Schema from the
- * kernel-dsl release that introduces scheduled callables; it is read through this one view so the
- * pre-check also builds against an SDK whose Schema types predate it, where no Bundle carries one.
- */
-function triggersOf(definition: object): readonly ScheduleTrigger[] {
-  if (!('trigger' in definition) || definition.trigger === undefined) return []
-  return (definition.trigger as readonly ScheduleTrigger[]).filter(
-    (trigger) => trigger.kind === 'schedule',
   )
 }
 
@@ -755,48 +722,6 @@ function sameValue(left: unknown, right: unknown): boolean {
         sameValue((left as Record<string, unknown>)[member], rightRecord[member]),
     )
   )
-}
-
-const CALENDAR_FIELDS = Object.freeze({
-  minute: { minimum: 0, maximum: 59 },
-  hour: { minimum: 0, maximum: 23 },
-  day: { minimum: 1, maximum: 31 },
-  month: { minimum: 1, maximum: 12 },
-  weekday: { minimum: 0, maximum: 6 },
-} as const)
-
-/**
- * The cron text of a canonical calendar, as the Kernel renders it in `Schedule.status`: `*` for
- * an absent field, `*\/n` or `a-b/n` for an arithmetic progression of three values or more, else
- * a comma list in which three consecutive values or more read `a-b`. A mirror of `renderCron` in
- * astrale-os/kernel `dsl/v1/language/schedule/cron.ts`, which the SDK does not re-export.
- */
-export function renderCron(calendar: Calendar): string {
-  return (Object.keys(CALENDAR_FIELDS) as (keyof Calendar)[])
-    .map((field) => renderCronField(field, calendar[field]))
-    .join(' ')
-}
-
-function renderCronField(field: keyof Calendar, values: readonly number[] | undefined): string {
-  if (values === undefined) return '*'
-  const first = values[0]!
-  const last = values.at(-1)!
-  const stride = values.length >= 3 ? values[1]! - first : 0
-  if (stride >= 2 && values.every((value, index) => value === first + index * stride)) {
-    const { minimum, maximum } = CALENDAR_FIELDS[field]
-    return first === minimum && last + stride > maximum
-      ? `*/${stride}`
-      : `${first}-${last}/${stride}`
-  }
-  const items: string[] = []
-  for (let start = 0; start < values.length;) {
-    let end = start
-    while (values[end + 1] === values[end]! + 1) end++
-    if (end - start >= 2) items.push(`${values[start]}-${values[end]}`)
-    else items.push(...values.slice(start, end + 1).map(String))
-    start = end + 1
-  }
-  return items.join(',')
 }
 
 function byOrigin(left: { readonly origin?: string }, right: { readonly origin?: string }): number {

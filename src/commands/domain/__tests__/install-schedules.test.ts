@@ -10,16 +10,25 @@ import { compile } from '@astrale-os/sdk/deployment/build'
 import { assemble } from '@astrale-os/sdk/deployment/release'
 import { defineDomain } from '@astrale-os/sdk/domain'
 import { defineRuntime } from '@astrale-os/sdk/runtime'
-import { bundle, classIcon, defineSchema, nodeClass, schema } from '@astrale-os/sdk/schema'
+import {
+  bundle,
+  classIcon,
+  defineSchema,
+  func,
+  method,
+  nodeClass,
+  onSchedule,
+} from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 import { stripVTControlCharacters } from 'node:util'
+import { z } from 'zod'
 
 import type { ServedDeployment } from '../../../lib/deployment/release'
 import type { PrecheckRoot, ScheduleListing } from '../install-precheck'
 import type { ReferenceInstallDependencies } from '../release-install'
 
 import { captureProcess, human } from '../../__tests__/fixtures/process'
-import { precheckSchedules, renderCron } from '../install-precheck'
+import { precheckSchedules } from '../install-precheck'
 import { scheduleLines } from '../install-schedules'
 import { installByReference } from '../release-install'
 
@@ -44,41 +53,40 @@ const Jobs = defineSchema(ORIGIN, {
   classes: { Ledger: nodeClass({ icon: classIcon.neutral, policies: { read: true } }) },
 })
 
-/** A trigger as an accepted Schema keeps it: canonical calendar, explicit name and zone. */
-function trigger(
-  name: string,
-  calendar: Record<string, readonly number[]>,
-  options: Record<string, unknown> = {},
-) {
-  return { kind: 'schedule', name, calendar, timezone: 'UTC', ...options }
-}
+const durable = {
+  auth: 'authorized',
+  policy: false,
+  input: z.object({ depth: z.enum(['quick', 'full']).optional() }),
+  output: z.object({ removed: z.number() }),
+  execution: { durable: true },
+} as const
+
+type Triggers = NonNullable<Parameters<typeof func>[0]['trigger']>
 
 /**
- * The Jobs Bundle with these triggers on its Functions and on the static Method `Ledger.sweep`.
- * The SDK this repository builds against cannot author a trigger yet, so the accepted shape is
- * written onto a sealed Bundle: the pre-check reads nothing else of these callables.
+ * The Jobs Bundle whose Functions and static Method `Ledger.sweep` declare these `onSchedule`
+ * triggers, through the Bundle codec a Kernel serves it with.
  */
 function jobsBundle(
-  functions: Readonly<Record<string, readonly unknown[]>>,
-  sweep: readonly unknown[] = [],
+  functions: Readonly<Record<string, Triggers>>,
+  sweep?: Triggers,
 ): bundle.Bundle {
-  const sealed = built(URL_R1).bundle
-  const ledger = sealed.root.classes.Ledger!
-  return {
-    ...sealed,
-    root: {
-      ...sealed.root,
-      functions: Object.fromEntries(
-        Object.entries(functions).map(([name, triggers]) => [name, { trigger: triggers }]),
-      ),
-      classes: {
-        Ledger: {
-          ...ledger,
-          methods: sweep.length === 0 ? {} : { sweep: { static: true, trigger: sweep } },
-        },
-      },
+  const source = defineSchema(ORIGIN, {
+    name: 'Jobs',
+    classes: {
+      Ledger: nodeClass({
+        icon: classIcon.neutral,
+        policies: { read: true },
+        ...(sweep === undefined
+          ? {}
+          : { methods: { sweep: method({ ...durable, static: true, trigger: sweep }) } }),
+      }),
     },
-  } as unknown as bundle.Bundle
+    functions: Object.fromEntries(
+      Object.entries(functions).map(([name, trigger]) => [name, func({ ...durable, trigger })]),
+    ),
+  })
+  return bundle.decode(bundle.encode(bundle.create(source)))
 }
 
 interface Built {
@@ -151,40 +159,23 @@ function activeKernel(active: bundle.Bundle | 'absent' | 'hidden') {
   }
 }
 
-const DIGEST = { minute: [0], hour: [7], weekday: [1, 2, 3, 4, 5] }
-const QUARTER = { minute: [0, 15, 30, 45] }
-
-describe('renderCron: the Kernel text of a canonical calendar', () => {
-  test('renders the vectors of kernel-dsl', () => {
-    expect(renderCron({})).toBe('* * * * *')
-    expect(renderCron({ minute: [0, 15, 30, 45] })).toBe('*/15 * * * *')
-    expect(
-      renderCron({ minute: [5, 10, 15, 20], hour: range(9, 1, 17), weekday: range(1, 1, 5) }),
-    ).toBe('5-20/5 9-17 * * 1-5')
-    expect(renderCron({ minute: [0], hour: [0, 12], day: [1, 2, 3, 15], month: [2] })).toBe(
-      '0 0,12 1-3,15 2 *',
-    )
-    expect(renderCron({ day: range(1, 2, 31) })).toBe('* * */2 * *')
-  })
-})
-
 describe('precheckSchedules: what each root runs after the install', () => {
   test('compares the candidate with the active Bundle: new, changed, unchanged and removed', async () => {
     const active = jobsBundle(
       {
-        digest: [trigger('default', DIGEST)],
-        prove: [trigger('default', { minute: range(0, 5, 55) })],
-        retired: [trigger('default', { minute: [0], hour: [3] })],
+        digest: onSchedule({ cron: '0 7 * * mon-fri' }),
+        prove: onSchedule({ cron: '*/5 * * * *' }),
+        retired: onSchedule({ cron: '0 3 * * *' }),
       },
-      [trigger('nightly', { minute: [30], hour: [2] }, { timezone: 'Europe/Paris' })],
+      onSchedule({ name: 'nightly', cron: '30 2 * * *', timezone: 'Europe/Paris' }),
     )
     const candidate = jobsBundle(
       {
-        digest: [trigger('default', DIGEST)],
-        prove: [trigger('default', { minute: range(0, 5, 55) }, { input: { depth: 'full' } })],
-        recover: [trigger('default', QUARTER, { overlap: 'allow', maxDelay: 3600 })],
+        digest: onSchedule({ cron: '0 7 * * 1-5' }),
+        prove: onSchedule({ cron: '0-59/5 * * * *', input: { depth: 'full' } }),
+        recover: onSchedule({ cron: '*/15 * * * *', overlap: 'allow', maxDelay: 3600 }),
       },
-      [trigger('nightly', { minute: [30], hour: [3] }, { timezone: 'UTC' })],
+      onSchedule({ name: 'nightly', cron: '30 3 * * *' }),
     )
     const kernel = activeKernel(active)
 
@@ -209,6 +200,7 @@ describe('precheckSchedules: what each root runs after the install', () => {
           change: 'unchanged',
           declared: { cron: '0 7 * * 1-5', timezone: 'UTC', overlap: 'skip', input: {} },
         },
+        // One calendar has one spelling: only the input of `prove` changed.
         expect.objectContaining({ callable: 'prove', change: 'changed', changed: ['input'] }),
         {
           callable: 'recover',
@@ -233,7 +225,7 @@ describe('precheckSchedules: what each root runs after the install', () => {
   })
 
   test('a first install lists every schedule as new; an unreadable Bundle says so', async () => {
-    const candidate = jobsBundle({ digest: [trigger('default', DIGEST)] })
+    const candidate = jobsBundle({ digest: onSchedule({ cron: '0 7 * * 1-5' }) })
     const [first] = await precheckSchedules([root(candidate)], [], activeKernel('absent'))
     expect(first).toMatchObject({ active: 'absent', schedules: [{ change: 'added' }] })
 
@@ -247,7 +239,7 @@ describe('precheckSchedules: what each root runs after the install', () => {
   })
 
   test('the active revision declares the same triggers: nothing is read, nothing is new', async () => {
-    const candidate = jobsBundle({ digest: [trigger('default', DIGEST)] })
+    const candidate = jobsBundle({ digest: onSchedule({ cron: '0 7 * * 1-5' }) })
     const kernel = activeKernel('hidden')
     const current = { ...installedR1, revision: R2.served.release.schema.revision }
 
@@ -402,10 +394,10 @@ function install(options: {
 }
 
 describe('install: schedules are shown, and confirmed when new or changed', () => {
-  const active = jobsBundle({ prove: [trigger('default', { minute: range(0, 10, 50) })] })
+  const active = jobsBundle({ prove: onSchedule({ cron: '*/10 * * * *' }) })
   const candidate = jobsBundle({
-    prove: [trigger('default', { minute: range(0, 5, 55) })],
-    recover: [trigger('default', QUARTER)],
+    prove: onSchedule({ cron: '*/5 * * * *' }),
+    recover: onSchedule({ cron: '*/15 * * * *' }),
   })
   // The served revision differs from the installed one, so the issuer stays and nothing else asks.
   const opts = { instance: 'prod', allowIssuerChange: [ORIGIN], ...INTERACTIVE } as never
@@ -471,10 +463,3 @@ describe('install: schedules are shown, and confirmed when new or changed', () =
     ])
   })
 })
-
-function range(first: number, step: number, last: number): readonly number[] {
-  return Array.from(
-    { length: Math.floor((last - first) / step) + 1 },
-    (_, index) => first + index * step,
-  )
-}
