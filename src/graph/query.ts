@@ -7,6 +7,7 @@ import type {
   QueryNodeInput,
 } from '@astrale-os/sdk/query'
 
+import { isQueryInputInvalid } from '@astrale-os/sdk/client'
 import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query, QueryAST } from '@astrale-os/sdk/query'
@@ -38,7 +39,7 @@ interface PreparedDocument {
 const DEFAULT_LIMIT = 100
 
 /** The Kernel admits the v7 document against its live Registry. Source and Edge arguments
- * belong to the V6 builder. A text search lists Named Nodes across its concrete Classes. */
+ * belong to the V6 builder. Text search uses the standard name and description Properties. */
 export function prepareQueryDocument(input: QueryCommandInput): PreparedDocument | undefined {
   const ast = input.ast
   const v7 =
@@ -51,7 +52,7 @@ export function prepareQueryDocument(input: QueryCommandInput): PreparedDocument
     (input.ast !== undefined && (input.search !== undefined || input.class !== undefined))
   )
     throw new TypeError('Use a v7 document alone or --search with an optional --class.')
-  const document = v7 ? (ast as QueryDocument) : namedSearch(input.search!, input.class)
+  const document = v7 ? (ast as QueryDocument) : searchDocument(input.search!, input.class)
   if (!('list' in document) && (input.limit !== undefined || input.cursor !== undefined))
     throw new TypeError('--limit and --cursor require a list')
   if (input.cursor === '') throw new TypeError('--cursor must contain a continuation')
@@ -66,20 +67,45 @@ export function prepareQueryDocument(input: QueryCommandInput): PreparedDocument
   }
 }
 
-function namedSearch(text: string, source?: string): QueryDocument {
-  const property = 'kernel.astrale.ai:class.Named.property.name'
-  const of =
-    source === undefined
-      ? 'kernel.astrale.ai:class.Named'
-      : ClassKey.of(classReference(source, '--class'))
+function searchDocument(text: string, source?: string): QueryDocument {
+  const named = 'kernel.astrale.ai:class.Named'
+  const descriptable = 'kernel.astrale.ai:class.Descriptable'
+  const name = `${named}.property.name`
   return {
     query: 'astrale.query/7',
     list: {
-      nodes: [of],
-      where: { op: 'search', properties: [property], text },
-      orderBy: [{ property, relevance: text, missing: 'last' }],
+      nodes:
+        source === undefined
+          ? [named, descriptable]
+          : [ClassKey.of(classReference(source, '--class'))],
+      where: { op: 'search', properties: [name, `${descriptable}.property.description`], text },
+      orderBy: [{ property: name, relevance: text, missing: 'last' }],
       select: 'value',
     },
+  }
+}
+
+/** A class with no Named Nodes has no name order. Its cursors are sealed to the unordered document. */
+export async function readQueryDocument<Result>(
+  document: QueryDocument,
+  input: { readonly search?: string; readonly class?: string; readonly cursor?: string },
+  read: (document: QueryDocument) => Promise<Result>,
+): Promise<Result> {
+  if (input.search === undefined || input.class === undefined || !('list' in document))
+    return read(document)
+  try {
+    return await read(document)
+  } catch (error) {
+    if (!isQueryInputInvalid(error)) throw error
+    const details = error.reason.details
+    if (details.phase !== 'plan') throw error
+    const missingName =
+      details.issue === 'QUERY_PROPERTY_FAMILY' &&
+      details.path === '/document/list/orderBy/0/property'
+    const otherCursor = input.cursor !== undefined && details.issue === 'QUERY_CURSOR_INVALID'
+    if (!missingName && !otherCursor) throw error
+    const { orderBy: _nameOrder, ...list } = document.list
+    return read({ ...document, list })
   }
 }
 

@@ -4,7 +4,12 @@ import type { KernelCommandOpts, SelfExpansionMeta } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
-import { prepareQuery, prepareQueryDocument, type QueryCommandInput } from '../graph/index'
+import {
+  prepareQuery,
+  prepareQueryDocument,
+  readQueryDocument,
+  type QueryCommandInput,
+} from '../graph/index'
 import { readInputFile } from '../lib/input-file'
 import { failInput } from '../lib/terminal/log'
 import { isMachine, output } from '../lib/terminal/output'
@@ -46,7 +51,10 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
         opts,
         label: 'Query',
         credential: { principal: 'caller' },
-        fn: (context) => context.graph.query(request.document, { paging: request.paging }),
+        fn: (context) =>
+          readQueryDocument(request.document, input, (document) =>
+            context.graph.query(document, { paging: request.paging }),
+          ),
         format: (result, format) => output(result, format),
       })
     }
@@ -104,14 +112,15 @@ function parseJson(raw: string, source: string): unknown {
 
 export default {
   name: 'query',
-  description: 'Read the graph or search Named Nodes by words',
+  description: 'Read the graph or search Node names and descriptions',
   afterHelpText: `
 Behavior:
   Positional Paths and --class author a finite Query V6 read. --edge adds
   one exact Edge-Class expansion; --direction defaults to outgoing. --ast and
   --file accept a complete canonical astrale.graph.query/v6 document, including
   Property ordering and Node or Edge reference/value projections. A v7 document
-  uses "query": "astrale.query/7". --search searches Named.name by relevance.
+  uses "query": "astrale.query/7". --search matches words across the standard name and description
+  Properties, with name matches first.
   A v7 list with complete=false has list.cursor even when empty. Pass it back
   with --cursor, or refine the search. --cursor resumes
   one caller-bound query scope. Machine output adds page.next only when another
@@ -131,7 +140,7 @@ Examples:
   options: [
     {
       flags: '--search <text>',
-      description: 'Search Named.name by word prefixes, ordered by relevance',
+      description: 'Search names and descriptions by word prefix, with name matches first',
     },
     { flags: '--ast <json>', description: 'Canonical Query v7 or V6 JSON document' },
     {
