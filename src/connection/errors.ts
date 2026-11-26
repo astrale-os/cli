@@ -32,6 +32,7 @@ import {
   operationConflict,
   queryInputRepair,
   reasonCode,
+  scheduleRefusalHint,
   schemaDataRemovalHint,
   schemaUpgradeDetails,
   schemaUpgradeHint,
@@ -297,7 +298,7 @@ function renderResponse(
             ? CREDENTIAL_REFUSED_HINT
             : code === 'EXECUTION_PENDING'
               ? 'The Execution has not ended yet: wait for it with --wait (up to --timeout), or read its status.'
-              : undefined))
+              : scheduleRefusalHint(failure.reason)))
   if (machine) {
     writeRaw({
       ...fields,

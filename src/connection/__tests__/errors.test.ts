@@ -134,6 +134,20 @@ describe('Kernel refusals', () => {
       reason: upgrade,
       hint: expect.stringContaining('--revoke-previous'),
     })
+    // A Schedule refusal (ADR-10) keeps its reason; the hint names what to change.
+    const declared = { code: 'SCHEDULE_DECLARED', details: {} }
+    expect((await machine(refusal(4009, declared))).json).toMatchObject({
+      reason: declared,
+      hint: expect.stringContaining('through a Release of its Domain'),
+    })
+    const interval = { code: 'SCHEDULE_REFUSED', details: { cause: 'INTERVAL' } }
+    expect((await machine(refusal(4003, interval))).json).toMatchObject({
+      reason: interval,
+      hint: expect.stringContaining('minInterval'),
+    })
+    expect(
+      (await machine(refusal(4003, { code: 'SCHEDULE_DENIED', details: {} }))).json.hint,
+    ).toContain('its creator act on it')
     const privateSource = { code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC', details: {} }
     expect((await machine(refusal(1003, privateSource))).json).toMatchObject({
       message: 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.',
