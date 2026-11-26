@@ -16,6 +16,7 @@ import type { SchemaIR, SourceSpan } from '../../../shared/contracts/schema'
 
 import {
   calleeName,
+  leadingDoc,
   newProject,
   nodeKey,
   objectPropertyValue,
@@ -26,45 +27,6 @@ import {
   unwrapExpression,
   valueOfIdentifier,
 } from './project'
-
-/**
- * Harvest the leading JSDoc / line-comment block immediately above `node`,
- * stripped of comment markers, collapsed to a single trimmed string.
- */
-function leadingDoc(node: Node): string | undefined {
-  // Prefer real JSDoc nodes when present (ts-morph exposes them on many decls).
-  const anyNode = node as unknown as { getJsDocs?: () => Array<{ getText: () => string }> }
-  if (typeof anyNode.getJsDocs === 'function') {
-    const docs = anyNode.getJsDocs()
-    if (docs.length > 0) {
-      const text = docs.map((d) => d.getText()).join('\n')
-      const cleaned = cleanComment(text)
-      if (cleaned) return cleaned
-    }
-  }
-  // Fall back to raw leading comment ranges (covers `//` line comments too).
-  const ranges = node.getLeadingCommentRanges()
-  if (ranges.length === 0) return undefined
-  const raw = ranges.map((r) => r.getText()).join('\n')
-  const cleaned = cleanComment(raw)
-  return cleaned || undefined
-}
-
-/** Strip `/** *​/`, `//`, leading `*` gutters; collapse to a tidy single line. */
-function cleanComment(raw: string): string {
-  const lines = raw
-    .replace(/\/\*\*?/g, '')
-    .replace(/\*\//g, '')
-    .split('\n')
-    .map((l) =>
-      l
-        .replace(/^\s*\*\s?/, '')
-        .replace(/^\s*\/\/\s?/, '')
-        .trim(),
-    )
-    .filter((l) => l.length > 0)
-  return lines.join(' ').replace(/\s+/g, ' ').trim()
-}
 
 const DECL_HELPERS: Record<string, 'node' | 'edge' | 'function'> = {
   nodeClass: 'node',

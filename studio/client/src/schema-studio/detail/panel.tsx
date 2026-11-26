@@ -16,10 +16,12 @@ import { useUI } from '@/lib/store'
 import { anchorData, schemaMemberRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
+import { definitionOfTarget, isDefinitionTarget } from '../definitions'
 import { FunctionRow } from '../functions-panel'
 import { ancestryOfClass, isKernelClass, resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
+import { DefinitionDetail } from './definition'
 import { CallableDetail, MemberList, MethodRow, PropertyRow } from './members'
 import { classSelectionId, memberLists, originLabel, selectedClassName } from './model'
 import { EdgeRelationship } from './relationships'
@@ -51,6 +53,14 @@ export function SchemaDetail({
     const model = functionsModel.all.find((entry) => entry.name === name)
     return model ? (
       <FunctionDetail bundle={bundle} model={model} selected={selected} />
+    ) : (
+      <EmptyState title="Not found" hint={selected} />
+    )
+  }
+  if (isDefinitionTarget(selected)) {
+    const definition = definitionOfTarget(bundle, selected)
+    return definition ? (
+      <DefinitionDetail bundle={bundle} definition={definition} />
     ) : (
       <EmptyState title="Not found" hint={selected} />
     )

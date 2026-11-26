@@ -4,7 +4,7 @@
  * Watchers invalidate on change; the next read rebuilds and re-broadcasts.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import type {
@@ -68,8 +68,9 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
  * differently. v8: source locations include registered Policies and Views.
  * v9: a handler link's wiring file is its declaring module, not the handler's.
  * v10: dependency admission uses the inspected SDK's canonical compatibility owner.
+ * v11: the overlay reads Query/Mutation definitions and what each handler reaches.
  */
-const BUNDLE_CACHE_VERSION = 10
+const BUNDLE_CACHE_VERSION = 11
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'introspect/cache.ts',
@@ -81,15 +82,28 @@ const TOOL_INPUTS = [
   'introspect/canonical-schema.ts',
   'introspect/dependency-footprint.ts',
   'introspect/overlay.ts',
-  'introspect/source-overlay/handlers.ts',
-  'introspect/source-overlay/kernel-calls.ts',
-  'introspect/source-overlay/project.ts',
-  'introspect/source-overlay/spans.ts',
   'introspect/hash.ts',
   'state/baseline.ts',
   '../shared/contracts/schema.ts',
   '../shared/schema/identity.ts',
 ]
+/** Directories whose every module reads sources into the bundle: a new reader is keyed too. */
+const TOOL_INPUT_DIRS = ['introspect/source-overlay']
+
+/** The tool inputs as server-relative paths; none where the sources are not on disk. */
+function toolInputs(serverRoot: string): string[] {
+  const modules = TOOL_INPUT_DIRS.flatMap((dir) => {
+    try {
+      return readdirSync(join(serverRoot, dir))
+        .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+        .sort()
+        .map((name) => `${dir}/${name}`)
+    } catch {
+      return []
+    }
+  })
+  return [...TOOL_INPUTS, ...modules]
+}
 
 interface BundleCacheEntry {
   version: number
@@ -228,7 +242,7 @@ function bundleCacheKey(root: string, schemaDirName: string, domainFile: string)
   for (const file of LOCKFILES) hashFileIfPresent(hash, file, join(root, file))
 
   const serverRoot = join(import.meta.dir, '..')
-  for (const file of TOOL_INPUTS) {
+  for (const file of toolInputs(serverRoot)) {
     const abs = join(serverRoot, file)
     hashFileIfPresent(hash, `tool:${relative(serverRoot, abs)}`, abs)
   }

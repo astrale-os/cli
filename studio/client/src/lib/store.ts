@@ -7,6 +7,8 @@ import type {
 
 import { create } from 'zustand'
 
+import { OUTLINE_LENSES, type OutlineLens } from '@/schema-studio/outline/model'
+
 import { detailRefFor } from './targets'
 
 /** A targeting draft: what was clicked + where on screen to anchor the composer.
@@ -111,6 +113,8 @@ interface UIState {
   chatTabsSide: ChatTabsSide
   /** the chat tab column's width when it sits on the left, persisted in this browser */
   chatTabsWidth: number
+  /** how the rail's outline reads every Domain, persisted in this browser */
+  outlineLens: OutlineLens
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
@@ -192,6 +196,7 @@ interface UIState {
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
   setChatTabsSide: (side: ChatTabsSide) => void
+  setOutlineLens: (lens: OutlineLens) => void
   setChatTabsWidth: (width: number) => void
   /** Go to Tests with this policy selected — the way Process and the detail panel hand one over. */
   openPolicy: (policy: string, domainId?: string) => void
@@ -276,6 +281,7 @@ export const useUI = create<UIState>((set) => ({
   edgeStyle: 'curved',
   chatTabsSide: loadStored('studio.chatTabs', ['left', 'top', 'top-titled'] as const, 'left'),
   chatTabsWidth: loadStoredWidth('studio.chatTabsWidth', CHAT_TABS_WIDTH),
+  outlineLens: loadStored('studio.outlineLens', OUTLINE_LENSES, 'relational'),
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
   panelOpen: false,
@@ -324,6 +330,10 @@ export const useUI = create<UIState>((set) => ({
   setChatTabsSide: (chatTabsSide) => {
     storeBrowserPreference('studio.chatTabs', chatTabsSide)
     set({ chatTabsSide })
+  },
+  setOutlineLens: (outlineLens) => {
+    storeBrowserPreference('studio.outlineLens', outlineLens)
+    set({ outlineLens })
   },
   setChatTabsWidth: (width) => {
     const chatTabsWidth = clampTo(CHAT_TABS_WIDTH, width)

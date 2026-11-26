@@ -5,7 +5,9 @@ import { join } from 'node:path'
 
 import type { SchemaIR } from '../../shared/contracts/schema'
 
+import { readDefinitions } from './source-overlay/definitions'
 import { buildHandlerLinks } from './source-overlay/handlers'
+import { newProject } from './source-overlay/project'
 import { buildSourceSpans } from './source-overlay/spans'
 
 const roots: string[] = []
@@ -139,6 +141,127 @@ export const create = defineWorkflow()('createIssue', async ({ input }) => graph
         handlerFile: 'functions/create.ts',
         handlerLine: 2,
         kernelCalls: ['graph.create'],
+      }),
+    ])
+  })
+
+  test('reads Query and Mutation definitions and links each handler to the definitions and callables it reaches', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-definitions-'))
+    roots.push(root)
+    mkdirSync(join(root, 'queries'))
+    mkdirSync(join(root, 'mutations'))
+    mkdirSync(join(root, 'functions'))
+    writeFileSync(
+      join(root, 'queries/issue.ts'),
+      `import { defineQuery } from '@astrale-os/sdk/query'
+
+/** An Issue with its Project. */
+export const issueInProject = defineQuery()('issues.issue.in-project', {
+  build: (issueId, { Issue, issue_in_project: inProject }) => Issue.get(issueId),
+})
+`,
+    )
+    writeFileSync(
+      join(root, 'mutations/issue.ts'),
+      `import { defineMutation } from '@astrale-os/sdk/mutation'
+
+export const renameIssue = defineMutation()('issues.issue.rename', {
+  build(input, classes, mutation) {
+    mutation.updateNode({ node: input.id, class: classes.Issue })
+  },
+})
+`,
+    )
+    writeFileSync(
+      join(root, 'functions/revise.ts'),
+      `import { renameIssue } from '../mutations/issue.ts'
+
+export async function revise(context, input) {
+  if (input.again) return reviseAgain(context, input)
+  const operation = context.domain.classes.Issue.methods.restore.key
+  return context.mutate(renameIssue, { ...input, operation })
+}
+
+const reviseAgain = (context, input) => revise(context, { ...input, again: false })
+`,
+    )
+    writeFileSync(
+      join(root, 'functions/rename.ts'),
+      `import { defineAction } from '@astrale-os/sdk/action'
+import { issueInProject } from '../queries/issue.ts'
+import { revise } from './revise.js'
+
+export const rename = defineAction()(
+  'Issue.rename',
+  { errors: {} },
+  async (context) => {
+    await context.query(issueInProject, context.self)
+    await archiveFirst(context)
+    return revise(context, context.input)
+  },
+)
+
+function archiveFirst(context) {
+  return context.step.run('archive', () => context.domain.classes.Issue.methods.archive)
+}
+`,
+    )
+
+    const project = newProject()
+    const { definitions, idByDeclaration } = readDefinitions({ domainRoot: root, project })
+    expect(definitions).toEqual([
+      {
+        kind: 'query',
+        id: 'issues.issue.in-project',
+        name: 'issueInProject',
+        file: 'queries/issue.ts',
+        line: 4,
+        // destructured names, aliases read by their Class name
+        classes: ['Issue', 'issue_in_project'],
+        doc: 'An Issue with its Project.',
+      },
+      {
+        kind: 'mutation',
+        id: 'issues.issue.rename',
+        name: 'renameIssue',
+        file: 'mutations/issue.ts',
+        line: 3,
+        // a classes parameter read by member
+        classes: ['Issue'],
+      },
+    ])
+
+    const withCallables: SchemaIR = {
+      ...ir,
+      classes: {
+        Issue: {
+          ...ir.classes.Issue!,
+          methods: {
+            ...ir.classes.Issue!.methods,
+            archive: { ...ir.classes.Issue!.methods.rename!, name: 'archive' },
+            restore: { ...ir.classes.Issue!.methods.rename!, name: 'restore' },
+          },
+        },
+      },
+    }
+    expect(
+      buildHandlerLinks({
+        ir: withCallables,
+        domainRoot: root,
+        project,
+        definitionIds: idByDeclaration,
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        owner: 'Issue',
+        method: 'rename',
+        // `(key, options, handler)`: the handler is the last argument
+        handlerLine: 8,
+        // named by the handler, or by the authored helpers it calls, through a cycle
+        definitions: ['issues.issue.in-project', 'issues.issue.rename'],
+        // handed on in a local helper declared below the handler; `restore` is only
+        // named by its key
+        calls: ['Issue.archive'],
       }),
     ])
   })

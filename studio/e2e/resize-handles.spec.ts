@@ -81,8 +81,12 @@ test('the detail panel resizes and keeps its width across navigation and reload'
   await page.goto('/')
   await page.getByRole('button', { name: 'Expand crm.studio-demo.astrale.ai', exact: true }).click()
   const tree = page.getByTestId('workspace-domain-tree')
-  const openPolicy = () =>
-    tree.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
+  await tree.getByRole('radio', { name: 'Functional' }).click()
+  const row = (id: string) => tree.locator(`[data-outline-id="${id}"]`)
+  const settle = 'module:billing/function:Invoice.settle'
+  const unfoldSettle = () => row(settle).locator('[data-outline-toggle]').click()
+  await unfoldSettle()
+  const openPolicy = () => row(`${settle}/policy`).click()
   await openPolicy()
   const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
   const width = () => panel.evaluate((element) => element.getBoundingClientRect().width)
@@ -102,10 +106,13 @@ test('the detail panel resizes and keeps its width across navigation and reload'
     .poll(async () => (await (await request.get('/api/workspace/state')).json()).detailWidth)
     .toBe(start + 120)
   await page.getByRole('button', { name: 'Close panel' }).click()
-  await tree.getByRole('button', { name: 'Invoice', exact: true }).click()
+  // a method's row opens its Class
+  await row(settle).click()
   await expect.poll(width).toBe(start + 120)
 
   await page.reload()
+  // the lens is a browser preference and outlives the reload; the rail's folds do not
+  await unfoldSettle()
   await openPolicy()
   await expect.poll(width).toBe(start + 120)
   await handle.focus()

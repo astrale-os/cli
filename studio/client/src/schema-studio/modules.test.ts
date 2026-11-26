@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { bundle, edgeClass, nodeClass } from './__tests__/fixture'
-import { buildModuleTree, folderModules, moduleOfClass } from './modules'
+import { folderModules, moduleOfClass, moduleOfMember } from './modules'
 
 const fixture = bundle({
   User: nodeClass('User'),
@@ -29,17 +29,6 @@ test('groups Node and Edge Classes by authored schema folder', () => {
   expect(folderModules(fixture).map(({ label }) => label)).toEqual(['identity', 'space'])
 })
 
-test('builds a class-only tree with stable selection identity', () => {
-  const tree = buildModuleTree(fixture)
-  expect(tree.children.map((child) => child.path)).toEqual(['identity', 'space'])
-  expect(
-    tree.children[1]?.members.map((member) => [member.kind, member.selectId, member.ref]),
-  ).toEqual([
-    ['class', 'class.Space', 'class.Space'],
-    ['edge', 'class.owns', 'edge.owns'],
-  ])
-})
-
 test('shows the title-cased module name for the conventional module layout', () => {
   const conventional = bundle({
     Invoice: nodeClass('Invoice'),
@@ -57,7 +46,7 @@ test('shows the title-cased module name for the conventional module layout', () 
   ])
 })
 
-test('puts all declarations directly in their module, then unowned declarations at the root', () => {
+test('places every declaration in its module folder, and the rest at the root', () => {
   const value = bundle({ Invoice: nodeClass('Invoice'), Resource: nodeClass('Resource') })
   value.ir!.policies = { mayPay: {}, globalAccess: {} }
   value.ir!.functions.pay = { name: 'pay', input: {}, output: { mode: 'value', schema: {} } }
@@ -71,58 +60,27 @@ test('puts all declarations directly in their module, then unowned declarations 
     'policy.globalAccess': 'schema/policies/global.ts',
   }))
     value.overlay.sourceSpans[ref] = { file, startLine: 1, endLine: 2 }
-  const tree = buildModuleTree(value)
-  expect(tree.children.map((node) => node.name)).toEqual(['Billing'])
-  expect(tree.children[0]!.children).toEqual([])
-  expect(tree.children[0]!.members.map((member) => member.ref).sort()).toEqual([
-    'class.Invoice',
-    'function.pay',
-    'policy.mayPay',
-    'view.billing',
-  ])
-  expect(tree.children[0]!.members.find((member) => member.kind === 'policy')?.selectId).toBe(
-    'policy.local.example.dev:policy.mayPay',
-  )
-  expect(tree.members.map((member) => member.ref).sort()).toEqual([
-    'class.Resource',
-    'policy.globalAccess',
+  expect(
+    (
+      [
+        ['class', 'Invoice'],
+        ['policy', 'mayPay'],
+        ['function', 'pay'],
+        ['view', 'billing'],
+        ['class', 'Resource'],
+        ['policy', 'globalAccess'],
+      ] as const
+    ).map(([kind, name]) => moduleOfMember(value, kind, name)),
+  ).toEqual([
+    'modules/billing',
+    'modules/billing',
+    'modules/billing',
+    'modules/billing',
+    'root',
+    'root',
   ])
   expect(folderModules(value).find((module) => module.path === 'modules/billing')?.classes).toEqual(
     ['Invoice'],
   )
   expect(moduleOfClass(value, 'Invoice')).toBe('modules/billing')
 })
-
-test.each(['schema', 'schema/modules/billing'])(
-  'groups and alphabetizes every category under %s',
-  (directory) => {
-    const value = bundle({
-      Zebra: nodeClass('Zebra'),
-      zRelated: edgeClass('zRelated', []),
-      Alpha: nodeClass('Alpha'),
-      aRelated: edgeClass('aRelated', []),
-    })
-    value.ir!.policies = { zGuard: {}, aGuard: {} }
-    value.ir!.views = { zBoard: { name: 'zBoard' }, aBoard: { name: 'aBoard' } }
-    for (const name of ['zRun', 'aRun']) {
-      value.ir!.functions[name] = { name, input: {}, output: { mode: 'value', schema: {} } }
-    }
-    const expected = [
-      'class.Alpha',
-      'class.Zebra',
-      'view.aBoard',
-      'view.zBoard',
-      'function.aRun',
-      'function.zRun',
-      'edge.aRelated',
-      'edge.zRelated',
-      'policy.aGuard',
-      'policy.zGuard',
-    ]
-    for (const ref of expected)
-      value.overlay.sourceSpans[ref] = { file: `${directory}/index.ts`, startLine: 1, endLine: 2 }
-    const tree = buildModuleTree(value)
-    const members = directory === 'schema' ? tree.members : tree.children[0]!.members
-    expect(members.map((member) => member.ref)).toEqual(expected)
-  },
-)

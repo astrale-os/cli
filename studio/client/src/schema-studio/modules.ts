@@ -1,25 +1,7 @@
 import type { StudioSchemaBundle } from '@shared/contracts/schema'
 
-import { schemaRefKey } from '@shared/schema/identity'
-
 /** Authored declarations share a module folder; technical subfolders stay out of the tree. */
 export type MemberKind = 'class' | 'edge' | 'policy' | 'function' | 'view'
-
-export interface MemberRef {
-  name: string
-  kind: MemberKind
-  selectId: string
-  ref: string
-  icon?: string
-}
-
-export interface TreeNode {
-  name: string
-  path: string
-  hue: number
-  children: TreeNode[]
-  members: MemberRef[]
-}
 
 interface FolderModule {
   path: string
@@ -94,84 +76,27 @@ function collectClasses(bundle: StudioSchemaBundle, schemaDir: string): RawMembe
   })
 }
 
+/** The module a declaration lives in, from its source location; `'root'` outside any. */
+export function moduleOfMember(
+  bundle: StudioSchemaBundle,
+  kind: MemberKind,
+  name: string,
+  schemaDir = 'schema',
+): string {
+  return locate(bundle, `${kind}.${name}`, schemaDir).modulePath
+}
+
+/** Each Class module's hue, as the tree and the canvas paint it. */
+export function moduleHues(bundle: StudioSchemaBundle, schemaDir = 'schema'): Map<string, number> {
+  return topHueMap(collectClasses(bundle, schemaDir))
+}
+
 function topHueMap(members: readonly RawMember[]): Map<string, number> {
   const roots = [...new Set(members.map((member) => member.modulePath))].sort()
   return new Map(roots.map((root, index) => [root, moduleHue(index)]))
 }
 
-function member(member: RawMember, origin: string): MemberRef {
-  return {
-    name: member.name,
-    kind: member.kind,
-    selectId:
-      member.kind === 'policy'
-        ? `policy.${schemaRefKey({ origin, kind: 'policy', name: member.name })}`
-        : `${member.kind === 'edge' ? 'class' : member.kind}.${member.name}`,
-    ref: memberRefKey(member.kind, member.name),
-    icon: member.icon,
-  }
-}
-
-export function buildModuleTree(bundle: StudioSchemaBundle, schemaDir = 'schema'): TreeNode {
-  const classes = collectClasses(bundle, schemaDir)
-  // Hues come from the Class folders alone, exactly as `folderModules` derives them, so a
-  // module reads in the same colour in the tree and on the canvas.
-  const hues = topHueMap(classes)
-  const declarations = {
-    policy: bundle.ir?.policies,
-    function: bundle.ir?.functions,
-    view: bundle.ir?.views,
-  }
-  const members = [...classes]
-  for (const kind of ['policy', 'function', 'view'] as const) {
-    for (const name of Object.keys(declarations[kind] ?? {})) {
-      members.push({ name, kind, ...locate(bundle, `${kind}.${name}`, schemaDir) })
-    }
-  }
-  const root: TreeNode = { name: schemaDir, path: '', hue: 0, children: [], members: [] }
-  const modules = new Map<string, TreeNode>()
-  for (const value of members) {
-    let node = root
-    if (value.modulePath !== 'root') {
-      let child = modules.get(value.modulePath)
-      if (!child) {
-        child = {
-          name: moduleLabel(value.modulePath, schemaDir),
-          path: value.modulePath,
-          hue: hues.get(value.modulePath) ?? 264,
-          children: [],
-          members: [],
-        }
-        modules.set(value.modulePath, child)
-        root.children.push(child)
-      }
-      node = child
-    }
-    node.members.push(member(value, bundle.ir!.domain))
-  }
-  sortTree(root)
-  return root
-}
-
-/** The same category order at the domain root and inside every module. */
-const MEMBER_ORDER: Record<MemberKind, number> = {
-  class: 0,
-  view: 1,
-  function: 2,
-  edge: 3,
-  policy: 4,
-}
-
-function sortTree(node: TreeNode): void {
-  node.children.sort((left, right) => left.name.localeCompare(right.name))
-  node.members.sort(
-    (left, right) =>
-      MEMBER_ORDER[left.kind] - MEMBER_ORDER[right.kind] || left.name.localeCompare(right.name),
-  )
-  node.children.forEach(sortTree)
-}
-
-function moduleLabel(modulePath: string, schemaDir: string): string {
+export function moduleLabel(modulePath: string, schemaDir: string): string {
   if (modulePath === 'root') return schemaDir
 
   const moduleName = /^modules\/([^/]+)$/u.exec(modulePath)?.[1]
@@ -213,5 +138,5 @@ export function moduleOfClass(
   className: string,
   schemaDir = 'schema',
 ): string {
-  return locate(bundle, `class.${className}`, schemaDir).modulePath
+  return moduleOfMember(bundle, 'class', className, schemaDir)
 }

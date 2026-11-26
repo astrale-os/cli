@@ -71,7 +71,7 @@ async function buildKernelBundle(source: KernelSource): Promise<StudioSchemaBund
     ir,
     ...(result.root === null ? {} : { schemaRoot: result.root }),
     // The Kernel has no authored sources here: no handler links, no source spans.
-    overlay: { handlerLinks: [], sourceSpans: {} },
+    overlay: { handlerLinks: [], definitions: [], sourceSpans: {} },
     error: null,
     extractedAt: new Date().toISOString(),
   }
@@ -85,7 +85,7 @@ function unavailableBundle(reason: string): StudioSchemaBundle {
     extractedBy: 'runtime-bun',
     depsInstalled: false,
     ir: null,
-    overlay: { handlerLinks: [], sourceSpans: {} },
+    overlay: { handlerLinks: [], definitions: [], sourceSpans: {} },
     error: { message: `Kernel Schema unavailable: ${reason}` },
     extractedAt: new Date().toISOString(),
   }

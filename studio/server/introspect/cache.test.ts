@@ -43,7 +43,7 @@ function entry(mutate: (bundle: Record<string, any>) => void = () => {}): Record
     extractedBy: 'runtime-bun',
     depsInstalled: true,
     ir,
-    overlay: { handlerLinks: [], sourceSpans: {} },
+    overlay: { handlerLinks: [], definitions: [], sourceSpans: {} },
     schemaRoot: { format: 'astrale.dsl', version: 'v1', origin: 'notes.example.dev' },
     error: null,
     extractedAt: '2026-08-20T00:00:00.000Z',
@@ -79,7 +79,7 @@ test('a failed bundle stands briefly, then asks to be retried; a good one stands
       extractedBy: 'static-tsmorph-fallback',
       depsInstalled: true,
       ir: null,
-      overlay: { handlerLinks: [], sourceSpans: {} },
+      overlay: { handlerLinks: [], definitions: [], sourceSpans: {} },
       error,
       extractedAt,
     }) satisfies StudioSchemaBundle

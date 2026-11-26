@@ -162,6 +162,10 @@ export interface HandlerLink {
   handlerLine?: number
   /** kernel ops detected in the handler (::update, ::link, createNode, …) */
   kernelCalls?: string[]
+  /** ids of the Query and Mutation definitions the handler reaches, itself or through authored helpers */
+  definitions?: string[]
+  /** other callables the handler reaches the same way, keyed `Class.method` */
+  calls?: string[]
   /** false ⇒ a todo()/NotImplemented stub → "contract-only" badge */
   implemented: boolean
   /** true ⇒ resolver could not link a file → "unlinked" badge */
@@ -175,8 +179,23 @@ export interface SourceSpan {
   doc?: string
 }
 
+/** A `defineQuery()` / `defineMutation()` declaration in the Domain's sources. */
+export interface DefinitionLink {
+  kind: 'query' | 'mutation'
+  /** the declared id, e.g. `issues.comment.delete` */
+  id: string
+  /** the binding that exports it, e.g. `deleteComment` */
+  name?: string
+  file: string
+  line: number
+  /** Classes its `build` names through its classes parameter, in source order */
+  classes: string[]
+  doc?: string
+}
+
 export interface SchemaOverlay {
   handlerLinks: HandlerLink[]
+  definitions: DefinitionLink[]
   /** Keyed by Class, Property, Method, Function, Policy, View, or Core anchor. */
   sourceSpans: Record<string, SourceSpan>
 }
