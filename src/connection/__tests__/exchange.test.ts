@@ -230,7 +230,7 @@ function exchangeFetch(
       return invocationResponse(
         body.requestId,
         body.call.input && Object.keys(body.call.input).length === 0
-          ? { id: options.user ?? 'user-1' }
+          ? whoamiAnswer(options.user ?? 'user-1')
           : 'kernel-destination-envelope',
         'application/vnd.astrale+json',
       )
@@ -271,6 +271,11 @@ function configuration(enabled: boolean) {
     id_token_signing_alg_values_supported: ['EdDSA'],
     ...(enabled ? { token_exchange_endpoint: `${DOMAIN}/.well-known/astrale/token` } : {}),
   }
+}
+
+/** The Kernel's `Identity.whoami` answer for `user`, complete as its client admits it. */
+function whoamiAnswer(user: string) {
+  return { id: user, iss: KERNEL, sub: user, frozen: false, requiredClaims: [] }
 }
 
 function invocationResponse(requestId: unknown, result: unknown, contentType: string): Response {

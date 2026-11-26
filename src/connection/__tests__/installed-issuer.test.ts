@@ -762,7 +762,8 @@ function network(
         invocation(
           body.requestId,
           call && Object.keys(call).length === 0
-            ? { id: user }
+            ? // `Identity.whoami`, complete as the Kernel client admits it.
+              { id: user, iss: KERNEL, sub: user, frozen: false, requiredClaims: [] }
             : call?.ast !== undefined
               ? { result: { kind: 'nodes', nodes: [] }, page: {} }
               : `kernel-destination-envelope:${user}`,
