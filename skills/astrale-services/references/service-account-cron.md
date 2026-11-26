@@ -1,7 +1,23 @@
 # Scheduled Worker calling an installed Domain
 
-A plain Worker, scaffolded and deployed as in [workflows.md](workflows.md): no Schema, Publication
-or consumer installation.
+## Services cron or `onSchedule`
+
+| The job | Use |
+| --- | --- |
+| A Domain's own business work, run on every instance that installs it, acting as the Domain | `onSchedule` on a durable callable ([Run on a schedule](../../astrale-domain/references/workflows.md#run-on-a-schedule)), not this guide |
+| A plain infrastructure Worker, with no Domain Schema or installation | A Services cron ([workflows.md](workflows.md)) |
+| A job that must act as a separate business account holding its own Roles | A Services cron calling the Domain as that account: this guide |
+
+| | `onSchedule` | Services cron |
+| --- | --- | --- |
+| Runs | The Domain's durable callable, started by each installing Kernel | A plain Worker, through a private unauthenticated `POST` |
+| Acts as | The Domain, attested by its Kernel: no account, key or secret | The account whose key the Worker holds |
+| Clock | Any pinned IANA zone, with a daylight-saving rule | UTC only |
+| Delivery | One Execution per instant; the latest missed instant catches up within `maxDelay` | Best effort; the dispatcher's deadline is 10 s |
+| Control | Listed before install; status, pause and resume per Schedule | `setSchedule` replaces the whole set |
+
+The rest of this guide is the Services cron. Its Worker is a plain Worker, scaffolded and deployed
+as in [workflows.md](workflows.md): no Schema, Publication or consumer installation.
 
 ## Compute versus business authority
 

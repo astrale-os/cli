@@ -267,7 +267,7 @@ nothing). Project Environments name no instance and ignore the CLI's active inst
 
 ```text
 domain install <ref>... [-i <instance>] [--allow-issuer-change[=<origin>]] [--revoke-previous]
-               [--mode online|maintenance] [--validation-scope incremental|full]
+               [--yes] [--mode online|maintenance] [--validation-scope incremental|full]
                [--validation-counts sample|exact] [--operation <id>] [--timeout <ms>] [--no-wait]
 <ref> = https://… | http://… (local Host)   a deployment URL
       | <origin>@1.5.0 | <origin>@2.0.0-rc.1  exactly that version, pre-release or yanked included
@@ -295,6 +295,11 @@ domain uninstall <origin>... [--destructive] [--yes] [--operation <id>] [--no-wa
 - An advisory pre-check reports installed Domains the change would break and proposes compatible
   published versions with the grouped command (`--json`: `precheck`). The install is still sent;
   the Kernel decides.
+- The schedules each Domain declares (`onSchedule`) run on the instance as that Domain. Before the
+  install is sent, the CLI lists them against the installed release (`+` new, `~` changed and how,
+  `-` removed) and, when one is new or changed, asks once at a terminal; `--yes` skips the question.
+  Nothing is asked without a terminal or with `--json` (`precheck.schedules`). Status, pause and
+  run now: [Run on a schedule](../astrale-domain/references/workflows.md#run-on-a-schedule).
 - An issuer change is never silent: `--allow-issuer-change` for a new deployment of the same line,
   `--allow-issuer-change=<origin>` for any other change, or type the origin at a terminal. The
   replaced issuer keeps serving its in-flight work; `--revoke-previous` cuts it at the activation.

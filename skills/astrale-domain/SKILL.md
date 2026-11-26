@@ -31,7 +31,7 @@ Load only the references the task needs.
 | Write the graph: a Mutation, guards, refusals, transitions | `references/mutations.md` |
 | Whose authority a call uses (`executor`/`caller`, `.self`/`.caller`), Identities, composition | `references/authority.md` |
 | Files: blob Properties, `file()` input fields, upload receipts, `astrale call --file` | `references/files.md` |
-| Several effects, a wait, a signal; write, test, call, deploy or migrate a Workflow | `references/workflows.md` |
+| Several effects, a wait, a signal; a job on a schedule (`onSchedule`, runtime Schedules, pause, status); write, test, call, deploy or migrate a Workflow | `references/workflows.md` |
 | An external API, an Integration/Provider, webhooks, side-effect and retry design | `references/integrations.md` |
 | Reuse or depend on another Domain instead of modelling its vocabulary | `references/domains.md` |
 | People who sign in: link a business record to their Shell account, create or invite accounts, declare Domain Roles and Teams, grant Roles, instance administrators | `references/users.md` |

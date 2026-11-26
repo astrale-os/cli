@@ -17,6 +17,7 @@ The installed `services.astrale.ai` Domain on the Admin instance:
 | --- | --- |
 | Generic Worker, API or cron (no Domain Schema, no installation) | [workflows.md](references/workflows.md) |
 | Background job calling an installed Domain as a dedicated account | [service-account-cron.md](references/service-account-cron.md) |
+| A Domain's own recurring job, acting as the Domain (no account, no Worker) | astrale-domain `references/workflows.md`, Run on a schedule (`onSchedule`); [service-account-cron.md](references/service-account-cron.md) compares the two |
 | Existing code or requirements → a callable Domain release, installed only on requested consumers | [deployer-agent.md](references/deployer-agent.md) |
 | Operate a Service: promote or roll back, secrets, crons, logs, transfer, retire or delete | [workflows.md](references/workflows.md) |
 | Ownership, wire payloads, results | [schema.md](references/schema.md) |
