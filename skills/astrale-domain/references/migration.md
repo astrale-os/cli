@@ -146,6 +146,9 @@ entering; warn the Instance's users.
    and the session awaits its first command (`--no-wait` returns the Execution at once). Keep it.
 3. After `--no-wait`, poll status until `detail.phase` is `awaiting`; stop on a terminal failure or
    cancel. A maintenance request without a Schema change is refused `SCHEMA_INPUT_INVALID`.
+   Read `detail.restore` before the first write: `{ "kind": "exact" }` means the Host copied the
+   Instance's database at the opening, and `cancel` or the idle bound put it back exactly;
+   `{ "kind": "none", "reason": … }` means they keep your writes (see Exits).
 4. Repair: a rename is a copy into the target key plus a delete of the source key. Record each
    committed batch; several Mutations are not one atomic migration.
 5. `astrale domain installation apply` sends exactly the command the session awaits
@@ -188,13 +191,19 @@ Exits:
 | --- | --- |
 | `apply` | Validates the target, activates, reopens |
 | `domain installation abort` | Stops the validation attempt toward the target; back to repair. An attempt back to the source cannot be aborted |
-| `astrale execution cancel` | Validates and reactivates the source: may also require repair |
-| no command by `detail.expires` | An attempt back to the source |
+| `astrale execution cancel` | `restore: exact`: puts the Instance back exactly as the session opened it (every Node, Edge, Property, revision, receipt and the Events), on the source; ends `cancelled`. `restore: none`: validates the stored data against the source and keeps your writes; may require repair |
+| no command by `detail.expires` | The same return as `cancel`; ends `failed` `SESSION_EXPIRED` |
 | forced cancel, delete | Refused `EXECUTION_EXIT_REFUSED`; only the Host operator releases a stuck session |
 | `astrale execution resume` | Resumes a paused Execution; does not reopen the Instance |
 
-No rollback: neither `abort` nor `cancel` undoes committed repairs. Going back after a completed
-`apply` is a new session installing the previous release and reversing the repair.
+With `restore: exact`, `cancel` undoes every committed repair: to keep one, `apply` it. It does not
+remove files uploaded during the session, and a revision read during the session no longer matches
+anything. `abort` undoes nothing: it only stops the attempt toward the target. `restore: none` names
+why there is no copy (`SESSION_COPY_UNSUPPORTED`, `SESSION_COPY_SPACE`, `SESSION_COPY_TIMEOUT`,
+`SESSION_COPY_CONNECTIONS`, `SESSION_COPY_DISABLED`, `SESSION_COPY_FAILED`, `SESSION_COPY_ABSENT`,
+`SESSION_COPY_CONSUMED`, `SESSION_OPENED_WITHOUT_COPY`): then neither `abort` nor `cancel` undoes
+committed repairs. Going back after a completed `apply` is a new session installing the previous
+release and reversing the repair.
 
 ## External effects
 
