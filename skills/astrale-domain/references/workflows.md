@@ -460,6 +460,30 @@ async ({ execution, step }) => {
 }
 ```
 
+### Test a schedule
+
+`createTestWorkflowEngine` starts ticks as the Kernel does: the schedule's input, the Domain as
+initiator, `execution.trigger` naming the schedule and the instant. Full reference: Scheduled
+Workflows in `docs/durable-workflows.md` of `@astrale-os/sdk`.
+
+```ts
+import { createTestWorkflowEngine, schedule } from '@astrale-os/sdk/testing'
+
+const engine = createTestWorkflowEngine({ now: Date.parse('2027-03-29T04:00:00Z') })
+const tick = await engine.fire(digest, { schema: Billing, at: '2027-03-29T05:00:00Z' }) // 07:00 in Paris
+expect(await engine.fire(digest, { schema: Billing, at: '2027-03-29T05:00:00Z' })).toBe(tick) // one per instant
+expect(schedule.next(Billing.functions.digest, { from: '2027-03-27T00:00:00Z', count: 2 })).toEqual([
+  '2027-03-29T05:00:00.000Z', // Monday: the weekend is skipped
+  '2027-03-30T05:00:00.000Z',
+])
+const kept = engine.schedule(sweep, { schema: Billing, name: 'quick' })
+await engine.advance(60 * 60_000) // fires each due tick; `kept.executions`, `kept.skipped`
+```
+
+- `fire` refuses an instant the schedule is not due at; the `trigger` option of `start` runs a
+  runtime Schedule's tick.
+- The engine never misses an instant: it does not exercise catch-up after an outage.
+
 ### Runtime Schedules
 
 A Function consents to Schedules created at runtime with `schedulable: { minInterval }` (seconds,
