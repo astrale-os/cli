@@ -44,6 +44,8 @@ async function nested(origin: string) {
           host: { navigation: { external: { origins: [origin] } } },
         },
       },
+      // The fixture Domain serves this one release, and its Kernel answers the host alone.
+      current: async (view) => view,
       capabilities: NO_HOST_CAPABILITIES,
       credential: { token: 'browser-fixture', expiresAt: Date.now() + 60_000 },
     })

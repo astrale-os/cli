@@ -97,6 +97,89 @@ describe('in-place View refresh', () => {
   })
 })
 
+describe('the release the Kernel serves now', () => {
+  const current = (base: string) => fetch(`${base}/current`, { headers: HOST })
+
+  test('reads the release of the session View as its caller, and holds the one its window moves to', async () => {
+    const config = fixture()
+    const first = config.session.view
+    const persist = mock(async (_record: unknown) => {})
+    let routes = [first.route]
+    const viewsFor = mock(async () => ({ views: routes }))
+    await serving(config, { connect: kernelWith(config, viewsFor), persist }, async (base) => {
+      expect(await (await current(base)).json()).toEqual({ view: first })
+      expect(persist).not.toHaveBeenCalled()
+
+      // Released again: the window moves to the next release in place, so the page keeps its
+      // revision, and the session lists the release it runs.
+      const next = {
+        target: first.target,
+        route: { ...first.route, issuer: 'https://next.example.test' },
+      }
+      routes = [next.route as Route]
+      expect(await (await current(base)).json()).toEqual({ view: next })
+      expect(persist.mock.calls).toEqual([
+        [expect.objectContaining({ id: config.session.id, pid: process.pid, view: next })],
+      ])
+      expect(await (await current(base)).json()).toEqual({ view: next })
+      expect(persist).toHaveBeenCalledTimes(1)
+
+      // A Domain that no longer publishes the View answers that it serves none.
+      routes = []
+      expect(await (await current(base)).json()).toEqual({ view: null })
+      const served = await (await fetch(`${base}/config.json`, { headers: HOST })).json()
+      expect(served).toMatchObject({ revision: 0, view: next })
+    })
+    expect(viewsFor).toHaveBeenCalledTimes(4)
+    expect(persist).toHaveBeenCalledTimes(1)
+  })
+
+  test('gives way to the release a refresh commits while it reads', async () => {
+    const config = fixture()
+    const first = config.session.view
+    const persist = mock(async (_record: unknown) => {})
+    const refreshed = { ...first.route, href: 'https://example.test/refreshed' } as Route
+    const stale = { ...first.route, issuer: 'https://stale.example.test' } as Route
+    let answer!: () => void
+    const answered = new Promise<void>((resolve) => (answer = resolve))
+    let calls = 0
+    const viewsFor = mock(async () => {
+      // The first read is the window's, and the Kernel answers it only after the refresh commits.
+      if (++calls === 1) {
+        await answered
+        return { views: [stale] }
+      }
+      return { views: [refreshed] }
+    })
+    await serving(config, { connect: kernelWith(config, viewsFor), persist }, async (base) => {
+      const reading = current(base)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect((await fetch(`${base}/refresh`, { method: 'POST' })).status).toBe(200)
+      answer()
+      expect(await (await reading).json()).toEqual({ view: { target: first.target, route: stale } })
+
+      const served = await (await fetch(`${base}/config.json`, { headers: HOST })).json()
+      expect(served).toMatchObject({
+        revision: 1,
+        view: { target: first.target, route: refreshed },
+      })
+    })
+    expect(persist.mock.calls).toEqual([
+      [expect.objectContaining({ view: { target: first.target, route: refreshed } })],
+    ])
+  })
+
+  test('gives no answer when the Kernel gives none', async () => {
+    const config = fixture()
+    const connect: typeof withClientSession = async () => {
+      throw new Error('Kernel unavailable')
+    }
+    await serving(config, { connect }, async (base) => {
+      expect((await current(base)).status).toBe(502)
+    })
+  })
+})
+
 type IdentityHooks = {
   identities?: false
   mint?: (identity: string) => Promise<string>
@@ -110,6 +193,8 @@ async function withIdentityView(
   hooks: IdentityHooks,
   body: (view: {
     request: (path: string, revision?: number, json?: object, headers?: object) => Promise<Response>
+    /** The page of `revision` asking for the credential of the View release it loaded. */
+    token: (revision?: number) => Promise<Response>
     callers: string[]
     records: string[]
     origin: string
@@ -160,8 +245,48 @@ async function withIdentityView(
         },
         ...(json ? { body: JSON.stringify(json) } : {}),
       })
-    return body({ request, callers, records, origin })
+    const token = async (revision = 0) => {
+      const { view } = await (await request('config.json', revision)).json()
+      return request('token', revision, { view })
+    }
+    return body({ request, token, callers, records, origin })
   })
+}
+
+/**
+ * A host page's POST to `path` on revision 0, admitted by the server before its body is sent: the
+ * body arrives only with `finish`.
+ */
+async function slowRequest(origin: string, path: string) {
+  const slow = httpRequest(`${origin}/s/refresh/${path}`, {
+    method: 'POST',
+    headers: {
+      origin,
+      expect: '100-continue',
+      'x-astrale-view-host': '1',
+      'x-astrale-view-revision': '0',
+    },
+  })
+  const response = new Promise<{ status: number; text: string }>((resolve, reject) => {
+    slow.on('response', (result) => {
+      const chunks: Buffer[] = []
+      result.on('data', (chunk: Buffer) => chunks.push(chunk))
+      result.on('end', () =>
+        resolve({ status: result.statusCode!, text: Buffer.concat(chunks).toString('utf8') }),
+      )
+    })
+    slow.on('error', reject)
+  })
+  const admitted = once(slow, 'continue')
+  slow.flushHeaders()
+  await admitted
+  return {
+    finish: (json: object) => {
+      slow.end(JSON.stringify(json))
+      return response
+    },
+    destroy: () => slow.destroy(),
+  }
 }
 
 describe('View identity switching', () => {
@@ -178,18 +303,18 @@ describe('View identity switching', () => {
           return token
         },
       },
-      async ({ request }) => {
-        expect(await (await request('token')).json()).toMatchObject({
+      async ({ request, token }) => {
+        expect(await (await token()).json()).toMatchObject({
           token: 'alice:https://example.test',
         })
         next = { ...route, issuer: 'https://new-app.test' as typeof route.issuer }
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
-        expect(await (await request('token', 1)).json()).toMatchObject({
+        expect(await (await token(1)).json()).toMatchObject({
           token: 'bob:https://new-app.test',
         })
         next = { ...route, issuer: 'https://refreshed-app.test' as typeof route.issuer }
         expect((await request('refresh', 1)).status).toBe(200)
-        expect(await (await request('token', 2)).json()).toMatchObject({
+        expect(await (await token(2)).json()).toMatchObject({
           token: 'bob:https://refreshed-app.test',
         })
         expect(exchanged).toEqual([
@@ -202,8 +327,8 @@ describe('View identity switching', () => {
   })
 
   test('re-resolves and mints as the selected identity while invalidating the old page', () =>
-    withIdentityView({}, async ({ request, callers, records }) => {
-      expect(await (await request('token')).json()).toMatchObject({
+    withIdentityView({}, async ({ request, token, callers, records }) => {
+      expect(await (await token()).json()).toMatchObject({
         token: mintedCredential('credential-alice'),
       })
       expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
@@ -214,9 +339,9 @@ describe('View identity switching', () => {
       })
       expect(records).toEqual(['bob'])
       expect(callers).toEqual(['alice', 'bob', 'bob'])
-      expect((await request('token', 0)).status).toBe(409)
+      expect((await token(0)).status).toBe(409)
       expect((await request('kernel-token', 0)).status).toBe(409)
-      expect(await (await request('token', 1)).json()).toMatchObject({
+      expect(await (await token(1)).json()).toMatchObject({
         token: mintedCredential('credential-bob'),
       })
     }))
@@ -245,13 +370,13 @@ describe('View identity switching', () => {
           return mintedCredential('credential-alice')
         },
       },
-      async ({ request, records }) => {
+      async ({ request, token, records }) => {
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(502)
         expect(await (await request('config.json')).json()).toMatchObject({
           identity: 'alice',
           revision: 0,
         })
-        expect(await (await request('token')).json()).toMatchObject({
+        expect(await (await token()).json()).toMatchObject({
           token: mintedCredential('credential-alice'),
         })
         expect(records).toEqual([])
@@ -261,30 +386,28 @@ describe('View identity switching', () => {
 
   test('rejects a stale switch whose body arrives after another switch commits', () =>
     withIdentityView({}, async ({ request, records, origin }) => {
-      const slow = httpRequest(`${origin}/s/refresh/identity`, {
-        method: 'POST',
-        headers: {
-          origin,
-          expect: '100-continue',
-          'x-astrale-view-host': '1',
-          'x-astrale-view-revision': '0',
-        },
-      })
-      const response = new Promise<number>((resolve, reject) => {
-        slow.on('response', (result) => {
-          result.resume()
-          resolve(result.statusCode!)
-        })
-        slow.on('error', reject)
-      })
+      const slow = await slowRequest(origin, 'identity')
       try {
-        const admitted = once(slow, 'continue')
-        slow.flushHeaders()
-        await admitted
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
-        slow.end(JSON.stringify({ identity: 'alice' }))
-        expect(await response).toBe(409)
+        expect((await slow.finish({ identity: 'alice' })).status).toBe(409)
         expect(records).toEqual(['bob'])
+      } finally {
+        slow.destroy()
+      }
+    }))
+
+  test("refuses a page the credential whose request arrives whole after another page's switch commits", () =>
+    withIdentityView({}, async ({ request, callers, origin }) => {
+      const { view } = await (await request('config.json', 0)).json()
+      const slow = await slowRequest(origin, 'token')
+      try {
+        expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
+        const switched = [...callers]
+        const answer = await slow.finish({ view })
+        expect(answer.status).toBe(409)
+        expect(answer.text).not.toContain('credential-bob')
+        // Nothing is resolved or minted for the stale page.
+        expect(callers).toEqual(switched)
       } finally {
         slow.destroy()
       }
@@ -301,13 +424,13 @@ describe('View identity switching', () => {
           return delayed.promise
         },
       },
-      async ({ request }) => {
-        const old = request('token')
+      async ({ request, token }) => {
+        const old = token()
         await started.promise
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
         delayed.resolve(mintedCredential('credential-alice'))
         expect((await old).status).toBe(502)
-        expect(await (await request('token', 1)).json()).toMatchObject({
+        expect(await (await token(1)).json()).toMatchObject({
           token: mintedCredential('credential-bob'),
         })
       },
@@ -324,12 +447,12 @@ describe('View identity switching', () => {
           await delayed.promise
         },
       },
-      async ({ request }) => {
+      async ({ request, token }) => {
         const first = request('identity', 0, { identity: 'bob' })
         await started.promise
         expect((await request('identity', 0, { identity: 'alice' })).status).toBe(409)
         expect((await request('refresh')).status).toBe(409)
-        expect((await request('token')).status).toBe(409)
+        expect((await token()).status).toBe(409)
         expect((await request('kernel-token')).status).toBe(409)
         delayed.resolve()
         expect((await first).status).toBe(200)

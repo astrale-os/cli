@@ -22,6 +22,14 @@ function connecting(mint: () => Promise<string>, kernel = 'https://kernel.test')
 const post = (url: string, headers: Record<string, string> = HOST) =>
   fetch(url, { method: 'POST', headers })
 
+/** The host page asking for the credential of the View release `view` names. */
+const token = (session: string, view: unknown) =>
+  fetch(`${session}/token`, {
+    method: 'POST',
+    headers: { ...HOST, 'content-type': 'application/json' },
+    body: JSON.stringify({ view }),
+  })
+
 describe('view session credentials', () => {
   test.each([
     { name: 'a View on its own Domain issuer gets an exchanged credential', external: true },
@@ -37,7 +45,7 @@ describe('view session credentials', () => {
     const exchanged = external && !explicit
 
     await serving(config, { connect: connecting(mint), exchange }, async (session) => {
-      expect(await (await post(`${session}/token`)).json()).toMatchObject(
+      expect(await (await token(session, config.session.view)).json()).toMatchObject(
         exchanged
           ? { token: 'exchanged', kind: 'exchanged' }
           : { token: mintedCredential('minted'), kind: 'minted' },
@@ -66,7 +74,9 @@ describe('view session credentials', () => {
     const route = config.session.view.route as { key: string }
     route.key = 'shell.astrale.ai:view.application'
     await serving(config, { connect: connecting(mint), exchange }, async (session) => {
-      expect(await (await post(`${session}/token`)).json()).toMatchObject({ kind: 'minted' })
+      expect(await (await token(session, config.session.view)).json()).toMatchObject({
+        kind: 'minted',
+      })
     })
     expect(exchange).not.toHaveBeenCalled()
   })
@@ -79,12 +89,13 @@ describe('view session credentials', () => {
       return mintedCredential('minted')
     })
 
-    await serving(viewConfig('shared'), { connect }, async (session) => {
-      const pending = [1, 2, 3].map(() => post(`${session}/token`))
+    const config = viewConfig('shared')
+    await serving(config, { connect }, async (session) => {
+      const pending = [1, 2, 3].map(() => token(session, config.session.view))
       release()
       const bodies = await Promise.all((await Promise.all(pending)).map((one) => one.json()))
       expect(bodies.map((body) => body.token)).toEqual(Array(3).fill(mintedCredential('minted')))
-      await post(`${session}/token`)
+      await token(session, config.session.view)
     })
     expect(connect).toHaveBeenCalledTimes(1)
   })
@@ -93,8 +104,9 @@ describe('view session credentials', () => {
     // Shorter than the requested 240 seconds: the issuer decides, not the request.
     const expiresAt = Math.floor(Date.now() / 1_000) + 180
     const dated = connecting(async () => mintedCredential('short', expiresAt))
+    const view = viewConfig('dated').session.view
     await serving(viewConfig('dated'), { connect: dated }, async (session) => {
-      expect(await (await post(`${session}/token`)).json()).toMatchObject({
+      expect(await (await token(session, view)).json()).toMatchObject({
         kind: 'minted',
         expiresAt: expiresAt * 1_000,
       })
@@ -102,7 +114,7 @@ describe('view session credentials', () => {
 
     const undated = connecting(async () => mintedCredential('undated', Number.NaN))
     await serving(viewConfig('undated'), { connect: undated }, async (session) => {
-      const response = await post(`${session}/token`)
+      const response = await token(session, view)
       expect(response.status).toBe(502)
       expect((await response.json()).error).toContain('minted View credential')
     })
@@ -123,8 +135,10 @@ describe('view session credentials', () => {
         externalOrigins: ['https://connect.nango.dev'],
         view: config.session.view,
       })
-      for (const endpoint of ['token', 'kernel-token']) {
-        const response = await post(`${session}/${endpoint}`)
+      for (const response of [
+        await token(session, config.session.view),
+        await post(`${session}/kernel-token`),
+      ]) {
         expect(response.status).toBe(403)
         expect(await response.json()).toEqual({
           error: 'plain views have no Astrale credential privilege',
@@ -135,13 +149,67 @@ describe('view session credentials', () => {
 
   test('mints nothing once the bookmark points at another Kernel', async () => {
     const connect = connecting(async () => 'must-not-be-minted', 'https://other.test')
-    await serving(viewConfig('repointed', { identity: 'alice' }), { connect }, async (session) => {
-      const response = await post(`${session}/token`)
+    const config = viewConfig('repointed', { identity: 'alice' })
+    await serving(config, { connect }, async (session) => {
+      const response = await token(session, config.session.view)
       expect(response.status).toBe(502)
       expect(await response.json()).toEqual({
         error: 'The session bookmark now points to another Kernel. Open a new View.',
       })
     })
+  })
+})
+
+describe('a credential for the release each window runs', () => {
+  const at = (issuer: string | undefined) => {
+    const { view } = viewConfig('release').session
+    const { issuer: _issuer, ...route } = view.route
+    return { ...view, route: issuer === undefined ? route : { ...route, issuer } }
+  }
+
+  test('issues each release the credential of its own Domain issuer, and reuses each one', async () => {
+    const mint = mock(async () => mintedCredential('minted'))
+    const exchange = mock(async (_kernel: unknown, target: { domainIssuer?: string }) => ({
+      token: `exchanged@${target.domainIssuer}`,
+      expiresAt: Date.now() + 240_000,
+    }))
+    const config = viewConfig('releases', { issuer: 'https://example.test' })
+    await serving(config, { connect: connecting(mint), exchange }, async (session) => {
+      const issued = async (view: unknown) => (await (await token(session, view)).json()).token
+      // The release the session opened, the release a redeploy moved its window to, and the first
+      // again, for a window still within its in-flight window: each one its own.
+      expect(await issued(at('https://example.test'))).toBe('exchanged@https://example.test')
+      expect(await issued(at('https://next.example.test'))).toBe(
+        'exchanged@https://next.example.test',
+      )
+      expect(await issued(at('https://example.test'))).toBe('exchanged@https://example.test')
+      // A release the Kernel executes runs on the caller's Kernel credential.
+      expect(await issued(at(undefined))).toBe(mintedCredential('minted'))
+    })
+    expect(exchange.mock.calls.map(([, target]) => target.domainIssuer)).toEqual([
+      'https://example.test',
+      'https://next.example.test',
+    ])
+    expect(mint).toHaveBeenCalledTimes(1)
+  })
+
+  test('refuses a request that names no View release, or a plain one', async () => {
+    const connect = connecting(async () => 'must-not-be-minted')
+    const config = viewConfig('unnamed')
+    await serving(config, { connect }, async (session) => {
+      expect((await post(`${session}/token`)).status).toBe(400)
+      for (const view of [null, 'board', { target: '/:example.test' }, at('not an issuer')]) {
+        expect((await token(session, view)).status).toBe(400)
+      }
+      const plain = {
+        ...config.session.view,
+        route: { ...config.session.view.route, handshake: 'none' },
+      }
+      expect(await (await token(session, plain)).json()).toEqual({
+        error: 'plain views have no Astrale credential privilege',
+      })
+    })
+    expect(connect).not.toHaveBeenCalled()
   })
 })
 
@@ -206,18 +274,23 @@ describe('view session ownership and host authority', () => {
     expect(reloaded).not.toHaveBeenCalled()
   })
 
-  test.each(['/config.json', '/identities', '/identity', '/release', '/token', '/kernel-token'])(
-    'refuses %s to anything but the View host',
-    async (route) => {
-      await serving(viewConfig('host-only', { handshake: 'none' }), {}, async (session) => {
-        const response = await fetch(`${session}${route}`, {
-          method: route === '/config.json' || route === '/identities' ? 'GET' : 'POST',
-          headers: { origin: 'https://example.test' },
-        })
-        expect(response.status).toBe(403)
+  test.each([
+    '/config.json',
+    '/identities',
+    '/identity',
+    '/release',
+    '/current',
+    '/token',
+    '/kernel-token',
+  ])('refuses %s to anything but the View host', async (route) => {
+    await serving(viewConfig('host-only', { handshake: 'none' }), {}, async (session) => {
+      const response = await fetch(`${session}${route}`, {
+        method: ['/config.json', '/identities', '/current'].includes(route) ? 'GET' : 'POST',
+        headers: { origin: 'https://example.test' },
       })
-    },
-  )
+      expect(response.status).toBe(403)
+    })
+  })
 
   test('a session opened without identities offers none and switches to none', async () => {
     const config = viewConfig('bound-identity', { handshake: 'none', identity: 'alice' })

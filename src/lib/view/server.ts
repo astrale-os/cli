@@ -1,14 +1,17 @@
 import type { Credentials, SessionCredential } from '@astrale-os/sdk/client/session'
+import type { ResolvedView } from '@astrale-os/shell'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
+import { issuer as issuerId } from '@astrale-os/sdk/auth'
 import { credentials } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { isDeepStrictEqual } from 'node:util'
 
-import type { ViewServeConfig } from './session'
+import type { ViewServeConfig, ViewSessionRecord } from './session'
 
 import { withClientSession } from '../../connection'
 import { AstraleError, InternalError } from '../../errors'
@@ -40,13 +43,17 @@ import { viewerFileContentType } from './viewer-files'
  * those the operator allowed, or - in owner mode (`./owner`) - the instance root
  * Admin issues to its owner, or an Identity impersonated from it. Either way the
  * page only receives grants derived from that authority, never the authority.
+ *
+ * A Domain's issuer changes with each release, so a View's credential is issued for the release
+ * its window runs, which the page names on each request: a window the Shell moves to the release
+ * the Kernel serves now receives that release's credential, and never another's.
  */
 
 const VIEW_TOKEN_TTL_SECONDS = 4 * 60
 /**
- * Delegation the mounted View must always be able to make from its bearer. It is the single
- * threshold: this server renews the grant once it stops covering that delegation, and the host page
- * anticipates against the same value from `/config.json`.
+ * Delegation the mounted View must always be able to make from its bearer. This server renews a
+ * grant once it stops covering that delegation, and the host page anticipates its own Kernel
+ * credential against the same value from `/config.json`.
  */
 const VIEW_DELEGATION_TTL_SECONDS = 60
 const IDLE_SWEEP_MS = 60_000
@@ -58,9 +65,9 @@ const IDLE_SWEEP_MS = 60_000
 const RELEASE_GRACE_MS = 10_000
 /**
  * Reserved to the loopback host page and the host that opened the session.
- * Reading the View's identity, listing the identities it may run as, minting
- * against it, changing it and ending the session are the host's, never the
- * embedded View's, whether or not this session was opened with identities to
+ * Reading the View's identity and release, listing the identities it may run as,
+ * minting against it, changing it and ending the session are the host's, never
+ * the embedded View's, whether or not this session was opened with identities to
  * switch between.
  */
 const HOST_ONLY_ROUTES = [
@@ -68,6 +75,7 @@ const HOST_ONLY_ROUTES = [
   '/identities',
   '/identity',
   '/release',
+  '/current',
   '/token',
   '/kernel-token',
 ]
@@ -75,6 +83,20 @@ const HOST_ONLY_ROUTES = [
 const REVISION_FREE_ROUTES = ['/config.json', '/identities', '/release']
 
 type PageStatus = { state: string; error?: string; at: string }
+
+/** What a grant provider holds: the kind of its grant, and its expiry, infinite while it mints. */
+interface HeldGrant {
+  kind: GrantKind
+  expiresAt: number
+}
+
+/**
+ * The grants of one audience: a View's Domain issuer, for a credential exchanged for the caller, or
+ * the Kernel's, for one minted. Kept while it mints or holds a grant that has not expired.
+ */
+interface AudienceGrants extends HeldGrant {
+  readonly credentials: Credentials
+}
 
 interface ViewServerDependencies {
   readonly connect: typeof withClientSession
@@ -118,13 +140,14 @@ export function startViewServer(
       ? undefined
       : (dependencies.owner ?? ownerAccess)(config.owner, proxy)
   let status: PageStatus = { state: 'waiting', at: new Date().toISOString() }
-  let grantKind: GrantKind = 'minted'
-  let grants = createGrantProvider()
-  let kernelGrants = createGrantProvider(undefined, false)
+  let viewGrants = new Map<string, AudienceGrants>()
+  let kernelGrants = createGrantProvider()
   let lastActivity = Date.now()
   let revision = 0
   let refreshing: Promise<void> | undefined
   let switching = false
+  /** The last write of the session record; each write lands after the one before it. */
+  let recording: Promise<void> = Promise.resolve()
   /** Pages currently holding this session, by the id each one reports. */
   const pages = new Map<string, number>()
   /**
@@ -192,7 +215,7 @@ export function startViewServer(
     identity: string | undefined,
     apply: () => void,
   ): Promise<void> {
-    await (dependencies.persist ?? saveRecord)({
+    await record({
       ...session,
       pid: process.pid,
       ...(identity === undefined ? {} : { identity }),
@@ -201,41 +224,97 @@ export function startViewServer(
     apply()
     if (identity !== undefined) session.identity = identity
     session.view = view
-    grants = createGrantProvider(grant)
-    kernelGrants = createGrantProvider(undefined, false)
+    viewGrants = new Map()
+    if (grant !== undefined) viewGrants.set(audienceOf(view), audienceGrants(view, grant))
+    kernelGrants = createGrantProvider()
     revision += 1
     status = { state: 'waiting', at: new Date().toISOString() }
   }
 
+  /** Write the session record after every write made before it, whichever settles first. */
+  function record(next: ViewSessionRecord): Promise<void> {
+    const write = recording.then(() => (dependencies.persist ?? saveRecord)(next))
+    recording = write.catch(() => {})
+    return write
+  }
+
   /**
-   * Issue a caller-scoped bearer; raw CLI credentials never enter the browser session. Concurrent
-   * page requests share one mint, and a grant is reused until it stops covering the View's own
-   * delegation.
+   * Hold the release of the session's View the Kernel answered with, read on `at`: the window moves
+   * to it in place, so the page keeps its revision. A switch or refresh commits its own release.
+   */
+  function follow(view: ResolvedView, at: number): void {
+    if (at !== revision || switching || refreshing !== undefined) return
+    if (isDeepStrictEqual(view, session.view)) return
+    session.view = view
+    // The record only lists the session: a failed write leaves the window's answer as it is.
+    void record({ ...session, pid: process.pid }).catch(() => {})
+  }
+
+  /** Whose credential `view`'s window runs on: its Domain's issuer, or the Kernel's. */
+  function audienceOf(view: ResolvedView): string {
+    return exchangedIssuer(view, proxy.issuer) ?? proxy.issuer
+  }
+
+  /** The View credential for the release `view` names, shared by every window that runs it. */
+  async function viewGrant(view: ResolvedView): Promise<TokenGrant> {
+    const audience = audienceOf(view)
+    let grants = viewGrants.get(audience)
+    if (grants === undefined) {
+      grants = audienceGrants(view)
+      viewGrants.set(audience, grants)
+    }
+    const fresh = await grants.credentials.acquire()
+    return { token: fresh.credential, expiresAt: fresh.expiresAt, kind: grants.kind }
+  }
+
+  /** The grants of `view`'s audience, starting from `initial` when a switch already minted it. */
+  function audienceGrants(view: ResolvedView, initial?: TokenGrant): AudienceGrants {
+    const held: HeldGrant = { kind: initial?.kind ?? 'minted', expiresAt: initial?.expiresAt ?? 0 }
+    return Object.assign(held, { credentials: createGrantProvider(view, initial, held) })
+  }
+
+  /**
+   * Issue a caller-scoped bearer: `view`'s own credential when one is given, otherwise the host
+   * page's Kernel credential. Raw CLI credentials never enter the browser session. Concurrent page
+   * requests share one mint, and a grant is reused until it stops covering the View's own
+   * delegation; `held` follows the grant the provider holds.
    *
    * Deliberately never started: this provider is request-scoped behind a client that already
-   * anticipates. The host page holds its own provider and starts it (`viewer/main.ts`), so the
-   * `POST /token` that reaches this server arrives on that page's own threshold timer and never on
-   * a user action. A timer here would instead mint delegations for a page that may have gone away,
-   * and hold the event loop against the server's idle shutdown.
+   * anticipates. The Shell renews each window's credential on its own threshold (`viewer/main.ts`),
+   * so the `POST /token` that reaches this server arrives on that schedule and never on a user
+   * action. A timer here would instead mint delegations for a page that may have gone away, and
+   * hold the event loop against the server's idle shutdown.
    */
-  function createGrantProvider(initial?: TokenGrant, forView = true): Credentials {
-    if (initial !== undefined) grantKind = initial.kind
+  function createGrantProvider(
+    view?: ResolvedView,
+    initial?: TokenGrant,
+    held?: HeldGrant,
+  ): Credentials {
     return credentials({
       ttlSeconds: VIEW_DELEGATION_TTL_SECONDS,
       mint: async (): Promise<SessionCredential> => {
         const started = revision
-        const view = forView ? session.view : undefined
-        const fresh =
-          owner === undefined
-            ? await mintGrant(config.kernel, view)
-            : await owner.grant(config.owner?.as?.id, view)
-        if (started !== revision)
-          throw new AstraleError(
-            'VIEW_SESSION_CHANGED',
-            'View session changed; reload before requesting credentials.',
-          )
-        if (forView) grantKind = fresh.kind
-        return { credential: fresh.token, expiresAt: fresh.expiresAt }
+        const previous = held?.expiresAt ?? 0
+        if (held !== undefined) held.expiresAt = Number.POSITIVE_INFINITY
+        try {
+          const fresh =
+            owner === undefined
+              ? await mintGrant(config.kernel, view)
+              : await owner.grant(config.owner?.as?.id, view)
+          if (started !== revision)
+            throw new AstraleError(
+              'VIEW_SESSION_CHANGED',
+              'View session changed; reload before requesting credentials.',
+            )
+          if (held !== undefined) {
+            held.kind = fresh.kind
+            held.expiresAt = fresh.expiresAt
+          }
+          return { credential: fresh.token, expiresAt: fresh.expiresAt }
+        } catch (error) {
+          if (held !== undefined) held.expiresAt = previous
+          throw error
+        }
       },
       ...(initial === undefined
         ? {}
@@ -311,6 +390,8 @@ export function startViewServer(
     }
     const sub = url.pathname.slice(base.length) || '/'
 
+    // What a host-only request posts, read before it is admitted.
+    let body: Record<string, unknown> | null = null
     // A custom header prevents cross-origin simple requests; no preflight is admitted here.
     if (HOST_ONLY_ROUTES.includes(sub)) {
       const address = server.address()
@@ -325,6 +406,9 @@ export function startViewServer(
         json(res, 403, { error: 'This operation is restricted to the View host.' })
         return
       }
+      // A request is admitted on the revision in force once it has arrived whole: its body may
+      // arrive after another page finished switching.
+      if (req.method === 'POST') body = await readJson(req)
       // Only a page acting on the identity in force has to agree on the revision:
       // reading the config is how a fresh page learns it, listing identities acts
       // on none, and a host releasing a session holds no page revision at all.
@@ -382,6 +466,13 @@ export function startViewServer(
       })
       return
     }
+    if (sub === '/current' && req.method === 'GET') {
+      const at = revision
+      const view = await currentRelease()
+      if (view !== null) follow(view, at)
+      json(res, 200, { view })
+      return
+    }
     if ((sub === '/token' || sub === '/kernel-token') && req.method === 'POST') {
       if (switching) {
         json(res, 409, { error: 'Identity switch in progress.' })
@@ -391,23 +482,30 @@ export function startViewServer(
         json(res, 403, { error: 'plain views have no Astrale credential privilege' })
         return
       }
-      // The host calls the Kernel as the caller; the child receives its Domain's credential.
-      // Never authenticate a Kernel whoami/read with the child's exchanged Domain bearer.
-      const forView = sub === '/token'
-      const fresh = await (forView ? grants : kernelGrants).acquire()
-      json(res, 200, {
-        token: fresh.credential,
-        expiresAt: fresh.expiresAt,
-        kind: forView ? grantKind : 'minted',
-      })
+      // The host calls the Kernel as the caller; each window receives the credential of the
+      // release it runs. Never authenticate a Kernel whoami/read with a window's Domain bearer.
+      if (sub === '/kernel-token') {
+        const fresh = await kernelGrants.acquire()
+        json(res, 200, { token: fresh.credential, expiresAt: fresh.expiresAt, kind: 'minted' })
+        return
+      }
+      const view = requestedView(body)
+      if (view === undefined) {
+        json(res, 400, { error: 'Name the View release the credential is for.' })
+        return
+      }
+      if (view.route.handshake !== 'shell') {
+        json(res, 403, { error: 'plain views have no Astrale credential privilege' })
+        return
+      }
+      json(res, 200, await viewGrant(view))
       return
     }
     if (sub === '/identity' && req.method === 'POST' && owner !== undefined) {
-      await switchAsOwner(req, res, owner)
+      await switchAsOwner(body, res, owner)
       return
     }
     if (sub === '/identity' && req.method === 'POST') {
-      const body = await readJson(req)
       const identity = body?.identity
       if (
         typeof identity !== 'string' ||
@@ -419,11 +517,6 @@ export function startViewServer(
       }
       if (switching || refreshing) {
         json(res, 409, { error: 'View session update in progress.' })
-        return
-      }
-      // The body may have arrived after another page finished switching.
-      if (req.headers['x-astrale-view-revision'] !== String(revision)) {
-        json(res, 409, { error: 'View session changed; reload before continuing.' })
         return
       }
       switching = true
@@ -452,7 +545,6 @@ export function startViewServer(
       return
     }
     if (sub === '/release' && req.method === 'POST') {
-      const body = await readJson(req)
       const page = asString(body?.page)
       released = true
       if (page !== undefined) {
@@ -484,15 +576,30 @@ export function startViewServer(
   }
 
   /**
+   * The release of the session's View the Kernel serves now, read under the authority that resolved
+   * it - root in owner mode - or `null` once its Domain publishes it no longer. Any other failure is
+   * no answer, and the window keeps the release it runs.
+   */
+  async function currentRelease(): Promise<ResolvedView | null> {
+    try {
+      return owner === undefined
+        ? await refreshViewPlacement(config, dependencies.connect)
+        : await owner.resolveView(session.view)
+    } catch (error) {
+      if (error instanceof AstraleError && error.code === 'VIEW_NOT_FOUND') return null
+      throw error
+    }
+  }
+
+  /**
    * Run the View as `{ identity }`: an Identity node id, or `null` for the instance root. Only an
    * identity the instance lists right now, read as root, is admitted.
    */
   async function switchAsOwner(
-    req: IncomingMessage,
+    body: Record<string, unknown> | null,
     res: ServerResponse,
     access: OwnerAccess,
   ): Promise<void> {
-    const body = await readJson(req)
     const wanted = body?.identity
     if (wanted !== null && typeof wanted !== 'string') {
       json(res, 403, { error: 'Identity was not allowed for this View session.' })
@@ -500,11 +607,6 @@ export function startViewServer(
     }
     if (switching || refreshing) {
       json(res, 409, { error: 'View session update in progress.' })
-      return
-    }
-    // The body may have arrived after another page finished switching.
-    if (req.headers['x-astrale-view-revision'] !== String(revision)) {
-      json(res, 409, { error: 'View session changed; reload before continuing.' })
       return
     }
     switching = true
@@ -600,7 +702,12 @@ export function startViewServer(
   }
 
   const idleTimer = setInterval(() => {
-    if (Date.now() - lastActivity > config.idleMs) void shutdown(0)
+    const now = Date.now()
+    if (now - lastActivity > config.idleMs) void shutdown(0)
+    // A release no window asked for within its grant's lifetime is no longer run here.
+    for (const [audience, grants] of viewGrants) {
+      if (grants.expiresAt <= now) viewGrants.delete(audience)
+    }
   }, IDLE_SWEEP_MS)
   idleTimer.unref()
 
@@ -696,4 +803,28 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown> |
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+/**
+ * The View release a host request names (`{ view }`), as the Shell resolved it: its target and
+ * route, whose issuer is a valid issuer when it has one. Anything else names none.
+ */
+function requestedView(body: Record<string, unknown> | null): ResolvedView | undefined {
+  const view = body?.view
+  if (typeof view !== 'object' || view === null) return undefined
+  const { target, route } = view as { target?: unknown; route?: unknown }
+  if (typeof target !== 'string' || typeof route !== 'object' || route === null) return undefined
+  const { key, handshake, issuer } = route as Record<string, unknown>
+  if (typeof key !== 'string' || (handshake !== 'shell' && handshake !== 'none')) return undefined
+  if (issuer !== undefined && (typeof issuer !== 'string' || !isIssuer(issuer))) return undefined
+  return view as ResolvedView
+}
+
+function isIssuer(value: string): boolean {
+  try {
+    issuerId.accept(value)
+    return true
+  } catch {
+    return false
+  }
 }

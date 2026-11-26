@@ -191,21 +191,23 @@ async function serveHost(
     }
     if (url.hostname !== 'host.example') return route.abort()
     fetched.push(url.pathname)
+    const view = {
+      target: `/:${ORIGIN}`,
+      route: {
+        key: `${ORIGIN}:view.application`,
+        declaration: { target: { kind: 'domain' } },
+        href: 'https://view.example/',
+        handshake: 'shell',
+        issuer: `https://${ORIGIN}`,
+        release: `sha256:${'a'.repeat(64)}`,
+        revision: `sha256:${'d'.repeat(64)}`,
+      },
+    }
+    if (url.pathname === '/current') return route.fulfill({ json: { view } })
     if (url.pathname === '/config.json')
       return route.fulfill({
         json: {
-          view: {
-            target: `/:${ORIGIN}`,
-            route: {
-              key: `${ORIGIN}:view.application`,
-              declaration: { target: { kind: 'domain' } },
-              href: 'https://view.example/',
-              handshake: 'shell',
-              issuer: `https://${ORIGIN}`,
-              release: `sha256:${'a'.repeat(64)}`,
-              revision: `sha256:${'d'.repeat(64)}`,
-            },
-          },
+          view,
           revision: 0,
           externalOrigins: [],
           delegationTtlSeconds: 60,
