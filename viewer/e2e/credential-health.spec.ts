@@ -25,6 +25,19 @@ const child = readFileSync(childFile, 'utf8')
 
 test.afterAll(() => rmSync(temporary, { recursive: true, force: true }))
 
+const VIEW = {
+  target: '/:browser-fixture.example',
+  route: {
+    key: 'browser-fixture.example:view.application',
+    declaration: { target: { kind: 'domain' } },
+    href: 'https://view.example/',
+    handshake: 'shell',
+    issuer: 'https://browser-fixture.example',
+    release: `sha256:${'a'.repeat(64)}`,
+    revision: `sha256:${'d'.repeat(64)}`,
+  },
+}
+
 async function mount(page: Page, context: BrowserContext) {
   let available = true
   let hanging = false
@@ -44,21 +57,11 @@ async function mount(page: Page, context: BrowserContext) {
       })
     }
     if (url.hostname !== 'host.example') return route.abort()
+    if (url.pathname === '/current') return route.fulfill({ json: { view: VIEW } })
     if (url.pathname === '/config.json')
       return route.fulfill({
         json: {
-          view: {
-            target: '/:browser-fixture.example',
-            route: {
-              key: 'browser-fixture.example:view.application',
-              declaration: { target: { kind: 'domain' } },
-              href: 'https://view.example/',
-              handshake: 'shell',
-              issuer: 'https://browser-fixture.example',
-              release: `sha256:${'a'.repeat(64)}`,
-              revision: `sha256:${'d'.repeat(64)}`,
-            },
-          },
+          view: VIEW,
           revision: 0,
           externalOrigins: [],
           delegationTtlSeconds: 60,
@@ -74,6 +77,7 @@ async function mount(page: Page, context: BrowserContext) {
         json: { token: 'kernel-fixture', expiresAt: Date.now() + 3_600_000, kind: 'minted' },
       })
     if (url.pathname === '/token') {
+      expect(route.request().postDataJSON()).toEqual({ view: VIEW })
       tokens += 1
       // A request lost while the machine slept: the issuer never answers it.
       if (hanging) return

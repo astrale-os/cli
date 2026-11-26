@@ -75,10 +75,14 @@ test('published requirements grant only each mounted View and isolate its provid
       return route.fulfill({
         json: { token: 'kernel-fixture', expiresAt: Date.now() + 3_600_000, kind: 'minted' },
       })
-    if (url.pathname === '/token')
+    if (url.pathname === '/current') return route.fulfill({ json: { view } })
+    if (url.pathname === '/token') {
+      // Issued for the release the window runs, which the page names.
+      expect(route.request().postDataJSON()).toEqual({ view })
       return route.fulfill({
         json: { token: 'browser-fixture', expiresAt: Date.now() + 240_000, kind: 'minted' },
       })
+    }
     if (url.pathname === '/status') return route.fulfill({ json: { revision } })
     return fulfillHostPage(route, url.pathname)
   })

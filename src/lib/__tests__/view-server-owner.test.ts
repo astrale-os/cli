@@ -89,7 +89,7 @@ describe('owner-mode View session', () => {
           { id: 'agent', label: 'Support agent', kind: 'identity', className: 'Agent' },
         ],
       })
-      expect((await host.post('/token')).body).toMatchObject({
+      expect((await host.post('/token', { view: config.session.view })).body).toMatchObject({
         token: 'exchanged:root@https://example.test',
         kind: 'exchanged',
       })
@@ -102,17 +102,23 @@ describe('owner-mode View session', () => {
       expect(persist.mock.calls.at(-1)?.[0]).toMatchObject({ identity: 'alice@x.test' })
       expect(await host.load()).toMatchObject({ identity: 'alice@x.test', revision: 1 })
       expect((await host.get('/identities')).body.selected).toBe('alice')
-      expect((await host.post('/token')).body.token).toBe('exchanged:alice@https://example.test')
+      expect((await host.post('/token', { view: config.session.view })).body.token).toBe(
+        'exchanged:alice@https://example.test',
+      )
       expect((await host.post('/kernel-token')).body.kind).toBe('minted')
       // An in-place refresh keeps running as the selected Identity, resolving as root.
       expect((await host.post('/refresh')).body).toEqual({ revision: 2 })
       await host.load()
-      expect((await host.post('/token')).body.token).toBe('exchanged:alice@https://example.test')
+      expect((await host.post('/token', { view: config.session.view })).body.token).toBe(
+        'exchanged:alice@https://example.test',
+      )
 
       // And back to Root.
       expect((await host.post('/identity', { identity: null })).status).toBe(200)
       expect(await host.load()).toMatchObject({ identity: 'Root', revision: 3 })
-      expect((await host.post('/token')).body.token).toBe('exchanged:root@https://example.test')
+      expect((await host.post('/token', { view: config.session.view })).body.token).toBe(
+        'exchanged:root@https://example.test',
+      )
 
       expect(kernel.authorities.length).toBeGreaterThanOrEqual(2)
       for (const authority of kernel.authorities) {
@@ -121,6 +127,30 @@ describe('owner-mode View session', () => {
           expect(JSON.stringify(record)).not.toContain(authority)
         }
       }
+    })
+  })
+
+  test('reads the release the Kernel serves now as the owner, and issues its credential', async () => {
+    const config = ownerConfig('owner-current')
+    const routes = [config.session.view.route]
+    const { dependencies } = owning(config, instanceKernel({ routes }))
+    await serving(config, dependencies, async (session) => {
+      const host = page(session)
+      await host.load()
+      expect((await host.post('/identity', { identity: 'alice' })).status).toBe(200)
+      await host.load()
+      const next = {
+        target: config.session.view.target,
+        route: { ...config.session.view.route, issuer: 'https://next.example.test' },
+      } as typeof config.session.view
+      routes[0] = next.route
+      expect((await host.get('/current')).body).toEqual({ view: next })
+      expect((await host.post('/token', { view: next })).body).toMatchObject({
+        token: 'exchanged:alice@https://next.example.test',
+        kind: 'exchanged',
+      })
+      routes.length = 0
+      expect((await host.get('/current')).body).toEqual({ view: null })
     })
   })
 
@@ -142,7 +172,7 @@ describe('owner-mode View session', () => {
       ).toBe(409)
       // A stale page acts on nothing, and its tokens are refused until it reloads.
       expect((await host.post('/identity', { identity: 'bob' })).status).toBe(200)
-      expect((await host.post('/token')).status).toBe(409)
+      expect((await host.post('/token', { view: config.session.view })).status).toBe(409)
       expect(kernel.impersonate.mock.calls.map(([input]) => input.identity)).toEqual(['bob'])
     })
   })

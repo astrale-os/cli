@@ -1,4 +1,4 @@
-import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
+import type { MountCredential, MountedWindow, ResolvedView } from '@astrale-os/shell'
 
 import { credentials, type Credentials } from '@astrale-os/sdk/client/session'
 import {
@@ -281,26 +281,38 @@ async function main(): Promise<void> {
 
   report('mounting')
   type ViewToken = { token: string; expiresAt: number }
-  // A mint follows its owner's signal: an answer that never comes must not pin the owner.
-  const loadToken = async (path = '/token', signal?: AbortSignal) => {
-    const next = await j<ViewToken>(path, { method: 'POST', signal })
-    return { credential: next.token, expiresAt: next.expiresAt }
+  // A request follows its owner's signal: an answer that never comes must not pin the owner.
+  const kernelTokens: Credentials | null =
+    route.handshake === 'shell'
+      ? credentials({
+          ttlSeconds: cfg.delegationTtlSeconds,
+          mint: async (signal) => {
+            const next = await j<ViewToken>('/kernel-token', { method: 'POST', signal })
+            return { credential: next.token, expiresAt: next.expiresAt }
+          },
+        })
+      : null
+  /**
+   * Every window's credential, which the Shell renews before it expires, and asks for the release
+   * the window runs: a window it moves to another release of its View receives that release's.
+   */
+  const viewCredential: MountCredential = {
+    token: '',
+    expiresAt: 0,
+    refresh: (view, signal) =>
+      j<ViewToken>('/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ view }),
+        signal,
+      }),
   }
-  let tokens: Credentials | null = null
-  let kernelTokens: Credentials | null = null
-  if (route.handshake === 'shell') {
-    tokens = credentials({
-      ttlSeconds: cfg.delegationTtlSeconds,
-      mint: (signal) => loadToken('/token', signal),
-      initial: await loadToken(),
-    })
-    // The page outlives many credentials; anticipate rather than pay on the next user action.
-    tokens.start()
-    kernelTokens = credentials({
-      ttlSeconds: cfg.delegationTtlSeconds,
-      mint: (signal) => loadToken('/kernel-token', signal),
-    })
-  }
+  /**
+   * The release of the session's View the Kernel serves now, read by the session under the
+   * authority that resolved it, which the View's own caller may lack.
+   */
+  const currentRelease = async (): Promise<ResolvedView | null> =>
+    (await j<{ view: ResolvedView | null }>('/current')).view
   const kernelUrl = new URL(cfg.kernelUrl, location.href).href
 
   // The node selector reads the graph as this session's caller: the Shell's own Kernel client.
@@ -408,29 +420,16 @@ async function main(): Promise<void> {
     }
   }
 
-  const heldCredential = async () => {
-    if (tokens === null) return undefined
-    const held = await tokens.acquire()
-    return {
-      token: held.credential,
-      expiresAt: held.expiresAt,
-      refresh: async () => {
-        const next = await tokens!.acquire()
-        return { token: next.credential, expiresAt: next.expiresAt }
-      },
-    }
-  }
-
-  const mount = async (view: ResolvedView): Promise<MountedWindow> => {
-    const credential = view.route.handshake === 'shell' ? await heldCredential() : undefined
-    return shell.mountView({
+  // The session's View, followed through its releases; a plain View receives no credential.
+  const mount = (view: ResolvedView): Promise<MountedWindow> =>
+    shell.mountView({
       host: container,
       view,
+      current: currentRelease,
       capabilities: hostCapabilities,
       handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
-      ...(credential === undefined ? {} : { credential }),
+      ...(view.route.handshake === 'shell' ? { credential: viewCredential } : {}),
     })
-  }
 
   installViewOpenHandler(shell, {
     current: () => mounted,
@@ -438,16 +437,15 @@ async function main(): Promise<void> {
       mounted = next
       showWindowStatus()
     },
-    open: async (view) => {
-      const credential = await heldCredential()
-      return shell.openView({
+    // A View the Shell resolves, and reads again before each credential, under its own rights.
+    open: (view) =>
+      shell.openView({
         host: container,
         view,
         capabilities: hostCapabilities,
         handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
-        ...(credential === undefined ? {} : { credential }),
-      })
-    },
+        credential: viewCredential,
+      }),
     opened: (next) => {
       showPlacement(next.view)
       el('error').style.display = 'none'

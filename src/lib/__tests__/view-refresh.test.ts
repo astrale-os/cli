@@ -97,6 +97,42 @@ describe('in-place View refresh', () => {
   })
 })
 
+describe('the release the Kernel serves now', () => {
+  const current = (base: string) => fetch(`${base}/current`, { headers: HOST })
+
+  test('reads the release of the session View as its caller, changing nothing', async () => {
+    const config = fixture()
+    const persist = mock(async () => {})
+    let routes = [config.session.view.route]
+    const viewsFor = mock(async () => ({ views: routes }))
+    await serving(config, { connect: kernelWith(config, viewsFor), persist }, async (base) => {
+      expect(await (await current(base)).json()).toEqual({ view: config.session.view })
+      const next = { ...config.session.view.route, issuer: 'https://next.example.test' }
+      routes = [next as Route]
+      expect(await (await current(base)).json()).toEqual({
+        view: { target: config.session.view.target, route: next },
+      })
+      // A Domain that no longer publishes the View answers that it serves none.
+      routes = []
+      expect(await (await current(base)).json()).toEqual({ view: null })
+      const served = await (await fetch(`${base}/config.json`, { headers: HOST })).json()
+      expect(served).toMatchObject({ revision: 0, view: config.session.view })
+    })
+    expect(viewsFor).toHaveBeenCalledTimes(3)
+    expect(persist).not.toHaveBeenCalled()
+  })
+
+  test('gives no answer when the Kernel gives none', async () => {
+    const config = fixture()
+    const connect: typeof withClientSession = async () => {
+      throw new Error('Kernel unavailable')
+    }
+    await serving(config, { connect }, async (base) => {
+      expect((await current(base)).status).toBe(502)
+    })
+  })
+})
+
 type IdentityHooks = {
   identities?: false
   mint?: (identity: string) => Promise<string>
@@ -110,6 +146,8 @@ async function withIdentityView(
   hooks: IdentityHooks,
   body: (view: {
     request: (path: string, revision?: number, json?: object, headers?: object) => Promise<Response>
+    /** The page of `revision` asking for the credential of the View release it loaded. */
+    token: (revision?: number) => Promise<Response>
     callers: string[]
     records: string[]
     origin: string
@@ -160,7 +198,11 @@ async function withIdentityView(
         },
         ...(json ? { body: JSON.stringify(json) } : {}),
       })
-    return body({ request, callers, records, origin })
+    const token = async (revision = 0) => {
+      const { view } = await (await request('config.json', revision)).json()
+      return request('token', revision, { view })
+    }
+    return body({ request, token, callers, records, origin })
   })
 }
 
@@ -178,18 +220,18 @@ describe('View identity switching', () => {
           return token
         },
       },
-      async ({ request }) => {
-        expect(await (await request('token')).json()).toMatchObject({
+      async ({ request, token }) => {
+        expect(await (await token()).json()).toMatchObject({
           token: 'alice:https://example.test',
         })
         next = { ...route, issuer: 'https://new-app.test' as typeof route.issuer }
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
-        expect(await (await request('token', 1)).json()).toMatchObject({
+        expect(await (await token(1)).json()).toMatchObject({
           token: 'bob:https://new-app.test',
         })
         next = { ...route, issuer: 'https://refreshed-app.test' as typeof route.issuer }
         expect((await request('refresh', 1)).status).toBe(200)
-        expect(await (await request('token', 2)).json()).toMatchObject({
+        expect(await (await token(2)).json()).toMatchObject({
           token: 'bob:https://refreshed-app.test',
         })
         expect(exchanged).toEqual([
@@ -202,8 +244,8 @@ describe('View identity switching', () => {
   })
 
   test('re-resolves and mints as the selected identity while invalidating the old page', () =>
-    withIdentityView({}, async ({ request, callers, records }) => {
-      expect(await (await request('token')).json()).toMatchObject({
+    withIdentityView({}, async ({ request, token, callers, records }) => {
+      expect(await (await token()).json()).toMatchObject({
         token: mintedCredential('credential-alice'),
       })
       expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
@@ -214,9 +256,9 @@ describe('View identity switching', () => {
       })
       expect(records).toEqual(['bob'])
       expect(callers).toEqual(['alice', 'bob', 'bob'])
-      expect((await request('token', 0)).status).toBe(409)
+      expect((await token(0)).status).toBe(409)
       expect((await request('kernel-token', 0)).status).toBe(409)
-      expect(await (await request('token', 1)).json()).toMatchObject({
+      expect(await (await token(1)).json()).toMatchObject({
         token: mintedCredential('credential-bob'),
       })
     }))
@@ -245,13 +287,13 @@ describe('View identity switching', () => {
           return mintedCredential('credential-alice')
         },
       },
-      async ({ request, records }) => {
+      async ({ request, token, records }) => {
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(502)
         expect(await (await request('config.json')).json()).toMatchObject({
           identity: 'alice',
           revision: 0,
         })
-        expect(await (await request('token')).json()).toMatchObject({
+        expect(await (await token()).json()).toMatchObject({
           token: mintedCredential('credential-alice'),
         })
         expect(records).toEqual([])
@@ -301,13 +343,13 @@ describe('View identity switching', () => {
           return delayed.promise
         },
       },
-      async ({ request }) => {
-        const old = request('token')
+      async ({ request, token }) => {
+        const old = token()
         await started.promise
         expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
         delayed.resolve(mintedCredential('credential-alice'))
         expect((await old).status).toBe(502)
-        expect(await (await request('token', 1)).json()).toMatchObject({
+        expect(await (await token(1)).json()).toMatchObject({
           token: mintedCredential('credential-bob'),
         })
       },
@@ -324,12 +366,12 @@ describe('View identity switching', () => {
           await delayed.promise
         },
       },
-      async ({ request }) => {
+      async ({ request, token }) => {
         const first = request('identity', 0, { identity: 'bob' })
         await started.promise
         expect((await request('identity', 0, { identity: 'alice' })).status).toBe(409)
         expect((await request('refresh')).status).toBe(409)
-        expect((await request('token')).status).toBe(409)
+        expect((await token()).status).toBe(409)
         expect((await request('kernel-token')).status).toBe(409)
         delayed.resolve()
         expect((await first).status).toBe(200)
