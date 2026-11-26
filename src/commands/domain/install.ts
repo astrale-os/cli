@@ -85,6 +85,15 @@ Behavior:
   it as the "precheck" member of the report, and of a refusal for dependency
   or dependent compatibility.
 
+  A Domain can declare schedules (onSchedule): every instance that installs
+  it starts those callables on time, acting as the Domain. Before the install
+  is sent, the CLI lists each root's schedules on the instance, compared with
+  the installed release: + new, ~ changed (and what changed), - removed, or
+  unchanged. When one is new or changed, it asks once at a terminal; --yes
+  skips the question. Nothing is asked without a terminal, with --json or
+  --ci: --json carries the listing as "precheck"."schedules". A paused
+  Schedule stays paused across an upgrade that keeps its name.
+
   An issuer change is never silent. When a URL serves another issuer than the
   one its origin is installed under, the install needs consent, which the
   Kernel records in the installation:
@@ -151,6 +160,10 @@ Examples:
       description:
         'Consent to an issuer change: bare, every new deployment of the same line; --allow-issuer-change=<origin>, any change of that origin (repeatable; the origin only after =)',
       repeatable: true,
+    },
+    {
+      flags: '--yes',
+      description: 'Install without asking to confirm new or changed schedules',
     },
     {
       flags: '--revoke-previous',

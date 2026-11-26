@@ -14,6 +14,7 @@ import chalk from 'chalk'
 
 import type { AdminRegistryApi } from '../../admin/registry'
 import type { KernelCommandOpts } from '../../connection'
+import type { ConnectionTarget } from '../../connection/target'
 import type { AdminTargetCommandOpts } from '../../lib/admin/target'
 import type { InstallFailure } from './install-call'
 import type { DependentProposal, InstallPrecheck, PrecheckRoot } from './install-precheck'
@@ -51,7 +52,18 @@ import { shellCommand } from '../../lib/shell-command'
 import { fatal, log } from '../../lib/terminal/log'
 import { isMachine, output } from '../../lib/terminal/output'
 import { exitWithInstallFailure, runInstallCall } from './install-call'
-import { precheckInstall, proposeDependentVersions } from './install-precheck'
+import {
+  isAbsentDomain,
+  precheckInstall,
+  precheckSchedules,
+  proposeDependentVersions,
+} from './install-precheck'
+import {
+  askAtTerminal,
+  confirmSchedules,
+  presentSchedules,
+  type ScheduleQuestion,
+} from './install-schedules'
 import {
   admitIssuerChanges,
   firstInstallNotice,
@@ -88,6 +100,8 @@ export type ReferenceInstallOpts = KernelCommandOpts &
     /** Every `--allow-issuer-change` occurrence: `''` without an origin, else the origin it names. */
     readonly allowIssuerChange?: readonly string[]
     readonly revokePrevious?: boolean
+    /** `--yes`: install without the question new or changed schedules ask at a terminal. */
+    readonly yes?: boolean
   }
 
 type InstalledState = Pick<InstalledRelease, 'revision' | 'pin' | 'issuer'>
@@ -157,6 +171,8 @@ export interface ReferenceInstallDependencies {
     signal: AbortSignal,
     bundleLink?: string,
   ) => ReturnType<typeof readReleaseBundle>
+  /** Asks at a terminal whether to install new or changed schedules. */
+  readonly ask: ScheduleQuestion
   readonly now: () => number
   readonly sleep: (ms: number) => Promise<void>
 }
@@ -172,6 +188,7 @@ const defaultDependencies: ReferenceInstallDependencies = {
   readDeployment: readServedDeployment,
   readBundle: (release, url, signal, link) =>
     readReleaseBundle(release, url, signal, globalThis.fetch, link),
+  ask: askAtTerminal,
   now: Date.now,
   sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 }
@@ -278,12 +295,13 @@ export async function installByReference(
   const failure = await deps
     .withClientSession(
       opts,
-      async ({ session }) =>
+      async ({ session, target }) =>
         installReleases(session, sources, await session.schema.installed(), {
           operation,
           consent,
           opts,
           deps,
+          instance: instanceName(opts, target),
         }),
       { principal: 'caller' },
     )
@@ -297,6 +315,15 @@ interface InstallRun {
   readonly consent: IssuerChangeConsent
   readonly opts: ReferenceInstallOpts
   readonly deps: ReferenceInstallDependencies
+  /** The instance as the operator selected it, for what the install shows. */
+  readonly instance: string
+}
+
+/** The instance an install targets, named as the operator selected it. */
+function instanceName(opts: ReferenceInstallOpts, target: ConnectionTarget | undefined): string {
+  if (opts.instance !== undefined) return opts.instance
+  if (target?.slug !== undefined) return target.slug
+  return target === undefined ? 'this instance' : new URL(target.url).host
 }
 
 /** What the install call gives the presentation: the Kernel result and the listing read after it. */
@@ -375,6 +402,20 @@ async function installReleases(
     if (consent.revokePrevious && changes.every((change) => change === undefined)) {
       log.dim('  --revoke-previous: no installed issuer changes, so there is nothing to revoke.')
     }
+  }
+  // What each root will run on this instance, as that root, and one question when it is new.
+  const schedules = precheck.schedules ?? []
+  if (!machine) presentSchedules(schedules, run.instance)
+  try {
+    await confirmSchedules(schedules, {
+      subject: installSubject(roots),
+      yes: opts.yes === true,
+      machine,
+      gate: opts,
+      ask: run.deps.ask,
+    })
+  } catch (error) {
+    return { error, render: 'input' }
   }
 
   // --timeout bounds the whole install, its wait included; --no-wait answers at once.
@@ -719,7 +760,10 @@ async function precheckReferences(
       }
     }),
   )
-  const { indirect, ...verdict } = await precheckInstall(checked, before, session.schema)
+  const [{ indirect, ...verdict }, schedules] = await Promise.all([
+    precheckInstall(checked, before, session.schema),
+    precheckSchedules(checked, before, session.schema),
+  ])
   // A dependent that breaks on a dependency it reaches only through another Domain has no answer
   // in the registry, so only the others open it.
   const direct = verdict.dependents.filter(({ domain }) => !indirect.has(domain.origin))
@@ -753,7 +797,7 @@ async function precheckReferences(
           changes,
         )
       : undefined
-  return { ...verdict, proposals, ...(command === undefined ? {} : { command }) }
+  return { ...verdict, proposals, ...(command === undefined ? {} : { command }), schedules }
 }
 
 function uniqueOrigins(dependents: InstallPrecheck['dependents']): readonly string[] {
@@ -974,6 +1018,14 @@ function refuseRepeated(named: readonly (readonly [string | undefined, string])[
   }
 }
 
+/** What a question about the whole install names: its one root, else how many it installs. */
+function installSubject(roots: readonly PlannedRoot[]): string {
+  if (roots.length !== 1) return `these ${roots.length} Domains`
+  const [{ source, origin }] = roots as [PlannedRoot]
+  if (source.publication !== undefined) return exactReference(source.publication)
+  return origin ?? source.reference
+}
+
 /** A reference as an install names it again: a version by the exact version it resolved to. */
 function namedAgain(source: ReleaseSource): string {
   return source.publication === undefined ? source.reference : exactReference(source.publication)
@@ -1094,15 +1146,4 @@ function pinLabel(pin: InstalledPin): string {
 
 function shortDigest(digest: string): string {
   return digest.startsWith('sha256:') ? `sha256:${digest.slice(7, 19)}` : digest
-}
-
-/**
- * Whether reading an origin's release found no installed Domain: the Kernel answers an origin
- * that is not installed with 1003 and reason SCHEMA_NOT_FOUND. An exact 3002 says the same.
- */
-function isAbsentDomain(error: unknown): boolean {
-  if (!(error instanceof ResponseError)) return false
-  return (
-    error.code === 3002 || (error.code === 1003 && reasonCode(error.reason) === 'SCHEMA_NOT_FOUND')
-  )
 }
