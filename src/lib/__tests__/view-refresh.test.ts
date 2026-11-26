@@ -100,26 +100,73 @@ describe('in-place View refresh', () => {
 describe('the release the Kernel serves now', () => {
   const current = (base: string) => fetch(`${base}/current`, { headers: HOST })
 
-  test('reads the release of the session View as its caller, changing nothing', async () => {
+  test('reads the release of the session View as its caller, and holds the one its window moves to', async () => {
     const config = fixture()
-    const persist = mock(async () => {})
-    let routes = [config.session.view.route]
+    const first = config.session.view
+    const persist = mock(async (_record: unknown) => {})
+    let routes = [first.route]
     const viewsFor = mock(async () => ({ views: routes }))
     await serving(config, { connect: kernelWith(config, viewsFor), persist }, async (base) => {
-      expect(await (await current(base)).json()).toEqual({ view: config.session.view })
-      const next = { ...config.session.view.route, issuer: 'https://next.example.test' }
-      routes = [next as Route]
-      expect(await (await current(base)).json()).toEqual({
-        view: { target: config.session.view.target, route: next },
-      })
+      expect(await (await current(base)).json()).toEqual({ view: first })
+      expect(persist).not.toHaveBeenCalled()
+
+      // Released again: the window moves to the next release in place, so the page keeps its
+      // revision, and the session lists the release it runs.
+      const next = {
+        target: first.target,
+        route: { ...first.route, issuer: 'https://next.example.test' },
+      }
+      routes = [next.route as Route]
+      expect(await (await current(base)).json()).toEqual({ view: next })
+      expect(persist.mock.calls).toEqual([
+        [expect.objectContaining({ id: config.session.id, pid: process.pid, view: next })],
+      ])
+      expect(await (await current(base)).json()).toEqual({ view: next })
+      expect(persist).toHaveBeenCalledTimes(1)
+
       // A Domain that no longer publishes the View answers that it serves none.
       routes = []
       expect(await (await current(base)).json()).toEqual({ view: null })
       const served = await (await fetch(`${base}/config.json`, { headers: HOST })).json()
-      expect(served).toMatchObject({ revision: 0, view: config.session.view })
+      expect(served).toMatchObject({ revision: 0, view: next })
     })
-    expect(viewsFor).toHaveBeenCalledTimes(3)
-    expect(persist).not.toHaveBeenCalled()
+    expect(viewsFor).toHaveBeenCalledTimes(4)
+    expect(persist).toHaveBeenCalledTimes(1)
+  })
+
+  test('gives way to the release a refresh commits while it reads', async () => {
+    const config = fixture()
+    const first = config.session.view
+    const persist = mock(async (_record: unknown) => {})
+    const refreshed = { ...first.route, href: 'https://example.test/refreshed' } as Route
+    const stale = { ...first.route, issuer: 'https://stale.example.test' } as Route
+    let answer!: () => void
+    const answered = new Promise<void>((resolve) => (answer = resolve))
+    let calls = 0
+    const viewsFor = mock(async () => {
+      // The first read is the window's, and the Kernel answers it only after the refresh commits.
+      if (++calls === 1) {
+        await answered
+        return { views: [stale] }
+      }
+      return { views: [refreshed] }
+    })
+    await serving(config, { connect: kernelWith(config, viewsFor), persist }, async (base) => {
+      const reading = current(base)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect((await fetch(`${base}/refresh`, { method: 'POST' })).status).toBe(200)
+      answer()
+      expect(await (await reading).json()).toEqual({ view: { target: first.target, route: stale } })
+
+      const served = await (await fetch(`${base}/config.json`, { headers: HOST })).json()
+      expect(served).toMatchObject({
+        revision: 1,
+        view: { target: first.target, route: refreshed },
+      })
+    })
+    expect(persist.mock.calls).toEqual([
+      [expect.objectContaining({ view: { target: first.target, route: refreshed } })],
+    ])
   })
 
   test('gives no answer when the Kernel gives none', async () => {

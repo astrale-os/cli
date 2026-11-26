@@ -9,8 +9,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { isDeepStrictEqual } from 'node:util'
 
-import type { ViewServeConfig } from './session'
+import type { ViewServeConfig, ViewSessionRecord } from './session'
 
 import { withClientSession } from '../../connection'
 import { AstraleError, InternalError } from '../../errors'
@@ -145,6 +146,8 @@ export function startViewServer(
   let revision = 0
   let refreshing: Promise<void> | undefined
   let switching = false
+  /** The last write of the session record; each write lands after the one before it. */
+  let recording: Promise<void> = Promise.resolve()
   /** Pages currently holding this session, by the id each one reports. */
   const pages = new Map<string, number>()
   /**
@@ -212,7 +215,7 @@ export function startViewServer(
     identity: string | undefined,
     apply: () => void,
   ): Promise<void> {
-    await (dependencies.persist ?? saveRecord)({
+    await record({
       ...session,
       pid: process.pid,
       ...(identity === undefined ? {} : { identity }),
@@ -226,6 +229,25 @@ export function startViewServer(
     kernelGrants = createGrantProvider()
     revision += 1
     status = { state: 'waiting', at: new Date().toISOString() }
+  }
+
+  /** Write the session record after every write made before it, whichever settles first. */
+  function record(next: ViewSessionRecord): Promise<void> {
+    const write = recording.then(() => (dependencies.persist ?? saveRecord)(next))
+    recording = write.catch(() => {})
+    return write
+  }
+
+  /**
+   * Hold the release of the session's View the Kernel answered with, read on `at`: the window moves
+   * to it in place, so the page keeps its revision. A switch or refresh commits its own release.
+   */
+  function follow(view: ResolvedView, at: number): void {
+    if (at !== revision || switching || refreshing !== undefined) return
+    if (isDeepStrictEqual(view, session.view)) return
+    session.view = view
+    // The record only lists the session: a failed write leaves the window's answer as it is.
+    void record({ ...session, pid: process.pid }).catch(() => {})
   }
 
   /** Whose credential `view`'s window runs on: its Domain's issuer, or the Kernel's. */
@@ -440,7 +462,10 @@ export function startViewServer(
       return
     }
     if (sub === '/current' && req.method === 'GET') {
-      json(res, 200, { view: await currentRelease() })
+      const at = revision
+      const view = await currentRelease()
+      if (view !== null) follow(view, at)
+      json(res, 200, { view })
       return
     }
     if ((sub === '/token' || sub === '/kernel-token') && req.method === 'POST') {
