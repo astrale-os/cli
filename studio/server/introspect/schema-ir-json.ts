@@ -4,6 +4,7 @@ import type {
   IrClass,
   IrFunction,
   IrMethod,
+  IrView,
   JsonSchema,
   SchemaIR,
 } from '../../shared/contracts/schema'
@@ -111,16 +112,11 @@ function isImport(value: unknown): boolean {
   )
 }
 
-function isView(value: unknown): boolean {
+function isView(value: unknown): value is IrView {
   const record = asJsonRecord(value)
-  const target = asJsonRecord(record?.target)
   return (
     typeof record?.name === 'string' &&
-    !!target &&
-    (target.kind === 'domain' ||
-      (target.kind === 'definition' &&
-        Array.isArray(target.definitions) &&
-        target.definitions.every(isSchemaRef)))
+    (record.description === undefined || typeof record.description === 'string')
   )
 }
 

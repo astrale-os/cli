@@ -40,7 +40,7 @@ function canonicalIr() {
     views: {
       documents: {
         name: 'documents',
-        target: { kind: 'domain' },
+        description: 'Browse documents.',
       },
     },
     policies: {},
