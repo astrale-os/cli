@@ -1,12 +1,13 @@
 import { KERNEL_DOMAIN_ID } from '../shared/contracts/workspace'
 /**
  * Studio JSON API composition root. It owns only the public `/api/` boundary,
- * cross-site mutation guard, workspace-vs-agent-vs-domain addressing, and final 404.
+ * workspace-vs-agent-vs-domain addressing, and final 404; who may call it at all is
+ * decided before it, by the guard (`api/guard.ts`, applied in `index.ts`).
  * Capability modules under `api/` (and `agent/routes.ts`) own the route implementations.
  */
 import { handleAgentRoute } from './agent/routes'
 import { handleDomainRoute } from './api/domain'
-import { crossSiteBlocked, json, notFound, readJsonRecord, type Notify } from './api/http'
+import { notFound, readJsonRecord, type Notify } from './api/http'
 import { handleKernelRoute } from './api/kernel'
 import { handleWorkspaceRoute } from './api/workspace'
 import { getDomain } from './domain/registry'
@@ -14,7 +15,6 @@ import { getDomain } from './domain/registry'
 export async function handleApi(req: Request, url: URL, notify: Notify): Promise<Response | null> {
   const path = url.pathname
   if (!path.startsWith('/api/')) return null
-  if (crossSiteBlocked(req, url)) return json({ error: 'cross-site request blocked' }, 403)
 
   const workspace = await handleWorkspaceRoute(req, path, notify)
   if (workspace) return workspace

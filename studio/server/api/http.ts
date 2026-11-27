@@ -45,24 +45,3 @@ export async function readJsonRecord(req: Request): Promise<JsonRecord> {
   const value: unknown = await req.json().catch(() => undefined)
   return asJsonRecord(value) ?? {}
 }
-
-/**
- * Block cross-site state-changing requests. Same-origin browser requests and
- * non-browser clients without Origin/Sec-Fetch-Site remain allowed.
- */
-export function crossSiteBlocked(req: Request, url: URL): boolean {
-  if (req.method === 'GET' || req.method === 'HEAD') return false
-  const site = req.headers.get('sec-fetch-site')
-  if (site) return !(site === 'same-origin' || site === 'none')
-  const origin = req.headers.get('origin')
-  if (origin) {
-    try {
-      // Same-origin includes the scheme as well as host and effective port.
-      // Comparing only `host` would accept an HTTPS origin for an HTTP Studio.
-      return new URL(origin).origin !== url.origin
-    } catch {
-      return true
-    }
-  }
-  return false
-}

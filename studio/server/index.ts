@@ -14,6 +14,7 @@ import { dirname, join, resolve } from 'node:path'
 import { setBridgePort } from './agent/bridge/grant'
 import { probeInstalledHarnesses } from './agent/harness/registry'
 import { handleApi } from './api'
+import { refusal, studioAudience, type Audience } from './api/guard'
 import { broadcast, sseResponse } from './api/sse'
 import { staticFiles } from './api/static'
 import { bootDomain } from './domain/boot'
@@ -132,11 +133,16 @@ const serveStatic = staticFiles(DIST)
 
 // Bind to loopback by default. Studio can trigger a LOCAL harness that edits code
 // and runs commands with the configured access level — exposing the trigger on
-// 0.0.0.0 would be RCE on the LAN. Power users behind a trusted tunnel can opt in
-// via DOMAIN_STUDIO_HOST.
+// 0.0.0.0 would be RCE on the LAN. DOMAIN_STUDIO_HOST binds another address; the
+// guard (api/guard.ts) then answers requests that name that address too, and no
+// other host name: a tunnel that forwards its own public name is refused.
 const HOST = process.env.DOMAIN_STUDIO_HOST || '127.0.0.1'
 const LOOPBACK = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1'
 
+const audienceAt = (boundPort: number): Audience =>
+  studioAudience({ port: boundPort, boundHost: HOST, ...(DEV ? { devOrigin: VITE } : {}) })
+// Who may drive the server is known once its port is: read per request, set right after binding.
+let audience = audienceAt(port)
 const server = Bun.serve({
   port,
   hostname: HOST,
@@ -144,6 +150,10 @@ const server = Bun.serve({
   // them (and the live UI). 255s is Bun's max; the SSE hub also sends keepalives.
   idleTimeout: 255,
   async fetch(req) {
+    // The guard first: no route below — the API, the events stream, the page — runs for a
+    // request it refuses.
+    const refused = refusal(req, audience)
+    if (refused) return refused
     const url = new URL(req.url)
     if (url.pathname === '/api/ready')
       return new Response(null, {
@@ -162,6 +172,7 @@ const server = Bun.serve({
     return serveStatic(url.pathname, req)
   },
 })
+audience = audienceAt(server.port ?? port)
 
 let shuttingDown = false
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
