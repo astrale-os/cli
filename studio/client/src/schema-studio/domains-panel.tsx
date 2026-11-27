@@ -23,7 +23,7 @@ import { SchemaIcon } from './schema-icon'
  * shows the domains THIS one truly imports (schema ground truth), and turns an "import
  * this" wish into an agent-readable comment that lives on the canvas — no separate page.
  * The canvas draws what each one contributes in a frame of its own; the Structure lens's
- * “Other Domains” option folds each into a single node.
+ * Domains control draws each hidden, reached or whole.
  */
 
 /** The canvas anchor an import-request comment shares with its "Requested" row. */

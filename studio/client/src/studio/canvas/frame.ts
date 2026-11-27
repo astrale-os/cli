@@ -45,6 +45,7 @@ export function shiftPlacement(placement: Placement, dx: number, dy: number): Pl
     ...placement,
     boxes: moveAll(placement.boxes),
     regions: moveAll(placement.regions),
+    ...(placement.areas ? { areas: moveAll(placement.areas) } : {}),
     routes: new Map(
       [...placement.routes].map(([id, points]) => [
         id,
@@ -55,10 +56,13 @@ export function shiftPlacement(placement: Placement, dx: number, dy: number): Pl
   }
 }
 
-/** The rect drawn for a scene id: its box or row, its region, or — for a link — what it joins. */
+/**
+ * The rect drawn for a scene id: its box or row, its region, its area, or — for a link — what
+ * it joins.
+ */
 export function rectOf(frame: Frame, id: string): Rect | undefined {
   const { arrangement, placement } = frame
-  const region = placement.regions.get(id)
+  const region = placement.regions.get(id) ?? placement.areas?.get(id)
   if (region) return region
   const place = arrangement.linkPlace.get(id)
   if (place) {

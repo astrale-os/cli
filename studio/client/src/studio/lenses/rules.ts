@@ -417,7 +417,7 @@ export function projectRules(
   const known = cache.get(key)
   if (known) return known
 
-  const structure = projectStructure(bundle, { dependencies: true })
+  const structure = projectStructure(bundle, {})
   const ir = bundle.ir
   if (!ir) return { ...structure, key }
   const rules = rulesOf(bundle)

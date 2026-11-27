@@ -53,6 +53,11 @@ export interface Scene {
    */
   lineWeight?: 'regular' | 'thin'
   /**
+   * The Domains drawn whole beside each other, each a framed area: the canvas's own first. Every
+   * node, group and link then names its area; without areas the Scene is one Domain's.
+   */
+  areas?: SceneArea[]
+  /**
    * What the Index lists instead of the nodes and links: entries of their own, grouped by
    * these groups (never drawn on the canvas), each a selection target.
    */
@@ -64,6 +69,23 @@ export interface Scene {
     /** Kinds listed behind their chip, left out until it is pressed. */
     hiddenKinds?: string[]
   }
+}
+
+/** One Domain drawn whole on a canvas that draws several: a framed area holding its parts. */
+export interface SceneArea {
+  /** `area.<origin>`: what its parts name as their area, and what places it */
+  id: string
+  origin: string
+  /** The Domain's id in the Studio: its comments are filed there, and it opens there. */
+  domainId: string
+  /** The Domain's name. */
+  label: string
+  /** Read after the name, quieter: the version the Domain declares. */
+  version?: string
+  /** The canvas's own Domain. */
+  home?: boolean
+  /** The Domain's hue on this canvas: its frame, its name and its Index row wear it. */
+  hue: number
 }
 
 /** A thing the Index lists that the canvas draws no box for: a Policy, a constraint's form. */
@@ -197,6 +219,8 @@ export interface SceneNode {
   sublabel?: string
   /** The id of the SceneGroup the node belongs to. */
   group?: string
+  /** The id of the SceneArea the node belongs to, on a canvas of several Domains. */
+  area?: string
   /**
    * The column the node stands in, counted with the flow: the layout keeps every node left
    * of any in a higher column. A Scene that ranks one node ranks all of them.
@@ -383,6 +407,10 @@ export interface SceneLink {
   name?: string
   /** The group that declares the link — the Index lists it there. */
   group?: string
+  /** The area whose Domain declares the link, on a canvas of several Domains. */
+  area?: string
+  /** The Domain a comment on the link is filed under, when not the canvas's (`SceneNode`). */
+  anchorDomain?: string
   from: SceneEnd
   to: SceneEnd
   /** A directed link reads from `from` to `to`; the canvas draws an arrowhead at `to`. */
@@ -432,6 +460,10 @@ export interface SceneGroup {
   id: string
   /** The comment anchor, when it is not the id. */
   anchor?: string
+  /** The Domain a comment on the group is filed under, when not the canvas's (`SceneNode`). */
+  anchorDomain?: string
+  /** The id of the SceneArea the group belongs to, on a canvas of several Domains. */
+  area?: string
   label: string
   /** The group's hue on the colour wheel. */
   hue?: number

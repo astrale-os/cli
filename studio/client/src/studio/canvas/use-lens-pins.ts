@@ -3,7 +3,8 @@
  * a Domain's record (by Domain id), the Kernel's, or the Workspace map's (`WORKSPACE_MAP_ID`).
  * What the reader placed, which modules they shut and which folds they opened are remembered
  * across reloads and restarts, in every browser that reads the record, and no lens shares
- * another's. Auto-arrange forgets the placements only: which are open is what the reader reads.
+ * another's; so is how the lens draws each other Domain. Auto-arrange forgets the placements
+ * only: which are open and which Domains are drawn is what the reader reads.
  *
  * A change shows at once — the record is updated in place before the server hears of it —
  * and reaches the server in the order it was made, so a reset never lands ahead of a
@@ -12,7 +13,7 @@
  * a module both stand.
  */
 
-import type { LayoutState, NodePosition } from '@shared/contracts/workspace'
+import type { DomainShare, LayoutState, NodePosition } from '@shared/contracts/workspace'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
@@ -54,9 +55,14 @@ export interface LensPins {
   opened: ReadonlySet<string>
   /** Opens a shut fold, or shuts an open one. */
   toggleFold: (fold: string) => void
+  /** How the lens draws each other Domain, by origin; one absent shows what is reached. */
+  shares: Readonly<Record<string, DomainShare>>
+  /** Says how the lens draws one other Domain; `reached` returns it to the default. */
+  share: (origin: string, share: DomainShare | 'reached') => void
 }
 
 const NONE_OPENED: ReadonlySet<string> = new Set()
+const NO_SHARES: Readonly<Record<string, DomainShare>> = {}
 
 /** How a change to each set of ids a lens keeps is written: what it adds and what it removes. */
 const WRITE = {
@@ -71,6 +77,7 @@ export function useLensPins(recordId: string, lens: string): LensPins {
   const saved = data?.lenses?.[lens]
   const collapsed = data?.collapsed?.[lens]
   const openedList = data?.opened?.[lens]
+  const shares = data?.domains?.[lens] ?? NO_SHARES
   const opened = useMemo(() => (openedList ? new Set(openedList) : NONE_OPENED), [openedList])
   const pins = useMemo<Pins>(
     () =>
@@ -159,5 +166,33 @@ export function useLensPins(recordId: string, lens: string): LensPins {
     [lens, queryClient, record, recordId],
   )
 
-  return { ready: !isPending, pins, place, reset, collapsed, collapse, opened, toggleFold }
+  const share = useCallback(
+    (origin: string, next: DomainShare | 'reached') => {
+      const current = queryClient.getQueryData<LayoutState>(qk.layout(recordId))?.domains?.[lens]
+      if ((current?.[origin] ?? 'reached') === next) return
+      const { [origin]: _before, ...others } = current ?? {}
+      queryClient.setQueryData<LayoutState>(qk.layout(recordId), (layout) => ({
+        ...layout,
+        domains: {
+          ...layout?.domains,
+          [lens]: next === 'reached' ? others : { ...others, [origin]: next },
+        },
+      }))
+      inOrder(recordId, () => api.setDomainShare(recordId, lens, origin, next), resync)
+    },
+    [recordId, lens, queryClient, resync],
+  )
+
+  return {
+    ready: !isPending,
+    pins,
+    place,
+    reset,
+    collapsed,
+    collapse,
+    opened,
+    toggleFold,
+    shares,
+    share,
+  }
 }

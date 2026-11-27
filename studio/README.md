@@ -83,10 +83,31 @@ and nothing else is blanked.
 
 | Lens | What it draws |
 | --- | --- |
-| Structure | Node Classes as cards and relationships as links, grouped by module. Classes of another Domain or of the Kernel that a relationship end accepts are drawn quiet, framed by their Domain. Options draw inheritance, and fold each other Domain into one node. |
+| Structure | Node Classes as cards and relationships as links, grouped by module. Classes of another Domain or of the Kernel that a relationship end accepts are drawn quiet, framed by their Domain. The **Domains** control draws other Domains whole beside the open one (below). An option draws inheritance. |
 | Behavior | Integrations, functions and the Classes they change, in three bands: each function links to the Classes it creates, updates, deletes, transitions, links or unlinks, and to the Integrations it calls. What the source reading cannot follow is said on the node. |
 | Rules | The Structure map with each Class card listing the rules on it: who may read, create, update, delete or call (Policies) and what must hold (constraints). The Index lists the rules. A rule opens on a page drawn by `@astrale-os/visual`. |
 | Views | Each View the Domain declares as a card: what it says of itself, how it is built (single-page app, inline HTML), where it mounts, the entrypoint first and marked, and where its sources do not back it (no code found, no client route). Views in more than one module are framed by module. A client route no View mounts is counted, not drawn. Where the sources say what a View's code reaches, the canvas reads in three bands: the Views, the functions their code calls, and the Classes those functions change, under the ids Behavior gives them; the `reads` option also draws the Classes each View reads, dashed. A View whose code cannot be read in full says so on its card. |
+
+The **Domains** control of the Structure canvas lists the open Domain, every other Domain of the
+Workspace and each Domain outside it the open one depends on (the Kernel, Shell). Each other
+Domain is drawn one of three ways:
+
+- **Hidden**: none of its Classes; each relationship that reaches it ends on one card for it.
+- **Reached**, the default: the Classes the open Domain's relationships accept, quiet, in its frame.
+- **Whole**: every Class it declares, in an area of its own beside the open Domain's. Only a
+  Domain whose Schema the Studio reads (a Workspace Domain, the Kernel) can be drawn whole: the
+  Classes the open Domain imports never stand in for one.
+
+Each Domain drawn whole is a framed area named with its version, its modules framed inside it, laid
+out as its own canvas lays it out; the areas are packed apart, the open Domain's first. The
+relationships between two areas are drawn across them, parallel ones on one route. An area drags
+whole by its name, and a card dragged stays in its area. The choice and the arrangement are the
+Domain's (`layout.json`), and **Auto-arrange** lays the composed canvas out again. The Index lists
+one top group per Domain. A Class of another Domain reads on that Domain's own page, which names
+it and opens it there; a comment on it is filed under that Domain.
+
+Behavior, Rules and Views read the open Domain alone, and so does the Data level. A selection
+only a Domain drawn whole declares is let go on leaving Structure.
 
 **Data level**, one dataset of a Domain:
 

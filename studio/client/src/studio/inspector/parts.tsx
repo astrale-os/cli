@@ -7,14 +7,23 @@ import type { Bump } from '@shared/contracts/versions'
  * identifiers only.
  */
 import { type LucideIcon, TextSearch } from 'lucide-react'
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import {
+  createContext,
+  type KeyboardEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
 
 import { AnchorButton, useRevealedAnchor } from '@/components/anchor'
 import { DescriptionText } from '@/components/studio-kit'
 import { useUI } from '@/lib/store'
 import { anchorData, targetSurface } from '@/lib/targets'
 import { cn } from '@/lib/utils'
-import { lensName } from '@/studio/lenses/keys'
+import { type LensId, lensName } from '@/studio/lenses/keys'
 
 import type { SceneTone } from '../scene/types'
 import type { ClassLink, Phrase, PropertyMark, ValueType } from './structure'
@@ -49,6 +58,19 @@ export function openTarget(target: string, domainId: string) {
 }
 
 /**
+ * Where a page's links and lens switches open. A page read on the open Domain's canvas opens
+ * what it names there (`openTarget`) and asks another question by changing the lens. A page of
+ * a Domain drawn beside the open one opens what that canvas draws there, and the rest — another
+ * question included — in its own Domain.
+ */
+export interface InspectorPlace {
+  open: (target: string, domainId: string) => void
+  ask: (lens: LensId) => void
+}
+
+export const InspectorPlaceContext = createContext<InspectorPlace | undefined>(undefined)
+
+/**
  * Text that opens a selection. Without a target, or with the one the Schema already shows, it
  * is said, not linked: a page never links to itself. At another level (Data, the Workspace) it
  * links, since it opens the Schema there.
@@ -68,6 +90,7 @@ export function Link({
   title?: string
   className?: string
 }) {
+  const place = useContext(InspectorPlaceContext)
   const here = useUI(
     (state) =>
       target !== undefined &&
@@ -84,7 +107,8 @@ export function Link({
       data-inspector-link={target}
       onClick={(event) => {
         event.stopPropagation()
-        openTarget(target, domainId)
+        if (place) place.open(target, domainId)
+        else openTarget(target, domainId)
       }}
       className={cn(
         'inline rounded-sm text-left underline decoration-foreground/20 underline-offset-[3px] transition-colors hover:decoration-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
@@ -651,6 +675,7 @@ export function Disclosure({
 /** The other questions, at the foot of the page; a click changes the lens and keeps the selection. */
 export function LensSwitches({ switches }: { switches: readonly LensSwitch[] }) {
   const setLens = useUI((state) => state.setLens)
+  const place = useContext(InspectorPlaceContext)
   if (switches.length === 0) return null
   return (
     <nav
@@ -663,7 +688,7 @@ export function LensSwitches({ switches }: { switches: readonly LensSwitch[] }) 
           key={each.lens}
           type="button"
           data-lens-switch={each.lens}
-          onClick={() => setLens(each.lens)}
+          onClick={() => (place ? place.ask(each.lens) : setLens(each.lens))}
           className="group flex w-full items-baseline gap-2 rounded-sm py-0.5 text-left text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <span className="min-w-0 flex-1">{each.text}</span>

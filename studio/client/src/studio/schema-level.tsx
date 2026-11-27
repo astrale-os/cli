@@ -5,14 +5,23 @@
  * that Scene and nothing else. The selection is the Studio's — ⌘K, reveal, comments and
  * the Inspector read and write the same `selectedClass` — so a lens never needs a
  * selection model of its own.
+ *
+ * Structure draws the other Domains as the reader chose on its canvas (`DomainsControl`): each
+ * hidden, reached or whole, the choice kept in the lens's arrangement. A Domain drawn whole is
+ * read as its own canvas reads it, and what it declares opens on its own page. Every other lens
+ * reads the open Domain alone and lets go of a selection only a Domain drawn whole declares.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import type { StudioSchemaBundle } from '@shared/contracts/schema'
+
+import { domainAddressOf } from '@shared/contracts/workspace'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ErrorBanner } from '@/components/error-banner'
-import { api, qk } from '@/lib/api'
+import { api, qk, versionsApi, versionsKeys } from '@/lib/api'
+import { bundleQueryOptions } from '@/lib/domain-queries'
 import { useSchemaDomains } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
 import { useUI } from '@/lib/store'
@@ -27,21 +36,63 @@ import { DOCK_CLEARANCE, TOOLBAR_CLEARANCE } from '../schema-studio/palette'
 import { PanelShell } from '../schema-studio/panel-shell'
 import { SchemaPolicyDetail } from '../schema-studio/policy-detail'
 import { useWorkspaceDomainInputs } from '../schema-studio/workspace/use-domain-inputs'
+import { DomainsControl, type DrawnAs } from './canvas/domains-control'
 import { OPTION_GLYPHS } from './canvas/glyphs'
 import { type CanvasOption, SceneCanvas } from './canvas/scene-canvas'
 import { useCanvas } from './canvas/store'
 import { useLensPins } from './canvas/use-lens-pins'
 import { IndexRail } from './index-rail/index-rail'
-import { lensOf, optionsOf } from './lenses'
+import { BesidePage } from './inspector/beside'
+import { lensOf, optionsOf, sceneOf } from './lenses'
+import {
+  domainChoices,
+  namedOnlyBeside,
+  type ReadableDomains,
+  redraws,
+  wholeDomainIds,
+} from './lenses/composition'
 import { isLensId } from './lenses/keys'
+import { NO_COMPOSITION, type StructureComposition } from './lenses/structure'
 import { spotlit, standIns } from './lenses/thread'
 import { opensRulePage, ruleDetailOf, RulePage } from './rule-page'
 import { arrange, arrangementKey, defaultCollapsed } from './scene/arrange'
 import { isolateScene, openedBy } from './scene/focus'
 import { withFoldsOpen } from './scene/rules'
+import { domainName } from './workspace/words'
 
 const NOTHING: ReadonlySet<string> = new Set()
 const NO_PINS: Pins = new Map()
+
+/**
+ * What reading the Domains drawn whole gave, in their order: the bundles read, and whether each
+ * read failed. Kept whole while nothing it holds changes, so a Domain still being read redraws
+ * nothing.
+ */
+const readWhole = (results: readonly { data?: StudioSchemaBundle; isError: boolean }[]) => ({
+  bundles: results.flatMap((result) => (result.data?.ir ? [result.data] : [])),
+  failed: results.map(
+    (result) => result.isError || (result.data !== undefined && result.data.ir === null),
+  ),
+})
+
+/** `origin=share,…`: the shares a Structure draws, as a key that changes only when they do. */
+const sharesKey = (shares: Readonly<Record<string, string>>, keep: (origin: string) => boolean) =>
+  Object.entries(shares)
+    .filter(([origin]) => keep(origin))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([origin, share]) => `${origin}=${share}`)
+    .join(',')
+
+const sharesOf = (key: string): Record<string, 'hidden' | 'whole'> =>
+  Object.fromEntries(
+    key
+      .split(',')
+      .filter(Boolean)
+      .map((entry) => {
+        const at = entry.lastIndexOf('=')
+        return [entry.slice(0, at), entry.slice(at + 1) as 'hidden' | 'whole']
+      }),
+  )
 
 /**
  * A Studio ref as the Scene names it. A relationship is selected and revealed as its Class
@@ -84,6 +135,8 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
     collapse,
     opened: openFolds,
     toggleFold,
+    shares,
+    share,
   } = useLensPins(domainId, lens.id)
   // An isolated neighbourhood is laid out for the moment: what is placed in it lasts until
   // it is left, and the lens's own arrangement is never written.
@@ -104,23 +157,84 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
   const options = useMemo(() => optionsOf(lens, setOptions), [lens, setOptions])
   const bundle = input?.bundle
   const anatomy = input?.anatomy
-  // The folds the reader opened are laid out open, at rest and under a focus alike.
-  const atRest = useMemo(
+
+  // The other Domains, as this lens draws them: only a lens that composes draws any.
+  const composes = lens.compose !== undefined
+  const readable = useMemo<ReadableDomains>(() => {
+    const workspace = new Map<string, string>()
+    const outside = new Map<string, string>()
+    for (const domain of domains ?? []) {
+      if (!domain.origin) continue
+      const kind = domainAddressOf(domain.id).kind
+      if (kind === 'workspace') workspace.set(domain.origin, domain.id)
+      else if (kind === 'kernel') outside.set(domain.origin, domain.id)
+    }
+    return { workspace, outside }
+  }, [domains])
+  const wholeIds = useMemo(
     () =>
-      bundle?.ir && lens.project
-        ? withFoldsOpen(lens.project(bundle, options, undefined, anatomy), openFolds)
-        : undefined,
-    [anatomy, bundle, lens, openFolds, options],
+      composes && bundle
+        ? wholeDomainIds(domainChoices(bundle, readable, shares, NOTHING), readable)
+        : [],
+    [bundle, composes, readable, shares],
   )
+  const whole = useQueries({ queries: wholeIds.map(bundleQueryOptions), combine: readWhole })
+  const { data: locals } = useQuery({
+    queryKey: versionsKeys.locals,
+    queryFn: versionsApi.locals,
+    enabled: composes,
+  })
+  const readOrigins = useMemo(
+    () => new Set(whole.bundles.map((each) => each.ir!.domain)),
+    [whole.bundles],
+  )
+  const failedOrigins = useMemo(() => {
+    const originOf = new Map(
+      [...readable.workspace, ...readable.outside].map(([origin, id]) => [id, origin]),
+    )
+    return new Set(
+      wholeIds.flatMap((id, index) => (whole.failed[index] ? (originOf.get(id) ?? []) : [])),
+    )
+  }, [readable, whole.failed, wholeIds])
+  const choices = useMemo(
+    () =>
+      composes && bundle ? domainChoices(bundle, readable, shares, readOrigins, failedOrigins) : [],
+    [bundle, composes, failedOrigins, readOrigins, readable, shares],
+  )
+  // What is drawn changes only once a Domain drawn whole has been read: meanwhile it is reached.
+  const drawnKey = sharesKey(shares, (origin) =>
+    shares[origin] === 'hidden' ? true : readOrigins.has(origin),
+  )
+  const drawnShares = useMemo(() => sharesOf(drawnKey), [drawnKey])
+  const composition = useMemo<StructureComposition>(() => {
+    if (!composes || !bundle?.ir || Object.keys(drawnShares).length === 0) return NO_COMPOSITION
+    const named = (origin: string, id: string) => {
+      const version = locals?.find((local) => local.domainId === id)?.declared
+      return { label: domainName(origin), ...(version ? { version } : {}) }
+    }
+    return {
+      shares: drawnShares,
+      whole: whole.bundles.map((each) => ({
+        bundle: each,
+        ...named(each.ir!.domain, each.domainId),
+      })),
+      home: named(bundle.ir.domain, domainId),
+    }
+  }, [bundle, composes, domainId, drawnShares, locals, whole.bundles])
+
+  // The folds the reader opened are laid out open, at rest and under a focus alike.
+  const atRest = useMemo(() => {
+    if (!bundle?.ir) return undefined
+    const projected = sceneOf(lens, bundle, options, undefined, anatomy, composition)
+    return projected ? withFoldsOpen(projected, openFolds) : undefined
+  }, [anatomy, bundle, composition, lens, openFolds, options])
   // What of the selection the lens draws more of: a function's mutations, in Behavior.
   const focus = bundle && lens.focus ? lens.focus(bundle, options, selected) : undefined
-  const scene = useMemo(
-    () =>
-      bundle && focus && lens.project
-        ? withFoldsOpen(lens.project(bundle, options, focus, anatomy), openFolds)
-        : atRest,
-    [anatomy, atRest, bundle, focus, lens, openFolds, options],
-  )
+  const scene = useMemo(() => {
+    if (!bundle || !focus) return atRest
+    const projected = sceneOf(lens, bundle, options, focus, anatomy, composition)
+    return projected ? withFoldsOpen(projected, openFolds) : atRest
+  }, [anatomy, atRest, bundle, composition, focus, lens, openFolds, options])
   // Modules open or collapse as the reader leaves them, at rest; a focus never changes that.
   const collapsed = useMemo(
     () =>
@@ -330,6 +444,38 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [select, setFocus, setPanelOverlay])
 
+  // Leaving Structure lets go of a selection only a Domain drawn whole declares: every other
+  // lens reads the open Domain alone, which names nothing for it.
+  useEffect(() => {
+    if (composes || !ownSelection || !selectedClass || !bundle?.ir) return
+    if (namedOnlyBeside(bundle, selectedClass)) clearSelection()
+  }, [bundle, clearSelection, composes, ownSelection, selectedClass])
+
+  const homeLabel = bundle?.ir ? domainName(bundle.ir.domain) : ''
+  const homeVersion = locals?.find((local) => local.domainId === domainId)?.declared ?? undefined
+  const onChoose = useCallback(
+    (origin: string, drawn: DrawnAs, redrawn: () => void) => {
+      const before = choices.find((choice) => choice.origin === origin)?.drawn ?? 'reached'
+      // A choice that changes what is drawn frames the new canvas whole, as an option does.
+      if (bundle && redraws(bundle, origin, before, drawn)) redrawn()
+      share(origin, drawn)
+    },
+    [bundle, choices, share],
+  )
+  const lensControls = useMemo(
+    () =>
+      composes && bundle?.ir
+        ? (redrawn: () => void) => (
+            <DomainsControl
+              home={{ label: homeLabel, ...(homeVersion ? { version: homeVersion } : {}) }}
+              choices={choices}
+              onChoose={(origin, drawn) => onChoose(origin, drawn, redrawn)}
+            />
+          )
+        : undefined,
+    [bundle, choices, composes, homeLabel, homeVersion, onChoose],
+  )
+
   const { data: introspection } = useQuery({
     queryKey: qk.introspection,
     queryFn: api.introspection,
@@ -349,6 +495,23 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
   // form of constraint and the Domain functions card sit on nothing: they keep their page.
   const rulePage =
     detail !== undefined && opensRulePage(detail) && (lens.id === 'rules' || !detail.includes('#'))
+  // What a Domain drawn whole declares opens on that Domain's own page, read as it reads it.
+  const beside = useMemo(() => {
+    if (!composes || !detail || !atRest?.areas || !bundle?.ir) return undefined
+    const id = sceneIdOf(detail)
+    const item =
+      atRest.nodes.find((node) => node.id === id) ?? atRest.links.find((link) => link.id === id)
+    if (!item?.anchor || !item.anchorDomain || item.anchorDomain === domainId) return undefined
+    const read = whole.bundles.find((each) => each.domainId === item.anchorDomain)
+    const area = atRest.areas.find((each) => each.domainId === item.anchorDomain)
+    if (!read || !area) return undefined
+    return {
+      bundle: read,
+      anchor: item.anchor,
+      label: area.label,
+      canvas: { domainId, origin: bundle.ir.domain, label: homeLabel, scene: atRest },
+    }
+  }, [atRest, bundle, composes, detail, domainId, homeLabel, whole.bundles])
 
   return (
     <div className="flex h-full flex-col" data-testid="schema-level" data-lens={lens.id}>
@@ -398,6 +561,7 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
               insets={insets}
               options={canvasOptions}
               onOption={onOption}
+              lensControls={lensControls}
               pins={pins}
               onPlace={onPlace}
               onAutoArrange={pins.size > 0 ? onAutoArrange : undefined}
@@ -421,6 +585,10 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
         ) : detail?.startsWith('policy.') ? (
           <PanelShell onCover={setCovered} onClose={() => select(undefined)}>
             <SchemaPolicyDetail domainId={domainId} policyKey={detail.slice('policy.'.length)} />
+          </PanelShell>
+        ) : beside ? (
+          <PanelShell onCover={setCovered} onClose={() => select(undefined)}>
+            <BesidePage {...beside} />
           </PanelShell>
         ) : rulePage && detail && selectionInput ? (
           <PanelShell onCover={setCovered} onClose={() => select(undefined)}>

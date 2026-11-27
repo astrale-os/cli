@@ -51,6 +51,7 @@ import type {
   CommentStore,
   DocMeta,
   DomainCatalogEntry,
+  DomainShare,
   DomainSummary,
   InstanceDomains,
   InstancesState,
@@ -379,6 +380,9 @@ export const api = {
   /** Opens some of one lens's folds by hand and shuts others; every fold not named keeps its state. */
   changeLensOpened: (id: string, lens: string, change: LensSetChange) =>
     post<LayoutState>(layoutPath(id), { action: 'open', lens, ...change }),
+  /** Says how one lens draws another Domain; every other Domain keeps how it is drawn. */
+  setDomainShare: (id: string, lens: string, origin: string, share: DomainShare | 'reached') =>
+    post<LayoutState>(layoutPath(id), { action: 'share', lens, origin, share }),
 
   datasets: (id: string) => get<StudioDatasets>(`${d(id)}/datasets`),
 

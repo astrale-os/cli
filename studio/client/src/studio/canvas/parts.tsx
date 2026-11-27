@@ -1,19 +1,20 @@
 /**
- * The marks the canvas draws in HTML: cards, collapsed groups, junctions and module
- * regions. Each part lays itself out at the offsets its `BoxModel` computed, so what
+ * The marks the canvas draws in HTML: cards, collapsed groups, junctions, module regions and,
+ * on a canvas of several Domains, each Domain's area. Each part lays itself out at the offsets its `BoxModel` computed, so what
  * renders is exactly what the layout reserved.
  */
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 
 import { concreteAnchorKind } from '@shared/comment-anchors'
-import { Box as BoxIcon, ChevronDown, ChevronRight, Layers, Spline } from 'lucide-react'
+import { Box as BoxIcon, ChevronDown, ChevronRight, House, Layers, Spline } from 'lucide-react'
 import { memo } from 'react'
 
+import { domainAnchorRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import type { Box, JunctionBox } from '../scene/arrange'
-import type { SceneBadge, SceneGroup, SceneRow, SceneSign } from '../scene/types'
+import type { SceneArea, SceneBadge, SceneGroup, SceneRow, SceneSign } from '../scene/types'
 import type { Emphasis } from './emphasis'
 import type { Rect } from './geometry'
 import type { Tier } from './viewport'
@@ -22,6 +23,7 @@ import { NodeCommentPin } from '../../schema-studio/node-comment-pin'
 import { moduleTint } from '../../schema-studio/palette'
 import { SchemaIcon } from '../../schema-studio/schema-icon'
 import { ConstraintMark, RuleMark, RuleMarks } from '../rules/rule-mark'
+import { AREA_HEADER } from './areas'
 import { commentTarget } from './comment-target'
 import { GLYPHS } from './glyphs'
 import { REGION_HEADER } from './layout'
@@ -81,7 +83,11 @@ function boxAnchor(box: CardBox): { ref: string; excerpt: string; domainId?: str
       excerpt: box.node.label,
       ...(box.node.anchorDomain ? { domainId: box.node.anchorDomain } : {}),
     }
-  return { ref: box.group.anchor ?? box.group.id, excerpt: box.group.label }
+  return {
+    ref: box.group.anchor ?? box.group.id,
+    excerpt: box.group.label,
+    ...(box.group.anchorDomain ? { domainId: box.group.anchorDomain } : {}),
+  }
 }
 
 /** One box: a card, or a collapsed group. */
@@ -696,7 +702,7 @@ export const RegionView = memo(function RegionView({
       data-emphasis={emphasis}
       data-framed={framed || undefined}
       data-selected={selected || undefined}
-      {...commentTarget(anchor, group.label)}
+      {...commentTarget(anchor, group.label, group.anchorDomain)}
       className="scene-region"
       style={
         {
@@ -744,7 +750,49 @@ export const RegionView = memo(function RegionView({
           </span>
         )}
       </div>
-      <Pin domainId={domainId} anchor={anchor} excerpt={group.label} />
+      <Pin domainId={group.anchorDomain ?? domainId} anchor={anchor} excerpt={group.label} />
+    </div>
+  )
+})
+
+/**
+ * One Domain's area on a canvas of several: a frame around its parts, its name and version
+ * on top. The canvas's own Domain is framed solid and marked as home; the others are framed
+ * dashed. Its name drags the whole area, and a comment on it is filed under its Domain.
+ */
+export const AreaView = memo(function AreaView({
+  area,
+  rect,
+  tier,
+}: {
+  area: SceneArea
+  rect: Rect
+  tier: Tier
+}) {
+  return (
+    <div
+      data-area-id={area.id}
+      data-home={area.home || undefined}
+      className="scene-area"
+      style={
+        {
+          transform: `translate(${rect.x}px, ${rect.y}px)`,
+          width: rect.width,
+          height: rect.height,
+          '--area-hue': area.hue,
+        } as CSSProperties
+      }
+    >
+      <div
+        className={cn('scene-area-header', tier === 'far' && 'scene-area-header-far')}
+        data-area-header={area.id}
+        {...commentTarget(domainAnchorRef(area.origin), area.label, area.domainId)}
+        style={{ height: AREA_HEADER }}
+      >
+        {area.home && <House className="scene-area-home" aria-label="This Domain" />}
+        <span className="scene-area-label">{area.label}</span>
+        {area.version && <span className="scene-area-version">{area.version}</span>}
+      </div>
     </div>
   )
 })

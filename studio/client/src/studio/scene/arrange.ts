@@ -20,10 +20,13 @@
  *   ribbon instead of a trunk; any other link — within a column, dashed, latent — is drawn
  *   on its own.
  * - The cost guard bounds what is drawn and records every fold.
+ * - In a Scene of several Domains, each area holds its parts' boxes: a junction whose every
+ *   accepted box stands in one area stands there too; one that joins areas stands in none.
  */
 
 import type {
   Scene,
+  SceneArea,
   SceneBadge,
   SceneBand,
   SceneFold,
@@ -121,6 +124,14 @@ export interface Region {
   members: string[]
 }
 
+/** One Domain's framed area, on a canvas of several. */
+export interface Area {
+  id: string
+  area: SceneArea
+  /** box ids, junctions included, in arrangement order */
+  members: string[]
+}
+
 /**
  * The links between two boxes of different columns, in a Scene of ribbons: one band at rest,
  * as thick as the node pairs it carries, striped by what its links say.
@@ -163,6 +174,8 @@ export interface Arrangement {
   bands: SceneBand[]
   boxes: Box[]
   regions: Region[]
+  /** the Scene's areas, each with its boxes; absent for a Scene of one Domain */
+  areas?: Area[]
   trunks: Trunk[]
   ribbons: Ribbon[]
   fans: Fan[]
@@ -172,8 +185,21 @@ export interface Arrangement {
   folded: SceneFold[]
 }
 
-/** The groups a Scene opens with collapsed: all of them once it is too large to read whole. */
+/**
+ * The groups a Scene opens with collapsed: all of them once it is too large to read whole. In
+ * a Scene of several Domains each area is read on its own: its groups collapse as its own
+ * Scene's would.
+ */
 export function defaultCollapsed(scene: Scene, above = COLLAPSE_ABOVE): Set<string> {
+  if (scene.areas && scene.areas.length > 0) {
+    const collapsed = new Set<string>()
+    for (const area of scene.areas) {
+      const nodes = scene.nodes.filter((node) => node.area === area.id).length
+      const groups = scene.groups.filter((group) => group.area === area.id)
+      if (nodes > above && groups.length >= 2) for (const group of groups) collapsed.add(group.id)
+    }
+    return collapsed
+  }
   if (scene.nodes.length <= above || scene.groups.length < 2) return new Set()
   return new Set(scene.groups.map((group) => group.id))
 }
@@ -440,6 +466,7 @@ export function arrange(
     bands: scene.bands ?? [],
     boxes,
     regions,
+    ...(scene.areas && scene.areas.length > 0 ? { areas: areasOf(scene.areas, boxes) } : {}),
     trunks: [...trunks.values()],
     ribbons: [...ribbons.values()].map(({ pairs, ...ribbon }) => ({
       ...ribbon,
@@ -453,4 +480,24 @@ export function arrange(
     linkPlace,
     folded,
   }
+}
+
+/** The area a box stands in: its node's or group's, or a junction's whose accepted boxes share one. */
+function areaOfBox(box: Box, index: ReadonlyMap<string, Box>): string | undefined {
+  if (box.kind === 'node') return box.node.area
+  if (box.kind === 'group') return box.group.area
+  const areas = new Set(
+    box.accepts.map((id) => (index.has(id) ? areaOfBox(index.get(id)!, index) : undefined)),
+  )
+  return areas.size === 1 ? [...areas][0] : undefined
+}
+
+function areasOf(areas: readonly SceneArea[], boxes: readonly Box[]): Area[] {
+  const index = new Map(boxes.map((box) => [box.id, box]))
+  const members = new Map(areas.map((area) => [area.id, [] as string[]]))
+  for (const box of boxes) {
+    const area = areaOfBox(box, index)
+    if (area !== undefined) members.get(area)?.push(box.id)
+  }
+  return areas.map((area) => ({ id: area.id, area, members: members.get(area.id)! }))
 }

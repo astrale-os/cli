@@ -6,15 +6,18 @@
  * Keyboard: ↑/↓ move between rows, ← / → close and open a module (or step to its header),
  * Enter selects; from the search field ↓ enters the list and Enter selects the first match.
  *
+ * On a canvas of several Domains each Domain is a row of its own, which opens and shuts in the
+ * Index alone: the canvas draws every area it lists.
+ *
  * The filter filters the canvas too: what it leaves out steps back there (`onFilter`). Every
  * entry is told apart at the rail's width, its count in view (`linesApart`).
  */
 
-import { ChevronDown, ChevronRight, PanelLeftClose, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Globe, House, PanelLeftClose, Search, X } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { targetSurface } from '@/lib/targets'
+import { domainAnchorRef, targetSurface } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import type { Scene } from '../scene/types'
@@ -29,7 +32,14 @@ import { useCanvas } from '../canvas/store'
 import { TONE_TEXT } from '../canvas/tones'
 import { OpMarks } from '../rules/rule-mark'
 import { linesApart, measureIn } from './label-lines'
-import { type IndexItemRow, type IndexRow, indexKinds, indexRows, kindLabel } from './model'
+import {
+  type IndexAreaRow,
+  type IndexItemRow,
+  type IndexRow,
+  indexKinds,
+  indexRows,
+  kindLabel,
+} from './model'
 
 export interface IndexRailProps {
   scene: Scene | undefined
@@ -47,6 +57,8 @@ export interface IndexRailProps {
 const ROW_CHROME = {
   grouped: 28,
   loose: 10,
+  /** what a row listed under a Domain's row adds to its indent */
+  area: 12,
   glyph: 14,
   gap: 6,
   end: 8,
@@ -77,11 +89,26 @@ export function IndexRail({
   const hovered = useCanvas((state) => state.hovered)
   const setHovered = useCanvas((state) => state.setHovered)
   const listRef = useRef<HTMLDivElement>(null)
+  // The Domains shut in the Index, on a canvas of several.
+  const [shutAreas, setShutAreas] = useState<ReadonlySet<string>>(new Set())
+  const shut = useMemo(
+    () => (shutAreas.size > 0 ? new Set([...collapsed, ...shutAreas]) : collapsed),
+    [collapsed, shutAreas],
+  )
+  const toggleArea = (area: string) =>
+    setShutAreas((current) => {
+      const next = new Set(current)
+      if (next.has(area)) next.delete(area)
+      else next.add(area)
+      return next
+    })
+  const toggle = (row: IndexRow) =>
+    row.type === 'area' ? toggleArea(row.id) : onToggleGroup(row.id)
 
   const kinds = useMemo(() => (scene ? indexKinds(scene) : []), [scene])
   const rows = useMemo(
-    () => (scene ? indexRows(scene, { query, hidden }, collapsed) : []),
-    [collapsed, hidden, query, scene],
+    () => (scene ? indexRows(scene, { query, hidden }, shut) : []),
+    [hidden, query, scene, shut],
   )
   // What the filter keeps, whatever is collapsed or hidden in the list, steps forward on the canvas.
   const kept = useMemo(
@@ -119,6 +146,7 @@ export function IndexRail({
         const room =
           width -
           (row.group ? ROW_CHROME.grouped : ROW_CHROME.loose) -
+          (row.area ? ROW_CHROME.area : 0) -
           ROW_CHROME.glyph -
           ROW_CHROME.gap -
           ROW_CHROME.end -
@@ -158,8 +186,7 @@ export function IndexRail({
     element.scrollIntoView({ block: 'nearest' })
   }
 
-  const activate = (row: IndexRow) =>
-    row.type === 'group' ? onToggleGroup(row.id) : onSelect(row.id)
+  const activate = (row: IndexRow) => (row.type === 'item' ? onSelect(row.id) : toggle(row))
 
   const onListKey = (event: KeyboardEvent<HTMLDivElement>) => {
     const elements = rowElements()
@@ -189,18 +216,23 @@ export function IndexRail({
         event.preventDefault()
         activate(row)
         return
-      case 'ArrowLeft':
+      case 'ArrowLeft': {
         if (!row) return
         event.preventDefault()
-        if (row.type === 'group' && !row.collapsed) onToggleGroup(row.id)
-        else if (row.type === 'item' && row.group) {
-          focusRow(elements.find((element) => element.dataset.indexRow === row.group))
-        }
+        if (row.type !== 'item' && !row.collapsed) return toggle(row)
+        const up =
+          row.type === 'item'
+            ? (row.group ?? row.area)
+            : row.type === 'group'
+              ? row.area
+              : undefined
+        if (up) focusRow(elements.find((element) => element.dataset.indexRow === up))
         return
+      }
       case 'ArrowRight':
-        if (row?.type !== 'group') return
+        if (!row || row.type === 'item') return
         event.preventDefault()
-        if (row.collapsed) onToggleGroup(row.id)
+        if (row.collapsed) toggle(row)
         else focusRow(elements[index + 1])
         return
     }
@@ -296,7 +328,14 @@ export function IndexRail({
             onPointerLeave={() => setHovered(null)}
           >
             {rows.map((row) =>
-              row.type === 'group' ? (
+              row.type === 'area' ? (
+                <AreaRowView
+                  key={row.id}
+                  row={row}
+                  tabStop={tabStop === row.id}
+                  onToggle={() => toggleArea(row.id)}
+                />
+              ) : row.type === 'group' ? (
                 <GroupRowView
                   key={row.id}
                   id={row.id}
@@ -307,8 +346,9 @@ export function IndexRail({
                   selected={selected === row.id}
                   hovered={hovered === row.id}
                   tabStop={tabStop === row.id}
-                  domainId={domainId}
+                  domainId={groupOf.get(row.id)?.anchorDomain ?? domainId}
                   anchor={groupOf.get(row.id)?.anchor}
+                  inArea={row.area !== undefined}
                   onToggle={() => onToggleGroup(row.id)}
                   onSelect={() => onSelect(row.id)}
                   onHover={setHovered}
@@ -368,6 +408,56 @@ function IndexHeader() {
 const ROW =
   'relative flex h-7 cursor-default items-center gap-1.5 pr-2 text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
 
+/** A Domain's row on a canvas of several: its name and version, what it lists under it. */
+function AreaRowView({
+  row,
+  tabStop,
+  onToggle,
+}: {
+  row: IndexAreaRow
+  tabStop: boolean
+  onToggle: () => void
+}) {
+  const Icon = row.home ? House : Globe
+  return (
+    <div
+      role="treeitem"
+      aria-expanded={!row.collapsed}
+      tabIndex={tabStop ? 0 : -1}
+      data-index-row={row.id}
+      data-index-area={row.origin}
+      data-tree-row=""
+      data-comment-outline-inset=""
+      {...commentTarget(domainAnchorRef(row.origin), row.label, row.domainId)}
+      className={cn(ROW, 'mt-1.5 pl-1.5 font-semibold hover:bg-accent/40')}
+      onClick={onToggle}
+    >
+      <span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center text-muted-foreground">
+        {row.collapsed ? (
+          <ChevronRight className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5" />
+        )}
+      </span>
+      {/* the hue its frame wears on the canvas */}
+      <Icon
+        aria-hidden
+        className="h-3.5 w-3.5 shrink-0"
+        style={{ color: `oklch(0.68 0.12 ${row.hue})` }}
+      />
+      <span className="min-w-0 truncate text-[12.5px]">{row.label}</span>
+      {row.version && (
+        <span className="shrink-0 font-mono text-[10.5px] font-normal text-muted-foreground">
+          {row.version}
+        </span>
+      )}
+      <span className="ml-auto shrink-0 text-[11px] font-normal tabular-nums text-muted-foreground">
+        {row.count}
+      </span>
+    </div>
+  )
+}
+
 function GroupRowView({
   id,
   label,
@@ -379,6 +469,7 @@ function GroupRowView({
   tabStop,
   domainId,
   anchor,
+  inArea,
   onToggle,
   onSelect,
   onHover,
@@ -393,6 +484,8 @@ function GroupRowView({
   tabStop: boolean
   domainId: string
   anchor?: string
+  /** listed under a Domain's row */
+  inArea: boolean
   onToggle: () => void
   onSelect: () => void
   onHover: (id: string | null) => void
@@ -410,7 +503,7 @@ function GroupRowView({
       {...commentTarget(anchor ?? id, label, domainId)}
       className={cn(
         ROW,
-        'mt-1 pl-1.5',
+        inArea ? 'mt-1 pl-[18px]' : 'mt-1 pl-1.5',
         selected ? 'bg-accent' : hovered ? 'bg-accent/60' : 'hover:bg-accent/40',
       )}
       onPointerEnter={(event) => {
@@ -487,7 +580,7 @@ function ItemRowView({
       className={cn(
         ROW,
         wrapped && 'h-auto min-h-7 items-start py-1 leading-[18px]',
-        row.group ? 'pl-7' : 'pl-2.5',
+        row.area ? (row.group ? 'pl-10' : 'pl-[22px]') : row.group ? 'pl-7' : 'pl-2.5',
         selected
           ? 'bg-accent font-medium text-foreground before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary'
           : hovered

@@ -36,7 +36,16 @@ import { anchorOf, type InspectorTarget, targetOf } from './target'
 import { ViewPage, ViewsBody } from './views-view'
 import { NO_TERMS, termsOf } from './words'
 
-export function Inspector({ bundle, selected }: { bundle: StudioSchemaBundle; selected?: string }) {
+export function Inspector({
+  bundle,
+  selected,
+  beside,
+}: {
+  bundle: StudioSchemaBundle
+  selected?: string
+  /** what heads the page when it reads a Domain drawn beside the open one: that Domain's name */
+  beside?: ReactNode
+}) {
   const lens = useUI((state) => state.lens)
   const rules = rulesOf(bundle)
   const terms = useMemo(
@@ -93,6 +102,7 @@ export function Inspector({ bundle, selected }: { bundle: StudioSchemaBundle; se
       data-anchor-excerpt={heading.name}
       data-commentable=""
     >
+      {beside}
       <Title
         kicker={heading.kicker}
         name={heading.name}

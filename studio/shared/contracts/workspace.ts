@@ -294,7 +294,18 @@ export interface LayoutState {
    * laid out open. A lens absent here, or a fold not named, shows its scene's default.
    */
   opened?: Record<string, string[]>
+  /**
+   * How each Studio lens draws the other Domains, by lens id, then by Domain origin: `hidden`
+   * draws none of its Classes, `whole` draws all of them in an area of their own. A Domain absent
+   * here shows only the Classes the canvas's own Domain reaches.
+   */
+  domains?: Record<string, Record<string, DomainShare>>
 }
+
+/** How much of another Domain a canvas draws, past what its own Domain reaches. */
+export type DomainShare = 'hidden' | 'whole'
+
+export const DOMAIN_SHARES: readonly DomainShare[] = ['hidden', 'whole']
 
 /**
  * What a layout record may hold, in counts and characters. A write past one is refused (413)
@@ -307,8 +318,10 @@ export const LAYOUT_LIMITS = {
   positions: 10_000,
   /** ids per set a lens keeps: its shut modules, its folds opened by hand */
   ids: 10_000,
-  /** a box's, a module's or a fold's id */
+  /** a box's, a module's or a fold's id, or a Domain's origin */
   id: 512,
+  /** other Domains a lens says how to draw */
+  domains: 256,
   /** a coordinate or a size, either way from 0, in world units */
   coordinate: 10_000_000,
 } as const

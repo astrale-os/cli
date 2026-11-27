@@ -1,5 +1,7 @@
 import { classIcon, defineSchema, edgeClass, nodeClass, valueSchema } from '@astrale-os/sdk/schema'
 
+import { CrmSchema, Team } from './crm.js'
+
 const string = valueSchema<string>()({ type: 'string' })
 
 const Company = nodeClass({
@@ -22,9 +24,17 @@ const OperatesIn = edgeClass.directed({
   target: { as: 'region', accepts: [Region], incoming: '0..*' },
 })
 
+/** A relationship whose other end is a Class of the Crm Domain. */
+const ServedBy = edgeClass.directed({
+  policies: { read: true },
+  source: { as: 'region', accepts: [Region], outgoing: '0..*' },
+  target: { as: 'team', accepts: [Team], incoming: '0..*' },
+})
+
 export const StudioPeerE2ESchema = defineSchema('ops.studio-demo.astrale.ai', {
   name: 'Test Domain',
-  classes: { Company, Region, OperatesIn },
+  dependencies: { crm: CrmSchema },
+  classes: { Company, Region, OperatesIn, ServedBy },
 })
 
 export type StudioPeerE2ESchema = typeof StudioPeerE2ESchema

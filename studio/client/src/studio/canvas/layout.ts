@@ -10,15 +10,18 @@
  * lines cross its border one way, so it is never routed around. Hovering or
  * selecting never moves anything. A loop reserves room for its label beside its box. The
  * engine is injected — the browser's runs in a worker — and the same input always lays
- * out the same way. A Scene of ribbons is laid out in its columns instead (`columns.ts`).
+ * out the same way. A Scene of ribbons is laid out in its columns instead (`columns.ts`); a
+ * Scene of several Domains, one area at a time, the areas then packed (`areas.ts`).
  */
 
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api.js'
 
-import { type Arrangement, type Box, isJunction } from '../scene/arrange'
+import { type Area, type Arrangement, type Box, isJunction } from '../scene/arrange'
+import { AREA_GAP, areaFrame, areaOfBoxes, EMPTY_AREA, packAreas, withinArea } from './areas'
 import { bandHeadings, columnBoxes } from './columns'
-import { type Point, type Rect, union } from './geometry'
+import { nearestRoom, type Point, type Rect, union } from './geometry'
 import { type BoxModel, boxModel, type Detail, type TextMeasure } from './metrics'
+import { routeLines } from './reroute'
 import { spoke } from './routes'
 
 export interface LayoutEngine {
@@ -37,6 +40,8 @@ export interface Placement {
    * in the fan's direction. A route meets a junction at its centre.
    */
   routes: ReadonlyMap<string, Point[]>
+  /** area id → its frame, on a canvas of several Domains */
+  areas?: ReadonlyMap<string, Rect>
   bounds: Rect
 }
 
@@ -543,6 +548,20 @@ export async function layoutArrangement(
 ): Promise<Placement> {
   const models = boxModels(arrangement, detail, measure)
   if (arrangement.boxes.length === 0) return gridPlacement(arrangement, models, detail)
+  if (arrangement.areas && arrangement.areas.length > 0)
+    return layoutAreas(arrangement, arrangement.areas, models, detail, measure, engine, loopLabels)
+  return layoutAlone(arrangement, models, detail, measure, engine, loopLabels)
+}
+
+/** One Domain's arrangement laid out. */
+async function layoutAlone(
+  arrangement: Arrangement,
+  models: ReadonlyMap<string, BoxModel>,
+  detail: Detail,
+  measure: TextMeasure,
+  engine: LayoutEngine,
+  loopLabels?: ReadonlyMap<string, LabelSize>,
+): Promise<Placement> {
   if (arrangement.lines === 'ribbons') return columnPlacement(arrangement, models, detail)
   const laid = async (lead: Lead, at: Detail) => {
     const sized = at === detail ? models : boxModels(arrangement, at, measure)
@@ -564,3 +583,103 @@ export async function layoutArrangement(
 }
 
 const longerSide = (rect: Rect) => Math.max(rect.width, rect.height)
+
+/** The least room kept around a junction between areas. */
+const JUNCTION_ROOM = 28
+
+/**
+ * A Scene of several Domains: each area laid out alone, the areas packed in Scene order, the
+ * junctions between areas placed among the boxes they join, clear of every frame, and the
+ * lines between areas routed around every box.
+ */
+async function layoutAreas(
+  arrangement: Arrangement,
+  areas: readonly Area[],
+  models: ReadonlyMap<string, BoxModel>,
+  detail: Detail,
+  measure: TextMeasure,
+  engine: LayoutEngine,
+  loopLabels?: ReadonlyMap<string, LabelSize>,
+): Promise<Placement> {
+  const parts = await Promise.all(
+    areas.map((area) => {
+      const alone = withinArea(arrangement, area)
+      return alone.boxes.length === 0
+        ? undefined
+        : layoutAlone(alone, models, detail, measure, engine, loopLabels)
+    }),
+  )
+  const frames = parts.map(
+    (part) =>
+      (part && areaFrame([...part.boxes.values(), ...part.regions.values()])) ?? {
+        x: 0,
+        y: 0,
+        ...EMPTY_AREA,
+      },
+  )
+  const corners = packAreas(frames, AREA_GAP)
+  const boxes = new Map<string, Rect>()
+  const regions = new Map<string, Rect>()
+  const routes = new Map<string, Point[]>()
+  const areaRects = new Map<string, Rect>()
+  areas.forEach((area, index) => {
+    const frame = frames[index]!
+    const by = { x: corners[index]!.x - frame.x, y: corners[index]!.y - frame.y }
+    const move = (rect: Rect): Rect => ({ ...rect, x: rect.x + by.x, y: rect.y + by.y })
+    areaRects.set(area.id, move(frame))
+    const part = parts[index]
+    if (!part) return
+    for (const [id, rect] of part.boxes) boxes.set(id, move(rect))
+    for (const [id, rect] of part.regions) regions.set(id, move(rect))
+    for (const [id, route] of part.routes)
+      routes.set(
+        id,
+        route.map((point) => ({ x: point.x + by.x, y: point.y + by.y })),
+      )
+  })
+
+  // A junction between areas stands among the boxes it joins, clear of every frame.
+  const inArea = areaOfBoxes(arrangement)
+  const between = arrangement.boxes.filter((box) => !inArea.has(box.id))
+  const taken: Rect[] = [...areaRects.values()]
+  for (const box of between) {
+    const model = models.get(box.id)!
+    const joined = box.kind === 'junction' ? box.accepts.flatMap((id) => boxes.get(id) ?? []) : []
+    const at = union(joined)
+    const rect = {
+      x: (at ? at.x + at.width / 2 : 0) - model.width / 2,
+      y: (at ? at.y + at.height / 2 : 0) - model.height / 2,
+      width: model.width,
+      height: model.height,
+    }
+    const room = nearestRoom(rect, taken, JUNCTION_ROOM)
+    const placed = { ...rect, x: rect.x + room.x, y: rect.y + room.y }
+    boxes.set(box.id, placed)
+    taken.push(placed)
+  }
+
+  const fans = new Map(arrangement.fans.map((fan) => [fan.id, fan]))
+  const crossing = routeEnds(arrangement).filter(([id]) => !routes.has(id))
+  const again: { id: string; from: string; to: string }[] = []
+  for (const [id, from, to] of crossing) {
+    const fan = fans.get(id)
+    const route = fan ? spokeOf(fan.junction, fan.box, boxes) : undefined
+    if (fan && route) routes.set(id, fan.inward ? route.reverse() : route)
+    else again.push({ id, from, to })
+  }
+  for (const [id, route] of routeLines(again, boxes)) routes.set(id, route)
+
+  return {
+    key: arrangement.key,
+    detail,
+    boxes,
+    models,
+    regions,
+    routes,
+    areas: areaRects,
+    bounds: boundsOf(
+      [...boxes.values(), ...regions.values(), ...areaRects.values()],
+      routes.values(),
+    ),
+  }
+}

@@ -18,7 +18,9 @@
  *   neighbourhood already shown whole at that zoom keeps the camera: no card moves.
  * - Every box, junction and module (by its name) drags; its lines and labels follow live.
  *   Letting go records where it rests — beside, never over, another box — and nothing else
- *   moves. "Auto-arrange" forgets what was placed in the lens.
+ *   moves. On a canvas of several Domains, each Domain's area drags by its name, and a card
+ *   dragged stays in its area, which grows around it. "Auto-arrange" forgets what was placed
+ *   in the lens.
  * - Keys: `F` isolates the selection's neighbourhood, `Esc` backs out, `.` fits, arrows
  *   walk to the nearest box that way.
  */
@@ -94,7 +96,7 @@ import { LabelsLayer, LinksLayer } from './links'
 import { measureText } from './measure'
 import { type BoxModel, boxModel, READING_ZOOM, rulesLegible, spokenScale } from './metrics'
 import { OffFramePointers } from './off-frame-pointers'
-import { BandHeading, BoxView, JunctionView, RegionView } from './parts'
+import { AreaView, BandHeading, BoxView, JunctionView, RegionView } from './parts'
 import { pinPlacement, type Pins, settleDrop } from './pins'
 import { pointing } from './pointer'
 import { drawnAlone } from './ribbons'
@@ -154,6 +156,11 @@ export interface SceneCanvasProps {
   insets: Insets
   options?: readonly CanvasOption[]
   onOption?: (id: string, value: boolean) => void
+  /**
+   * Controls of the lens's own, drawn beside its options — which Domains it draws. A control
+   * that changes what is drawn calls `redrawn`: the new scene is framed whole, as an option's is.
+   */
+  lensControls?: (redrawn: () => void) => ReactNode
   /** where the reader placed boxes, by box id */
   pins: Pins
   /** records boxes where the reader let them rest */
@@ -210,8 +217,18 @@ function placingPlacement(state: Placing, by: Point) {
     .placement
 }
 
-/** The boxes a press on `target` moves: its box or junction, or a module by its name. */
+/**
+ * The boxes a press on `target` moves: its box or junction, a module by its name, or a
+ * Domain's area by its name.
+ */
 function gripOf(frame: Frame, target: Element): string[] | undefined {
+  const area = target.closest<HTMLElement>('[data-area-header]')?.dataset.areaHeader
+  if (area) {
+    const members = frame.arrangement.areas
+      ?.find((candidate) => candidate.id === area)
+      ?.members.filter((id) => frame.placement.boxes.has(id))
+    return members && members.length > 0 ? members : undefined
+  }
   const region = target.closest<HTMLElement>('[data-region-header]')?.dataset.regionHeader
   if (region) {
     const members = frame.arrangement.regions
@@ -379,6 +396,7 @@ export function SceneCanvas({
   insets: given,
   options = [],
   onOption,
+  lensControls,
   pins,
   onPlace,
   onAutoArrange,
@@ -1231,12 +1249,16 @@ export function SceneCanvas({
       const corner = state.corners.get(id)!
       dropped.set(id, { x: corner.x + state.by.x, y: corner.y + state.by.y })
     }
-    // A module holding a moved box is recorded by its members' corner as they now stand.
+    // A module or an area holding a moved box is recorded by its boxes' corner as they now
+    // stand.
     const moving = new Set(state.ids)
-    for (const region of state.origin.arrangement.regions) {
-      if (!region.members.some((id) => moving.has(id))) continue
-      const corners = region.members.flatMap((id) => dropped.get(id) ?? [])
-      dropped.set(region.id, {
+    for (const holder of [
+      ...state.origin.arrangement.regions,
+      ...(state.origin.arrangement.areas ?? []),
+    ]) {
+      if (!holder.members.some((id) => moving.has(id))) continue
+      const corners = holder.members.flatMap((id) => dropped.get(id) ?? [])
+      dropped.set(holder.id, {
         x: Math.min(...corners.map((corner) => corner.x)),
         y: Math.min(...corners.map((corner) => corner.y)),
       })
@@ -1471,6 +1493,11 @@ export function SceneCanvas({
       <div ref={worldRef} className="scene-world">
         {frame && (
           <>
+            {frame.arrangement.areas?.map((area) => {
+              const rect = frame.placement.areas?.get(area.id)
+              if (!rect) return null
+              return <AreaView key={area.id} area={area.area} rect={rect} tier={tier} />
+            })}
             {frame.arrangement.regions.map((region) => {
               const rect = frame.placement.regions.get(region.id)
               if (!rect) return null
@@ -1649,6 +1676,9 @@ export function SceneCanvas({
       >
         {/* The folds read beside the toolbar, in the band the canvas keeps clear for it. */}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+          {lensControls?.(() => {
+            intent.current = { kind: 'fit' }
+          })}
           {options.length > 0 && (
             <CanvasToolbar>
               {options.map((option) => (

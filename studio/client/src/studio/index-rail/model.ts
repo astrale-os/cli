@@ -3,12 +3,31 @@
  * links, grouped as the canvas groups them, in the Scene's order — so whatever a lens
  * draws, the Index lists, and a selection means the same thing in both. A Scene that lists
  * other things than it draws (`Scene.index`: the Rules lens's Policies and constraints) is
- * listed by those entries and their groups instead.
+ * listed by those entries and their groups instead. A Scene of several Domains (`Scene.areas`)
+ * lists each Domain under a row of its own, in the Scene's order, its groups and items inside.
  */
 
 import type { RuleOp, Scene, SceneGlyph, SceneTone } from '../scene/types'
 
 import { linkName } from '../scene/types'
+
+/** A Domain's row, on a Scene of several: what the Domain's area holds is listed under it. */
+export interface IndexAreaRow {
+  type: 'area'
+  id: string
+  label: string
+  version?: string
+  /** the open Domain's */
+  home: boolean
+  /** the Domain's hue on the canvas (`SceneArea.hue`) */
+  hue: number
+  origin: string
+  /** the Domain a comment on the row is filed under */
+  domainId: string
+  /** items listed under it, after filtering */
+  count: number
+  collapsed: boolean
+}
 
 export interface IndexGroupRow {
   type: 'group'
@@ -18,6 +37,8 @@ export interface IndexGroupRow {
   /** items listed under it, after filtering */
   count: number
   collapsed: boolean
+  /** the Domain's area it is listed under, on a Scene of several */
+  area?: string
 }
 
 export interface IndexItemRow {
@@ -37,9 +58,11 @@ export interface IndexItemRow {
   ops?: RuleOp[]
   /** a keyword the query matched, when it was not the label itself */
   matched?: string
+  /** the Domain's area it is listed under, on a Scene of several */
+  area?: string
 }
 
-export type IndexRow = IndexGroupRow | IndexItemRow
+export type IndexRow = IndexAreaRow | IndexGroupRow | IndexItemRow
 
 export interface IndexFilter {
   query: string
@@ -83,6 +106,7 @@ function listedItems(scene: Scene): IndexItemRow[] {
     ...(node.anchor ? { anchor: node.anchor } : {}),
     ...(node.anchorDomain ? { anchorDomain: node.anchorDomain } : {}),
     ...(node.group ? { group: node.group } : {}),
+    ...(node.area ? { area: node.area } : {}),
     kind: node.kind,
     label: node.label,
     ...(node.sublabel ? { sublabel: node.sublabel } : {}),
@@ -96,7 +120,9 @@ function listedItems(scene: Scene): IndexItemRow[] {
       type: 'item',
       id: link.id,
       ...(link.anchor ? { anchor: link.anchor } : {}),
+      ...(link.anchorDomain ? { anchorDomain: link.anchorDomain } : {}),
       ...(link.group ? { group: link.group } : {}),
+      ...(link.area ? { area: link.area } : {}),
       kind: link.kind,
       label: linkName(link),
       ...(link.name !== undefined && link.label ? { sublabel: link.label } : {}),
@@ -142,12 +168,48 @@ export function indexRows(
   }
   const items = listedItems(scene).flatMap((item) => matches(item) ?? [])
   const groups = scene.index?.groups ?? scene.groups
-  const known = new Set(groups.map((group) => group.id))
+  const areas = scene.index ? undefined : scene.areas
+  if (!areas?.length) return grouped(items, groups, collapsed, Boolean(query))
   const rows: IndexRow[] = []
+  for (const area of areas) {
+    const inside = items.filter((item) => item.area === area.id)
+    if (inside.length === 0) continue
+    const shut = !query && collapsed.has(area.id)
+    rows.push({
+      type: 'area',
+      id: area.id,
+      label: area.label,
+      ...(area.version !== undefined ? { version: area.version } : {}),
+      home: area.home === true,
+      hue: area.hue,
+      origin: area.origin,
+      domainId: area.domainId,
+      count: inside.length,
+      collapsed: shut,
+    })
+    if (shut) continue
+    const own = groups.filter((group) => group.area === area.id)
+    for (const row of grouped(inside, own, collapsed, Boolean(query)))
+      rows.push(row.type === 'group' ? { ...row, area: area.id } : row)
+  }
+  const known = new Set(areas.map((area) => area.id))
+  rows.push(...items.filter((item) => !item.area || !known.has(item.area)))
+  return rows
+}
+
+/** Each group's header, then its items; the items no group holds after them. */
+function grouped(
+  items: readonly IndexItemRow[],
+  groups: Scene['groups'],
+  collapsed: ReadonlySet<string>,
+  querying: boolean,
+): (IndexGroupRow | IndexItemRow)[] {
+  const known = new Set(groups.map((group) => group.id))
+  const rows: (IndexGroupRow | IndexItemRow)[] = []
   for (const group of groups) {
     const members = items.filter((item) => item.group === group.id)
     if (members.length === 0) continue
-    const shut = !query && collapsed.has(group.id)
+    const shut = !querying && collapsed.has(group.id)
     rows.push({
       type: 'group',
       id: group.id,

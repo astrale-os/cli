@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { LAYOUT_LIMITS } from '../../shared/contracts/workspace'
-import { changeLensIds, readLayout, resetLayout, resetLensLayout, setLensPositions } from './layout'
+import {
+  changeLensIds,
+  readLayout,
+  resetLayout,
+  resetLensLayout,
+  setDomainShare,
+  setLensPositions,
+} from './layout'
 import { UnreadableState } from './state-file'
 import { statePath, writeJson } from './store'
 
@@ -196,4 +203,40 @@ test('each lens keeps its own shut modules and opened folds, through an automati
   })
   resetLayout(root)
   expect(readLayout(root)).toEqual({})
+})
+
+test('each lens says how it draws each other Domain, kept through an automatic layout of its boxes', () => {
+  const root = domainRoot()
+  setDomainShare(root, 'structure', 'issues.example.dev', 'whole')
+  setDomainShare(root, 'structure', 'shell.example.dev', 'hidden')
+  setDomainShare(root, 'behavior', 'issues.example.dev', 'whole')
+  setLensPositions(root, 'structure', { 'class.issues.example.dev:class.Ticket': { x: 900, y: 0 } })
+  expect(readLayout(root).domains).toEqual({
+    structure: { 'issues.example.dev': 'whole', 'shell.example.dev': 'hidden' },
+    behavior: { 'issues.example.dev': 'whole' },
+  })
+
+  // Laying the boxes out again forgets where the areas stood, not which Domains are drawn.
+  expect(resetLensLayout(root, 'structure').domains).toEqual({
+    structure: { 'issues.example.dev': 'whole', 'shell.example.dev': 'hidden' },
+    behavior: { 'issues.example.dev': 'whole' },
+  })
+
+  // Reached is the default: it is said by no entry at all.
+  setDomainShare(root, 'structure', 'shell.example.dev', 'reached')
+  setDomainShare(root, 'behavior', 'issues.example.dev', 'reached')
+  expect(readLayout(root)).toEqual({ domains: { structure: { 'issues.example.dev': 'whole' } } })
+  setDomainShare(root, 'structure', 'issues.example.dev', 'reached')
+  expect(readLayout(root)).toEqual({})
+})
+
+test('a share past LAYOUT_LIMITS, or of no known kind, is refused and changes nothing', () => {
+  const root = domainRoot()
+  setDomainShare(root, 'structure', 'issues.example.dev', 'whole')
+  expect(setDomainShare(root, 'structure', 'x'.repeat(LAYOUT_LIMITS.id + 1), 'whole')).toEqual({
+    problem: `a Domain of the Domains drawn of the lens structure has an id longer than ${LAYOUT_LIMITS.id} characters`,
+    tooLarge: true,
+  })
+  writeJson(root, 'layout.json', { domains: { structure: { 'issues.example.dev': 'all' } } })
+  expect(() => readLayout(root)).toThrow(UnreadableState)
 })

@@ -60,3 +60,34 @@ export function segmentCrosses(a: Point, b: Point, rect: Rect): boolean {
 /** Whether a polyline passes through the rect's inside anywhere along it. */
 export const polylineCrosses = (points: readonly Point[], rect: Rect) =>
   points.some((point, index) => index > 0 && segmentCrosses(points[index - 1]!, point, rect))
+
+/** How far apart the spots tried for a rect are. */
+const STEP = 24
+/** How many rings of spots are tried around a rect before it goes below everything. */
+const RINGS = 48
+
+let rings: Point[] | undefined
+/** The shifts tried around a spot: nearest first, and equally near, clockwise from the right. */
+function ringShifts(): Point[] {
+  if (rings) return rings
+  const angle = (point: Point) => {
+    const value = Math.atan2(point.y, point.x)
+    return value < 0 ? value + 2 * Math.PI : value
+  }
+  const all: Point[] = []
+  for (let dy = -RINGS; dy <= RINGS; dy += 1)
+    for (let dx = -RINGS; dx <= RINGS; dx += 1) all.push({ x: dx * STEP, y: dy * STEP })
+  all.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y) || angle(a) - angle(b))
+  rings = all
+  return all
+}
+
+/** The shift that brings `rect` to the nearest room `gap` clear of every obstacle. */
+export function nearestRoom(rect: Rect, obstacles: readonly Rect[], gap: number): Point {
+  for (const by of ringShifts()) {
+    const moved = { ...rect, x: rect.x + by.x, y: rect.y + by.y }
+    if (!obstacles.some((obstacle) => overlaps(moved, obstacle, gap))) return by
+  }
+  const bottom = Math.max(...obstacles.map((obstacle) => obstacle.y + obstacle.height))
+  return { x: 0, y: bottom + gap - rect.y }
+}

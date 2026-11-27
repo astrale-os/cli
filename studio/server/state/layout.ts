@@ -2,8 +2,9 @@
  * layout.ts — a canvas's persisted arrangement: a Domain's, the Kernel's or the Workspace map's.
  * Each Studio lens keeps its own under `lenses`, positions keyed by box id (e.g. `class.Monitor`),
  * so they survive schema changes: a removed box's position is harmless, a new box is laid out
- * automatically. Its shut modules are under `collapsed`, the folds opened by hand under `opened`:
- * which are open is what the reader reads, so forgetting where boxes stand keeps both. Stamped
+ * automatically. Its shut modules are under `collapsed`, the folds opened by hand under `opened`,
+ * how it draws each other Domain under `domains`: what is open and which Domains are drawn is what
+ * the reader reads, so forgetting where boxes stand keeps all three. Stamped
  * with the render fingerprint for reference. Persisted via the allow-listed store (layout.json).
  *
  * The file is read whole or not at all (state-file.ts), within `LAYOUT_LIMITS`. A key this
@@ -11,9 +12,9 @@
  * the arrangement an earlier Studio made on one canvas for every Class, which that Studio
  * still reads.
  */
-import type { LayoutState, NodePosition } from '../../shared/contracts/workspace'
+import type { DomainShare, LayoutState, NodePosition } from '../../shared/contracts/workspace'
 
-import { LAYOUT_LIMITS } from '../../shared/contracts/workspace'
+import { DOMAIN_SHARES, LAYOUT_LIMITS } from '../../shared/contracts/workspace'
 import { asJsonRecord, refused, type Decoded } from '../json'
 import { changeStateFile, forgetStateFile, stateOf, type Shape, type StateFile } from './state-file'
 
@@ -89,6 +90,31 @@ export function idsOf(value: unknown, at = 'the ids'): LayoutDecoded<string[]> {
   return { value: [...ids].sort() }
 }
 
+export function isDomainShare(value: unknown): value is DomainShare {
+  return DOMAIN_SHARES.includes(value as DomainShare)
+}
+
+/** How a lens draws the other Domains, by origin. */
+export function sharesOf(
+  value: unknown,
+  at = 'the Domains',
+): LayoutDecoded<Record<string, DomainShare>> {
+  const record = asJsonRecord(value)
+  if (!record) return refused(`${at} are not a record by Domain origin`)
+  const entries = Object.entries(record)
+  if (entries.length > LAYOUT_LIMITS.domains)
+    return tooLarge(`${at} name more than ${LAYOUT_LIMITS.domains} Domains`)
+  const shares: Record<string, DomainShare> = {}
+  for (const [origin, share] of entries) {
+    const key = idOf(origin, `a Domain of ${at}`)
+    if ('problem' in key) return key
+    if (!isDomainShare(share))
+      return refused(`${at} draw ${origin} as ${JSON.stringify(share)}, not hidden or whole`)
+    shares[origin] = share
+  }
+  return { value: shares }
+}
+
 /** A record by lens id, each lens's value decoded by `decode`. */
 function byLensOf<T>(
   value: unknown,
@@ -123,12 +149,15 @@ function layoutOf(value: unknown): Decoded<LayoutState> {
   if ('problem' in collapsed) return collapsed
   const opened = byLensOf(record.opened, 'opened folds', idsOf)
   if ('problem' in opened) return opened
+  const domains = byLensOf(record.domains, 'Domains drawn', sharesOf)
+  if ('problem' in domains) return domains
   return {
     value: {
       ...(renderFingerprint === undefined ? {} : { renderFingerprint }),
       ...(lenses.value ? { lenses: lenses.value } : {}),
       ...(collapsed.value ? { collapsed: collapsed.value } : {}),
       ...(opened.value ? { opened: opened.value } : {}),
+      ...(domains.value ? { domains: domains.value } : {}),
     },
   }
 }
@@ -144,6 +173,7 @@ const LAYOUT: StateFile<LayoutState> = {
       lenses: { map: { map: POSITION } },
       collapsed: null,
       opened: null,
+      domains: null,
     },
   },
   empty: () => ({}),
@@ -211,9 +241,29 @@ export function changeLensIds(
 }
 
 /**
+ * Says how one lens draws one other Domain; `reached` returns it to the default, drawing what the
+ * canvas's own Domain reaches. Every other Domain and every other lens keep theirs.
+ */
+export function setDomainShare(
+  root: string,
+  lens: string,
+  origin: string,
+  share: DomainShare | 'reached',
+): { readonly value: LayoutState } | LayoutRefusal {
+  return changeLayout(root, (current) => {
+    const { [origin]: _before, ...others } = current.domains?.[lens] ?? {}
+    const shares = share === 'reached' ? others : { ...others, [origin]: share }
+    const { [lens]: _lens, ...lenses } = current.domains ?? {}
+    const domains = Object.keys(shares).length > 0 ? { ...lenses, [lens]: shares } : lenses
+    const { domains: _all, ...rest } = current
+    return { ...rest, ...(Object.keys(domains).length > 0 ? { domains } : {}) }
+  })
+}
+
+/**
  * Forgets one lens's arrangement, so it is laid out automatically again; the rest stays, its
- * shut modules and opened folds included: which are open is what the reader reads, not where
- * boxes stand.
+ * shut modules, opened folds and Domains drawn included: what is open and drawn is what the
+ * reader reads, not where boxes stand.
  */
 export function resetLensLayout(root: string, lens: string): LayoutState {
   return changeStateFile(root, LAYOUT, (current) => {

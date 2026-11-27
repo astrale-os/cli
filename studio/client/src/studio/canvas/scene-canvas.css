@@ -811,6 +811,84 @@ body[data-target-mode] .scene-canvas * {
   letter-spacing: 0;
 }
 
+/* ── areas: one Domain each, on a canvas of several ── */
+
+/* A frame behind its modules and cards, in the Domain's own hue: the line, a faint wash and
+   the name wear it, so two Domains side by side read as two. The canvas's own Domain is
+   solid, the others dashed, every one complete and none dimmed. */
+.scene-area {
+  --area-tone: oklch(0.6 0.12 var(--area-hue, 255));
+  --area-rule: color-mix(in oklab, var(--area-tone) 65%, transparent);
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--area-rule);
+  border-radius: 20px;
+  background: color-mix(in oklab, var(--area-tone) 8%, transparent);
+  transition:
+    transform var(--scene-motion) var(--scene-ease),
+    width var(--scene-motion) var(--scene-ease),
+    height var(--scene-motion) var(--scene-ease),
+    opacity var(--scene-motion) var(--scene-ease);
+}
+.dark .scene-area {
+  --area-tone: oklch(0.74 0.11 var(--area-hue, 255));
+}
+.scene-area[data-home] {
+  --area-rule: color-mix(in oklab, var(--area-tone) 80%, transparent);
+  border-style: solid;
+  background: color-mix(in oklab, var(--area-tone) 10%, transparent);
+}
+.scene-canvas[data-placing] .scene-area {
+  transition: none;
+}
+@starting-style {
+  .scene-area {
+    opacity: 0;
+  }
+}
+.scene-area-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.scene-area-home {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--area-tone);
+}
+.scene-area-label {
+  flex: none;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: color-mix(in oklab, var(--area-tone) 62%, var(--color-foreground));
+}
+.scene-area-version {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-muted-foreground);
+}
+/* From afar the name and version are read at the size of the frame they head. */
+.scene-area-header-far .scene-area-label {
+  font-size: 30px;
+}
+.scene-area-header-far .scene-area-version {
+  font-size: 19px;
+}
+.scene-area-header-far .scene-area-home {
+  width: 26px;
+  height: 26px;
+}
+
 /* ── links, fans and labels ── */
 
 .scene-links {

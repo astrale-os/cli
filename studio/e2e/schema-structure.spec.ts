@@ -85,7 +85,7 @@ test('a union end meets its Classes at a junction, each reached by its own fan',
   )
 })
 
-test('Classes of another Domain sit in its frame, and fold into one card on demand', async ({
+test('Classes of another Domain sit in its frame, and fold into one card when it is hidden', async ({
   page,
 }) => {
   await openSchema(page)
@@ -107,18 +107,20 @@ test('Classes of another Domain sit in its frame, and fold into one card on dema
   for (const id of ['class.ProcessedBy', 'class.PaidOutBy'])
     await expect(sceneLink(page, id)).toBeVisible()
 
-  // off, the other Domain is one card, and the links that reach it still draw
-  const toggle = page.getByRole('button', { name: 'Other Domains' })
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  // hidden, the other Domain is one card, and the links that reach it still draw
+  await page.getByTestId('domains-control').click()
+  const way = (drawn: string) =>
+    page.locator(`[data-domain-choice="${PAYMENTS}"][data-drawn="${drawn}"]`)
+  await expect(way('reached')).toHaveAttribute('aria-checked', 'true')
+  await way('hidden').click()
+  await expect(way('hidden')).toHaveAttribute('aria-checked', 'true')
   await expect(sceneBox(page, `domain.${PAYMENTS}`)).toBeVisible()
   await expect(sceneBox(page, foreign('Payout'))).toHaveCount(0)
   await expect(frame).toHaveCount(0)
   for (const id of ['class.ProcessedBy', 'class.PaidOutBy'])
     await expect(sceneLink(page, id)).toBeVisible()
 
-  await toggle.click()
+  await way('reached').click()
   await expect(sceneBox(page, foreign('Payout'))).toBeVisible()
 })
 

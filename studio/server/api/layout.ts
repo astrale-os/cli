@@ -3,8 +3,9 @@
  * `.domain-studio/`, the Kernel's and the Workspace map's on this machine, since no project owns
  * them. A GET reads the record whole. A write names its lens: `set` merges positions by box id;
  * `collapse` and `open` add ids to the lens's shut modules or its folds opened by hand and remove
- * others (`add`, `remove`), so a write from another tab is never undone; `reset` forgets the
- * lens's arrangement and keeps both. A `reset` that names no lens forgets the whole record.
+ * others (`add`, `remove`), so a write from another tab is never undone; `share` says how the
+ * lens draws one other Domain (`origin`, `share`: hidden, reached or whole); `reset` forgets the
+ * lens's arrangement and keeps the rest. A `reset` that names no lens forgets the whole record.
  * Every write answers the record as it now stands; one that does not decode is refused (400),
  * one past `LAYOUT_LIMITS` too (413), and neither changes anything.
  */
@@ -13,11 +14,13 @@ import type { JsonRecord } from '../json'
 import {
   changeLensIds,
   idsOf,
+  isDomainShare,
   isLensId,
   positionsOf,
   readLayout,
   resetLayout,
   resetLensLayout,
+  setDomainShare,
   setLensPositions,
   type LayoutRefusal,
   type LensIds,
@@ -63,6 +66,14 @@ export async function handleLayoutRoute(
   }
   if (body.action === 'collapse') return idsWrite(root, 'collapsed', lens, body)
   if (body.action === 'open') return idsWrite(root, 'opened', lens, body)
+  if (body.action === 'share') {
+    const { origin, share } = body
+    if (typeof origin !== 'string' || origin.length === 0)
+      return badRequest('a share write names a Domain origin')
+    if (share !== 'reached' && !isDomainShare(share))
+      return badRequest('a share is hidden, reached or whole')
+    return answer(setDomainShare(root, lens, origin, share))
+  }
   if (body.action === 'reset') return json(resetLensLayout(root, lens))
   return badRequest('unknown layout action')
 }

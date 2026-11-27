@@ -65,6 +65,8 @@ interface LinkMarkProps {
   hidden: boolean
   weight: number
   anchor?: string
+  /** the Domain its anchor is filed under, when not the canvas's own */
+  anchorDomain?: string
   excerpt?: string
   hoverId: string
   selectId?: string
@@ -85,6 +87,7 @@ const LinkMark = memo(function LinkMark({
   hidden,
   weight,
   anchor,
+  anchorDomain,
   excerpt,
   hoverId,
   selectId,
@@ -103,7 +106,7 @@ const LinkMark = memo(function LinkMark({
       data-verb={HUED_TONES.has(tone) || undefined}
       data-relationship={relationship || undefined}
       data-ambient={ambient || undefined}
-      {...(anchor ? anchorData(anchor, excerpt) : {})}
+      {...(anchor ? anchorData(anchor, excerpt, anchorDomain) : {})}
       style={{ '--link-tone': STROKE[tone], '--link-weight': weight } as CSSProperties}
     >
       <path className="scene-link-hit" d={roundedPath(points)} />
@@ -273,6 +276,7 @@ export const LinksLayer = memo(function LinksLayer({
               hidden={false}
               weight={1}
               anchor={link.anchor}
+              anchorDomain={link.anchorDomain}
               excerpt={linkName(link)}
               hoverId={link.from.nodes[0] ?? id}
               selectId={link.opens ?? link.id}
@@ -304,6 +308,7 @@ export const LinksLayer = memo(function LinksLayer({
               // A counted trunk draws heavier with what it carries; one its names say draws even.
               weight={scene.trunkLabel === 'labels' ? 1 : 1 + Math.min(3, members.length - 1) * 0.8}
               anchor={single?.anchor}
+              anchorDomain={single?.anchorDomain}
               excerpt={single?.label}
               hoverId={trunk.id}
               selectId={single?.opens ?? single?.id}
@@ -325,6 +330,7 @@ export const LinksLayer = memo(function LinksLayer({
                   hidden={!isOpen}
                   weight={1}
                   anchor={link.anchor}
+                  anchorDomain={link.anchorDomain}
                   excerpt={linkName(link)}
                   hoverId={trunk.id}
                   selectId={link.opens ?? link.id}
@@ -383,7 +389,9 @@ export const LabelsLayer = memo(function LabelsLayer({
             data-restricts={label.restricts ? '' : undefined}
             title={label.restricts ? restrictTitle(label.restricts.role) : undefined}
             data-spoken={label.scale !== undefined || undefined}
-            {...(link?.anchor && !label.end ? anchorData(link.anchor, linkName(link)) : {})}
+            {...(link?.anchor && !label.end
+              ? anchorData(link.anchor, linkName(link), link.anchorDomain)
+              : {})}
             style={
               {
                 // A name read at every zoom is drawn larger than its size, filling its place.
