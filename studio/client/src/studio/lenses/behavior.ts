@@ -101,7 +101,7 @@ const COLUMN = { integrations: 0, functions: 1, mutations: 2, changed: 3 } as co
 const BANDS = [
   { column: COLUMN.integrations, label: 'Outside world' },
   { column: COLUMN.functions, label: 'Functions' },
-  { column: COLUMN.changed, label: 'The graph' },
+  { column: COLUMN.changed, label: 'Graph' },
 ]
 
 /** A target reached by this share of the functions, and by at least `HUB_LEAST`, is a hub. */

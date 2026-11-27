@@ -48,7 +48,7 @@ test('switching lens keeps the selection; Behavior draws its bands, tallies and 
   await expect(bands).toHaveCount(3)
   await expect(bands.nth(0)).toHaveText(/outside world/i)
   await expect(bands.nth(1)).toHaveText(/functions/i)
-  await expect(bands.nth(2)).toHaveText(/the graph/i)
+  await expect(bands.nth(2)).toHaveText(/^graph$/i)
 
   // the keyboard reaches the same lenses, and the selection rides along both ways
   await page.keyboard.press('1')

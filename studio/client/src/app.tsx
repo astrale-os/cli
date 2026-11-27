@@ -6,7 +6,16 @@ import {
   REGISTRY_READ_LIMIT_MS,
 } from '@shared/contracts/versions'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessagesSquare, Plus, RefreshCw, Search, Settings } from 'lucide-react'
+import {
+  Lock,
+  type LucideIcon,
+  MessagesSquare,
+  Network,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+} from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -40,6 +49,7 @@ import { useAddress } from '@/lib/use-address'
 import { cn } from '@/lib/utils'
 import { useWorkspaceUiSync } from '@/lib/workspace-ui'
 import { LevelBreadcrumb } from '@/studio/bar/level-breadcrumb'
+import { GLYPHS } from '@/studio/canvas/glyphs'
 import { loadDataLevel } from '@/studio/data/load'
 import { datasetName, isReadyDataset } from '@/studio/data/model'
 import { DataWait } from '@/studio/data/wait'
@@ -283,10 +293,21 @@ function PublicationWithoutData({
   )
 }
 
+/** Each lens by the glyph of what it draws: a graph, a function, a Policy. */
+const LENS_ICONS: Record<LensKey, LucideIcon> = {
+  structure: Network,
+  behavior: GLYPHS.function,
+  rules: GLYPHS.policy,
+}
+
+const LENS_TAB =
+  'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium transition-colors max-lg:px-2 disabled:cursor-default disabled:text-muted-foreground/55'
+
 /**
  * The lens switch: which question the canvas answers about the Domain. A lens without a
  * projector yet is named and visibly not ready, so the switch already reads as the
- * Studio's three questions; the Data level reads Rules before the Schema does.
+ * Studio's three questions; the Data level reads Rules before the Schema does. Scenarios
+ * keep their place beside the lenses, locked.
  */
 function LensSwitch({
   active,
@@ -307,6 +328,7 @@ function LensSwitch({
       {LENS_NAMES.map((lens) => {
         const current = lens.id === active
         const readable = lensReadable(lens, dataLevel)
+        const Icon = LENS_ICONS[lens.id]
         return (
           <Tooltip key={lens.id}>
             <TooltipTrigger asChild>
@@ -319,12 +341,13 @@ function LensSwitch({
                   data-lens={lens.id}
                   onClick={() => onChange(lens.id)}
                   className={cn(
-                    'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium transition-colors max-lg:px-2 disabled:cursor-default disabled:text-muted-foreground/55',
+                    LENS_TAB,
                     current
                       ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.06)]'
                       : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
+                  <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   {lens.label}
                   {!readable && (
                     <span className="rounded-full border border-dashed px-1.5 text-[10px] font-normal leading-4">
@@ -343,6 +366,21 @@ function LensSwitch({
           </Tooltip>
         )
       })}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <button type="button" disabled data-lens="scenarios" className={LENS_TAB}>
+              <GLYPHS.scenario className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Scenarios
+              <Lock className="h-3 w-3 shrink-0" aria-label="locked" />
+            </button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          What a sequence of calls does to a Dataset
+          <span className="ml-1.5 text-muted-foreground">locked</span>
+        </TooltipContent>
+      </Tooltip>
     </nav>
   )
 }
