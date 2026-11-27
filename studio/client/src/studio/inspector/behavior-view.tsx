@@ -315,7 +315,7 @@ function LifecycleView({ lifecycle, domainId }: { lifecycle: Lifecycle; domainId
             {' and'}
           </>
         )}{' '}
-        moves through {plural(lifecycle.states.length, 'state')}
+        transitions through {plural(lifecycle.states.length, 'state')}
         {lifecycle.steps.length > 0 && <> by {plural(lifecycle.steps.length, 'declared step')}</>}.
       </p>
       {lifecycle.steps.length === 0 ? (
@@ -394,8 +394,8 @@ function LifecycleView({ lifecycle, domainId }: { lifecycle: Lifecycle; domainId
           {lifecycle.untold.length > 0 && (
             <Meta>
               <Callables items={lifecycle.untold} domainId={domainId} />{' '}
-              {lifecycle.untold.length === 1 ? 'moves' : 'move'} it by an event the reading cannot
-              tell.
+              {lifecycle.untold.length === 1 ? 'transitions' : 'transition'} it by an event the
+              reading cannot tell.
             </Meta>
           )}
           {silent > 0 && (

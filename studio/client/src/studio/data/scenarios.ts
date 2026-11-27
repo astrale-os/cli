@@ -47,7 +47,7 @@ export type Standing = 'expected' | 'unexpected' | 'gone' | 'unknown'
 /** One kind of write a function is declared to make, on the Classes its source names. */
 export interface DeclaredChange {
   readonly verb: ChangeVerb
-  /** the Behavior lens's word for it: `creates`, `moves state` */
+  /** the Behavior lens's word for it: `creates`, `transitions` */
   readonly word: string
   /** the Classes it lands on, as the source names them, as the Schema marks them */
   readonly classes: readonly ClassLink[]

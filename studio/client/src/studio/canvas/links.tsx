@@ -126,7 +126,7 @@ const TONE_WORDS: Partial<Record<SceneTone, string>> = {
   create: 'creates',
   update: 'updates',
   delete: 'deletes',
-  transition: 'moves state',
+  transition: 'transitions',
   link: 'links',
   unlink: 'unlinks',
   call: 'calls',

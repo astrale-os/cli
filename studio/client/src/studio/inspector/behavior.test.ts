@@ -189,7 +189,7 @@ describe('a function', () => {
   test('a precondition is read apart from what it writes, its parts as the source writes them', () => {
     const issue = of(ledger(), 'function.Invoice.issue', 'function')
     expect(issue.changes[0]!.effects.map((effect) => said(effect.words))).toEqual([
-      'moves an Invoice from draft to issued on issue',
+      'transitions an Invoice from draft to issued on issue',
     ])
     expect(
       issue.preconditions.map((stated) => [

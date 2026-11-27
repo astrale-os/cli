@@ -1079,7 +1079,7 @@ export function effectLine(
           effect.event === undefined
             ? ', by an event the reading cannot tell'
             : ` on ${effect.event}`
-        return ['moves ', ...some(bundle, terms, ref), `${move}${on}`]
+        return ['transitions ', ...some(bundle, terms, ref), `${move}${on}`]
       }
       case 'read':
         return effect.role === 'traverse' ? ['walks to ', ...the()] : ['starts at ', ...the()]

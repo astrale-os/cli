@@ -119,7 +119,7 @@ export const VERB_WORDS: Record<ChangeVerb, string> = {
   create: 'creates',
   update: 'updates',
   delete: 'deletes',
-  transition: 'moves state',
+  transition: 'transitions',
   link: 'links',
   unlink: 'unlinks',
 }
@@ -129,7 +129,7 @@ const VERB_PASSIVE: Record<ChangeVerb, string> = {
   create: 'created',
   update: 'updated',
   delete: 'deleted',
-  transition: 'state moved',
+  transition: 'transitioned',
   link: 'linked',
   unlink: 'unlinked',
 }
