@@ -13,7 +13,7 @@
  * its columns (`bands`), and groups drawn as one box of rows (`SceneGroup.members`).
  */
 
-import type { StudioSchemaBundle } from '@shared/contracts/schema'
+import type { DomainAnatomy, StudioSchemaBundle } from '@shared/contracts/schema'
 
 export interface Scene {
   /** Equal keys guarantee equal content: the canvas lays a Scene out again only when it changes. */
@@ -213,6 +213,11 @@ export interface SceneNode {
    * of — so a mark on it has a place: drawn quiet, its border dashed.
    */
   absent?: boolean
+  /**
+   * What the node says of itself, in its author's words: read under its header and badges from
+   * the middle zoom on, wrapped on a few lines and never cut in a word's middle.
+   */
+  note?: string
   /** Read when near: the node's members. */
   rows?: SceneRow[]
   /**
@@ -486,6 +491,12 @@ export type LensOptions = Readonly<Record<string, boolean>>
 /**
  * What a new lens implements: a pure, deterministic projection of one Domain's bundle.
  * `focus` is what the reader selected, for a lens that draws more around it; equal focus
- * keys give equal Scenes.
+ * keys give equal Scenes. `anatomy` is what the Domain's sources say beside its Schema (its
+ * Views' code), for a lens that reads it; a Scene that reads it keys on what it read.
  */
-export type Projector = (bundle: StudioSchemaBundle, options: LensOptions, focus?: string) => Scene
+export type Projector = (
+  bundle: StudioSchemaBundle,
+  options: LensOptions,
+  focus?: string,
+  anatomy?: DomainAnatomy,
+) => Scene

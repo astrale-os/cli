@@ -1,6 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 
-import { fitLines, LEGIBLE_TEXT, FONTS, namesIn, rulesLegible, type TextMeasure } from './metrics'
+import type { Scene, SceneNode } from '../scene/types'
+
+import { arrange } from '../scene/arrange'
+import { boxModels } from './layout'
+import {
+  estimateText,
+  fitLines,
+  LEGIBLE_TEXT,
+  FONTS,
+  namesIn,
+  NOTE,
+  rulesLegible,
+  type TextMeasure,
+} from './metrics'
 
 /** One unit per character, whatever the font: lines are as wide as their characters. */
 const chars: TextMeasure = (text) => text.length
@@ -79,5 +92,35 @@ describe('the functions a rule row names', () => {
     // however long it is, a lit name is drawn, alone if it must be
     const narrow = namesIn(names, 4, chars, (name) => name.label === 'transfer')
     expect(labels(narrow.shown)).toEqual(['transfer'])
+  })
+})
+
+describe('what a card says of itself', () => {
+  const card: SceneNode = {
+    id: 'view.board',
+    kind: 'view',
+    shape: 'card',
+    label: 'board',
+    badges: [{ label: 'single-page app', tone: 'muted' }],
+  }
+  const model = (node: SceneNode) => {
+    const scene: Scene = { key: node.id, nodes: [node], links: [], groups: [], folded: [] }
+    return boxModels(arrange(scene, { collapsed: new Set() }), 'compact', estimateText).get(
+      node.id,
+    )!
+  }
+
+  test('reads under its badges, on a few whole lines, and the card grows to hold them', () => {
+    const plain = model(card)
+    const noted = model({
+      ...card,
+      note: 'Where the team plans its week: every open task, who holds it, and what blocks it from closing before Friday.',
+    })
+    expect(plain.note).toBeUndefined()
+    expect(noted.note!.length).toBeGreaterThan(1)
+    expect(noted.note!.length).toBeLessThanOrEqual(NOTE.lines)
+    expect(noted.noteTop!).toBeGreaterThanOrEqual(plain.height - NOTE.bottom)
+    expect(noted.height).toBe(noted.noteTop! + noted.note!.length * NOTE.lineH + NOTE.bottom)
+    expect(noted.width).toBeGreaterThanOrEqual(NOTE.width)
   })
 })

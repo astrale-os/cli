@@ -6,7 +6,7 @@ import type { StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { classRefKey } from '@shared/schema/identity'
 
-import type { LensKey } from '../lenses/keys'
+import type { LensId, LensKey } from '../lenses/keys'
 import type { InspectorTarget } from './target'
 
 import { contractAdmits } from '../rules/admission'
@@ -29,7 +29,7 @@ export function switchesOf(
   bundle: StudioSchemaBundle,
   target: InspectorTarget,
   rules: DomainRules,
-  lens: LensKey,
+  lens: LensId,
   terms: Terms = NO_TERMS,
 ): LensSwitch[] {
   const asked: Record<LensKey, () => string | undefined> = {

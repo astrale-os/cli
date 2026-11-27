@@ -53,7 +53,13 @@ import { GLYPHS } from '@/studio/canvas/glyphs'
 import { loadDataLevel } from '@/studio/data/load'
 import { datasetName } from '@/studio/data/model'
 import { DataWait } from '@/studio/data/wait'
-import { LENS_NAMES, type LensKey, lensReadable } from '@/studio/lenses/keys'
+import {
+  dataLensOf,
+  LENS_NAMES,
+  type LensId,
+  type LensKey,
+  lensReadable,
+} from '@/studio/lenses/keys'
 import { Reading, RemoteNotice } from '@/studio/workspace/remote'
 
 const LazySchemaLevel = lazy(() =>
@@ -177,9 +183,13 @@ function DataRouter({
   )
 }
 
-/** What the Behavior lens can read of a published Schema, and what it cannot. */
-const PUBLISHED_BEHAVIOR =
-  'Behavior reads the published Schema: every function and Method, where it is declared, and the Classes its signature names. What a function reads, writes and calls is read from its handler source, which a published bundle does not hold: the map draws what each declaration names, and none of its effects.'
+/** What a lens can read of a published Schema, and what it cannot, where it differs from the rest. */
+const PUBLISHED_READS: Partial<Record<LensId, string>> = {
+  behavior:
+    'Behavior reads the published Schema: every function and Method, where it is declared, and the Classes its signature names. What a function reads, writes and calls is read from its handler source, which a published bundle does not hold: the map draws what each declaration names, and none of its effects.',
+  views:
+    'Views reads the published Schema: every View it declares. A published bundle holds no View code, so none of them opens here.',
+}
 
 /**
  * A Publication at the Schema level. The registry answers first: while it is read, and when it
@@ -194,7 +204,7 @@ function PublicationRouter({
 }: {
   domainId: string
   publication: PublicationAddress
-  lens: LensKey
+  lens: LensId
 }) {
   const queryClient = useQueryClient()
   const openWorkspace = useUI((s) => s.openWorkspace)
@@ -249,9 +259,8 @@ function PublicationRouter({
         className="shrink-0 border-b bg-muted/40 px-3 py-1.5 text-[12.5px] leading-relaxed text-muted-foreground"
       >
         <span className="font-medium text-foreground">Publication {what}, read-only.</span>{' '}
-        {lens === 'behavior'
-          ? PUBLISHED_BEHAVIOR
-          : 'Its Schema is the one the registry serves: no sources, datasets or View code come with it, and nothing here writes to it.'}
+        {PUBLISHED_READS[lens] ??
+          'Its Schema is the one the registry serves: no sources, datasets or View code come with it, and nothing here writes to it.'}
       </p>
       <div className="relative min-h-0 flex-1">
         <SchemaRouter domainId={domainId} />
@@ -290,30 +299,34 @@ function PublicationWithoutData({
   )
 }
 
-/** Each lens by the glyph of what it draws: a graph, a function, a Policy. */
-const LENS_ICONS: Record<LensKey, LucideIcon> = {
+/** Each lens by the glyph of what it draws: a graph, a function, a Policy, a View. */
+const LENS_ICONS: Record<LensId, LucideIcon> = {
   structure: Network,
   behavior: GLYPHS.function,
   rules: GLYPHS.policy,
+  views: GLYPHS.view,
 }
 
 const LENS_TAB =
-  'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium transition-colors max-lg:px-2 disabled:cursor-default disabled:text-muted-foreground/55'
+  'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium transition-colors max-xl:px-2 disabled:cursor-default disabled:text-muted-foreground/55'
+
+/** Below this width a tab other than the current one shows its glyph alone; its name stays its accessible name. */
+const LENS_LABEL_NARROW = 'max-[1400px]:sr-only'
 
 /**
- * The lens switch: which question the canvas answers about the Domain. A lens without a
- * projector yet is named and visibly not ready, so the switch already reads as the
- * Studio's three questions; the Data level reads Rules before the Schema does. Scenarios
- * keep their place beside the lenses, locked.
+ * The lens switch: which question the canvas answers about the Domain. A lens a level does not
+ * read is its glyph alone, disabled, its tooltip saying why; the Data level reads Rules before
+ * the Schema does, and never a lens only the Schema answers. Scenarios keep their place after
+ * the lenses, locked. On a narrow window every tab but the current one is its glyph alone.
  */
 function LensSwitch({
   active,
   dataLevel,
   onChange,
 }: {
-  active: LensKey
+  active: LensId
   dataLevel: boolean
-  onChange: (lens: LensKey) => void
+  onChange: (lens: LensId) => void
 }) {
   return (
     <nav
@@ -345,20 +358,23 @@ function LensSwitch({
                   )}
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                  {lens.label}
-                  {!readable && (
-                    <span className="rounded-full border border-dashed px-1.5 text-[10px] font-normal leading-4">
-                      soon
-                    </span>
-                  )}
+                  <span className={!readable ? 'sr-only' : current ? undefined : LENS_LABEL_NARROW}>
+                    {lens.label}
+                  </span>
                 </button>
               </span>
             </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {lens.question}
-              <span className="ml-1.5 text-muted-foreground">
-                {readable ? lens.shortcut : 'coming'}
-              </span>
+            <TooltipContent side="bottom" className="max-w-72">
+              {readable ? (
+                <>
+                  {lens.question}
+                  <span className="ml-1.5 text-muted-foreground">{lens.shortcut}</span>
+                </>
+              ) : (
+                <span data-lens-reason={lens.id}>
+                  {(dataLevel && lens.schemaOnly) || `${lens.label} is not read yet.`}
+                </span>
+              )}
             </TooltipContent>
           </Tooltip>
         )
@@ -368,7 +384,7 @@ function LensSwitch({
           <span className="inline-flex">
             <button type="button" disabled data-lens="scenarios" className={LENS_TAB}>
               <GLYPHS.scenario className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Scenarios
+              <span className={LENS_LABEL_NARROW}>Scenarios</span>
               <Lock className="h-3 w-3 shrink-0" aria-label="locked" />
             </button>
           </span>
@@ -616,7 +632,7 @@ export function App() {
                 origin={
                   domains?.find((domain) => domain.id === scopedDomainId)?.origin ?? scopedDomainId
                 }
-                lens={lens}
+                lens={dataLensOf(lens)}
               />
             ) : scopedDomainId ? (
               <SchemaRouter domainId={scopedDomainId} />

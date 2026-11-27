@@ -2,7 +2,7 @@
 
 Domain Studio is a local web application for reading and changing Astrale Domains. It reads a
 workspace's Domains from their sources, and any published version of a Domain from the registry,
-and draws each one at three levels through three lenses. A comment or a question can be attached
+and draws each one at three levels through four lenses. A comment or a question can be attached
 to anything it draws; a local Claude Code or Codex agent, run under your own login, reads those
 threads, edits the Domain on disk and answers in place.
 
@@ -56,14 +56,15 @@ drawn.
 ## Levels and lenses
 
 The Studio reads at three levels. Past the Workspace, a lens chooses the question the canvas
-answers. The level breadcrumb in the header switches level and Domain; `1`, `2` and `3` switch
-lens.
+answers. The level breadcrumb in the header switches level and Domain; `1` to `4` switch lens.
+Scenarios follow the lenses in the switch, locked.
 
 | Lens | Question it answers |
 | --- | --- |
 | **Structure** | What exists |
 | **Behavior** | What happens |
 | **Rules** | What is allowed and what must hold |
+| **Views** | What people see |
 
 Every level has the same layout: an **Index** listing what the canvas draws, the **Scene canvas**,
 and a panel that reads the selection in sentences (the **Inspector** at the Domain level). The
@@ -85,6 +86,7 @@ and nothing else is blanked.
 | Structure | Node Classes as cards and relationships as links, grouped by module. Classes of another Domain or of the Kernel that a relationship end accepts are drawn quiet, framed by their Domain. Options draw inheritance, and fold each other Domain into one node. |
 | Behavior | Integrations, functions and the Classes they change, in three bands: each function links to the Classes it creates, updates, deletes, moves in state, links or unlinks, and to the Integrations it calls. What the source reading cannot follow is said on the node. |
 | Rules | The Structure map with each Class card listing the rules on it: who may read, create, update, delete or call (Policies) and what must hold (constraints). The Index lists the rules. A rule opens on a page drawn by `@astrale-os/visual`. |
+| Views | Each View the Domain declares as a card: what it says of itself, how it is built (single-page app, inline HTML), where it mounts, the entrypoint first and marked, and where its sources do not back it (no code found, no client route). Views in more than one module are framed by module. A client route no View mounts is counted, not drawn. Where the sources say what a View's code reaches, the canvas reads in three bands: the Views, the functions their code calls, and the Classes those functions change, under the ids Behavior gives them; the `reads` option also draws the Classes each View reads, dashed. A View whose code cannot be read in full says so on its card. |
 
 **Data level**, one dataset of a Domain:
 
@@ -93,6 +95,9 @@ and nothing else is blanked.
 | Structure | Each Node as a card in its Class's region, each Edge as a link. A dataset too large to read whole opens with every region folded. |
 | Rules | The dataset read as one of its identities, or as anyone: per Node and per Edge, what that identity may do and by which rule. Each verdict can be pinned to a Scenario. The Index also lists the Domain's Policies: one selected says how many pairs (an identity, or anyone, and a Node or Edge it is decided over) it admits, each pair a sentence, and the map lights what it admits. A Policy selected on the Schema's Rules lens opens here on a dataset of its Domain. |
 | Behavior | The dataset's Scenarios, each step judged on the dataset as written. |
+
+The Data level does not read Views: a View renders on an instance, not over a dataset. Its tab
+stays in the switch, disabled, and says so.
 
 ### Scenarios
 
@@ -127,7 +132,7 @@ workspace Domain.
   fork runs at the access level you chose, like any turn.
 - A published bundle holds the Schema alone. Behavior draws each function's declaration — the
   Class a Method works on, the Classes its input takes and its output returns — and none of its
-  effects. The Views overview lists the Views the Schema declares, with no View code to open.
+  effects. The Views lens draws the Views the Schema declares, with no View code to open.
   The Data level says that a Publication carries no dataset.
 - A registry read shows its elapsed time. Past `REGISTRY_READ_LIMIT_MS` (index 1 min + bundle
   2 min + judgement 3 min) it says the limit it reached and offers **Read again**; an answer that
@@ -156,8 +161,9 @@ The URL names the place, so a reload, a pasted link, Back and Forward land where
 | `/publication/<origin>/<version>?lens=<lens>&select=<ref>` | One Publication, read-only. |
 | `/` | No place: the Workspace's saved UI state decides. |
 
-`<lens>` is `structure`, `behavior` or `rules`. A part of an address that names nothing is
-reported, and the rest still opens.
+`<lens>` is `structure`, `behavior`, `rules` or `views`; the Data level does not read `views`, and
+an address naming it there opens the dataset without it and says so. A part of an address that
+names nothing is reported, and the rest still opens.
 
 ## Comments and Ask
 
@@ -257,7 +263,14 @@ which is why the server binds loopback only and answers only the Studio's own pa
 
 ## Views
 
-A Domain's Views are listed in its Views overview (⌘K → Views). A View opens by its canonical
+A Domain's Views are drawn by its Views lens (`4`, or ⌘K → Views). A View selected there, or from
+the Index, opens its page in the Inspector: how it is built, where it mounts and is declared, what
+its code calls and reads as read from its sources (or that it is not read, and why), and one
+action, **Open**. When it cannot open, **Open** is disabled and the reason stands beside it: no
+active instance, an active instance you do not own, or a Publication, whose bundle holds no View
+code. A function, Class or definition selected under Views lists the Views whose code reaches it.
+
+A View opens by its canonical
 ViewPath, `/:<origin>:view.<name>`, through `astrale view` as the instance owner: the CLI resolves
 the installed, verified View placement and owns the loopback Shell session, identity, delegation and
 cleanup.
@@ -338,7 +351,7 @@ client/src/
   app.tsx           header, level routing, Publications
   studio/           the three levels: bar, canvas, scene, lenses, index-rail, inspector,
                     rules, data, workspace, schema-level.tsx, rule-page.tsx
-  schema-studio/    the Imported domains and Views overviews, and detail panels
+  schema-studio/    the Imported domains overview, and detail panels
   components/       shared UI: work panel, comments, Ask, command palette, settings
   lib/              API client, queries, store, addresses, targets, read-only rule
 ```

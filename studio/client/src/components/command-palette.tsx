@@ -31,8 +31,8 @@ import { cn } from '@/lib/utils'
 import { folderModules, moduleOfClass } from '@/schema-studio/modules'
 import { LENS_NAMES } from '@/studio/lenses/keys'
 
-/** The domain-level overviews. They open in the schema section's right panel —
- *  reachable from here rather than from a permanent row of canvas buttons. */
+/** Each Domain's overviews: the Domains it imports, in the Schema level's right panel, and its
+ *  Views, in the Views lens. */
 const OVERVIEWS: { key: 'domains' | 'views'; label: string; icon: typeof Box }[] = [
   { key: 'domains', label: 'Imported domains', icon: Globe },
   { key: 'views', label: 'Views', icon: AppWindow },
@@ -574,7 +574,11 @@ export function CommandPalette() {
                 key={`${domain.id}:overview.${o.key}`}
                 value={`open ${domain.label} ${o.label} ${o.key} overview`}
                 className={ITEM_CLS}
-                onSelect={() => openInSchema(domain.id, () => setPanelOverlay(o.key, domain.id))}
+                onSelect={() =>
+                  openInSchema(domain.id, () =>
+                    o.key === 'views' ? setLens('views') : setPanelOverlay(o.key, domain.id),
+                  )
+                }
               >
                 <Row icon={o.icon} label={o.label} meta={domain.label} />
               </Command.Item>

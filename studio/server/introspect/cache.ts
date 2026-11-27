@@ -33,7 +33,7 @@ import { hashAnatomyFiles } from '../state/baseline'
 import { studioSettings } from '../state/settings'
 import { readJson, writeJson } from '../state/store'
 import { buildAnatomy } from './anatomy'
-import { buildBundle } from './bundle'
+import { buildBundle, dependencyOrigins } from './bundle'
 import { isCanonicalDomainSchemaV1 } from './canonical-schema'
 import { invalidateClientPackage, resolveClientPackage } from './client-package'
 import { buildDatasets } from './datasets'
@@ -580,11 +580,22 @@ export async function getAnatomy(id: string, rebuild = false): Promise<DomainAna
 
   const anatomy = Promise.resolve().then(() => {
     const started = performance.now()
+    const canonicalViews =
+      bundle?.ir?.format === 'astrale.dsl' ? (bundle.ir.views ?? {}) : undefined
     const result = buildAnatomy({
       root: h.root,
       schemaDirName: h.schemaDirName,
       clientDir: client.status === 'available' ? client.sourceDir : undefined,
-      canonicalViews: bundle?.ir?.format === 'astrale.dsl' ? (bundle.ir.views ?? {}) : undefined,
+      canonicalViews,
+      ...(bundle && canonicalViews
+        ? {
+            reach: {
+              ir: bundle.ir,
+              definitions: bundle.overlay.definitions,
+              dependencies: dependencyOrigins(bundle.schemaRoot),
+            },
+          }
+        : {}),
     })
     recordIntrospectionPhase(id, 'anatomy', performance.now() - started)
     return result

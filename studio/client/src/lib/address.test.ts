@@ -5,7 +5,7 @@ import { ANYONE } from '@shared/contracts/scenarios'
 import { publishedDomainId } from '@shared/contracts/versions'
 import { describe, expect, test } from 'bun:test'
 
-import { LENS_KEYS } from '@/studio/lenses/keys'
+import { isDataLens, LENS_KEYS } from '@/studio/lenses/keys'
 
 import {
   type Address,
@@ -93,8 +93,8 @@ describe('an address reads back as the place it was written from', () => {
         }
   })
 
-  test('the Data level, in each lens, with each view', () => {
-    for (const lens of [undefined, ...LENS_KEYS])
+  test('the Data level, in each lens it reads, with each view', () => {
+    for (const lens of [undefined, ...LENS_KEYS.filter(isDataLens)])
       for (const view of DATA_VIEWS)
         for (const dataset of [undefined, DATASET]) {
           const address: Address = {
@@ -209,6 +209,13 @@ describe('an address that names no place says what it named', () => {
     expect(parseAddress('/domain/issues', '?lens=timeline&select=class.Issue')).toEqual({
       address: { level: 'domain', domainId: ISSUES, select: 'class.Issue' },
       unknown: 'the lens “timeline”',
+    })
+  })
+
+  test('a lens only the Schema answers reads the Data level without it, and is named', () => {
+    expect(parseAddress('/domain/issues/data', `?dataset=${DATASET}&lens=views`)).toEqual({
+      address: { level: 'data', domainId: ISSUES, dataset: DATASET, view: {} },
+      unread: 'Views',
     })
   })
 })

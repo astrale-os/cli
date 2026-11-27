@@ -3,7 +3,9 @@ import type { SourceFile } from 'ts-morph'
 import type { SchemaIR, ViewInfo } from '../../../shared/contracts/schema'
 
 import { schemaProject } from './schema-definition'
-import { buildFrontendViews, buildSchemaViewSources } from './views/routes'
+import { viewEntries } from './views/entries'
+import { readViewReach, type ReachContext } from './views/reach'
+import { buildFrontendViews, buildSchemaViewSources, readFrontends } from './views/routes'
 
 function mergeRoute(target: ViewInfo, incoming: ViewInfo): void {
   if (incoming.kind !== 'unknown') target.kind = incoming.kind
@@ -25,12 +27,14 @@ function canonicalViewInfo(slug: string, view: NonNullable<SchemaIR['views']>[st
  * canonical map (including an empty map) makes it authoritative: static routes
  * cannot invent Views or override identity or description.
  * Without admitted canonical Views, Studio does not invent authoring semantics.
+ * With a reach context, every View also carries what its code reaches.
  */
 export function buildViews(
   root: string,
   schemaDirName = 'schema',
   canonicalViews?: NonNullable<SchemaIR['views']>,
   schemaSources: readonly SourceFile[] = schemaProject(root, schemaDirName),
+  reach?: Omit<ReachContext, 'root' | 'schemaDirName'>,
 ): ViewInfo[] {
   const merged = new Map<string, ViewInfo>()
   const admittedViews = canonicalViews ?? {}
@@ -41,9 +45,18 @@ export function buildViews(
     const current = merged.get(slug)
     if (current) current.file = file
   }
-  for (const view of buildFrontendViews(root, Object.keys(admittedViews))) {
+  const frontends = readFrontends(root)
+  for (const view of buildFrontendViews(root, Object.keys(admittedViews), frontends)) {
     const current = merged.get(view.slug)
     if (current) mergeRoute(current, view)
+  }
+  if (reach && merged.size > 0) {
+    const entries = viewEntries(root, frontends, [...merged.keys()])
+    const reaches = readViewReach({ ...reach, root, schemaDirName }, entries)
+    for (const [slug, view] of merged) {
+      const found = reaches.get(slug)
+      if (found) view.reach = found
+    }
   }
   return [...merged.values()]
 }

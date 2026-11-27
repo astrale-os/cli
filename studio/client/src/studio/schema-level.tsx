@@ -17,7 +17,6 @@ import { useSchemaDomains } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
 import { useUI } from '@/lib/store'
 import { isModuleRef } from '@/lib/targets'
-import { buildViewsModel } from '@/lib/views'
 
 import type { Frame } from './canvas/frame'
 import type { Pins } from './canvas/pins'
@@ -27,8 +26,6 @@ import { DomainsPanel } from '../schema-studio/domains-panel'
 import { DOCK_CLEARANCE, TOOLBAR_CLEARANCE } from '../schema-studio/palette'
 import { PanelShell } from '../schema-studio/panel-shell'
 import { SchemaPolicyDetail } from '../schema-studio/policy-detail'
-import { ViewsPanel } from '../schema-studio/views-panel'
-import { WorkspaceViewsPanel } from '../schema-studio/workspace/overview-panel'
 import { useWorkspaceDomainInputs } from '../schema-studio/workspace/use-domain-inputs'
 import { OPTION_GLYPHS } from './canvas/glyphs'
 import { type CanvasOption, SceneCanvas } from './canvas/scene-canvas'
@@ -36,7 +33,7 @@ import { useCanvas } from './canvas/store'
 import { useLensPins } from './canvas/use-lens-pins'
 import { IndexRail } from './index-rail/index-rail'
 import { lensOf, optionsOf } from './lenses'
-import { LENS_KEYS, type LensKey } from './lenses/keys'
+import { isLensId } from './lenses/keys'
 import { spotlit, standIns } from './lenses/thread'
 import { opensRulePage, ruleDetailOf, RulePage } from './rule-page'
 import { arrange, arrangementKey, defaultCollapsed } from './scene/arrange'
@@ -106,22 +103,23 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
 
   const options = useMemo(() => optionsOf(lens, setOptions), [lens, setOptions])
   const bundle = input?.bundle
+  const anatomy = input?.anatomy
   // The folds the reader opened are laid out open, at rest and under a focus alike.
   const atRest = useMemo(
     () =>
       bundle?.ir && lens.project
-        ? withFoldsOpen(lens.project(bundle, options), openFolds)
+        ? withFoldsOpen(lens.project(bundle, options, undefined, anatomy), openFolds)
         : undefined,
-    [bundle, lens, openFolds, options],
+    [anatomy, bundle, lens, openFolds, options],
   )
   // What of the selection the lens draws more of: a function's mutations, in Behavior.
   const focus = bundle && lens.focus ? lens.focus(bundle, options, selected) : undefined
   const scene = useMemo(
     () =>
       bundle && focus && lens.project
-        ? withFoldsOpen(lens.project(bundle, options, focus), openFolds)
+        ? withFoldsOpen(lens.project(bundle, options, focus, anatomy), openFolds)
         : atRest,
-    [atRest, bundle, focus, lens, openFolds, options],
+    [anatomy, atRest, bundle, focus, lens, openFolds, options],
   )
   // Modules open or collapse as the reader leaves them, at rest; a focus never changes that.
   const collapsed = useMemo(
@@ -260,7 +258,7 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
   const onIsolate = useCallback((id: string | null) => setIsolated(scope, id), [scope, setIsolated])
   const onLens = useCallback(
     (id: string) => {
-      if ((LENS_KEYS as readonly string[]).includes(id)) setLens(id as LensKey)
+      if (isLensId(id)) setLens(id)
     },
     [setLens],
   )
@@ -416,18 +414,7 @@ export function SchemaLevel({ domainId }: { domainId: string }) {
           ) : null}
         </div>
 
-        {panelOverlay?.kind === 'views' ? (
-          <PanelShell onCover={setCovered} onClose={() => setPanelOverlay(null)}>
-            {overlayInput ? (
-              <ViewsPanel
-                domainId={overlayInput.summary.id}
-                model={buildViewsModel(overlayInput.anatomy, overlayInput.bundle)}
-              />
-            ) : (
-              <WorkspaceViewsPanel inputs={inputs} />
-            )}
-          </PanelShell>
-        ) : panelOverlay?.kind === 'domains' && overlayInput ? (
+        {panelOverlay?.kind === 'domains' && overlayInput ? (
           <PanelShell onCover={setCovered} onClose={() => setPanelOverlay(null)}>
             <DomainsPanel domainId={overlayInput.summary.id} />
           </PanelShell>

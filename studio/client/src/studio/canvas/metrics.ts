@@ -102,6 +102,22 @@ export const CARD = {
 } as const
 
 /**
+ * A card's note (`SceneNode.note`): its author's words under its header and badges, measured
+ * as a rule's phrase is, on at most `lines` lines.
+ */
+export const NOTE = {
+  /** the least width a card with a note takes, so it reads on few lines */
+  width: 264,
+  lineH: 16,
+  lines: 3,
+  /** the room above its first line, under the header; under badges, `afterBadges` */
+  top: 2,
+  afterBadges: 2,
+  /** the room below its last line */
+  bottom: 10,
+} as const
+
+/**
  * A card's rule rows. A row that decides an operation starts with its mark and what it decides,
  * its phrase beside them on at most `lines` lines, then the functions it guards on one line; a
  * fold or a constraint says what it is above its phrase. A row a fold holds stands in, and has
@@ -257,6 +273,9 @@ export interface BoxModel {
   tallies: PlacedTally[]
   badges: SceneBadge[]
   badgesTop: number
+  /** the node's note in lines, read from the middle zoom on */
+  note?: string[]
+  noteTop?: number
   rows: SceneRow[]
   /** the rows are the group's member nodes: each one selects its node */
   memberRows: boolean
@@ -479,6 +498,7 @@ export function boxModel(box: Box, detail: Detail, measure: TextMeasure, width?:
   for (const row of rows) natural = Math.max(natural, rowWidth(row, measure))
   const rules = node?.rules ?? []
   if (rules.length > 0) natural = Math.max(natural, RULE.width)
+  if (node?.note) natural = Math.max(natural, NOTE.width)
   // Content is measured inside the card's border; the card is that plus the border.
   const boxWidth =
     width ?? Math.round(Math.min(most, Math.max(CARD.minW, natural + CARD.border * 2)))
@@ -509,6 +529,11 @@ export function boxModel(box: Box, detail: Detail, measure: TextMeasure, width?:
   }
   const badgesTop = height - 6
   if (badges.length > 0) height += CARD.badgeRowH
+  const noteTop = height + (badges.length > 0 ? NOTE.afterBadges : NOTE.top)
+  const note = node?.note
+    ? fitLines(node.note, boxWidth - CARD.border * 2 - CARD.padX * 2, NOTE.lines, measure)
+    : []
+  if (note.length > 0) height = noteTop + note.length * NOTE.lineH + NOTE.bottom
   const rowsTop = height
   if (rows.length > 0)
     height += CARD.rowsPad * 2 + (rows.length + (moreRows > 0 ? 1 : 0)) * CARD.rowH
@@ -529,6 +554,7 @@ export function boxModel(box: Box, detail: Detail, measure: TextMeasure, width?:
     tallies: placedTallies,
     badges,
     badgesTop,
+    ...(note.length > 0 ? { note, noteTop } : {}),
     rows,
     memberRows: rowsGroup,
     moreRows,

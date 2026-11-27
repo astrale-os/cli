@@ -1,31 +1,20 @@
 /**
  * The Inspector: one page whose content is a function of the selection and the lens. The title
  * block is the selection's, the same under every lens; the body answers the lens's question
- * about it; the foot offers the other two questions, each with what makes it worth asking. A
- * change of lens keeps the selection: it is another question about the same thing.
+ * about it; the foot offers the other questions, each with what makes it worth asking. A
+ * change of lens keeps the selection: it is another question about the same thing. A View has
+ * one page under every lens: what it is, what its code reaches, and how to open it.
  */
 import type { StudioSchemaBundle } from '@shared/contracts/schema'
 
-import {
-  AppWindow,
-  Braces,
-  MousePointerClick,
-  PenLine,
-  Plug,
-  Search,
-  Workflow,
-  Zap,
-} from 'lucide-react'
+import { Braces, MousePointerClick, PenLine, Plug, Search, Workflow, Zap } from 'lucide-react'
 import { type ReactNode, useMemo } from 'react'
 
 import { EmptyState } from '@/components/studio-kit'
-import { useViewsModel } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
-import { viewAnchor } from '@/lib/views'
 
 import type { CallableLink } from './behavior'
 
-import { ViewRow } from '../../schema-studio/views-panel'
 import { rulesOf } from '../rules/model'
 import { type Behavior, behaviorOf } from './behavior'
 import {
@@ -44,6 +33,7 @@ import { classLink, holdsOf, structureOf } from './structure'
 import { StructureView } from './structure-view'
 import { switchesOf } from './switches'
 import { anchorOf, type InspectorTarget, targetOf } from './target'
+import { ViewPage, ViewsBody } from './views-view'
 import { NO_TERMS, termsOf } from './words'
 
 export function Inspector({ bundle, selected }: { bundle: StudioSchemaBundle; selected?: string }) {
@@ -138,6 +128,8 @@ export function Inspector({ bundle, selected }: { bundle: StudioSchemaBundle; se
         )
       ) : lens === 'behavior' ? (
         <BehaviorBody behavior={behavior} domainId={domainId} />
+      ) : lens === 'views' ? (
+        <ViewsBody bundle={bundle} target={target} />
       ) : (
         <RulesView
           bundle={bundle}
@@ -259,34 +251,4 @@ function headingOf(
       }
   }
   return { kicker: '', name: bundle.domainId, mono: false, icon: null }
-}
-
-/** A View: what it is and its implementation, under every lens alike. */
-function ViewPage({ bundle, slug }: { bundle: StudioSchemaBundle; slug: string }) {
-  const views = useViewsModel(bundle.domainId)
-  const view = views.all.find((entry) => entry.slug === slug)
-  const description = bundle.ir?.views[slug]?.description
-  return (
-    <Page
-      domainId={bundle.domainId}
-      data-comment-outline-inset=""
-      data-anchor-ref={viewAnchor(slug)}
-      data-anchor-excerpt={slug}
-      data-commentable=""
-    >
-      <Title
-        kicker="View"
-        name={slug}
-        icon={<AppWindow />}
-        {...(description === undefined ? {} : { description })}
-        domainId={bundle.domainId}
-        anchor={viewAnchor(slug)}
-      />
-      {view !== undefined ? (
-        <ViewRow domainId={bundle.domainId} view={view} />
-      ) : (
-        <Empty>No implementation of this View is built.</Empty>
-      )}
-    </Page>
-  )
 }

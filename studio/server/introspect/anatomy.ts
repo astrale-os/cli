@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/contracts/schema'
+import type { ReachContext } from './anatomy/views/reach'
 
 import { resolveDomainEntry } from '../domain/registry'
 import { asJsonRecord, asString, parseJson } from '../json'
@@ -28,6 +29,8 @@ interface AnatomyArgs {
   schemaDirName: string
   clientDir?: string
   canonicalViews?: NonNullable<SchemaIR['views']>
+  /** what the reading of each View's code knows of the Domain; without it, Views carry no reach */
+  reach?: Omit<ReachContext, 'root' | 'schemaDirName'>
 }
 
 export function buildAnatomy({
@@ -35,6 +38,7 @@ export function buildAnatomy({
   schemaDirName,
   clientDir,
   canonicalViews,
+  reach,
 }: AnatomyArgs): DomainAnatomy {
   // Parse the authored schema modules once for both the origin and View lookups.
   const schemaSources = schemaProject(root, schemaDirName)
@@ -43,7 +47,7 @@ export function buildAnatomy({
     clientDir ?? (existsSync(join(root, 'ui')) ? join(root, 'ui') : undefined)
   return {
     overview: buildOverview(root, schemaDirName, authoredClientDir, schema?.origin),
-    views: buildViews(root, schemaDirName, canonicalViews, schemaSources),
+    views: buildViews(root, schemaDirName, canonicalViews, schemaSources, reach),
     client: buildClientTree(root, clientDir ?? null),
     env: buildEnvFields(root),
     detectedIntegrations: detectIntegrations(root),

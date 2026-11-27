@@ -4,8 +4,8 @@
  * This module owns syntax/value lookup only. It does not interpret handlers or
  * schema members.
  */
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import {
   Node,
   Project,
@@ -44,14 +44,18 @@ export function tryAddFile(project: Project, file: string): SourceFile | undefin
   }
 }
 
-/** Path relative to `root`, POSIX-style ('schema/monitor.ts'), never absolute. */
+/**
+ * Path relative to `root`, POSIX-style ('schema/monitor.ts'), never absolute. Both sides are
+ * compared through symlinks; a missing file through its nearest existing directory.
+ */
 export function relToRoot(root: string, file: string): string {
   const abs = isAbsolute(file) ? file : resolvePath(root, file)
-  const canonical = (value: string) => {
+  const canonical = (value: string): string => {
     try {
       return realpathSync(value)
     } catch {
-      return value
+      const parent = dirname(value)
+      return parent === value ? value : join(canonical(parent), basename(value))
     }
   }
   return relative(canonical(root), canonical(abs)).split('\\').join('/')
@@ -72,7 +76,8 @@ export function unwrapExpression(node: Node): Node {
     Node.isParenthesizedExpression(current) ||
     Node.isAsExpression(current) ||
     Node.isSatisfiesExpression(current) ||
-    Node.isTypeAssertion(current)
+    Node.isTypeAssertion(current) ||
+    Node.isNonNullExpression(current)
   ) {
     current = current.getExpression()
   }
@@ -89,7 +94,7 @@ export function valueOfIdentifier(id: Node): Node | undefined {
 }
 
 /** Follow a named relative import to the exported value that defines it. */
-function resolveImportedValue(id: Node): Node | undefined {
+export function resolveImportedValue(id: Node): Node | undefined {
   if (!Node.isIdentifier(id)) return undefined
   const localName = id.getText()
   const sourceFile = id.getSourceFile()
@@ -107,7 +112,7 @@ function resolveImportedValue(id: Node): Node | undefined {
 }
 
 /** Find an exported variable/function value, following local and barrel exports. */
-function findExportedValue(
+export function findExportedValue(
   project: Project,
   file: string,
   exportName: string,
@@ -178,7 +183,7 @@ export function declarationOf(identifier: Node): Node | undefined {
 }
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
-function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
+export function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
   const baseDir = dirname(from.getFilePath())
   if (!spec.startsWith('.')) {
     // Current SDK projects use package `imports` aliases such as `#functions/risk`.
@@ -194,18 +199,33 @@ function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
   return firstExisting(resolvePath(baseDir, spec))
 }
 
-/** The authored file behind a module target, tolerating an emitted `.js` suffix. */
-function firstExisting(base: string): string | undefined {
+/**
+ * The authored file behind a module target, tolerating an emitted `.js` suffix: the target
+ * itself, its TypeScript source, its JavaScript one, or a directory's index, and never a
+ * directory.
+ */
+export function firstExisting(base: string): string | undefined {
   const sourceBase = base.replace(/\.(?:[cm]?js|jsx)$/, '')
   const candidates = [
     base,
     sourceBase.endsWith('.ts') ? sourceBase : `${sourceBase}.ts`,
     sourceBase.endsWith('.tsx') ? sourceBase : `${sourceBase}.tsx`,
+    `${sourceBase}.js`,
+    `${sourceBase}.jsx`,
     `${base}/index.ts`,
     `${base}/index.tsx`,
+    `${base}/index.js`,
+    `${base}/index.jsx`,
   ]
-  for (const c of candidates) if (existsSync(c)) return c
-  return undefined
+  return candidates.find(isFile)
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile()
+  } catch {
+    return false
+  }
 }
 
 /** A function written as a declaration, an arrow or an expression: what a helper is. */

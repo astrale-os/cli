@@ -9,6 +9,7 @@ import type { CSSProperties } from 'react'
  * count the Schema's notation. A hue says one thing, the one `canvas/tones.ts` gives it.
  */
 import {
+  AppWindow,
   ArrowRightFromLine,
   ArrowRightToLine,
   Asterisk,
@@ -105,6 +106,7 @@ export type SectionKind =
   | 'lifecycle'
   | 'deletion'
   | 'untold'
+  | 'views'
 
 /**
  * A section's mark: a glyph in a hue. The Schema's sections take theirs from `SECTION_MARKS`; a
@@ -135,6 +137,7 @@ export const SECTION_MARKS: Record<SectionKind, SectionMark> = {
   lifecycle: { glyph: Route, tone: 'transition' },
   deletion: { glyph: Trash2, tone: 'delete' },
   untold: { glyph: CircleQuestionMark, tone: 'muted' },
+  views: { glyph: AppWindow, tone: 'view' },
 }
 
 /**

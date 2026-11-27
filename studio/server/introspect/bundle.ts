@@ -97,7 +97,7 @@ export async function buildBundle(
 }
 
 /** Each dependency alias the Schema declares → its origin, as the sources name them. */
-function dependencyOrigins(root: unknown): Record<string, string> {
+export function dependencyOrigins(root: unknown): Record<string, string> {
   if (!isCanonicalDomainSchemaV1(root)) return {}
   return Object.fromEntries(
     Object.entries(root.dependencies ?? {}).flatMap(([alias, dependency]) =>

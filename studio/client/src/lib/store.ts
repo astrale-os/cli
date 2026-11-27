@@ -3,7 +3,7 @@ import type { WorkspacePanelUiState, WorkspaceUiState } from '@shared/contracts/
 import { publicationOf } from '@shared/contracts/versions'
 import { create } from 'zustand'
 
-import { LENS_NAMES, type LensKey } from '@/studio/lenses/keys'
+import { dataLensOf, isDataLens, LENS_NAMES, type LensId } from '@/studio/lenses/keys'
 
 import { detailRefFor, type Target } from './targets'
 
@@ -106,8 +106,9 @@ interface UIState {
   chatTabsSide: ChatTabsSide
   /** the chat tab column's width when it sits on the left, persisted in this browser */
   chatTabsWidth: number
-  /** the question the canvas answers — Structure, Behavior or Rules — persisted in this browser */
-  lens: LensKey
+  /** the question the canvas answers — Structure, Behavior, Rules or Views — persisted in this
+   *  browser. The Data level never reads a lens only the Schema answers (`isDataLens`). */
+  lens: LensId
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
@@ -148,11 +149,10 @@ interface UIState {
   selectionDomainId?: string
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
-  /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains overview)
+  /** when set, the RIGHT PANEL shows a domain-level overlay (the Domains overview)
    *  instead of the selected-class detail. Cleared by selecting a class / navigating. */
   panelOverlay: {
-    kind: 'views' | 'domains'
-    /** Domains are local; Views may span the whole canvas. */
+    kind: 'domains'
     domainId?: string
   } | null
   /** comment-mode draft: the floating composer target + screen position */
@@ -190,8 +190,9 @@ interface UIState {
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
   setChatTabsSide: (side: ChatTabsSide) => void
-  /** Ask the canvas another question: the Schema canvas, read through `lens`. The selection stays. */
-  setLens: (lens: LensKey) => void
+  /** Ask the canvas another question: the Schema canvas, read through `lens`. The selection
+   *  stays. A lens the Data level does not read is asked of the Schema level. */
+  setLens: (lens: LensId) => void
   setChatTabsWidth: (width: number) => void
   /** Read the whole Workspace. Every way into a Domain reads its Schema again. */
   openWorkspace: () => void
@@ -224,7 +225,7 @@ interface UIState {
   /** Jump to whatever an anchor points at: the Schema, the member that declares it selected
    *  and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string, domainId: string) => void
-  setPanelOverlay: (kind: 'views' | 'domains' | null, domainId?: string) => void
+  setPanelOverlay: (kind: 'domains' | null, domainId?: string) => void
   /** `domainId` names the owner; it is required for a real selection. */
   selectClass: (n?: string, domainId?: string) => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
@@ -337,7 +338,9 @@ export const useUI = create<UIState>((set) => ({
       lens,
       ...(s.level === 'workspace'
         ? { level: 'domain' as const, panelOverlay: null, openAnchorRef: null }
-        : {}),
+        : s.level === 'data' && !isDataLens(lens)
+          ? schemaLevel
+          : {}),
     }))
   },
   setChatTabsWidth: (width) => {
@@ -363,14 +366,15 @@ export const useUI = create<UIState>((set) => ({
       openAnchorRef: null,
     })),
   openDataLevel: (dataset) =>
-    set({
+    set((s) => ({
       level: 'data',
+      lens: dataLensOf(s.lens),
       dataset,
       panelOverlay: null,
       revealedRef: null,
       revealTarget: null,
       openAnchorRef: null,
-    }),
+    })),
   setReaderDomain: (readerDomainId) =>
     set((s) => (readerDomainId === s.readerDomainId ? {} : { readerDomainId, dataset: null })),
   setPanelOpen: (panelOpen) => set({ panelOpen }),

@@ -439,6 +439,84 @@ export interface ViewInfo {
   url?: string
   file?: string
   description?: string
+  /** what the View's code reaches; every View a Domain's anatomy lists carries it */
+  reach?: ViewReach
+}
+
+/** A place in authored source: a file relative to the Domain root, and a line. */
+export interface SourceSite {
+  file: string
+  line: number
+}
+
+/**
+ * A Domain function or Method a View's code calls, keyed as the overlay keys callables:
+ * `Class.method` or the function's name. Handing a callable on (`useAction(…)`) calls it;
+ * reading one of its fields only names it and is not a call.
+ */
+export interface ViewCall {
+  key: string
+  /** where the code names it, by file then line */
+  sites: SourceSite[]
+}
+
+/** A Query or Mutation definition a View's code uses, by its declared id. */
+export interface ViewDefinitionUse {
+  kind: DefinitionLink['kind']
+  id: string
+  /** where the code names it, by file then line */
+  sites: SourceSite[]
+}
+
+/**
+ * A Class, node or relationship, a View's code reads: through the `read` effects of the
+ * definitions it uses, or by its Class handle (`useObject`, `useRelation`).
+ */
+export interface ViewClassRead {
+  /** the local Class name or the exact imported key, as the IR keys them */
+  class: string
+  /** ids of the definitions whose `read` effects name it */
+  definitions: string[]
+  /** where the code reads it by its Class handle */
+  sites: SourceSite[]
+}
+
+/**
+ * What a View's code reaches, read statically from its frontend's entry modules, never executed.
+ * `read` carries the facts and, in `gaps`, every place the reading cannot tell more: a reading
+ * with no facts and no gaps means the code reaches nothing. `none` states that no code serves
+ * the View. `unread` states that code may serve it but the reading cannot find or read it.
+ */
+export type ViewReach =
+  | ViewReachRead
+  | { status: 'none'; reason: string }
+  | { status: 'unread'; reason: string; file?: string; line?: number }
+
+export interface ViewReachRead {
+  status: 'read'
+  /**
+   * `view`: the facts are this View's. `frontend`: the Views in `sharedWith` start from the same
+   * entry modules, so the facts are their shared frontend's, and which of them this View reaches
+   * is not decidable from source.
+   */
+  scope: 'view' | 'frontend'
+  sharedWith: string[]
+  /** the modules the reading starts from, relative to the Domain root */
+  entries: string[]
+  /**
+   * how the reading tied code to the View where its declaration does not locate it (an
+   * `external` origin matched to a workspace package); absent where the declaration does
+   */
+  inferred?: string
+  /** authored modules the reading follows from `entries` */
+  files: number
+  calls: ViewCall[]
+  definitions: ViewDefinitionUse[]
+  reads: ViewClassRead[]
+  /** the used definitions declared in the View's code, which the overlay does not read */
+  ownDefinitions: DefinitionLink[]
+  /** where the reading cannot tell what the code reaches */
+  gaps: SourceGap[]
 }
 
 /** Full launch context shown before Studio asks `astrale view` to resolve and open the View. */

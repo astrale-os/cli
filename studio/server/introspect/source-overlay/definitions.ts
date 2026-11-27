@@ -1341,7 +1341,8 @@ function conditionsAround(node: Node): PreconditionCondition[] {
   return under
 }
 
-function definitionKind(call: CallExpression): DefinitionLink['kind'] | undefined {
+/** What a `defineQuery()(…)` or `defineMutation()(…)` call declares; undefined for any other call. */
+export function definitionKind(call: CallExpression): DefinitionLink['kind'] | undefined {
   const factory = curriedFactory(call)
   if (factory === 'defineQuery') return 'query'
   if (factory === 'defineMutation') return 'mutation'
@@ -1435,11 +1436,55 @@ function readDefinition(
   return { id, effects, preconditions: [...preconditions.values()], gaps }
 }
 
+/** Reads one `defineQuery()` or `defineMutation()` call into its link; undefined for any other call. */
+export type DefinitionLinkReader = (call: CallExpression) => DefinitionLink | undefined
+
+/**
+ * A reader of single definitions, wherever they are written, with what each does to which
+ * Class. Files are given relative to `domainRoot`. Without the IR, Classes keep the names the
+ * sources give them and no named relation is followed.
+ */
+export function definitionReader(args: {
+  domainRoot: string
+  ir?: SchemaIR | null
+  /** dependency alias → origin, as the Schema declares them */
+  dependencies?: Readonly<Record<string, string>>
+  cache?: FlowCache
+}): DefinitionLinkReader {
+  const { domainRoot } = args
+  const context = {
+    model: modelOf(args.ir ?? null, new Map(Object.entries(args.dependencies ?? {}))),
+    domainRoot,
+    cache: args.cache ?? flowCache(),
+  }
+  return (call) => {
+    const kind = definitionKind(call)
+    if (!kind) return undefined
+    const reading = readDefinition(call, kind, context)
+    if (!reading) return undefined
+    const name = bindingName(call)
+    const statement = call.getFirstAncestorByKind(SyntaxKind.VariableStatement)
+    const doc = statement ? leadingDoc(statement) : undefined
+    const link: DefinitionLink = {
+      kind,
+      id: reading.id,
+      file: relToRoot(domainRoot, call.getSourceFile().getFilePath()),
+      line: call.getStartLineNumber(),
+      classes: unique(reading.effects.map((effect) => effect.class)),
+    }
+    if (name) link.name = name
+    if (doc) link.doc = doc
+    if (reading.effects.length > 0) link.effects = reading.effects
+    if (reading.preconditions.length > 0) link.preconditions = reading.preconditions
+    if (reading.gaps.length > 0) link.gaps = reading.gaps
+    return link
+  }
+}
+
 /**
  * Discover `defineQuery()` and `defineMutation()` declarations anywhere in the
  * Domain's authored sources, with what each does to which Class. The ids are the
- * Domain's own; nothing is admitted. Without the IR, Classes keep the names the
- * sources give them and no named relation is followed.
+ * Domain's own; nothing is admitted.
  */
 export function readDefinitions(args: {
   domainRoot: string
@@ -1453,38 +1498,18 @@ export function readDefinitions(args: {
   const definitions: DefinitionLink[] = []
   const idByDeclaration = new Map<string, string>()
   if (!domainRoot) return { definitions, idByDeclaration }
-  const context = {
-    model: modelOf(args.ir ?? null, new Map(Object.entries(args.dependencies ?? {}))),
-    domainRoot,
-    cache: args.cache ?? flowCache(),
-  }
+  const read = definitionReader(args)
   const sources = authoredTypeScriptFiles(domainRoot)
     .map((file) => tryAddFile(project, file))
     .filter((source): source is SourceFile => source !== undefined)
 
   for (const source of sources) {
     for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const kind = definitionKind(call)
-      if (!kind || idByDeclaration.has(nodeKey(call))) continue
-      const reading = readDefinition(call, kind, context)
-      if (!reading) continue
-      const name = bindingName(call)
-      const statement = call.getFirstAncestorByKind(SyntaxKind.VariableStatement)
-      const doc = statement ? leadingDoc(statement) : undefined
-      const link: DefinitionLink = {
-        kind,
-        id: reading.id,
-        file: relToRoot(domainRoot, source.getFilePath()),
-        line: call.getStartLineNumber(),
-        classes: unique(reading.effects.map((effect) => effect.class)),
-      }
-      if (name) link.name = name
-      if (doc) link.doc = doc
-      if (reading.effects.length > 0) link.effects = reading.effects
-      if (reading.preconditions.length > 0) link.preconditions = reading.preconditions
-      if (reading.gaps.length > 0) link.gaps = reading.gaps
+      if (idByDeclaration.has(nodeKey(call))) continue
+      const link = read(call)
+      if (!link) continue
       definitions.push(link)
-      idByDeclaration.set(nodeKey(call), reading.id)
+      idByDeclaration.set(nodeKey(call), link.id)
     }
   }
 

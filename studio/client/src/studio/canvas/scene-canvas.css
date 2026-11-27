@@ -214,6 +214,21 @@ body[data-target-mode] .scene-canvas * {
   line-height: 15px;
 }
 
+/* A card's note: its author's words, quiet, in the lines `NOTE` measured (`FONTS.ruleText`). */
+.scene-box-note {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-muted-foreground);
+}
+.scene-box-note > span {
+  display: block;
+  white-space: nowrap;
+}
+
 /* ── junctions: where ends accepting the same set meet, before fanning out ── */
 
 .scene-junction {

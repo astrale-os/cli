@@ -22,7 +22,14 @@ import type { StudioDataset } from '@shared/contracts/schema'
 import { ANYONE } from '@shared/contracts/scenarios'
 import { publicationOf, publishedDomainId } from '@shared/contracts/versions'
 
-import { LENS_KEYS, type LensKey } from '@/studio/lenses/keys'
+import {
+  dataLensOf,
+  isDataLens,
+  isLensId,
+  type LensId,
+  type LensKey,
+  lensName,
+} from '@/studio/lenses/keys'
 
 /** What the Data level holds of one dataset, as an address names it. */
 export interface DataSelection {
@@ -45,7 +52,7 @@ export type Address =
       level: 'domain'
       /** a workspace Domain's id, or a Publication's (`@registry:<origin>@<version>`) */
       domainId: string
-      lens?: LensKey
+      lens?: LensId
       /** the selection on the canvas, as the Studio names it (`class.X`, `class.X#read`…) */
       select?: string
     }
@@ -53,6 +60,7 @@ export type Address =
       level: 'data'
       domainId: string
       dataset?: string
+      /** a lens the Data level reads */
       lens?: LensKey
       view: DataSelection
     }
@@ -64,13 +72,12 @@ export interface ParsedAddress {
   unknown?: string
   /** a place the Studio retired, in words, when the address lands where it is read now */
   retired?: string
+  /** a lens the level named does not read, by its label, when the address lands without it */
+  unread?: string
 }
 
 /** What the retired Tests place said: one dataset, the Domain's Policies proven on it. */
 const RETIRED_TESTS = 'Tests'
-
-const isLens = (value: string | null): value is LensKey =>
-  value !== null && (LENS_KEYS as readonly string[]).includes(value)
 
 /** A path segment, `@` kept as written: `/domain/@kernel` reads better than `%40kernel`. */
 const segment = (value: string) => encodeURIComponent(value).replace(/%40/g, '@')
@@ -177,8 +184,9 @@ export function parseAddress(pathname: string, search: string): ParsedAddress {
     return { unknown: `the path ${pathname}` }
 
   const lens = params.get('lens')
-  const unknownLens = lens !== null && !isLens(lens) ? `the lens “${lens}”` : undefined
-  const known = isLens(lens) ? { lens } : {}
+  const unknownLens = lens !== null && !isLensId(lens) ? `the lens “${lens}”` : undefined
+  let unreadLens: string | undefined
+  const known = isLensId(lens) ? { lens } : {}
   const dataset = optional(params, 'dataset')
   let address: Address
   // Tests read a dataset's Policies: the Data level reads the same dataset, its Rules lens them
@@ -205,18 +213,24 @@ export function parseAddress(pathname: string, search: string): ParsedAddress {
       const value = optional(params, name)
       if (value) view[field] = value
     }
+    // a lens only the Schema answers is not read at the Data level, which opens without it
+    if (known.lens !== undefined && !isDataLens(known.lens)) unreadLens = lensName(known.lens).label
     address = {
       level: 'data',
       domainId,
       ...(dataset ? { dataset } : {}),
-      ...known,
+      ...(known.lens !== undefined && isDataLens(known.lens) ? { lens: known.lens } : {}),
       view: dataView(view),
     }
   } else {
     const select = optional(params, 'select')
     address = { level: 'domain', domainId, ...known, ...(select ? { select } : {}) }
   }
-  return { address, ...(unknownLens ? { unknown: unknownLens } : {}) }
+  return {
+    address,
+    ...(unknownLens ? { unknown: unknownLens } : {}),
+    ...(unreadLens ? { unread: unreadLens } : {}),
+  }
 }
 
 /**
@@ -227,7 +241,7 @@ export interface Place {
   level: Address['level']
   domainId?: string
   dataset?: string
-  lens?: LensKey
+  lens?: LensId
 }
 
 export function placeOf(address: Address): Place {
@@ -266,7 +280,7 @@ export interface Shown {
   level: Address['level']
   /** the Domain the levels read; none in a Workspace that holds no Domain */
   domainId?: string
-  lens: LensKey
+  lens: LensId
   /** the dataset the Data level reads, by module path; null shows the Domain's Datasets page */
   dataset: string | null
   /** the Schema selection, and the Domain it belongs to */
@@ -290,7 +304,7 @@ export function addressOf(shown: Shown): Address | undefined {
       level: 'data',
       domainId,
       ...(dataset ? { dataset } : {}),
-      lens: shown.lens,
+      lens: dataLensOf(shown.lens),
       view: dataView(shown.view ?? {}),
     }
   const select = shown.selectionDomainId === domainId ? shown.selected : undefined

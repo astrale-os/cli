@@ -10,9 +10,22 @@ test('clearing the selection closes the detail it opened, and leaves an overlay 
   expect(useUI.getState().selectedClass).toBeUndefined()
   expect(useUI.getState().focusId).toBeNull()
 
-  useUI.getState().setPanelOverlay('views')
+  useUI.getState().setPanelOverlay('domains')
   useUI.getState().clearSelection()
-  expect(useUI.getState().panelOverlay).toEqual({ kind: 'views' })
+  expect(useUI.getState().panelOverlay).toEqual({ kind: 'domains' })
+})
+
+test('the Data level never reads a lens only the Schema answers', () => {
+  useUI.setState({ level: 'domain', lens: 'views' })
+  useUI.getState().openDataLevel('datasets/demo.dataset.ts')
+  expect(useUI.getState()).toMatchObject({ level: 'data', lens: 'structure' })
+
+  useUI.getState().setLens('rules')
+  expect(useUI.getState()).toMatchObject({ level: 'data', lens: 'rules' })
+
+  // choosing Views from a Dataset reads the Schema it renders
+  useUI.getState().setLens('views')
+  expect(useUI.getState()).toMatchObject({ level: 'domain', lens: 'views' })
 })
 
 test('revealing a relationship asks the canvas for the LINE, and pins no focus on it', () => {

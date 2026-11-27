@@ -221,6 +221,13 @@ export const BoxView = memo(function BoxView({
           ))}
         </div>
       )}
+      {!far && model.note && (
+        <p className="scene-box-note" style={{ top: model.noteTop }}>
+          {model.note.map((line, index) => (
+            <span key={index}>{line}</span>
+          ))}
+        </p>
+      )}
       {model.rows.length > 0 && (
         <div className="scene-box-rows" style={{ top: model.rowsTop }}>
           {model.rows.map((row) => (

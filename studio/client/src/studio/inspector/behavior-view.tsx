@@ -760,7 +760,7 @@ function asideOf({ selfRoles, times }: EffectLine): Pick<EffectRow, 'aside'> {
 
 const reasons = (gaps: readonly SourceGap[]) => gaps.map((gap) => gap.reason)
 
-function Untold({ gaps }: { gaps: readonly SourceGap[] }) {
+export function Untold({ gaps }: { gaps: readonly SourceGap[] }) {
   return (
     <Section label="Can’t tell" kind="untold" count={gaps.length} data-inspector-untold="">
       <ul className="space-y-1.5">

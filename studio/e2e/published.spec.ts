@@ -86,7 +86,7 @@ test('a dependency opens the Publication it is built against, and the newest, re
   // no Publish, no dataset, nothing to install from a Publication
   await expect(page.getByTestId('level-dataset')).toHaveCount(0)
 
-  // the three lenses read it; Behavior says what a published Schema cannot tell. What a lens
+  // Structure, Behavior and Rules read it; Behavior says what a published Schema cannot tell. What a lens
   // finds none of, its canvas and its Index say, instead of a blank
   for (const lens of ['behavior', 'rules', 'structure'] as const) {
     await lensButton(page, lens).click()

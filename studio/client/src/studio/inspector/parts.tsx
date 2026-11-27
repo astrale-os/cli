@@ -2,20 +2,19 @@ import type { Bump } from '@shared/contracts/versions'
 
 /**
  * The Inspector's page parts: a title block, quiet sections, links that open what they name,
- * lists that fold with a count, and the switches to the other two questions. One type scale
+ * lists that fold with a count, and the switches to the other questions. One type scale
  * (18 title · 13 body · 12 secondary · 11 labels), no boxes inside the page, mono for
  * identifiers only.
  */
 import { type LucideIcon, TextSearch } from 'lucide-react'
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
-import type { LensKey } from '@/studio/lenses/keys'
-
 import { AnchorButton, useRevealedAnchor } from '@/components/anchor'
 import { DescriptionText } from '@/components/studio-kit'
 import { useUI } from '@/lib/store'
 import { anchorData, targetSurface } from '@/lib/targets'
 import { cn } from '@/lib/utils'
+import { lensName } from '@/studio/lenses/keys'
 
 import type { SceneTone } from '../scene/types'
 import type { ClassLink, Phrase, PropertyMark, ValueType } from './structure'
@@ -649,13 +648,7 @@ export function Disclosure({
   )
 }
 
-const LENS_LABEL: Record<LensKey, string> = {
-  structure: 'Structure',
-  behavior: 'Behavior',
-  rules: 'Rules',
-}
-
-/** The other two questions, at the foot of the page; a click changes the lens and keeps the selection. */
+/** The other questions, at the foot of the page; a click changes the lens and keeps the selection. */
 export function LensSwitches({ switches }: { switches: readonly LensSwitch[] }) {
   const setLens = useUI((state) => state.setLens)
   if (switches.length === 0) return null
@@ -675,7 +668,7 @@ export function LensSwitches({ switches }: { switches: readonly LensSwitch[] }) 
         >
           <span className="min-w-0 flex-1">{each.text}</span>
           <span className="shrink-0 text-[12px] font-medium text-foreground/70 group-hover:text-foreground">
-            {LENS_LABEL[each.lens]} →
+            {lensName(each.lens).label} →
           </span>
         </button>
       ))}
