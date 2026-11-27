@@ -18,6 +18,8 @@
  * - A target most functions reach is a hub: its links are ambient, and its card says so.
  * - A call between functions is a mark on the caller, drawn while lit.
  * - What the source reading cannot follow is said on the node ("can't tell"), never left out.
+ * - A mutation the Domain declares and no function's handler reaches is listed and, with the
+ *   mutations drawn, stands in their column saying so: nothing leads to it.
  * - A Publication's bundle holds no handler sources: each function links instead to what its
  *   declaration names — the Class a Method works on, the Classes its input and its output
  *   name — and no row says it cannot tell what nothing reads (the level says so once).
@@ -212,7 +214,13 @@ export interface BehaviorModel {
   /** whether the bundle holds the handler sources what a function does is read from */
   handlers: boolean
   functions: FunctionModel[]
+  /** every mutation the Domain declares or a function reaches */
   mutations: ReadonlyMap<string, MutationModel>
+  /**
+   * the declared mutations no function's handler reaches, by selection id, by name; none
+   * when the bundle holds no handler sources, where what uses a mutation cannot be told
+   */
+  unused: readonly string[]
   /** every Class a change, a read or a signature lands on, and every relationship written, by selection id */
   classes: ReadonlyMap<string, IrClassRef>
   /** every Integration declared or reached, by key; absent when only reached */
@@ -524,7 +532,18 @@ export function behaviorModel(bundle: StudioSchemaBundle): BehaviorModel {
     }
   }
 
-  const model = { domain, handlers: sourced, functions, mutations, classes, integrations }
+  // A mutation no handler reaches is still the Domain's: it is read like the others.
+  const reached = new Set(functions.flatMap((fn) => fn.mutations))
+  const unused = sourced
+    ? overlay.definitions
+        .filter((definition) => definition.kind === 'mutation')
+        .map(mutationOf)
+        .filter((mutation) => !reached.has(mutation.id))
+        .sort((left, right) => left.label.localeCompare(right.label))
+        .map((mutation) => mutation.id)
+    : []
+
+  const model = { domain, handlers: sourced, functions, mutations, unused, classes, integrations }
   models.set(bundle, model)
   return model
 }
@@ -559,7 +578,7 @@ export function changedBy(model: BehaviorModel, fn: FunctionModel): string[] {
 
 /**
  * The focus that changes what the lens draws, from what is selected: a function that uses a
- * mutation, or a mutation some function uses. With every mutation drawn, none does.
+ * mutation, or a mutation. With every mutation drawn, none does.
  */
 export function behaviorFocus(
   bundle: StudioSchemaBundle,
@@ -570,8 +589,7 @@ export function behaviorFocus(
   const model = behaviorModel(bundle)
   if (selected.startsWith('function.'))
     return model.functions.find((fn) => fn.id === selected)?.mutations.length ? selected : undefined
-  if (selected.startsWith('mutation.'))
-    return model.functions.some((fn) => fn.mutations.includes(selected)) ? selected : undefined
+  if (selected.startsWith('mutation.')) return model.mutations.has(selected) ? selected : undefined
   return undefined
 }
 
@@ -719,6 +737,9 @@ const hubBadge = (reached: number, of: number, verb: string): SceneBadge => ({
 const INTEGRATIONS_GROUP = 'index.integrations'
 const MUTATIONS_GROUP = 'index.mutations'
 
+/** What a mutation no function's handler reaches says of itself. */
+const UNUSED = 'no function uses it'
+
 /**
  * What the Behavior Index lists: the functions by module and the Integrations they reach, as
  * the canvas draws them, and every mutation a function uses, behind its kind chip — selected,
@@ -744,9 +765,9 @@ function behaviorIndex(
   const users = new Map<string, string[]>()
   for (const fn of model.functions)
     for (const id of fn.mutations) users.set(id, [...(users.get(id) ?? []), fn.key])
-  const mutations = [...model.mutations.values()]
-    .filter((mutation) => users.has(mutation.id))
-    .sort((left, right) => left.label.localeCompare(right.label))
+  const mutations = [...model.mutations.values()].sort((left, right) =>
+    left.label.localeCompare(right.label),
+  )
   return {
     groups: [
       ...groups,
@@ -764,7 +785,11 @@ function behaviorIndex(
           id: mutation.id,
           kind: 'mutation',
           label: mutation.label,
-          ...(verbs.length > 0 ? { sublabel: verbs.join(' · ') } : {}),
+          ...(users.has(mutation.id)
+            ? verbs.length > 0
+              ? { sublabel: verbs.join(' · ') }
+              : {}
+            : { sublabel: UNUSED }),
           group: MUTATIONS_GROUP,
           tone: 'fn' as const,
           icon: { glyph: 'mutation' as const },
@@ -958,6 +983,10 @@ export function projectBehavior(
     }
   }
 
+  // One no function uses is drawn with the others, or when it is the focus: nothing leads to it.
+  for (const id of model.unused) if (showAll || focus === id) drawnMutations.add(id)
+  const unused = new Set(model.unused)
+
   // Each drawn mutation links to what it changes, once, whoever uses it.
   const drawn = [...drawnMutations].sort()
   for (const id of drawn) {
@@ -1016,9 +1045,13 @@ export function projectBehavior(
       shape: 'pill',
       column: COLUMN.mutations,
       label: mutation.label,
-      ...(mutation.gaps.length > 0 ? { sublabel: 'can’t tell' } : {}),
+      ...(unused.has(id)
+        ? { sublabel: UNUSED }
+        : mutation.gaps.length > 0
+          ? { sublabel: 'can’t tell' }
+          : {}),
       icon: { glyph: 'mutation' },
-      tone: 'fn',
+      tone: unused.has(id) ? 'muted' : 'fn',
       signs: preconditionSigns(mutation),
       keywords: [mutation.definition.id],
     })
