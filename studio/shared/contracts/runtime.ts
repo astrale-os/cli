@@ -49,6 +49,8 @@ export type StudioEvent =
   /** a referenced Dataset module or the project configuration changed */
   | { type: 'datasets'; domainId: string }
   | { type: 'comments'; domainId: string }
+  /** a Scenario of the Domain was written, in some window: the revisions they now stand at */
+  | { type: 'scenarios'; domainId: string; revisions: Readonly<Record<string, number>> }
   | { type: 'compile-error'; domainId: string; message: string }
   | { type: 'resolving'; domainId: string }
   | { type: 'agent-run'; chatId: string; run: AgentRun }

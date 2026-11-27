@@ -1,13 +1,14 @@
 import type { EnvName } from '@shared/contracts/schema'
 import type { DomainSummary } from '@shared/contracts/workspace'
 
-import { KERNEL_DOMAIN_ID, KERNEL_ORIGIN } from '@shared/contracts/workspace'
+import { publicationOf } from '@shared/contracts/versions'
+import { KERNEL_DOMAIN_ID, KERNEL_ORIGIN, WORKSPACE_MAP_ID } from '@shared/contracts/workspace'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
-import { api, qk } from './api'
-import { anatomyQueryOptions, bundleQueryOptions } from './domain-queries'
+import { api, qk, refusalOf, unreadableOf } from './api'
+import { anatomyQueryOptions, bundleQueryOptions, invalidateDomainReads } from './domain-queries'
 import { useUI } from './store'
 import { type ViewsModel, buildViewsModel } from './views'
 
@@ -66,21 +67,41 @@ export const KERNEL_DOMAIN: DomainSummary = {
   depsInstalled: true,
   hasGit: false,
   configFile: '',
-  readOnly: true,
+}
+
+/** A Publication read in Studio, by its Domain id: read-only, and nothing of it on disk. */
+export function publicationSummary(domainId: string): DomainSummary | undefined {
+  const publication = publicationOf(domainId)
+  if (!publication) return undefined
+  return {
+    id: domainId,
+    origin: publication.origin,
+    path: '',
+    schemaDir: '',
+    depsInstalled: true,
+    hasGit: false,
+    configFile: '',
+  }
 }
 
 /**
- * The Domains the schema canvas can draw: the Kernel, then the workspace's. Only the schema
- * canvas reads the Kernel; the agent, comments, Core, Tests and Process keep to the workspace.
- * A workspace that holds the Kernel's own sources already draws it from there.
+ * The Domains the schema canvas can draw: the Publication being read, if one is, then the
+ * Kernel, then the workspace's. The Publication comes first: it is the Domain of its own origin
+ * the reader asked for, ahead of a workspace copy of it. Only the schema canvas reads the Kernel
+ * and Publications; the agent, comments, Core, Tests and Process keep to the workspace. A
+ * workspace that holds the Kernel's own sources already draws it from there.
  */
 export function useSchemaDomains(): { data: DomainSummary[] | undefined } {
   const { data: workspace } = useWorkspace()
+  const readerDomainId = useUI((state) => state.readerDomainId)
   const data = useMemo(() => {
     if (!workspace) return undefined
-    if (workspace.some((domain) => domain.origin === KERNEL_ORIGIN)) return workspace
-    return [KERNEL_DOMAIN, ...workspace]
-  }, [workspace])
+    const publication = readerDomainId ? publicationSummary(readerDomainId) : undefined
+    const kernel = workspace.some((domain) => domain.origin === KERNEL_ORIGIN)
+      ? []
+      : [KERNEL_DOMAIN]
+    return [...(publication ? [publication] : []), ...kernel, ...workspace]
+  }, [readerDomainId, workspace])
   return { data }
 }
 export function useStudioRuntime() {
@@ -197,11 +218,15 @@ export function useEnv(id: string, env: EnvName) {
   // refetches on any domain SSE (env.ts edits invalidate 'env') — see useInvalidateDomain
   return useQuery({ queryKey: qk.env(id, env), queryFn: () => api.env(id, env) })
 }
+/**
+ * A Domain's comments. The Workspace map names no Domain and keeps no comments file: each
+ * of its cards files its threads under the Domain it stands for, so the map's id reads none.
+ */
 export function useComments(id?: string) {
   return useQuery({
     queryKey: qk.comments(id ?? ''),
     queryFn: () => api.comments(id!),
-    enabled: !!id,
+    enabled: !!id && id !== WORKSPACE_MAP_ID,
   })
 }
 
@@ -228,7 +253,13 @@ function useWorkspaceResource<T>(
   })
   const entries = domains.map((domain, index) => {
     const result = results[index]
-    return { domain, data: result?.data, loading: enabled && !(result && settled(result)) }
+    return {
+      domain,
+      data: result?.data,
+      error: result?.error ?? undefined,
+      refetch: result?.refetch,
+      loading: enabled && !(result && settled(result)),
+    }
   })
   return {
     entries,
@@ -248,7 +279,16 @@ export function useWorkspaceComments({ foreground = false } = {}) {
     api.comments,
   )
   return {
-    data: entries.map(({ domain, data, loading }) => ({ domain, store: data, loading })),
+    data: entries.map(({ domain, data, error, refetch, loading }) => {
+      const unreadable = unreadableOf(error)
+      return {
+        domain,
+        store: data,
+        loading,
+        // the Domain's comments file, when it is not read whole: nothing is saved over it
+        ...(unreadable ? { unreadable, retry: () => void refetch?.() } : {}),
+      }
+    }),
     isLoading,
     pending,
   }
@@ -256,40 +296,37 @@ export function useWorkspaceComments({ foreground = false } = {}) {
 export function useSettings() {
   return useQuery({ queryKey: qk.settings, queryFn: api.settings })
 }
-export function useCore(id?: string) {
-  return useQuery({ queryKey: qk.core(id ?? ''), queryFn: () => api.core(id!), enabled: !!id })
-}
-export function useDatasets(id?: string) {
-  return useQuery({
-    queryKey: qk.datasets(id ?? ''),
-    queryFn: () => api.datasets(id!),
-    enabled: !!id,
-  })
+/** A Domain's Datasets, as one query: the hook below and a fetch outside React share it. */
+export const datasetsQueryOptions = (id: string) => ({
+  queryKey: qk.datasets(id),
+  queryFn: () => api.datasets(id),
+})
+
+/** A Domain's Datasets. They are extracted on demand: `enabled: false` waits to be asked. */
+export function useDatasets(id?: string, { enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({ ...datasetsQueryOptions(id ?? ''), enabled: !!id && enabled })
 }
 
 /** Every domain's attached context, retaining where each document is stored. */
 export function useWorkspaceDocuments() {
   const { entries, isLoading, pending } = useWorkspaceResource(false, qk.documents, api.documents)
   return {
-    data: entries.map(({ domain, data, loading }) => ({ domain, documents: data, loading })),
+    data: entries.map(({ domain, data, error, loading }) => {
+      const unreadable = unreadableOf(error)
+      // the Domain's document index, when it is not read whole: nothing is saved over it
+      return { domain, documents: data, loading, ...(unreadable ? { unreadable } : {}) }
+    }),
     isLoading,
     pending,
   }
 }
 
-/** Invalidate every query for a domain (used by the SSE bridge). Memoized so its
+/** Invalidate a domain's derived reads (used by the SSE bridge). Memoized so its
  *  identity is stable — otherwise it churns the SSE onEvent callback, which would
  *  tear down and reopen the EventSource on every render and drop live frames. */
 export function useInvalidateDomain() {
   const qc = useQueryClient()
-  return useCallback(
-    (id: string) => {
-      for (const key of ['bundle', 'anatomy', 'comments', 'core', 'datasets', 'env']) {
-        qc.invalidateQueries({ queryKey: [key, id] })
-      }
-    },
-    [qc],
-  )
+  return useCallback((id: string) => invalidateDomainReads(qc, id), [qc])
 }
 
 export function useCommentMutations(id: string) {
@@ -297,7 +334,11 @@ export function useCommentMutations(id: string) {
   const inval = () => qc.invalidateQueries({ queryKey: qk.comments(id) })
   // A dropped write must never look like it worked: every comment mutation
   // surfaces its failure, so the UI never silently discards what was typed.
-  const onError = (error: unknown) => toast.error(String((error as Error)?.message ?? error))
+  const onError = (error: unknown) => {
+    toast.error(refusalOf(error))
+    // a store not read whole is shown as such where its threads would be
+    if (unreadableOf(error)) void inval()
+  }
   return {
     create: useMutation({
       onError,

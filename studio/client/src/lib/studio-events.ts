@@ -4,6 +4,8 @@ import type { StudioEvent } from '@shared/contracts/runtime'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
+import { scenariosWritten } from '@/studio/data/use-scenarios'
+
 import { useAgentLive } from './agent'
 import { qk } from './api'
 import { useInvalidateDomain } from './hooks'
@@ -16,6 +18,7 @@ export type StudioEventEffect =
   | { type: 'invalidate-agent-history'; chatId?: string }
   | { type: 'invalidate-chats' }
   | { type: 'invalidate-datasets'; domainId: string }
+  | { type: 'read-scenarios'; domainId: string; revisions: Readonly<Record<string, number>> }
   | { type: 'put-agent-event'; chatId: string; runId: string; event: AgentEvent }
   | { type: 'put-agent-context'; chatId: string; runId: string; context: AgentContextUsage }
   | {
@@ -97,6 +100,8 @@ export function studioEventEffects(event: StudioEvent): StudioEventEffect[] {
       ]
     case 'datasets':
       return [{ type: 'invalidate-datasets', domainId: event.domainId }]
+    case 'scenarios':
+      return [{ type: 'read-scenarios', domainId: event.domainId, revisions: event.revisions }]
     case 'anatomy-diff':
     case 'comments':
     case 'compile-error':
@@ -139,6 +144,9 @@ export function useStudioEventSync(): void {
             break
           case 'invalidate-datasets':
             void queryClient.invalidateQueries({ queryKey: qk.datasets(effect.domainId) })
+            break
+          case 'read-scenarios':
+            scenariosWritten(queryClient, effect.domainId, effect.revisions)
             break
           case 'put-agent-event':
             putEvent(effect.chatId, effect.runId, effect.event)

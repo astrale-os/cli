@@ -1,6 +1,5 @@
 import type { AnchorRef } from '@shared/contracts/workspace'
 
-import { KERNEL_DOMAIN_ID } from '@shared/contracts/workspace'
 import { MessageSquarePlus } from 'lucide-react'
 import { type ReactNode } from 'react'
 
@@ -14,33 +13,10 @@ import { Popover, PopoverAnchor } from './ui/popover'
  * Wraps ANY element (card, row, section…) to make it commentable. Shows a
  * hover comment chip in the top-right corner and a CommentPin when the anchor
  * already has threads, both opening the same non-modal popover. Open state is
- * shared globally via store.openAnchorRef.
+ * shared globally via store.openAnchorRef. On a read-only Domain the popover says
+ * that it takes no comment (`ThreadPopover`).
  */
 export function Commentable({
-  anchor,
-  excerpt,
-  children,
-  className,
-  domainId,
-}: {
-  anchor: AnchorRef
-  excerpt: string
-  children: ReactNode
-  className?: string
-  domainId: string
-}) {
-  // The Kernel is read-only: there is no thread to start on it.
-  if (domainId === KERNEL_DOMAIN_ID) {
-    return <span className={cn('relative block', className)}>{children}</span>
-  }
-  return (
-    <CommentableAnchor anchor={anchor} excerpt={excerpt} className={className} domainId={domainId}>
-      {children}
-    </CommentableAnchor>
-  )
-}
-
-function CommentableAnchor({
   anchor,
   excerpt,
   children,

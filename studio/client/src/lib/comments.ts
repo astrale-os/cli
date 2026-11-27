@@ -52,11 +52,6 @@ export function writeCommentDraft(key: string, value: string): void {
   else drafts.delete(key)
 }
 
-export function hasAnyUnsentDraft(): boolean {
-  for (const value of drafts.values()) if (value.trim()) return true
-  return false
-}
-
 /** Is there unsent text in this domain-qualified composer or one of its replies? */
 export function hasUnsentDraft(
   domainId: string,

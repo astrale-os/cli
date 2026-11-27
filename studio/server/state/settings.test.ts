@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { studioHome } from './home'
-import { studioSettings, updateStudioSettings } from './settings'
-import { writeJson } from './store'
+import { storedSettings, studioSettings, updateStudioSettings } from './settings'
+import { UnreadableState } from './state-file'
+import { readState, writeJson } from './store'
 
 const previousHome = process.env.ASTRALE_HOME
 let home = ''
@@ -28,20 +29,36 @@ test('remembers one sanitized preferred model, and lets it be cleared', () => {
   expect(updateStudioSettings({ agentModel: null }).agentModel).toBeNull()
 })
 
-test('drops malformed and destructive values without discarding the rest', () => {
+test('runs on the values a damaged file holds well, says it is damaged, and saves nothing over it', () => {
   writeJson(studioHome(), 'settings.json', {
     agentModel: { harness: 'claude' },
     agentAccess: 'workspace',
     introspectTimeoutMs: -1,
     updatesPollMs: 9_999,
   })
+  const damaged = readState(studioHome(), 'settings.json')
   expect(studioSettings()).toMatchObject({
     agentModel: null,
     agentAccess: 'workspace',
     introspectTimeoutMs: 60_000,
     updatesPollMs: 600_000,
   })
+  expect(() => storedSettings()).toThrow(UnreadableState)
+  expect(() => storedSettings()).toThrow(
+    'its introspectTimeoutMs is -1, not a whole number from 250 to 300000',
+  )
+  expect(() => updateStudioSettings({ viewProbeTimeoutMs: 250 })).toThrow(UnreadableState)
+  expect(readState(studioHome(), 'settings.json')).toBe(damaged)
+})
+
+test('a save leaves out the values that do not hold and keeps the keys this Studio does not know', () => {
+  writeJson(studioHome(), 'settings.json', { agentAccess: 'workspace', future: { v: 2 } })
   expect(
     updateStudioSettings({ instancePollMs: Number.POSITIVE_INFINITY, viewProbeTimeoutMs: 250 }),
-  ).toMatchObject({ instancePollMs: 30_000, viewProbeTimeoutMs: 250 })
+  ).toMatchObject({ agentAccess: 'workspace', instancePollMs: 30_000, viewProbeTimeoutMs: 250 })
+  expect(JSON.parse(readState(studioHome(), 'settings.json')!)).toEqual({
+    agentAccess: 'workspace',
+    future: { v: 2 },
+    viewProbeTimeoutMs: 250,
+  })
 })

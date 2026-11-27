@@ -1,0 +1,68 @@
+/*
+ * A step's number on the stage, in the list and on the Figure, drawn as the map draws it
+ * (`.scene-step`): the rule's hue (`--step-tone`, set on the stage), the number in the page's ink.
+ */
+.stage-step {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--step-tone, var(--color-rule-who));
+  color: var(--color-background);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition:
+    opacity 140ms ease,
+    box-shadow 140ms ease;
+}
+
+/* On the Figure, it stands over the part it numbers, ringed in the page so it reads over a wire. */
+.stage-badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 0 0 2px var(--color-card);
+  cursor: default;
+}
+
+/* A step pointed at stands out; the others step back. */
+[data-stage-pointing] .stage-badge:not([data-pointed]) {
+  opacity: 0.35;
+}
+.stage-line[data-pointed] > .stage-step,
+.stage-badge[data-pointed] {
+  box-shadow:
+    0 0 0 2px var(--color-card),
+    0 0 0 5px color-mix(in oklab, var(--step-tone, var(--color-rule-who)) 40%, transparent);
+}
+
+/*
+ * The walk and its Figure scroll when the band stands lower than they take whole: the band's foot
+ * fades while more of them is below, so what scrolls never reads as cut at its edge. Fitting, the
+ * scroll timeline is inactive and nothing fades.
+ */
+@property --stage-foot {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes stage-foot {
+  0%,
+  92% {
+    --stage-foot: 36px;
+  }
+  100% {
+    --stage-foot: 0px;
+  }
+}
+.stage-scroll {
+  mask-image: linear-gradient(#000 calc(100% - var(--stage-foot)), transparent 100%);
+  animation: stage-foot linear both;
+  animation-timeline: scroll(self block);
+}

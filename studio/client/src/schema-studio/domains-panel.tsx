@@ -1,6 +1,6 @@
-import type { DomainCatalogEntry, VisibilityState } from '@shared/contracts/workspace'
+import type { DomainCatalogEntry } from '@shared/contracts/workspace'
 
-import { Eye, EyeOff, Globe, Plus } from 'lucide-react'
+import { Globe, Plus } from 'lucide-react'
 import { useMemo } from 'react'
 import { toast } from 'sonner'
 
@@ -10,20 +10,20 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useBundle, useCatalog, useCommentMutations, useComments } from '@/lib/hooks'
+import { readOnlyNotice } from '@/lib/read-only'
 import { useUI } from '@/lib/store'
-import { anchorKey, domainAnchorRef } from '@/lib/targets'
-import { cn } from '@/lib/utils'
+import { anchorKey } from '@/lib/targets'
 
 import { type ExternalDomain, externalDomains } from './external'
 import { KERNEL_ORIGIN } from './inheritance'
 import { SchemaIcon } from './schema-icon'
-import { isHidden } from './visibility'
 
 /**
- * DomainsPanel — the "Imported domains" overview in the RIGHT PANEL (opened from the
- * canvas "Domains" button). It shows the domains THIS one truly imports (schema ground
- * truth) with per-domain show/hide, and turns an "import this" wish into an agent-readable
- * comment that lives on the canvas — no separate page.
+ * DomainsPanel — the "Imported domains" overview in the RIGHT PANEL (opened from ⌘K). It
+ * shows the domains THIS one truly imports (schema ground truth), and turns an "import
+ * this" wish into an agent-readable comment that lives on the canvas — no separate page.
+ * The canvas draws what each one contributes in a frame of its own; the Structure lens's
+ * “Other Domains” option folds each into a single node.
  */
 
 /** The canvas anchor an import-request comment shares with its "Requested" row. */
@@ -38,15 +38,7 @@ function useResolve() {
     byOrigin.get(origin) ?? { name: origin.split('.')[0] || origin, icon: '' }
 }
 
-function DomainRow({
-  domain,
-  hidden,
-  onToggleHidden,
-}: {
-  domain: ExternalDomain
-  hidden: boolean
-  onToggleHidden: (ref: string) => void
-}) {
+function DomainRow({ domain }: { domain: ExternalDomain }) {
   const resolve = useResolve()
   const entry = resolve(domain.origin)
   const tone = domain.kind === 'kernel' ? 'violet' : 'emerald'
@@ -56,12 +48,7 @@ function DomainRow({
   const linked = domain.members.filter((member) => member.connected).length
 
   return (
-    <div
-      className={cn(
-        'group flex items-center gap-2 rounded-lg px-1.5 py-1 transition-opacity',
-        hidden && 'opacity-50',
-      )}
-    >
+    <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
       <IconTile tone={tone} size="sm">
         {entry.icon ? <SchemaIcon svg={entry.icon} className="h-3.5 w-3.5" /> : <Globe />}
       </IconTile>
@@ -72,15 +59,6 @@ function DomainRow({
           {linked > 0 && ` · ${linked} linked`}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => onToggleHidden(domainAnchorRef(domain.origin))}
-        title={hidden ? 'Show in canvas' : 'Hide in canvas'}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
-      >
-        {/* What a click does: an open eye shows, a closed eye hides. */}
-        {hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-      </button>
     </div>
   )
 }
@@ -189,15 +167,8 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
   )
 }
 
-export function DomainsPanel({
-  domainId,
-  visibility,
-  onToggleHidden,
-}: {
-  domainId: string
-  visibility: VisibilityState
-  onToggleHidden: (ref: string) => void
-}) {
+export function DomainsPanel({ domainId }: { domainId: string }) {
+  const readOnly = readOnlyNotice(domainId, 'comment')
   const { data: bundle } = useBundle(domainId)
   const { data: comments } = useComments(domainId)
   const domains = useMemo(() => (bundle ? externalDomains(bundle) : []), [bundle])
@@ -245,12 +216,7 @@ export function DomainsPanel({
             </div>
             <div className="flex flex-col gap-0.5">
               {domains.map((d) => (
-                <DomainRow
-                  key={d.origin}
-                  domain={d}
-                  hidden={isHidden(domainAnchorRef(d.origin), visibility.hidden)}
-                  onToggleHidden={onToggleHidden}
-                />
+                <DomainRow key={d.origin} domain={d} />
               ))}
             </div>
           </>
@@ -277,7 +243,12 @@ export function DomainsPanel({
         )}
 
         <Separator className="my-3 opacity-60" />
-        <ImportButton domainId={domainId} taken={taken} />
+        {/* an import is requested by a comment: a read-only Domain takes none */}
+        {readOnly ? (
+          <p className="px-2 text-[12px] leading-relaxed text-muted-foreground">{readOnly}</p>
+        ) : (
+          <ImportButton domainId={domainId} taken={taken} />
+        )}
       </div>
     </ScrollArea>
   )

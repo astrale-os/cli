@@ -1,7 +1,7 @@
 /**
- * A domain begins as a conversation: the rail's plus opens the agent's own
- * composer, centred over the studio, with the name written above it like a
- * title.
+ * A domain begins as a conversation: the Workspace page's "New domain" opens the
+ * agent's own composer, centred over the studio, with the name written above it
+ * like a title.
  *
  * Nothing here sends: scaffolding shells out to npx and pnpm, which is not
  * something a browser test should set off. What is pinned is the door — what it
@@ -11,14 +11,17 @@ import { expect, test, type Page } from './test'
 
 const card = (page: Page) => page.getByTestId('new-domain')
 
+/** The Workspace level offers it: the level that lists the Domains is where one begins. */
 async function open(page: Page): Promise<void> {
   await page.goto('/')
   await expect(page.getByTestId('agent-dock')).toBeVisible()
+  await page.getByTestId('level-workspace').click()
+  await expect(page.getByTestId('workspace-level')).toBeVisible()
   await page.getByRole('button', { name: 'New domain' }).click()
   await expect(card(page)).toBeVisible()
 }
 
-test('the plus opens the agent composer, name first, and Escape leaves the studio as it was', async ({
+test('New domain opens the agent composer, name first, and Escape leaves the studio as it was', async ({
   page,
 }) => {
   await open(page)

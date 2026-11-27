@@ -1,26 +1,24 @@
-import { expect, test } from './test'
+import { expect, lensButton, openSchema, sceneBox, test } from './test'
 
 /**
- * The canvas is ONE draggable surface, so it wears ONE cursor. React Flow ships a cursor per
- * capability instead — `default` on a plain node, `pointer` on a selectable one and across an
- * edge's wide invisible hit target, `crosshair` on the hidden handles — and every <button> a
- * node paints inside itself (module chevron, view pill, comment pin) lays one more on top. At
- * the 0.08 minimum zoom those targets measure 1–13px, so each reads as a flash rather than as
- * an affordance. The contract therefore has NO exceptions: every element the canvas owns says
- * `grab`, mid-drag every one of them says `grabbing`, and in Comment mode the whole window says
- * `pointer`. The policy is checked against every element the fixture really renders.
+ * The canvas is ONE draggable surface, so it wears ONE cursor: every element the world draws —
+ * cards, their headers and tallies, links and their hit paths, junctions, frames, labels — says
+ * `grab`; mid-pan every one says `grabbing`; in Comment mode every one says `pointer`, because
+ * every one is then a click target. The zoom and fit controls are not the world: they are
+ * buttons, and say so.
  *
- * Everything below runs in the browser, so each probe stands alone: no shared helpers, because
- * `page.evaluate` ships the function and nothing it closes over.
+ * Each probe runs in the browser and stands alone: `page.evaluate` ships the function and
+ * nothing it closes over.
  */
 
 type Offender = { cursor: string; tag: string; cls: string }
 
-/** Every element the canvas owns, and the cursor it reports. */
-function probeElements(expected: string): { checked: number; offenders: Offender[] } {
-  const flow = document.querySelector('.react-flow')
-  if (!flow) throw new Error('no canvas on the page')
-  const all = [flow, ...flow.querySelectorAll('*')]
+/** Every element of the canvas's world, and the cursor it reports. */
+function probeWorld(expected: string): { checked: number; offenders: Offender[] } {
+  const canvas = document.querySelector('.scene-canvas')
+  const world = canvas?.querySelector('.scene-world')
+  if (!canvas || !world) throw new Error('no scene canvas on the page')
+  const all = [canvas, ...world.querySelectorAll('*')]
   const offenders: Offender[] = []
   for (const el of all) {
     const cursor = getComputedStyle(el).cursor
@@ -28,58 +26,64 @@ function probeElements(expected: string): { checked: number; offenders: Offender
     offenders.push({
       cursor,
       tag: el.tagName.toLowerCase(),
-      cls: String((el as HTMLElement).className ?? '').slice(0, 80),
+      cls: String((el as HTMLElement).getAttribute('class') ?? '').slice(0, 80),
     })
   }
   return { checked: all.length, offenders: offenders.slice(0, 12) }
 }
 
-/** A point where the bare pane is the topmost element — somewhere a pan can start from. */
-function emptyPanePoint(): { x: number; y: number } {
-  const flow = document.querySelector('.react-flow')
-  if (!flow) throw new Error('no canvas on the page')
-  const box = flow.getBoundingClientRect()
-  for (let y = Math.ceil(box.top) + 2; y < box.bottom - 2; y += 6) {
-    for (let x = Math.ceil(box.left) + 2; x < box.right - 2; x += 6) {
+/** A point of the canvas no card, link or control covers: somewhere a pan starts from. */
+function barePoint(): { x: number; y: number } {
+  const canvas = document.querySelector('.scene-canvas')
+  if (!canvas) throw new Error('no scene canvas on the page')
+  const box = canvas.getBoundingClientRect()
+  const taken =
+    '.scene-box, .scene-link, .scene-ribbon, .scene-junction, [data-canvas-chrome], button'
+  for (let y = Math.ceil(box.top) + 8; y < box.bottom - 8; y += 6) {
+    for (let x = Math.ceil(box.left) + 8; x < box.right - 8; x += 6) {
       const el = document.elementFromPoint(x, y)
-      if (el?.classList.contains('react-flow__pane')) return { x, y }
+      if (el && canvas.contains(el) && !el.closest(taken)) return { x, y }
     }
   }
-  throw new Error('no bare pane to grab')
+  throw new Error('no bare canvas to grab')
 }
 
 test('the canvas wears one cursor: an open hand, closed mid-pan, a pointer in comment mode', async ({
   page,
 }) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Schema', exact: true }).click()
-  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
-  // the view pill is one of the buttons that used to flash — the probe needs it on screen
-  await expect(page.getByRole('button', { name: 'overview', exact: true })).toBeVisible()
-
-  const schema = await page.evaluate(probeElements, 'grab')
+  await openSchema(page)
+  const schema = await page.evaluate(probeWorld, 'grab')
   expect(schema.offenders).toEqual([])
-  expect(schema.checked).toBeGreaterThan(20)
+  expect(schema.checked).toBeGreaterThan(50)
 
-  // a pan the mouse really performs closes the hand over everything, controls included
-  const from = await page.evaluate(emptyPanePoint)
+  // a pan the mouse really performs closes the hand over everything
+  const from = await page.evaluate(barePoint)
+  const before = (await sceneBox(page, 'class.Invoice').boundingBox())!
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x + 60, from.y + 30, { steps: 6 })
-  expect((await page.evaluate(probeElements, 'grabbing')).offenders).toEqual([])
-  await page.mouse.move(from.x, from.y, { steps: 6 })
+  await expect(page.locator('.scene-canvas[data-panning]')).toHaveCount(1)
+  expect((await page.evaluate(probeWorld, 'grabbing')).offenders).toEqual([])
   await page.mouse.up()
+  await expect(page.locator('.scene-canvas[data-panning]')).toHaveCount(0)
+  // and it was a pan: the world moved under the hand
+  const after = (await sceneBox(page, 'class.Invoice').boundingBox())!
+  expect(Math.round(after.x - before.x)).toBe(60)
+  expect(Math.round(after.y - before.y)).toBe(30)
 
-  // comment mode turns every element into a click target; a hand left on the canvas
-  // would say the opposite of what the mode does
+  // the controls are buttons, not the world
+  const fit = page.locator('[data-canvas-chrome] button[aria-label="Fit"]')
+  expect(await fit.evaluate((el) => getComputedStyle(el).cursor)).toBe('pointer')
+
+  // comment mode turns every element into a click target
   await page.keyboard.press('c')
   await expect(page.locator('body[data-target-mode]')).toHaveCount(1)
-  expect((await page.evaluate(probeElements, 'pointer')).offenders).toEqual([])
-  expect(await page.evaluate(() => getComputedStyle(document.body).cursor)).toBe('pointer')
+  expect((await page.evaluate(probeWorld, 'pointer')).offenders).toEqual([])
   await page.keyboard.press('Escape')
   await expect(page.locator('body[data-target-mode]')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Core', exact: true }).click()
-  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
-  expect((await page.evaluate(probeElements, 'grab')).offenders).toEqual([])
+  // another lens draws other parts — bands, ribbons, tallies — under the same hand
+  await lensButton(page, 'behavior').click()
+  await expect(page.locator('.scene-band')).toHaveCount(3)
+  expect((await page.evaluate(probeWorld, 'grab')).offenders).toEqual([])
 })

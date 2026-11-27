@@ -57,7 +57,8 @@ export function sniffImageType(bytes: Uint8Array): AttachmentImageType | undefin
   return undefined
 }
 
-function decodeAttachment(value: unknown): ChatAttachment | undefined {
+/** One attachment as a stored run or queued message lists it, or none when it is not one. */
+export function decodeAttachment(value: unknown): ChatAttachment | undefined {
   const record = asJsonRecord(value)
   const id = asString(record?.id)
   const name = asString(record?.name)

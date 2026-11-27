@@ -6,56 +6,74 @@
  */
 import type { AgentRun, AgentUsage } from '../../../shared/contracts/agent'
 
-import { asFiniteNumber, asJsonRecord, asString } from '../../json'
-import { readJson, writeJson } from '../../state/store'
-
-const PATH = 'usage.json'
+import { asJsonRecord, refused, type Decoded } from '../../json'
+import { changeStateFile, stateOf, type StateFile } from '../../state/state-file'
 
 const EMPTY: AgentUsage = { runs: 0, tokens: 0, costUsd: 0 }
 
-function nonNegative(value: unknown): number | undefined {
-  const number = asFiniteNumber(value)
-  return number !== undefined && number >= 0 ? number : undefined
-}
+const isAmount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
 
-function decodeUsage(value: unknown): AgentUsage | undefined {
+function usageOf(value: unknown): Decoded<AgentUsage> {
   const record = asJsonRecord(value)
-  if (!record) return undefined
-  const runs = nonNegative(record.runs)
-  const tokens = nonNegative(record.tokens)
-  const costUsd = nonNegative(record.costUsd)
-  const lastRunAt = asString(record.lastRunAt)
-  const lastTokens = nonNegative(record.lastTokens)
-  const lastCostUsd = nonNegative(record.lastCostUsd)
+  if (!record) return refused('it holds no object')
+  const { runs, tokens, costUsd, lastRunAt, lastTokens, lastCostUsd } = record
+  if (!isAmount(runs) || !Number.isInteger(runs)) return refused('it counts no runs')
+  if (!isAmount(tokens)) return refused('it counts no tokens')
+  if (!isAmount(costUsd)) return refused('it counts no cost in USD')
+  if (lastRunAt !== undefined && typeof lastRunAt !== 'string')
+    return refused('it says when the last run was in no text')
+  if (lastTokens !== undefined && !isAmount(lastTokens))
+    return refused('its lastTokens is not a count')
+  if (lastCostUsd !== undefined && !isAmount(lastCostUsd))
+    return refused('its lastCostUsd is not an amount')
   return {
-    runs: runs !== undefined && Number.isInteger(runs) ? runs : EMPTY.runs,
-    tokens: tokens ?? EMPTY.tokens,
-    costUsd: costUsd ?? EMPTY.costUsd,
-    ...(lastRunAt === undefined ? {} : { lastRunAt }),
-    ...(lastTokens === undefined ? {} : { lastTokens }),
-    ...(lastCostUsd === undefined ? {} : { lastCostUsd }),
+    value: {
+      runs,
+      tokens,
+      costUsd,
+      ...(lastRunAt === undefined ? {} : { lastRunAt }),
+      ...(lastTokens === undefined ? {} : { lastTokens }),
+      ...(lastCostUsd === undefined ? {} : { lastCostUsd }),
+    },
   }
 }
 
+const USAGE: StateFile<AgentUsage> = {
+  name: 'usage.json',
+  decode: usageOf,
+  shape: {
+    record: {
+      runs: null,
+      tokens: null,
+      costUsd: null,
+      lastRunAt: null,
+      lastTokens: null,
+      lastCostUsd: null,
+    },
+  },
+  empty: () => ({ ...EMPTY }),
+}
+
+/** The running total; `UnreadableState` when the file is not read whole. */
 export function readUsage(root: string): AgentUsage {
-  return readJson(root, PATH, decodeUsage, { ...EMPTY })
+  return stateOf(root, USAGE)
 }
 
 /** Fold a finished run into the running total. A run with no reported usage (e.g. it
  *  failed to spawn) is ignored so the count stays meaningful. Best-effort — never
- *  let bookkeeping break a run. */
+ *  let bookkeeping break a run; a total not read whole is left as it is, not restarted. */
 export function recordRun(root: string, run: AgentRun): void {
   if (run.tokens == null && run.costUsd == null) return
   try {
-    const prev = readUsage(root)
-    writeJson(root, PATH, {
+    changeStateFile(root, USAGE, (prev) => ({
       runs: prev.runs + 1,
       tokens: prev.tokens + (run.tokens ?? 0),
       costUsd: prev.costUsd + (run.costUsd ?? 0),
       lastRunAt: run.finishedAt ?? new Date().toISOString(),
-      lastTokens: run.tokens,
-      lastCostUsd: run.costUsd,
-    } satisfies AgentUsage)
+      ...(run.tokens == null ? {} : { lastTokens: run.tokens }),
+      ...(run.costUsd == null ? {} : { lastCostUsd: run.costUsd }),
+    }))
   } catch {
     /* usage is best-effort */
   }

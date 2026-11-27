@@ -74,7 +74,7 @@ export function InstanceSwitcher() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <div className="-ml-1 inline-flex items-center gap-0.5">
+      <div className="inline-flex items-center gap-0.5">
         <InstanceTrigger
           active={active}
           loading={isPending}
@@ -107,16 +107,21 @@ function InstanceTrigger({
       <button
         type="button"
         aria-busy={loading || undefined}
-        title={loading ? 'Loading instances' : (warning ?? 'Active instance — click to switch')}
-        className="inline-flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-accent/50"
+        title={
+          loading
+            ? 'Loading instances'
+            : (warning ?? `Active instance: ${active ?? 'none'} — click to switch`)
+        }
+        className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[13px] transition-colors hover:bg-accent"
       >
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/15 text-primary">
-          <Server className="h-4 w-4" />
-        </span>
+        <Server className="h-3.5 w-3.5 text-muted-foreground" />
         {loading ? (
           <Skeleton className="h-4 w-24" />
         ) : (
-          <span className="font-semibold tracking-tight">{active ?? 'no instance'}</span>
+          // a narrow window keeps the switch and names the instance in its title
+          <span className={cn('max-lg:sr-only', active ? 'font-medium' : 'text-muted-foreground')}>
+            {active ?? 'no instance'}
+          </span>
         )}
         {warning && (
           <TriangleAlert

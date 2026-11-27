@@ -11,7 +11,7 @@ import type {
   HarnessHealth,
 } from '../adapter'
 
-import { readComments } from '../../../state/comments'
+import { briefedComments } from '../../../state/comments'
 import { applyMockDomainEdit } from './domain-edit'
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -78,7 +78,7 @@ export class MockHarness implements AgentHarness {
         resumeRejected: true,
       }
     }
-    const store = readComments(input.root)
+    const store = briefedComments(input.root)
     // like a real agent, answer only the threads this turn attached — the ones it names
     const open = store.comments.filter(
       (comment) =>

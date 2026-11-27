@@ -7,7 +7,7 @@
  * harness is fixed, so "switch to the other agent" is a fork that opens a NEW
  * tab and leaves the current conversation alone.
  */
-import type { ChatInfo, ChatList } from '@shared/contracts/agent'
+import type { ChatInfo, ChatList, UnreadableChatFile } from '@shared/contracts/agent'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -17,6 +17,7 @@ import { useSchemaSettled } from './hooks'
 import { useUI } from './store'
 
 const NO_CHATS: ChatInfo[] = []
+const NO_FILES: UnreadableChatFile[] = []
 
 export function useChats() {
   return useQuery({
@@ -27,6 +28,11 @@ export function useChats() {
 
 export function useChatList(): ChatInfo[] {
   return useChats().data?.chats ?? NO_CHATS
+}
+
+/** The files of the tabs the server cannot read whole, each left as it is: the strip names them. */
+export function useUnreadableChats(): UnreadableChatFile[] {
+  return useChats().data?.unreadable ?? NO_FILES
 }
 
 /** The tab the user is looking at — undefined only until the first load lands. */

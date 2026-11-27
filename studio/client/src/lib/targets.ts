@@ -1,4 +1,4 @@
-import type { AnchorKind } from '@shared/contracts/workspace'
+import type { AnchorKind, AnchorRef } from '@shared/contracts/workspace'
 
 import { concreteAnchorKind } from '@shared/comment-anchors'
 
@@ -7,7 +7,7 @@ import { concreteAnchorKind } from '@shared/comment-anchors'
  *
  * A target is the schema entity (or section) a comment attaches to. Targets form
  * a containment hierarchy, coarsest → finest:
- *   domain.<origin>                       a whole domain (its frame, its row in the rail)
+ *   domain.<origin>                       a whole domain (its frame, its crumb in the bar)
  *   section.<id>                          a whole tab (the schema canvas, env…)
  *   view.<slug>                           a declared domain view (Views panel rows)
  *   function.<name>                       a standalone domain Function (no receiver)
@@ -17,13 +17,13 @@ import { concreteAnchorKind } from '@shared/comment-anchors'
  *
  * `domain.` is keyed by ORIGIN, not by the workspace's local id: the origin is the
  * domain's own name, stable across workspaces and readable by the agent, and the
- * namespace is already spelled that way by canvas visibility and by an
- * import request (`domain.import.<origin>`).
+ * namespace is already spelled that way by an import request (`domain.import.<origin>`).
  *
- * Resolution rule (see comment-mode.tsx): the NEAREST declared scope wins. Every
- * surface stamps the most specific ref it represents via `anchorData()`; the
- * resolver climbs the DOM with `closest('[data-anchor-ref]')`, so unmarked gaps
- * resolve to their enclosing scope instead of collapsing to the section.
+ * Resolution rule (`targetAt`): the NEAREST declared scope wins. Every surface stamps
+ * the most specific ref it represents via `anchorData()`; the resolver climbs the DOM
+ * with `closest('[data-anchor-ref]')`, so unmarked gaps resolve to their enclosing
+ * scope instead of collapsing to the section. A target is then found again where it
+ * was made (`locateTarget`), never at a namesake on another surface.
  */
 
 type SchemaMemberKind = 'class' | 'edge'
@@ -31,21 +31,8 @@ type SchemaMemberKind = 'class' | 'edge'
 /** The finest targets in the hierarchy: the fields a schema member owns. */
 type MemberFieldKind = 'property' | 'method' | 'endpoint'
 
-interface FlowNodeIdentity {
-  domainId?: string
-  localId: string
-}
-
 /** Non-greedy owner so the FIRST field segment splits the ref, not a later namesake. */
 const MEMBER_FIELD = /^((?:class|edge)\..+?)\.(property|method|endpoint)\.(.+)$/
-
-function safelyDecode(value: string): string {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return value
-  }
-}
 
 /** Stable identity shared by comments and Ask. Keep the historical format intact. */
 export function anchorKey(domainId: string, ref: string): string {
@@ -95,115 +82,87 @@ export function schemaMemberRef(kind: SchemaMemberKind, name: string): string {
   return `${kind}.${name}`
 }
 
-/** Qualify a local React Flow id for a multi-domain canvas. */
-export function encodeFlowNodeId(domainId: string, localId: string): string {
-  return `workspace:${encodeURIComponent(domainId)}:${localId}`
+/**
+ * A target where it was made. One Domain element is drawn on several surfaces at once — a Class
+ * is a card on the canvas, a row in the Index, the Inspector's page — and an Ask or a comment
+ * belongs to the one it was made on: it stays on that element through pan, zoom and scroll, and
+ * never moves to a namesake elsewhere, nor to the same element of another Domain.
+ */
+export interface Target {
+  /** The Domain whose element it is: where its thread is filed, whose Schema Ask reads. */
+  domainId: string
+  anchor: AnchorRef
+  excerpt: string
+  /** The surface it was made on (`targetSurface`); undefined on a surface that names none. */
+  surface: string | undefined
+  /** The element it was made on. */
+  element: Element
 }
 
-/** Decode a node id emitted by either the single-domain or workspace canvas. */
-export function decodeFlowNodeId(nodeId: string): FlowNodeIdentity {
-  if (!nodeId.startsWith('workspace:')) return { localId: nodeId }
-  const separator = nodeId.indexOf(':', 'workspace:'.length)
-  if (separator < 0) return { localId: nodeId }
+/** The surfaces that draw targets: each names itself with `targetSurface` on its root. */
+export type TargetSurface = 'canvas' | 'index' | 'inspector' | 'bar'
+
+/** The stamp that names the surface every target inside an element is drawn on. */
+export function targetSurface(surface: TargetSurface) {
+  return { 'data-target-surface': surface } as const
+}
+
+/**
+ * The Domain a target element belongs to: the owner stamped on it (`anchorData`), else the
+ * Domain drawn around it (`data-domain-id`). Making a target and finding it again read this one
+ * rule. An element neither names is no target.
+ */
+export function targetOwnerOf(element: Element): string | undefined {
+  return (
+    element.getAttribute('data-anchor-domain-id') ||
+    element.closest('[data-domain-id]')?.getAttribute('data-domain-id') ||
+    undefined
+  )
+}
+
+/** The surface a target element is drawn on, as the nearest `targetSurface` stamp names it. */
+function surfaceOf(element: Element): string | undefined {
+  return element.closest('[data-target-surface]')?.getAttribute('data-target-surface') || undefined
+}
+
+/**
+ * The target a click on `element` makes: the nearest stamp around it, so the most specific
+ * scope wins and an unmarked gap resolves to the scope that encloses it. Null where no stamp,
+ * or no owner, says what was clicked.
+ */
+export function targetAt(element: Element | null): Target | null {
+  const tagged = element?.closest('[data-anchor-ref]')
+  const ref = tagged?.getAttribute('data-anchor-ref')
+  if (!tagged || !ref) return null
+  const domainId = targetOwnerOf(tagged)
+  if (domainId === undefined) return null
+  const excerpt = tagged.getAttribute('data-anchor-excerpt') || tagged.textContent || ref
   return {
-    domainId: safelyDecode(nodeId.slice('workspace:'.length, separator)),
-    localId: nodeId.slice(separator + 1),
+    domainId,
+    anchor: { ref, kind: anchorKindForRef(ref) },
+    excerpt: excerpt.trim().slice(0, 80),
+    surface: surfaceOf(tagged),
+    element: tagged,
   }
 }
 
-/** Encode a cross-domain relationship while retaining its declaring domain. */
-export function encodeFlowEdgeId(
-  ownerDomainId: string,
-  name: string,
-  source: string,
-  target: string,
-): string {
-  return `workspace-edge:${encodeURIComponent(ownerDomainId)}:${name}:${source}:${target}`
-}
-
-/** Convert a class/module React Flow id to the target ref used by comments and Ask. */
-export function flowNodeAnchorRef(nodeId: string): string | null {
-  const { localId } = decodeFlowNodeId(nodeId)
-  if (localId.startsWith('class.') || localId.startsWith('function.')) return localId
-  if (localId.startsWith('grp-')) return `module.${localId.slice('grp-'.length)}`
-  return null
+function standsFor(element: Element, target: Target): boolean {
+  return (
+    element.getAttribute('data-anchor-ref') === target.anchor.ref &&
+    targetOwnerOf(element) === target.domainId &&
+    surfaceOf(element) === target.surface
+  )
 }
 
 /**
- * Normalize a ReactFlow edge element's `data-id` to its edge-class ref. Canvas
- * edges are keyed either `edge-<Class>` or `edge-<Class>__<A>__<B>` (class + the
- * two endpoints), so stripping the `edge-` prefix alone can yield
- * `edge.<Class>__<A>__<B>` — a ref that matches no schema member. Keep only the
- * class segment so both forms resolve to `edge.<Class>`.
+ * Where a target is drawn now: the element it was made on while that element is on the page,
+ * else the element that took its place — the same ref of the same Domain on the same surface —
+ * once a redraw replaced it. Refs are compared, never interpolated into a selector.
  */
-export function flowEdgeAnchorRef(edgeId: string): string | null {
-  const localId = edgeId.startsWith('workspace-edge:')
-    ? `edge-${edgeId.split(':')[2] ?? ''}`
-    : decodeFlowNodeId(edgeId).localId
-  const name = localId
-    .replace(/^edge-/, '')
-    .split('__')[0]
-    ?.trim()
-  return name ? `edge.${name}` : null
-}
-
-/** Domain that owns a workspace edge; absent for an unqualified single-domain id. */
-export function flowEdgeOwnerDomainId(edgeId: string): string | undefined {
-  if (edgeId.startsWith('workspace-edge:')) {
-    const separator = edgeId.indexOf(':', 'workspace-edge:'.length)
-    const encoded = edgeId.slice('workspace-edge:'.length, separator < 0 ? undefined : separator)
-    return encoded ? safelyDecode(encoded) : undefined
-  }
-  return decodeFlowNodeId(edgeId).domainId
-}
-
-/** Domain stamped on a target or on the canvas frame that contains it. */
-export function targetElementDomainId(element: Element): string | undefined {
-  if (element instanceof HTMLElement && element.dataset.domainId) return element.dataset.domainId
-  const ancestor = element.closest<HTMLElement>('[data-domain-id]')
-  if (ancestor?.dataset.domainId) return ancestor.dataset.domainId
-  return element.querySelector<HTMLElement>('[data-domain-id]')?.dataset.domainId
-}
-
-function belongsToDomain(element: Element, domainId: string, encodedDomainId?: string): boolean {
-  const owner = encodedDomainId ?? targetElementDomainId(element)
-  return owner === undefined || owner === domainId
-}
-
-/**
- * Find the rendered element for a canonical target without interpolating user-controlled
- * refs into selectors. Workspace ids are decoded before comparison, so homonymous targets
- * in different domains remain distinct.
- */
-export function locateTargetElement(
-  root: ParentNode,
-  domainId: string,
-  ref: string,
-): HTMLElement | null {
-  if (ref.startsWith('class.') || ref.startsWith('module.') || ref.startsWith('function.')) {
-    for (const element of root.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')) {
-      const id = element.dataset.id ?? ''
-      if (
-        flowNodeAnchorRef(id) === ref &&
-        belongsToDomain(element, domainId, decodeFlowNodeId(id).domainId)
-      )
-        return element
-    }
-  }
-
-  if (ref.startsWith('edge.')) {
-    for (const element of root.querySelectorAll<HTMLElement>('.react-flow__edge[data-id]')) {
-      const id = element.dataset.id ?? ''
-      if (
-        flowEdgeAnchorRef(id) === ref &&
-        belongsToDomain(element, domainId, flowEdgeOwnerDomainId(id))
-      )
-        return element
-    }
-  }
-
-  for (const element of root.querySelectorAll<HTMLElement>('[data-anchor-ref]')) {
-    if (element.dataset.anchorRef === ref && belongsToDomain(element, domainId)) return element
+export function locateTarget(root: ParentNode, target: Target): Element | null {
+  if (target.element.isConnected && standsFor(target.element, target)) return target.element
+  for (const element of root.querySelectorAll('[data-anchor-ref]')) {
+    if (standsFor(element, target)) return element
   }
   return null
 }
@@ -212,9 +171,9 @@ export function locateTargetElement(
  * The data-* stamps that make an element a comment/ask target (read by comment mode).
  *
  * `domainId` says which domain's thread store the comment belongs in, for surfaces whose
- * OWNER is not the domain they are drawn inside — the rail lists domains the canvas does
- * not draw, so its rows carry no `data-domain-id` (that stamp means "this is on screen" to
- * the ask layer). Left out, the resolver must find an owner in the rendered hierarchy.
+ * OWNER is not the domain they are drawn inside — the bar's Domain crumb and the Index rows
+ * sit outside any `data-domain-id` (that stamp means "this is on screen" to the ask layer).
+ * Left out, the resolver must find an owner in the rendered hierarchy.
  */
 export function anchorData(ref: string, excerpt?: string, domainId?: string) {
   return {

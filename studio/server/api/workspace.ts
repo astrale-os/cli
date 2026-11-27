@@ -6,13 +6,16 @@ import { listInstanceDomains } from '../instances/domains'
 import { introspectionStatus, invalidate, rebuildAndAnnounce } from '../introspect/cache'
 import { invalidateKernel } from '../introspect/kernel'
 import { asString } from '../json'
-import { studioSettings, updateStudioSettings } from '../state/settings'
+import { operandProblem } from '../process'
+import { storedSettings, updateStudioSettings } from '../state/settings'
 import { readWorkspaceUiState, updateWorkspaceUiState } from '../state/workspace-ui'
 import { buildCatalog } from '../workspace/catalog'
 import { createDomain } from '../workspace/create'
 import { detectGit } from '../workspace/git'
 import { getStudioRuntime } from '../workspace/runtime'
+import { versions } from '../workspace/versions/service'
 import { badRequest, json, readJsonRecord, type Notify } from './http'
+import { handleLayoutRoute } from './layout'
 
 export async function handleWorkspaceRoute(
   req: Request,
@@ -52,9 +55,17 @@ export async function handleWorkspaceRoute(
     if (req.method === 'POST') {
       const body = await readJsonRecord(req)
       if (body.action !== 'update') return badRequest('unknown workspace state action')
-      return json(updateWorkspaceUiState(root, body.state))
+      const updated = updateWorkspaceUiState(root, body.state)
+      return 'problem' in updated ? json({ error: updated.problem }, 413) : json(updated.value)
     }
     return badRequest('GET or POST')
+  }
+
+  // The Workspace map's arrangement names no Domain: like the rest of the workspace's UI state,
+  // it is kept on this machine for the scanned workspace, and written into no Domain.
+  if (path === '/api/workspace/layout') {
+    const body = req.method === 'POST' ? await readJsonRecord(req) : {}
+    return handleLayoutRoute(req, agentWorkspace().uiRoot, body)
   }
 
   if (path === '/api/workspace/introspection' && req.method === 'GET') {
@@ -64,6 +75,8 @@ export async function handleWorkspaceRoute(
   if (path === '/api/workspace/refresh' && req.method === 'POST') {
     const domains = allDomains()
     invalidateKernel()
+    // what the registry answered is read again too: a refresh trusts no kept copy
+    versions().registry.forget()
     await Promise.all(
       domains.map(async (handle) => {
         // Keep agent runs entirely outside this path. A manual refresh only replaces
@@ -97,7 +110,7 @@ export async function handleWorkspaceRoute(
   }
 
   if (path === '/api/settings') {
-    if (req.method === 'GET') return json(studioSettings())
+    if (req.method === 'GET') return json(storedSettings())
     if (req.method === 'POST') {
       const body = await readJsonRecord(req)
       if (body.action !== 'update') return badRequest('unknown settings action')
@@ -116,13 +129,15 @@ export async function handleWorkspaceRoute(
   if (path === '/api/instances' && req.method === 'GET') return json(await listInstances())
   if (path === '/api/instances/domains' && req.method === 'GET') {
     const name = (new URL(req.url).searchParams.get('name') ?? '').trim()
-    if (!name) return badRequest('name is required')
+    const problem = operandProblem(name, 'the instance name')
+    if (problem) return badRequest(problem)
     return json(await listInstanceDomains(name))
   }
   if (path === '/api/instances/use' && req.method === 'POST') {
     const body = await readJsonRecord(req)
     const name = (asString(body.name) ?? '').trim()
-    if (!name) return badRequest('name is required')
+    const problem = operandProblem(name, 'the instance name')
+    if (problem) return badRequest(problem)
     return json(await setActiveInstance(name))
   }
 

@@ -1,18 +1,16 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { PublicationAddress } from '@shared/contracts/versions'
+
 import {
-  Boxes,
-  FlaskConical,
-  type LucideIcon,
-  MessagesSquare,
-  Network,
-  Plus,
-  RefreshCw,
-  Search,
-  Settings,
-  Workflow,
-} from 'lucide-react'
-import { lazy, type ReactNode, Suspense, useEffect, useMemo } from 'react'
+  publicationOf,
+  publishedDomainId,
+  REGISTRY_READ_LIMIT_MS,
+} from '@shared/contracts/versions'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { MessagesSquare, Plus, RefreshCw, Search, Settings } from 'lucide-react'
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+
+import type { WorkspaceLevelProps } from '@/studio/workspace'
 
 import { AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
@@ -25,58 +23,328 @@ import { SettingsDialog } from '@/components/settings/dialog'
 import { StudioRuntimeNotice } from '@/components/studio-runtime-notice'
 import { Tour } from '@/components/tour'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
 import { useAgentLive, useAgentSnapshot } from '@/lib/agent'
-import { api, qk } from '@/lib/api'
-import { useInvalidateDomain, useWorkspace } from '@/lib/hooks'
-import { type SectionKey, useUI } from '@/lib/store'
+import { api } from '@/lib/api'
+import {
+  bundleQueryOptions,
+  invalidateRefreshed,
+  readPublicationAgain,
+  remoteFailureOf,
+} from '@/lib/domain-queries'
+import { useDatasets, useWorkspace } from '@/lib/hooks'
+import { OnScreen, useOnScreen } from '@/lib/notices'
+import { shownDomainId, useUI } from '@/lib/store'
 import { useStudioEventSync } from '@/lib/studio-events'
+import { useAddress } from '@/lib/use-address'
 import { cn } from '@/lib/utils'
 import { useWorkspaceUiSync } from '@/lib/workspace-ui'
-import { useCanvasSelectionSync } from '@/schema-studio/workspace/canvas-selection'
-import { ProcessSection } from '@/sections/process'
+import { LevelBreadcrumb } from '@/studio/bar/level-breadcrumb'
+import { loadDataLevel } from '@/studio/data/load'
+import { datasetName, isReadyDataset } from '@/studio/data/model'
+import { DataWait } from '@/studio/data/wait'
+import { LENS_NAMES, type LensKey, lensReadable } from '@/studio/lenses/keys'
+import { Reading, RemoteNotice } from '@/studio/workspace/remote'
 
-const LazySchemaSection = lazy(() =>
-  import('./schema-studio/index').then(({ SchemaSection }) => ({ default: SchemaSection })),
+const LazySchemaLevel = lazy(() =>
+  import('./studio/schema-level').then(({ SchemaLevel }) => ({ default: SchemaLevel })),
+)
+const LazyDataLevel = lazy(() => loadDataLevel().then(({ DataLevel }) => ({ default: DataLevel })))
+const LazyWorkspaceLevel = lazy(() =>
+  import('./studio/workspace/index').then(({ WorkspaceLevel }) => ({ default: WorkspaceLevel })),
 )
 
-const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
-  { key: 'schema', label: 'Schema', icon: Network },
-  { key: 'core', label: 'Core', icon: Boxes },
-  { key: 'tests', label: 'Tests', icon: FlaskConical },
-  { key: 'process', label: 'Process', icon: Workflow },
-]
+/** The Workspace level: every Domain, none of them read through a lens. */
+function WorkspaceRouter(props: WorkspaceLevelProps) {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-full flex items-center justify-center text-muted-foreground">
+          Loading workspace…
+        </div>
+      }
+    >
+      <LazyWorkspaceLevel {...props} />
+      <OnScreen place={{ level: 'workspace' }} />
+    </Suspense>
+  )
+}
 
-function SectionRouter({
-  section,
+/** The Schema level: one Domain read through the lens. */
+function SchemaRouter({ domainId }: { domainId: string }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-full flex items-center justify-center text-muted-foreground">
+          Loading schema studio…
+        </div>
+      }
+    >
+      <LazySchemaLevel domainId={domainId} />
+      <SchemaOnScreen domainId={domainId} />
+    </Suspense>
+  )
+}
+
+/** The Schema level is on screen once its code is in and its bundle has answered. */
+function SchemaOnScreen({ domainId }: { domainId: string }) {
+  const bundle = useQuery({ ...bundleQueryOptions(domainId), enabled: false })
+  useOnScreen(bundle.isPending ? undefined : { level: 'domain', domainId })
+  return null
+}
+
+/**
+ * When the reader asked for the Data level of a Domain, or for another dataset of it: the one
+ * clock its wait is said on. Opened on no dataset, the dataset it then names is the same ask.
+ */
+function useAskedAt(domainId: string, datasetPath: string | null): number {
+  const [asked, setAsked] = useState(() => ({ domainId, datasetPath, at: Date.now() }))
+  if (asked.domainId === domainId && asked.datasetPath === datasetPath) return asked.at
+  const again = asked.domainId !== domainId || asked.datasetPath !== null
+  const next = { domainId, datasetPath, at: again ? Date.now() : asked.at }
+  setAsked(next)
+  return next.at
+}
+
+/**
+ * The Data level: one dataset of the Domain, named by its module, read through the lens. Named
+ * or not, it mounts: a dataset that cannot be read says where and why.
+ * Opened on no dataset, it names the Domain's first ready one, so a later failure keeps naming
+ * it; with none ready it goes back to the Schema, the selection kept.
+ * The level's code, the Domain's datasets and its Schema are asked for at once, none waiting on
+ * another; until they answer, the wait says which dataset opens and what is being read.
+ */
+function DataRouter({
   domainId,
-  onDomainChange,
+  origin,
+  lens,
 }: {
-  section: SectionKey
-  domainId?: string
-  onDomainChange: (domainId: string) => void
+  domainId: string
+  origin: string
+  lens: LensKey
 }) {
-  switch (section) {
-    // Schema, Core and Tests are three readings of one domain — the same lazily-loaded
-    // studio, asked for a different canvas.
-    case 'schema':
-    case 'core':
-    case 'tests':
-      return (
-        <Suspense
-          fallback={
-            <div className="h-full flex items-center justify-center text-muted-foreground">
-              Loading schema studio…
-            </div>
-          }
+  const queryClient = useQueryClient()
+  const datasetPath = useUI((s) => s.dataset)
+  const openSchema = useUI((s) => s.openSchema)
+  const openDataLevel = useUI((s) => s.openDataLevel)
+  const named = datasetPath !== null
+  const { data, isError } = useDatasets(domainId)
+  const first = data?.datasets.find(isReadyDataset)?.path
+  const settled = isError || data !== undefined
+  const since = useAskedAt(domainId, datasetPath)
+  useEffect(() => {
+    void loadDataLevel()
+    void queryClient.prefetchQuery(bundleQueryOptions(domainId))
+  }, [domainId, queryClient])
+  useEffect(() => {
+    if (named || !settled) return
+    if (first === undefined) openSchema()
+    else openDataLevel(first)
+  }, [first, named, openDataLevel, openSchema, settled])
+  if (!named)
+    return (
+      <DataWait
+        since={since}
+        dataset={`the first ready dataset of ${origin}`}
+        reading={`Reading the datasets ${origin} declares`}
+      />
+    )
+  return (
+    <Suspense
+      fallback={
+        <DataWait
+          since={since}
+          dataset={datasetName(data?.datasets, datasetPath)}
+          reading="Loading the Data level"
+        />
+      }
+    >
+      <LazyDataLevel
+        domainId={domainId}
+        origin={origin}
+        datasetPath={datasetPath}
+        lens={lens}
+        since={since}
+      />
+    </Suspense>
+  )
+}
+
+/** What the Behavior lens can read of a published Schema, and what it cannot. */
+const PUBLISHED_BEHAVIOR =
+  'Behavior reads the published Schema: every function and Method, where it is declared, and the Classes its signature names. What a function reads, writes and calls is read from its handler source, which a published bundle does not hold: the map draws what each declaration names, and none of its effects.'
+
+/**
+ * A Publication at the Schema level. The registry answers first: while it is read, and when it
+ * does not give the Publication, the page says which — never a blank canvas. Once read, the
+ * Schema level draws it as it draws any Domain, under a line that says it is a Publication and
+ * what a published bundle does not carry.
+ */
+function PublicationRouter({
+  domainId,
+  publication,
+  lens,
+}: {
+  domainId: string
+  publication: PublicationAddress
+  lens: LensKey
+}) {
+  const queryClient = useQueryClient()
+  const openWorkspace = useUI((s) => s.openWorkspace)
+  const bundle = useQuery(bundleQueryOptions(domainId))
+  const what = `${publication.origin} ${publication.version}`
+  if (bundle.isPending)
+    return (
+      <div
+        data-publication-status="reading"
+        className="mx-auto flex h-full max-w-xl items-center justify-center px-6"
+      >
+        <Reading
+          limitMs={REGISTRY_READ_LIMIT_MS}
+          what={`Publication ${what}`}
+          onRetry={() => readPublicationAgain(queryClient, domainId)}
+          skeleton={false}
         >
-          <LazySchemaSection domainId={domainId} onDomainChange={onDomainChange} mode={section} />
-        </Suspense>
-      )
-    case 'process':
-      return <ProcessSection domainId={domainId} onDomainChange={onDomainChange} />
+          Reading {what} from the registry…
+        </Reading>
+      </div>
+    )
+  if (bundle.isError) {
+    const failure = remoteFailureOf(bundle.error) ?? {
+      status: 'failed' as const,
+      message: String(bundle.error),
+    }
+    return (
+      <div className="h-full overflow-auto bg-canvas" data-publication-status={failure.status}>
+        <OnScreen place={{ level: 'domain', domainId }} />
+        <div className="mx-auto max-w-xl space-y-3 px-6 py-16">
+          <p className="text-sm font-medium">Publication {what}, read-only, could not be read.</p>
+          <RemoteNotice
+            failure={failure}
+            what={what}
+            onRetry={() => readPublicationAgain(queryClient, domainId)}
+          />
+          <button
+            type="button"
+            onClick={openWorkspace}
+            className="text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Back to the Workspace
+          </button>
+        </div>
+      </div>
+    )
   }
+  return (
+    <div className="flex h-full flex-col">
+      <p
+        data-publication-notice={lens}
+        className="shrink-0 border-b bg-muted/40 px-3 py-1.5 text-[12.5px] leading-relaxed text-muted-foreground"
+      >
+        <span className="font-medium text-foreground">Publication {what}, read-only.</span>{' '}
+        {lens === 'behavior'
+          ? PUBLISHED_BEHAVIOR
+          : 'Its Schema is the one the registry serves: no sources, datasets or View code come with it, and nothing here writes to it.'}
+      </p>
+      <div className="relative min-h-0 flex-1">
+        <SchemaRouter domainId={domainId} />
+      </div>
+    </div>
+  )
+}
+
+/** The Data level, asked of a Publication: a published bundle carries no dataset. */
+function PublicationWithoutData({
+  domainId,
+  publication,
+}: {
+  domainId: string
+  publication: PublicationAddress
+}) {
+  const openSchema = useUI((s) => s.openSchema)
+  useOnScreen({ level: 'data', domainId })
+  return (
+    <div
+      data-publication-status="no-datasets"
+      className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground"
+    >
+      <p>
+        Publication {publication.origin} {publication.version} carries no dataset: datasets are read
+        from a Domain's sources, and a published bundle holds its Schema alone.
+      </p>
+      <button
+        type="button"
+        onClick={openSchema}
+        className="inline-flex h-8 items-center rounded-md border px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-accent"
+      >
+        Read its Schema
+      </button>
+    </div>
+  )
+}
+
+/**
+ * The lens switch: which question the canvas answers about the Domain. A lens without a
+ * projector yet is named and visibly not ready, so the switch already reads as the
+ * Studio's three questions; the Data level reads Rules before the Schema does.
+ */
+function LensSwitch({
+  active,
+  dataLevel,
+  onChange,
+}: {
+  active: LensKey
+  dataLevel: boolean
+  onChange: (lens: LensKey) => void
+}) {
+  return (
+    <nav
+      aria-label="Lens"
+      data-testid="lens-switch"
+      data-tour="lenses"
+      className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5"
+    >
+      {LENS_NAMES.map((lens) => {
+        const current = lens.id === active
+        const readable = lensReadable(lens, dataLevel)
+        return (
+          <Tooltip key={lens.id}>
+            <TooltipTrigger asChild>
+              {/* A disabled button gets no pointer events, so its tooltip hangs off a wrapper. */}
+              <span className="inline-flex">
+                <button
+                  type="button"
+                  aria-pressed={current}
+                  disabled={!readable}
+                  data-lens={lens.id}
+                  onClick={() => onChange(lens.id)}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium transition-colors max-lg:px-2 disabled:cursor-default disabled:text-muted-foreground/55',
+                    current
+                      ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.06)]'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {lens.label}
+                  {!readable && (
+                    <span className="rounded-full border border-dashed px-1.5 text-[10px] font-normal leading-4">
+                      soon
+                    </span>
+                  )}
+                </button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {lens.question}
+              <span className="ml-1.5 text-muted-foreground">
+                {readable ? lens.shortcut : 'coming'}
+              </span>
+            </TooltipContent>
+          </Tooltip>
+        )
+      })}
+    </nav>
+  )
 }
 
 /** A header action: icon only, its name and shortcut in the tooltip. */
@@ -128,13 +396,11 @@ function IconAction({
 
 export function App() {
   const queryClient = useQueryClient()
-  const invalidateDomain = useInvalidateDomain()
   const { data: domains } = useWorkspace()
   const workspaceUiReady = useWorkspaceUiSync()
-  const section = useUI((s) => s.section)
+  const level = useUI((s) => s.level)
   const sectionDomainId = useUI((s) => s.readerDomainId)
   const selectionDomainId = useUI((s) => s.selectionDomainId)
-  const setSection = useUI((s) => s.setSection)
   const setSectionDomainId = useUI((s) => s.setReaderDomain)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
   const setSettingsOpen = useUI((s) => s.setSettingsOpen)
@@ -144,16 +410,29 @@ export function App() {
   const toggleCommentMode = useUI((s) => s.toggleCommentMode)
   const toggleAskMode = useUI((s) => s.toggleAskMode)
   const clearSelection = useUI((s) => s.clearSelection)
+  const openDomain = useUI((s) => s.openDomain)
+  const lens = useUI((s) => s.lens)
+  const setLens = useUI((s) => s.setLens)
   const setRun = useAgentLive((s) => s.setRun)
   const validIds = useMemo(() => new Set((domains ?? []).map((domain) => domain.id)), [domains])
-  const known = (domainId?: string) => (domainId && validIds.has(domainId) ? domainId : undefined)
-  const scopedDomainId = known(sectionDomainId) ?? known(selectionDomainId) ?? domains?.[0]?.id
-  const scopedDomain = domains?.find((domain) => domain.id === scopedDomainId)
+  const scopedDomainId = shownDomainId(
+    { readerDomainId: sectionDomainId, selectionDomainId },
+    domains ?? [],
+  )
+  const publication =
+    level !== 'workspace' && scopedDomainId ? publicationOf(scopedDomainId) : undefined
+  const arrived = useAddress({ ready: workspaceUiReady, domains })
+  const openPublished = useCallback(
+    (origin: string, version: string) => openDomain(publishedDomainId(origin, version)),
+    [openDomain],
+  )
   const refreshDomains = useMutation({
     mutationFn: api.refreshWorkspace,
     onSuccess: ({ refreshed }) => {
-      for (const domain of domains ?? []) invalidateDomain(domain.id)
-      void queryClient.invalidateQueries({ queryKey: qk.workspace })
+      invalidateRefreshed(
+        queryClient,
+        (domains ?? []).map((domain) => domain.id),
+      )
       toast.success(`${refreshed === 1 ? 'Domain' : 'Domains'} refreshed`)
     },
     onError: (error) => toast.error(`Could not refresh domains — ${String(error)}`),
@@ -171,8 +450,6 @@ export function App() {
   }
 
   useStudioEventSync()
-  // Keep the canvas visibility set aligned with the domains the watcher still exposes.
-  useCanvasSelectionSync(workspaceUiReady)
 
   // keep the merge-forward agent store in sync with the authoritative snapshot —
   // recovers the terminal run state if an `agent-run` frame was ever missed.
@@ -187,19 +464,25 @@ export function App() {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
+      const lens = LENS_NAMES.find((name) => name.shortcut === e.key)
       if (e.key === 'c' || e.key === 'C') {
         e.preventDefault()
         toggleCommentMode()
       } else if (e.key === 'a' || e.key === 'A') {
         e.preventDefault()
         toggleAskMode()
+      } else if (lens && useUI.getState().level !== 'workspace') {
+        // a lens reads one Domain: at the Workspace level its key does nothing
+        if (!lensReadable(lens, useUI.getState().level === 'data')) return
+        e.preventDefault()
+        setLens(lens.id)
       }
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [toggleCommentMode, toggleAskMode])
+  }, [toggleCommentMode, toggleAskMode, setLens])
 
-  if (!domains || !workspaceUiReady) {
+  if (!domains || !workspaceUiReady || !arrived) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
         Connecting to studio…
@@ -211,42 +494,25 @@ export function App() {
     <TooltipProvider delayDuration={250}>
       <div className="flex h-full flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-          {/* what you are looking at — which DOMAIN is the rail's question, not this bar's */}
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <InstanceSwitcher />
-            <StudioRuntimeNotice />
-            {scopedDomain ? (
-              <UpdatesBadge domainId={scopedDomain.id} domainPath={scopedDomain.path} />
-            ) : null}
+          {/* where you are */}
+          <div className="flex min-w-0 flex-1 items-center">
+            <LevelBreadcrumb
+              domains={domains}
+              domainId={scopedDomainId}
+              onDomainChange={changeSectionDomain}
+            />
           </div>
 
-          {/* where you are */}
-          <nav data-tour="sections" className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-            {NAV.map((n) => {
-              const Icon = n.icon
-              const active = section === n.key
-              return (
-                <button
-                  key={n.key}
-                  type="button"
-                  aria-current={active ? 'page' : undefined}
-                  onClick={() => setSection(n.key)}
-                  className={cn(
-                    'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors',
-                    active
-                      ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.06)]'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="hidden md:inline">{n.label}</span>
-                </button>
-              )
-            })}
-          </nav>
+          {/* what you ask — of a Domain: the Workspace level has no lens */}
+          {level !== 'workspace' && (
+            <LensSwitch active={lens} dataLevel={level === 'data'} onChange={setLens} />
+          )}
 
-          {/* what you can do */}
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+          {/* what you can do: on a narrow window, as wide as its controls, and no wider */}
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1 max-lg:flex-none">
+            <StudioRuntimeNotice />
+            <InstanceSwitcher />
+            <span className="mx-1 h-4 w-px bg-border" />
             <IconAction
               label="Refresh domains"
               disabled={refreshDomains.isPending}
@@ -293,12 +559,32 @@ export function App() {
           )}
         >
           <main className="relative min-h-0 flex-1 overflow-hidden">
-            {domains.length > 0 || section === 'schema' ? (
-              <SectionRouter
-                section={section}
-                domainId={scopedDomainId}
-                onDomainChange={changeSectionDomain}
+            {level === 'workspace' ? (
+              <WorkspaceRouter
+                domains={domains}
+                onOpenDomain={openDomain}
+                onOpenPublished={openPublished}
               />
+            ) : publication && scopedDomainId ? (
+              level === 'data' ? (
+                <PublicationWithoutData domainId={scopedDomainId} publication={publication} />
+              ) : (
+                <PublicationRouter
+                  domainId={scopedDomainId}
+                  publication={publication}
+                  lens={lens}
+                />
+              )
+            ) : level === 'data' && scopedDomainId ? (
+              <DataRouter
+                domainId={scopedDomainId}
+                origin={
+                  domains?.find((domain) => domain.id === scopedDomainId)?.origin ?? scopedDomainId
+                }
+                lens={lens}
+              />
+            ) : scopedDomainId ? (
+              <SchemaRouter domainId={scopedDomainId} />
             ) : (
               <EmptyWorkspace />
             )}
@@ -320,8 +606,8 @@ export function App() {
 
 /**
  * Nothing to look at yet. A workspace with no domain in it has exactly one thing
- * to offer, and the rail that normally offers it is inside a section that cannot
- * draw — so it is offered here instead.
+ * to offer, and the Workspace page that normally offers it is not drawn at the Domain
+ * level — so it is offered here instead.
  */
 function EmptyWorkspace() {
   const setNewDomainOpen = useUI((s) => s.setNewDomainOpen)

@@ -49,6 +49,14 @@ test('a function is bound to the local classes its node paths accept, input or o
   expect(functionsForClass(bound, 'Issue').map((entry) => entry.name)).toEqual(['triage'])
 })
 
+test('an output binds the classes it is or lists, and those its fields are or list', () => {
+  const PROJECT = classRef('local.example.dev', 'Project')
+  const lists = model({}, { type: 'array', items: nodePath(ISSUE) })
+  expect(lists.all[0]?.refs).toEqual([ISSUE])
+  const fields = model({}, { type: 'object', properties: { project: nodePath(PROJECT) } })
+  expect(fields.all[0]?.refs).toEqual([PROJECT])
+})
+
 test('a class from another domain is remembered, but leaves the function standalone', () => {
   const foreign = model({ payment: nodePath(classRef('payments.test', 'Payment')) })
   expect(foreign.all[0]?.refs.map((ref) => ref.origin)).toEqual(['payments.test'])

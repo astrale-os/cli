@@ -1,119 +1,27 @@
 import type { StudioSchemaBundle } from '@shared/contracts/schema'
-import type { IrSchemaRef } from '@shared/schema/identity'
 
-import { parseSchemaRefKey, schemaRefKey } from '@shared/schema/identity'
-import { FlaskConical, ShieldCheck } from 'lucide-react'
-import { useMemo } from 'react'
+import { publicationOf } from '@shared/contracts/versions'
+import { isReadOnlyDomainId } from '@shared/contracts/workspace'
+import { parseSchemaRefKey } from '@shared/schema/identity'
+import { Database, ShieldCheck } from 'lucide-react'
 
 import { EmptyState } from '@/components/studio-kit'
 import { useBundle, useSchemaDomains } from '@/lib/hooks'
-import { indexPolicies, policyGuard, policyUsage, type PolicyUsage } from '@/lib/policy'
 import { useUI } from '@/lib/store'
+import { carryToDataset } from '@/studio/data/carry'
+import { Empty, LensSwitches, Page, Section, Title } from '@/studio/inspector/parts'
+import { type LensSwitch } from '@/studio/inspector/switches'
+import { type PolicyRule, policyRuleOf, rulesOf } from '@/studio/rules/model'
+import { PolicyRuleCard, UnreadNote } from '@/studio/rules/rule-view'
 
-import { checkObjectWords, ExpressionWords } from './dataset-view/policy-words'
-import { resolveClass } from './inheritance'
+import { originLabel } from './detail/model'
 
-export function PolicyUsageSection({
-  usage,
-  onOpen,
-  bundle,
-}: {
-  usage: PolicyUsage
-  onOpen: (key: string) => void
-  bundle: StudioSchemaBundle
-}) {
-  const domainId = bundle.domainId
-  const memberLink = (label: string, target: string) => (
-    <button
-      type="button"
-      onClick={() => {
-        const ui = useUI.getState()
-        if (target.includes('.method.')) ui.revealAnchor(target, domainId)
-        else {
-          ui.setSection('schema')
-          ui.selectClass(target, domainId)
-        }
-      }}
-      className="rounded font-medium hover:text-primary hover:underline focus-visible:text-primary focus-visible:underline focus-visible:outline-none"
-    >
-      {label}
-    </button>
-  )
-  const link = (ref: IrSchemaRef) => (
-    <button
-      type="button"
-      key={schemaRefKey(ref)}
-      onClick={() => onOpen(schemaRefKey(ref))}
-      className="rounded text-primary hover:underline"
-    >
-      {ref.name}
-    </button>
-  )
-  const via = (refs?: IrSchemaRef[]) =>
-    refs?.length ? (
-      <span className="inline-flex flex-wrap items-baseline gap-1 text-muted-foreground">
-        via{' '}
-        {refs.map((ref, i) => (
-          <span key={schemaRefKey(ref)}>
-            {i > 0 && ' → '}
-            {link(ref)}
-          </span>
-        ))}
-      </span>
-    ) : null
-  return (
-    <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Used by
-      </h3>
-      {usage.policies.length + usage.classes.length + usage.callables.length === 0 ? (
-        <p className="text-[12px] text-muted-foreground">
-          No policy, class or callable references this policy.
-        </p>
-      ) : (
-        <div className="space-y-2 text-[12px]">
-          {usage.policies.map((use) => (
-            <div key={schemaRefKey(use.ref)} className="flex flex-wrap items-baseline gap-x-1.5">
-              <span className="text-muted-foreground">Policy</span> {link(use.ref)} {via(use.via)}
-            </div>
-          ))}
-          {usage.classes.map((use, i) => (
-            <div key={i} className="flex flex-wrap items-baseline gap-x-1.5">
-              <span>
-                {memberLink(use.className, `class.${use.className}`)} · {use.operation}
-              </span>{' '}
-              {via(use.via)}
-            </div>
-          ))}
-          {usage.callables.map((use, i) => (
-            <div key={i} className="flex flex-wrap items-baseline gap-x-1.5">
-              <span>
-                {use.ownerKind === 'class' ? (
-                  <>
-                    {memberLink(use.owner, `class.${use.owner}`)}.
-                    {memberLink(
-                      use.name,
-                      `${bundle.ir?.classes[use.owner]?.type === 'edge' ? 'edge' : 'class'}.${use.owner}.method.${use.name}`,
-                    )}
-                  </>
-                ) : (
-                  memberLink(use.name, `function.${use.name}`)
-                )}
-              </span>
-              <span className="text-muted-foreground">on {checkObjectWords(use.object)}</span>{' '}
-              {via(use.via)}
-              {use.composed && (
-                <span className="text-muted-foreground">(part of a combined check)</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  )
-}
-
-/** Policy panels also work when their domain is not drawn on the canvas. */
+/**
+ * Policy panels also work when their domain is not drawn on the canvas: a Policy is read from
+ * the workspace Domain that declares it. A Publication is read from its own bundle, whatever the
+ * Policy's origin: it carries the very Schemas it is built against, and the workspace's copy of
+ * its origin is another version.
+ */
 export function SchemaPolicyDetail({
   domainId,
   policyKey,
@@ -123,7 +31,9 @@ export function SchemaPolicyDetail({
 }) {
   const ref = parseSchemaRefKey(policyKey)
   const { data: workspace } = useSchemaDomains()
-  const ownerId = workspace?.find((domain) => domain.origin === ref?.origin)?.id ?? domainId
+  const ownerId = publicationOf(domainId)
+    ? domainId
+    : (workspace?.find((domain) => domain.origin === ref?.origin)?.id ?? domainId)
   const { data: bundle, isLoading } = useBundle(ownerId)
   if (isLoading) return <div className="p-5 text-sm text-muted-foreground">Loading policy…</div>
   if (!bundle?.ir)
@@ -135,13 +45,20 @@ export function SchemaPolicyDetail({
   return <PolicyDetail bundle={bundle} policyKey={policyKey} />
 }
 
+/**
+ * A Policy's page in the Inspector. Under Rules, its card: the rule in words or as a Figure,
+ * where it sits, what it checks and what checks it. Under the other lenses, what it is and the
+ * switch to Rules: a Policy adds nothing to what exists or to what happens.
+ */
 function PolicyDetail({ bundle, policyKey }: { bundle: StudioSchemaBundle; policyKey: string }) {
-  const ir = bundle.ir!
-  const index = useMemo(() => indexPolicies(ir), [ir])
-  const policy =
-    index.byKey.get(policyKey) ??
-    index.byKey.get(schemaRefKey({ origin: ir.domain, kind: 'policy', name: policyKey }))
-  if (!policy)
+  const lens = useUI((state) => state.lens)
+  const readerDomainId = useUI((state) => state.readerDomainId)
+  const rules = rulesOf(bundle)
+  const key = policyKey.includes(':policy.')
+    ? policyKey
+    : `${rules.origin ?? bundle.ir?.domain}:policy.${policyKey}`
+  const policy = policyRuleOf(rules, key)
+  if (!policy && !rules.unread)
     return (
       <div className="p-5">
         <EmptyState
@@ -150,51 +67,60 @@ function PolicyDetail({ bundle, policyKey }: { bundle: StudioSchemaBundle; polic
         />
       </div>
     )
-  const open = (key: string) => useUI.getState().selectClass(`policy.${key}`, bundle.domainId)
-  const guard = policyGuard(policy, index)
+  const name = policy?.name ?? parseSchemaRefKey(key)?.name ?? policyKey
+  const origin = policy?.origin ?? parseSchemaRefKey(key)?.origin
+  const switches: LensSwitch[] =
+    lens === 'rules' || policy === undefined ? [] : [{ lens: 'rules', text: policyWords(policy) }]
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="flex items-center gap-2.5 border-b px-4 py-3 pr-12">
-        <ShieldCheck className="h-6 w-6 shrink-0 text-success" />
-        <div className="min-w-0">
-          <h2 className="truncate text-[15px] font-semibold">{policy.ref.name}</h2>
-          <p className="text-[11px] text-muted-foreground">
-            {guard === 'edge'
-              ? 'guards an edge'
-              : guard === 'object'
-                ? 'guards a node'
-                : 'about the subject'}
-          </p>
-        </div>
-      </div>
-      <div className="space-y-5 p-4">
-        {policy.description && (
-          <p className="text-[13px] leading-relaxed text-foreground/80">{policy.description}</p>
+    <Page domainId={bundle.domainId} data-inspector-lens={lens} data-policy-detail="">
+      <Title
+        kicker={`Policy · ${originLabel(origin)}`}
+        name={name}
+        icon={<ShieldCheck />}
+        {...(policy?.description === undefined ? {} : { description: policy.description })}
+        domainId={bundle.domainId}
+        anchor={`policy.${key}`}
+      />
+      {lens !== 'rules' ? (
+        <Section label={lens === 'structure' ? 'Structure' : 'Behavior'}>
+          <Empty>
+            A Policy is a rule: it adds nothing to{' '}
+            {lens === 'structure' ? 'what exists' : 'what happens'}.
+          </Empty>
+        </Section>
+      ) : policy ? (
+        <PolicyRuleCard rules={rules} policy={policy} />
+      ) : (
+        <UnreadNote unread={rules.unread!} />
+      )}
+      {/* The Data level reads the Domain shown; the Kernel and a Publication carry no dataset. */}
+      {lens === 'rules' &&
+        policy !== undefined &&
+        readerDomainId !== undefined &&
+        !isReadOnlyDomainId(readerDomainId) && (
+          <button
+            type="button"
+            data-policy-on-dataset={policy.target}
+            onClick={() => void carryToDataset(readerDomainId, policy.target, policy.name)}
+            className="inline-flex items-center gap-1.5 rounded-sm text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <Database className="h-3.5 w-3.5" /> What it admits on a dataset
+          </button>
         )}
-        <section className="space-y-2">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Rule
-          </h3>
-          <div className="rounded-md border bg-card px-3 py-2.5">
-            <ExpressionWords
-              policy={policy}
-              index={index}
-              onOpen={open}
-              undirected={(ref) =>
-                resolveClass(bundle, { ...ref, kind: 'class' })?.orientation === 'undirected'
-              }
-            />
-          </div>
-        </section>
-        <PolicyUsageSection usage={policyUsage(ir, policy)} onOpen={open} bundle={bundle} />
-        <button
-          type="button"
-          onClick={() => useUI.getState().openPolicy(schemaRefKey(policy.ref), bundle.domainId)}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-primary hover:bg-accent"
-        >
-          <FlaskConical className="h-3.5 w-3.5" /> Test on a Dataset
-        </button>
-      </div>
-    </div>
+      <LensSwitches switches={switches} />
+    </Page>
   )
+}
+
+/** What the Rules lens has to say of a Policy: where it sits and what it checks. */
+function policyWords(policy: PolicyRule): string {
+  const sits = policy.sitsOn.length
+  const checks = policy.policies.length
+  const parts = [
+    sits === 0
+      ? 'It sits on nothing'
+      : `It sits on ${sits} ${sits === 1 ? 'slot or callable' : 'slots and callables'}`,
+    ...(checks === 0 ? [] : [`checks ${checks} ${checks === 1 ? 'Policy' : 'Policies'}`]),
+  ]
+  return `${parts.join(' and ')}; read what it says`
 }

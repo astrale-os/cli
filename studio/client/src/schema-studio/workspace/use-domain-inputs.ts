@@ -1,28 +1,15 @@
 import type { DomainAnatomy, StudioSchemaBundle } from '@shared/contracts/schema'
-import type { DomainSummary, LayoutState, VisibilityState } from '@shared/contracts/workspace'
+import type { DomainSummary } from '@shared/contracts/workspace'
 
 import { useQueries } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
-import {
-  anatomyQueryOptions,
-  bundleQueryOptions,
-  layoutQueryOptions,
-  visibilityQueryOptions,
-} from '@/lib/domain-queries'
+import { anatomyQueryOptions, bundleQueryOptions } from '@/lib/domain-queries'
 
 export interface WorkspaceDomainInput {
   summary: DomainSummary
   bundle: StudioSchemaBundle
   anatomy: DomainAnatomy
-  layout: LayoutState
-  visibility: VisibilityState
-}
-
-const EMPTY_LAYOUT: LayoutState = { positions: {} }
-const EMPTY_VISIBILITY: VisibilityState = {
-  hidden: {},
-  showInheritedEdges: true,
 }
 
 export function useWorkspaceDomainInputs(
@@ -34,12 +21,6 @@ export function useWorkspaceDomainInputs(
   })
   const anatomies = useQueries({
     queries: ids.map(anatomyQueryOptions),
-  })
-  const layouts = useQueries({
-    queries: ids.map(layoutQueryOptions),
-  })
-  const visibilities = useQueries({
-    queries: ids.map(visibilityQueryOptions),
   })
 
   return useMemo(() => {
@@ -58,15 +39,9 @@ export function useWorkspaceDomainInputs(
         pending = pending || !error
         return
       }
-      inputs.push({
-        summary,
-        bundle,
-        anatomy,
-        layout: layouts[index]?.data ?? EMPTY_LAYOUT,
-        visibility: visibilities[index]?.data ?? EMPTY_VISIBILITY,
-      })
+      inputs.push({ summary, bundle, anatomy })
     })
 
     return { inputs, pending, errors }
-  }, [anatomies, bundles, domains, ids, layouts, visibilities])
+  }, [anatomies, bundles, domains, ids])
 }

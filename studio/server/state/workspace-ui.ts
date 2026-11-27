@@ -1,18 +1,18 @@
-/** Machine-side UI state for one scanned workspace. */
+/**
+ * Machine-side UI state for one scanned workspace (`ui.json`). The file is read whole or not at
+ * all (state-file.ts): a version or a value this Studio does not read makes it unreadable, and
+ * no write goes over it; a key it does not know is kept. A value out of its range is brought
+ * back into it, which is the same preference, not a lost one.
+ */
 import type {
-  NodePosition,
   WorkspacePanelUiState,
   WorkspaceRailUiState,
-  WorkspaceSchemaUiState,
-  WorkspaceSection,
   WorkspaceUiState,
 } from '../../shared/contracts/workspace'
 
-import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
-import { readJson, writeJson } from './store'
-
-const FILE = 'ui.json'
-const SECTIONS = new Set<WorkspaceSection>(['schema', 'core', 'tests', 'process'])
+import { WORKSPACE_UI_LIMITS } from '../../shared/contracts/workspace'
+import { asBoolean, asFiniteNumber, asJsonRecord, asString, refused, type Decoded } from '../json'
+import { changeStateFile, stateOf, type StateFile } from './state-file'
 const EDGE_STYLES = new Set<WorkspaceUiState['edgeStyle']>(['curved', 'orthogonal'])
 const PANEL_TABS = new Set<WorkspacePanelUiState['tab']>(['agent', 'comments'])
 const PANEL_SIDES = new Set<WorkspacePanelUiState['side']>(['left', 'right', 'bottom'])
@@ -34,7 +34,6 @@ function clamped(
 export function emptyWorkspaceUiState(): WorkspaceUiState {
   return {
     version: 1,
-    section: 'schema',
     edgeStyle: 'curved',
     detailWidth: DETAIL_WIDTH.fallback,
     panel: {
@@ -46,66 +45,12 @@ export function emptyWorkspaceUiState(): WorkspaceUiState {
       dockHeight: DOCK_HEIGHT.fallback,
     },
     rail: { width: 240, collapsed: false },
-    schema: {
-      visibleDomainIds: [],
-      initialized: false,
-      domainPositions: {},
-      externalPositions: {},
-      collapsedModules: {},
-      expandedDomainIds: [],
-      expandedExternals: [],
-    },
   }
 }
 
 function oneOf<T extends string>(value: unknown, allowed: Set<T>): T | undefined {
   const candidate = asString(value) as T | undefined
   return candidate && allowed.has(candidate) ? candidate : undefined
-}
-
-function uniqueStrings(value: unknown, fallback: string[]): string[] {
-  const items = asStringArray(value)
-  return items ? [...new Set(items.filter(Boolean))] : fallback
-}
-
-function positions(value: unknown, fallback: Record<string, NodePosition>) {
-  const record = asJsonRecord(value)
-  if (!record) return fallback
-  const result: Record<string, NodePosition> = {}
-  for (const [key, raw] of Object.entries(record)) {
-    const point = asJsonRecord(raw)
-    const x = asFiniteNumber(point?.x)
-    const y = asFiniteNumber(point?.y)
-    if (!key || x === undefined || y === undefined) continue
-    result[key] = { x, y }
-  }
-  return result
-}
-
-function collapsed(value: unknown, fallback: Record<string, string[]>) {
-  const record = asJsonRecord(value)
-  if (!record) return fallback
-  const result: Record<string, string[]> = {}
-  for (const [domainId, raw] of Object.entries(record)) {
-    if (!domainId) continue
-    const paths = asStringArray(raw)
-    if (paths) result[domainId] = [...new Set(paths.filter(Boolean))]
-  }
-  return result
-}
-
-function schemaState(value: unknown, fallback: WorkspaceSchemaUiState): WorkspaceSchemaUiState {
-  const record = asJsonRecord(value)
-  if (!record) return fallback
-  return {
-    visibleDomainIds: uniqueStrings(record.visibleDomainIds, fallback.visibleDomainIds),
-    initialized: asBoolean(record.initialized) ?? fallback.initialized,
-    domainPositions: positions(record.domainPositions, fallback.domainPositions),
-    externalPositions: positions(record.externalPositions, fallback.externalPositions),
-    collapsedModules: collapsed(record.collapsedModules, fallback.collapsedModules),
-    expandedDomainIds: uniqueStrings(record.expandedDomainIds, fallback.expandedDomainIds),
-    expandedExternals: uniqueStrings(record.expandedExternals, fallback.expandedExternals),
-  }
 }
 
 function panelState(value: unknown, fallback: WorkspacePanelUiState): WorkspacePanelUiState {
@@ -130,20 +75,65 @@ function railState(value: unknown, fallback: WorkspaceRailUiState): WorkspaceRai
   }
 }
 
-function decodeWorkspaceUiState(value: unknown): WorkspaceUiState | undefined {
+/** Absent, or one of `allowed`; else why not. */
+function checkedOneOf(value: unknown, allowed: Set<string>, what: string): string | undefined {
+  return value === undefined || (typeof value === 'string' && allowed.has(value))
+    ? undefined
+    : `its ${what} is none of ${[...allowed].join(', ')}`
+}
+const checkedNumber = (value: unknown, what: string) =>
+  value === undefined || asFiniteNumber(value) !== undefined
+    ? undefined
+    : `its ${what} is not a number`
+const checkedBoolean = (value: unknown, what: string) =>
+  value === undefined || typeof value === 'boolean' ? undefined : `its ${what} is not true or false`
+
+/** Why the file is not this Studio's UI state, read whole; nothing when it is. */
+function problemOf(record: Record<string, unknown>): string | undefined {
+  if (record.version !== 1)
+    return `it is version ${JSON.stringify(record.version)}, and this Studio reads version 1`
+  const { readerDomainId } = record
+  if (readerDomainId !== undefined && typeof readerDomainId !== 'string')
+    return 'its reader Domain is not text'
+  if (
+    typeof readerDomainId === 'string' &&
+    readerDomainId.length > WORKSPACE_UI_LIMITS.readerDomainId
+  )
+    return `its reader Domain is longer than ${WORKSPACE_UI_LIMITS.readerDomainId} characters`
+  const panel = record.panel === undefined ? {} : asJsonRecord(record.panel)
+  const rail = record.rail === undefined ? {} : asJsonRecord(record.rail)
+  if (!panel) return 'its panel is not an object'
+  if (!rail) return 'its rail is not an object'
+  return (
+    checkedOneOf(record.edgeStyle, EDGE_STYLES, 'edge style') ??
+    checkedNumber(record.detailWidth, 'detail width') ??
+    checkedBoolean(panel.open, 'panel’s open state') ??
+    checkedOneOf(panel.tab, PANEL_TABS, 'panel tab') ??
+    checkedOneOf(panel.side, PANEL_SIDES, 'panel side') ??
+    checkedNumber(panel.size, 'panel size') ??
+    checkedNumber(panel.dockWidth, 'dock width') ??
+    checkedNumber(panel.dockHeight, 'dock height') ??
+    checkedNumber(rail.width, 'rail width') ??
+    checkedBoolean(rail.collapsed, 'rail’s collapsed state')
+  )
+}
+
+function workspaceUiStateOf(value: unknown): Decoded<WorkspaceUiState> {
   const record = asJsonRecord(value)
-  if (!record || record.version !== 1) return undefined
+  if (!record) return refused('it holds no object')
+  const problem = problemOf(record)
+  if (problem) return refused(problem)
   const fallback = emptyWorkspaceUiState()
   const readerDomainId = asString(record.readerDomainId)?.trim() || undefined
   return {
-    version: 1,
-    section: oneOf(record.section, SECTIONS) ?? fallback.section,
-    edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? fallback.edgeStyle,
-    detailWidth: detailWidth(record.detailWidth),
-    ...(readerDomainId ? { readerDomainId } : {}),
-    panel: panelState(record.panel, fallback.panel),
-    rail: railState(record.rail, fallback.rail),
-    schema: schemaState(record.schema, fallback.schema),
+    value: {
+      version: 1,
+      edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? fallback.edgeStyle,
+      detailWidth: detailWidth(record.detailWidth),
+      ...(readerDomainId ? { readerDomainId } : {}),
+      panel: panelState(record.panel, fallback.panel),
+      rail: railState(record.rail, fallback.rail),
+    },
   }
 }
 
@@ -151,28 +141,64 @@ function detailWidth(value: unknown, fallback = DETAIL_WIDTH.fallback): number {
   return clamped(value, DETAIL_WIDTH, fallback)
 }
 
-export function readWorkspaceUiState(root: string): WorkspaceUiState {
-  return readJson(root, FILE, decodeWorkspaceUiState, emptyWorkspaceUiState())
+const WORKSPACE_UI: StateFile<WorkspaceUiState> = {
+  name: 'ui.json',
+  decode: workspaceUiStateOf,
+  shape: {
+    record: {
+      version: null,
+      edgeStyle: null,
+      detailWidth: null,
+      readerDomainId: null,
+      panel: {
+        record: {
+          open: null,
+          tab: null,
+          side: null,
+          size: null,
+          dockWidth: null,
+          dockHeight: null,
+        },
+      },
+      rail: { record: { width: null, collapsed: null } },
+    },
+  },
+  empty: emptyWorkspaceUiState,
 }
 
-/** Merge a trusted-boundary patch after decoding each field against the current state. */
-export function updateWorkspaceUiState(root: string, patch: unknown): WorkspaceUiState {
-  const current = readWorkspaceUiState(root)
+/** The workspace's UI state; `UnreadableState` when the file is not read whole. */
+export function readWorkspaceUiState(root: string): WorkspaceUiState {
+  return stateOf(root, WORKSPACE_UI)
+}
+
+/**
+ * Merge a trusted-boundary patch after decoding each field against the current state: a field
+ * that does not decode keeps what the state had; a reader Domain past
+ * `WORKSPACE_UI_LIMITS.readerDomainId` is refused (413).
+ */
+export function updateWorkspaceUiState(
+  root: string,
+  patch: unknown,
+): { readonly value: WorkspaceUiState } | { readonly problem: string; readonly tooLarge: true } {
   const record = asJsonRecord(patch)
-  if (!record) return current
-  const reader = record.readerDomainId
-  const readerDomainId =
-    reader === null ? undefined : asString(reader)?.trim() || current.readerDomainId
-  const next: WorkspaceUiState = {
-    version: 1,
-    section: oneOf(record.section, SECTIONS) ?? current.section,
-    edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? current.edgeStyle,
-    detailWidth: detailWidth(record.detailWidth, current.detailWidth),
-    ...(readerDomainId ? { readerDomainId } : {}),
-    panel: panelState(record.panel, current.panel),
-    rail: railState(record.rail, current.rail),
-    schema: schemaState(record.schema, current.schema),
-  }
-  writeJson(root, FILE, next)
-  return next
+  const reader = record?.readerDomainId
+  if (typeof reader === 'string' && reader.length > WORKSPACE_UI_LIMITS.readerDomainId)
+    return {
+      problem: `a reader Domain id is at most ${WORKSPACE_UI_LIMITS.readerDomainId} characters`,
+      tooLarge: true,
+    }
+  const value = changeStateFile(root, WORKSPACE_UI, (current): WorkspaceUiState | undefined => {
+    if (!record) return undefined
+    const readerDomainId =
+      reader === null ? undefined : asString(reader)?.trim() || current.readerDomainId
+    return {
+      version: 1,
+      edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? current.edgeStyle,
+      detailWidth: detailWidth(record.detailWidth, current.detailWidth),
+      ...(readerDomainId ? { readerDomainId } : {}),
+      panel: panelState(record.panel, current.panel),
+      rail: railState(record.rail, current.rail),
+    }
+  })
+  return { value }
 }

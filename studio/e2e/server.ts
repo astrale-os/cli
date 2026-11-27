@@ -4,13 +4,13 @@
  * The production command normally passes this descriptor. The test launcher
  * recreates that exact boundary so server-side CLI calls never depend on PATH.
  */
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 
-const studioRoot = resolve(import.meta.dir, '..')
-const cliRoot = resolve(studioRoot, '..')
-const port = process.env.STUDIO_E2E_PORT ?? '4397'
+import { e2eDist, e2ePort as port, studioRoot } from './dist'
+
 const executable = process.execPath
-const cliEntry = join(cliRoot, 'bin', 'astrale.ts')
+// The real CLI, but for the registry reads of the origins a spec serves (see `registry.ts`).
+const cliEntry = join(import.meta.dir, 'registry-cli.ts')
 const serverEntry = join(studioRoot, 'server', 'index.ts')
 const fixture = join(import.meta.dir, 'fixture')
 const astraleHome = join(studioRoot, 'test-results', 'astrale-home')
@@ -21,6 +21,10 @@ const child = Bun.spawn([executable, serverEntry, fixture, '--port', port, '--no
     ...process.env,
     // Machine-global Studio state must never make an E2E run read or write the user's home.
     ASTRALE_HOME: astraleHome,
+    // A browser test must never reach a real Publish: the server refuses every one.
+    ASTRALE_STUDIO_PUBLISH: 'off',
+    // The build this run made for itself (see `e2e/build.ts`), never the shared `client/dist`.
+    DOMAIN_STUDIO_DIST: e2eDist,
     // The model picker probes every agent, which would download Studio's pinned
     // builds (~200 MB) into that fresh home on every run. Browser tests drive no
     // real agent, so they keep whatever the PATH has, as before the pin.

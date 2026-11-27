@@ -14,6 +14,7 @@ import type { Notify } from '../../api/http'
 import type { StoredChat } from '../chats'
 import type { AgentWorkspace } from '../workspace'
 
+import { UnreadableState } from '../../state/state-file'
 import {
   deleteAttachment,
   deleteChatAttachments,
@@ -50,6 +51,7 @@ import {
   takeQueuedMessage,
   titleChatFromMessage,
   type ChatSeed,
+  unreadableChatFiles,
 } from '../chats'
 import { inspectHarnessHealth, lastKnownPresence } from '../harness/adapter'
 import { getHarnessById, hasHarness } from '../harness/registry'
@@ -157,9 +159,11 @@ export function listChats(): ChatList {
     seedOf(workspace),
     workspace.uiRoot,
   )
+  const unreadable = unreadableChatFiles(workspace.stateRoot, workspace.uiRoot)
   return {
     chats: store.chats.map((chat) => describe(workspace, chat)),
     activeId: store.activeId,
+    ...(unreadable.length > 0 ? { unreadable } : {}),
   }
 }
 
@@ -492,7 +496,12 @@ async function runThenDrain(
   } catch {
     /* completeRun records its own failure on the run it settles */
   }
-  await drainQueue(prepared.chat.id, notify, prepared.run.status)
+  try {
+    await drainQueue(prepared.chat.id, notify, prepared.run.status)
+  } catch (error) {
+    // a chat file not read whole keeps its queue as it is: nothing moves until it is fixed
+    if (!(error instanceof UnreadableState)) throw error
+  }
 }
 
 /**

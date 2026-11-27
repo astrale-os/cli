@@ -320,6 +320,20 @@ export interface ChatList {
   chats: ChatInfo[]
   /** the tab this workspace opens on; always one of the machine-wide `chats` */
   activeId: string
+  /**
+   * The files of the tabs this Studio cannot read whole, with why, each left as it is: a chat's
+   * (by `chatId`), left out of `chats`; the active pointer or the tabs' order, read as none.
+   * None when every file is read whole.
+   */
+  unreadable?: UnreadableChatFile[]
+}
+
+/** A file of the tabs not read whole: where it is, and why. */
+export interface UnreadableChatFile {
+  path: string
+  reason: string
+  /** the chat whose file it is; none for the active pointer or the tabs' order */
+  chatId?: string
 }
 
 /** The agent's raw resumable session id, surfaced for manual view/edit in Settings. */

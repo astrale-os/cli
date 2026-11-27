@@ -19,9 +19,9 @@ import type { AgentWorkspace } from '../workspace'
 import { imagesLabel } from '../../../shared/attachments'
 import { refreshAuto } from '../../handoff/service'
 import { getBundle } from '../../introspect/cache'
-import { readComments } from '../../state/comments'
+import { briefedComments } from '../../state/comments'
 import { readContext } from '../../state/context'
-import { listDocuments } from '../../state/documents'
+import { briefedDocuments } from '../../state/documents'
 import { attachmentFiles, resolveAttachments } from '../attachments'
 import { startBridge } from '../bridge/grant'
 import { pendingHandoff } from '../chats'
@@ -89,7 +89,7 @@ function awaitingThreads(comments: Comment[]): Comment[] {
 /** Every thread awaiting the agent across the workspace, by id — what `'all'` means now. */
 export function awaitingThreadIds(workspace: AgentWorkspace): string[] {
   return workspace.domains.flatMap((handle) =>
-    awaitingThreads(readComments(handle.root).comments).map((comment) => comment.id),
+    awaitingThreads(briefedComments(handle.root).comments).map((comment) => comment.id),
   )
 }
 
@@ -113,10 +113,11 @@ async function domainParts(
   signal: AbortSignal,
   selection: CommentSelection | undefined,
 ): Promise<DomainTurnParts> {
-  const open = readComments(handle.root).comments.filter((comment) => comment.status === 'open')
+  const comments = briefedComments(handle.root)
+  const open = comments.comments.filter((comment) => comment.status === 'open')
   const pending = awaitingThreads(open)
   const awaiting = attachedThreads(pending, selection)
-  const documents = listDocuments(handle.root)
+  const { documents, unreadable: unreadableDocuments } = briefedDocuments(handle.root)
   const base: DomainTurnParts = {
     origin: domainOrigin(handle),
     root: handle.root,
@@ -124,6 +125,8 @@ async function domainParts(
     renderFingerprint: '',
     openThreads: open.length,
     pendingThreads: pending.length,
+    ...(comments.unreadable ? { unreadableComments: comments.unreadable } : {}),
+    ...(unreadableDocuments ? { unreadableDocuments } : {}),
     awaitingThreads: awaiting,
     userContext: [],
     autoContext: [],

@@ -1,11 +1,15 @@
 /**
- * The in-memory per-domain caches for the (relatively expensive) bundle
- * and anatomy, so API reads and the file-watcher share one computed value.
- * Watchers invalidate on change; the next read rebuilds and re-broadcasts.
+ * The per-domain bundle and anatomy, computed once so API reads and the file-watcher share
+ * one value. Watchers invalidate on change; the next read rebuilds and re-broadcasts.
+ *
+ * A bundle is also persisted to `.domain-studio/.cache/schema-bundle.json` under a key that
+ * digests everything it is derived from (`bundleCacheKey`). A persisted bundle is read only
+ * under the same key and entry version; every build whose inputs held still while it ran
+ * replaces it; a failed one stands for `FAILED_BUNDLE_TTL_MS` at most, in memory or on disk.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import type {
   IntrospectionPriority,
@@ -13,9 +17,11 @@ import type {
   StudioEvent,
 } from '../../shared/contracts/runtime'
 import type {
+  DefinitionEffectKind,
+  DefinitionPreconditionKind,
+  PreconditionTermName,
   DomainAnatomy,
   SchemaOverlay,
-  StudioCore,
   StudioDatasets,
   StudioSchemaBundle,
 } from '../../shared/contracts/schema'
@@ -30,8 +36,9 @@ import { buildAnatomy } from './anatomy'
 import { buildBundle } from './bundle'
 import { isCanonicalDomainSchemaV1 } from './canonical-schema'
 import { invalidateClientPackage, resolveClientPackage } from './client-package'
-import { buildCore } from './core'
 import { buildDatasets } from './datasets'
+import { installedSdkRoot } from './island'
+import { schemaExtractorCommand } from './runtime'
 import { introspectionScheduler, type ScheduledWork } from './scheduler'
 import { decodeSchemaIR } from './schema-ir-json'
 import { IntrospectionTimer, introspectionTimings, recordIntrospectionPhase } from './timing'
@@ -41,7 +48,7 @@ const bundles = new Map<string, StudioSchemaBundle>()
  * The build a caller can JOIN instead of starting a second one.
  *
  * `bundles` only ever holds a finished bundle, and opening the studio asks for
- * `/bundle`, `/anatomy` and `/core` at once while the boot may still be indexing the
+ * `/bundle` and `/anatomy` at once while the boot may still be indexing the
  * same domain: without this, each would bundle the identical sources itself.
  */
 interface RunningBundle {
@@ -68,9 +75,15 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
  * differently. v8: source locations include registered Policies and Views.
  * v9: a handler link's wiring file is its declaring module, not the handler's.
  * v10: dependency admission uses the inspected SDK's canonical compatibility owner.
- * v11: the overlay reads Query/Mutation definitions and what each handler reaches.
+ * v11: the overlay reads Query/Mutation definitions, the runtime's Integrations, and what
+ * each handler reaches of them.
+ * v12: the overlay reads both definition forms, what each definition does to which Class, and
+ * where the reading cannot tell.
+ * v13: an admitted bundle carries its root's dependency closure.
+ * v14: a Mutation definition carries the preconditions its `build` states.
+ * v15: a precondition carries the conditions and loops it is stated under.
  */
-const BUNDLE_CACHE_VERSION = 11
+const BUNDLE_CACHE_VERSION = 15
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'introspect/cache.ts',
@@ -111,6 +124,20 @@ interface BundleCacheEntry {
   bundle: StudioSchemaBundle
 }
 
+function isSourceGap(value: unknown): boolean {
+  const record = asJsonRecord(value)
+  return (
+    typeof record?.file === 'string' &&
+    asFiniteNumber(record.line) !== undefined &&
+    typeof record.reason === 'string'
+  )
+}
+
+/** Absent, or a list whose every item is `item`. */
+function isOptionalList(value: unknown, item: (value: unknown) => boolean): boolean {
+  return value === undefined || (Array.isArray(value) && value.every(item))
+}
+
 function isHandlerLink(value: unknown): boolean {
   const record = asJsonRecord(value)
   return (
@@ -119,7 +146,92 @@ function isHandlerLink(value: unknown): boolean {
     ['action', 'workflow'].includes(String(record.kind)) &&
     typeof record.method === 'string' &&
     typeof record.static === 'boolean' &&
-    typeof record.implemented === 'boolean'
+    typeof record.implemented === 'boolean' &&
+    isOptionalList(record.integrationGaps, isSourceGap)
+  )
+}
+
+const EFFECT_KINDS: ReadonlySet<string> = new Set<DefinitionEffectKind>([
+  'create',
+  'update',
+  'delete',
+  'transition',
+  'expect',
+  'read',
+])
+
+const PRECONDITION_KINDS: ReadonlySet<string> = new Set<DefinitionPreconditionKind>([
+  'node',
+  'edge',
+  'none',
+  'exists',
+  'count',
+  'unchanged',
+  'query',
+])
+const PRECONDITION_TERMS: ReadonlySet<string> = new Set<PreconditionTermName>([
+  'node',
+  'source',
+  'target',
+  'slug',
+  'equals',
+  'absent',
+  'props',
+  'range',
+  'bounds',
+  'ids',
+  'query',
+])
+
+function isDefinitionPrecondition(value: unknown): boolean {
+  const record = asJsonRecord(value)
+  return (
+    PRECONDITION_KINDS.has(String(record?.kind)) &&
+    Array.isArray(record?.classes) &&
+    record.classes.every((name) => typeof name === 'string') &&
+    isOptionalString(record.name) &&
+    Array.isArray(record.terms) &&
+    record.terms.every((term) => {
+      const part = asJsonRecord(term)
+      return PRECONDITION_TERMS.has(String(part?.term)) && typeof part?.text === 'string'
+    }) &&
+    typeof record.file === 'string' &&
+    asFiniteNumber(record.line) !== undefined &&
+    isOptionalString(record.gap)
+  )
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string'
+}
+
+function isDefinitionEffect(value: unknown): boolean {
+  const record = asJsonRecord(value)
+  return (
+    EFFECT_KINDS.has(String(record?.kind)) &&
+    typeof record?.class === 'string' &&
+    typeof record.verb === 'string' &&
+    typeof record.file === 'string' &&
+    asFiniteNumber(record.line) !== undefined &&
+    [record.property, record.from, record.event, record.to].every(isOptionalString) &&
+    (record.role === undefined || record.role === 'root' || record.role === 'traverse')
+  )
+}
+
+function isDefinitionLink(value: unknown): boolean {
+  const record = asJsonRecord(value)
+  return (
+    (record?.kind === 'query' || record?.kind === 'mutation') &&
+    typeof record.id === 'string' &&
+    typeof record.file === 'string' &&
+    asFiniteNumber(record.line) !== undefined &&
+    Array.isArray(record.classes) &&
+    record.classes.every((name) => typeof name === 'string') &&
+    isOptionalString(record.name) &&
+    isOptionalString(record.doc) &&
+    isOptionalList(record.effects, isDefinitionEffect) &&
+    isOptionalList(record.preconditions, isDefinitionPrecondition) &&
+    isOptionalList(record.gaps, isSourceGap)
   )
 }
 
@@ -140,6 +252,9 @@ function decodeOverlay(value: unknown): SchemaOverlay | undefined {
   if (
     !Array.isArray(handlerLinks) ||
     !handlerLinks.every(isHandlerLink) ||
+    !Array.isArray(record?.definitions) ||
+    !record.definitions.every(isDefinitionLink) ||
+    !Array.isArray(record?.integrations) ||
     !sourceSpans ||
     !Object.values(sourceSpans).every(isSourceSpan)
   ) {
@@ -181,6 +296,15 @@ function decodeBundle(value: unknown): StudioSchemaBundle | undefined {
   ) {
     return undefined
   }
+  const schemaClosure = record.schemaClosure
+  if (
+    schemaClosure !== undefined &&
+    (schemaMode !== 'canonical-admitted' ||
+      !Array.isArray(schemaClosure) ||
+      !schemaClosure.every(isCanonicalDomainSchemaV1))
+  ) {
+    return undefined
+  }
   const errorRecord = record.error === null ? null : asJsonRecord(record.error)
   const errorMessage = asString(errorRecord?.message)
   if (record.error !== undefined && record.error !== null && errorMessage === undefined) {
@@ -195,6 +319,7 @@ function decodeBundle(value: unknown): StudioSchemaBundle | undefined {
     depsInstalled,
     ir,
     ...(record.schemaRoot === undefined ? {} : { schemaRoot: record.schemaRoot }),
+    ...(schemaClosure === undefined ? {} : { schemaClosure }),
     overlay,
     ...(record.error === undefined
       ? {}
@@ -229,17 +354,58 @@ function hashFileIfPresent(hash: ReturnType<typeof createHash>, label: string, f
   }
 }
 
-function bundleCacheKey(root: string, schemaDirName: string, domainFile: string): string {
+function realPathOf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+/** A program file as it is on disk: where it resolves, its size and its modification time. */
+function hashProgramFile(hash: ReturnType<typeof createHash>, label: string, part: string): void {
+  if (!isAbsolute(part)) return void hash.update(`${label}\0${part}\0`)
+  try {
+    const stat = statSync(part)
+    hash.update(`${label}\0${realPathOf(part)}\0${stat.size}\0${stat.mtimeMs}\0`)
+  } catch {
+    hash.update(`${label}\0${part}\0missing\0`)
+  }
+}
+
+/**
+ * The lockfiles that pin what a Domain's imports resolve to: those of the nearest directory,
+ * from the Domain up, that has any (a workspace package is pinned by its workspace's lockfile).
+ */
+function governingLockfiles(root: string): string[] {
+  for (let directory = resolve(root); ; directory = dirname(directory)) {
+    const found = LOCKFILES.map((file) => join(directory, file)).filter((file) => existsSync(file))
+    if (found.length > 0 || dirname(directory) === directory) return found
+  }
+}
+
+/**
+ * What a bundle is derived from, as one digest: the Domain's sources, the extractor program
+ * that read them, the SDK and packages they resolve to, and this Studio's own sources. Any
+ * of them changing gives another key, so an entry never outlives what it was derived from.
+ */
+export function bundleCacheKey(root: string, schemaDirName: string, domainFile: string): string {
   const hash = createHash('sha256')
   hash.update(`domain-studio-bundle-cache-v${BUNDLE_CACHE_VERSION}\0`)
   hash.update(`schema-dir:${schemaDirName}\0`)
+  // this server's Bun composes the overlay; the extractor program reads the Schema
   hash.update(`bun:${Bun.version}\0`)
+  for (const part of schemaExtractorCommand()) hashProgramFile(hash, 'extractor', part)
 
   const files = hashAnatomyFiles(root, schemaDirName, domainFile)
   for (const [file, digest] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
     hash.update(`${file}\0${digest}\0`)
   }
-  for (const file of LOCKFILES) hashFileIfPresent(hash, file, join(root, file))
+  for (const file of governingLockfiles(root)) hashFileIfPresent(hash, `lockfile:${file}`, file)
+  // the SDK the extractor admits the Schema with: absent, installed, reinstalled, bumped
+  const sdk = installedSdkRoot(root)
+  if (sdk === null) hash.update('sdk\0none\0')
+  else hashFileIfPresent(hash, `sdk:${realPathOf(sdk)}`, join(sdk, 'package.json'))
 
   const serverRoot = join(import.meta.dir, '..')
   for (const file of toolInputs(serverRoot)) {
@@ -425,12 +591,6 @@ export async function getAnatomy(id: string, rebuild = false): Promise<DomainAna
   })
   anatomies.set(id, { bundle, value: anatomy })
   return anatomy
-}
-
-export async function getCore(id: string, rebuild = false): Promise<StudioCore | null> {
-  const h = getDomain(id)
-  if (!h) return null
-  return buildCore(h, await getBundle(id, rebuild))
 }
 
 export async function getDatasets(id: string, rebuild = false): Promise<StudioDatasets | null> {

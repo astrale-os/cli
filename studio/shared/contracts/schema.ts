@@ -6,6 +6,7 @@
  */
 
 import {
+  classRefKey,
   isIrClassRef,
   type IrClassKey,
   type IrClassRef,
@@ -49,6 +50,21 @@ export function nodePathAccepts(schema: JsonSchema): IrClassRef[] {
   return Array.isArray(accepts) ? accepts.filter(isIrClassRef) : []
 }
 
+/**
+ * The Classes a callable's input or output names: the Node paths it is or lists, or its
+ * fields are or list, as exact Definition coordinates, each once, in declaration order.
+ */
+export function nodePathsIn(schema: JsonSchema | undefined): IrClassRef[] {
+  if (schema === undefined) return []
+  // a list of references carries the path schema on its items, not on itself
+  const isOrLists = (value: JsonSchema) => [
+    ...nodePathAccepts(value),
+    ...(value.items === undefined ? [] : nodePathAccepts(value.items)),
+  ]
+  const refs = [...isOrLists(schema), ...Object.values(schema.properties ?? {}).flatMap(isOrLists)]
+  return [...new Map(refs.map((ref) => [classRefKey(ref), ref])).values()]
+}
+
 /** Portable form of the DSL-owned canonical schema revision. */
 export type SchemaRevision = `sha256:${string}`
 
@@ -69,6 +85,19 @@ export type IrCallableOutput =
   | { mode: 'value'; schema: JsonSchema }
   | { mode: 'stream'; item: JsonSchema }
   | { mode: 'binary' }
+
+/** The value a callable returns, as a schema: none for binary content. */
+export function callableOutputSchema({
+  output,
+}: {
+  output: IrCallableOutput
+}): JsonSchema | undefined {
+  return output.mode === 'value'
+    ? output.schema
+    : output.mode === 'stream'
+      ? output.item
+      : undefined
+}
 
 export interface IrCallable {
   name: string
@@ -166,6 +195,10 @@ export interface HandlerLink {
   definitions?: string[]
   /** other callables the handler reaches the same way, keyed `Class.method` */
   calls?: string[]
+  /** Integration operations the handler reaches the same way, keyed `key.operation` */
+  integrations?: string[]
+  /** where the reading cannot tell which Integration operations the handler reaches */
+  integrationGaps?: SourceGap[]
   /** false ⇒ a todo()/NotImplemented stub → "contract-only" badge */
   implemented: boolean
   /** true ⇒ resolver could not link a file → "unlinked" badge */
@@ -188,14 +221,165 @@ export interface DefinitionLink {
   name?: string
   file: string
   line: number
-  /** Classes its `build` names through its classes parameter, in source order */
+  /** the Classes its effects name, in the order of their first effect */
   classes: string[]
   doc?: string
+  /** what its `build` does, in the order the reading meets it; absent when it meets nothing */
+  effects?: DefinitionEffect[]
+  /**
+   * a Mutation's preconditions, one per `mutation.expect.*` call its `build` reaches, in the order
+   * the reading meets them; absent when it states none
+   */
+  preconditions?: DefinitionPrecondition[]
+  /** where the reading cannot tell what it does; absent when the effects are complete */
+  gaps?: SourceGap[]
+}
+
+/**
+ * What a precondition requires, by the SDK verb that states it (`mutation.expect.<kind>`):
+ * `node`, the Node exists, of the Class, its Properties meeting `equals` and `absent`; `edge`, the
+ * Edge exists between `source` and `target`, of the Class, with `slug` and those Properties;
+ * `none`, no root of `range` matches; `exists`, one does; `count`, their number lies in `bounds`;
+ * `unchanged`, they are exactly `ids`, in order; `query` (Query V6, deprecated), `query` answers
+ * `equals`.
+ */
+export type DefinitionPreconditionKind =
+  | 'node'
+  | 'edge'
+  | 'none'
+  | 'exists'
+  | 'count'
+  | 'unchanged'
+  | 'query'
+
+/**
+ * The SDK's name for one part of a precondition; `props` stands for Properties the reading cannot
+ * split into `equals` and `absent`.
+ */
+export type PreconditionTermName =
+  | 'node'
+  | 'source'
+  | 'target'
+  | 'slug'
+  | 'equals'
+  | 'absent'
+  | 'props'
+  | 'range'
+  | 'bounds'
+  | 'ids'
+  | 'query'
+
+/**
+ * One part of a precondition as the source writes it, whitespace folded to one line. A bare name
+ * of a `const` the same file initialises reads as that initialiser.
+ */
+export interface PreconditionTerm {
+  term: PreconditionTermName
+  text: string
+}
+
+/**
+ * A precondition a Mutation's `build` states: the Kernel refuses the Mutation when it does not
+ * hold. The Studio reads it from the source and checks none of it.
+ */
+export interface DefinitionPrecondition {
+  kind: DefinitionPreconditionKind
+  /** the Classes it requires something of, as the IR keys them; empty when the reading cannot tell */
+  classes: string[]
+  /** the name a refusal carries as `failure.precondition`, when the source gives one */
+  name?: string
+  /** its parts, in the order the SDK takes them; the Class is in `classes` */
+  terms: PreconditionTerm[]
+  file: string
+  line: number
+  /**
+   * the conditions and loops it is stated under in the function that states it, outermost
+   * first; absent when that function states it on every path
+   */
+  under?: PreconditionCondition[]
+  /** why the reading cannot tell all of it (its Classes, a part or its name); absent when it can */
+  gap?: string
+}
+
+/**
+ * One condition or loop a precondition is stated under, as the source writes it: required only
+ * `when` `source` holds (`if`, `?:`, `&&`, `case`, a guard that leaves before it otherwise), only
+ * `unless` it holds (`else`, `||`, a guard that leaves before it when it holds), once for `each`
+ * pass of a loop over `source` (`for`, `while`, an array's `forEach`, `map`…), or only when the
+ * `try` it is `caught` from throws (`source` is that `try`).
+ */
+export interface PreconditionCondition {
+  kind: 'when' | 'unless' | 'each' | 'caught'
+  /** folded to one line: `input.force`, `input.previousTopics`, `nextName === undefined` */
+  source: string
+  line: number
+}
+
+/**
+ * What a definition does to a Class: a Mutation writes it (`create`, `update`, `delete`,
+ * `transition`) or requires something of it (`expect`); a Query reads it (`read`).
+ */
+export type DefinitionEffectKind = 'create' | 'update' | 'delete' | 'transition' | 'expect' | 'read'
+
+/** One thing a definition does to one Class, where its source says so. */
+export interface DefinitionEffect {
+  kind: DefinitionEffectKind
+  /** the local Class name or the exact imported key, as the IR keys them */
+  class: string
+  /**
+   * what the source calls: a builder verb (`createEdge`, `expect.count`, `expect.query`), a read
+   * (`where`, `via`, `union`, `is`, `Query.expand`), or the name of a relation it follows
+   */
+  verb: string
+  file: string
+  line: number
+  /** a transition's state Property */
+  property?: string
+  /** a transition's coordinates, when the source writes them as literals */
+  from?: string
+  event?: string
+  /** the state the Class's state machine moves to from `from` on `event` */
+  to?: string
+  /** a read's place: where the Query starts, or what it walks through or reaches */
+  role?: 'root' | 'traverse'
+}
+
+/** A place the source reading cannot follow, in plain words. */
+export interface SourceGap {
+  file: string
+  line: number
+  reason: string
+}
+
+/** What another attempt of an Integration operation may do, as `defineIntegration.operation` declares it. */
+export type IntegrationReplay = 'safe' | 'keyed' | 'unsafe'
+
+export interface IntegrationOperationLink {
+  name: string
+  /** the decisions the declaration can take; empty when the reading cannot tell */
+  replay: IntegrationReplay[]
+  line?: number
+}
+
+/** An Integration the Domain's runtime declares, under the key its handlers reach it by. */
+export interface IntegrationLink {
+  /** `context.integrations.<key>` */
+  key: string
+  /** the `defineIntegration` id, e.g. `admin.machine-lifecycle` */
+  id?: string
+  /** the binding that exports the declaration */
+  name?: string
+  file?: string
+  line?: number
+  doc?: string
+  /** absent when the declaration could not be read */
+  operations?: IntegrationOperationLink[]
 }
 
 export interface SchemaOverlay {
   handlerLinks: HandlerLink[]
   definitions: DefinitionLink[]
+  integrations: IntegrationLink[]
   /** Keyed by Class, Property, Method, Function, Policy, View, or Core anchor. */
   sourceSpans: Record<string, SourceSpan>
 }
@@ -221,6 +405,12 @@ export interface StudioSchemaBundle {
    * preview. Kept separate from the lossy render IR.
    */
   schemaRoot?: unknown
+  /**
+   * The canonical V1 documents of every Schema `schemaRoot` depends on, as the DSL Bundle the
+   * installed SDK admitted carries them: with `schemaRoot`, the exact Bundle a rule reader reads.
+   * Present only for an admitted root whose extractor reports it.
+   */
+  schemaClosure?: unknown[]
   overlay: SchemaOverlay
   /** present when the runtime import failed to compile (render state, not a crash) */
   error?: BundleError | null
@@ -331,7 +521,7 @@ export interface DomainAnatomy {
   detectedIntegrations: string[]
 }
 
-/** One materialized node instance in a domain's core graph. */
+/** One Node a Dataset holds. */
 export interface StudioCoreNode {
   /** canonical CoreRef identity, e.g. `/:big-shop.example.dev:core.acme` */
   path: string
@@ -339,11 +529,9 @@ export interface StudioCoreNode {
   className: string
   /** the node's property values, keyed by (possibly owner-qualified) property name */
   data: Record<string, unknown>
-  /** parent node's `path`, when nested under another node (absent for roots) */
-  parent?: string
 }
 
-/** One materialized edge instance wiring two core nodes. */
+/** One Edge a Dataset holds, wiring two of its Nodes, or a Node and the owning Domain. */
 export interface StudioCoreEdge {
   /** source Core path or owning Domain path */
   from: string
@@ -353,17 +541,6 @@ export interface StudioCoreEdge {
   edgeName: string
   /** edge property values, when the edge class carries data */
   data?: Record<string, unknown>
-}
-
-/** A domain's core data: the concrete genesis node/edge instance graph. */
-export interface StudioCore {
-  /** the domain origin this core graph belongs to (mirrors SchemaIR.domain) */
-  domain: string
-  nodes: StudioCoreNode[]
-  edges: StudioCoreEdge[]
-  /** set when extraction failed; null when extraction succeeded (including "no core defined") */
-  error?: { message: string } | null
-  extractedAt: string
 }
 
 /** One demo Dataset declared under the project's test resources, projected like Core data. */

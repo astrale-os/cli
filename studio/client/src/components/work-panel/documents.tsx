@@ -2,6 +2,7 @@ import type { DocMeta } from '@shared/contracts/workspace'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   File as FileIcon,
   FileCode2,
   FileImage,
@@ -21,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { api, qk } from '@/lib/api'
+import { api, qk, refusalOf } from '@/lib/api'
 import { useWorkspace, useWorkspaceDocuments } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
@@ -174,15 +175,29 @@ export function DocumentChips() {
 
   return (
     <>
-      {groups.map((group) => (
-        <DomainDocumentChips
-          key={group.domain.id}
-          domainId={group.domain.id}
-          domainLabel={group.domain.origin}
-          docs={group.documents ?? []}
-          onEdit={(doc) => setEditing({ domainId: group.domain.id, doc })}
-        />
-      ))}
+      {groups.map((group) =>
+        group.unreadable ? (
+          // an index not read whole: said where its documents would be, never shown empty
+          <span
+            key={group.domain.id}
+            role="alert"
+            data-state-unreadable={group.unreadable.path}
+            title={group.unreadable.sentence}
+            className={cn(CHIP, 'gap-1.5 border-warning/40 bg-warning/10 pr-2 text-warning')}
+          >
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            <span className="truncate">{group.domain.origin} · documents can't be read</span>
+          </span>
+        ) : (
+          <DomainDocumentChips
+            key={group.domain.id}
+            domainId={group.domain.id}
+            domainLabel={group.domain.origin}
+            docs={group.documents ?? []}
+            onEdit={(doc) => setEditing({ domainId: group.domain.id, doc })}
+          />
+        ),
+      )}
       {editing && (
         <EditDialog
           domainId={editing.domainId}
@@ -268,7 +283,7 @@ function useDocumentMutations(domainId: string) {
   const upload = useMutation({
     mutationFn: (files: File[]) => api.uploadDocuments(domainId, files),
     onSuccess: invalidate,
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(refusalOf(error)),
   })
   // Removing a document is predictable, so drop it from the list immediately and
   // put it back (with a toast) if the server disagrees.
@@ -285,7 +300,7 @@ function useDocumentMutations(domainId: string) {
     },
     onError: (error, _docId, context) => {
       if (context?.previous) qc.setQueryData(queryKey, context.previous)
-      toast.error(`Could not remove the document — ${String((error as Error)?.message ?? error)}`)
+      toast.error(`Could not remove the document — ${refusalOf(error)}`)
     },
     onSettled: invalidate,
   })
@@ -331,7 +346,7 @@ function EditDialog({
       qc.invalidateQueries({ queryKey: qk.documents(domainId) })
       onClose()
     } catch (error) {
-      toast.error(String(error))
+      toast.error(refusalOf(error))
     } finally {
       setBusy(false)
     }

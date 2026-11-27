@@ -5,9 +5,12 @@
  * `extractor --kernel <projectRoot>` reads the Kernel Schema the project's installed SDK
  * ships (`KernelSchema` of `@astrale-os/sdk/schema`), so Studio shows the exact Kernel
  * that project is built against.
+ * `extractor --versions <requestFile>` answers one versions-island request (compatibility,
+ * Publication bundles) with the project's installed SDK; see `workspace/versions/island.ts`.
  */
 import type { CanonicalDomainSchemaV1, SchemaSdk } from './canonical-schema'
 
+import { runVersionsIsland, VERSIONS_MODE } from '../workspace/versions/island'
 import {
   extractCanonicalSchemaFromSdk,
   findCanonicalDomainSchemaExport,
@@ -45,6 +48,7 @@ async function main(): Promise<void> {
       ok: true,
       ir: extraction.ir,
       root: extraction.root,
+      closure: extraction.closure,
       schemaMode: extraction.status === 'admitted' ? 'canonical-admitted' : 'canonical-preview',
       revision: extraction.revision,
     }),
@@ -55,4 +59,5 @@ function kernelSchemaOf(sdk: Record<string, unknown>): CanonicalDomainSchemaV1 |
   return isCanonicalDomainSchemaV1(sdk.KernelSchema) ? sdk.KernelSchema : null
 }
 
-main().catch(reportFailure)
+if (process.argv[2] === VERSIONS_MODE) runVersionsIsland(process.argv[3]).catch(reportFailure)
+else main().catch(reportFailure)

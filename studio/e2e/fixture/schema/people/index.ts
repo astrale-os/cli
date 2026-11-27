@@ -1,4 +1,4 @@
-import { core, edgeClass, nodeClass, property } from '@astrale-os/sdk/schema'
+import { core, edgeClass, K, nodeClass, property } from '@astrale-os/sdk/schema'
 
 import { icons } from '../icons.js'
 import { Party } from '../shared/index.js'
@@ -6,9 +6,9 @@ import { boolean, string } from '../values.js'
 
 export const Person = nodeClass({
   policies: { read: true },
-  description: 'A human being known to the company.',
+  description: 'A human being known to the company, who may sign in.',
   icon: icons.party,
-  extends: [Party],
+  extends: [Party, K.classes.Identity],
   properties: {
     fullName: string,
     phone: property(string, { required: false }),

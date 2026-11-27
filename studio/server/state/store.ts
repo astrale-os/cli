@@ -111,6 +111,18 @@ export function readState(domainRoot: string, subpath: string): string | null {
   return readFileSync(target, 'utf8')
 }
 
+/** A state file's bytes, as they are on disk; `null` when it is not there. */
+export function readStateBytes(domainRoot: string, subpath: string): Uint8Array | null {
+  const target = statePath(domainRoot, subpath)
+  if (!existsSync(target)) return null
+  return readFileSync(target)
+}
+
+/**
+ * A JSON state file whose loss is the same as its absence — a derived cache, a record a write
+ * replaces whole — or `fallback`. A file the Studio reads, changes and writes back goes through
+ * `state-file.ts` instead, which never writes over a file it did not read whole.
+ */
 export function readJson<T>(
   domainRoot: string,
   subpath: string,

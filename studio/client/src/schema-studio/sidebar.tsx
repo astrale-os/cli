@@ -1,5 +1,5 @@
 import { PanelLeftOpen } from 'lucide-react'
-import { type ReactNode, createContext, useContext, useRef } from 'react'
+import { type ReactNode, createContext, useContext, useLayoutEffect, useRef } from 'react'
 
 import { ResizeHandle } from '@/components/ui/resize-handle'
 import { useUI } from '@/lib/store'
@@ -12,6 +12,8 @@ import { useUI } from '@/lib/store'
 const MIN = 180
 const MAX = 560
 const DEFAULT_WIDTH = 240
+/** The strip a closed rail keeps (`w-10`). */
+const CLOSED_WIDTH = 40
 
 /**
  * The rail's own close button, offered to whatever header it was given: the header owns
@@ -24,9 +26,12 @@ export const useRailCollapse = () => useContext(CollapseContext)
 export function ModulesSidebar({
   children,
   header,
+  name,
   onClearSelection,
 }: {
   children: ReactNode
+  /** What the rail lists, as its closed strip and its resize handle name it. */
+  name: string
   /** Pinned above the scroller — the rail's own title bar. */
   header?: ReactNode
   /** Called when the rail's empty space is clicked — see `clearOnBackgroundClick`. */
@@ -36,6 +41,14 @@ export function ModulesSidebar({
   const collapsed = useUI((state) => state.modulesCollapsed)
   const setWidth = useUI((state) => state.setModulesWidth)
   const setCollapsed = useUI((state) => state.setModulesCollapsed)
+
+  // The rail takes the view's full height: the floating dock keeps to the canvas beside it.
+  const setAside = useUI((state) => state.setAside)
+  useLayoutEffect(
+    () => setAside('left', collapsed ? CLOSED_WIDTH : width),
+    [collapsed, setAside, width],
+  )
+  useLayoutEffect(() => () => setAside('left', 0), [setAside])
 
   // Clicking the rail beside the tree means the same thing as clicking the canvas pane:
   // nothing is selected. A press on a control — or anywhere on a tree row, whose padding
@@ -62,15 +75,15 @@ export function ModulesSidebar({
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          title="Show domains"
-          aria-label="Show domains"
+          title={`Show ${name.toLowerCase()}`}
+          aria-label={`Show ${name.toLowerCase()}`}
           aria-expanded={false}
           className="grid h-10 w-10 shrink-0 place-items-center text-muted-foreground transition-colors hover:text-foreground"
         >
           <PanelLeftOpen className="h-4 w-4" />
         </button>
         <span className="mt-1 select-none text-[11px] font-semibold uppercase tracking-wider text-muted-foreground [writing-mode:vertical-rl]">
-          Domains
+          {name}
         </span>
       </div>
     )
@@ -90,7 +103,7 @@ export function ModulesSidebar({
       {/* drag handle straddling the right border */}
       <ResizeHandle
         orientation="vertical"
-        label="Resize the domains rail"
+        label={`Resize the ${name}`}
         className="right-0 top-0 h-full w-2 translate-x-1/2"
         value={width}
         min={MIN}

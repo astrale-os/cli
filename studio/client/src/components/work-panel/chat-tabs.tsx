@@ -22,17 +22,21 @@
  * effort and speed. Changing agent is not a thing you do when OPENING a
  * conversation - it is picking a model of the other one, in the composer, once you
  * know what you want to ask.
+ *
+ * A file of the tabs the server cannot read whole - a chat's, the tabs' order, the tab
+ * a workspace opens on - is never hidden: the strip says which, with why and where,
+ * and the server leaves it as it is until it is fixed.
  */
-import type { ChatInfo, HarnessStatus } from '@shared/contracts/agent'
+import type { ChatInfo, HarnessStatus, UnreadableChatFile } from '@shared/contracts/agent'
 
 import { DEFAULT_CHAT_TITLE } from '@shared/contracts/agent'
-import { Plus, X } from 'lucide-react'
+import { AlertTriangle, Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { hasHarnessLogo, HarnessLogo } from '@/components/harness-logo'
 import { ResizeHandle } from '@/components/ui/resize-handle'
 import { useAgentUnread } from '@/lib/agent-unread'
-import { useChatMutations } from '@/lib/chats'
+import { useChatMutations, useUnreadableChats } from '@/lib/chats'
 import { labelOf } from '@/lib/harnesses'
 import { CHAT_TABS_WIDTH, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -64,6 +68,7 @@ export function ChatTabs({
   className?: string
 }) {
   const { open, select, close, reorder, update } = useChatMutations()
+  const unreadable = useUnreadableChats()
   const strip = useRef<HTMLDivElement>(null)
   const edges = useSideScroll(strip, chats.length, !vertical)
   const tones = chatTones(chats)
@@ -110,6 +115,7 @@ export function ChatTabs({
         >
           {tabs}
         </div>
+        <UnreadableChats files={unreadable} />
         {/* drag handle straddling the right border */}
         <ResizeHandle
           orientation="vertical"
@@ -142,8 +148,76 @@ export function ChatTabs({
         {tabs}
       </div>
 
+      <UnreadableChats files={unreadable} compact />
       <NewChatButton disabled={open.isPending} onClick={() => open.mutate(undefined)} />
     </div>
+  )
+}
+
+/** What a file of the tabs holds, as a sentence's subject. */
+function fileWords(file: UnreadableChatFile): string {
+  if (file.chatId !== undefined) return 'A chat'
+  return file.path.endsWith('chat-order.json')
+    ? 'The tabs’ order'
+    : 'The tab this workspace opens on'
+}
+
+/**
+ * The files of the tabs the server cannot read whole, said where the tabs are: how many, and
+ * on opening, each one's why and where. Along the top it is a mark whose hover says it all.
+ */
+function UnreadableChats({
+  files,
+  compact = false,
+}: {
+  files: UnreadableChatFile[]
+  compact?: boolean
+}) {
+  if (files.length === 0) return null
+  const chats = files.filter((file) => file.chatId !== undefined).length
+  const summary =
+    files.length === 1
+      ? `${fileWords(files[0]!)} can’t be read`
+      : chats === files.length
+        ? `${chats} chats can’t be read`
+        : `${files.length} files of the tabs can’t be read`
+  const detail = files.map((file) => `${fileWords(file)}: ${file.reason}. ${file.path}`).join('\n')
+  const kept = 'The Studio leaves each as it is and saves nothing to it until it is fixed.'
+  if (compact)
+    return (
+      <span
+        role="img"
+        data-chats-unreadable={files.length}
+        aria-label={`${summary}. ${kept}`}
+        title={`${summary}\n${detail}\n${kept}`}
+        className="grid h-6 w-6 shrink-0 place-items-center text-warning"
+      >
+        <AlertTriangle className="h-3.5 w-3.5" />
+      </span>
+    )
+  return (
+    <details
+      data-chats-unreadable={files.length}
+      className="mx-1.5 mb-2 shrink-0 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[11px] leading-relaxed"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-warning">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0">{summary}</span>
+      </summary>
+      <ul className="mt-1.5 space-y-1.5">
+        {files.map((file) => (
+          <li key={file.path} data-chat-unreadable={file.chatId ?? ''}>
+            <p>
+              {fileWords(file)}: {file.reason}.
+            </p>
+            <code className="block break-all font-mono text-[10px] text-muted-foreground">
+              {file.path}
+            </code>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-muted-foreground">{kept}</p>
+    </details>
   )
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { IrClass, IrFunction, SchemaIR } from '../../shared/contracts/schema'
 
-import { diffSchemas, structuralStatusOf } from './diff'
+import { diffSchemas } from './diff'
 
 const callable = (returnsType = 'string'): IrFunction => ({
   name: 'inspect',
@@ -37,7 +37,6 @@ describe('canonical standalone Function diffs', () => {
     expect(diffSchemas(empty, populated)).toEqual([{ kind: 'function-added', target: 'inspect' }])
     const removed = diffSchemas(populated, empty)
     expect(removed).toEqual([{ kind: 'function-removed', target: 'inspect' }])
-    expect(structuralStatusOf(removed)).toBe('changed')
   })
 
   test('a changed return type, auth or output mode changes the signature', () => {

@@ -8,6 +8,8 @@
 
 import type { SchemaRevision } from './schema'
 
+import { PUBLISHED_DOMAIN_PREFIX, publicationOf, type PublicationAddress } from './versions'
+
 /** A kernel instance the CLI knows about (a local bookmark or an admin-managed one). */
 export interface InstanceInfo {
   name: string
@@ -150,15 +152,23 @@ export interface FileChange {
   status: 'added' | 'modified' | 'removed'
 }
 
+/**
+ * The current Schema beside the baseline's, as the Studio observes its structure; never a Runtime
+ * migration verdict. An extraction that holds no Schema compares nothing: it is unread, and says
+ * why, instead of reading as unchanged.
+ */
+export type SchemaComparison =
+  | { state: 'unchanged' }
+  | { state: 'changed'; changes: SchemaChange[] }
+  | { state: 'unread'; reason: string }
+
 export interface ChangeSet {
   source: 'baseline' | 'git'
   hasGit: boolean
   hasBaseline: boolean
-  schemaChanges: SchemaChange[]
+  schema: SchemaComparison
   fileChanges: FileChange[]
   schemaDiffText?: string
-  /** Describes Studio-observed structure only; never a Runtime migration verdict. */
-  structuralStatus: 'none' | 'changed'
   baselineRevision?: SchemaRevision
   currentRevision?: SchemaRevision
   baselineCapturedAt?: string
@@ -213,22 +223,6 @@ export interface DomainSummary {
   depsInstalled: boolean
   hasGit: boolean
   configFile: string
-  /** The Kernel Domain: drawn and inspected like any Domain, but nothing in it can change. */
-  readOnly?: boolean
-}
-
-/** The Studio surface selected inside one scanned workspace. */
-export type WorkspaceSection = 'schema' | 'core' | 'tests' | 'process'
-
-/** Machine-side canvas composition and geometry for one scanned workspace. */
-export interface WorkspaceSchemaUiState {
-  visibleDomainIds: string[]
-  initialized: boolean
-  domainPositions: Record<string, NodePosition>
-  externalPositions: Record<string, NodePosition>
-  collapsedModules: Record<string, string[]>
-  expandedDomainIds: string[]
-  expandedExternals: string[]
 }
 
 /** Machine-side work-panel placement for one scanned workspace. */
@@ -253,10 +247,15 @@ export interface WorkspaceRailUiState {
  * UI state belongs to the machine, but is isolated by scanned workspace. It is
  * deliberately not written into any domain: domains only own domain artifacts.
  */
+/** What the workspace's UI state may hold: a patch past one is refused (413). */
+export const WORKSPACE_UI_LIMITS = {
+  /** the reader Domain's id, in characters */
+  readerDomainId: 512,
+} as const
+
 export interface WorkspaceUiState {
   version: 1
-  section: WorkspaceSection
-  /** Local scope of the Core/Tests/Process readers; this is not an active domain. */
+  /** The Domain the Schema and the Data level read; this is not an active domain. */
   readerDomainId?: string
   /** How relationship edges are drawn across the workspace canvases. */
   edgeStyle: 'curved' | 'orthogonal'
@@ -264,7 +263,6 @@ export interface WorkspaceUiState {
   detailWidth?: number
   panel: WorkspacePanelUiState
   rail: WorkspaceRailUiState
-  schema: WorkspaceSchemaUiState
 }
 
 export interface NodePosition {
@@ -275,19 +273,57 @@ export interface NodePosition {
   h?: number
 }
 
-/** Persisted manual graph layout. This is the sole authority for its JSON shape. */
+/**
+ * A canvas's persisted arrangement: a Domain's, the Kernel's, or the Workspace map's
+ * (`WORKSPACE_MAP_ID`). This is the sole authority for its JSON shape.
+ */
 export interface LayoutState {
   renderFingerprint?: string
-  positions: Record<string, NodePosition>
+  /**
+   * Each Studio lens's own arrangement, by lens id: a placed box's top-left by box id, in
+   * the lens canvas's world units. Lenses never share positions.
+   */
+  lenses?: Record<string, Record<string, NodePosition>>
+  /**
+   * Each Studio lens's shut modules, by lens id: their group ids, sorted. An empty list is
+   * every module open; a lens absent here shows its scene's default.
+   */
+  collapsed?: Record<string, string[]>
+  /**
+   * Each Studio lens's folds the reader opened by hand, by lens id: their ids, sorted, each
+   * laid out open. A lens absent here, or a fold not named, shows its scene's default.
+   */
+  opened?: Record<string, string[]>
 }
 
-/** Persisted per-domain canvas visibility. This is the sole authority for its JSON shape. */
-export interface VisibilityState {
-  /** Refs hidden on the canvas: `class.X` | `edge.X` | `domain.<origin>`. */
-  hidden: Record<string, true>
-  /** Whether local Class inheritance edges are rendered. */
-  showInheritedEdges: boolean
-}
+/**
+ * What a layout record may hold, in counts and characters. A write past one is refused (413)
+ * and a file past one is not read whole — never cut down to fit.
+ */
+export const LAYOUT_LIMITS = {
+  /** lenses arranged per record */
+  lenses: 16,
+  /** boxes placed per lens */
+  positions: 10_000,
+  /** ids per set a lens keeps: its shut modules, its folds opened by hand */
+  ids: 10_000,
+  /** a box's, a module's or a fold's id */
+  id: 512,
+  /** a coordinate or a size, either way from 0, in world units */
+  coordinate: 10_000_000,
+} as const
+
+/**
+ * What one request's body may weigh, in bytes, on every route that reads one. A body past its
+ * bound is refused (413) — before it is read when it declares its length, as it arrives
+ * otherwise — never cut down to fit. The record limits above apply within it.
+ */
+export const REQUEST_LIMITS = {
+  /** a JSON body: a write, an agent message, a bridge call */
+  json: 4 * 1024 * 1024,
+  /** a multipart body: one chat image, or the files one Documents upload sends together */
+  upload: 32 * 1024 * 1024,
+} as const
 
 /** Origin of the Kernel Domain every Domain is built on. */
 export const KERNEL_ORIGIN = 'kernel.astrale.ai'
@@ -298,3 +334,47 @@ export const KERNEL_ORIGIN = 'kernel.astrale.ai'
  * one cannot collide with them.
  */
 export const KERNEL_DOMAIN_ID = '@kernel'
+
+/**
+ * What a Domain id names, read from the id alone: a workspace Domain (`<folder>-<8 hex>`, as the
+ * server keys a project), the Kernel (`KERNEL_DOMAIN_ID`), one Publication
+ * (`@registry:<origin>@<version>`), or nothing (`invalid`). Whether a workspace Domain of that id
+ * is registered is the server's to say.
+ */
+export type DomainAddress =
+  | { readonly kind: 'workspace'; readonly id: string }
+  | { readonly kind: 'kernel' }
+  | ({ readonly kind: 'publication' } & Readonly<PublicationAddress>)
+  | { readonly kind: 'invalid' }
+
+/** A workspace Domain's id: its project folder's name made safe (1–40 characters), `-`, and 8 hex digits of its path. */
+const WORKSPACE_DOMAIN_ID = /^[A-Za-z0-9._-]{1,40}-[0-9a-f]{8}$/
+
+/** The one reading of a Domain id; every other test of an id derives from it. */
+export function domainAddressOf(domainId: string): DomainAddress {
+  if (domainId === KERNEL_DOMAIN_ID) return { kind: 'kernel' }
+  if (domainId.startsWith(PUBLISHED_DOMAIN_PREFIX)) {
+    const publication = publicationOf(domainId)
+    return publication ? { kind: 'publication', ...publication } : { kind: 'invalid' }
+  }
+  return WORKSPACE_DOMAIN_ID.test(domainId)
+    ? { kind: 'workspace', id: domainId }
+    : { kind: 'invalid' }
+}
+
+/**
+ * Whether a Domain id names a Domain the Studio only reads: the Kernel, or a Publication. Neither
+ * has sources on disk, so nothing edits, comments on or publishes it, and its arrangement is kept
+ * on this machine. The server refuses those writes in one place (`api.ts`), and every write to an
+ * id that names nothing.
+ */
+export function isReadOnlyDomainId(domainId: string): boolean {
+  const { kind } = domainAddressOf(domainId)
+  return kind === 'kernel' || kind === 'publication'
+}
+
+/**
+ * The Workspace map's id where a canvas names whose layout record it reads. The map names no
+ * Domain: its record is the scanned workspace's, kept on this machine (`/api/workspace/layout`).
+ */
+export const WORKSPACE_MAP_ID = '@workspace'

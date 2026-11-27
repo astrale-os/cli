@@ -15,29 +15,48 @@ export function buildAskSystemPrompt(): string {
   ].join('\n')
 }
 
+/** Where the element lives, so the answer reads the right source. */
+export type AskDomain =
+  /** A project of this workspace, at its path from the workspace root. */
+  | { source: 'project'; origin: string; path: string }
+  /** The Kernel, read from the installed SDK rather than from a project. */
+  | { source: 'kernel'; origin: string }
+  /** One published version, read from the registry; no project of it is at hand. */
+  | { source: 'publication'; origin: string; version: string }
+
 interface AskParts {
   anchorRef: string
   excerpt: string
   question: string
   ir: SchemaIR | null
   overlay?: SchemaOverlay
+  domain?: AskDomain
   /**
-   * The domain the element lives in, so the answer reads the right repo. The Kernel has no
-   * path: it is read from the installed SDK, not from a project in the workspace.
+   * The Domain is one the Studio only reads (`isReadOnlyDomainId`): the prompt tells the aside to
+   * edit nothing of it. An instruction, not an enforcement — the fork runs at the chosen access.
    */
-  domain?: { origin: string; path?: string }
+  readOnly?: boolean
+}
+
+function whereOf(domain: AskDomain | undefined): string {
+  if (!domain) return ' in this workspace'
+  switch (domain.source) {
+    case 'project':
+      return ` in the domain \`${domain.origin}\` (at \`${domain.path}\`)`
+    case 'kernel':
+      return ` in the read-only Kernel Domain \`${domain.origin}\` (as the installed \`@astrale-os/sdk\` ships it)`
+    case 'publication':
+      return ` in the read-only Publication \`${domain.origin}@${domain.version}\` (its Schema as the registry serves it; its sources are not in this workspace)`
+  }
 }
 
 /** Build one focused side-question prompt. */
 export function buildAskPrompt(parts: AskParts): string {
   const target = describeAnchor(parts.anchorRef, parts.ir, parts.overlay)
   const named = parts.excerpt && parts.excerpt !== parts.anchorRef ? ` (${parts.excerpt})` : ''
-  const where = !parts.domain
-    ? ' in this workspace'
-    : parts.domain.path === undefined
-      ? ` in the read-only Kernel Domain \`${parts.domain.origin}\` (as the installed \`@astrale-os/sdk\` ships it)`
-      : ` in the domain \`${parts.domain.origin}\` (at \`${parts.domain.path}\`)`
-  const lines = [`Quick question about \`${parts.anchorRef}\`${named}${where}.`]
+  const lines = [`Quick question about \`${parts.anchorRef}\`${named}${whereOf(parts.domain)}.`]
+  if (parts.readOnly)
+    lines.push('It is read here, never edited: answer from its Schema and change no file for it.')
   if (target) lines.push('', 'Target:', target)
   lines.push('', `Question: ${parts.question.trim()}`)
   return lines.join('\n')

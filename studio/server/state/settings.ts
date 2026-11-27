@@ -10,15 +10,21 @@ import { type AgentModelPreference, type StudioSettings } from '../../shared/con
  *
  * Missing keys fall back to DEFAULT_SETTINGS. Surfaced subtly in the UI (command palette
  * + a faint gear) for power users.
+ *
+ * The Studio runs on every key the file holds well, and on the default of the others, so a file
+ * edited by hand never stops it. The Settings route reads the file whole or not at all
+ * (state-file.ts): a key that does not hold, and the dialog says so with the file's path, and
+ * no save goes over it until it is fixed. A key this Studio does not know is kept.
  */
 import {
   parseStudioNumericSetting,
   STUDIO_NUMERIC_LIMITS,
   type NumericStudioSetting,
 } from '../../shared/settings-values'
-import { asJsonRecord, asString } from '../json'
+import { asJsonRecord, asString, refused, type Decoded, type JsonRecord } from '../json'
 import { studioHome } from './home'
-import { readJson, writeJson } from './store'
+import { changeStateFile, stateOf, type StateFile } from './state-file'
+import { readJson } from './store'
 
 const PATH = 'settings.json'
 
@@ -58,17 +64,72 @@ function decodeModelPreference(value: unknown): AgentModelPreference | null {
   return harness && model ? { harness, model } : null
 }
 
+/** Why a key of the file this Studio knows does not hold, or nothing when every one does. */
+function settingProblem(record: JsonRecord): string | undefined {
+  for (const key of Object.keys(STUDIO_NUMERIC_LIMITS) as NumericStudioSetting[]) {
+    if (record[key] === undefined || parseStudioNumericSetting(key, record[key]) !== null) continue
+    const { min, max } = STUDIO_NUMERIC_LIMITS[key]
+    return `its ${key} is ${JSON.stringify(record[key])}, not a whole number from ${min} to ${max}`
+  }
+  const { agentAccess, agentModel, integrationsDir } = record
+  if (agentAccess !== undefined && !AGENT_ACCESS_LEVELS.some((level) => level === agentAccess))
+    return `its agentAccess is ${JSON.stringify(agentAccess)}, not one of ${AGENT_ACCESS_LEVELS.join(', ')}`
+  if (integrationsDir !== undefined && typeof integrationsDir !== 'string')
+    return 'its integrationsDir is not text'
+  if (agentModel !== undefined && agentModel !== null && decodeModelPreference(agentModel) === null)
+    return 'its agentModel names no harness and model'
+  return undefined
+}
+
+function settingsOf(value: unknown): Decoded<Partial<StudioSettings>> {
+  const record = asJsonRecord(value)
+  if (!record) return refused('it holds no object')
+  const problem = settingProblem(record)
+  return problem ? refused(problem) : { value: normalizeSettings(record) }
+}
+
+const SETTINGS: StateFile<Partial<StudioSettings>> = {
+  name: PATH,
+  decode: settingsOf,
+  shape: {
+    record: {
+      agentAccess: null,
+      agentModel: null,
+      integrationsDir: null,
+      introspectTimeoutMs: null,
+      instancePollMs: null,
+      updatesPollMs: null,
+      viewProbeTimeoutMs: null,
+    },
+  },
+  empty: () => ({}),
+}
+
 function decodeSettings(value: unknown): Partial<StudioSettings> | undefined {
   return asJsonRecord(value) ? normalizeSettings(value) : undefined
 }
 
-/** The studio's settings. Global: there is no domain to ask for. */
+/**
+ * What the Studio runs on: each key the file holds well, the default of the others. Global:
+ * there is no domain to ask for.
+ */
 export function studioSettings(): StudioSettings {
   return { ...DEFAULT_SETTINGS, ...readJson(studioHome(), PATH, decodeSettings, {}) }
 }
 
+/** The settings as the file holds them, read whole; `UnreadableState` when it is not. */
+export function storedSettings(): StudioSettings {
+  return { ...DEFAULT_SETTINGS, ...stateOf(studioHome(), SETTINGS) }
+}
+
+/**
+ * Saves the values of `patch` that hold; a value that does not is left out. A file not read
+ * whole is left as it is: `UnreadableState`.
+ */
 export function updateStudioSettings(patch: unknown): StudioSettings {
-  const next: StudioSettings = { ...studioSettings(), ...normalizeSettings(patch) }
-  writeJson(studioHome(), PATH, next)
-  return next
+  const next = changeStateFile(studioHome(), SETTINGS, (current) => ({
+    ...current,
+    ...normalizeSettings(patch),
+  }))
+  return { ...DEFAULT_SETTINGS, ...next }
 }

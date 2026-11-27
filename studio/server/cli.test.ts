@@ -88,13 +88,15 @@ if (args[0] === 'fail') {
 process.stdout.write(JSON.stringify({ command: args }))
 `,
   )
-  expect(await runStudioCliJson(['query', '--class', 'Issue'], asJsonRecord)).toMatchObject({
+  expect(
+    await runStudioCliJson(['query', '--class', 'Issue'], asJsonRecord, { timeoutMs: 10_000 }),
+  ).toMatchObject({
     ok: true,
     exitCode: 0,
     timedOut: false,
     data: { command: ['query', '--class', 'Issue', '--json'] },
   })
-  expect(await runStudioCliJson(['fail'], asJsonRecord)).toMatchObject({
+  expect(await runStudioCliJson(['fail'], asJsonRecord, { timeoutMs: 10_000 })).toMatchObject({
     ok: false,
     exitCode: 7,
     detail: 'Missing instance.',

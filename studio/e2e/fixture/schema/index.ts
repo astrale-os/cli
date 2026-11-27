@@ -1,10 +1,11 @@
-import { defineSchema, view } from '@astrale-os/sdk/schema'
+import { defineSchema, KernelSchema, view } from '@astrale-os/sdk/schema'
 
 import {
   BilledTo,
   Invoice,
   IssuedFrom,
   mayManageInvoice,
+  PaidOutBy,
   Payment,
   ProcessedBy,
   SettledBy,
@@ -24,11 +25,19 @@ import {
   QuoteOf,
 } from './sales/index.js'
 import { Document, Party } from './shared/index.js'
-import { AboutAccount, Message, MessageOn, RaisedBy, Ticket } from './support/index.js'
+import {
+  AboutAccount,
+  mayReadTicket,
+  Mentions,
+  Message,
+  MessageOn,
+  RaisedBy,
+  Ticket,
+} from './support/index.js'
 
 export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
   name: 'Test Domain',
-  dependencies: { payments: PaymentsSchema },
+  dependencies: { kernel: KernelSchema, payments: PaymentsSchema },
   classes: {
     Party,
     Document,
@@ -52,11 +61,13 @@ export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
     SettledBy,
     SubscribedTo,
     ProcessedBy,
+    PaidOutBy,
     Ticket,
     Message,
     RaisedBy,
     AboutAccount,
     MessageOn,
+    Mentions,
   },
   functions: { reconcileInvoice, escalateTicket, exportLedger },
   views: {
@@ -64,7 +75,7 @@ export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
       description: 'CRM overview.',
     }),
   },
-  policies: { mayManageInvoice },
+  policies: { mayManageInvoice, mayReadTicket },
   core: { nodes: { platform: platformTeam }, edges: [] },
 })
 

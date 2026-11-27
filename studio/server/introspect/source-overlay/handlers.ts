@@ -1,12 +1,15 @@
 /** Source links for SDK V1 Action and Workflow declarations. */
 import { Node, SyntaxKind, type CallExpression, type Project, type SourceFile } from 'ts-morph'
 
-import type { HandlerLink, SchemaIR } from '../../../shared/contracts/schema'
+import type { HandlerLink, IntegrationLink, SchemaIR } from '../../../shared/contracts/schema'
+import type { FlowCache } from './flow'
 
+import { integrationReachReader } from './integrations'
 import { scanKernelCalls } from './kernel-calls'
 import {
   authoredTypeScriptFiles,
   curriedFactory,
+  isFunction,
   newProject,
   nodeKey,
   relToRoot,
@@ -104,14 +107,6 @@ function namedCallables(body: Node, ir: SchemaIR | null): string[] {
     if (ownerName && ir.classes[ownerName]?.methods[method]) keys.add(`${ownerName}.${method}`)
   }
   return [...keys]
-}
-
-function isFunction(node: Node): boolean {
-  return (
-    Node.isFunctionDeclaration(node) ||
-    Node.isArrowFunction(node) ||
-    Node.isFunctionExpression(node)
-  )
 }
 
 /** What one function names itself; a handler reaches the closure of it over its helpers. */
@@ -220,6 +215,10 @@ export function buildHandlerLinks(args: {
   project?: Project
   /** `nodeKey` of each Query/Mutation declaration → its id; see readDefinitions. */
   definitionIds?: ReadonlyMap<string, string>
+  /** The runtime's Integrations; see readIntegrations. */
+  integrations?: readonly IntegrationLink[]
+  /** Shared with the definition reading — see buildOverlay. */
+  cache?: FlowCache
 }): HandlerLink[] {
   const { ir, domainRoot } = args
   if (!domainRoot) return []
@@ -241,6 +240,7 @@ export function buildHandlerLinks(args: {
     return calls
   }
   const reachOf = reachReader(ir, args.definitionIds ?? new Map())
+  const integrationsOf = integrationReachReader(args.integrations ?? [], domainRoot, args.cache)
 
   for (const source of sources) {
     for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
@@ -272,6 +272,9 @@ export function buildHandlerLinks(args: {
       const self = `${callable.owner}.${callable.method}`
       const calls = reach.calls.filter((key) => key !== self)
       if (calls.length > 0) link.calls = calls
+      const integrations = integrationsOf(handler)
+      if (integrations.uses.length > 0) link.integrations = integrations.uses
+      if (integrations.gaps.length > 0) link.integrationGaps = integrations.gaps
       links.set(`${callable.ownerKind}:${callable.owner}.${callable.method}`, link)
     }
   }

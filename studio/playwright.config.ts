@@ -2,16 +2,20 @@ import { defineConfig, devices } from '@playwright/test'
 
 const port = Number(process.env.STUDIO_E2E_PORT ?? 4397)
 const baseURL = `http://127.0.0.1:${port}`
+// A machine shared with other heavy jobs answers slowly: every wait stretches by this factor.
+const patience = Number(process.env.STUDIO_E2E_PATIENCE ?? 1)
 
 export default defineConfig({
   testDir: './e2e',
   outputDir: './test-results',
-  // The suite writes node positions, visibility and comment threads into the
+  // The suite writes node positions, shut groups and comment threads into the
   // fixture, so it is not idempotent on its own. Clear those before each run —
   // here rather than in the server, which `reuseExistingServer` may not restart.
   globalSetup: './e2e/reset-state.ts',
   fullyParallel: false,
   workers: 1,
+  timeout: 30_000 * patience,
+  expect: { timeout: 5_000 * patience },
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'line',
   use: {

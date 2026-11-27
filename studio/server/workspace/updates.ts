@@ -21,10 +21,14 @@ const NOT_STALE: StaleReport = {
   sdk: { stale: false, inProject: false, outdated: [] },
 }
 
+/** How long `update --check` may take; past it nothing is said to be stale. */
+const UPDATE_CHECK_TIMEOUT_MS = 30_000
+
 export async function getUpdates(root: string): Promise<StaleReport> {
   const result = await runStudioCliJson(['update', '--check', '--json'], decodeStaleReport, {
     cwd: root,
     acceptedExitCodes: [0, 10],
+    timeoutMs: UPDATE_CHECK_TIMEOUT_MS,
   })
   return result.ok && result.data ? result.data : NOT_STALE
 }

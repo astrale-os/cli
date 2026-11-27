@@ -18,11 +18,15 @@ export interface DomainTurnParts {
   openThreads: number
   /** open threads whose last word is not the agent's, attached to this turn or not */
   pendingThreads: number
+  /** why the domain's comments could not be read, when they could not: none are counted */
+  unreadableComments?: string
   /** the awaiting threads the user attached to this turn — what this turn carries */
   awaitingThreads: Comment[]
   userContext: ContextItem[]
   autoContext: ContextItem[]
   documents: DocMeta[]
+  /** why the domain's document index could not be read, when it could not: none are listed */
+  unreadableDocuments?: string
   ir: SchemaIR | null
   overlay?: SchemaOverlay
 }
@@ -68,12 +72,16 @@ function workspaceDigest(parts: TurnParts): string {
   for (const domain of parts.domains) {
     const attached = domain.awaitingThreads.length
     unattached += Math.max(0, domain.pendingThreads - attached)
-    const status =
-      domain.openThreads === 0
+    const status = domain.unreadableComments
+      ? `its threads cannot be read — ${domain.unreadableComments}`
+      : domain.openThreads === 0
         ? 'no open thread'
         : `${count(domain.openThreads, 'open thread')}, ${attached} attached to this turn`
-    const docs =
-      domain.documents.length > 0 ? `, ${count(domain.documents.length, 'document')}` : ''
+    const docs = domain.unreadableDocuments
+      ? `; its documents cannot be read — ${domain.unreadableDocuments}`
+      : domain.documents.length > 0
+        ? `, ${count(domain.documents.length, 'document')}`
+        : ''
     lines.push(`- **${domain.origin}** — \`${domain.relativePath}\` — ${status}${docs}`)
   }
   if (unattached > 0)

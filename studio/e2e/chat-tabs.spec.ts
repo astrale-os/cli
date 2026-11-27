@@ -3,7 +3,7 @@
  * dropped and keeps the name and colour it was given, a new tab carries on with the
  * current one's settings, and what was written for one agent stays with it.
  */
-import type { ChatInfo, ChatList } from '../shared/contracts/agent'
+import type { ChatInfo, ChatList, UnreadableChatFile } from '../shared/contracts/agent'
 
 import {
   chatAction,
@@ -216,4 +216,44 @@ test('the composer carries a draft per chat, not one draft across them', async (
   await expect(field).toHaveValue('rename the Order class')
   await tab(page, 'Billing').click()
   await expect(field).toHaveValue('write the billing tests')
+})
+
+test('the tabs say which of their files the server cannot read whole, why and where', async ({
+  page,
+  request,
+}) => {
+  const chats = [chatInfo('chat-orders', 'Orders')]
+  const unreadable: UnreadableChatFile[] = [
+    {
+      path: '/state/agent/chats/chat-billing.json',
+      reason: 'it holds an unresolved merge conflict',
+      chatId: 'chat-billing',
+    },
+    { path: '/state/agent/chat-order.json', reason: 'it is not JSON' },
+  ]
+  await stubAgent(page, { chats })
+  // the server's list names them; every chat it can read still opens
+  await page.route('**/api/agent/chats', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ json: { chats, activeId: 'chat-orders', unreadable } satisfies ChatList })
+      : route.fallback(),
+  )
+  await dockWorkspacePanel(request, 'left')
+  await page.goto('/')
+
+  await expect(tab(page, 'Orders')).toBeVisible()
+  const said = page.locator('[data-chat-tabs="left"] [data-chats-unreadable]')
+  await expect(said).toHaveAttribute('data-chats-unreadable', '2')
+  await expect(said).toContainText('2 files of the tabs can’t be read')
+  await said.locator('summary').click()
+  await expect(said.locator('[data-chat-unreadable="chat-billing"]')).toContainText(
+    'A chat: it holds an unresolved merge conflict.',
+  )
+  await expect(said.locator('[data-chat-unreadable="chat-billing"]')).toContainText(
+    '/state/agent/chats/chat-billing.json',
+  )
+  await expect(said.locator('[data-chat-unreadable=""]')).toContainText(
+    'The tabs’ order: it is not JSON.',
+  )
+  await expect(said).toContainText('saves nothing to it until it is fixed')
 })

@@ -38,10 +38,7 @@ function canonicalIr() {
       },
     },
     views: {
-      documents: {
-        name: 'documents',
-        target: { kind: 'domain' },
-      },
+      documents: { name: 'documents', description: 'Browse documents.' },
     },
     policies: {},
     dependencies: [],

@@ -10,7 +10,10 @@ import {
   Node,
   Project,
   SyntaxKind,
+  type ArrowFunction,
   type CallExpression,
+  type FunctionDeclaration,
+  type FunctionExpression,
   type ObjectLiteralExpression,
   type SourceFile,
 } from 'ts-morph'
@@ -158,7 +161,20 @@ function firstValueDeclaration(node: Node): Node | undefined {
   const idNode = Node.isIdentifier(node)
     ? node
     : node.getFirstDescendantByKind(SyntaxKind.Identifier)
-  return idNode?.getSymbol()?.getDeclarations()[0]
+  return idNode && declarationOf(idNode)
+}
+
+/**
+ * The declaration an identifier refers to. A shorthand property (`{ integrations }`)
+ * names the property and the binding at once; the binding is the value.
+ */
+export function declarationOf(identifier: Node): Node | undefined {
+  const parent = identifier.getParent()
+  const symbol =
+    parent && Node.isShorthandPropertyAssignment(parent)
+      ? parent.getValueSymbol()
+      : identifier.getSymbol()
+  return symbol?.getDeclarations()[0]
 }
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
@@ -190,6 +206,25 @@ function firstExisting(base: string): string | undefined {
   ]
   for (const c of candidates) if (existsSync(c)) return c
   return undefined
+}
+
+/** A function written as a declaration, an arrow or an expression: what a helper is. */
+export function isFunction(
+  node: Node,
+): node is FunctionDeclaration | ArrowFunction | FunctionExpression {
+  return (
+    Node.isFunctionDeclaration(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isFunctionExpression(node)
+  )
+}
+
+/** The binding that holds a declaration: `export const deleteComment = …`. */
+export function bindingName(call: CallExpression): string | undefined {
+  const declaration = call.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  return declaration && unwrapExpression(declaration.getInitializer() ?? declaration) === call
+    ? declaration.getName()
+    : undefined
 }
 
 /** Stable identity of a syntax node across aliases: `<file>:<start offset>`. */

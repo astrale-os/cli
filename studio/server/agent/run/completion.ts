@@ -7,6 +7,7 @@ import type { AgentStreamEvent } from '../harness/adapter'
 import type { PreparedRun } from './preparation'
 
 import { mergeParsedReply, parseReplyBlock } from '../../state/comments'
+import { UnreadableState } from '../../state/state-file'
 import { chatExists, clearChatSession, recordChatTurn } from '../chats'
 import { emitStudioEvent } from '../notify'
 import { releaseController } from './live-state'
@@ -279,7 +280,10 @@ export async function completeRun(
           })
         for (const domainId of touched) emitStudioEvent(notify, { type: 'comments', domainId })
       } catch (error: any) {
-        if (/```json/i.test(result.finalText)) {
+        if (error instanceof UnreadableState) {
+          replyError = `agent reply not merged: ${error.message}`
+          pushEvent({ kind: 'error', text: replyError })
+        } else if (/```json/i.test(result.finalText)) {
           replyError = `agent reply block was malformed JSON — reply not merged (${String(error?.message ?? error).slice(0, 80)})`
           pushEvent({ kind: 'error', text: replyError })
         } else if (bridgeReplies === 0) {

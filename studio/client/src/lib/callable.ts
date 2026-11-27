@@ -1,6 +1,6 @@
 import type { HandlerLink, IrCallableAuth, IrFunction, IrMethod } from '@shared/contracts/schema'
 
-import { Globe, Puzzle, ShieldCheck, UserRound, Zap, type LucideIcon } from 'lucide-react'
+import { Globe, ShieldCheck, UserRound, type LucideIcon } from 'lucide-react'
 
 interface AuthVerdict {
   level: 'secured' | 'authenticated' | 'public'
@@ -58,10 +58,4 @@ export function methodAuth(method?: AuthCallable): AuthVerdict | null {
     auth,
     blurb: 'The callable contract requires authorization.',
   }
-}
-
-/** Abstract contracts and concrete operations have distinct glyphs. */
-export function methodGlyph(method: IrMethod): { icon: LucideIcon; tone: string } {
-  if (!method.executable) return { icon: Puzzle, tone: 'fn' }
-  return { icon: Zap, tone: 'primary' }
 }

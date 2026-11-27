@@ -1,11 +1,18 @@
-import { edgeClass, nodeClass, property } from '@astrale-os/sdk/schema'
+import { edgeClass, nodeClass, policy, property } from '@astrale-os/sdk/schema'
 
 import { icons } from '../icons.js'
 import { Company, Person } from '../people/index.js'
 import { string } from '../values.js'
 
+/** Only whoever raised a ticket reads it. */
+export const mayReadTicket = policy({
+  description: 'The caller raised this ticket.',
+  match: ({ edge, subject, object }) =>
+    edge({ source: object, class: () => RaisedBy, target: subject }),
+})
+
 export const Ticket = nodeClass({
-  policies: { read: true },
+  policies: { read: () => mayReadTicket, traverse: () => mayReadTicket },
   description: 'A customer support request.',
   icon: icons.ticket,
   properties: {
@@ -38,4 +45,12 @@ export const MessageOn = edgeClass.directed({
   policies: { read: true },
   source: { as: 'message', accepts: [Message], outgoing: '1' },
   target: { as: 'ticket', accepts: [Ticket], incoming: '0..*' },
+})
+
+/** One end that accepts two Classes: a message may mention a person or a company. */
+export const Mentions = edgeClass.directed({
+  policies: { read: true },
+  description: 'A party a message mentions.',
+  source: { as: 'message', accepts: [Message], outgoing: '0..*' },
+  target: { as: 'mentioned', accepts: [Person, Company], incoming: '0..*' },
 })

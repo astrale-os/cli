@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import '@xyflow/react/dist/style.css';
 
 /* Domain Studio — two themes, one set of tokens. Neutral surfaces, a single
    calm accent, and a small set of semantic hues for the schema grammar (node /
@@ -48,11 +47,32 @@
   --brand-codex: var(--foreground);
 
   /* schema grammar — one hue per kind, legible on light surfaces */
-  --schema-node: oklch(0.5 0.12 250);
+  --schema-node: oklch(0.5 0.065 268);
   --schema-edge: oklch(0.52 0.11 65);
   --schema-view: oklch(0.5 0.09 205);
   --schema-core: oklch(0.48 0.11 155);
   --schema-function: oklch(0.5 0.14 300);
+
+  /* what a function does to what it reaches — one hue per verb; a call stays neutral */
+  --verb-create: oklch(0.53 0.13 150);
+  --verb-update: oklch(0.52 0.15 252);
+  --verb-delete: oklch(0.55 0.17 25);
+  --verb-transition: oklch(0.52 0.14 320);
+  --verb-link: oklch(0.55 0.1 195);
+  --verb-unlink: oklch(0.56 0.13 355);
+  --verb-call: oklch(0.55 0.02 255);
+
+  /* the two questions a rule answers: who may act, and what must hold */
+  --rule-who: oklch(0.5 0.15 280);
+  --rule-what: oklch(0.55 0.13 40);
+
+  /* whom a rule admits — one tone per answer, wherever a rule is read; where nothing is
+     written, the Kernel's default reads muted (see rule-mark.css) */
+  --admit-policy: var(--rule-who);
+  --admit-open: var(--warning);
+  --admit-signed-in: var(--success);
+  /* only Root and the Domain: the Kernel's own, a steel blue apart from the update verb's */
+  --admit-closed: oklch(0.48 0.085 225);
 
   /* canvas ink — set here rather than in the graph code so both themes agree */
   --edge-line: oklch(0.74 0.02 255);
@@ -60,6 +80,12 @@
   --edge-inherit: oklch(0.55 0.14 300);
   --edge-function: oklch(0.62 0.13 300);
   --edge-soft: oklch(0.78 0.01 255);
+
+  /* Scene canvas: a link at rest, an end chip's fill, and the halo behind a link label. */
+  --scene-link: oklch(0.66 0.02 255);
+  --scene-chip: oklch(0.975 0.012 70);
+  --scene-chip-border: oklch(0.9 0.03 70);
+  --scene-shadow: 0 1px 2px oklch(0.3 0.02 255 / 0.06), 0 2px 8px -4px oklch(0.3 0.02 255 / 0.1);
 }
 
 .dark {
@@ -94,17 +120,35 @@
   --brand-claude: oklch(0.74 0.12 45);
   --brand-codex: var(--foreground);
 
-  --schema-node: oklch(0.72 0.11 250);
+  --schema-node: oklch(0.74 0.055 268);
   --schema-edge: oklch(0.75 0.1 70);
   --schema-view: oklch(0.72 0.08 205);
   --schema-core: oklch(0.7 0.11 155);
   --schema-function: oklch(0.72 0.12 300);
+
+  --verb-create: oklch(0.72 0.13 150);
+  --verb-update: oklch(0.72 0.13 252);
+  --verb-delete: oklch(0.68 0.16 25);
+  --verb-transition: oklch(0.72 0.12 320);
+  --verb-link: oklch(0.74 0.1 195);
+  --verb-unlink: oklch(0.72 0.13 355);
+  --verb-call: oklch(0.66 0.02 255);
+
+  --rule-who: oklch(0.73 0.12 280);
+  --rule-what: oklch(0.74 0.12 45);
+
+  --admit-closed: oklch(0.8 0.075 225);
 
   --edge-line: oklch(0.47 0.02 255);
   --edge-cross: oklch(0.66 0.11 45);
   --edge-inherit: oklch(0.66 0.13 300);
   --edge-function: oklch(0.66 0.12 300);
   --edge-soft: oklch(0.42 0.012 255);
+
+  --scene-link: oklch(0.55 0.02 255);
+  --scene-chip: oklch(0.27 0.018 70);
+  --scene-chip-border: oklch(0.36 0.035 70);
+  --scene-shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 2px 10px -4px oklch(0 0 0 / 0.4);
 }
 
 @theme inline {
@@ -145,10 +189,26 @@
   --color-schema-view: var(--schema-view);
   --color-schema-core: var(--schema-core);
   --color-schema-function: var(--schema-function);
+  --color-verb-create: var(--verb-create);
+  --color-verb-update: var(--verb-update);
+  --color-verb-delete: var(--verb-delete);
+  --color-verb-transition: var(--verb-transition);
+  --color-verb-link: var(--verb-link);
+  --color-verb-unlink: var(--verb-unlink);
+  --color-verb-call: var(--verb-call);
+  --color-rule-who: var(--rule-who);
+  --color-rule-what: var(--rule-what);
+  --color-admit-policy: var(--admit-policy);
+  --color-admit-open: var(--admit-open);
+  --color-admit-signed-in: var(--admit-signed-in);
+  --color-admit-closed: var(--admit-closed);
   --color-edge-line: var(--edge-line);
   --color-edge-cross: var(--edge-cross);
   --color-edge-inherit: var(--edge-inherit);
   --color-edge-function: var(--edge-function);
+  --color-scene-link: var(--scene-link);
+  --color-scene-chip: var(--scene-chip);
+  --color-scene-chip-border: var(--scene-chip-border);
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   --font-sans:
     ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui,
@@ -215,14 +275,14 @@ body {
 }
 
 /* Comment / ask targeting: outline whatever the next click would pin to. A comment
-   draft keeps the same paint until its composer closes. An edge gets its own line
-   thickened instead — a box around it would cover its neighbours and you could not
-   tell which relationship the pin would land on.
+   draft keeps the same paint until its composer closes. A Scene link gets its own line
+   thickened instead (scene-canvas.css) — a box around it would cover its neighbours and
+   you could not tell which relationship the pin would land on.
    `data-revealed` shares the outline on purpose: opening a thread from the comments
    panel points at an element the same way targeting one does. */
-[data-comment-target]:not(.react-flow__edge),
-[data-comment-draft-target]:not(.react-flow__edge),
-[data-revealed] {
+[data-comment-target]:not(.scene-link),
+[data-comment-draft-target]:not(.scene-link),
+[data-revealed]:not(.scene-link) {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
   border-radius: var(--radius-md);
@@ -235,136 +295,12 @@ body {
 [data-comment-outline-inset][data-revealed] {
   outline-offset: -2px;
 }
-/* `!important` because an edge's colour and weight are DATA here, not styling: the canvas
-   writes `stroke` / `stroke-width` straight onto the path as an inline style (cross-module
-   vs local, inherited, selected — see `projectDomainCanvas`), and an inline declaration
-   outranks any normal rule a stylesheet can write. Without it this block is dead: the line
-   under the pointer stays the grey it was, and nothing says where the pin would land. */
-.react-flow__edge[data-comment-target] .react-flow__edge-path,
-.react-flow__edge[data-comment-draft-target] .react-flow__edge-path {
-  outline: none;
-  stroke-width: 4px !important;
-  stroke: var(--color-primary) !important;
-}
 
-/* Every edge label is portalled into this shared layer, so no edge can strike through the words
-   that name it — but only if the layer outranks EVERY edge layer, and z-index 1 did not.
-   React Flow derives an edge's z-index from its endpoints' nesting depth: a class inside a module
-   inside a domain frame already scores 12, and selecting an edge adds 1000 more. So the layer is
-   lifted clear of all of it. This cannot reach the toolbar or the controls — the layer lives inside
-   `.react-flow__viewport`, whose transform makes it a stacking context of its own. */
-.react-flow__edgelabel-renderer {
-  z-index: 2000;
-}
-
-.schema-edge-label {
-  position: absolute;
-  visibility: hidden;
-  box-sizing: border-box;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  background: var(--color-card);
-  color: var(--color-muted-foreground);
-  font-family: var(--font-sans);
-  font-size: 10px;
-  line-height: 12px;
-  white-space: nowrap;
-  pointer-events: none;
-  user-select: none;
-}
-
-.schema-edge-cardinality {
-  padding: 1px 5px;
-}
-
-/* ── React Flow surface ── */
-.react-flow__attribution {
-  display: none;
-}
-/* Our GroupNode paints the module box itself; React Flow's default node chrome
-   (a near-black 1px border + grey fill + padding) framed every box a second time. */
-.react-flow__node-group {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  font-size: inherit;
-}
-
-.react-flow {
-  background: var(--color-canvas);
-  /* our nodes own their selected/hover treatment — drop React Flow's black hairline */
-  --xy-node-boxshadow-selected: none;
-  --xy-node-boxshadow-hover: none;
-}
-/* The graph is ONE draggable surface, so it wears ONE cursor — over every pixel of it. React
-   Flow picks a cursor per element instead: `default` on a node that is neither draggable nor
-   selectable, `pointer` on a selectable one and across an edge's wide invisible hit target,
-   `crosshair` on the hidden handles that anchor those edges — and every <button> a node paints
-   inside itself (the module chevron, the view pill, the comment pin) lays its own `pointer` on
-   top. At the 0.08 minimum zoom a view pill measures 13px and a chevron barely 1px, so none of
-   those reads as an affordance: sweeping the mouse across a dense graph merely flickered
-   hand → pointer → hand several times a second. Hence one rule and no exceptions — the hand
-   covers the pane, the nodes and their buttons, the edges, the handles, and the floating chrome
-   (toolbar, controls all pan and zoom the same surface). The class is repeated so this
-   sweep outweighs React Flow's own two-class cursor rules — `.react-flow__node.selectable` and
-   friends — which a plain descendant selector would lose to. */
-.react-flow,
-.react-flow.react-flow * {
-  cursor: grab;
-}
-/* Mid-drag the whole surface holds the closed hand: whatever slides under the pointer — another
-   node, the controls, the toolbar — would otherwise re-assert `grab` and flicker for as long as
-   the drag lasts. React Flow marks the pane mid-pan and the node mid-move; either one closes
-   the hand across the canvas. */
-.react-flow:has(.dragging),
-.react-flow.react-flow:has(.dragging) * {
-  cursor: grabbing;
-}
 /* Comment and Ask mode turn EVERY element into a click target, so while one is armed the whole
-   window wears the single cursor that says so — the canvas included, whose hand would otherwise
-   contradict the mode the moment the pointer crossed into it. */
+   window wears the single cursor that says so. */
 body[data-target-mode],
-body[data-target-mode] *,
-body[data-target-mode] .react-flow.react-flow * {
+body[data-target-mode] * {
   cursor: pointer;
-}
-.react-flow__controls {
-  box-shadow: none;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--color-card);
-}
-.react-flow__controls-button {
-  background: var(--color-card);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-muted-foreground);
-  width: 28px;
-  height: 28px;
-}
-.react-flow__controls-button:hover {
-  background: var(--color-accent);
-  color: var(--color-foreground);
-}
-.react-flow__controls-button svg {
-  fill: currentColor;
-  max-width: 12px;
-  max-height: 12px;
-}
-.react-flow__edge-text {
-  font-family: var(--font-sans);
-  font-size: 10px;
-  fill: var(--color-muted-foreground);
-}
-.react-flow__edge-textbg {
-  fill: var(--color-canvas);
-}
-.react-flow__node {
-  font-family: var(--font-sans);
 }
 
 /* The new-domain composer arrives the way the dock's chat opens: a short rise,
@@ -389,16 +325,6 @@ body[data-target-mode] .react-flow.react-flow * {
 }
 [data-studio-rise][data-state='open'] {
   animation: studio-rise 180ms ease-out;
-}
-
-/* A row in a list card sits flush against the card's clipped edge, so the targeting outline
-   above — drawn OUTSIDE the row — lost its top on the first row, its bottom on the last, and
-   its sides on every one: only a stray line or two survived the card's `overflow: hidden`.
-   Rows in a list wear the ring inside their own box instead, where nothing can cut it. */
-[data-member-list] > [data-comment-target],
-[data-member-list] > [data-comment-draft-target],
-[data-member-list] > [data-revealed] {
-  outline-offset: -2px;
 }
 
 /* A resize in progress (components/ui/resize-handle.tsx): the grip's cursor over

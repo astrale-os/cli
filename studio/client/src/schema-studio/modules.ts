@@ -13,12 +13,8 @@ interface FolderModule {
 
 const HUES = [264, 190, 150, 90, 30, 320, 220, 55, 0, 170, 120, 290]
 
-export function moduleHue(index: number): number {
+function moduleHue(index: number): number {
   return HUES[index % HUES.length]
-}
-
-export function memberRefKey(kind: MemberKind, name: string): string {
-  return `${kind}.${name}`
 }
 
 interface SchemaLocation {

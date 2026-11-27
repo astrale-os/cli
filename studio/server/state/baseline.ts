@@ -1,13 +1,13 @@
 /**
- * baseline.ts — the PRIMARY change tracker. On first launch we capture a
- * versioned snapshot (canonical revision/root, render IR, and a content hash of
- * the "anatomy + schema fileset")
+ * baseline.ts — the PRIMARY change tracker. The first bundle that holds a Schema
+ * is captured as a versioned snapshot (canonical revision/root, render IR, and a
+ * content hash of the "anatomy + schema fileset")
  * under `.domain-studio/.cache/baseline/`. Subsequent runs diff the live state
  * against that baseline to compute a ChangeSet. Git (git.ts) only enriches when
  * a real repo is present; the fixtures are not repos, so baseline stands alone.
  *
  * Layout under `.cache/baseline/`:
- *   ir.json           — the captured render SchemaIR (or null)
+ *   ir.json           — the captured render SchemaIR
  *   schema-root.json  — the admitted portable V1 root (or null)
  *   files.json        — { [relpathFromRoot]: sha256 }
  *   meta.json         — format/projection versions, revision, capturedAt
@@ -16,12 +16,14 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import type { SchemaIR, SchemaRevision } from '../../shared/contracts/schema'
-import type { ChangeSet, FileChange, SchemaChange } from '../../shared/contracts/workspace'
+import type { SchemaIR, SchemaRevision, StudioSchemaBundle } from '../../shared/contracts/schema'
+import type { ChangeSet, FileChange, SchemaComparison } from '../../shared/contracts/workspace'
+import type { DomainHandle } from '../domain/registry'
 
 import { isSchemaRevision, STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/contracts/schema'
+import { unreadSchemaReason } from '../introspect/bundle'
 import { isCanonicalDomainSchemaV1 } from '../introspect/canonical-schema'
-import { diffSchemas, structuralStatusOf } from '../introspect/diff'
+import { diffSchemas } from '../introspect/diff'
 import { decodeSchemaIR } from '../introspect/schema-ir-json'
 import { asFiniteNumber, asJsonRecord, asStringRecord, parseJson } from '../json'
 import { readState, writeJson } from './store'
@@ -147,7 +149,7 @@ export function hashAnatomyFiles(
 interface Baseline {
   formatVersion: typeof BASELINE_FORMAT_VERSION
   projectionVersion: number
-  ir: SchemaIR | null
+  ir: SchemaIR
   /** Admitted canonical root only; null for legacy/preview snapshots. */
   root: unknown | null
   revision: SchemaRevision | null
@@ -156,7 +158,7 @@ interface Baseline {
 }
 
 interface BaselineSchemaSnapshot {
-  ir: SchemaIR | null
+  ir: SchemaIR
   /** Admitted canonical root only; preview roots must be passed as null. */
   root: unknown | null
   revision: SchemaRevision | null
@@ -197,10 +199,6 @@ function decodeBaselineMeta(value: unknown): BaselineMeta | undefined {
   }
 }
 
-function decodeNullableSchemaIR(value: unknown): SchemaIR | null | undefined {
-  return value === null ? null : decodeSchemaIR(value)
-}
-
 function decodeNullableSchemaRoot(value: unknown): unknown | null | undefined {
   return value === null ? null : isCanonicalDomainSchemaV1(value) ? value : undefined
 }
@@ -236,7 +234,8 @@ export function captureBaseline(
 /**
  * Load a current baseline. Older/unrecognised formats and render-projection
  * versions are explicitly invalidated so adapter changes cannot masquerade as
- * authored schema changes. The lifecycle will seed a replacement snapshot.
+ * authored schema changes; so is a snapshot without a Schema, which would diff
+ * nothing against every later one. The lifecycle will seed a replacement snapshot.
  */
 export function loadBaseline(root: string): Baseline | null {
   const meta = readBaselineJson(root, `${BASE}/meta.json`, decodeBaselineMeta)
@@ -247,11 +246,11 @@ export function loadBaseline(root: string): Baseline | null {
   ) {
     return null
   }
-  const ir = readBaselineJson(root, `${BASE}/ir.json`, decodeNullableSchemaIR)
+  const ir = readBaselineJson(root, `${BASE}/ir.json`, decodeSchemaIR)
   const schemaRoot = readBaselineJson(root, `${BASE}/schema-root.json`, decodeNullableSchemaRoot)
   const files = readBaselineJson(root, `${BASE}/files.json`, asStringRecord)
   if (ir === undefined || schemaRoot === undefined || files === undefined) return null
-  if (meta.revision !== null && (schemaRoot === null || ir === null)) return null
+  if (meta.revision !== null && schemaRoot === null) return null
   if (meta.revision === null && schemaRoot !== null) return null
   return {
     formatVersion: BASELINE_FORMAT_VERSION,
@@ -262,6 +261,27 @@ export function loadBaseline(root: string): Baseline | null {
     files,
     capturedAt: meta.capturedAt,
   }
+}
+
+/**
+ * Seed the baseline from `bundle` unless one is held already. Only a bundle that holds a
+ * Schema seeds it: a failed extraction holds none, so the Domain stays without a baseline
+ * until an extraction succeeds, instead of keeping a snapshot that hides every change.
+ */
+export function seedBaseline(
+  handle: Pick<DomainHandle, 'root' | 'schemaDirName' | 'domainFile'>,
+  bundle: StudioSchemaBundle | null,
+): void {
+  if (!bundle?.ir || loadBaseline(handle.root)) return
+  captureBaseline(
+    handle.root,
+    {
+      ir: bundle.ir,
+      root: bundle.schemaMode === 'canonical-admitted' ? (bundle.schemaRoot ?? null) : null,
+      revision: bundle.schemaRevision ?? null,
+    },
+    hashAnatomyFiles(handle.root, handle.schemaDirName, handle.domainFile),
+  )
 }
 
 /** Compare two file-hash maps into added/modified/removed FileChange[]. */
@@ -278,67 +298,88 @@ function diffFiles(prev: Record<string, string>, next: Record<string, string>): 
   return out
 }
 
-/** A compact human-readable summary of schema changes (baseline source fallback for diff text). */
-function summarizeSchemaChanges(changes: SchemaChange[]): string {
-  if (changes.length === 0) return 'No schema changes.'
-  return changes
-    .map((c) => {
-      const detail = c.detail ? `: ${c.detail}` : ''
-      return `${c.kind} ${c.target}${detail}`
-    })
-    .join('\n')
+/** What the current extraction holds: its Schema and admitted revision, or why it holds none. */
+export type CurrentSchema =
+  | { state: 'read'; ir: SchemaIR; revision: SchemaRevision | null }
+  | { state: 'unread'; reason: string }
+
+/** The current extraction of a bundle, as `computeChanges` compares it. */
+export function currentSchemaOf(bundle: StudioSchemaBundle | null): CurrentSchema {
+  return bundle?.ir
+    ? { state: 'read', ir: bundle.ir, revision: bundle.schemaRevision ?? null }
+    : { state: 'unread', reason: unreadSchemaReason(bundle) }
+}
+
+/** The comparison in a few lines: the baseline source's diff text, and the handoff's digest. */
+export function schemaComparisonText(schema: SchemaComparison): string {
+  switch (schema.state) {
+    case 'unchanged':
+      return 'No schema changes.'
+    case 'unread':
+      return `The Schema cannot be read, so nothing is compared: ${schema.reason}`
+    case 'changed':
+      return schema.changes
+        .map((c) => {
+          const detail = c.detail ? `: ${c.detail}` : ''
+          return `${c.kind} ${c.target}${detail}`
+        })
+        .join('\n')
+  }
+}
+
+function compare(
+  baseline: { ir: SchemaIR; revision: SchemaRevision | null } | null,
+  current: CurrentSchema,
+): SchemaComparison {
+  if (current.state === 'unread') return current
+  if (!baseline || (baseline.revision && current.revision === baseline.revision))
+    return { state: 'unchanged' }
+  const changes = diffSchemas(baseline.ir, current.ir)
+  return changes.length === 0 ? { state: 'unchanged' } : { state: 'changed', changes }
 }
 
 /**
- * Compute the live ChangeSet against the captured baseline. On first launch
- * (no baseline yet) this returns an empty, 'none' ChangeSet with
- * hasBaseline:false so the UI shows "no changes" and the caller can then
- * capture an initial baseline.
+ * Compute the live ChangeSet against the captured baseline. Without one (no bundle has held a
+ * Schema yet) nothing is compared and `hasBaseline` is false. A current extraction that holds no
+ * Schema is unread, with the extraction's reason, whether or not a baseline is held: a failed
+ * extraction never reads as "no changes".
  */
 export function computeChanges(
   root: string,
-  currentIr: SchemaIR | null,
+  current: CurrentSchema,
   currentFiles: Record<string, string>,
-  opts: {
-    currentRevision?: SchemaRevision | null
-    git: { hasGit: boolean; diffText?: string }
-  },
+  opts: { git: { hasGit: boolean; diffText?: string } },
 ): ChangeSet {
   const { hasGit } = opts.git
   const source: ChangeSet['source'] = hasGit ? 'git' : 'baseline'
   const baseline = loadBaseline(root)
+  const currentRevision =
+    current.state === 'read' && current.revision ? { currentRevision: current.revision } : {}
+  const schema = compare(baseline, current)
 
   if (!baseline) {
     return {
       source,
       hasGit,
       hasBaseline: false,
-      schemaChanges: [],
+      schema,
       fileChanges: [],
-      structuralStatus: 'none',
-      ...(opts.currentRevision ? { currentRevision: opts.currentRevision } : {}),
+      ...currentRevision,
     }
   }
 
-  const schemaChanges =
-    baseline.revision && opts.currentRevision === baseline.revision
-      ? []
-      : diffSchemas(baseline.ir, currentIr)
-  const structuralStatus = structuralStatusOf(schemaChanges)
   const fileChanges = diffFiles(baseline.files, currentFiles)
-
-  const schemaDiffText = hasGit ? opts.git.diffText : summarizeSchemaChanges(schemaChanges)
+  const schemaDiffText = hasGit ? opts.git.diffText : schemaComparisonText(schema)
 
   return {
     source,
     hasGit,
     hasBaseline: true,
-    schemaChanges,
+    schema,
     fileChanges,
     schemaDiffText,
-    structuralStatus,
     ...(baseline.revision ? { baselineRevision: baseline.revision } : {}),
-    ...(opts.currentRevision ? { currentRevision: opts.currentRevision } : {}),
+    ...currentRevision,
     baselineCapturedAt: baseline.capturedAt,
   }
 }

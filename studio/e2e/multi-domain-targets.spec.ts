@@ -1,67 +1,68 @@
-import { expect, test, PEER_ID } from './test'
+import { expect, PEER_ID, sceneBox, test } from './test'
 
-test('Ask and comments keep the owning domain for a homonymous workspace node', async ({
+/**
+ * Two Domains of the Workspace both declare a Class `Company`. Ask and comments aimed at the
+ * other Domain's Company belong to that Domain: the Ask target names it, the comment is written
+ * to its comments, anchored on its Class.
+ */
+test('Ask and comments keep the owning Domain for a homonymous Class', async ({
   page,
   request,
 }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Schema', exact: true }).click()
-  // The rail's eye puts another workspace domain on the canvas.
-  await page.getByRole('button', { name: 'Show ops.studio-demo.astrale.ai on the canvas' }).click()
-
-  const peerNode = page.locator(`.react-flow__node[data-id="workspace:${PEER_ID}:class.Company"]`)
-  await expect(peerNode).toBeVisible()
-  await expect(page.getByTestId(`workspace-domain-${PEER_ID}`)).toBeVisible()
+  await expect(page.getByTestId('schema-level')).toBeVisible()
+  const domain = page.getByTestId('level-domain')
+  await domain.click()
+  await page.getByRole('menuitemradio', { name: 'ops.studio-demo.astrale.ai' }).click()
+  await expect(domain).toContainText('ops.studio-demo.astrale.ai')
+  const company = sceneBox(page, 'class.Company')
+  await expect(company).toBeVisible({ timeout: 60_000 })
+  await expect(sceneBox(page, 'class.Invoice')).toHaveCount(0)
 
   await page.keyboard.press('a')
-  await peerNode.click()
+  await company.click()
   const askDot = page.getByTitle('Ask', { exact: true })
   await expect(page.getByPlaceholder('Ask about Company…')).toBeVisible()
   await expect(askDot).toBeVisible()
 
-  const alignedWithPeer = async () => {
-    const node = await peerNode.boundingBox()
+  // the dot sits on the card's corner, and stays there through a zoom
+  const onCorner = async () => {
+    const card = await company.boundingBox()
     const dot = await askDot.boundingBox()
-    if (!node || !dot) return false
-    const dotCenter = { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }
+    if (!card || !dot) return false
+    const center = { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }
     return (
-      Math.abs(dotCenter.x - (node.x + node.width - 10)) < 2 &&
-      Math.abs(dotCenter.y - (node.y + 10)) < 2
+      Math.abs(center.x - (card.x + card.width - 10)) < 2 && Math.abs(center.y - (card.y + 10)) < 2
     )
   }
-  await expect.poll(alignedWithPeer).toBe(true)
-
-  const beforeZoom = (await peerNode.boundingBox())!
-  await page.mouse.move(beforeZoom.x + beforeZoom.width / 2, beforeZoom.y + beforeZoom.height / 2)
+  await expect.poll(onCorner).toBe(true)
+  const before = (await company.boundingBox())!
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2)
   await page.mouse.wheel(0, -180)
   await expect
     .poll(async () => {
-      const afterZoom = await peerNode.boundingBox()
-      return !!afterZoom && Math.abs(afterZoom.width - beforeZoom.width) > 3
+      const after = await company.boundingBox()
+      return !!after && Math.abs(after.width - before.width) > 3
     })
     .toBe(true)
-  await expect.poll(alignedWithPeer).toBe(true)
+  await expect.poll(onCorner).toBe(true)
   await page.keyboard.press('Escape')
   await expect(askDot).toHaveCount(0)
 
   await page.keyboard.press('c')
-  await peerNode.click()
+  await company.click()
   const composer = page.getByPlaceholder('Note for the agent…')
   await expect(composer).toBeVisible()
   await composer.fill('Peer-domain targeting check')
-
-  const responsePromise = page.waitForResponse(
+  const posted = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       new URL(response.url()).pathname === `/api/domain/${PEER_ID}/comments`,
   )
   await page.getByRole('button', { name: 'Comment', exact: true }).click()
-  const response = await responsePromise
+  const response = await posted
   expect(response.ok()).toBe(true)
-  const comment = (await response.json()) as {
-    id: string
-    anchorRefs: Array<{ ref: string }>
-  }
+  const comment = (await response.json()) as { id: string; anchorRefs: Array<{ ref: string }> }
   expect(comment.anchorRefs).toContainEqual(expect.objectContaining({ ref: 'class.Company' }))
 
   const cleanup = await request.post(`/api/domain/${PEER_ID}/comments`, {

@@ -1,0 +1,127 @@
+/*
+ * The rule reader drawn in the Studio's ink: every `--vr-*` the package's stylesheet reads,
+ * restated on the element that holds a reading from the Studio's own tokens, so the Studio's theme
+ * (`.dark` on <html>) decides both, whatever the system's. Only the entity hues are the package's
+ * own: the Studio has no eight-hue palette for the entities a reading names.
+ */
+@import '@astrale-os/visual/styles.css';
+
+.studio-rules {
+  --vr-ink: var(--foreground);
+  --vr-strong: var(--foreground);
+  --vr-surface: var(--card);
+  --vr-line: var(--border);
+  --vr-accent: var(--primary);
+  --vr-positive: var(--success);
+  --vr-negative: var(--destructive);
+  --vr-caution: var(--warning);
+  --vr-muted: var(--muted-foreground);
+  --vr-logic: color-mix(in oklab, var(--primary) 55%, var(--foreground));
+  --vr-chip-bg: var(--muted);
+  --vr-focus: var(--ring);
+  --vr-mark-positive: color-mix(in oklab, var(--success) 15%, transparent);
+  --vr-mark-negative: color-mix(in oklab, var(--destructive) 14%, transparent);
+  --vr-mark-caution: color-mix(in oklab, var(--warning) 20%, transparent);
+  --vr-mark-focus: color-mix(in oklab, var(--ring) 15%, transparent);
+  --vr-tint-0: color-mix(in oklab, var(--foreground) 2%, var(--card));
+  --vr-tint-1: color-mix(in oklab, var(--foreground) 4%, var(--card));
+  --vr-tint-2: color-mix(in oklab, var(--foreground) 6%, var(--card));
+  --vr-tint-3: color-mix(in oklab, var(--foreground) 8%, var(--card));
+  --vr-mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+
+  --vr-entity-0: #1d64c4;
+  --vr-entity-1: #a4520a;
+  --vr-entity-2: #0b7366;
+  --vr-entity-3: #b8326a;
+  --vr-entity-4: #4a7412;
+  --vr-entity-5: #8b3aa8;
+  --vr-entity-6: #0a6d94;
+  --vr-entity-7: #806100;
+}
+
+.dark .studio-rules {
+  --vr-entity-0: #7fb0ff;
+  --vr-entity-1: #f5a65b;
+  --vr-entity-2: #4fd1bd;
+  --vr-entity-3: #ff8fb8;
+  --vr-entity-4: #a6d65a;
+  --vr-entity-5: #e09cf5;
+  --vr-entity-6: #5cc4f0;
+  --vr-entity-7: #e6c35c;
+}
+
+/* A list of readings states the reader's closing note once, at its foot (`SiteList`), not under each row. */
+.studio-rules-row .vr-note {
+  display: none;
+}
+
+/*
+ * In the Inspector the word card docks at the page's foot, inside the panel: the frame is the
+ * containing block of the card's fixed position, so it never covers the panel's header or the
+ * words around the one it explains.
+ */
+.inspector-frame {
+  transform: translateZ(0);
+}
+.inspector-frame .vr-word-card {
+  top: auto;
+  right: 12px;
+  /* above the band the Studio's agent dock floats in, over the panel's lower edge */
+  bottom: 76px;
+  left: 12px;
+  width: auto;
+  max-width: none;
+}
+
+/*
+ * A Figure wider than its room scrolls sideways (`FigureFrame`); its title line stays in view and
+ * wraps to the room instead of widening the Figure. An edge with more of the Figure beyond it fades
+ * below the title line (`--figure-head`), so what scrolls never reads as cut and the title never
+ * fades.
+ */
+@property --figure-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --figure-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes studio-figure-edges {
+  0% {
+    --figure-fade-start: 0px;
+    --figure-fade-end: 40px;
+  }
+  8%,
+  92% {
+    --figure-fade-start: 40px;
+    --figure-fade-end: 40px;
+  }
+  100% {
+    --figure-fade-start: 40px;
+    --figure-fade-end: 0px;
+  }
+}
+.studio-figure .vr-figure-host {
+  container-type: inline-size;
+  scrollbar-width: thin;
+  mask-image:
+    linear-gradient(#000 var(--figure-head, 0px), transparent var(--figure-head, 0px)),
+    linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--figure-fade-start),
+      #000 calc(100% - var(--figure-fade-end)),
+      transparent 100%
+    );
+  animation: studio-figure-edges linear both;
+  animation-timeline: scroll(self inline);
+}
+.studio-figure .vr-figure > .vr-region > .vr-scope-head {
+  position: sticky;
+  inset-inline-start: 0;
+  max-width: 100cqi;
+  flex-wrap: wrap;
+}

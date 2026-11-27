@@ -2,7 +2,7 @@ import { X } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { type SectionKey, useUI } from '@/lib/store'
+import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 interface TourStep {
@@ -11,8 +11,8 @@ interface TourStep {
   /** Where the spotlight lands: the first selector that is on screen wins. None on
    *  screen — a collapsed rail, a docked panel — and the card simply sits centred. */
   targets?: string[]
-  /** The section the step is about, opened before it is shown. */
-  section?: SectionKey
+  /** The step is about the Domain's Schema, opened before it is shown. */
+  schema?: true
 }
 
 /** Seven steps at most: the tour names the building blocks and gets out of the way. */
@@ -23,23 +23,20 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     title: 'Domains',
-    body: 'A domain is one area of a business — issue tracking, billing, a CRM — with everything it needs, and it exposes an application. Creating or updating one takes three moves: build it (TypeScript code, shaped here), deploy it (its code goes live at a URL), then install it on an instance (its schema joins that graph). This rail lists the domains in your workspace.',
-    targets: ['[data-testid="modules-sidebar"]'],
-    section: 'schema',
+    body: 'A domain is one area of a business — issue tracking, billing, a CRM — with everything it needs, and it exposes an application. Creating or updating one takes three moves: build it (TypeScript code, shaped here), deploy it (its code goes live at a URL), then install it on an instance (its schema joins that graph). The bar names the domain you are reading; click it to switch.',
+    targets: ['[data-testid="level-domain"]'],
+    schema: true,
   },
   {
     title: 'The schema',
     body: 'What a domain adds to the graph. Node classes are the things that exist; edge classes are the relationships between them; abstract classes are traits several classes share, like Named. A function is an operation you can call — open an issue, invite a member — guarded by its policies. A function attached to a class is called a method. Click a card to see all of it.',
-    targets: [
-      '[data-testid="workspace-schema-canvas"]',
-      '[data-testid="workspace-schema-section"]',
-    ],
-    section: 'schema',
+    targets: ['[data-testid="scene-canvas"]'],
+    schema: true,
   },
   {
-    title: 'Four readings of one domain',
-    body: 'Schema is the model. Core is the reference data installed with the domain, there from day one — a built-in group, for instance. Tests holds demo datasets: small example graphs that tell the domain’s story, on which you also check who may do what. Process lists its functions — actions and workflows — and its views.',
-    targets: ['[data-tour="sections"]'],
+    title: 'Three questions, one map',
+    body: 'Structure shows what exists: the classes and their relationships. Behavior shows what happens: the functions, what each one changes, and the integrations they call. Rules — who may see and change what — comes next. Press 1, 2 or 3; whatever you selected stays selected. Open a dataset from the bar to read the domain’s demo data and check on it who may do what.',
+    targets: ['[data-tour="lenses"]'],
   },
   {
     title: 'Comment on anything',
@@ -120,7 +117,7 @@ function placeCard(target: Rect | null, cardHeight: number): { top: number; left
 export function Tour() {
   const open = useUI((s) => s.tourOpen)
   const setOpen = useUI((s) => s.setTourOpen)
-  const setSection = useUI((s) => s.setSection)
+  const openSchema = useUI((s) => s.openSchema)
   const [index, setIndex] = useState(0)
   const [target, setTarget] = useState<Rect | null>(null)
   const [card, setCard] = useState<HTMLDivElement | null>(null)
@@ -137,8 +134,8 @@ export function Tour() {
   }, [open])
 
   useEffect(() => {
-    if (open && step?.section) setSection(step.section)
-  }, [open, step, setSection])
+    if (open && step?.schema) openSchema()
+  }, [open, step, openSchema])
 
   // Targets move — a lazy section landing, a canvas fitting its view, a window resized —
   // so the spotlight follows the element each frame rather than trusting one measure.
@@ -194,6 +191,7 @@ export function Tour() {
       {target ? (
         <div
           aria-hidden
+          data-testid="tour-spotlight"
           className="pointer-events-none absolute rounded-lg ring-2 ring-primary/70 transition-all duration-300 ease-out"
           style={{ ...target, boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.5)' }}
         />

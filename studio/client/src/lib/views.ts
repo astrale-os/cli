@@ -3,10 +3,16 @@
  * (bundle.ir.views) and the client implementation (anatomy.client.routes) to produce
  * the studio's view model: each view and its drift status. Every View belongs to its
  * Domain; none is bound to a Class. Pure derivation over server-provided ground truths.
+ * A Publication's bundle holds its Schema only: its Views are the ones it declares.
  */
 import type { DomainAnatomy, StudioSchemaBundle, ViewInfo } from '@shared/contracts/schema'
 
+import { publicationOf } from '@shared/contracts/versions'
+
 type ViewDrift = 'ok' | 'missing-impl' // SPA view declares a mount that the client `ROUTES` doesn't implement
+
+/** The comment and Ask anchor of a View: `view.<slug>`. */
+export const viewAnchor = (slug: string) => `view.${slug}`
 
 export interface ViewModel extends ViewInfo {
   drift: ViewDrift
@@ -21,6 +27,15 @@ export interface ViewsModel {
 
 export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBundle): ViewsModel {
   const ir = bundle?.ir
+  if (bundle && publicationOf(bundle.domainId)) {
+    const all = Object.entries(ir?.views ?? {}).map(([slug, view]) => ({
+      slug,
+      kind: 'unknown' as const,
+      ...(view.description === undefined ? {} : { description: view.description }),
+      drift: 'ok' as const,
+    }))
+    return { all, orphanRoutes: [], hasDrift: false }
+  }
   const views = anatomy?.views ?? []
   const routes = anatomy?.client.routes ?? {}
 

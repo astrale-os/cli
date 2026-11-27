@@ -1,158 +1,171 @@
-import type { StudioDataset, StudioSchemaBundle } from '../shared/contracts/schema'
+import type { APIRequestContext } from '@playwright/test'
 
-import { dockWorkspacePanel, expect, type Page, test } from './test'
+import type { ScenarioStore } from '../shared/contracts/scenarios'
+import type { StudioDataset } from '../shared/contracts/schema'
+
+import { revisionOf } from '../shared/contracts/scenarios'
+import {
+  FIXTURE_ID,
+  expect,
+  indexRail,
+  inspector,
+  lensButton,
+  openSchema,
+  sceneBox,
+  test,
+  type Page,
+} from './test'
+
+/**
+ * A Policy judged on a dataset. Selected on the Schema's Rules lens, it is carried into the Data
+ * level's Rules lens, on a dataset of its Domain: the panel says how many pairs — an identity of
+ * the dataset, or anyone, and a Node or Edge the Policy is decided over — it admits, each pair a
+ * sentence; the map lights who it admits to what, and a pair lit, that pair alone; the Kernel's
+ * verdicts where the Policy sits pin as Scenario steps. The datasets themselves are choices in
+ * the dataset crumb, and the Rules lens's Index lists the Domain's Policies.
+ *
+ * The fixture's `support-desk` dataset holds Acme, Ann and Bob who work there, the ticket each
+ * raised (`printer` by Ann, `login` by Bob) and an invoice; `mayReadTicket` admits a ticket's
+ * reporter.
+ */
 
 const origin = 'crm.studio-demo.astrale.ai'
-const policyRef = (name: string) => ({ origin, kind: 'policy' as const, name })
+const POLICY = `policy.${origin}:policy.mayReadTicket`
+const scenarios = `/api/domain/${encodeURIComponent(FIXTURE_ID)}/scenarios`
+const panel = (page: Page) => page.locator('[data-data-panel]')
+const pair = (page: Page, id: string) => panel(page).locator(`[data-policy-pair="${id}"]`)
 
-/** One outline row, by its path from the outline's root. */
-const outlineRow = (page: Page, id: string) =>
-  page.getByTestId('workspace-domain-tree').locator(`[data-outline-id="${id}"]`)
-
-/** Opens a row's fold without selecting what the row opens. */
-const unfold = (page: Page, id: string) =>
-  outlineRow(page, id).locator('[data-outline-toggle]').click()
-
-test('a method names the rule on calling it, and root views sit beside the modules', async ({
-  page,
-}) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
-  const tree = page.getByTestId('workspace-domain-tree')
-  // what runs, and the rule on calling it, is read through the functional lens
-  await tree.getByRole('radio', { name: 'Functional' }).click()
-  await unfold(page, 'module:billing/function:Invoice.settle')
-  await outlineRow(page, 'module:billing/function:Invoice.settle/policy').click()
-  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
-  await expect(panel.getByRole('heading', { name: 'mayManageInvoice', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Close panel' }).click()
-  const rootView = outlineRow(page, 'root/view:overview')
-  await expect(rootView).toHaveAttribute('aria-level', '1')
-  await rootView.click()
-  await expect(panel.getByRole('heading', { name: 'overview', exact: true })).toBeVisible()
-})
-
-async function policyScenario(page: Page) {
-  await page.route('**/api/domain/*/bundle', async (route) => {
-    const response = await route.fetch()
-    const bundle = (await response.json()) as StudioSchemaBundle
-    if (bundle.ir?.domain === origin) {
-      for (const [ref, path] of Object.entries({
-        'class.Invoice': 'classes/invoice.ts',
-        'policy.mayManageInvoice': 'policies/may-manage-invoice.ts',
-        'function.closeBilling': 'functions/close-billing.ts',
-      }))
-        bundle.overlay.sourceSpans[ref] = {
-          file: 'schema/modules/billing/' + path,
-          startLine: 1,
-          endLine: 2,
-        }
-      bundle.ir.policies.manageBilling = { expression: { allOf: [policyRef('mayManageInvoice')] } }
-      bundle.ir.policies.administerBilling = { expression: { anyOf: [policyRef('manageBilling')] } }
-      bundle.ir.classes.Invoice!.policies = { read: policyRef('administerBilling') }
-      bundle.ir.functions.closeBilling = {
-        name: 'closeBilling',
-        auth: 'authorized',
-        input: { type: 'object' },
-        output: { mode: 'value', schema: { type: 'boolean' } },
-        policy: {
-          check: policyRef('administerBilling'),
-          object: { kind: 'input', field: 'invoice' },
-        },
-      }
-    }
-    await route.fulfill({ response, json: bundle })
-  })
+async function clearScenarios(request: APIRequestContext) {
+  const store = (await (await request.get(scenarios)).json()) as ScenarioStore
+  for (const scenario of store.scenarios)
+    await request.post(scenarios, {
+      data: { action: 'delete', id: scenario.id, revision: revisionOf(store, scenario.id) },
+    })
 }
 
-test('a policy lists its direct and indirect consumers, and each link opens both ways', async ({
-  page,
-  request,
-}) => {
-  await policyScenario(page)
-  await dockWorkspacePanel(request, 'left')
-  await page.goto('/')
-  await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
-  const tree = page.getByTestId('workspace-domain-tree')
-  // `modules/billing` is one module, not a `modules` folder holding `billing`
-  await expect(tree.getByRole('treeitem', { name: 'modules', exact: true })).toHaveCount(0)
-  await expect(outlineRow(page, 'module:modules/billing/class:Invoice')).toBeVisible()
-  await tree.getByRole('radio', { name: 'Functional' }).click()
-  await unfold(page, 'module:modules/billing/function:Invoice.settle')
-  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
-  const heading = (name: string) => panel.getByRole('heading', { name, exact: true })
-  const link = (name: string) => panel.getByRole('button', { name, exact: true }).first()
-  const usages = panel
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { name: 'Used by', exact: true }) })
-  const method = panel.locator('[data-anchor-ref="class.Invoice.method.settle"]')
-  const openPolicy = () =>
-    outlineRow(page, 'module:modules/billing/function:Invoice.settle/policy').click()
-  const closePanel = () => page.getByRole('button', { name: 'Close panel' }).click()
+/** Opens the Schema's Rules lens and selects a Policy from its Index row. */
+async function selectPolicy(page: Page, name: string) {
+  await openSchema(page)
+  await page.keyboard.press('3')
+  await expect(lensButton(page, 'rules')).toHaveAttribute('aria-pressed', 'true')
+  await indexRail(page)
+    .locator(`[data-index-row^="policy."][data-index-row$=":policy.${name}"]`)
+    .click()
+}
 
-  await openPolicy()
-  await expect(heading('mayManageInvoice')).toBeVisible()
-  for (const consumer of [
-    'manageBilling',
-    'administerBilling',
-    'Invoice · read',
-    'Invoice.settle',
-    'closeBilling',
-  ])
-    await expect(usages).toContainText(consumer)
+test.describe('a Policy carried to a dataset', () => {
+  test.beforeEach(async ({ request }) => clearScenarios(request))
+  test.afterEach(async ({ request }) => clearScenarios(request))
 
-  // each consumer opens: a Class, a Method expanded inside it, a Function, a composing Policy
-  await usages.getByRole('button', { name: 'Invoice', exact: true }).first().click()
-  await expect(heading('Invoice')).toBeVisible()
-  await expect(method.locator('[data-method-detail]')).toHaveCount(0)
-  await openPolicy()
-  await usages.getByRole('button', { name: 'settle', exact: true }).click()
-  await expect(method.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true')
-  await expect(method.locator('[data-method-detail]')).toBeInViewport()
-  await openPolicy()
-  await usages.getByRole('button', { name: 'closeBilling', exact: true }).click()
-  await expect(heading('closeBilling')).toBeVisible()
-  await openPolicy()
-  await usages.getByRole('button', { name: 'administerBilling', exact: true }).first().click()
-  await expect(heading('administerBilling')).toBeVisible()
-  await link('manageBilling').click()
-  await expect(heading('manageBilling')).toBeVisible()
+  test('says what it admits pair by pair, lights it on the map, and pins a pair as a step', async ({
+    page,
+    request,
+  }) => {
+    await selectPolicy(page, 'mayReadTicket')
+    await inspector(page).locator(`[data-policy-on-dataset="${POLICY}"]`).click()
 
-  // and back: a Class, a Method and a Function name the Policy that guards them
-  await closePanel()
-  await page.getByText('Invoice', { exact: true }).first().click()
-  await link('administerBilling').click()
-  await expect(heading('administerBilling')).toBeVisible()
-  await closePanel()
-  await page.getByText('Invoice', { exact: true }).first().click()
-  await method.getByRole('button').first().click()
-  await method.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
-  await expect(heading('mayManageInvoice')).toBeVisible()
-  await closePanel()
-  await outlineRow(page, 'module:modules/billing/function:closeBilling').click()
-  await link('administerBilling').click()
-  await expect(heading('administerBilling')).toBeVisible()
+    // the selection carries: the dataset opens under Rules on the Policy
+    const level = page.getByTestId('data-level')
+    await expect(level).toHaveAttribute('data-state', 'ready')
+    await expect(level).toHaveAttribute('data-lens', 'rules')
+    await expect(page.getByTestId('level-dataset')).toContainText('Support desk')
+    const admits = panel(page).locator('[data-policy-admits]')
+    await expect(admits).toHaveAttribute('data-policy-admits', '2/6')
+    await expect(admits).toContainText('mayReadTicket admits 2 of 6 pairs.')
+    await expect(pair(page, 'ann|printer')).toHaveAttribute('data-outcome', 'allowed')
+    await expect(pair(page, 'ann|printer')).toContainText('mayReadTicket admits ann on printer.')
+    await expect(pair(page, 'bob|login')).toHaveAttribute('data-outcome', 'allowed')
+    await expect(pair(page, 'ann|login')).toContainText(
+      'mayReadTicket does not admit ann on login.',
+    )
+    await expect(pair(page, '@anyone|login')).toHaveAttribute('data-outcome', 'refused')
+    // the Index lists the Domain's Policies, the one carried selected
+    await expect(indexRail(page).locator(`[data-index-row="${POLICY}"]`)).toBeVisible()
 
-  // the Process section and a Dataset's policy details carry the same links
-  await page.getByRole('button', { name: 'Process', exact: true }).click()
-  await page.getByRole('button', { name: 'administerBilling', exact: true }).click()
-  await link('manageBilling').click()
-  await link('mayManageInvoice').click()
-  await link('Test on a Dataset').click()
-  await expect(heading('mayManageInvoice')).toBeVisible()
-  // a consuming Policy opens in place, still on the Dataset
-  await usages.getByRole('button', { name: 'administerBilling', exact: true }).first().click()
-  await expect(heading('administerBilling')).toBeVisible()
-  await link('manageBilling').click()
-  await link('mayManageInvoice').click()
-  await usages.getByRole('button', { name: 'settle', exact: true }).click()
-  await expect(heading('Invoice')).toBeVisible()
-  await expect(method.locator('[data-method-detail]')).toBeInViewport()
+    // the map lights who it admits to what
+    for (const node of ['ann', 'printer', 'bob', 'login'])
+      await expect(sceneBox(page, `core.node.${node}`)).toHaveAttribute('data-emphasis', 'lit')
+    await expect(sceneBox(page, 'core.node.invoice-1')).toHaveAttribute('data-emphasis', 'dim')
+    // one layer marks a card at a time: what anyone reads stands aside while the Policy is lit
+    const readAs = page.getByTestId('data-identity')
+    await expect(readAs).toHaveAttribute('data-set-aside', '')
+    await expect(readAs).toContainText('Set aside while mayReadTicket is selected')
+    await expect(readAs.getByTestId('data-read-summary')).toHaveCount(0)
+    await expect(sceneBox(page, 'core.node.login')).not.toContainText("can't read")
+    await expect(sceneBox(page, 'core.node.login')).not.toHaveAttribute('data-muted', 'true')
+
+    // a pair lit lights that pair alone, and says what the Kernel decides where the Policy sits
+    await pair(page, 'ann|login').locator('[data-pair-light]').click()
+    await expect(pair(page, 'ann|login')).toHaveAttribute('data-lit', '')
+    await expect(sceneBox(page, 'core.node.ann')).toHaveAttribute('data-emphasis', 'lit')
+    await expect(sceneBox(page, 'core.node.login')).toHaveAttribute('data-emphasis', 'lit')
+    await expect(sceneBox(page, 'core.node.printer')).toHaveAttribute('data-emphasis', 'dim')
+    const verdicts = pair(page, 'ann|login').locator('[data-pair-verdicts]')
+    await expect(verdicts).toContainText('ann may not read login.')
+
+    // the verdict pins as a step asked by the pair's identity
+    await verdicts.locator('[data-verdict-pin="read:login"]').click()
+    await page.locator('[data-pin-menu="read:login"] [data-pin-new]').click()
+    await expect
+      .poll(async () => {
+        const store = (await (await request.get(scenarios)).json()) as ScenarioStore
+        return store.scenarios.flatMap((scenario) =>
+          scenario.steps.map(({ does, on, as, expect }) => ({ does, on, as, expect })),
+        )
+      })
+      .toEqual([{ does: 'read', on: { node: 'login' }, as: 'ann', expect: 'refused' }])
+
+    // the address carries the Policy and the pair lit: a reload lands on both
+    await page.reload()
+    await expect(level).toHaveAttribute('data-state', 'ready', { timeout: 60_000 })
+    await expect(pair(page, 'ann|login')).toHaveAttribute('data-lit', '')
+    await expect(admits).toHaveAttribute('data-policy-admits', '2/6')
+    // a pair lit sets them aside as well
+    await expect(sceneBox(page, 'core.node.login')).not.toContainText("can't read")
+    await expect(readAs).toHaveAttribute('data-set-aside', '')
+
+    // and back to the Schema, on the same Policy
+    await panel(page).locator(`[data-policy-schema="${POLICY}"]`).click()
+    await expect(page.getByTestId('schema-level')).toBeVisible()
+    await expect(inspector(page).locator(`[data-policy-on-dataset="${POLICY}"]`)).toBeVisible()
+  })
+
+  test('the identity read as marks the map again once the Policy is no longer selected', async ({
+    page,
+  }) => {
+    await selectPolicy(page, 'mayReadTicket')
+    await inspector(page).locator(`[data-policy-on-dataset="${POLICY}"]`).click()
+    await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
+    const readAs = page.getByTestId('data-identity')
+    await expect(readAs).toHaveAttribute('data-set-aside', '')
+    await expect(sceneBox(page, 'core.node.login')).not.toHaveAttribute('data-muted', 'true')
+
+    await page.keyboard.press('Escape')
+    await expect(panel(page).locator('[data-policy-admits]')).toHaveCount(0)
+    await expect(readAs).not.toHaveAttribute('data-set-aside', '')
+    await expect(readAs).toContainText('reads 4 of 6 Nodes')
+    await expect(readAs.getByTestId('data-read-summary')).toBeVisible()
+    await expect(sceneBox(page, 'core.node.login')).toHaveAttribute('data-muted', 'true')
+    await expect(sceneBox(page, 'core.node.login')).toContainText("can't read")
+  })
+
+  test('a Domain with no ready dataset keeps the reader on the Schema, and says why', async ({
+    page,
+  }) => {
+    await page.route('**/api/domain/*/datasets', (route) =>
+      route.fulfill({ json: { domainId: FIXTURE_ID, datasets: [], extractedAt: '' } }),
+    )
+    await selectPolicy(page, 'mayReadTicket')
+    await inspector(page).locator(`[data-policy-on-dataset="${POLICY}"]`).click()
+    await expect(
+      page.locator('[data-sonner-toast]').filter({ hasText: 'mayReadTicket cannot be read' }),
+    ).toContainText('This Domain has no dataset that could be read.')
+    await expect(page.getByTestId('schema-level')).toBeVisible()
+    await expect(page.getByTestId('data-level')).toHaveCount(0)
+  })
 })
 
-test('datasets show only choices in the rail and the selected scenario on the canvas', async ({
-  page,
-}) => {
+test('datasets are choices in the crumb; the one open says what it holds', async ({ page }) => {
   const datasets: StudioDataset[] = ['First scenario', 'Second scenario'].map((title, i) => ({
     status: 'ready',
     path: `tests/scenario-${i}.ts`,
@@ -164,37 +177,42 @@ test('datasets show only choices in the rail and the selected scenario on the ca
     schemaMatch: true,
     references: {},
     variables: {},
-    nodes: [{ path: `company-${i}`, className: 'Company', data: { name: 'Example' } }],
+    nodes: [{ path: `company-${i}`, className: 'Company', data: { displayName: 'Example' } }],
     edges: [],
   }))
   await page.route('**/api/domain/*/datasets', (route) =>
-    route.fulfill({ json: { domainId: 'crm', datasets, extractedAt: '' } }),
+    route.fulfill({ json: { domainId: FIXTURE_ID, datasets, extractedAt: '' } }),
   )
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Tests', exact: true }).click()
-  const choices = page.getByRole('radiogroup', { name: 'Dataset drawn on the canvas' })
-  await expect(choices.getByRole('radio').first()).toHaveText('First scenario')
-  await expect(choices.getByRole('radio').last()).toHaveText('Second scenario')
-  await expect(choices).not.toContainText('Description')
-  const note = page.getByRole('complementary', { name: 'Scenario' })
-  await expect(note).toContainText('Description of scenario 0')
-  await choices.getByRole('radio', { name: 'Second scenario' }).click()
-  await expect(note).toContainText('Description of scenario 1')
-  await expect(note).not.toContainText('Description of scenario 0')
-  const policies = page
-    .locator('details')
-    .filter({ has: page.locator('summary', { hasText: 'Policies' }) })
-  await expect(policies).not.toHaveAttribute('open', '')
-  await policies.locator('summary').click()
-  await expect(policies.getByRole('button', { name: 'mayManageInvoice' })).toBeVisible()
+  await openSchema(page)
+  await page.getByTestId('level-dataset').click()
+  const menu = page.getByRole('menu')
+  const choices = menu.getByRole('menuitemradio')
+  await expect(choices).toHaveText(['No dataset', 'First scenario', 'Second scenario'])
+  await expect(menu).not.toContainText('Description')
+  await menu.getByRole('menuitemradio', { name: 'First scenario' }).click()
+  await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
+  await expect(panel(page)).toContainText('Description of scenario 0')
+
+  await page.getByTestId('level-dataset').click()
+  await menu.getByRole('menuitemradio', { name: 'Second scenario' }).click()
+  await expect(panel(page)).toContainText('Description of scenario 1')
+  await expect(panel(page)).not.toContainText('Description of scenario 0')
+  await expect(sceneBox(page, 'core.node.company-1')).toBeVisible()
+
+  // under Rules, the Index lists the Domain's Policies, each with where it sits
+  await page.keyboard.press('3')
+  const policies = indexRail(page).locator('[data-index-row^="policy."]')
+  await expect(policies.filter({ hasText: 'mayReadTicket' })).toContainText('2 places')
+  await expect(policies.filter({ hasText: 'mayManageInvoice' })).toContainText('1 place')
 })
 
-test('the empty dataset state stays concise', async ({ page }) => {
+test('a Domain that references no dataset says so in the crumb, concisely', async ({ page }) => {
   await page.route('**/api/domain/*/datasets', (route) =>
-    route.fulfill({ json: { domainId: 'crm', datasets: [], extractedAt: '' } }),
+    route.fulfill({ json: { domainId: FIXTURE_ID, datasets: [], extractedAt: '' } }),
   )
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Tests', exact: true }).click()
-  await expect(page.getByText('No Dataset referenced', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('complementary', { name: 'Scenario' })).toHaveCount(0)
+  await openSchema(page)
+  await page.getByTestId('level-dataset').click()
+  const menu = page.getByRole('menu')
+  await expect(menu.getByText('No Dataset referenced', { exact: true })).toBeVisible()
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['No dataset'])
 })

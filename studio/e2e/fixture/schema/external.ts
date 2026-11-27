@@ -10,7 +10,15 @@ export const PaymentProcessor = nodeClass({
   properties: { name: string },
 })
 
+/** A second Class of the same Domain, so its Classes are drawn together in its frame. */
+export const Payout = nodeClass({
+  policies: { read: true },
+  description: 'A transfer of settled funds to the merchant.',
+  icon: icons.payment,
+  properties: { reference: string },
+})
+
 export const PaymentsSchema = defineSchema('payments.studio-demo.astrale.ai', {
   name: 'Test Domain',
-  classes: { PaymentProcessor },
+  classes: { PaymentProcessor, Payout },
 })

@@ -53,3 +53,12 @@ export function parseJson(text: string): unknown | undefined {
     return undefined
   }
 }
+
+/** A value decoded whole, or why it was refused. */
+export type Decoded<T> = { readonly value: T } | { readonly problem: string }
+
+/** A decoder that says why a value does not decode whole. */
+export type StrictDecoder<T> = (value: unknown) => Decoded<T>
+
+/** The refusal of a strict decoder. */
+export const refused = (problem: string): { readonly problem: string } => ({ problem })

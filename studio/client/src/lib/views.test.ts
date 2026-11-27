@@ -1,3 +1,4 @@
+import { publishedDomainId } from '@shared/contracts/versions'
 import { expect, test } from 'bun:test'
 
 import { anatomy, bundle } from '@/schema-studio/__tests__/fixture'
@@ -14,4 +15,15 @@ test('a frontend route is bound to the canonical View of the same name, or repor
     drift: 'ok',
   })
   expect(buildViewsModel(anatomy([dashboard]), bundle({})).all[0]?.drift).toBe('missing-impl')
+})
+
+test('a Publication lists the Views its Schema declares, with no View code behind them', () => {
+  const published = bundle({})
+  published.domainId = publishedDomainId('issues.astrale.ai', '0.9.1')
+  published.ir!.views = { application: { name: 'application', description: 'Every issue.' } }
+  expect(buildViewsModel(anatomy([]), published)).toEqual({
+    all: [{ slug: 'application', kind: 'unknown', description: 'Every issue.', drift: 'ok' }],
+    orphanRoutes: [],
+    hasDrift: false,
+  })
 })

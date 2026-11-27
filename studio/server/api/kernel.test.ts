@@ -58,16 +58,25 @@ test('the Kernel is read-only: no threads, no writes beyond reader preferences',
   expect(await (await call('/comments')).json()).toMatchObject({ comments: [] })
   const refused = await call('/comments', post({ action: 'create', text: 'hello' }))
   expect(refused.status).toBe(403)
-  expect((await call('/core')).status).toBe(404)
   expect((await call('/anatomy')).status).toBe(200)
 
-  // Layout and visibility are this machine's way of reading the Kernel, kept off any project.
-  await call('/layout', post({ action: 'set', positions: { 'class.Identity': { x: 4, y: 2 } } }))
+  // Its layout is this machine's way of reading the Kernel, kept off any project, and read
+  // through the same lenses as a Domain's: each keeps its own, a reset forgets one.
+  const place = (lens: string, x: number) =>
+    call('/layout', post({ action: 'set', lens, positions: { 'class.Identity': { x, y: 2 } } }))
+  await place('structure', 4)
+  await place('behavior', 9)
+  await call('/layout', post({ action: 'collapse', lens: 'structure', add: ['module.auth'] }))
   expect(await (await call('/layout')).json()).toMatchObject({
-    positions: { 'class.Identity': { x: 4, y: 2 } },
+    lenses: {
+      structure: { 'class.Identity': { x: 4, y: 2 } },
+      behavior: { 'class.Identity': { x: 9, y: 2 } },
+    },
+    collapsed: { structure: ['module.auth'] },
   })
-  await call('/visibility', post({ action: 'set', hidden: { 'class.Role': true } }))
-  expect(await (await call('/visibility')).json()).toMatchObject({
-    hidden: { 'class.Role': true },
+  await call('/layout', post({ action: 'reset', lens: 'structure' }))
+  expect((await (await call('/layout')).json()).lenses).toEqual({
+    behavior: { 'class.Identity': { x: 9, y: 2 } },
   })
+  expect((await call('/visibility')).status).toBe(404)
 }, 60_000)
