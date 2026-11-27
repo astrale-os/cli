@@ -55,7 +55,7 @@
 
   /* what a function does to what it reaches — one hue per verb; a call stays neutral */
   --verb-create: oklch(0.53 0.13 150);
-  --verb-update: oklch(0.52 0.15 252);
+  --verb-update: oklch(0.6 0.13 100);
   --verb-delete: oklch(0.55 0.17 25);
   --verb-transition: oklch(0.52 0.14 320);
   --verb-link: oklch(0.55 0.1 195);
@@ -127,7 +127,7 @@
   --schema-function: oklch(0.72 0.12 300);
 
   --verb-create: oklch(0.72 0.13 150);
-  --verb-update: oklch(0.72 0.13 252);
+  --verb-update: oklch(0.84 0.14 100);
   --verb-delete: oklch(0.68 0.16 25);
   --verb-transition: oklch(0.72 0.12 320);
   --verb-link: oklch(0.74 0.1 195);

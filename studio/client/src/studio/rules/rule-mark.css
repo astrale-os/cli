@@ -1,11 +1,12 @@
-/* The hues of the operations that observe: reading a Node, traversing an Edge. Writing wears
-   its verb's hue (`--verb-*`); calling, the call's. Each hue says one thing in the Studio. */
+/* The hues of the operations that observe: reading a Node is blue, traversing an Edge pink.
+   Writing wears its verb's hue (`--verb-*`: create green, update yellow, delete red); calling,
+   the call's. Each hue says one thing in the Studio. */
 :root {
-  --op-read: oklch(0.55 0.12 95);
+  --op-read: oklch(0.52 0.15 252);
   --op-traverse: oklch(0.54 0.15 335);
 }
 .dark {
-  --op-read: oklch(0.78 0.12 95);
+  --op-read: oklch(0.72 0.13 252);
   --op-traverse: oklch(0.74 0.13 335);
 }
 
