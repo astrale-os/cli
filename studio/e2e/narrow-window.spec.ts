@@ -36,14 +36,19 @@ async function noSidewaysScroll(page: Page) {
   expect(sizes.header).toBe(0)
 }
 
-/** On screen, inside the window, and wide enough to read a few letters of. */
-async function readable(page: Page, locator: Locator) {
+/** A few letters of a name. */
+const LETTERS = 48
+/** A glyph with room to press it. */
+const GLYPH = 28
+
+/** On screen, inside the window, and at least `least` wide: a few letters, unless said otherwise. */
+async function readable(page: Page, locator: Locator, least = LETTERS) {
   await expect(locator).toBeVisible()
   const box = (await locator.boundingBox())!
   const window = page.viewportSize()!
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(window.width)
-  expect(box.width).toBeGreaterThanOrEqual(48)
+  expect(box.width).toBeGreaterThanOrEqual(least)
 }
 
 const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
@@ -100,11 +105,15 @@ test.describe('at 800 × 600', () => {
     expect(await width(canvas)).toBe(open)
     await noSidewaysScroll(page)
 
-    // every crumb and every lens is on screen, and a lens still switches
+    // every crumb and every lens is on screen, and a lens still switches: the lens in use by
+    // its name, the others by their glyph (their names stay their accessible names)
     for (const crumb of ['level-workspace', 'level-domain', 'level-dataset'])
       await readable(page, page.getByTestId(crumb))
-    for (const lens of ['structure', 'behavior', 'rules'] as const)
-      await readable(page, lensButton(page, lens))
+    await readable(page, lensButton(page, 'structure'))
+    for (const lens of ['behavior', 'rules', 'views'] as const) {
+      await readable(page, lensButton(page, lens), GLYPH)
+      await expect(lensButton(page, lens)).toHaveAccessibleName(new RegExp(lens, 'i'))
+    }
     await lensButton(page, 'behavior').click()
     await expect(lensButton(page, 'behavior')).toHaveAttribute('aria-pressed', 'true')
     await expect(panel).toBeVisible()

@@ -121,8 +121,10 @@ export const indexRow = (page: Page, id: string): Locator =>
 export const inspector = (page: Page): Locator => page.locator('[data-inspector-lens]')
 
 /** The lens switch in the bar. */
-export const lensButton = (page: Page, lens: 'structure' | 'behavior' | 'rules'): Locator =>
-  page.getByTestId('lens-switch').locator(`button[data-lens="${lens}"]`)
+export const lensButton = (
+  page: Page,
+  lens: 'structure' | 'behavior' | 'rules' | 'views',
+): Locator => page.getByTestId('lens-switch').locator(`button[data-lens="${lens}"]`)
 
 /** Open the Studio on the fixture Domain's Schema and wait for its canvas to draw. */
 export async function openSchema(page: Page): Promise<void> {

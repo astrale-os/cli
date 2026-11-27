@@ -165,7 +165,8 @@ function DomainCrumb({
           // targeting mode attaches a thread, or an Ask, to the whole Domain from here
           {...anchorData(domainAnchorRef(domain.origin), domain.origin, domain.id)}
           title="Switch Domain"
-          className={cn(TRIGGER, 'font-semibold text-foreground')}
+          // the Domain's name is the last crumb to give way: a few letters of it always read
+          className={cn(TRIGGER, 'min-w-18 font-semibold text-foreground')}
         >
           <span className="truncate">{domain.origin}</span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -247,8 +248,9 @@ function DatasetCrumb({ domain }: { domain: DomainSummary }) {
           className={cn(
             TRIGGER,
             current || listed ? 'font-medium text-foreground' : 'text-muted-foreground',
-            // a word the crumb always says stays whole; a dataset's own title may be cut
-            !current && 'shrink-0',
+            // a word the crumb always says stays whole where the bar has room; a dataset's own
+            // title, and any label on a narrow bar, may be cut down to a few letters
+            !current ? 'min-w-12 lg:shrink-0' : 'min-w-12',
           )}
         >
           {current?.status === 'failed' ? (

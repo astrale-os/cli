@@ -1,3 +1,6 @@
+import { rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import type { ChangeReport, Remote } from '../shared/contracts/versions'
 
 import { autoArrange, bareOffset, drag, layoutWrite, placeOf } from './arrange'
@@ -216,47 +219,54 @@ test('Publish asks for every guard, then the Studio refuses it before anything r
   page,
   request,
 }) => {
-  const bundle = (await (
-    await request.get(`/api/domain/${encodeURIComponent(FIXTURE_ID)}/bundle`)
-  ).json()) as { schemaRevision: string }
-  await stubLook(page, bundle.schemaRevision)
-  const publishes: string[] = []
-  page.on('request', (sent) => {
-    if (sent.url().includes('/versions/publish')) publishes.push(sent.method())
-  })
+  // A working tree with a file git does not track is no clean commit, wherever the suite runs:
+  // publishing it as it is must be acknowledged.
+  const untracked = join(import.meta.dirname, `.publish-spec-${process.pid}.tmp`)
+  writeFileSync(untracked, '')
+  try {
+    const bundle = (await (
+      await request.get(`/api/domain/${encodeURIComponent(FIXTURE_ID)}/bundle`)
+    ).json()) as { schemaRevision: string }
+    await stubLook(page, bundle.schemaRevision)
+    const publishes: string[] = []
+    page.on('request', (sent) => {
+      if (sent.url().includes('/versions/publish')) publishes.push(sent.method())
+    })
 
-  await openWorkspace(page)
-  await sceneBox(page, `domain:${FIXTURE_ID}`).click()
-  await page.locator('[data-workspace-page="domain"] [data-action="publish"]').click()
-  const dialog = page.locator('[data-publish-dialog="review"]')
-  await expect(dialog).toBeVisible()
+    await openWorkspace(page)
+    await sceneBox(page, `domain:${FIXTURE_ID}`).click()
+    await page.locator('[data-workspace-page="domain"] [data-action="publish"]').click()
+    const dialog = page.locator('[data-publish-dialog="review"]')
+    await expect(dialog).toBeVisible()
 
-  // nothing is ready until every guard is answered, and each missing one is named
-  const confirm = dialog.locator('[data-action="confirm-publish"]')
-  await expect(confirm).toBeDisabled()
-  await expect(dialog).toContainText('Choose an Environment.')
-  await expect(dialog).toContainText('Type 0.0.0 to confirm.')
+    // nothing is ready until every guard is answered, and each missing one is named
+    const confirm = dialog.locator('[data-action="confirm-publish"]')
+    await expect(confirm).toBeDisabled()
+    await expect(dialog).toContainText('Choose an Environment.')
+    await expect(dialog).toContainText('Type 0.0.0 to confirm.')
 
-  await dialog.getByRole('radio', { name: /development/ }).check()
-  await expect(dialog).not.toContainText('Choose an Environment.')
-  await expect(confirm).toBeDisabled()
-  // the fixture is no clean commit: publishing it as it is must be acknowledged
-  const dirty = dialog.getByRole('checkbox', { name: /--allow-dirty/ })
-  await expect(dirty).toBeVisible()
-  await dirty.check()
+    await dialog.getByRole('radio', { name: /development/ }).check()
+    await expect(dialog).not.toContainText('Choose an Environment.')
+    await expect(confirm).toBeDisabled()
+    const dirty = dialog.getByRole('checkbox', { name: /--allow-dirty/ })
+    await expect(dirty).toBeVisible()
+    await dirty.check()
 
-  const typed = dialog.getByLabel('Type 0.0.0 to confirm')
-  await typed.fill('0.0.1')
-  await expect(confirm).toBeDisabled()
-  await typed.fill('0.0.0')
-  await expect(confirm).toBeEnabled()
-  await expect(confirm).toHaveText('Publish 0.0.0 to development')
-  expect(publishes).toEqual([])
+    const typed = dialog.getByLabel('Type 0.0.0 to confirm')
+    await typed.fill('0.0.1')
+    await expect(confirm).toBeDisabled()
+    await typed.fill('0.0.0')
+    await expect(confirm).toBeEnabled()
+    await expect(confirm).toHaveText('Publish 0.0.0 to development')
+    expect(publishes).toEqual([])
 
-  await confirm.click()
-  const refused = page.locator('[data-publish-result="refused"]')
-  await expect(refused).toBeVisible()
-  await expect(refused).toHaveAttribute('data-refusal', 'publish-disabled')
-  await expect(refused).toContainText('Nothing ran: the Studio refused before publishing.')
-  expect(publishes).toEqual(['POST'])
+    await confirm.click()
+    const refused = page.locator('[data-publish-result="refused"]')
+    await expect(refused).toBeVisible()
+    await expect(refused).toHaveAttribute('data-refusal', 'publish-disabled')
+    await expect(refused).toContainText('Nothing ran: the Studio refused before publishing.')
+    expect(publishes).toEqual(['POST'])
+  } finally {
+    rmSync(untracked, { force: true })
+  }
 })

@@ -955,12 +955,15 @@ body[data-target-mode] .scene-canvas * {
   fill: color-mix(in oklch, var(--link-tone) 70%, var(--color-scene-link));
 }
 /* A relationship is a thing of the Schema, not a connector: its line wears the relationships'
-   hue at rest and carries more weight than a line that only joins two cards. */
-.scene-link[data-relationship] .scene-link-stroke:not([data-dashed]) {
+   hue at rest and carries more weight than a line that only joins two cards. These rules
+   weigh no more than the ones for a lit, selected or targeted line, which come after them. */
+.scene-link:where([data-relationship]) .scene-link-stroke:where(:not([data-dashed])) {
   stroke: color-mix(in oklab, var(--color-schema-edge) 72%, var(--color-canvas));
   stroke-width: calc(1.75px * var(--link-weight, 1) * var(--stroke-unit));
 }
-.scene-link[data-relationship] .scene-link-stroke:not([data-dashed]) + .scene-link-arrow {
+.scene-link:where([data-relationship])
+  .scene-link-stroke:where(:not([data-dashed]))
+  + .scene-link-arrow {
   fill: color-mix(in oklab, var(--color-schema-edge) 72%, var(--color-canvas));
 }
 /* A link to a hub stays faint until lit, so the hub's many lines never drown the rest. */
@@ -992,8 +995,9 @@ body[data-target-mode] .scene-canvas * {
   fill: var(--link-tone);
 }
 /* Lit or pointed at, a relationship takes its full hue and a little more weight. */
-.scene-link[data-relationship][data-emphasis='lit'] .scene-link-stroke:not([data-dashed]),
-.scene-link[data-relationship]:hover .scene-link-stroke:not([data-dashed]) {
+.scene-link:where([data-relationship])[data-emphasis='lit']
+  .scene-link-stroke:where(:not([data-dashed])),
+.scene-link:where([data-relationship]):hover .scene-link-stroke:where(:not([data-dashed])) {
   stroke-width: calc(2.25px * var(--link-weight, 1) * var(--stroke-unit));
 }
 .scene-link[data-selected] .scene-link-stroke {
@@ -1001,12 +1005,13 @@ body[data-target-mode] .scene-canvas * {
   stroke-width: calc(2.5px * var(--stroke-unit));
 }
 /* Selected, it is the brightest line of the canvas: full hue, heaviest, with a glow of its own. */
-.scene-link[data-relationship][data-selected] .scene-link-stroke:not([data-dashed]) {
+.scene-link:where([data-relationship])[data-selected]
+  .scene-link-stroke:where(:not([data-dashed])) {
   stroke: color-mix(in oklab, var(--link-tone) 84%, var(--color-foreground));
   stroke-width: calc(3px * var(--stroke-unit));
   filter: drop-shadow(0 0 3px color-mix(in oklch, var(--link-tone) 55%, transparent));
 }
-.scene-link[data-relationship][data-selected] .scene-link-arrow {
+.scene-link:where([data-relationship])[data-selected] .scene-link-arrow {
   fill: color-mix(in oklab, var(--link-tone) 84%, var(--color-foreground));
 }
 .scene-link[data-selected] .scene-link-arrow {
