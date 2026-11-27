@@ -639,17 +639,29 @@ body[data-target-mode] .scene-canvas * {
 }
 
 /* A Scene of thin lines draws its links lighter until lit: its cards say what it is about,
-   and a link matters where something walks it. */
+   and a link matters where something walks it. A relationship keeps its hue there, a step
+   lighter than where relationships are the subject. */
 .scene-canvas[data-lines='thin']
-  .scene-link:not([data-emphasis='lit']):not([data-selected]):not(:hover)
+  .scene-link:not([data-relationship]):not([data-emphasis='lit']):not([data-selected]):not(:hover)
   .scene-link-stroke:not([data-dashed]) {
   stroke: color-mix(in oklch, var(--color-scene-link) 55%, transparent);
   stroke-width: calc(0.85px * var(--stroke-unit));
 }
 .scene-canvas[data-lines='thin']
-  .scene-link:not([data-emphasis='lit']):not([data-selected]):not(:hover)
+  .scene-link:not([data-relationship]):not([data-emphasis='lit']):not([data-selected]):not(:hover)
   .scene-link-arrow {
   fill: color-mix(in oklch, var(--color-scene-link) 55%, transparent);
+}
+.scene-canvas[data-lines='thin']
+  .scene-link[data-relationship]:not([data-emphasis='lit']):not([data-selected]):not(:hover)
+  .scene-link-stroke:not([data-dashed]) {
+  stroke: color-mix(in oklab, var(--color-schema-edge) 58%, var(--color-canvas));
+  stroke-width: calc(1.4px * var(--link-weight, 1) * var(--stroke-unit));
+}
+.scene-canvas[data-lines='thin']
+  .scene-link[data-relationship]:not([data-emphasis='lit']):not([data-selected]):not(:hover)
+  .scene-link-arrow {
+  fill: color-mix(in oklab, var(--color-schema-edge) 58%, var(--color-canvas));
 }
 
 /* A walk's steps, numbered in the order the rule reads them. */
@@ -864,6 +876,15 @@ body[data-target-mode] .scene-canvas * {
 .scene-link[data-verb] .scene-link-arrow {
   fill: color-mix(in oklch, var(--link-tone) 70%, var(--color-scene-link));
 }
+/* A relationship is a thing of the Schema, not a connector: its line wears the relationships'
+   hue at rest and carries more weight than a line that only joins two cards. */
+.scene-link[data-relationship] .scene-link-stroke:not([data-dashed]) {
+  stroke: color-mix(in oklab, var(--color-schema-edge) 72%, var(--color-canvas));
+  stroke-width: calc(1.75px * var(--link-weight, 1) * var(--stroke-unit));
+}
+.scene-link[data-relationship] .scene-link-stroke:not([data-dashed]) + .scene-link-arrow {
+  fill: color-mix(in oklab, var(--color-schema-edge) 72%, var(--color-canvas));
+}
 /* A link to a hub stays faint until lit, so the hub's many lines never drown the rest. */
 .scene-link[data-ambient]:not([data-hidden]):not([data-emphasis='lit']):not(:hover) {
   opacity: 0.32;
@@ -892,9 +913,23 @@ body[data-target-mode] .scene-canvas * {
 .scene-link:hover .scene-link-arrow {
   fill: var(--link-tone);
 }
+/* Lit or pointed at, a relationship takes its full hue and a little more weight. */
+.scene-link[data-relationship][data-emphasis='lit'] .scene-link-stroke:not([data-dashed]),
+.scene-link[data-relationship]:hover .scene-link-stroke:not([data-dashed]) {
+  stroke-width: calc(2.25px * var(--link-weight, 1) * var(--stroke-unit));
+}
 .scene-link[data-selected] .scene-link-stroke {
   stroke: var(--link-tone);
   stroke-width: calc(2.5px * var(--stroke-unit));
+}
+/* Selected, it is the brightest line of the canvas: full hue, heaviest, with a glow of its own. */
+.scene-link[data-relationship][data-selected] .scene-link-stroke:not([data-dashed]) {
+  stroke: color-mix(in oklab, var(--link-tone) 84%, var(--color-foreground));
+  stroke-width: calc(3px * var(--stroke-unit));
+  filter: drop-shadow(0 0 3px color-mix(in oklch, var(--link-tone) 55%, transparent));
+}
+.scene-link[data-relationship][data-selected] .scene-link-arrow {
+  fill: color-mix(in oklab, var(--link-tone) 84%, var(--color-foreground));
 }
 .scene-link[data-selected] .scene-link-arrow {
   fill: var(--link-tone);

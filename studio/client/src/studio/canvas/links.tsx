@@ -35,6 +35,9 @@ import { TONE_COLOR } from './tones'
 
 const ARROW = 7
 
+/** The kind every lens gives a relationship's link. */
+const RELATIONSHIP = 'relationship'
+
 /** A line's hue: its tone's, but a function's lines read as inheritance does. */
 const STROKE: Record<SceneTone, string> = { ...TONE_COLOR, fn: 'var(--color-edge-inherit)' }
 
@@ -53,6 +56,8 @@ interface LinkMarkProps {
   directed: boolean
   dashed: boolean
   tone: SceneTone
+  /** the line is a relationship of the Schema, whatever a lens says of it */
+  relationship: boolean
   /** faint until lit: the link reaches a hub */
   ambient: boolean
   emphasis: Emphasis
@@ -73,6 +78,7 @@ const LinkMark = memo(function LinkMark({
   directed,
   dashed,
   tone,
+  relationship,
   ambient,
   emphasis,
   selected,
@@ -95,6 +101,7 @@ const LinkMark = memo(function LinkMark({
       data-selected={selected || undefined}
       data-hidden={hidden || undefined}
       data-verb={HUED_TONES.has(tone) || undefined}
+      data-relationship={relationship || undefined}
       data-ambient={ambient || undefined}
       {...(anchor ? anchorData(anchor, excerpt) : {})}
       style={{ '--link-tone': STROKE[tone], '--link-weight': weight } as CSSProperties}
@@ -259,6 +266,7 @@ export const LinksLayer = memo(function LinksLayer({
               directed={link.directed}
               dashed={link.dashed === true}
               tone={link.tone ?? 'edge'}
+              relationship={link.kind === RELATIONSHIP}
               ambient={link.ambient === true}
               emphasis={emphasis}
               selected={id === selected}
@@ -288,6 +296,7 @@ export const LinksLayer = memo(function LinksLayer({
               directed={directed}
               dashed={members.every((link) => link.dashed === true)}
               tone={toneOf(members)}
+              relationship={members.every((link) => link.kind === RELATIONSHIP)}
               ambient={members.every((link) => link.ambient === true)}
               emphasis={emphasis}
               selected={single !== undefined && single.id === selected}
@@ -309,6 +318,7 @@ export const LinksLayer = memo(function LinksLayer({
                   directed={link.directed}
                   dashed={link.dashed === true}
                   tone={link.tone ?? 'edge'}
+                  relationship={link.kind === RELATIONSHIP}
                   ambient={link.ambient === true}
                   emphasis={lineEmphasis(link.id, focus)}
                   selected={link.id === selected}
