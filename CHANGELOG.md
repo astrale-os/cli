@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.182](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.181...cli/v1.0.0-beta.182) (2026-11-27)
+
+
+### Bug Fixes
+
+* **studio:** read a Domain with a View from its cache ([#836](https://github.com/astrale-os/cli/issues/836)) ([84231f0](https://github.com/astrale-os/cli/commit/84231f00bdf5643e76207b039d4905d839c7715c))
+
 ## [1.0.0-beta.181](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.180...cli/v1.0.0-beta.181) (2026-11-26)
 
 
