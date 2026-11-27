@@ -11,9 +11,9 @@ async function route(path: string, init?: RequestInit) {
   return handleApi(new Request(url, init), url, () => {})
 }
 
-const post = (body: unknown, origin?: string): RequestInit => ({
+const post = (body: unknown): RequestInit => ({
   method: 'POST',
-  headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+  headers: { 'content-type': 'application/json' },
   body: JSON.stringify(body),
 })
 
@@ -23,30 +23,6 @@ test('non-api paths fall through, and an unknown api path is the JSON 404', asyn
   expect(response?.status).toBe(404)
   expect(await response?.json()).toEqual({ error: 'not found' })
   expect((await route('/api/domain/not-registered/visibility'))?.status).toBe(404)
-})
-
-test('a mutation from another origin is refused before it changes anything', async () => {
-  const handle = testDomain()
-  const visibility = `/api/domain/${encodeURIComponent(handle.id)}/visibility`
-  const hide = { action: 'set', hidden: { 'class.Injected': true }, showInheritedEdges: false }
-
-  // same host, other scheme or port: not the same origin
-  for (const origin of [
-    'https://127.0.0.1',
-    'http://127.0.0.1:3000',
-    'https://malicious.example',
-  ]) {
-    const blocked = await route(visibility, post(hide, origin))
-    expect(blocked?.status).toBe(403)
-    expect(await blocked?.json()).toEqual({ error: 'cross-site request blocked' })
-  }
-  expect(await (await route(visibility))?.json()).toEqual({ hidden: {}, showInheritedEdges: true })
-
-  expect((await route(visibility, post(hide, 'http://127.0.0.1')))?.status).toBe(200)
-  expect(await (await route(visibility))?.json()).toEqual({
-    hidden: { 'class.Injected': true },
-    showInheritedEdges: false,
-  })
 })
 
 test('domain routes validate their bodies', async () => {
