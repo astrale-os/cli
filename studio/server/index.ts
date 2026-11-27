@@ -13,15 +13,25 @@ import { dirname, join, resolve } from 'node:path'
 
 import { setBridgePort } from './agent/bridge/grant'
 import { probeInstalledHarnesses } from './agent/harness/registry'
-import { handleApi } from './api'
-import { broadcast, sseResponse } from './api/sse'
+import { studioAudience, type Audience } from './api/guard'
+import { broadcast } from './api/sse'
 import { staticFiles } from './api/static'
 import { bootDomain } from './domain/boot'
 import { allDomains } from './domain/registry'
+import { captureProcess } from './process'
+import { studioFetch } from './serve'
 import { initWorkspaceRoot, stoppers } from './workspace/root'
 import { initStudioRuntime } from './workspace/runtime'
 import { resolveTarget } from './workspace/scan'
+import { publishSwitchOf } from './workspace/versions/context'
 import { watchWorkspace } from './workspace/watch'
+
+// before anything else: a Publish switch that is neither on nor off starts nothing
+const publishSwitch = publishSwitchOf(process.env.ASTRALE_STUDIO_PUBLISH)
+if ('problem' in publishSwitch) {
+  console.error(`\n  ✗ ${publishSwitch.problem}\n`)
+  process.exit(1)
+}
 
 const argv = process.argv.slice(2)
 let target = ''
@@ -51,6 +61,7 @@ if (!domains.length) {
 }
 
 console.log(`\n  Domain Studio — ${domains.length} domain(s)`)
+if (!publishSwitch.publishing) console.log('    Publish is off (ASTRALE_STUDIO_PUBLISH=off)')
 if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
   console.log(`    timing workspace discovery=${discoveryMs}ms`)
 }
@@ -132,36 +143,32 @@ const serveStatic = staticFiles(DIST)
 
 // Bind to loopback by default. Studio can trigger a LOCAL harness that edits code
 // and runs commands with the configured access level — exposing the trigger on
-// 0.0.0.0 would be RCE on the LAN. Power users behind a trusted tunnel can opt in
-// via DOMAIN_STUDIO_HOST.
+// 0.0.0.0 would be RCE on the LAN. DOMAIN_STUDIO_HOST binds another address; the
+// guard (api/guard.ts) then answers requests that name that address too, and no
+// other host name: a tunnel that forwards its own public name is refused.
 const HOST = process.env.DOMAIN_STUDIO_HOST || '127.0.0.1'
 const LOOPBACK = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1'
 
+const audienceAt = (boundPort: number): Audience =>
+  studioAudience({ port: boundPort, boundHost: HOST, ...(DEV ? { devOrigin: VITE } : {}) })
+// Who may drive the server is known once its port is: read per request, set right after binding.
+let audience = audienceAt(port)
 const server = Bun.serve({
   port,
   hostname: HOST,
   // SSE + long agent turns hold connections open; Bun's 10s default would drop
   // them (and the live UI). 255s is Bun's max; the SSE hub also sends keepalives.
   idleTimeout: 255,
-  async fetch(req) {
-    const url = new URL(req.url)
-    if (url.pathname === '/api/ready')
-      return new Response(null, {
-        status: workspaceReady ? 204 : 503,
-        headers: { 'cache-control': 'no-store' },
-      })
-    if (url.pathname === '/api/events') return sseResponse(allDomains().map((d) => d.id))
-    const apiRes = await handleApi(req, url, broadcast)
-    if (apiRes) return apiRes
-    if (DEV) {
-      return fetch(VITE + url.pathname + url.search, {
-        headers: req.headers,
-        method: req.method,
-      }).catch(() => new Response('Vite dev server not reachable', { status: 502 }))
-    }
-    return serveStatic(url.pathname, req)
-  },
+  fetch: studioFetch({
+    audience: () => audience,
+    ready: () => workspaceReady,
+    domains: () => allDomains().map((d) => d.id),
+    notify: broadcast,
+    ...(DEV ? { vite: VITE } : {}),
+    serveStatic,
+  }),
 })
+audience = audienceAt(server.port ?? port)
 
 let shuttingDown = false
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -182,13 +189,13 @@ if (!LOOPBACK) {
   console.warn(
     `  ⚠ SECURITY: bound to ${HOST} (not loopback). The Submit-to-agent trigger is the\n` +
       `    only thing standing between the network and an agent that edits code + runs shell\n` +
-      `    with its configured access. Anyone who can reach this port can trigger it. Use only behind\n` +
-      `    a trusted tunnel; unset DOMAIN_STUDIO_HOST to bind 127.0.0.1.\n`,
+      `    with its configured access. Anyone who can reach this port as ${HOST} can trigger it.\n` +
+      `    Unset DOMAIN_STUDIO_HOST to bind 127.0.0.1.\n`,
   )
 }
 if (open) {
   try {
-    Bun.spawn(['open', urlStr])
+    void captureProcess(['open', urlStr], { timeoutMs: 10_000 })
   } catch {
     /* headless ok */
   }

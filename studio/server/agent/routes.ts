@@ -1,7 +1,14 @@
 import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/contracts/agent'
 import type { ChatResult } from './run/coordinator'
 
-import { badRequest, json, notFound, type AgentRouteContext } from '../api/http'
+import {
+  badRequest,
+  json,
+  notFound,
+  pathSegment,
+  readUpload,
+  type AgentRouteContext,
+} from '../api/http'
 import { asBoolean, asJsonRecord, asString } from '../json'
 import { decodeAnchorRef } from '../state/comments'
 import { type AskRequest, runAsk } from './ask'
@@ -223,8 +230,8 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
   // One image per upload, sent the moment it is pasted: each chip in the composer
   // then fills in on its own, and one refused image does not take the others down.
   if (rest === '/agent/attachments' && req.method === 'POST') {
-    const form = await req.formData().catch(() => undefined)
-    const file = form?.get('file')
+    const form = await readUpload(req)
+    const file = form.get('file')
     if (!(file instanceof File)) return badRequest('expected one image in the `file` field')
     return chatJson(
       addAttachment(chatParam, {
@@ -235,7 +242,7 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
   }
   const attachment = rest.match(/^\/agent\/attachments\/([^/]+)$/)
   if (attachment) {
-    const id = decodeURIComponent(attachment[1]!)
+    const id = pathSegment(attachment[1]!, 'the attachment id')
     if (req.method === 'DELETE') return json({ ok: removeAttachment(chatParam, id) })
     if (req.method !== 'GET') return badRequest('GET or DELETE')
     const found = attachmentOf(chatParam, id)

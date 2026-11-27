@@ -68,6 +68,8 @@ export function bundle(
     },
     overlay: {
       handlerLinks: [],
+      definitions: [],
+      integrations: [],
       sourceSpans: {},
     },
     extractedAt: '2026-08-23T00:00:00.000Z',

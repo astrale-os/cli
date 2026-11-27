@@ -3,11 +3,24 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StudioSchemaBundle } from '../../shared/contracts/schema'
+import type {
+  DefinitionEffect,
+  DefinitionLink,
+  DefinitionPrecondition,
+  StudioSchemaBundle,
+} from '../../shared/contracts/schema'
 
+import { STUDIO_CLI_DESCRIPTOR_ENV } from '../cli'
 import { registerDomain, unregisterDomain } from '../domain/registry'
 import { readState, writeJson } from '../state/store'
-import { decodeBundleCacheEntry, getAnatomy, getBundle, invalidate, stillStands } from './cache'
+import {
+  bundleCacheKey,
+  decodeBundleCacheEntry,
+  getAnatomy,
+  getBundle,
+  invalidate,
+  stillStands,
+} from './cache'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -43,7 +56,7 @@ function entry(mutate: (bundle: Record<string, any>) => void = () => {}): Record
     extractedBy: 'runtime-bun',
     depsInstalled: true,
     ir,
-    overlay: { handlerLinks: [], sourceSpans: {} },
+    overlay: { handlerLinks: [], definitions: [], integrations: [], sourceSpans: {} },
     schemaRoot: { format: 'astrale.dsl', version: 'v1', origin: 'notes.example.dev' },
     error: null,
     extractedAt: '2026-08-20T00:00:00.000Z',
@@ -62,13 +75,82 @@ test('a persisted bundle is admitted by its known structure, and refused when co
   for (const corrupt of [
     (bundle: Record<string, any>) => delete bundle.schemaRoot,
     (bundle: Record<string, any>) => (bundle.schemaRoot = { canonical: true }),
+    (bundle: Record<string, any>) => (bundle.schemaClosure = [{ canonical: true }]),
+    (bundle: Record<string, any>) => (bundle.schemaClosure = bundle.schemaRoot),
+    (bundle: Record<string, any>) => {
+      bundle.schemaMode = 'canonical-preview'
+      delete bundle.schemaRevision
+      bundle.schemaClosure = []
+    },
     (bundle: Record<string, any>) => delete bundle.schemaRevision,
     (bundle: Record<string, any>) => (bundle.schemaRevision = 'sha256:not-a-revision'),
     (bundle: Record<string, any>) => (bundle.ir.classes = { Broken: null }),
     (bundle: Record<string, any>) => (bundle.overlay.handlerLinks = [{ owner: 'Thing' }]),
+    (bundle: Record<string, any>) => (bundle.overlay.definitions = [{ ...definition, line: '4' }]),
+    (bundle: Record<string, any>) =>
+      (bundle.overlay.definitions = [{ ...definition, effects: [{ ...effect, class: 1 }] }]),
+    (bundle: Record<string, any>) =>
+      (bundle.overlay.definitions = [{ ...definition, effects: [{ ...effect, kind: 'move' }] }]),
+    (bundle: Record<string, any>) =>
+      (bundle.overlay.definitions = [{ ...definition, gaps: [{ file: 'a.ts', line: 3 }] }]),
+    (bundle: Record<string, any>) =>
+      (bundle.overlay.definitions = [
+        { ...definition, preconditions: [{ ...precondition, kind: 'maybe' }] },
+      ]),
+    (bundle: Record<string, any>) =>
+      (bundle.overlay.definitions = [
+        { ...definition, preconditions: [{ ...precondition, terms: [{ term: 'range' }] }] },
+      ]),
   ])
     expect(decodeBundleCacheEntry(entry(corrupt))).toBeUndefined()
+
+  const read = decodeBundleCacheEntry(
+    entry(
+      (bundle) =>
+        (bundle.overlay.definitions = [
+          { ...definition, effects: [effect], preconditions: [precondition] },
+        ]),
+    ),
+  )
+  expect(read?.bundle.overlay.definitions[0]?.effects).toEqual([effect])
+  expect(read?.bundle.overlay.definitions[0]?.preconditions).toEqual([precondition])
+
+  // the admitted root's closure travels with it, and a bundle without one still decodes
+  const dependency = { format: 'astrale.dsl', version: 'v1', origin: 'directory.example.dev' }
+  const closed = decodeBundleCacheEntry(entry((bundle) => (bundle.schemaClosure = [dependency])))
+  expect(closed?.bundle.schemaClosure).toEqual([dependency])
+  expect(decoded && 'schemaClosure' in decoded.bundle).toBe(false)
 })
+
+const definition: DefinitionLink = {
+  kind: 'mutation',
+  id: 'notes.note.archive',
+  file: 'mutations/archive.ts',
+  line: 4,
+  classes: ['Note'],
+  gaps: [
+    { file: 'mutations/archive.ts', line: 9, reason: 'names a Class the reading cannot tell' },
+  ],
+}
+const precondition: DefinitionPrecondition = {
+  kind: 'none',
+  classes: ['Note'],
+  name: 'title-taken',
+  terms: [{ term: 'range', text: 'Note.where((note) => note.title.eq(input.title))' }],
+  file: 'mutations/archive.ts',
+  line: 6,
+}
+const effect: DefinitionEffect = {
+  kind: 'transition',
+  class: 'Note',
+  verb: 'transition',
+  file: 'mutations/archive.ts',
+  line: 7,
+  property: 'state',
+  from: 'open',
+  event: 'archive',
+  to: 'archived',
+}
 
 test('a failed bundle stands briefly, then asks to be retried; a good one stands for good', () => {
   const failed = (extractedAt: string, error: StudioSchemaBundle['error'] = { message: 'x' }) =>
@@ -79,7 +161,7 @@ test('a failed bundle stands briefly, then asks to be retried; a good one stands
       extractedBy: 'static-tsmorph-fallback',
       depsInstalled: true,
       ir: null,
-      overlay: { handlerLinks: [], sourceSpans: {} },
+      overlay: { handlerLinks: [], definitions: [], integrations: [], sourceSpans: {} },
       error,
       extractedAt,
     }) satisfies StudioSchemaBundle
@@ -87,6 +169,55 @@ test('a failed bundle stands briefly, then asks to be retried; a good one stands
   expect(stillStands(failed(new Date().toISOString()))).toBe(true)
   expect(stillStands(failed(new Date(Date.now() - 5 * 60_000).toISOString()))).toBe(false)
   expect(stillStands(failed('not a date'))).toBe(false)
+})
+
+test('a bundle is keyed to the program that extracts it, the lockfile that pins it, and its SDK', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'studio-bundle-key-'))
+  roots.push(workspace)
+  const root = join(workspace, 'domains', 'notes')
+  mkdirSync(join(root, 'schema'), { recursive: true })
+  writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
+  const key = () => bundleCacheKey(root, 'schema', join(root, 'domain.ts'))
+  const seen = new Set([key()])
+  const changesKey = (change: () => void) => {
+    change()
+    expect(key()).toBe(key())
+    expect(seen.has(key())).toBe(false)
+    seen.add(key())
+  }
+
+  // a workspace package is pinned by the workspace's lockfile, above its own root
+  const lockfile = join(workspace, 'pnpm-lock.yaml')
+  changesKey(() => writeFileSync(lockfile, "lockfileVersion: '9.0'\n"))
+  changesKey(() => writeFileSync(lockfile, "lockfileVersion: '9.0'\n# another resolution\n"))
+
+  // the SDK it is read with: installed, then another build of it
+  const sdk = join(workspace, 'node_modules', '@astrale-os', 'sdk')
+  changesKey(() => {
+    mkdirSync(sdk, { recursive: true })
+    writeFileSync(join(sdk, 'package.json'), '{"version":"1.0.0"}')
+  })
+  changesKey(() => writeFileSync(join(sdk, 'package.json'), '{"version":"1.0.1"}'))
+
+  // the program that runs the extractor, which need not be this server's Bun
+  const previous = process.env[STUDIO_CLI_DESCRIPTOR_ENV]
+  try {
+    for (const name of ['bun-a', 'bun-b']) {
+      const executable = join(workspace, name)
+      writeFileSync(executable, name)
+      changesKey(() => {
+        process.env[STUDIO_CLI_DESCRIPTOR_ENV] = JSON.stringify({
+          version: 1,
+          executable,
+          args: [],
+        })
+      })
+    }
+    changesKey(() => writeFileSync(join(workspace, 'bun-b'), 'bun-b, upgraded in place'))
+  } finally {
+    if (previous === undefined) delete process.env[STUDIO_CLI_DESCRIPTOR_ENV]
+    else process.env[STUDIO_CLI_DESCRIPTOR_ENV] = previous
+  }
 })
 
 function temporaryDomain(): { id: string; root: string; schemaIndex: string } {
@@ -130,12 +261,13 @@ test('an upgraded Studio rebuilds a persisted successful preview from the old ad
   const domain = temporaryDomain()
   writeFileSync(
     domain.schemaIndex,
-    `import { classIcon, defineSchema, nodeClass, valueSchema } from '@astrale-os/sdk/schema'
+    `import { classIcon, defineSchema, nodeClass, valueSchema, view } from '@astrale-os/sdk/schema'
 const Shared = nodeClass({ icon: classIcon.neutral, inheritance: 'open', policies: { read: true }, properties: { title: valueSchema<string>()({ type: 'string' }) } })
 const dependency = defineSchema('cache-dependency.studio.test', { name: 'Test Domain', classes: { Shared } })
 export const schema = defineSchema('cache-upgrade.studio.test', { name: 'Test Domain',
   dependencies: { dependency },
   classes: { Document: nodeClass({ icon: classIcon.neutral, policies: { read: true }, extends: [Shared] }) },
+  views: { overview: view({ description: 'Every document.' }) },
 })
 `,
   )
@@ -161,7 +293,7 @@ export const schema = defineSchema('cache-upgrade.studio.test', { name: 'Test Do
   expect(upgraded?.schemaMode).toBe('canonical-admitted')
   expect(imported(upgraded)).toBeDefined()
 
-  // a current admitted disk cache is reused without another extraction
+  // a current admitted disk cache, Views and all, is reused without another extraction
   const current = JSON.parse(readState(domain.root, cacheFile)!)
   current.bundle.extractedAt = '2000-01-01T00:00:00.000Z'
   writeJson(domain.root, cacheFile, current)

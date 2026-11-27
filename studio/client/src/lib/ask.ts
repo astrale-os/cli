@@ -2,7 +2,7 @@ import type { AnchorRef } from '@shared/contracts/workspace'
 
 import { create } from 'zustand'
 
-import { anchorKey } from './targets'
+import { anchorKey, type Target } from './targets'
 
 /**
  * Ephemeral "Ask" state. Unlike comments (persisted to comments.json), an ask lives
@@ -11,16 +11,15 @@ import { anchorKey } from './targets'
  * answer streams in the BACKGROUND (the stream runs here in the store, not in the
  * popover) — the dot flips to "answer ready" so you can come back to it.
  *
- * One ask per element (keyed by domain::ref). Re-asking on the same element reuses it.
+ * One ask per Domain element (keyed by domain::ref). Asking it again, from any surface, reuses
+ * it and moves its dot to where it was asked last.
  */
 export type AskStatus = 'composing' | 'streaming' | 'done' | 'error'
 
 export interface AskEntry {
   key: string
-  ref: string
-  domainId: string
-  anchor: AnchorRef
-  excerpt: string
+  /** what was asked about, where it was asked */
+  target: Target
   /** click point — fallback dot position when the target element isn't on screen */
   x: number
   y: number
@@ -38,7 +37,7 @@ interface AsksState {
   entries: Record<string, AskEntry>
   /** which ask's popover is expanded (null ⇒ all collapsed to dots) */
   openKey: string | null
-  start: (domainId: string, anchor: AnchorRef, excerpt: string, x: number, y: number) => void
+  start: (target: Target, x: number, y: number) => void
   submit: (key: string, question: string) => void
   recompose: (key: string) => void
   open: (key: string) => void
@@ -51,18 +50,15 @@ export const useAsks = create<AsksState>((set, get) => ({
   openKey: null,
 
   // ask-mode click → create (or reopen) the ask for this element and expand it
-  start: (domainId, anchor, excerpt, x, y) => {
-    const key = anchorKey(domainId, anchor.ref)
+  start: (target, x, y) => {
+    const key = anchorKey(target.domainId, target.anchor.ref)
     set((s) => {
       const existing = s.entries[key]
       const entry: AskEntry = existing
-        ? { ...existing, x, y, seen: true }
+        ? { ...existing, target, x, y, seen: true }
         : {
             key,
-            ref: anchor.ref,
-            domainId,
-            anchor,
-            excerpt,
+            target,
             x,
             y,
             question: '',
@@ -96,8 +92,8 @@ export const useAsks = create<AsksState>((set, get) => ({
       })
 
     streamAsk(
-      e.domainId,
-      { anchor: e.anchor, excerpt: e.excerpt, question },
+      e.target.domainId,
+      { anchor: e.target.anchor, excerpt: e.target.excerpt, question },
       (chunk) => {
         if (!ctrl.signal.aborted) patch((cur) => ({ ...cur, answer: cur.answer + chunk }))
       },

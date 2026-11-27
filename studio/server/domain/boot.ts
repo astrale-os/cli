@@ -8,7 +8,7 @@ import type { DomainHandle } from './registry'
  * one present at launch.
  */
 import { getBundle } from '../introspect/cache'
-import { captureBaseline, hashAnatomyFiles, loadBaseline } from '../state/baseline'
+import { seedBaseline } from '../state/baseline'
 import { initDotDir } from '../state/store'
 import { watchDomain } from './watch'
 
@@ -33,16 +33,7 @@ export async function bootDomain(
     false,
     options.background === true ? 'background' : 'reader',
   )
-  if (!loadBaseline(handle.root))
-    captureBaseline(
-      handle.root,
-      {
-        ir: bundle?.ir ?? null,
-        root: bundle?.schemaMode === 'canonical-admitted' ? (bundle.schemaRoot ?? null) : null,
-        revision: bundle?.schemaRevision ?? null,
-      },
-      hashAnatomyFiles(handle.root, handle.schemaDirName, handle.domainFile),
-    )
+  seedBaseline(handle, bundle)
   const stop = watchDomain(handle)
   return {
     origin: bundle?.ir?.domain ?? handle.origin ?? handle.id,

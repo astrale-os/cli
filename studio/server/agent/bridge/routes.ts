@@ -6,9 +6,9 @@ import type { AgentWorkspace } from '../workspace'
 import { concreteAnchorKind } from '../../../shared/comment-anchors'
 import { json } from '../../api/http'
 import { asString, asStringArray } from '../../json'
-import { addThreadEntry, readComments, setStatus, upsertComment } from '../../state/comments'
+import { addThreadEntry, briefedComments, setStatus, upsertComment } from '../../state/comments'
 import { readContext } from '../../state/context'
-import { listDocuments } from '../../state/documents'
+import { briefedDocuments } from '../../state/documents'
 import { emitStudioEvent } from '../notify'
 import { domainOrigin, domainRelativePath, findDomain } from '../workspace'
 
@@ -68,13 +68,13 @@ export function handleBridge(sub: string, body: JsonRecord): Promise<Response> {
 
 /** Every open thread of one domain, regardless of whose turn it is. */
 function openIn(handle: DomainHandle) {
-  return readComments(handle.root).comments.filter((comment) => comment.status === 'open')
+  return briefedComments(handle.root).comments.filter((comment) => comment.status === 'open')
 }
 
 /** Which domain holds a comment — ids are uuids, so at most one does. */
 function ownerOf(workspace: AgentWorkspace, commentId: string): DomainHandle | undefined {
   return workspace.domains.find((handle) =>
-    readComments(handle.root).comments.some((comment) => comment.id === commentId),
+    briefedComments(handle.root).comments.some((comment) => comment.id === commentId),
   )
 }
 
@@ -95,11 +95,13 @@ async function applyBridgeCall(sub: string, body: JsonRecord): Promise<Response>
       return json({
         domains: workspace.domains.map((handle) => {
           const open = openIn(handle)
+          const { unreadable } = briefedComments(handle.root)
           return {
             ...describe(handle),
             root: handle.root,
             openThreads: open.length,
             awaiting: open.filter((comment) => comment.thread.at(-1)?.role !== 'author').length,
+            ...(unreadable ? { unreadable } : {}),
           }
         }),
       })
@@ -131,10 +133,12 @@ async function applyBridgeCall(sub: string, body: JsonRecord): Promise<Response>
       if (!handle)
         return error(reference ? `unknown domain: ${reference}` : 'domain is required', 404)
       const context = readContext(handle.root)
+      const briefed = briefedDocuments(handle.root)
       return json({
         ...describe(handle),
         root: handle.root,
-        documents: listDocuments(handle.root).map((doc) => ({
+        ...(briefed.unreadable ? { unreadableDocuments: briefed.unreadable } : {}),
+        documents: briefed.documents.map((doc) => ({
           name: doc.name,
           type: doc.type,
           size: doc.size,

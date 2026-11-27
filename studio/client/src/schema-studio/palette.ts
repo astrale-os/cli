@@ -55,27 +55,8 @@ export function moduleTint(hue: number): ModuleTint {
   return Object.fromEntries(PARTS.map((part) => [part, paint(part)])) as unknown as ModuleTint
 }
 
-/** Rendered size of a class node — the layout contract (see elk-layout.ts). */
-export const CLASS_W = 184
-export const CLASS_H = 40
-/** Rendered size of a view node — narrower and shorter than a class, so the two
- *  never read as the same kind of thing even before you reach their shapes. */
-export const VIEW_W = 168
-export const VIEW_H = 32
-/** Rendered size of a function node. Same pill metrics as a view — both are callables
- *  or screens hanging off the classes, and one shape for "not a class" keeps the
- *  canvas readable at a glance; the hue is what tells them apart. */
-export const FUNCTION_W = 168
-export const FUNCTION_H = 32
-/** Module box insets: children start below the header, padded on every side. */
-export const MODULE_HEADER = 38
-export const MODULE_PAD = 18
-export const MODULE_COLLAPSED_H = 34
-/** Domain frame inset — even on every side. Unlike a module box the frame wears its
- *  origin ON the top edge, so there is no label to reserve room under. */
-export const DOMAIN_PAD = 52
+/** Room the canvas's floating toolbars take at the top of a view: nothing docks under them. */
+export const TOOLBAR_CLEARANCE = 44
+
 /** Room the floating agent dock takes at the bottom of a view: canvas controls sit above it. */
 export const DOCK_CLEARANCE = 88
-
-/** Base weight for unselected schema relationships, including external endpoints. */
-export const EDGE_WIDTH = 1.3

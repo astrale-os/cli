@@ -22,7 +22,8 @@ test('a quiet domain package hint prepares a new unsent agent request', async ({
   await page.route('**/api/domain/*/updates', (route) => route.fulfill({ json: updates }))
 
   await page.goto('/')
-  const hint = page.getByTestId('workspace-domain-tree').getByRole('button', {
+  // the Domain crumb carries the hint for the Domain being read
+  const hint = page.getByTestId('level-breadcrumb').getByRole('button', {
     name: '2 Astrale package updates available for crm.studio-demo.astrale.ai',
   })
   await expect(hint).toBeVisible()

@@ -3,23 +3,29 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { readJson, writeJson } from '../state/store'
+import { UnreadableState } from '../state/state-file'
+import { readJson, readState, writeJson, writeState } from '../state/store'
 import {
   activeChat,
+  chatExists,
   chatInfo,
   chatQueue,
   clearChatHandoff,
+  clearChatSession,
   createChat,
   deleteChat,
   enqueueChatMessage,
   ensureChats,
   forkChat,
   markHandoffDelivered,
+  renameChat,
   requeueChatMessage,
   resolveChat,
   setActiveChat,
+  setChatModel,
   setChatOrder,
   takeQueuedMessage,
+  unreadableChatFiles,
 } from './chats'
 
 const roots: string[] = []
@@ -125,7 +131,7 @@ test('a fork briefs the new tab once, keeps the briefing as its chip, and leaves
   })
 })
 
-test('a queue keeps its order on a failed take and drops corrupt entries on read', () => {
+test('a queue keeps its order on a failed take', () => {
   const dir = root()
   const chat = activeChat(dir, 'claude')
   enqueueChatMessage(dir, chat.id, 'one')
@@ -135,16 +141,150 @@ test('a queue keeps its order on a failed take and drops corrupt entries on read
   // a submit that never started puts its message back where it was
   requeueChatMessage(dir, chat.id, takeQueuedMessage(dir, chat.id)!)
   expect(texts()).toEqual(['one', 'two'])
+})
 
-  const stored = readJson<Record<string, unknown> | null>(
-    dir,
-    `chats/${chat.id}.json`,
-    (value) => value as Record<string, unknown>,
-    null,
-  )!
-  writeJson(dir, `chats/${chat.id}.json`, {
+/** What a request naming a chat whose file is not read whole meets: a refusal, with why. */
+function refusal(run: () => unknown): UnreadableState {
+  try {
+    run()
+  } catch (error) {
+    if (error instanceof UnreadableState) return error
+    throw error
+  }
+  throw new Error('the request was not refused')
+}
+
+test('a chat file not read whole is left out of the tabs, refused by name, and never written over', () => {
+  const dir = root()
+  const kept = activeChat(dir, 'claude')
+  const broken = createChat(dir, { harness: 'claude' })
+  const file = `chats/${broken.id}.json`
+  const cases: [string, string, RegExp][] = [
+    ['not JSON', '{ "id": ', /^it is not JSON/],
+    [
+      'a queued message this Studio does not decode',
+      JSON.stringify({
+        ...JSON.parse(readState(dir, file)!),
+        queue: [{ id: 'kept', text: 'kept' }, { text: 'no id' }],
+      }),
+      /^queued message 2 has no id$/,
+    ],
+    [
+      'a value of a known key it does not decode',
+      JSON.stringify({ ...JSON.parse(readState(dir, file)!), turns: 'many' }),
+      /^turns is not a count$/,
+    ],
+    [
+      'another chat’s id',
+      JSON.stringify({ ...JSON.parse(readState(dir, file)!), id: kept.id }),
+      new RegExp(`^it does not name chat ${broken.id} as its id$`),
+    ],
+  ]
+  for (const [, bytes, reason] of cases) {
+    writeState(dir, file, bytes)
+    // the tabs read whole are listed, and the broken one is not taken for one closed
+    expect(ensureChats(dir, 'claude').chats.map((chat) => chat.id)).toEqual([kept.id])
+    expect(chatExists(dir, broken.id)).toBe(true)
+    const named = refusal(() => resolveChat(dir, 'claude', broken.id))
+    expect(named.path.endsWith(file)).toBe(true)
+    expect(named.reason).toMatch(reason)
+    // every write naming it is refused, the file left as it is
+    for (const write of [
+      () => renameChat(dir, broken.id, 'renamed'),
+      () => setChatModel(dir, broken.id, 'other'),
+      () => enqueueChatMessage(dir, broken.id, 'more'),
+      () => takeQueuedMessage(dir, broken.id),
+      () => clearChatHandoff(dir, broken.id),
+      () => setActiveChat(dir, broken.id),
+      () => deleteChat(dir, broken.id),
+    ])
+      expect(refusal(write).reason).toMatch(reason)
+    expect(readState(dir, file)).toBe(bytes)
+  }
+  // a new tab takes a new file, and the active one is still the one read whole
+  expect(createChat(dir, { harness: 'codex' }).id).not.toBe(broken.id)
+  expect(readState(dir, file)).toBe(cases.at(-1)![1])
+})
+
+test("the active pointer and the tabs' order not read whole read as none, are named, and are never written over", () => {
+  const dir = root()
+  const first = activeChat(dir, 'claude')
+  // age order is by creation time: the second tab is made a tick later
+  Bun.sleepSync(2)
+  const second = createChat(dir, { harness: 'claude' })
+  setChatOrder(dir, [second.id, first.id])
+  expect(unreadableChatFiles(dir)).toEqual([])
+
+  const pointer = '{ "activeId": '
+  const order = JSON.stringify({ order: 'b, a' })
+  writeState(dir, 'active-chat.json', pointer)
+  writeState(dir, 'chat-order.json', order)
+  // the tabs still open, in age order, on the newest
+  const store = ensureChats(dir, 'claude')
+  expect(store.chats.map((chat) => chat.id)).toEqual([first.id, second.id])
+  expect(store.activeId).toBe(second.id)
+  // each file left out is named, with why
+  const named = unreadableChatFiles(dir)
+  expect(named.map((file) => [file.path.split('/').at(-1), file.reason])).toEqual([
+    ['active-chat.json', expect.stringMatching(/^it is not JSON/)],
+    ['chat-order.json', 'order is not a list of chat ids'],
+  ])
+  // every write to them is refused, before anything else is written
+  expect(refusal(() => setActiveChat(dir, first.id)).path.endsWith('active-chat.json')).toBe(true)
+  expect(refusal(() => setChatOrder(dir, [first.id])).path.endsWith('chat-order.json')).toBe(true)
+  expect(refusal(() => deleteChat(dir, first.id)).path.endsWith('chat-order.json')).toBe(true)
+  expect(refusal(() => createChat(dir, { harness: 'codex' })).reason).toMatch(/^it is not JSON/)
+  expect(ensureChats(dir, 'claude').chats).toHaveLength(2)
+  expect(readState(dir, 'active-chat.json')).toBe(pointer)
+  expect(readState(dir, 'chat-order.json')).toBe(order)
+
+  // a chat file not read whole is named by its chat
+  writeState(dir, 'active-chat.json', JSON.stringify({ activeId: first.id, pinned: 'newer' }))
+  writeState(dir, `chats/${second.id}.json`, '{')
+  expect(unreadableChatFiles(dir).map((file) => file.chatId)).toEqual([second.id, undefined])
+  // a key this Studio does not know is kept through a write of the pointer
+  writeState(dir, 'chat-order.json', JSON.stringify({ order: [first.id] }))
+  createChat(dir, { harness: 'claude' })
+  expect(JSON.parse(readState(dir, 'active-chat.json')!).pinned).toBe('newer')
+})
+
+test('a key this Studio does not know is kept through every write, and one it knows goes when cleared', () => {
+  const dir = root()
+  const chat = activeChat(dir, 'claude')
+  const file = `chats/${chat.id}.json`
+  enqueueChatMessage(dir, chat.id, 'first')
+  const stored = JSON.parse(readState(dir, file)!)
+  writeJson(dir, file, {
     ...stored,
-    queue: [{ id: 'kept', text: 'kept' }, { text: 'no id' }, 'nonsense'],
+    sessionId: 'session-1',
+    // what an older Studio may have written for a key it left empty
+    model: null,
+    pinnedBy: { window: 'newer' },
+    handoff: {
+      fromChatId: 'source',
+      fromHarness: 'codex',
+      createdAt: stored.createdAt,
+      summary: 'so far',
+      channel: 'newer',
+    },
+    queue: [{ ...stored.queue[0], priority: 'high' }],
   })
-  expect(texts()).toEqual(['kept'])
+
+  renameChat(dir, chat.id, 'Renamed')
+  enqueueChatMessage(dir, chat.id, 'second')
+  takeQueuedMessage(dir, chat.id, chatQueue(resolveChat(dir, 'claude', chat.id)!)[1]!.id)
+  markHandoffDelivered(dir, chat.id)
+  clearChatSession(dir, chat.id)
+
+  const after = JSON.parse(readState(dir, file)!)
+  expect(after.title).toBe('Renamed')
+  expect(after.pinnedBy).toEqual({ window: 'newer' })
+  expect(after.handoff).toMatchObject({ delivered: true, channel: 'newer' })
+  expect(after.queue).toEqual([{ ...stored.queue[0], priority: 'high' }])
+  // a key it knows is gone when this Studio clears it, never put back
+  expect('sessionId' in after).toBe(false)
+  expect('model' in after).toBe(false)
+  expect(
+    chatInfo(resolveChat(dir, 'claude', chat.id)!, 'idle').queued.map(({ text }) => text),
+  ).toEqual(['first'])
 })

@@ -214,6 +214,8 @@ function FloatingDock() {
   const run = useDisplayRun()
   const dockWidth = useUI((s) => s.dockWidth)
   const dockHeight = useUI((s) => s.dockHeight)
+  // the rail and an open Inspector keep their full height: the dock floats over the canvas
+  const asides = useUI((s) => s.asides)
   const tabsLeft = useUI((s) => s.chatTabsSide === 'left')
   const tabsWidth = useUI((s) => s.chatTabsWidth)
   const { data: chats } = useChats()
@@ -254,7 +256,10 @@ function FloatingDock() {
     // the close button — the top of the dock — climbed off the screen as soon as a
     // long message, a queue or a short window made the whole thing taller than the
     // window, and the dock went on to cover the app header.
-    <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-center p-4">
+    <div
+      style={{ left: asides.left, right: asides.right }}
+      className="pointer-events-none absolute inset-0 z-30 flex items-end justify-center p-4"
+    >
       <AgentDropZone
         ref={box}
         data-testid="agent-dock"

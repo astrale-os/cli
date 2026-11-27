@@ -5,7 +5,7 @@ import { getAnatomy, getBundle } from '../introspect/cache'
 import { asString } from '../json'
 import { studioSettings } from '../state/settings'
 import { getViewRuntime, launchViewSession, releaseViewSession } from '../views/session'
-import { badRequest, json, notFound, type DomainRouteContext } from './http'
+import { badRequest, json, notFound, pathSegment, type DomainRouteContext } from './http'
 
 const VALID_SLUG = /^[a-z][a-z0-9-]*$/
 
@@ -14,7 +14,7 @@ async function resolveView(
   id: string,
   encodedSlug: string,
 ): Promise<{ error: Response } | { view: ViewInfo; origin: string }> {
-  const slug = decodeURIComponent(encodedSlug)
+  const slug = pathSegment(encodedSlug, 'the View slug')
   if (!VALID_SLUG.test(slug)) return { error: badRequest('invalid view slug') }
   const anatomy = await getAnatomy(id)
   const view = anatomy?.views.find((candidate) => candidate.slug === slug)

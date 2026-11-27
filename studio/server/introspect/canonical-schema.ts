@@ -15,7 +15,6 @@ import type {
   JsonSchema,
   SchemaIR,
   SchemaRevision,
-  StudioCore,
 } from '../../shared/contracts/schema'
 import type { IrClassKey, IrClassRef, IrSchemaRef } from '../../shared/schema/identity'
 
@@ -66,6 +65,8 @@ export interface SchemaSdk {
 interface CanonicalSchemaExtraction {
   readonly status: 'admitted' | 'preview'
   readonly root: CanonicalDomainSchemaV1
+  /** The admitted root's dependency Schemas, as the DSL Bundle carries them; null for a preview. */
+  readonly closure: readonly CanonicalDomainSchemaV1[] | null
   readonly revision: SchemaRevision | null
   readonly ir: SchemaIR
 }
@@ -121,37 +122,19 @@ export function extractCanonicalSchemaFromSdk(
     return {
       status: 'admitted',
       root: admitted.root,
+      closure: admitted.closure,
       revision: domain.revision,
       ir: projectSchema(admitted.root, projectImports(sdk, domain, admitted.closure)),
     }
   } catch {
-    return { status: 'preview', root: candidate, revision: null, ir: projectSchema(candidate) }
+    return {
+      status: 'preview',
+      root: candidate,
+      closure: null,
+      revision: null,
+      ir: projectSchema(candidate),
+    }
   }
-}
-
-/** Project canonical Core data without importing Domain definition or Runtime modules. */
-export function projectCanonicalCore(
-  root: CanonicalDomainSchemaV1,
-): Pick<StudioCore, 'domain' | 'nodes' | 'edges'> {
-  const core = asRecord(root.core) ?? {}
-  const nodes = entriesOf(core.nodes).map(([slug, raw]) => {
-    const node = asRecord(raw) ?? {}
-    return {
-      path: corePath({ origin: root.origin, name: slug }),
-      className: classRef(node.class)?.name ?? '?',
-      data: recordCopy(node.properties),
-    }
-  })
-  const edges = arrayOf(core.edges).map((raw) => {
-    const edge = asRecord(raw) ?? {}
-    return {
-      from: coreEndpoint(edge.source, root.origin),
-      to: coreEndpoint(edge.target, root.origin),
-      edgeName: classRef(edge.class)?.name ?? '?',
-      ...(edge.properties === undefined ? {} : { data: recordCopy(edge.properties) }),
-    }
-  })
-  return { domain: root.origin, nodes, edges }
 }
 
 function projectSchema(root: CanonicalDomainSchemaV1, imports?: ImportProjection): SchemaIR {
@@ -391,19 +374,6 @@ function dataDeclaration(
   return typeof data?.mediaType === 'string'
     ? (jsonCopy(data) as { mediaType: string; [key: string]: unknown })
     : undefined
-}
-
-function coreEndpoint(value: unknown, rootOrigin: string): string {
-  const endpoint = asRecord(value)
-  if (endpoint?.kind === 'domain') {
-    return `/:${typeof endpoint.origin === 'string' ? endpoint.origin : rootOrigin}`
-  }
-  const ref = definitionRefOf(value)
-  return ref?.kind === 'core' ? corePath(ref) : `/:${rootOrigin}`
-}
-
-function corePath(ref: Pick<IrSchemaRef, 'origin' | 'name'>): string {
-  return `/:${ref.origin}:core.${ref.name}`
 }
 
 function studioSchema(value: unknown): JsonSchema {

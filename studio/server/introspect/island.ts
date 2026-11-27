@@ -12,29 +12,30 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+/** The `@astrale-os/sdk` package a Domain reads: the nearest installed copy, from the Domain up. */
+export function installedSdkRoot(root: string): string | null {
+  for (let directory = root; ; directory = dirname(directory)) {
+    const packageRoot = join(directory, 'node_modules', '@astrale-os', 'sdk')
+    if (existsSync(join(packageRoot, 'package.json'))) return packageRoot
+    if (dirname(directory) === directory) return null
+  }
+}
+
 /** Resolve one `@astrale-os/sdk` export subpath from the Domain's own installed SDK. */
 export async function installedSdkExport(root: string, subpath: string): Promise<string> {
-  let directory = root
-  for (;;) {
-    const packageRoot = join(directory, 'node_modules', '@astrale-os', 'sdk')
-    const manifestPath = join(packageRoot, 'package.json')
-    if (existsSync(manifestPath)) {
-      const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
-        exports?: Record<string, string | { import?: string; default?: string; types?: string }>
-      }
-      const exported = manifest.exports?.[subpath]
-      const target =
-        typeof exported === 'string'
-          ? exported
-          : (exported?.import ?? exported?.default ?? exported?.types)
-      if (target) return join(packageRoot, target)
-      throw new Error(`${manifestPath} does not export @astrale-os/sdk/${subpath.slice(2)}`)
-    }
-    const parent = dirname(directory)
-    if (parent === directory) break
-    directory = parent
+  const packageRoot = installedSdkRoot(root)
+  if (packageRoot === null) throw new Error(`Cannot find @astrale-os/sdk from ${root}`)
+  const manifestPath = join(packageRoot, 'package.json')
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    exports?: Record<string, string | { import?: string; default?: string; types?: string }>
   }
-  throw new Error(`Cannot find @astrale-os/sdk from ${root}`)
+  const exported = manifest.exports?.[subpath]
+  const target =
+    typeof exported === 'string'
+      ? exported
+      : (exported?.import ?? exported?.default ?? exported?.types)
+  if (target) return join(packageRoot, target)
+  throw new Error(`${manifestPath} does not export @astrale-os/sdk/${subpath.slice(2)}`)
 }
 
 function buildFailure(cause: unknown): Error {

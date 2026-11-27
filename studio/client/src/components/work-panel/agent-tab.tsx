@@ -4,11 +4,19 @@ import type { ClipboardEvent, ReactNode } from 'react'
 
 import { imagesLabel } from '@shared/attachments'
 import { useQueryClient } from '@tanstack/react-query'
-import { Image as ImageIcon, ListPlus, Loader2, Square, TriangleAlert } from 'lucide-react'
+import {
+  Image as ImageIcon,
+  ListPlus,
+  Loader2,
+  MessageSquare,
+  Square,
+  TriangleAlert,
+} from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
+import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   conversationContext,
@@ -21,7 +29,7 @@ import {
   useAgentTurns,
   useDisplayRun,
 } from '@/lib/agent'
-import { useReadAgentReplies } from '@/lib/agent-unread'
+import { useReadAgentReplies, useUnreadAgentReplies } from '@/lib/agent-unread'
 import { api, qk } from '@/lib/api'
 import { isImageFile, useComposerImages, useDraftImages } from '@/lib/attachments'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
@@ -29,6 +37,7 @@ import { labelOf, noAgentNotice, presenceOf } from '@/lib/harnesses'
 import { useHarness, useWorkspace, useWorkspaceDocuments } from '@/lib/hooks'
 import { agentDraftOf, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { useStage } from '@/studio/stage/store'
 
 import { AgentTurn, TurnDivider } from './agent-turn'
 import { ChatEffortPicker } from './chat-effort'
@@ -133,6 +142,7 @@ export function AgentDropZone({
   const { data: chats } = useChats()
   const { attach } = useComposerImages(chats?.activeId)
   const queryClient = useQueryClient()
+  const room = useStageRoom()
 
   const upload = async (files: File[]) => {
     if (!files.length) return
@@ -153,6 +163,16 @@ export function AgentDropZone({
   return (
     <DropZone
       {...rest}
+      data-stepped-aside={room === 'aside' ? '' : undefined}
+      data-over-stage={typeof room === 'number' ? '' : undefined}
+      style={
+        room === 'aside'
+          ? // hidden, not unmounted: its draft and caret are the same element when it comes back
+            { ...rest.style, display: 'none' }
+          : typeof room === 'number'
+            ? { ...rest.style, marginBottom: room, maxHeight: `calc(100% - ${room}px)` }
+            : rest.style
+      }
       onFiles={(files) => {
         const images = files.filter(isImageFile)
         if (images.length) attach(images)
@@ -161,6 +181,64 @@ export function AgentDropZone({
     >
       {children}
     </DropZone>
+  )
+}
+
+/**
+ * Where the floating composer stands while the rule stage is open at the foot of the view, so
+ * that neither covers the other's controls: aside until the agent is opened, then over the stage
+ * — lifted by the stage's height, in px. None while no stage is open, or for the panel at a side,
+ * which never covers it.
+ */
+function useStageRoom(): 'aside' | number | undefined {
+  const floating = useUI((state) => state.panelSide === 'bottom')
+  const open = useUI((state) => state.panelOpen)
+  const cover = useStage((state) => state.cover)
+  if (!floating || cover === 0) return undefined
+  return open ? cover : 'aside'
+}
+
+/**
+ * The composer's way back while it steps aside for the stage, named as the composer is: one click
+ * opens the agent over the stage, put back first if it was enlarged.
+ */
+export function AgentAsideButton() {
+  const floating = useUI((state) => state.panelSide === 'bottom')
+  const setPanelTab = useUI((state) => state.setPanelTab)
+  const setEnlarged = useStage((state) => state.setEnlarged)
+  const working = isRunActive(useDisplayRun())
+  const unread = useUnreadAgentReplies()
+  if (!floating) return null
+  const failed = unread.some((reply) => reply.failed)
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      data-agent-aside=""
+      data-agent-notification={unread.length > 0 ? (failed ? 'error' : 'unread') : undefined}
+      aria-busy={working || undefined}
+      title="The composer steps aside while the stage is open: this brings it back over it"
+      onClick={() => {
+        setEnlarged(false)
+        setPanelTab('agent')
+        requestAnimationFrame(() =>
+          document
+            .querySelector<HTMLTextAreaElement>('[data-testid="agent-dock"] [data-agent-composer]')
+            ?.focus(),
+        )
+      }}
+      className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+    >
+      {working ? <Loader2 aria-hidden className="animate-spin" /> : <MessageSquare aria-hidden />}
+      Message the agent
+      {unread.length > 0 && (
+        <span
+          aria-hidden
+          className={cn('size-1.5 rounded-full', failed ? 'bg-destructive' : 'bg-success')}
+        />
+      )}
+    </Button>
   )
 }
 

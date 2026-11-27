@@ -114,10 +114,11 @@ export function UpdatesBadge({ domainId, domainPath }: { domainId: string; domai
         <button
           type="button"
           title="Astrale CLI or skills update available"
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 text-xs font-medium text-warning transition-colors hover:bg-warning/20"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-warning/40 bg-warning/10 px-2 text-xs font-medium text-warning transition-colors hover:bg-warning/20"
         >
           <ArrowUpCircle className="h-3.5 w-3.5" />
-          <span>Update</span>
+          {/* a narrow window keeps the badge, and its name for assistive technology */}
+          <span className="max-lg:sr-only">Update</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="bottom" className="w-80 space-y-3 p-3">

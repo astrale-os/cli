@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import { HarnessLogo } from '@/components/harness-logo'
 import { Button } from '@/components/ui/button'
 import { brandTone } from '@/components/work-panel/chat-tone'
-import { api, qk } from '@/lib/api'
+import { api, qk, unreadableOf } from '@/lib/api'
 import { useActiveChat, useActiveChatId } from '@/lib/chats'
 import { labelOf, noAgentNotice } from '@/lib/harnesses'
 import { useAgentSession, useLoadout, useUsage } from '@/lib/hooks'
@@ -227,7 +227,8 @@ export function AgentDetails({
   // Diagnostics describe the conversation the user is in, not the domain default.
   const chatId = useActiveChatId()
   const { data: loadout, isFetching: loadoutFetching, error: loadoutError } = useLoadout(chatId)
-  const { data: usage } = useUsage()
+  const { data: usage, error: usageError } = useUsage()
+  const usageUnreadable = unreadableOf(usageError)
   const queryClient = useQueryClient()
   const accessLevels = harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
   const access = resolveAgentAccess(values.agentAccess ?? settings?.agentAccess, accessLevels)
@@ -263,6 +264,7 @@ export function AgentDetails({
             loadoutError ? String((loadoutError as Error)?.message ?? loadoutError) : undefined
           }
           usage={usage}
+          {...(usageUnreadable ? { usageUnreadable } : {})}
           onRefresh={() => refreshLoadout.mutate()}
         />
       </div>

@@ -10,7 +10,7 @@
  */
 import type { AgentRun } from '@shared/contracts/agent'
 
-import { chatInfo, expect, FIXTURE_ID, stubAgent, test, type Page } from './test'
+import { chatInfo, expect, FIXTURE_ID, sceneBox, stubAgent, test, type Page } from './test'
 
 /** Anything taller than this is a panel, not a bar. */
 const BAR_CEILING = 120
@@ -327,7 +327,7 @@ test('the paperclip asks for a domain; what it took rides the open chat, past th
   await agent(page)
   await goBottom(page)
   // an upload queues behind the server's first introspection
-  await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 })
+  await expect(sceneBox(page, 'class.Invoice')).toBeVisible({ timeout: 20_000 })
   await openDock(page)
   await composer(page).fill('half a sentence')
 

@@ -1,8 +1,8 @@
 /**
  * create-domain.tsx — how a domain begins.
  *
- * It begins as a conversation. The rail's plus opens one composer in the middle
- * of the screen: a name written like a title — from the left edge, where the
+ * It begins as a conversation. The Workspace page's New domain opens one composer
+ * in the middle of the screen: a name written like a title — from the left edge, where the
  * message under it starts — and under it the same field, the same clip and the
  * same send button the agent has everywhere else in the studio, because that is
  * what this is. Pressing send scaffolds the domain under the name that was
@@ -29,7 +29,6 @@ import { useActiveChatId } from '@/lib/chats'
 import { createDomainWithBrief, type NewDomainPhase, readName } from '@/lib/new-domain'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { useCanvasDomains } from '@/schema-studio/workspace/canvas-selection'
 
 import { ComposerField, ComposerFrame, DropZone, FilePickButton, SendButton } from './composer'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
@@ -37,7 +36,7 @@ import { CHIP, fmtSize, kindOf } from './work-panel/documents'
 
 const PROMPT = 'Describe the domain — what it models, what it is for…'
 
-/** The centred composer, opened from the rail's plus (and from an empty workspace). */
+/** The centred composer, opened from the Workspace page and from an empty workspace. */
 export function NewDomainDialog() {
   const open = useUI((state) => state.newDomainOpen)
   const setOpen = useUI((state) => state.setNewDomainOpen)
@@ -87,11 +86,10 @@ function NewDomainCard({
 
   const queryClient = useQueryClient()
   const setRun = useAgentLive((state) => state.setRun)
-  const setSection = useUI((state) => state.setSection)
+  const openDomain = useUI((state) => state.openDomain)
   const setPanelTab = useUI((state) => state.setPanelTab)
   const setAgentDraft = useUI((state) => state.setAgentDraft)
   const activeChatId = useActiveChatId()
-  const canvas = useCanvasDomains()
 
   const reading = readName(name)
   const busy = phase !== 'idle'
@@ -110,8 +108,7 @@ function NewDomainCard({
     if (run) setRun(run)
     void queryClient.invalidateQueries({ queryKey: qk.chats })
     void queryClient.invalidateQueries({ queryKey: qk.agent() })
-    if (!canvas.visible.has(id)) canvas.toggleOnCanvas(id)
-    setSection('schema')
+    openDomain(id)
     // the turn is already running — open on it rather than on a canvas that is
     // still being drawn, which is what makes this read as one gesture
     setPanelTab('agent')

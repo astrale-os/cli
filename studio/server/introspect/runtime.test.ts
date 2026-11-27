@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import type { DomainHandle } from '../domain/registry'
 
 import { buildBundle } from './bundle'
-import { buildCore } from './core'
 import { renderFingerprintOf } from './hash'
 import { runtimeExtract } from './runtime'
 
@@ -75,21 +74,18 @@ test('the authored SDK admits the Schema; the bundle carries its revision, Core 
     },
   })
   expect(extracted.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
+  // the admitted Bundle's closure travels with the root: the dependency's own document
+  expect(extracted.closure).toMatchObject([
+    { format: 'astrale.dsl', version: 'v1', origin: 'directory.runtime.test' },
+  ])
 
   // the DSL revision travels as is, while the render identity stays separate
   const built = await buildBundle(handle)
   expect(built.schemaRoot).toEqual(extracted.root)
+  expect(built.schemaClosure).toEqual(extracted.closure!)
   expect(built.schemaRevision).toBe(extracted.revision!)
   expect(built.renderFingerprint).toBe(renderFingerprintOf(extracted.root))
   expect(built.renderFingerprint).not.toBe(renderFingerprintOf(extracted.ir))
-
-  // Core comes through the pure Schema entry, never the Domain definition
-  expect(buildCore(handle, built)).toMatchObject({
-    domain: 'documents.runtime.test',
-    nodes: [{ path: '/:documents.runtime.test:core.welcome', className: 'Document', data: {} }],
-    edges: [],
-    error: null,
-  })
 })
 
 for (const [fixture, origin] of [

@@ -4,13 +4,16 @@
  * This module owns syntax/value lookup only. It does not interpret handlers or
  * schema members.
  */
-import { existsSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import {
   Node,
   Project,
   SyntaxKind,
+  type ArrowFunction,
   type CallExpression,
+  type FunctionDeclaration,
+  type FunctionExpression,
   type ObjectLiteralExpression,
   type SourceFile,
 } from 'ts-morph'
@@ -81,6 +84,7 @@ export function valueOfIdentifier(id: Node): Node | undefined {
   if (!Node.isIdentifier(id)) return undefined
   const decl = firstValueDeclaration(id)
   if (decl && Node.isVariableDeclaration(decl)) return decl.getInitializer()
+  if (decl && Node.isFunctionDeclaration(decl)) return decl
   return resolveImportedValue(id)
 }
 
@@ -157,7 +161,20 @@ function firstValueDeclaration(node: Node): Node | undefined {
   const idNode = Node.isIdentifier(node)
     ? node
     : node.getFirstDescendantByKind(SyntaxKind.Identifier)
-  return idNode?.getSymbol()?.getDeclarations()[0]
+  return idNode && declarationOf(idNode)
+}
+
+/**
+ * The declaration an identifier refers to. A shorthand property (`{ integrations }`)
+ * names the property and the binding at once; the binding is the value.
+ */
+export function declarationOf(identifier: Node): Node | undefined {
+  const parent = identifier.getParent()
+  const symbol =
+    parent && Node.isShorthandPropertyAssignment(parent)
+      ? parent.getValueSymbol()
+      : identifier.getSymbol()
+  return symbol?.getDeclarations()[0]
 }
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
@@ -189,6 +206,25 @@ function firstExisting(base: string): string | undefined {
   ]
   for (const c of candidates) if (existsSync(c)) return c
   return undefined
+}
+
+/** A function written as a declaration, an arrow or an expression: what a helper is. */
+export function isFunction(
+  node: Node,
+): node is FunctionDeclaration | ArrowFunction | FunctionExpression {
+  return (
+    Node.isFunctionDeclaration(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isFunctionExpression(node)
+  )
+}
+
+/** The binding that holds a declaration: `export const deleteComment = …`. */
+export function bindingName(call: CallExpression): string | undefined {
+  const declaration = call.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  return declaration && unwrapExpression(declaration.getInitializer() ?? declaration) === call
+    ? declaration.getName()
+    : undefined
 }
 
 /** Stable identity of a syntax node across aliases: `<file>:<start offset>`. */
@@ -246,4 +282,94 @@ export function propertyKey(prop: Node): string | undefined {
   }
   // Spread (`...knobs`) — no single key.
   return undefined
+}
+
+const IGNORED_DIRECTORIES = new Set([
+  '.git',
+  '.history',
+  '.astrale',
+  '.cache',
+  '__tests__',
+  'dist',
+  'node_modules',
+])
+
+/** Every authored, non-test TypeScript file under `root`. */
+export function authoredTypeScriptFiles(root: string): string[] {
+  const files: string[] = []
+  const visit = (directory: string) => {
+    let entries
+    try {
+      entries = readdirSync(directory, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRECTORIES.has(entry.name)) visit(path)
+      } else if (entry.isFile() && path.endsWith('.ts') && !path.endsWith('.test.ts')) {
+        files.push(path)
+      }
+    }
+  }
+  visit(root)
+  return files
+}
+
+/** The factory of an SDK curried declaration: `defineAction<S>()(…)` → 'defineAction'. */
+export function curriedFactory(call: CallExpression): string | undefined {
+  const expression = unwrapExpression(call.getExpression())
+  if (!Node.isCallExpression(expression)) return undefined
+  const factory = unwrapExpression(expression.getExpression())
+  return Node.isIdentifier(factory) ? factory.getText() : undefined
+}
+
+/** A string-literal call argument, e.g. the declared key of `defineAction()('Issue.rename', …)`. */
+export function stringArgument(call: CallExpression, index: number): string | undefined {
+  const argument = call.getArguments()[index]
+  return argument &&
+    (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
+    ? argument.getLiteralText()
+    : undefined
+}
+
+/**
+ * Harvest the leading JSDoc / line-comment block immediately above `node`,
+ * stripped of comment markers, collapsed to a single trimmed string.
+ */
+export function leadingDoc(node: Node): string | undefined {
+  // Prefer real JSDoc nodes when present (ts-morph exposes them on many decls).
+  const anyNode = node as unknown as { getJsDocs?: () => Array<{ getText: () => string }> }
+  if (typeof anyNode.getJsDocs === 'function') {
+    const docs = anyNode.getJsDocs()
+    if (docs.length > 0) {
+      const text = docs.map((d) => d.getText()).join('\n')
+      const cleaned = cleanComment(text)
+      if (cleaned) return cleaned
+    }
+  }
+  // Fall back to raw leading comment ranges (covers `//` line comments too).
+  const ranges = node.getLeadingCommentRanges()
+  if (ranges.length === 0) return undefined
+  const raw = ranges.map((r) => r.getText()).join('\n')
+  const cleaned = cleanComment(raw)
+  return cleaned || undefined
+}
+
+/** Strip `/** *​/`, `//`, leading `*` gutters; collapse to a tidy single line. */
+function cleanComment(raw: string): string {
+  const lines = raw
+    .replace(/\/\*\*?/g, '')
+    .replace(/\*\//g, '')
+    .split('\n')
+    .map((l) =>
+      l
+        .replace(/^\s*\*\s?/, '')
+        .replace(/^\s*\/\/\s?/, '')
+        .trim(),
+    )
+    .filter((l) => l.length > 0)
+  return lines.join(' ').replace(/\s+/g, ' ').trim()
 }

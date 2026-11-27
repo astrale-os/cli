@@ -1,49 +1,85 @@
-import { expect, type Locator, type Page, test } from './test'
+import { expect, inspector, lensButton, openSchema, sceneBox, test, type Locator } from './test'
 
 /**
- * A Class's detail panel reads as two flat lists and one line of ancestry.
- *
- * Properties and methods each come as ONE list: the Class's own members first, then
- * what it inherits, every inherited entry named `Base.member` — no "Inherited" section
- * below the fold. A method is one line closed (its signature) and opens on click into
- * its contract: the Policy, the input as field rows, the return. The header says
- * `extends` once and then the whole chain, each ancestor a chip that opens it.
- *
- * And a row's targeting ring draws whole: the list card clips, and the ring used to
- * lose its top on the first row and its bottom on the last.
+ * The Inspector reads the selection through the lens on screen. Structure tells what a Class
+ * is: its ancestry, its relationships as sentences, its properties — its own first, then what
+ * it inherits, named by the base — and no methods, which are what it does. Behavior tells
+ * what changes it, and what it does: its methods, each one a way into its function.
  */
-
-async function openInvoice(page: Page): Promise<Locator> {
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Schema', exact: true }).click()
-  await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
-  const node = page.getByText('Invoice', { exact: true }).first()
-  await expect(node).toBeVisible()
-  await node.click()
-  await expect(page.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
-  return page.getByRole('button', { name: 'Close panel' }).locator('..')
-}
 
 const refsOf = (rows: Locator) =>
   rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-anchor-ref')))
 
-test('keeps inherited properties while excluding concrete parent methods', async ({ page }) => {
-  const panel = await openInvoice(page)
+test('Structure reads what a Class is, and leaves what it does to Behavior', async ({ page }) => {
+  await openSchema(page)
+  await sceneBox(page, 'class.Invoice').click()
+  const panel = inspector(page)
+  await expect(panel).toHaveAttribute('data-inspector-lens', 'structure')
+  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
+  await expect(panel).toContainText('A demand for payment issued to a customer.')
 
-  // the canonical schema orders each Class's members by name; the panel keeps that
-  // within a Class and puts the Class's own before its base's
-  const properties = panel
-    .locator('[data-member-list]')
-    .first()
-    .locator(':scope > [data-anchor-ref]')
+  // its relationships, a row each drawn in marks — the verb, the count, the other Class — that
+  // says its sentence on hover and names the relationship under it
+  const relationships = panel.locator('[data-inspector-relationships]')
+  const customer = relationships.locator(
+    '[data-inspector-relationship][title="An Invoice has exactly one customer Company"]',
+  )
+  await expect(customer.locator('[data-count-mark="1"]')).toBeVisible()
+  await expect(customer.locator('[data-class-chip="class.Company"]')).toBeVisible()
+  await expect(
+    relationships.locator(
+      '[data-inspector-relationship][title="An Invoice has any number of Payments"]',
+    ),
+  ).toBeVisible()
+  await expect(relationships.locator('[data-inspector-link="class.SettledBy"]')).toBeVisible()
+
+  // its own properties first; the inherited ones fold under their base, then read as such
+  const properties = panel.locator('[data-inspector-property]')
+  expect(await refsOf(properties)).toEqual([
+    'class.Invoice.property.paid',
+    'class.Invoice.property.total',
+  ])
+  await panel.getByRole('button', { name: /2 inherited from Document/ }).click()
   expect(await refsOf(properties)).toEqual([
     'class.Invoice.property.paid',
     'class.Invoice.property.total',
     'class.Document.property.issuedOn',
     'class.Document.property.reference',
   ])
-  await expect(properties.nth(2)).toContainText('Document.issuedOn')
 
+  // no methods here: the Inspector points at the lens that reads them
+  await expect(panel.locator('[data-inspector-methods]')).toHaveCount(0)
+  await expect(panel.locator('[data-method-row]')).toHaveCount(0)
+  const toBehavior = panel.locator('[data-lens-switch="behavior"]')
+  await expect(toBehavior).toContainText('2 functions write an Invoice')
+  await toBehavior.click()
+  await expect(lensButton(page, 'behavior')).toHaveAttribute('aria-pressed', 'true')
+  await expect(panel).toHaveAttribute('data-inspector-lens', 'behavior')
+  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
+})
+
+test('Behavior reads what changes a Class and what it does', async ({ page }) => {
+  await openSchema(page)
+  await sceneBox(page, 'class.Invoice').click()
+  await lensButton(page, 'behavior').click()
+  const panel = inspector(page)
+  await expect(panel).toHaveAttribute('data-inspector-lens', 'behavior')
+
+  // what changes it: each verb, the function that does it and the mutation it runs
+  const changes = panel.locator('[data-inspector-changes]')
+  const update = changes.locator('[data-inspector-change="update"]')
+  await expect(update.locator('[data-inspector-link="function.Invoice.settle"]')).toBeVisible()
+  await expect(update.locator('[data-inspector-link="function.reconcileInvoice"]')).toBeVisible()
+  await expect(
+    update.locator('[data-inspector-link="mutation.crm.invoice.reconcile"]'),
+  ).toBeVisible()
+  const link = changes.locator('[data-inspector-change="link"]')
+  await expect(link.locator('[data-inspector-link="class.SettledBy"]')).toBeVisible()
+  // the Structure facts are one switch away, not repeated
+  await expect(panel.locator('[data-inspector-relationships]')).toHaveCount(0)
+  await expect(panel.locator('[data-inspector-property]')).toHaveCount(0)
+
+  // its methods, by name: a concrete method of its base is not one of them
   const methods = panel.locator('[data-method-row]')
   expect(await refsOf(methods)).toEqual([
     'class.Invoice.method.remind',
@@ -51,88 +87,30 @@ test('keeps inherited properties while excluding concrete parent methods', async
     'class.Invoice.method.settle',
   ])
   await expect(panel.locator('[data-anchor-ref="class.Document.method.archive"]')).toHaveCount(0)
-  // the base's members no longer live in a section of their own
-  await expect(panel.getByText('Inherited', { exact: true })).toHaveCount(0)
-})
+  await expect(methods.nth(1)).toContainText('static')
+  await expect(methods.nth(2)).toContainText('action · contract')
 
-test('a method is one line closed and its whole contract open, returns as rows', async ({
-  page,
-}) => {
-  const panel = await openInvoice(page)
-  const settle = panel.locator('[data-anchor-ref="class.Invoice.method.settle"]')
-
-  // closed: the name, at the height of a property row, and nothing more — not the
-  // inputs, not the return, not the Policy
-  await expect(settle.getByRole('button', { name: /settle/ })).toHaveText('settlecontract')
-  await expect(settle).not.toContainText('amount')
-  await expect(settle).not.toContainText('Yes / no')
-  await expect(panel.locator('[data-method-detail]')).toHaveCount(0)
-
-  await settle.getByRole('button', { name: /settle/ }).click()
-  const detail = settle.locator('[data-method-detail]')
-  await expect(detail).toBeVisible()
-
-  // what it does, first
-  await expect(detail.locator('[data-method-doc]')).toHaveText(
-    'Record a payment against this invoice.',
+  // a method opens its function: what it does, takes, returns and changes
+  await methods.nth(2).locator('[data-inspector-link="function.Invoice.settle"]').click()
+  await expect(panel.getByRole('heading', { name: 'Invoice.settle', exact: true })).toBeVisible()
+  await expect(panel).toContainText('Record a payment against this invoice.')
+  await expect(panel).toContainText('amount')
+  await expect(panel).toContainText('Yes / no')
+  await expect(panel.locator('[data-inspector-function-changes]')).toContainText(
+    'creates a Payment',
   )
-
-  // the Policy: who may call, and the check the Kernel evaluates
-  await expect(detail).toContainText('Authorized')
-  const check = detail.locator('[data-policy-check]')
-  await expect(check).toContainText('mayManageInvoice')
-  await expect(check).toContainText('on this Invoice')
-
-  // the input, as field lines: name at the left, the friendly type at the right
-  const input = detail.locator('[data-method-input]')
-  await expect(input).toContainText('amount')
-  await expect(input).toContainText('Number')
-  await expect(input).toContainText('note?')
-  await expect(input).toContainText('Text')
-
-  // the return; the receiver no longer costs a row in the expanded detail
-  await expect(detail.locator('[data-method-returns]')).toContainText('Yes / no')
-  await expect(detail).not.toContainText('Runs on')
-  await expect(detail).not.toContainText('a Invoice')
-
-  // and it folds back to the one line
-  await settle.getByRole('button', { name: /settle/ }).click()
-  await expect(panel.locator('[data-method-detail]')).toHaveCount(0)
-
-  // a structured return and a stream open into rows too
-  const remind = panel.locator('[data-anchor-ref="class.Invoice.method.remind"]')
-  await expect(remind).not.toContainText('Object')
-  await remind.getByRole('button', { name: /remind/ }).click()
-  const returns = remind.locator('[data-method-returns]')
-  await expect(returns).toContainText('Object')
-  await expect(returns).toContainText('sentAt')
-  await expect(returns).toContainText('channel')
-  // authorized without a pinned Policy says so, instead of showing nothing
-  await expect(remind).toContainText('no Policy pinned')
-
-  const search = panel.locator('[data-anchor-ref="class.Invoice.method.search"]')
-  await expect(search).not.toContainText('Stream')
-  await expect(search.getByRole('button', { name: /search/ })).toContainText('static')
-  await search.getByRole('button', { name: /search/ }).click()
-  await expect(search.locator('[data-method-returns]')).toContainText('Stream of Object')
-  await expect(search).toContainText('Anonymous')
-  await expect(search.locator('[data-method-detail]')).not.toContainText('Runs on')
-  await expect(search).not.toContainText('the Invoice type')
+  await expect(panel.locator('[data-inspector-reaches]')).toContainText('ledger.record')
 })
 
-test('the header shows the bases as chips, no word in front, and each opens its Class', async ({
-  page,
-}) => {
-  const panel = await openInvoice(page)
+test('the ancestry names each base, and each opens its Class', async ({ page }) => {
+  await openSchema(page)
+  await sceneBox(page, 'class.Invoice').click()
+  const panel = inspector(page)
   const ancestry = panel.locator('[data-class-ancestry]')
-  await expect(ancestry).toHaveText(/^Document$/)
-  await expect(panel.getByText('extends', { exact: true })).toHaveCount(0)
-  // the relation is spelled out on hover instead
-  const chip = ancestry.getByRole('button', { name: 'Document', exact: true })
-  await expect(chip).toHaveAttribute('title', 'Invoice extends Document')
-
-  await chip.click()
-  await expect(page.getByRole('heading', { name: 'Document', exact: true })).toBeVisible()
+  await expect(ancestry).toContainText('Extends')
+  await ancestry.locator('[data-inspector-link="class.Document"]').click()
+  await expect(panel.getByRole('heading', { name: 'Document', exact: true })).toBeVisible()
+  await expect(sceneBox(page, 'class.Document')).toHaveAttribute('data-selected', 'true')
   // an abstract root extends nothing: the line is simply absent
   await expect(panel.locator('[data-class-ancestry]')).toHaveCount(0)
 })
@@ -169,30 +147,19 @@ const ringAndClip = (target: Locator, clipped: boolean) =>
     return { style: style.outlineStyle, width, ring, inner }
   }, clipped)
 
-test('the targeting ring draws whole: on the first and last list rows, and around the panel', async ({
-  page,
-}) => {
-  const panel = await openInvoice(page)
-  const rows = panel.locator('[data-member-list]').first().locator(':scope > [data-anchor-ref]')
-  const detail = panel.locator(':scope > [data-anchor-ref="class.Invoice"]')
-  const panelBox = (await detail.boundingBox())!
+test('the targeting ring draws whole on the first and last property rows', async ({ page }) => {
+  await openSchema(page)
+  await sceneBox(page, 'class.Invoice').click()
+  const rows = inspector(page).locator('[data-inspector-property]')
+  await expect(rows).toHaveCount(2)
 
   await page.keyboard.press('c')
-  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
-
-  // list rows sit in a card that clips; the panel itself is the box its ring must stay in.
-  // The panel is hovered in its left padding, clear of the property and method targets.
-  const targets: [Locator, { x: number; y: number }, boolean][] = []
+  await expect(page.locator('body[data-target-mode]')).toHaveCount(1)
   for (const row of [rows.first(), rows.last()]) {
     const box = (await row.boundingBox())!
-    targets.push([row, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, true])
-  }
-  targets.push([detail, { x: panelBox.x + 4, y: panelBox.y + panelBox.height / 2 }, false])
-
-  for (const [target, at, clipped] of targets) {
-    await page.mouse.move(at.x, at.y)
-    await expect(target).toHaveAttribute('data-comment-target', '')
-    const { style, width, ring, inner } = await ringAndClip(target, clipped)
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(row).toHaveAttribute('data-comment-target', '')
+    const { style, width, ring, inner } = await ringAndClip(row, true)
     expect(style).toBe('solid')
     expect(width).toBeGreaterThan(0)
     expect(ring.top).toBeGreaterThanOrEqual(inner.top - 0.01)
@@ -200,6 +167,6 @@ test('the targeting ring draws whole: on the first and last list rows, and aroun
     expect(ring.left).toBeGreaterThanOrEqual(inner.left - 0.01)
     expect(ring.right).toBeLessThanOrEqual(inner.right + 0.01)
   }
-
   await page.keyboard.press('Escape')
+  await expect(page.locator('body[data-target-mode]')).toHaveCount(0)
 })

@@ -1,8 +1,9 @@
-import { Loader2, Minus, Send, Sparkles, X } from 'lucide-react'
+import { Lock, Loader2, Minus, Send, Sparkles, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { type AskEntry, type AskStatus, useAsks } from '@/lib/ask'
-import { locateTargetElement } from '@/lib/targets'
+import { readOnlyNotice } from '@/lib/read-only'
+import { locateTarget } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { Button } from './ui/button'
@@ -18,12 +19,12 @@ function domainIsRendered(domainId: string): boolean {
   return false
 }
 
-/** Top-right corner of the ask's target element on screen, or the click point for a
- *  rendered section/canvas anchor. Hidden domains return null instead of leaking a dot
+/** Top-right corner of the ask's target where it was asked (`locateTarget`), or the click
+ *  point while no element stands for it. Hidden domains return null instead of leaking a dot
  *  at stale coordinates into the next canvas. */
 function locate(entry: AskEntry): Point | null {
-  if (!domainIsRendered(entry.domainId)) return null
-  const el = locateTargetElement(document, entry.domainId, entry.ref)
+  if (!domainIsRendered(entry.target.domainId)) return null
+  const el = locateTarget(document, entry.target)
   if (el) {
     const r = el.getBoundingClientRect()
     if ((r.width || r.height) && r.bottom > 0 && r.top < window.innerHeight)
@@ -41,6 +42,7 @@ function AskBody({ entry }: { entry: AskEntry }) {
   const [text, setText] = useState('')
   const composing = entry.status === 'composing'
   const replied = entry.status === 'done' || entry.status === 'error'
+  const readOnly = readOnlyNotice(entry.target.domainId, 'ask')
 
   const ask = () => {
     const q = text.trim()
@@ -52,7 +54,9 @@ function AskBody({ entry }: { entry: AskEntry }) {
       <div className="flex items-center gap-1.5 text-xs font-medium">
         <Sparkles className="h-3.5 w-3.5 text-primary" />
         <span className="text-muted-foreground">Ask</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground">{entry.ref}</span>
+        <span className="truncate font-mono text-[11px] text-muted-foreground">
+          {entry.target.anchor.ref}
+        </span>
         <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">ephemeral</span>
         {/* once replied: minimize + close together. while composing: close (cancel an
             unsent draft). while STREAMING: neither — nothing to do but wait / click away. */}
@@ -106,12 +110,22 @@ function AskBody({ entry }: { entry: AskEntry }) {
         </div>
       )}
 
+      {readOnly && (
+        <p
+          data-read-only-notice=""
+          className="flex items-start gap-1.5 text-[12px] leading-snug text-muted-foreground"
+        >
+          <Lock className="mt-0.5 h-3 w-3 shrink-0" />
+          {readOnly}
+        </p>
+      )}
+
       {composing ? (
         <div className="space-y-2">
           <Textarea
             autoFocus
             className="min-h-16 text-[13px]"
-            placeholder={`Ask about ${entry.excerpt}…`}
+            placeholder={`Ask about ${entry.target.excerpt}…`}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {

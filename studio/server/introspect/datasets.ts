@@ -3,7 +3,7 @@
  *
  * References are read STATICALLY from `defineProject` in the configuration (never executed), then each
  * module is extracted in its own Bun island (see dataset-extractor.ts) and projected into
- * the same node/edge shape the Core canvas renders. Never throws: every failure is data.
+ * the Node and Edge shape the Data level reads. Never throws: every failure is data.
  */
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -162,7 +162,7 @@ function localClassName(key: string, origin: string): string {
   return ref && ref.origin === origin ? ref.name : key
 }
 
-/** Project portable Dataset bytes into the Core canvas shape. */
+/** Project portable Dataset bytes into the Node and Edge shape the Data level reads. */
 export function projectDataset(
   path: string,
   dataset: DatasetJson,

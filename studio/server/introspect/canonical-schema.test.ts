@@ -18,9 +18,9 @@ import {
   extractCanonicalSchemaFromSdk,
   findCanonicalDomainSchemaExport,
   isCanonicalDomainSchemaV1,
-  projectCanonicalCore,
   type CanonicalDomainSchemaV1,
 } from './canonical-schema'
+import { decodeSchemaIR } from './schema-ir-json'
 
 const string = valueSchema<string>()({ type: 'string' })
 const boolean = valueSchema<boolean>()({ type: 'boolean' })
@@ -156,31 +156,6 @@ describe('canonical Schema projection', () => {
     ])
   })
 
-  test('projects Core from the same admitted root without a second Schema import', () => {
-    const extraction = extractCanonicalSchemaFromSdk(sdk, schema)
-    expect(projectCanonicalCore(extraction.root)).toEqual({
-      domain: schema.origin,
-      nodes: [
-        {
-          path: '/:docs.example.dev:core.primary',
-          className: 'Document',
-          data: {
-            'docs.example.dev:class.Document.property.slug': 'primary',
-            'shared.example.dev:class.Named.property.title': 'Primary',
-          },
-        },
-      ],
-      edges: [
-        {
-          from: '/:docs.example.dev:core.primary',
-          to: '/:docs.example.dev:core.primary',
-          edgeName: 'links',
-          data: {},
-        },
-      ],
-    })
-  })
-
   test('falls back to a preview when the Domain cannot compare dependency meaning', () => {
     const rejecting = {
       compareMeaning() {
@@ -194,6 +169,19 @@ describe('canonical Schema projection', () => {
       )
       expect(extraction).toMatchObject({ status: 'preview', revision: null })
       expect(extraction.ir.importsByKey).toEqual({})
+    }
+  })
+
+  test('every projection is read back by the decoder of persisted IR', () => {
+    // The bundle cache and the review baseline persist this IR and decode it on the next
+    // launch; one the decoder refuses is extracted again at every launch, silently.
+    const admitted = extractCanonicalSchemaFromSdk(sdk, schema)
+    const preview = extractCanonicalSchemaFromSdk(
+      { ...sdk, schema: { resolve: sdk.schema.resolve } } as unknown as typeof sdk,
+      schema,
+    )
+    for (const { ir } of [admitted, preview]) {
+      expect(decodeSchemaIR(JSON.parse(JSON.stringify(ir)))).toEqual(ir)
     }
   })
 })

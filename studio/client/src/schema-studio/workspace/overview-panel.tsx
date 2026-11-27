@@ -1,47 +1,22 @@
-import { AppWindow, Braces, TriangleAlert } from 'lucide-react'
+import { AppWindow, TriangleAlert } from 'lucide-react'
 
 import { EmptyState } from '@/components/studio-kit'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { buildFunctionsModel } from '@/lib/functions'
 import { buildViewsModel } from '@/lib/views'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
-import { FunctionRow } from '../functions-panel'
 import { ViewRow } from '../views-panel'
 
-const EMPTY = {
-  views: { icon: <AppWindow />, title: 'No views', hint: 'The selected domains declare no views.' },
-  functions: {
-    icon: <Braces />,
-    title: 'No functions',
-    hint: 'The selected domains declare no standalone functions.',
-  },
-}
-
-/** The views or the functions of every domain on the canvas, one block per domain. */
-export function WorkspaceOverviewPanel({
-  kind,
-  inputs,
-}: {
-  kind: 'views' | 'functions'
-  inputs: WorkspaceDomainInput[]
-}) {
+/** The views of every domain on the canvas, one block per domain. */
+export function WorkspaceViewsPanel({ inputs }: { inputs: WorkspaceDomainInput[] }) {
   const groups = inputs.map((input) => {
     const domainId = input.summary.id
-    if (kind === 'views') {
-      const model = buildViewsModel(input.anatomy, input.bundle)
-      return {
-        input,
-        drift: model.hasDrift,
-        rows: model.all.map((view) => <ViewRow key={view.slug} domainId={domainId} view={view} />),
-      }
-    }
-    const model = buildFunctionsModel(input.bundle)
+    const model = buildViewsModel(input.anatomy, input.bundle)
     return {
       input,
-      drift: false,
-      rows: model.all.map((fn) => <FunctionRow key={fn.name} domainId={domainId} fn={fn} />),
+      drift: model.hasDrift,
+      rows: model.all.map((view) => <ViewRow key={view.slug} domainId={domainId} view={view} />),
     }
   })
   const count = groups.reduce((total, group) => total + group.rows.length, 0)
@@ -50,7 +25,7 @@ export function WorkspaceOverviewPanel({
     <ScrollArea className="h-full">
       <div className="p-5">
         <div className="mb-5 flex items-baseline gap-2 pr-8">
-          <h1 className="text-base font-semibold">Workspace {kind}</h1>
+          <h1 className="text-base font-semibold">Workspace views</h1>
           <span className="text-xs text-muted-foreground">{count}</span>
           {groups.some((group) => group.drift) && (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning">
@@ -59,7 +34,13 @@ export function WorkspaceOverviewPanel({
           )}
         </div>
 
-        {count === 0 && <EmptyState {...EMPTY[kind]} />}
+        {count === 0 && (
+          <EmptyState
+            icon={<AppWindow />}
+            title="No views"
+            hint="The selected domains declare no views."
+          />
+        )}
 
         <div className="space-y-7">
           {groups

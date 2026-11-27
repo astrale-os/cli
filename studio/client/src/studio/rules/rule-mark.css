@@ -1,0 +1,101 @@
+/* The hues of the operations that observe: reading a Node, traversing an Edge. Writing wears
+   its verb's hue (`--verb-*`); calling, the call's. Each hue says one thing in the Studio. */
+:root {
+  --op-read: oklch(0.55 0.12 95);
+  --op-traverse: oklch(0.54 0.15 335);
+}
+.dark {
+  --op-read: oklch(0.78 0.12 95);
+  --op-traverse: oklch(0.74 0.13 335);
+}
+
+/* A rule's mark: whom it admits, filled in that admission's tone where something is written,
+   a dashed ring (the glyph in the muted tone) where the Kernel's default applies. */
+.rule-mark {
+  --mark-size: 16px;
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--mark-tone);
+  color: var(--color-background);
+  vertical-align: middle;
+}
+.rule-mark.rule-mark svg {
+  width: 72%;
+  height: 72%;
+  stroke-width: 2.4;
+}
+.rule-mark[data-unwritten] {
+  border: 1.5px dashed var(--mark-tone);
+  background: none;
+  color: var(--mark-tone);
+}
+.rule-mark[data-unwritten] svg {
+  width: 64%;
+  height: 64%;
+}
+.rule-marks {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+}
+
+/* A mark and whom it admits beside it, in its tone. */
+.admission {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 2px;
+  min-width: 0;
+  /* one size wherever it stands: a card's row, the Index, an Inspector entry */
+  font-size: 13px;
+  line-height: 20px;
+}
+.admission-label {
+  color: color-mix(in oklch, var(--mark-tone) 82%, var(--color-foreground));
+  font-weight: 600;
+}
+.admission[data-unwritten] .admission-label {
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+.admission-default {
+  border: 1px dashed color-mix(in oklch, var(--color-muted-foreground) 60%, transparent);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.admission-why {
+  color: var(--color-muted-foreground);
+  font-weight: 400;
+}
+
+/* An operation's mark: its glyph in its hue on a wash of it, never filled — whom a rule admits
+   is the filled mark's to say. */
+.op-mark {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--mark-tone) 14%, transparent);
+  color: var(--mark-tone);
+}
+.op-mark svg {
+  width: 70%;
+  height: 70%;
+  stroke-width: 2.3;
+}

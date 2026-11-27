@@ -10,8 +10,8 @@
 import type { HandlerLink, IrFunction, StudioSchemaBundle } from '@shared/contracts/schema'
 import type { IrClassRef } from '@shared/schema/identity'
 
-import { nodePathAccepts } from '@shared/contracts/schema'
-import { Braces, type LucideIcon, Workflow, Zap } from 'lucide-react'
+import { callableOutputSchema, nodePathsIn } from '@shared/contracts/schema'
+import { classRefKey } from '@shared/schema/identity'
 
 import { handlerLinkFor } from './callable'
 
@@ -44,24 +44,10 @@ export interface FunctionsModel {
 
 const EMPTY: FunctionsModel = { all: [], byClass: new Map(), standalone: [] }
 
-/** Every Definition a callable names, walking the input properties and the output. */
+/** Every Definition a callable names, in its input, then in its output. */
 function acceptedRefs(fn: IrFunction): IrClassRef[] {
-  const schemas = [
-    fn.input,
-    ...Object.values(fn.input.properties ?? {}),
-    ...(fn.output.mode === 'value' ? [fn.output.schema] : []),
-    ...(fn.output.mode === 'stream' ? [fn.output.item] : []),
-  ]
-  const seen = new Map<string, IrClassRef>()
-  for (const schema of schemas) {
-    // An array of references carries the path schema on its items, not on itself.
-    for (const candidate of [schema, ...(schema.items ? [schema.items] : [])]) {
-      for (const ref of nodePathAccepts(candidate)) {
-        seen.set(`${ref.origin}:${ref.name}`, ref)
-      }
-    }
-  }
-  return [...seen.values()]
+  const refs = [...nodePathsIn(fn.input), ...nodePathsIn(callableOutputSchema(fn))]
+  return [...new Map(refs.map((ref) => [classRefKey(ref), ref])).values()]
 }
 
 export function buildFunctionsModel(bundle?: StudioSchemaBundle): FunctionsModel {
@@ -105,16 +91,4 @@ export function buildFunctionsModel(bundle?: StudioSchemaBundle): FunctionsModel
 
 export function functionsForClass(model: FunctionsModel, className: string): FunctionModel[] {
   return model.byClass.get(className) ?? []
-}
-
-/** The canvas id — and the comment anchor — of a standalone Function. */
-export const functionRef = (name: string): string => `function.${name}`
-
-/**
- * How a Function is implemented, in one glyph. Every surface that draws a Function —
- * the canvas pill, the overview row, the detail header, the Process list — reads it
- * from here, so a Workflow never looks like an Action in one place and not another.
- */
-export function functionGlyph(model: Pick<FunctionModel, 'link'>): LucideIcon {
-  return model.link?.kind === 'workflow' ? Workflow : model.link ? Zap : Braces
 }

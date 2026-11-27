@@ -20,6 +20,7 @@ import { bootDomain } from '../domain/boot'
 import { registerDomain } from '../domain/registry'
 import { findSchemaDefinition } from '../introspect/anatomy/schema-definition'
 import { getBundle } from '../introspect/cache'
+import { captureProcess } from '../process'
 import { stoppers, workspaceRoot } from './root'
 
 /** Mirrors create-astrale-domain's `isValidSlug`: lowercase letters, digits, dots, dashes;
@@ -34,27 +35,25 @@ interface CreateDomainResult {
   output: string
 }
 
+/** How long the scaffold may take, and the install after it; past either, its process group ends. */
+const SCAFFOLD_TIMEOUT_MS = 5 * 60_000
+const INSTALL_TIMEOUT_MS = 10 * 60_000
+
+/** One step of the flow, through the Studio's runner: its exit code and both streams. */
 async function run(
-  cmd: string,
-  args: string[],
+  command: readonly string[],
   cwd: string,
+  timeoutMs: number,
 ): Promise<{ code: number; output: string }> {
-  try {
-    const proc = Bun.spawn([cmd, ...args], {
-      cwd,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: process.env,
-    })
-    const [out, err] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ])
-    const code = await proc.exited
-    return { code, output: `${out}\n${err}`.trim() }
-  } catch (e) {
-    return { code: 1, output: `failed to spawn ${cmd}: ${(e as Error)?.message ?? e}` }
-  }
+  const ran = await captureProcess(command, { cwd, timeoutMs })
+  if (ran.spawnError) return { code: 1, output: `failed to run ${command[0]}: ${ran.spawnError}` }
+  const output = `${ran.stdout}\n${ran.stderr}`.trim()
+  if (ran.timedOut)
+    return {
+      code: 1,
+      output: `${output}\n${command[0]} did not finish within ${timeoutMs}ms`.trim(),
+    }
+  return { code: ran.exitCode, output }
 }
 
 export async function createDomain(rawName: string): Promise<CreateDomainResult> {
@@ -78,7 +77,7 @@ export async function createDomain(rawName: string): Promise<CreateDomainResult>
   }
 
   // 1. Scaffold (non-interactive). `--yes` accepts defaults (astrale adapter, template).
-  const scaffold = await run('npx', ['--yes', SCAFFOLDER, name, '--yes'], root)
+  const scaffold = await run(['npx', '--yes', SCAFFOLDER, name, '--yes'], root, SCAFFOLD_TIMEOUT_MS)
   const scaffolded = registerDomain(dir)
   if (!scaffolded) {
     return {
@@ -96,7 +95,7 @@ export async function createDomain(rawName: string): Promise<CreateDomainResult>
   // 2. Install deps so the domain is fully introspectable + deployable. Best-effort:
   //    a scaffolded-but-uninstalled domain still loads (static fallback), so a failed
   //    install is a soft warning, not a hard failure.
-  const install = await run('pnpm', ['install'], dir)
+  const install = await run(['pnpm', 'install'], dir, INSTALL_TIMEOUT_MS)
 
   // 3. Register + boot with deps present. The live watcher may have already booted a
   //    deps-less fallback for this dir mid-install — stop it and boot fresh.

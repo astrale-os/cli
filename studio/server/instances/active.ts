@@ -5,9 +5,15 @@ import { studioActiveInstanceName } from '../../../src/commands/studio-views'
 import { matchAdminInstance, ownershipReason } from '../../../src/lib/admin/ownership'
 import { runStudioCliJson, runStudioCliText } from '../cli'
 import { asJsonRecord, decodeEach, type JsonRecord } from '../json'
+import { operandProblem } from '../process'
+
+/** How long one listing of the instances may take; past it the listing reads as unavailable. */
+const LIST_TIMEOUT_MS = 20_000
+/** How long `instance use` may take. */
+const USE_TIMEOUT_MS = 30_000
 
 async function astraleJson(args: string[]): Promise<JsonRecord | undefined> {
-  const result = await runStudioCliJson(args, asJsonRecord)
+  const result = await runStudioCliJson(args, asJsonRecord, { timeoutMs: LIST_TIMEOUT_MS })
   return result.ok ? result.data : undefined
 }
 
@@ -118,13 +124,12 @@ function ownership(
 export async function setActiveInstance(
   name: string,
 ): Promise<{ ok: boolean; active: string | null; output: string }> {
-  const result = await runStudioCliText([
-    'instance',
-    'use',
-    name,
-    '--adopt-default',
-    '--skip-jwks-check',
-  ])
+  const problem = operandProblem(name, 'the instance name')
+  if (problem) return { ok: false, active: await studioActiveInstanceName(), output: problem }
+  const result = await runStudioCliText(
+    ['instance', 'use', name, '--adopt-default', '--skip-jwks-check'],
+    { timeoutMs: USE_TIMEOUT_MS },
+  )
   const combined = `${result.stdout}\n${result.stderr}`.trim()
   return {
     ok: result.ok,

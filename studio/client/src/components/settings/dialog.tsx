@@ -17,7 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { api, qk } from '@/lib/api'
+import { UnreadableState } from '@/components/unreadable-state'
+import { api, qk, refusalOf, unreadableOf } from '@/lib/api'
 import { useHarness, useSettings, useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
@@ -44,7 +45,9 @@ export function SettingsDialog() {
   const open = useUI((state) => state.settingsOpen)
   const setOpen = useUI((state) => state.setSettingsOpen)
   const selectionDomainId = useUI((state) => state.selectionDomainId)
-  const { data: settings } = useSettings()
+  const { data: settings, error: settingsError, refetch: rereadSettings } = useSettings()
+  // the settings file, when it is not read whole: said at the top, and no save goes over it
+  const unreadable = unreadableOf(settingsError)
   const { data: domains = [] } = useWorkspace()
   const { data: harness } = useHarness(open)
   const queryClient = useQueryClient()
@@ -101,7 +104,7 @@ export function SettingsDialog() {
       toast.success('Settings saved')
       changeOpen(false)
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(refusalOf(error)),
   })
 
   return (
@@ -113,6 +116,13 @@ export function SettingsDialog() {
         </DialogHeader>
         <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen} className="contents">
           <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
+            {unreadable && (
+              <UnreadableState
+                file={unreadable}
+                what="The settings"
+                onRetry={() => void rereadSettings()}
+              />
+            )}
             <AppearanceSettings />
             <AgentSettings harness={harness} />
             <HelpSettings />

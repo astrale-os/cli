@@ -41,11 +41,17 @@ interface EdgeLabelPlacementOptions {
    * dragged far from its own line reads worse than one that partly covers a neighbour.
    */
   softObstacles?: EdgeLabelObstacleSource
+  /**
+   * How far from the preferred point a label may stand, at most, when nothing on or by its line
+   * is clear; past it the label has no place (`null`) instead of the last resort right of all.
+   */
+  offPathLimit?: number
 }
 
 const DEFAULT_CLEARANCE = 4
 const OFF_PATH_STEP = 8
-const OFF_PATH_LIMIT = 256
+/** How far off its line a label is searched for room before the last resort right of all. */
+export const OFF_PATH_LIMIT = 256
 const OBSTACLE_CELL_SIZE = 128
 /** How far a label may step off its line to clear another label before it accepts an overlap. */
 const SOFT_OFF_PATH_LIMIT = 16
@@ -251,7 +257,8 @@ export function placeEdgeLabel(
   // Off the path, the first card-free point wins unless a point clear of labels too lies within a
   // short detour further out.
   let firstFree: { point: EdgeLabelPoint; radius: number } | null = null
-  for (let radius = OFF_PATH_STEP; radius <= OFF_PATH_LIMIT; radius += OFF_PATH_STEP) {
+  const limit = Math.min(OFF_PATH_LIMIT, options.offPathLimit ?? OFF_PATH_LIMIT)
+  for (let radius = OFF_PATH_STEP; radius <= limit; radius += OFF_PATH_STEP) {
     if (firstFree && radius > firstFree.radius + SOFT_DETOUR_LIMIT) break
     for (const offset of ringOffsets(radius)) {
       const candidate = { x: origin.x + offset.x, y: origin.y + offset.y }
@@ -261,6 +268,7 @@ export function placeEdgeLabel(
     }
   }
   if (firstFree) return firstFree.point
+  if (options.offPathLimit !== undefined) return null
 
   // All obstacles end strictly before this label begins, so overlap is impossible.
   const indexedRight = Array.isArray(obstacles) ? Number.NEGATIVE_INFINITY : obstacles.maxRight

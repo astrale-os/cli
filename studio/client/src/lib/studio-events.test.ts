@@ -26,6 +26,9 @@ test('each event invalidates its own scope: domain, workspace, chats, or all on 
     { type: 'invalidate-domain', domainId: 'billing' },
   ])
   expect(studioEventEffects({ type: 'chats' })).toEqual([{ type: 'invalidate-chats' }])
+  expect(
+    studioEventEffects({ type: 'scenarios', domainId: 'billing', revisions: { 'who-runs': 2 } }),
+  ).toEqual([{ type: 'read-scenarios', domainId: 'billing', revisions: { 'who-runs': 2 } }])
 })
 
 test('live agent events merge directly and only terminal runs refresh history', () => {

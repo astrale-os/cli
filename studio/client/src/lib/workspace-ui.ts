@@ -3,31 +3,23 @@ import type { WorkspaceUiState } from '@shared/contracts/workspace'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 
-import {
-  hydrateSchemaWorkspace,
-  schemaWorkspaceSnapshot,
-  useSchemaWorkspace,
-} from '@/schema-studio/workspace/store'
-
-import { api, qk } from './api'
+import { api, qk, unreadableOf } from './api'
+import { sayOnScreen } from './notices'
 import { hydrateWorkspaceUi, uiWorkspaceSnapshot, useUI } from './store'
 
+/** `readerDomainId`: null forgets the last Domain read, none keeps it. */
 type WorkspaceUiUpdate = Omit<WorkspaceUiState, 'readerDomainId'> & {
-  readerDomainId: string | null
+  readerDomainId?: string | null
 }
 
 function snapshot(): WorkspaceUiUpdate {
-  return {
-    version: 1,
-    ...uiWorkspaceSnapshot(),
-    schema: schemaWorkspaceSnapshot(),
-  }
+  return { version: 1, ...uiWorkspaceSnapshot() }
 }
 
 /**
- * Hydrate both UI stores from the workspace's machine-side file, then keep their
- * persistent projections together in that one file. A brief debounce coalesces a
- * panel resize without delaying ordinary navigation noticeably.
+ * Hydrate the UI store from the workspace's machine-side file, then keep its persistent
+ * projection in that file. A brief debounce coalesces a panel resize without delaying ordinary
+ * navigation noticeably.
  */
 export function useWorkspaceUiSync(): boolean {
   const query = useQuery({
@@ -37,10 +29,15 @@ export function useWorkspaceUiSync(): boolean {
   })
   const hydrated = useRef(false)
 
+  // a file not read whole: the Studio opens on its defaults, saves nothing over it, and says so
+  const unreadable = unreadableOf(query.error)?.sentence
+  useEffect(() => {
+    if (unreadable) sayOnScreen(unreadable)
+  }, [unreadable])
+
   useEffect(() => {
     if (!query.data || hydrated.current) return
     hydrateWorkspaceUi(query.data)
-    hydrateSchemaWorkspace(query.data.schema)
     hydrated.current = true
   }, [query.data])
 
@@ -69,11 +66,9 @@ export function useWorkspaceUiSync(): boolean {
       timer = setTimeout(flush, 120)
     }
 
-    const stopUi = useUI.subscribe(changed)
-    const stopSchema = useSchemaWorkspace.subscribe(changed)
+    const stop = useUI.subscribe(changed)
     return () => {
-      stopUi()
-      stopSchema()
+      stop()
       if (timer) clearTimeout(timer)
       flush()
     }

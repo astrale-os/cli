@@ -8,7 +8,7 @@ import {
   valueSchema,
 } from '@astrale-os/sdk/schema'
 
-import { PaymentProcessor } from '../external.js'
+import { PaymentProcessor, Payout } from '../external.js'
 import { icons } from '../icons.js'
 import { Company } from '../people/index.js'
 import { Quote } from '../sales/index.js'
@@ -117,4 +117,10 @@ export const ProcessedBy = edgeClass.directed({
   policies: { read: true },
   source: { as: 'payment', accepts: [Payment], outgoing: '0..1' },
   target: { as: 'processor', accepts: [PaymentProcessor], incoming: '0..*' },
+})
+
+export const PaidOutBy = edgeClass.directed({
+  policies: { read: true },
+  source: { as: 'payment', accepts: [Payment], outgoing: '0..1' },
+  target: { as: 'payout', accepts: [Payout], incoming: '0..*' },
 })

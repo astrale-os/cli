@@ -1,11 +1,20 @@
 /**
- * Every edge in the Studio that resizes something behaves the same way: the domains
- * rail, the docked work panel and the detail panel. Same grip, lit on hover, still lit
+ * Every edge in the Studio that resizes something behaves the same way: the Index
+ * rail, the docked work panel and the Inspector. Same grip, lit on hover, still lit
  * while a drag outruns the pointer, the resize cursor held over everything on the way,
  * a double click back to the default size, and the width kept where the reader left it.
  * The floating dock's own edges are bottom-dock.spec.ts's.
  */
-import { dockWorkspacePanel, expect, test, type Locator, type Page } from './test'
+import {
+  dockWorkspacePanel,
+  expect,
+  lensButton,
+  openSchema,
+  sceneBox,
+  test,
+  type Locator,
+  type Page,
+} from './test'
 
 const state = (handle: Locator) => handle.getAttribute('data-resize-state')
 
@@ -51,7 +60,7 @@ test('the rail and the docked panel resize the same way, and reset on double cli
   await page.goto('/')
 
   const rail = page.getByTestId('modules-sidebar')
-  const railHandle = page.getByRole('separator', { name: 'Resize the domains rail' })
+  const railHandle = page.getByRole('separator', { name: 'Resize the Index' })
   const railWidth = async () => Math.round((await rail.boundingBox())!.width)
   const railDefault = await railWidth()
   await checkGrip(page, railHandle, { dx: 900, dy: 0 })
@@ -74,17 +83,14 @@ test('the rail and the docked panel resize the same way, and reset on double cli
   await expect.poll(panelWidth).toBe(panelDefault + 20)
 })
 
-test('the detail panel resizes and keeps its width across navigation and reload', async ({
+test('the Inspector resizes and keeps its width across selection, lens and reload', async ({
   page,
   request,
 }) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Expand crm.studio-demo.astrale.ai', exact: true }).click()
-  const tree = page.getByTestId('workspace-domain-tree')
-  const openPolicy = () =>
-    tree.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
-  await openPolicy()
-  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
+  await openSchema(page)
+  await sceneBox(page, 'class.Invoice').click()
+  const panel = page.getByTestId('detail-panel')
+  await expect(panel.locator('[data-inspector-lens]')).toBeVisible()
   const width = () => panel.evaluate((element) => element.getBoundingClientRect().width)
   const start = await width()
   const handle = page.getByRole('separator', { name: 'Resize detail panel' })
@@ -101,12 +107,19 @@ test('the detail panel resizes and keeps its width across navigation and reload'
   await expect
     .poll(async () => (await (await request.get('/api/workspace/state')).json()).detailWidth)
     .toBe(start + 120)
+
+  // closed and opened on another Class, then read through another lens: the same width
   await page.getByRole('button', { name: 'Close panel' }).click()
-  await tree.getByRole('button', { name: 'Invoice', exact: true }).click()
+  await expect(panel).toHaveCount(0)
+  await sceneBox(page, 'class.Company').click()
+  await expect.poll(width).toBe(start + 120)
+  await page.keyboard.press('2')
+  await expect(lensButton(page, 'behavior')).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(width).toBe(start + 120)
 
   await page.reload()
-  await openPolicy()
+  await expect(sceneBox(page, 'class.Invoice')).toBeVisible({ timeout: 60_000 })
+  await sceneBox(page, 'class.Invoice').click()
   await expect.poll(width).toBe(start + 120)
   await handle.focus()
   await page.keyboard.press('Home')

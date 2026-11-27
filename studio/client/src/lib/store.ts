@@ -1,34 +1,24 @@
-import type {
-  AnchorRef,
-  WorkspacePanelUiState,
-  WorkspaceSection,
-  WorkspaceUiState,
-} from '@shared/contracts/workspace'
+import type { WorkspacePanelUiState, WorkspaceUiState } from '@shared/contracts/workspace'
 
+import { publicationOf } from '@shared/contracts/versions'
 import { create } from 'zustand'
 
-import { detailRefFor } from './targets'
+import { LENS_NAMES, type LensKey } from '@/studio/lenses/keys'
 
-/** A targeting draft: what was clicked + where on screen to anchor the composer.
- *  `mode` decides which composer opens — a persistent comment or an ephemeral ask. */
+import { detailRefFor, type Target } from './targets'
+
+/** A comment being written: the target clicked in comment mode, where it was made, and the
+ *  click point the composer opens at. The target's element stays highlighted until it closes. */
 export interface CommentDraft {
-  mode: 'comment' | 'ask'
-  /** Owning domain of the target. A draft without one is never created. */
-  domainId: string
-  /** Exact surface clicked in targeting mode. Kept transiently so the composer can
-   *  leave that surface highlighted until it closes. */
-  targetElement: HTMLElement
-  anchor: AnchorRef
-  excerpt: string
+  target: Target
   x: number
   y: number
 }
 
-/** The main views of a domain. Talking to the agent and reading comments are NOT
- *  sections — they follow you across every view, from the work panel. */
-export type SectionKey = WorkspaceSection
-
-const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'tests', 'process']
+/** How far in the Studio reads: the whole Workspace, one Domain of it — its Schema — or one
+ *  dataset of a Domain read through the lenses. Talking to the agent and reading comments are
+ *  not levels: they follow you across every one, from the work panel. */
+export type StudioLevel = 'workspace' | 'domain' | 'data'
 
 /** The draft key for "no chat yet" — the chat list is a fetch, and the composer is
  *  on screen before it lands. No chat id can collide with it: chat ids are non-empty. */
@@ -97,9 +87,14 @@ function paintTheme(theme: Theme): 'light' | 'dark' {
 }
 
 interface UIState {
-  section: SectionKey
-  /** Local scope shared by Core/Tests/Process. It never scopes the agent or comments. */
+  /** The level the view reads. It is not persisted: opening the Studio lands on a Domain. */
+  level: StudioLevel
+  /** The Domain the levels read. It never scopes the agent or comments. */
   readerDomainId?: string
+  /** The dataset the Data level reads, of `readerDomainId`, by its module path: the one name a
+   *  dataset keeps whether it loads or not. Null reads its first ready one. Another Domain
+   *  starts at null again. */
+  dataset: string | null
   /** appearance preference, persisted in this browser */
   theme: Theme
   /** the theme actually painted — `system` resolved. Canvas colours that land in
@@ -111,6 +106,8 @@ interface UIState {
   chatTabsSide: ChatTabsSide
   /** the chat tab column's width when it sits on the left, persisted in this browser */
   chatTabsWidth: number
+  /** the question the canvas answers — Structure, Behavior or Rules — persisted in this browser */
+  lens: LensKey
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
@@ -125,6 +122,10 @@ interface UIState {
   /** domains/modules rail furniture, scoped to this scanned workspace */
   modulesWidth: number
   detailWidth: number
+  /** The widths the panels on the view's edges take — the rail on the left; the Inspector or
+   *  an overview on the right — 0 where none is: the floating dock keeps to the canvas
+   *  between them, so each panel has its full height. */
+  asides: { left: number; right: number }
   modulesCollapsed: boolean
   /** What is typed in the agent composer, per chat. It lives here, not in the composer,
    *  so that closing the floating chat — or re-docking the panel — never throws a message
@@ -147,12 +148,11 @@ interface UIState {
   selectionDomainId?: string
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
-  /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Functions / Domains /
-   *  Integrations overview) instead of the selected-class detail. Cleared by selecting a
-   *  class / navigating. */
+  /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains overview)
+   *  instead of the selected-class detail. Cleared by selecting a class / navigating. */
   panelOverlay: {
-    kind: 'views' | 'functions' | 'domains' | 'integrations'
-    /** Domains and Integrations are local; Views and Functions may span the whole canvas. */
+    kind: 'views' | 'domains'
+    /** Domains are local; Views may span the whole canvas. */
     domainId?: string
   } | null
   /** comment-mode draft: the floating composer target + screen position */
@@ -187,16 +187,22 @@ interface UIState {
   newDomainOpen: boolean
   /** The onboarding tour. It never opens by itself: Settings and ⌘K start it. */
   tourOpen: boolean
-  /** A policy another section asked Tests to open on its demo data; Tests takes it and clears it. */
-  probePolicy: string | null
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
   setChatTabsSide: (side: ChatTabsSide) => void
+  /** Ask the canvas another question: the Schema canvas, read through `lens`. The selection stays. */
+  setLens: (lens: LensKey) => void
   setChatTabsWidth: (width: number) => void
-  /** Go to Tests with this policy selected — the way Process and the detail panel hand one over. */
-  openPolicy: (policy: string, domainId?: string) => void
-  setProbePolicy: (policy: string | null) => void
-  setSection: (s: SectionKey) => void
+  /** Read the whole Workspace. Every way into a Domain reads its Schema again. */
+  openWorkspace: () => void
+  /** Read the shown Domain's Schema, the lens and selection kept. */
+  openSchema: () => void
+  /** Read a Domain's Schema. The selection stays when it is that Domain's: a round trip
+   *  through the Workspace level comes back to it. */
+  openDomain: (domainId: string) => void
+  /** Read the dataset at module `path` through the lenses, the lens and selection kept; null
+   *  reads the Domain's first ready one. `openSchema` goes back to the Schema. */
+  openDataLevel: (path: string | null) => void
   setReaderDomain: (domainId?: string) => void
   setPanelOpen: (open: boolean) => void
   setPanelTab: (tab: PanelTab) => void
@@ -205,6 +211,7 @@ interface UIState {
   setDockSize: (size: { width?: number; height?: number }) => void
   setModulesWidth: (width: number) => void
   setDetailWidth: (width: number) => void
+  setAside: (side: 'left' | 'right', width: number) => void
   setModulesCollapsed: (collapsed: boolean) => void
   /** Write this chat's draft. `undefined` writes the pre-chat one — see `agentDrafts`. */
   setAgentDraft: (chatId: string | undefined, text: string) => void
@@ -214,20 +221,16 @@ interface UIState {
   dropAgentDraft: (chatId: string) => void
   /** Replace the threads attached to the next agent turn — see `agentComments`. */
   setAgentComments: (ids: string[]) => void
-  /** Jump to whatever an anchor points at: the right section, the member that declares
-   *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
+  /** Jump to whatever an anchor points at: the Schema, the member that declares it selected
+   *  and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string, domainId: string) => void
-  setPanelOverlay: (
-    kind: 'views' | 'functions' | 'domains' | 'integrations' | null,
-    domainId?: string,
-  ) => void
+  setPanelOverlay: (kind: 'views' | 'domains' | null, domainId?: string) => void
   /** `domainId` names the owner; it is required for a real selection. */
   selectClass: (n?: string, domainId?: string) => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
   focusClass: (id: string, domainId: string) => void
   /** Drop the selection and its graph focus — what clicking empty space means. Leaves an
-   *  open overlay panel (Views / Functions / Domains / Integrations) alone: it is not a
-   *  selection. */
+   *  open overlay panel (Views / Domains) alone: it is not a selection. */
   clearSelection: () => void
   setFocus: (id: string | null) => void
   toggleCardinality: () => void
@@ -266,16 +269,31 @@ function revealPan(ref: string): string | null {
   return ref.startsWith('edge.') ? ref : revealFocus(ref)
 }
 
+/** What reading the Schema clears: an overlay, a reveal under way, an open thread. */
+const schemaLevel = {
+  level: 'domain',
+  panelOverlay: null,
+  revealedRef: null,
+  revealTarget: null,
+  openAnchorRef: null,
+} as const satisfies Partial<UIState>
+
 const initialTheme = loadStored('studio.theme', ['system', 'light', 'dark'] as const, 'system')
 // The floating dock is where the panel starts: it costs the view nothing, and a
 // first look at a domain should be the domain, not a column beside it.
 export const useUI = create<UIState>((set) => ({
-  section: 'schema',
+  level: 'domain',
+  dataset: null,
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
   edgeStyle: 'curved',
   chatTabsSide: loadStored('studio.chatTabs', ['left', 'top', 'top-titled'] as const, 'left'),
   chatTabsWidth: loadStoredWidth('studio.chatTabsWidth', CHAT_TABS_WIDTH),
+  lens: loadStored(
+    'studio.lens',
+    LENS_NAMES.filter((name) => name.available).map((name) => name.id),
+    'structure',
+  ),
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
   panelOpen: false,
@@ -286,6 +304,7 @@ export const useUI = create<UIState>((set) => ({
   dockHeight: DOCK_HEIGHT.fallback,
   modulesWidth: 240,
   detailWidth: 420,
+  asides: { left: 0, right: 0 },
   modulesCollapsed: false,
   agentDrafts: {},
   agentComments: [],
@@ -303,19 +322,6 @@ export const useUI = create<UIState>((set) => ({
   settingsOpen: false,
   newDomainOpen: false,
   tourOpen: false,
-  probePolicy: null,
-  openPolicy: (probePolicy, readerDomainId) => {
-    set({
-      section: 'tests',
-      probePolicy,
-      ...(readerDomainId ? { readerDomainId } : {}),
-      panelOverlay: null,
-      revealedRef: null,
-      revealTarget: null,
-      openAnchorRef: null,
-    })
-  },
-  setProbePolicy: (probePolicy) => set({ probePolicy }),
   setTheme: (theme) => {
     storeBrowserPreference('studio.theme', theme)
     set({ theme, resolvedTheme: paintTheme(theme) })
@@ -325,27 +331,48 @@ export const useUI = create<UIState>((set) => ({
     storeBrowserPreference('studio.chatTabs', chatTabsSide)
     set({ chatTabsSide })
   },
+  setLens: (lens) => {
+    storeBrowserPreference('studio.lens', lens)
+    set((s) => ({
+      lens,
+      ...(s.level === 'workspace'
+        ? { level: 'domain' as const, panelOverlay: null, openAnchorRef: null }
+        : {}),
+    }))
+  },
   setChatTabsWidth: (width) => {
     const chatTabsWidth = clampTo(CHAT_TABS_WIDTH, width)
     storeBrowserPreference('studio.chatTabsWidth', String(chatTabsWidth))
     set({ chatTabsWidth })
   },
-  setSection: (section) => {
-    // Schema and Core are two canvases over the same domain with DISJOINT selection
-    // namespaces (`class.X` vs a core path), so crossing between them starts clean —
-    // carrying a class selection into Core would open a detail panel for nothing.
+  openWorkspace: () =>
+    set({ level: 'workspace', panelOverlay: null, revealTarget: null, openAnchorRef: null }),
+  openSchema: () => set(schemaLevel),
+  openDomain: (domainId) =>
     set((s) => ({
-      section,
+      level: 'domain',
+      readerDomainId: domainId,
+      ...(domainId === s.readerDomainId ? {} : { dataset: null }),
+      // the Domain read before, or the one the selection belongs to: the selection is still its
+      ...(domainId === s.readerDomainId || domainId === s.selectionDomainId
+        ? {}
+        : { selectedClass: undefined, selectionDomainId: undefined, focusId: null }),
       panelOverlay: null,
       revealedRef: null,
       revealTarget: null,
       openAnchorRef: null,
-      ...((s.section === 'core') !== (section === 'core')
-        ? { selectedClass: undefined, selectionDomainId: undefined, focusId: null }
-        : {}),
-    }))
-  },
-  setReaderDomain: (readerDomainId) => set({ readerDomainId }),
+    })),
+  openDataLevel: (dataset) =>
+    set({
+      level: 'data',
+      dataset,
+      panelOverlay: null,
+      revealedRef: null,
+      revealTarget: null,
+      openAnchorRef: null,
+    }),
+  setReaderDomain: (readerDomainId) =>
+    set((s) => (readerDomainId === s.readerDomainId ? {} : { readerDomainId, dataset: null })),
   setPanelOpen: (panelOpen) => set({ panelOpen }),
   setPanelTab: (panelTab) => set({ panelTab, panelOpen: true }),
   setPanelSide: (panelSide) => {
@@ -363,6 +390,8 @@ export const useUI = create<UIState>((set) => ({
     })),
   setModulesWidth: (modulesWidth) => set({ modulesWidth }),
   setDetailWidth: (detailWidth) => set({ detailWidth }),
+  setAside: (side, width) =>
+    set((s) => (s.asides[side] === width ? s : { asides: { ...s.asides, [side]: width } })),
   setModulesCollapsed: (modulesCollapsed) => set({ modulesCollapsed }),
   setAgentDraft: (chatId, text) =>
     set((s) => ({ agentDrafts: { ...s.agentDrafts, [chatId ?? NO_CHAT]: text } })),
@@ -382,17 +411,11 @@ export const useUI = create<UIState>((set) => ({
     }),
   setAgentComments: (agentComments) => set({ agentComments }),
   revealAnchor: (ref, domainId) => {
-    const named = ref.startsWith('section.')
-      ? ref.slice('section.'.length).split('.')[0]
-      : ref.startsWith('core.')
-        ? 'core'
-        : 'schema'
-    const target = SECTION_KEYS.find((key) => key === named) ?? 'schema'
     // A property or method is revealed INSIDE the member that declares it — selecting
     // the field itself would select a canvas node that does not exist.
     const selection = detailRefFor(ref)
     set({
-      section: target,
+      level: 'domain',
       panelOverlay: null,
       revealedRef: ref,
       selectionDomainId: domainId,
@@ -483,19 +506,39 @@ export const useUI = create<UIState>((set) => ({
   setTourOpen: (tourOpen) => set({ tourOpen }),
 }))
 
-/** The small persistent projection of the UI store; transient selections stay in memory. */
+/**
+ * The Domain the levels read: the reader's, else the selection's, else the Workspace's first.
+ * Each must be one there is to read — a Domain of the Workspace, or a Publication by its id.
+ */
+export function shownDomainId(
+  state: Pick<UIState, 'readerDomainId' | 'selectionDomainId'>,
+  domains: readonly { id: string }[],
+): string | undefined {
+  const readable = (domainId?: string) =>
+    domainId &&
+    (publicationOf(domainId) !== undefined || domains.some((domain) => domain.id === domainId))
+      ? domainId
+      : undefined
+  return readable(state.readerDomainId) ?? readable(state.selectionDomainId) ?? domains[0]?.id
+}
+
+/**
+ * The small persistent projection of the UI store; transient selections stay in memory. A
+ * Publication read is not a Domain of the Workspace: the last one read stays the one a bare
+ * `/` opens, and the address alone says the Publication.
+ */
 export function uiWorkspaceSnapshot(): Pick<
   WorkspaceUiState,
-  'section' | 'edgeStyle' | 'panel' | 'rail' | 'detailWidth'
+  'edgeStyle' | 'panel' | 'rail' | 'detailWidth'
 > & {
-  readerDomainId: string | null
+  readerDomainId?: string | null
 } {
   const state = useUI.getState()
+  const reader = state.readerDomainId
   return {
-    section: state.section,
     edgeStyle: state.edgeStyle,
     detailWidth: clampTo(DETAIL_WIDTH, state.detailWidth),
-    readerDomainId: state.readerDomainId ?? null,
+    ...(reader !== undefined && publicationOf(reader) ? {} : { readerDomainId: reader ?? null }),
     panel: {
       open: state.panelOpen,
       tab: state.panelTab,
@@ -514,7 +557,6 @@ export function uiWorkspaceSnapshot(): Pick<
 /** Install the server-owned workspace state without disturbing transient interaction state. */
 export function hydrateWorkspaceUi(state: WorkspaceUiState): void {
   useUI.setState({
-    section: state.section,
     edgeStyle: state.edgeStyle,
     readerDomainId: state.readerDomainId,
     panelOpen: state.panel.side === 'bottom' ? false : state.panel.open,

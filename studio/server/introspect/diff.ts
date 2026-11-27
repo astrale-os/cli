@@ -40,9 +40,9 @@ function callableContract(m: IrMethod | IrFunction): unknown {
   }
 }
 
-export function diffSchemas(prev: SchemaIR | null, next: SchemaIR | null): SchemaChange[] {
+/** What changed from one Schema to another; a Schema that could not be read is never one of them. */
+export function diffSchemas(prev: SchemaIR, next: SchemaIR): SchemaChange[] {
   const changes: SchemaChange[] = []
-  if (!prev || !next) return changes
 
   const metadata = (ir: SchemaIR) => ({ format: ir.format, version: ir.version, domain: ir.domain })
   if (!same(metadata(prev), metadata(next))) {
@@ -281,8 +281,4 @@ function canonical(value: unknown): unknown {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, item]) => [key, canonical(item)]),
   )
-}
-
-export function structuralStatusOf(changes: SchemaChange[]): 'none' | 'changed' {
-  return changes.length === 0 ? 'none' : 'changed'
 }

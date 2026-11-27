@@ -10,7 +10,8 @@ import {
   decodeAnchorRefs,
   deleteComment,
   markOrphans,
-  mergeReply,
+  mergeParsedReply,
+  parseReplyBlock,
   readComments,
   setStatus,
   upsertComment,
@@ -100,15 +101,18 @@ export async function handleCommentRoute(context: DomainRouteContext): Promise<R
 
   if (rest === '/comments/merge' && req.method === 'POST') {
     const bundle = await getBundle(id)
+    let parsed: ReturnType<typeof parseReplyBlock>
     try {
-      const result = mergeReply(root, bundle?.renderFingerprint ?? '', asString(body.text) ?? '', {
-        dedupeAuthorText: true,
-      })
-      notify({ type: 'comments', domainId: id })
-      return json(result)
+      parsed = parseReplyBlock(asString(body.text) ?? '')
     } catch (error) {
       return badRequestFromError(error)
     }
+    // a store not read whole is refused by the merge itself: 409, not a malformed reply
+    const result = mergeParsedReply(root, bundle?.renderFingerprint ?? '', parsed, {
+      dedupeAuthorText: true,
+    })
+    notify({ type: 'comments', domainId: id })
+    return json(result)
   }
 
   return null

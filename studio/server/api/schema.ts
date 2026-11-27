@@ -1,5 +1,5 @@
-/** Canonical schema, anatomy, and genesis inspection routes. */
-import { getAnatomy, getBundle, getCore, getDatasets } from '../introspect/cache'
+/** Canonical schema, anatomy, and Dataset inspection routes. */
+import { getAnatomy, getBundle, getDatasets } from '../introspect/cache'
 import { json, type DomainRouteContext } from './http'
 
 export async function handleSchemaRoute(context: DomainRouteContext): Promise<Response | null> {
@@ -10,7 +10,6 @@ export async function handleSchemaRoute(context: DomainRouteContext): Promise<Re
     return json(await getBundle(handle.id, fresh, priority))
   }
   if (rest === '/anatomy') return json(await getAnatomy(handle.id, fresh))
-  if (rest === '/core') return json(await getCore(handle.id, fresh))
   if (rest === '/datasets') return json(await getDatasets(handle.id, fresh))
   return null
 }

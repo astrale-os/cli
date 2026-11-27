@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { Skeleton } from './ui/skeleton'
 
 /**
- * What the rail prints for an installation: its registry version, else the head of its deployment
+ * What the bar prints for an installation: its registry version, else the head of its deployment
  * name (`1.4.2 + 7 commits` of `1.4.2 + 7 commits · a1b2c3d · staging`).
  */
 export function installedLabel(domain: InstanceDomain): string {
@@ -35,9 +35,9 @@ function OpenLink({ url, label }: { url: string; label: string }) {
 }
 
 /**
- * Beside a workspace Domain in the rail: the version installed on the active instance, with a dot
+ * Beside the Domain the bar reads: the version installed on the active instance, with a dot
  * when a newer one is available. A click opens what runs there: version, update, deployment. The
- * listing is read once per instance (one CLI call reaching its Kernel) and shared by every row;
+ * listing is read once per instance (one CLI call reaching its Kernel) and shared by every reader;
  * nothing shows for a Domain the instance does not run, or when the listing cannot be read.
  */
 export function DomainInstalledChip({ origin }: { origin: string }) {

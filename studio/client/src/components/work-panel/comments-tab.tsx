@@ -5,11 +5,11 @@ import { useState } from 'react'
 
 import { Chip, EmptyState } from '@/components/studio-kit'
 import { ThreadView } from '@/components/thread'
+import { UnreadableState } from '@/components/unreadable-state'
 import { anchorLabel, openCommentThreads } from '@/lib/comments'
 import { useWorkspaceComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { useCanvasDomains } from '@/schema-studio/workspace/canvas-selection'
 
 import { threadText } from './comment-picker'
 
@@ -25,7 +25,6 @@ export function CommentsTab() {
   const { data: groups, isLoading, pending } = useWorkspaceComments({ foreground: true })
   const [openId, setOpenId] = useState<string | null>(null)
   const revealAnchor = useUI((state) => state.revealAnchor)
-  const canvas = useCanvasDomains()
 
   if (isLoading) {
     return (
@@ -35,6 +34,9 @@ export function CommentsTab() {
     )
   }
 
+  const unreadable = groups.flatMap(({ domain, unreadable, retry }) =>
+    unreadable ? [{ domain, file: unreadable, retry }] : [],
+  )
   const commentGroups = groups
     .map(({ domain, store }) => ({ domain, comments: openCommentThreads(store?.comments) }))
     .filter((group) => group.comments.length > 0)
@@ -46,7 +48,6 @@ export function CommentsTab() {
     setOpenId(next)
     const ref = comment.anchorRefs[0]?.ref
     if (next && ref) {
-      if (!canvas.visible.has(domainId)) canvas.toggleOnCanvas(domainId)
       revealAnchor(ref, domainId)
     }
   }
@@ -54,7 +55,19 @@ export function CommentsTab() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {commentCount === 0 && pending > 0 ? (
+        {unreadable.length > 0 && (
+          <div className="space-y-2 border-b p-3">
+            {unreadable.map(({ domain, file, retry }) => (
+              <UnreadableState
+                key={domain.id}
+                file={file}
+                what={`The comments of ${domain.origin}`}
+                onRetry={retry}
+              />
+            ))}
+          </div>
+        )}
+        {commentCount === 0 && unreadable.length > 0 ? null : commentCount === 0 && pending > 0 ? (
           <div
             role="status"
             className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center text-sm text-muted-foreground"

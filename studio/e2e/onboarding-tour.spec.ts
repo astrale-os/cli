@@ -1,17 +1,41 @@
-import { expect, test } from './test'
+import { expect, test, type Page } from './test'
 
 const STEPS = [
   'Welcome to Astrale Studio',
   'Domains',
   'The schema',
-  'Four readings of one domain',
+  'Three questions, one map',
   'Comment on anything',
   'Hand it to the agent',
 ] as const
 
+/** What each step frames on screen: the welcome stands alone, the others point at the bar,
+ *  the canvas, the lenses, comment mode and the agent. */
+const TARGETS = [
+  null,
+  '[data-testid="level-domain"]',
+  '[data-testid="scene-canvas"]',
+  '[data-tour="lenses"]',
+  '[data-tour="comment"]',
+  '[data-testid="agent-dock"]',
+] as const
+
+/** Does the spotlight frame the target, all of it? */
+async function framed(page: Page, target: string): Promise<boolean> {
+  const spot = await page.getByTestId('tour-spotlight').boundingBox()
+  const aim = await page.locator(target).first().boundingBox()
+  if (!spot || !aim) return false
+  return (
+    spot.x <= aim.x + 0.5 &&
+    spot.y <= aim.y + 0.5 &&
+    spot.x + spot.width >= aim.x + aim.width - 0.5 &&
+    spot.y + spot.height >= aim.y + aim.height - 0.5
+  )
+}
+
 test('the tour never opens by itself and walks every step from Settings', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByTestId('workspace-schema-section')).toBeVisible()
+  await expect(page.getByTestId('schema-level')).toBeVisible()
   await expect(page.getByTestId('studio-tour')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Settings' }).click()
@@ -23,6 +47,8 @@ test('the tour never opens by itself and walks every step from Settings', async 
     await expect(card.getByRole('heading')).toHaveText(title)
     await expect(card).toContainText(`${index + 1} / ${STEPS.length}`)
     await expect(card).toBeInViewport()
+    const target = TARGETS[index]
+    if (target) await expect.poll(() => framed(page, target)).toBe(true)
     if (index < STEPS.length - 1) await card.getByRole('button', { name: 'Next' }).click()
   }
 

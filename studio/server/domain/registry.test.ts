@@ -131,10 +131,58 @@ export default project({
   expect(analyzeProjectConfig(root)).toEqual({
     domainFile: join(root, 'domain/domain.ts'),
     datasets: ['./tests/demo.ts', './tests/big.ts'],
+    environments: { declared: false, environments: [], complete: true },
   })
   expect(register(root)).toMatchObject({
     domainFile: join(root, 'domain/domain.ts'),
     schemaIndex: join(root, 'domain/schema/index.ts'),
+  })
+})
+
+test('reads the declared Environments and their deployment adapters, never executing them', () => {
+  const root = domainDir({
+    'astrale.config.ts': `import * as adapters from '@astrale-os/adapter-astrale'
+import { cloudflare as worker } from '@astrale-os/adapter-cloudflare'
+import { defineProject } from '@astrale-os/sdk/project'
+import domain from './domain.js'
+const platform = { name: 'astrale-platform' } as const
+const production = { deployment: worker({ namespace: platform }) }
+export default defineProject({
+  domain,
+  environments: {
+    development: { deployment: adapters.services({ name: 'issues' }) },
+    production,
+    'pre-release': { deployment: makeDeployment() },
+    [computed]: { deployment: worker({}) },
+  },
+})
+`,
+  })
+  expect(analyzeProjectConfig(root).environments).toEqual({
+    declared: true,
+    environments: [
+      {
+        name: 'development',
+        adapter: { module: '@astrale-os/adapter-astrale', export: 'services' },
+      },
+      {
+        name: 'production',
+        adapter: { module: '@astrale-os/adapter-cloudflare', export: 'cloudflare' },
+      },
+      { name: 'pre-release' },
+    ],
+    complete: false,
+  })
+  const spread = domainDir({
+    'astrale.config.ts': PROJECT.replace(
+      'defineProject({ domain })',
+      'defineProject({ domain, environments: { ...shared } })',
+    ),
+  })
+  expect(analyzeProjectConfig(spread).environments).toEqual({
+    declared: true,
+    environments: [],
+    complete: false,
   })
 })
 

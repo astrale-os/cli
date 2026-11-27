@@ -1,98 +1,23 @@
-import { KERNEL_DOMAIN_ID } from '@shared/contracts/workspace'
 import { MousePointerClick, Sparkles } from 'lucide-react'
 import { useEffect } from 'react'
-import { toast } from 'sonner'
 
 import { useAsks } from '@/lib/ask'
-import { type CommentDraft, useUI } from '@/lib/store'
-import {
-  anchorKindForRef,
-  decodeFlowNodeId,
-  flowEdgeAnchorRef,
-  flowEdgeOwnerDomainId,
-  flowNodeAnchorRef,
-  targetElementDomainId,
-} from '@/lib/targets'
-
-/** Resolve the most specific targetable element under the pointer (mode-agnostic). */
-function resolveDraft(
-  target: HTMLElement | null,
-  mode: 'comment' | 'ask',
-  x: number,
-  y: number,
-): CommentDraft | null {
-  if (!target) return null
-  const scopedDomainId = targetElementDomainId(target)
-  const draft = (
-    domainId: string,
-    targetElement: HTMLElement,
-    anchor: CommentDraft['anchor'],
-    excerpt: string,
-  ): CommentDraft => ({ mode, domainId, targetElement, anchor, excerpt, x, y })
-
-  // 1) an element explicitly marked commentable (detail props/methods, section items…)
-  const tagged = target.closest<HTMLElement>('[data-anchor-ref]')
-  if (tagged?.dataset.anchorRef) {
-    const ref = tagged.dataset.anchorRef
-    // An owner stamped ON the anchor wins: the rail's domain rows name a domain the
-    // canvas may not be drawing at all, so there is no `data-domain-id` around them to
-    // read — and falling through to unrelated selection state would file the thread
-    // on the wrong one (see `anchorData`).
-    const domainId =
-      tagged.dataset.anchorDomainId ?? targetElementDomainId(tagged) ?? scopedDomainId
-    if (!domainId) return null
-    const excerpt = (tagged.dataset.anchorExcerpt || tagged.textContent || ref).trim().slice(0, 80)
-    return draft(domainId, tagged, { ref, kind: anchorKindForRef(ref) }, excerpt)
-  }
-
-  // 2) a graph node — a class box or a (collapsed/expanded) module box
-  const node = target.closest<HTMLElement>('.react-flow__node')
-  if (node) {
-    const rawId = node.getAttribute('data-id') ?? ''
-    const identity = decodeFlowNodeId(rawId)
-    const ref = flowNodeAnchorRef(rawId)
-    const domainId = identity.domainId ?? targetElementDomainId(node) ?? scopedDomainId
-    if (!domainId) return null
-    if (ref?.startsWith('class.'))
-      return draft(domainId, node, { ref, kind: 'schema' }, ref.slice('class.'.length))
-    if (ref?.startsWith('module.'))
-      return draft(domainId, node, { ref, kind: 'section' }, ref.slice('module.'.length))
-  }
-
-  // 3) a graph edge (relationship)
-  const edge = target.closest<HTMLElement>('.react-flow__edge')
-  if (edge) {
-    const edgeId = edge.getAttribute('data-id') ?? ''
-    const ref = flowEdgeAnchorRef(edgeId)
-    const domainId = flowEdgeOwnerDomainId(edgeId) ?? targetElementDomainId(edge) ?? scopedDomainId
-    if (ref && domainId)
-      return draft(domainId, edge, { ref, kind: 'schema' }, ref.slice('edge.'.length))
-  }
-
-  // Empty canvas and generic page chrome are deliberately not targets: every
-  // comment and ask belongs to a concrete domain/module/class/property/view.
-  return null
-}
+import { useUI } from '@/lib/store'
+import { targetAt } from '@/lib/targets'
 
 /** The element a click would pin to — highlighted under the pointer while targeting.
- *  Mirrors `resolveDraft`: only real targets light up, never the decorative frames. */
+ *  Mirrors `targetAt`: only stamped targets light up, never the decorative frames. */
 function resolveTargetElement(target: HTMLElement | null): HTMLElement | null {
-  if (!target) return null
-  const tagged = target.closest<HTMLElement>('[data-anchor-ref]')
-  if (tagged) return tagged
-  const node = target.closest<HTMLElement>('.react-flow__node')
-  if (node) {
-    const rawId = node.getAttribute('data-id') ?? ''
-    return flowNodeAnchorRef(rawId) ? node : null
-  }
-  return target.closest<HTMLElement>('.react-flow__edge')
+  return target?.closest<HTMLElement>('[data-anchor-ref]') ?? null
 }
 
 /**
  * "Target anything" mode, shared by Comment (hotkey C) and Ask (hotkey A). While
  * active, a capture-phase click resolves the most specific target under the pointer
- * (a commentable element or a graph node / edge) and opens the matching
- * floating composer at the click point via `commentDraft` (carrying the mode). Esc exits.
+ * (`targetAt`: the nearest `anchorData` stamp, on the surface clicked) and opens the
+ * matching composer at the click point: a comment draft, or an Ask. Empty canvas and
+ * page chrome carry no stamp and are no target. Esc exits. A read-only Domain's target
+ * opens too: its composer says what it takes there.
  */
 export function CommentModeOverlay() {
   const commentMode = useUI((s) => s.commentMode)
@@ -123,27 +48,22 @@ export function CommentModeOverlay() {
     const onClick = (e: MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      const mode = useUI.getState().askMode ? 'ask' : 'comment'
-      const draft = resolveDraft(e.target as HTMLElement | null, mode, e.clientX, e.clientY)
+      const ask = useUI.getState().askMode
+      const target = targetAt(e.target as Element | null)
       exit()
-      if (!draft) return
-      if (draft.mode === 'comment' && draft.domainId === KERNEL_DOMAIN_ID) {
-        toast.info('The Kernel is read-only: comment on your own Domains, or Ask (A) about it.')
-        return
-      }
+      if (!target) return
+      const { clientX: x, clientY: y } = e
       // open on the next frame so this click finishes before the popover mounts —
       // otherwise Radix treats the opening click as an outside-dismiss and closes it.
-      if (draft.mode === 'ask') {
+      if (ask) {
         // ask → an ephemeral, element-anchored side-question (client-only, not a comment)
-        requestAnimationFrame(() =>
-          useAsks.getState().start(draft.domainId, draft.anchor, draft.excerpt, draft.x, draft.y),
-        )
+        requestAnimationFrame(() => useAsks.getState().start(target, x, y))
       } else {
         // Hand the hover call-out to the composer before leaving targeting mode. Its
         // own lifecycle removes this marker when the popover closes, so the element
         // stays visibly tied to the note while it is being written.
-        draft.targetElement.setAttribute('data-comment-draft-target', '')
-        requestAnimationFrame(() => setCommentDraft(draft))
+        target.element.setAttribute('data-comment-draft-target', '')
+        requestAnimationFrame(() => setCommentDraft({ target, x, y }))
       }
     }
     const onKeyDown = (e: KeyboardEvent) => {

@@ -1,0 +1,1118 @@
+/* The Scene canvas. Every part sits at the world offsets its layout gave it; the world is
+   moved by one transform, so these rules never run on a pan or a zoom. Motion is the same
+   everywhere: a part that moves between two frames glides, a part that appears or leaves
+   fades, and focus changes opacity and colour only — never geometry. */
+
+.scene-canvas {
+  --scene-motion: 220ms;
+  --scene-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* World-unit strokes stay visible from afar: the tier thickens them as the world shrinks. */
+  --stroke-unit: 1;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  contain: strict;
+  background: var(--color-canvas);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: var(--font-sans);
+}
+.scene-canvas[data-tier='middle'] {
+  --stroke-unit: 1.15;
+}
+.scene-canvas[data-tier='far'] {
+  --stroke-unit: 2.2;
+}
+
+/* One surface, one cursor: the hand covers every part the world draws. */
+.scene-canvas,
+.scene-canvas .scene-world * {
+  cursor: grab;
+}
+.scene-canvas[data-panning],
+.scene-canvas[data-panning] *,
+.scene-canvas[data-placing],
+.scene-canvas[data-placing] * {
+  cursor: grabbing;
+}
+/* Dragged boxes follow the pointer exactly, and their lines with them: nothing glides. */
+.scene-canvas[data-placing] .scene-box,
+.scene-canvas[data-placing] .scene-region,
+.scene-canvas[data-placing] .scene-junction {
+  transition: none;
+}
+body[data-target-mode] .scene-canvas,
+body[data-target-mode] .scene-canvas * {
+  cursor: pointer;
+}
+
+.scene-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+/* ── boxes ── */
+
+.scene-box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-card);
+  box-shadow: var(--scene-shadow);
+  color: var(--color-card-foreground);
+  transition:
+    transform var(--scene-motion) var(--scene-ease),
+    width var(--scene-motion) var(--scene-ease),
+    height var(--scene-motion) var(--scene-ease),
+    opacity var(--scene-motion) var(--scene-ease),
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+/* The module's hue, as a short bar at the head of the card. */
+.scene-box::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 11px;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 2px 2px 0;
+  background: var(--box-mark);
+}
+.scene-box[data-box-kind='group']::before {
+  display: none;
+}
+/* A pill is one line between cards: rounded whole, its glyph wearing its hue. */
+.scene-box[data-shape='pill'] {
+  border-radius: 9999px;
+}
+.scene-box[data-shape='pill']::before {
+  display: none;
+}
+.scene-box[data-shape='pill'] .scene-box-header {
+  padding: 0 10px;
+}
+.scene-box[data-emphasis='dim'] {
+  opacity: 0.28;
+}
+.scene-box[data-emphasis='lit']:not([data-selected]),
+.scene-box[data-hovered]:not([data-selected]) {
+  border-color: color-mix(in oklch, var(--box-mark) 55%, var(--color-border));
+}
+.scene-box[data-muted] {
+  background: color-mix(in oklch, var(--color-card) 70%, var(--color-canvas));
+}
+/* A card for something the Scene holds none of: there only so a mark has a place. */
+.scene-box[data-absent] {
+  border-style: dashed;
+  background: color-mix(in oklch, var(--color-card) 40%, transparent);
+  box-shadow: none;
+}
+.scene-box[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+@starting-style {
+  .scene-box {
+    opacity: 0;
+  }
+  .scene-box[data-leaving] {
+    opacity: 1;
+  }
+}
+
+.scene-box-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  min-width: 0;
+}
+.scene-box-toggle {
+  flex: none;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--box-mark);
+}
+.scene-box-toggle:hover {
+  background: color-mix(in oklch, var(--box-mark) 14%, transparent);
+}
+.scene-box-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.scene-box-sublabel {
+  margin-left: -2px;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+}
+.scene-box-counts {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+}
+.scene-box-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.scene-box-count-dot {
+  width: 5px;
+  height: 5px;
+  margin: 0 3px;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.scene-box-badges {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
+  height: 22px;
+  align-items: center;
+  overflow: hidden;
+}
+.scene-box-badge {
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+}
+/* What would happen, as declared: an outline in its hue, the same size as a badge. */
+.scene-box-badge[data-outline] {
+  padding: 0 5px;
+  border: 1px dashed currentColor;
+  background: transparent;
+  line-height: 15px;
+}
+
+/* ── junctions: where ends accepting the same set meet, before fanning out ── */
+
+.scene-junction {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1.5px solid var(--color-scene-link);
+  border-radius: 9999px;
+  background: var(--color-canvas);
+  transition:
+    transform var(--scene-motion) var(--scene-ease),
+    opacity var(--scene-motion) var(--scene-ease),
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+/* A wider target than the mark: the ring is small, the pointer need not be precise. */
+.scene-junction::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+}
+.scene-junction:hover,
+.scene-junction[data-hovered],
+.scene-junction[data-emphasis='lit'] {
+  border-color: var(--color-schema-edge);
+  background: color-mix(in oklch, var(--color-schema-edge) 22%, var(--color-canvas));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-schema-edge) 14%, transparent);
+}
+.scene-junction[data-emphasis='dim'] {
+  opacity: 0.28;
+}
+.scene-junction[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+@starting-style {
+  .scene-junction {
+    opacity: 0;
+  }
+}
+
+.scene-box-rows {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+  overflow: hidden;
+}
+.scene-box-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.scene-box-row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scene-box-row-detail {
+  max-width: 140px;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  color: var(--color-muted-foreground);
+}
+.scene-box-row-marks {
+  display: flex;
+  flex: none;
+  color: var(--color-muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 10px;
+}
+.scene-box-row-mark {
+  width: 14px;
+  text-align: center;
+}
+.scene-box-row-mark[data-mark='required'],
+.scene-box-row-mark[data-mark='unsafe'] {
+  color: var(--color-warning);
+  font-weight: 700;
+}
+.scene-box-row-more {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+}
+
+/* A tally counts what happens to a card's node, its dot in the verb's hue. */
+.scene-box-tally {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--tally-tone) 9%, transparent);
+  color: color-mix(in oklch, var(--tally-tone) 78%, var(--color-foreground));
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.scene-box-tally-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--tally-tone);
+}
+
+/* A group's member rows: each its node, lit, dimmed, hovered and selected as a card would be. */
+.scene-box-row[data-member] {
+  border-radius: 4px;
+  margin: 0 4px;
+  padding: 0 8px;
+  transition:
+    opacity 160ms ease,
+    background-color 120ms ease;
+}
+.scene-box-row[data-member] .scene-box-row-detail {
+  margin-left: 0;
+}
+.scene-box-row[data-member]:hover,
+.scene-box-row[data-member][data-hovered] {
+  background: color-mix(in oklch, var(--box-mark) 12%, transparent);
+}
+/* A highlight never widens a text: layout measured it at its resting weight. */
+.scene-box-row[data-member][data-selected] {
+  background: color-mix(in oklch, var(--box-mark) 22%, transparent);
+  color: var(--color-foreground);
+}
+.scene-box-row[data-member][data-emphasis='dim'] {
+  opacity: 0.35;
+}
+.scene-row-signs {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-family: var(--font-sans);
+}
+.scene-row-sign-dot {
+  width: 6px;
+  height: 6px;
+  margin: 0 1px;
+  border-radius: 9999px;
+}
+.scene-row-sign-glyph {
+  display: inline-flex;
+  width: 13px;
+  justify-content: center;
+}
+/* a pictogram with the count it marks, `CARD.signCountGap` apart: 1px each side, as a glyph alone */
+.scene-row-sign-glyph[data-count] {
+  width: auto;
+  align-items: center;
+  gap: 2px;
+  padding: 0 1px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 15px;
+}
+.scene-row-sign-text {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in oklch, currentColor 10%, transparent);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+/* ── rules: a card's rule rows, each in the hue of the operation it decides ── */
+
+.scene-rules {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--color-border);
+}
+/* The groups a card's rows read in — what observes, what writes, who calls, what must hold —
+   each on its own panel, set apart by `RULE.groupGap`: two groups read as two before a word. */
+.scene-rule-group {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--color-muted) 70%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-border) 70%, transparent);
+}
+/* On a dark card the muted fill all but vanishes: the panels lift in the ink instead. */
+.dark .scene-rule-group {
+  background: color-mix(in oklch, var(--color-foreground) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-foreground) 12%, transparent);
+}
+.scene-rule {
+  --rule-tone: var(--color-rule-who);
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 5px;
+  transition:
+    opacity 160ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.scene-rule[data-rule-tone='what'] {
+  --rule-tone: var(--color-rule-what);
+}
+/* A row with a lead — its mark, and what it decides beside its phrase — reads across. */
+.scene-rule[data-lead] {
+  flex-direction: row;
+  align-items: flex-start;
+}
+.scene-rule-lead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.scene-rule-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.scene-rule-head .rule-mark,
+.scene-rule-head .rule-marks {
+  --mark-size: 14px;
+}
+/* What a row decides, a fold's chevron before it (`RULE.chevron` wide). */
+.scene-rule-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.scene-rule-chevron {
+  flex: none;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-left: -2px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--rule-tone);
+}
+.scene-rule-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+.scene-rule-chevron:hover {
+  background: color-mix(in oklch, var(--rule-tone) 16%, transparent);
+}
+.scene-rule-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--rule-tone) 85%, var(--color-foreground));
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 15px;
+}
+.scene-rule-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+.scene-rule-line {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* The functions a rule guards, after its phrase: each one selects its function. */
+.scene-rule-names {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--color-muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 15px;
+}
+.scene-rule-name,
+.scene-rule-more {
+  border-radius: 3px;
+}
+.scene-rule-name {
+  cursor: pointer;
+}
+.scene-rule-name:hover {
+  color: var(--color-foreground);
+  text-decoration: underline;
+}
+/* Lit, a name keeps the width its row measured: its tint reaches past it, taking no room. */
+.scene-rule-name[data-lit],
+.scene-rule-name[data-selected],
+.scene-rule-more[data-lit] {
+  background: color-mix(in oklch, var(--rule-tone) 18%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--rule-tone) 18%, transparent);
+  color: color-mix(in oklch, var(--rule-tone) 80%, var(--color-foreground));
+}
+/* What stands in for a rule — the Kernel's default, why a rule cannot be read, a fold's
+   count — reads quietly, so what is written reads first. */
+.scene-rule[data-unwritten] .scene-rule-text,
+.scene-rule[data-unread] .scene-rule-text {
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+.scene-rule[data-unwritten] .scene-rule-label {
+  color: color-mix(in oklch, var(--rule-tone) 45%, var(--color-muted-foreground));
+}
+.scene-rule[data-fold] .scene-rule-text {
+  color: var(--color-muted-foreground);
+}
+.scene-rule:hover,
+.scene-rule[data-hovered],
+.scene-rule[data-lit='lit'] {
+  background: color-mix(in oklch, var(--rule-tone) 9%, transparent);
+}
+.scene-rule[data-selected] {
+  background: color-mix(in oklch, var(--rule-tone) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--rule-tone);
+}
+.scene-rule[data-lit='dim'],
+.scene-rule[data-emphasis='dim'] {
+  opacity: 0.42;
+}
+.scene-rule[data-emphasis='lit']:not([data-lit='dim']) {
+  background: color-mix(in oklch, var(--rule-tone) 9%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--rule-tone) 60%, transparent);
+}
+/* Where phrases no longer read, a row is a mark in its tone saying what it decides and how
+   much: filled where a rule is written, hollow where nothing is, dashed round a fold that
+   leaves some of what it holds unwritten. */
+.scene-rule-glance {
+  display: none;
+}
+.scene-canvas[data-glance] .scene-rule > :not(.scene-rule-glance) {
+  visibility: hidden;
+}
+/* A row read as a mark: its words are `glanceIn`'s, sized as `FONTS.ruleGlance` and inset as
+   `RULE.glanceInset` says (2px + 8px each side, less the row's own 4px). */
+.scene-canvas[data-glance] .scene-rule-glance {
+  position: absolute;
+  inset: 3px 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--rule-tone) 22%, transparent);
+  color: color-mix(in oklch, var(--rule-tone) 70%, var(--color-foreground));
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.scene-canvas[data-glance] .scene-rule[data-depth='1'] .scene-rule-glance {
+  font-size: 13px;
+}
+.scene-rule-glance .rule-mark {
+  --mark-size: 18px;
+}
+.scene-glance-words {
+  min-width: 0;
+  overflow: hidden;
+}
+.scene-canvas[data-glance] .scene-rule[data-unwritten] .scene-rule-glance {
+  background: none;
+  border: 2px dashed color-mix(in oklch, var(--rule-tone) 50%, transparent);
+  color: var(--color-muted-foreground);
+}
+.scene-canvas[data-glance] .scene-rule[data-partly] .scene-rule-glance {
+  outline: 2px dashed color-mix(in oklch, var(--rule-tone) 55%, transparent);
+  outline-offset: -2px;
+}
+/* A card a selection opened is drawn over what is below it, taller than its place. */
+.scene-box[data-raised] {
+  z-index: 5;
+  filter: drop-shadow(0 10px 18px color-mix(in oklch, var(--color-foreground) 22%, transparent));
+}
+
+/* A Scene of thin lines draws its links lighter until lit: its cards say what it is about,
+   and a link matters where something walks it. */
+.scene-canvas[data-lines='thin']
+  .scene-link:not([data-emphasis='lit']):not([data-selected]):not(:hover)
+  .scene-link-stroke:not([data-dashed]) {
+  stroke: color-mix(in oklch, var(--color-scene-link) 55%, transparent);
+  stroke-width: calc(0.85px * var(--stroke-unit));
+}
+.scene-canvas[data-lines='thin']
+  .scene-link:not([data-emphasis='lit']):not([data-selected]):not(:hover)
+  .scene-link-arrow {
+  fill: color-mix(in oklch, var(--color-scene-link) 55%, transparent);
+}
+
+/* A walk's steps, numbered in the order the rule reads them. */
+.scene-step {
+  --step-tone: var(--color-rule-who);
+  position: absolute;
+  z-index: 7;
+  left: 0;
+  top: 0;
+  display: flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--step-tone);
+  box-shadow: 0 0 0 2px var(--color-canvas);
+  color: var(--color-background);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+@starting-style {
+  .scene-step {
+    opacity: 0;
+  }
+}
+/* The step the stage points at stands out, ringed in its hue; the others step back. */
+.scene-labels[data-step-pointing] .scene-step:not([data-pointed]) {
+  opacity: 0.3;
+}
+.scene-step[data-pointed] {
+  z-index: 8;
+  box-shadow:
+    0 0 0 2px var(--color-canvas),
+    0 0 0 5px color-mix(in oklab, var(--step-tone) 45%, transparent);
+}
+
+/* A band's heading: quiet, over its column. */
+.scene-band {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: flex-end;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: transform var(--scene-motion) var(--scene-ease);
+}
+.scene-canvas[data-tier='far'] .scene-band {
+  font-size: 24px;
+  letter-spacing: 0.04em;
+}
+
+/* ── module regions ── */
+
+.scene-region {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  transition:
+    transform var(--scene-motion) var(--scene-ease),
+    width var(--scene-motion) var(--scene-ease),
+    height var(--scene-motion) var(--scene-ease),
+    opacity var(--scene-motion) var(--scene-ease),
+    border-color 160ms ease;
+}
+/* A soft region: the module's tint, faint enough that its cards stay the figure. */
+.scene-region[data-framed] {
+  border-color: color-mix(in oklch, var(--region-border) 70%, transparent);
+  background: color-mix(in oklch, var(--region-surface) 60%, transparent);
+}
+.scene-region[data-selected] {
+  border-color: var(--region-border);
+  border-width: 2px;
+}
+.scene-region[data-emphasis='dim'] {
+  opacity: 0.4;
+}
+@starting-style {
+  .scene-region {
+    opacity: 0;
+  }
+}
+.scene-region-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 6px;
+}
+.scene-region-toggle {
+  flex: none;
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--region-text);
+  opacity: 0.65;
+}
+.scene-region-toggle:hover {
+  opacity: 1;
+  background: color-mix(in oklch, var(--region-text) 12%, transparent);
+}
+.scene-region-label {
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--region-text);
+}
+.scene-region-badges {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+  margin-left: 4px;
+  overflow: hidden;
+}
+.scene-region-badges .scene-box-badge {
+  flex: none;
+}
+/* Marks wider than the header leaves them sit on the frame's top edge, at its right. */
+.scene-region-badges[data-on-edge] {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  margin: 0;
+  padding: 0 4px;
+  overflow: visible;
+  transform: translateY(-50%);
+  border-radius: 6px;
+  background: var(--color-background);
+}
+.scene-region-label-far {
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+/* ── links, fans and labels ── */
+
+.scene-links {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+.scene-labels {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transition: opacity 160ms ease;
+}
+/* While parts glide to a new frame their links would cut across them: the lines wait. */
+.scene-canvas[data-moving] .scene-links,
+.scene-canvas[data-moving] .scene-labels {
+  opacity: 0;
+  transition: none;
+}
+
+.scene-link {
+  transition: opacity 160ms ease;
+}
+.scene-link[data-hidden] {
+  opacity: 0;
+}
+.scene-link[data-emphasis='dim'] {
+  opacity: 0.16;
+}
+.scene-link[data-hidden][data-emphasis] {
+  opacity: 0;
+}
+.scene-link-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: calc(12px * var(--stroke-unit));
+  pointer-events: stroke;
+}
+.scene-link[data-hidden] .scene-link-hit {
+  pointer-events: none;
+}
+.scene-link-stroke {
+  fill: none;
+  stroke: var(--color-scene-link);
+  stroke-width: calc(1.25px * var(--link-weight, 1) * var(--stroke-unit));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition:
+    stroke 160ms ease,
+    stroke-width 160ms ease;
+}
+.scene-link-arrow {
+  fill: var(--color-scene-link);
+  transition:
+    fill 160ms ease,
+    stroke 160ms ease;
+}
+/* A verb is what the link says: its hue shows at rest, a little softer than when lit. */
+.scene-link[data-verb] .scene-link-stroke {
+  stroke: color-mix(in oklch, var(--link-tone) 70%, var(--color-scene-link));
+}
+.scene-link[data-verb] .scene-link-arrow {
+  fill: color-mix(in oklch, var(--link-tone) 70%, var(--color-scene-link));
+}
+/* A link to a hub stays faint until lit, so the hub's many lines never drown the rest. */
+.scene-link[data-ambient]:not([data-hidden]):not([data-emphasis='lit']):not(:hover) {
+  opacity: 0.32;
+}
+.scene-link[data-ambient][data-emphasis='dim']:not([data-hidden]) {
+  opacity: 0.1;
+}
+/* A dashed link is secondary (`is a`): thinner and lighter than any relationship, with an
+   open head, so it reads after them however far it runs. */
+.scene-link-stroke[data-dashed] {
+  stroke: color-mix(in oklch, var(--color-scene-link) 60%, transparent);
+  stroke-width: calc(1px * var(--stroke-unit));
+  stroke-dasharray: 4 4;
+}
+.scene-link-stroke[data-dashed] + .scene-link-arrow {
+  fill: var(--color-canvas);
+  stroke: color-mix(in oklch, var(--color-scene-link) 75%, transparent);
+  stroke-width: calc(1px * var(--stroke-unit));
+  stroke-linejoin: round;
+}
+.scene-link[data-emphasis='lit'] .scene-link-stroke,
+.scene-link:hover .scene-link-stroke {
+  stroke: var(--link-tone);
+}
+.scene-link[data-emphasis='lit'] .scene-link-arrow,
+.scene-link:hover .scene-link-arrow {
+  fill: var(--link-tone);
+}
+.scene-link[data-selected] .scene-link-stroke {
+  stroke: var(--link-tone);
+  stroke-width: calc(2.5px * var(--stroke-unit));
+}
+.scene-link[data-selected] .scene-link-arrow {
+  fill: var(--link-tone);
+}
+.scene-link[data-emphasis='lit'] .scene-link-stroke[data-dashed] + .scene-link-arrow,
+.scene-link:hover .scene-link-stroke[data-dashed] + .scene-link-arrow,
+.scene-link[data-selected] .scene-link-stroke[data-dashed] + .scene-link-arrow {
+  fill: var(--color-canvas);
+  stroke: var(--link-tone);
+}
+/* Targeting thickens the line itself: a box around a line would cover its neighbours. */
+.scene-link[data-comment-target] .scene-link-stroke,
+.scene-link[data-comment-draft-target] .scene-link-stroke,
+.scene-link[data-revealed] .scene-link-stroke {
+  stroke: var(--color-primary);
+  stroke-width: calc(3px * var(--stroke-unit));
+}
+.scene-link[data-comment-target] .scene-link-arrow,
+.scene-link[data-comment-draft-target] .scene-link-arrow,
+.scene-link[data-revealed] .scene-link-arrow {
+  fill: var(--color-primary);
+}
+
+/* A ribbon: the links between a group and a target, one band per tone, as thick as what it
+   carries. Translucent, so where ribbons meet they still read apart. */
+.scene-ribbon {
+  transition: opacity 180ms ease;
+}
+.scene-ribbon-stripe {
+  fill: color-mix(in oklch, var(--ribbon-tone) 58%, transparent);
+  transition: fill 160ms ease;
+}
+.scene-ribbon-hit {
+  fill: none;
+  stroke: transparent;
+  pointer-events: stroke;
+}
+.scene-ribbon[data-ambient] .scene-ribbon-stripe {
+  fill: color-mix(in oklch, var(--ribbon-tone) 18%, transparent);
+}
+.scene-ribbon:hover .scene-ribbon-stripe,
+.scene-ribbon[data-emphasis='lit'] .scene-ribbon-stripe {
+  fill: color-mix(in oklch, var(--ribbon-tone) 78%, transparent);
+}
+.scene-ribbon[data-emphasis='dim'] {
+  opacity: 0.22;
+}
+.scene-ribbon[data-hidden] {
+  opacity: 0;
+}
+.scene-ribbon[data-hidden] .scene-ribbon-hit {
+  pointer-events: none;
+}
+
+/* A fan is lighter than any link: it says what an end may reach, not another relationship. */
+.scene-fan {
+  fill: none;
+  stroke: color-mix(in oklch, var(--color-scene-link) 70%, transparent);
+  stroke-width: calc(1px * var(--stroke-unit));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition:
+    opacity 160ms ease,
+    stroke 160ms ease;
+}
+.scene-fan[data-emphasis='lit'] {
+  stroke: color-mix(in oklch, var(--color-schema-edge) 75%, transparent);
+}
+.scene-fan[data-emphasis='dim'] {
+  opacity: 0.16;
+}
+
+.scene-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: 4px;
+  /* Opaque: a line running under a name is hidden there, never struck through the name or the
+     constraints under it. */
+  background: var(--color-canvas);
+  color: var(--color-muted-foreground);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+  transition:
+    opacity 160ms ease,
+    color 160ms ease;
+}
+@starting-style {
+  .scene-label {
+    opacity: 0;
+  }
+}
+.scene-label[data-end] {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.scene-label[data-emphasis='lit'] {
+  color: var(--color-foreground);
+}
+/* Selected, a name keeps the weight its placed room was measured at. */
+.scene-label[data-selected] {
+  color: var(--color-schema-edge);
+}
+.scene-label[data-verb] {
+  color: color-mix(in oklch, var(--label-tone) 82%, var(--color-muted-foreground));
+}
+.scene-label[data-verb][data-emphasis='lit'],
+.scene-label[data-verb][data-selected] {
+  color: var(--label-tone);
+}
+/* A name several lines share: the count of them after it. */
+.scene-label-count {
+  margin-left: 4px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-foreground);
+}
+/* An end that restricts: a stop mark in the delete hue before its count (`RESTRICT_W` wide). */
+.scene-label-restrict {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: var(--color-verb-delete);
+  opacity: 0.8;
+}
+.scene-label-restrict[data-alone] {
+  margin-right: 0;
+}
+/* Constraints read on their own line under the name (`MARKS_H` tall). */
+.scene-label-marks {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 12px;
+  color: var(--color-muted-foreground);
+}
+
+/* The rule a link's name is marked with: a dot in its hue before the name, selecting the rule. */
+.scene-label-rule {
+  position: absolute;
+  left: -15px;
+  top: 2px;
+  display: flex;
+  cursor: pointer;
+}
+.scene-label-rule .rule-mark {
+  --mark-size: 12px;
+  opacity: 0.85;
+  transition: opacity 120ms ease;
+}
+.scene-label-rule:hover .rule-mark {
+  opacity: 1;
+}
+
+/* ── chrome ── */
+
+.scene-canvas [data-canvas-chrome] button {
+  cursor: pointer;
+}
+.scene-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-muted-foreground);
+  pointer-events: none;
+}
+.scene-folded {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-card) 92%, transparent);
+  color: var(--color-foreground);
+  font-size: 11px;
+  backdrop-filter: blur(6px);
+}
+button.scene-folded {
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+button.scene-folded:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-border));
+  background: var(--color-card);
+}
+button.scene-folded:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
+.scene-isolated {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card);
+  box-shadow: var(--scene-shadow);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.scene-isolated-exit {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--color-muted-foreground);
+}
+.scene-isolated-exit:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-canvas * {
+    transition: none !important;
+  }
+}

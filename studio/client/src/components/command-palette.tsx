@@ -2,6 +2,7 @@ import type { DomainIntrospectionTiming } from '@shared/contracts/runtime'
 import type { StudioSchemaBundle } from '@shared/contracts/schema'
 import type { DomainSummary } from '@shared/contracts/workspace'
 
+import { publicationOf } from '@shared/contracts/versions'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Command } from 'cmdk'
 import {
@@ -9,45 +10,32 @@ import {
   ArrowRight,
   Box,
   Braces,
+  Database,
   Folder,
   Globe,
   Loader2,
   Map as MapIcon,
-  Plug,
   Spline,
   Tag,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { TOUR_STEPS } from '@/components/tour'
 import { api, qk } from '@/lib/api'
+import { bundleQueryOptions } from '@/lib/domain-queries'
 import { buildFunctionsModel } from '@/lib/functions'
 import { useWorkspace } from '@/lib/hooks'
 import { introspectionPhaseLabel } from '@/lib/introspection'
-import { type SectionKey, useUI } from '@/lib/store'
+import { shownDomainId, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { folderModules, moduleOfClass } from '@/schema-studio/modules'
-import { useCanvasDomains } from '@/schema-studio/workspace/canvas-selection'
-
-/** The nav sections, mirroring app.tsx's NAV order/labels. */
-const SECTIONS: { key: SectionKey; label: string }[] = [
-  { key: 'schema', label: 'Schema' },
-  { key: 'core', label: 'Core' },
-  { key: 'tests', label: 'Tests' },
-  { key: 'process', label: 'Process' },
-]
+import { LENS_NAMES } from '@/studio/lenses/keys'
 
 /** The domain-level overviews. They open in the schema section's right panel —
  *  reachable from here rather than from a permanent row of canvas buttons. */
-const OVERVIEWS: {
-  key: 'domains' | 'views' | 'functions' | 'integrations'
-  label: string
-  icon: typeof Box
-}[] = [
+const OVERVIEWS: { key: 'domains' | 'views'; label: string; icon: typeof Box }[] = [
   { key: 'domains', label: 'Imported domains', icon: Globe },
   { key: 'views', label: 'Views', icon: AppWindow },
-  { key: 'functions', label: 'Functions', icon: Braces },
-  { key: 'integrations', label: 'Integrations', icon: Plug },
 ]
 
 /** Summarise a JSON Schema property type for the muted meta column. */
@@ -94,6 +82,29 @@ function Row({
 
 const ITEM_CLS =
   'flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground'
+
+/** A Domain ⌘K searches, by what names it: its origin, and a Publication's version with it. */
+export interface PaletteDomain {
+  id: string
+  label: string
+}
+
+/**
+ * The Domains ⌘K searches: the Workspace's, and first the Publication in view when one is. A
+ * Publication is no Domain of the Workspace, but it is the one the page reads.
+ */
+export function paletteDomains(
+  workspace: readonly DomainSummary[],
+  shownId: string | undefined,
+): PaletteDomain[] {
+  const publication = shownId === undefined ? undefined : publicationOf(shownId)
+  return [
+    ...(publication && shownId
+      ? [{ id: shownId, label: `${publication.origin} ${publication.version}` }]
+      : []),
+    ...workspace.map((domain) => ({ id: domain.id, label: domain.origin })),
+  ]
+}
 
 /** What every searchable item carries: its domain, the text cmdk matches, and the meta column. */
 interface IndexEntry {
@@ -144,11 +155,11 @@ export class PaletteSearchIndexCache {
   private revision?: string
   private value = emptySearchIndex()
 
-  build(domains: DomainSummary[], bundles: Array<StudioSchemaBundle | undefined>): SearchIndex {
+  build(domains: PaletteDomain[], bundles: Array<StudioSchemaBundle | undefined>): SearchIndex {
     const revision = JSON.stringify(
       domains.map((domain, index) => [
         domain.id,
-        domain.origin,
+        domain.label,
         bundles[index]?.renderFingerprint ?? null,
       ]),
     )
@@ -164,7 +175,7 @@ export class PaletteSearchIndexCache {
     const indexes = domains.map((domain, index) => {
       const bundle = bundles[index]
       if (!bundle) return emptySearchIndex()
-      const domainRevision = `${domain.origin}\0${bundle.renderFingerprint}`
+      const domainRevision = `${domain.label}\0${bundle.renderFingerprint}`
       const cached = this.domains.get(domain.id)
       if (cached?.revision === domainRevision) return cached.value
       const value = buildDomainIndex(domain, bundle)
@@ -185,16 +196,17 @@ export class PaletteSearchIndexCache {
 
 type BundleQueryState = { data?: StudioSchemaBundle; isError: boolean }
 
+/** A Domain's bundle as every reader holds it, read at background priority for the index. */
 const paletteBundleQuery = (domainId: string, open: boolean) => ({
-  queryKey: qk.bundle(domainId),
+  ...bundleQueryOptions(domainId),
   queryFn: () => api.bundle(domainId, 'background'),
   enabled: open,
 })
 
-function paletteLoadState(domains: DomainSummary[], results: BundleQueryState[]) {
-  const loaded: DomainSummary[] = []
-  const pending: DomainSummary[] = []
-  const failed: DomainSummary[] = []
+function paletteLoadState(domains: PaletteDomain[], results: BundleQueryState[]) {
+  const loaded: PaletteDomain[] = []
+  const pending: PaletteDomain[] = []
+  const failed: PaletteDomain[] = []
   domains.forEach((domain, index) => {
     const result = results[index]
     if (result?.data !== undefined) loaded.push(domain)
@@ -205,22 +217,22 @@ function paletteLoadState(domains: DomainSummary[], results: BundleQueryState[])
 }
 
 function loadingDetail(
-  domains: DomainSummary[],
+  domains: PaletteDomain[],
   timings: DomainIntrospectionTiming[] | undefined,
 ): string {
   const byDomain = new Map(timings?.map((timing) => [timing.domainId, timing]))
   const shown = domains.slice(0, 3).map((domain) => {
     const timing = byDomain.get(domain.id)
-    return `${domain.origin} — ${introspectionPhaseLabel(timing)}`
+    return `${domain.label} — ${introspectionPhaseLabel(timing)}`
   })
   const remaining = domains.length - shown.length
   return `${shown.join(' · ')}${remaining > 0 ? ` · +${remaining} more` : ''}`
 }
 
-function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): SearchIndex {
+function buildDomainIndex(domain: PaletteDomain, bundle?: StudioSchemaBundle): SearchIndex {
   const ir = bundle?.ir
   if (!ir || !bundle) return emptySearchIndex()
-  const base = { domainId: domain.id, domainLabel: domain.origin }
+  const base = { domainId: domain.id, domainLabel: domain.label }
 
   const classes = Object.values(ir.classes)
     .filter((candidate) => candidate.type === 'node')
@@ -237,8 +249,8 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
       return {
         ...base,
         name: candidate.name,
-        value: `${domain.origin} class ${candidate.name} ${module} ${counts}`,
-        meta: [domain.origin, module === 'root' ? '' : module, counts].filter(Boolean).join(' · '),
+        value: `${domain.label} class ${candidate.name} ${module} ${counts}`,
+        meta: [domain.label, module === 'root' ? '' : module, counts].filter(Boolean).join(' · '),
       }
     })
 
@@ -251,8 +263,8 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
       return {
         ...base,
         name: edge.name,
-        value: `${domain.origin} edge ${edge.name} ${sourceType} ${targetType} relationship`,
-        meta: `${domain.origin} · ${sourceType} → ${targetType}`,
+        value: `${domain.label} edge ${edge.name} ${sourceType} ${targetType} relationship`,
+        meta: `${domain.label} · ${sourceType} → ${targetType}`,
       }
     })
 
@@ -264,8 +276,8 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
     return {
       ...base,
       name: fn.name,
-      value: `${domain.origin} function ${fn.name} ${kind} ${worksOn}`,
-      meta: [domain.origin, kind, worksOn].filter(Boolean).join(' · '),
+      value: `${domain.label} function ${fn.name} ${kind} ${worksOn}`,
+      meta: [domain.label, kind, worksOn].filter(Boolean).join(' · '),
     }
   })
 
@@ -280,8 +292,8 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
         id: `class.${candidate.name}.property.${property}`,
         owner: candidate.name,
         prop: property,
-        value: `${domain.origin} ${candidate.name}.${property} property ${type}`,
-        meta: `${domain.origin} · ${type}`,
+        value: `${domain.label} ${candidate.name}.${property} property ${type}`,
+        meta: `${domain.label} · ${type}`,
       })
     }
   }
@@ -292,8 +304,8 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
       ...base,
       path: module.path,
       firstClass: module.classes[0],
-      value: `${domain.origin} module ${module.path} ${module.classes.join(' ')} ${module.edges.join(' ')}`,
-      meta: `${domain.origin} · ${count} member${count === 1 ? '' : 's'}`,
+      value: `${domain.label} module ${module.path} ${module.classes.join(' ')} ${module.edges.join(' ')}`,
+      meta: `${domain.label} · ${count} member${count === 1 ? '' : 's'}`,
     }
   })
 
@@ -303,15 +315,24 @@ function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): S
 export function CommandPalette() {
   const open = useUI((s) => s.paletteOpen)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
-  const setSection = useUI((s) => s.setSection)
+  const openDataLevel = useUI((s) => s.openDataLevel)
+  const setLens = useUI((s) => s.setLens)
   const setTourOpen = useUI((s) => s.setTourOpen)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
   const setFocus = useUI((s) => s.setFocus)
   const revealOnCanvas = useUI((s) => s.revealOnCanvas)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
-  const canvas = useCanvasDomains()
-  const { data: domains = [] } = useWorkspace()
+  const openDomain = useUI((s) => s.openDomain)
+  const level = useUI((s) => s.level)
+  const readerDomainId = useUI((s) => s.readerDomainId)
+  const selectionDomainId = useUI((s) => s.selectionDomainId)
+  const { data: workspace = [] } = useWorkspace()
+  const shownId =
+    level === 'workspace'
+      ? undefined
+      : shownDomainId({ readerDomainId, selectionDomainId }, workspace)
+  const domains = useMemo(() => paletteDomains(workspace, shownId), [workspace, shownId])
   const indexCache = useRef<PaletteSearchIndexCache | null>(null)
   const [search, setSearch] = useState('')
   useEffect(() => {
@@ -368,10 +389,9 @@ export function CommandPalette() {
   const pendingDetail =
     load.pending.length > 0 ? loadingDetail(load.pending, introspection?.domains) : ''
 
-  /** Every schema result lands the same way: on the schema canvas, with its domain drawn. */
+  /** Every schema result lands the same way: on the Schema of its own Domain. */
   const openInSchema = (domainId: string, then?: () => void) => {
-    setSection('schema')
-    if (!canvas.visible.has(domainId)) canvas.toggleOnCanvas(domainId)
+    openDomain(domainId)
     then?.()
     close()
   }
@@ -426,7 +446,7 @@ export function CommandPalette() {
 
       {load.pending.length === 0 && load.failed.length > 0 && (
         <div role="status" className="border-b bg-warning/10 px-3 py-2 text-xs text-warning">
-          Search index incomplete · {load.failed.map((domain) => domain.origin).join(', ')} failed
+          Search index incomplete · {load.failed.map((domain) => domain.label).join(', ')} failed
         </div>
       )}
 
@@ -552,30 +572,40 @@ export function CommandPalette() {
             OVERVIEWS.map((o) => (
               <Command.Item
                 key={`${domain.id}:overview.${o.key}`}
-                value={`open ${domain.origin} ${o.label} ${o.key} overview`}
+                value={`open ${domain.label} ${o.label} ${o.key} overview`}
                 className={ITEM_CLS}
                 onSelect={() => openInSchema(domain.id, () => setPanelOverlay(o.key, domain.id))}
               >
-                <Row icon={o.icon} label={o.label} meta={domain.origin} />
+                <Row icon={o.icon} label={o.label} meta={domain.label} />
               </Command.Item>
             )),
           )}
         </Command.Group>
 
         <Command.Group heading="Go to">
-          {SECTIONS.map((s) => (
+          {LENS_NAMES.filter((lens) => lens.available).map((lens) => (
             <Command.Item
-              key={`section.${s.key}`}
-              value={`go to ${s.label} ${s.key} section`}
+              key={`lens.${lens.id}`}
+              value={`go to ${lens.label} lens ${lens.question}`}
               className={ITEM_CLS}
               onSelect={() => {
-                setSection(s.key)
+                setLens(lens.id)
                 close()
               }}
             >
-              <Row icon={ArrowRight} label={s.label} meta="section" />
+              <Row icon={ArrowRight} label={lens.label} meta={`lens · ${lens.shortcut}`} />
             </Command.Item>
           ))}
+          <Command.Item
+            value="go to data dataset level who may policies"
+            className={ITEM_CLS}
+            onSelect={() => {
+              openDataLevel(null)
+              close()
+            }}
+          >
+            <Row icon={Database} label="Data" meta="a dataset, read through the lens" />
+          </Command.Item>
         </Command.Group>
 
         {!wantsHelp && helpGroup}

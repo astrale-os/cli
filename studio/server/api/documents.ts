@@ -7,7 +7,7 @@ import {
   readDocument,
   updateDocument,
 } from '../state/documents'
-import { json, notFound, type DomainRouteContext } from './http'
+import { json, notFound, pathSegment, readUpload, type DomainRouteContext } from './http'
 
 /**
  * Types safe to render in a tab. Everything else downloads instead.
@@ -51,7 +51,7 @@ export async function handleDocumentTransport(
 ): Promise<Response | null> {
   if (rest === '/context/documents' && req.method === 'GET') return json(listDocuments(root))
   if (rest === '/context/documents' && req.method === 'POST') {
-    const form = await req.formData()
+    const form = await readUpload(req)
     const added = []
     for (const value of form.getAll('files')) {
       if (value instanceof File) {
@@ -65,7 +65,7 @@ export async function handleDocumentTransport(
 
   const raw = rest.match(/^\/context\/documents\/([^/]+)\/raw$/)
   if (raw && req.method === 'GET') {
-    const document = readDocument(root, decodeURIComponent(raw[1]))
+    const document = readDocument(root, pathSegment(raw[1], 'the document id'))
     if (!document) return notFound()
     return new Response(Bun.file(document.abs), {
       headers: documentResponseHeaders(document.meta.type, document.meta.name),

@@ -5,7 +5,6 @@ export const FIXTURE_ID = workspaceKey(resolve(import.meta.dirname, 'fixture'))
 export const PEER_ID = workspaceKey(resolve(import.meta.dirname, 'fixture/peer'))
 
 import type { AgentRun, ChatInfo, ChatList } from '@shared/contracts/agent'
-import type { WorkspacePanelUiState, WorkspaceUiState } from '@shared/contracts/workspace'
 
 import {
   expect,
@@ -14,13 +13,17 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test'
+import {
+  WORKSPACE_MAP_ID,
+  type WorkspacePanelUiState,
+  type WorkspaceUiState,
+} from '@shared/contracts/workspace'
 
 export type { Locator, Page }
 export { expect }
 
 const DEFAULT_WORKSPACE_UI: WorkspaceUiState = {
   version: 1,
-  section: 'schema',
   edgeStyle: 'curved',
   detailWidth: 420,
   panel: {
@@ -32,23 +35,15 @@ const DEFAULT_WORKSPACE_UI: WorkspaceUiState = {
     dockHeight: 560,
   },
   rail: { width: 240, collapsed: false },
-  schema: {
-    visibleDomainIds: [],
-    initialized: false,
-    domainPositions: {},
-    externalPositions: {},
-    collapsedModules: {},
-    expandedDomainIds: [],
-    expandedExternals: [],
-  },
 }
 
 async function writeWorkspaceUi(
   request: APIRequestContext,
   state: WorkspaceUiState,
 ): Promise<void> {
+  // An update keeps the Domain the readers last opened unless told to forget it: null does.
   const response = await request.post('/api/workspace/state', {
-    data: { action: 'update', state },
+    data: { action: 'update', state: { ...state, readerDomainId: state.readerDomainId ?? null } },
   })
   if (!response.ok()) {
     throw new Error(`Could not reset workspace UI: ${response.status()} ${await response.text()}`)
@@ -70,19 +65,140 @@ export async function dockWorkspacePanel(
   })
 }
 
+/** Where a map's arrangement is kept: a Domain's, or the Workspace map's. */
+export const layoutRoute = (mapId: string): string =>
+  mapId === WORKSPACE_MAP_ID
+    ? '/api/workspace/layout'
+    : `/api/domain/${encodeURIComponent(mapId)}/layout`
+
+/** Forget every arrangement a map remembers, every lens's included. */
+export async function resetLayout(request: APIRequestContext, mapId: string): Promise<void> {
+  const response = await request.post(layoutRoute(mapId), { data: { action: 'reset' } })
+  if (!response.ok()) {
+    throw new Error(`Could not reset the layout of ${mapId}: ${response.status()}`)
+  }
+}
+
 /**
- * Workspace UI state is machine-side and intentionally survives browser contexts. Reset it
- * before every scenario so a dock move, canvas drag or hidden domain cannot leak into the next.
+ * Workspace UI state and each map's arrangement are machine-side and intentionally survive
+ * browser contexts. Reset them before every scenario so a dock move, a dragged card or a
+ * collapsed module cannot leak into the next.
  */
 export const test = base.extend<{ resetWorkspaceUi: void }>({
   resetWorkspaceUi: [
     async ({ request }, use) => {
       await writeWorkspaceUi(request, DEFAULT_WORKSPACE_UI)
+      await resetLayout(request, FIXTURE_ID)
+      await resetLayout(request, PEER_ID)
+      await resetLayout(request, WORKSPACE_MAP_ID)
       await use()
     },
     { auto: true },
   ],
 })
+
+// ─── The Studio's surfaces ─────────────────────────────────────────────────────
+
+/** The Scene canvas of the level on screen. */
+export const sceneCanvas = (page: Page): Locator => page.getByTestId('scene-canvas')
+
+/** One card on the canvas, by its selection target (`class.Invoice`, `domain:<id>`…). */
+export const sceneBox = (page: Page, id: string): Locator =>
+  page.locator(`.scene-box[data-box-id="${id}"]`)
+
+/** One drawn link, by its selection target (`class.WorksAt`, `core.edge.0`…). */
+export const sceneLink = (page: Page, id: string): Locator =>
+  page.locator(`g.scene-link[data-select-id="${id}"]`)
+
+/** The Index rail. */
+export const indexRail = (page: Page): Locator => page.getByTestId('index-rail')
+
+/** One Index row, by the selection target it lists. */
+export const indexRow = (page: Page, id: string): Locator =>
+  indexRail(page).locator(`[data-index-row="${id}"]`)
+
+/** The Schema level's Inspector, whatever lens it reads through. */
+export const inspector = (page: Page): Locator => page.locator('[data-inspector-lens]')
+
+/** The lens switch in the bar. */
+export const lensButton = (page: Page, lens: 'structure' | 'behavior' | 'rules'): Locator =>
+  page.getByTestId('lens-switch').locator(`button[data-lens="${lens}"]`)
+
+/** Open the Studio on the fixture Domain's Schema and wait for its canvas to draw. */
+export async function openSchema(page: Page): Promise<void> {
+  await page.goto('/')
+  await expect(page.getByTestId('schema-level')).toBeVisible()
+  await expect(sceneBox(page, 'class.Invoice')).toBeVisible({ timeout: 60_000 })
+}
+
+type Rect = { x: number; y: number; width: number; height: number }
+
+/**
+ * Wait for the camera to come to rest, then require the target wholly inside the canvas. A reveal
+ * animates, and a card crossing the canvas on its way elsewhere is not in view: a reading counts
+ * only once two looks 150 ms apart agree. The target is a locator, or a reader of a screen rect
+ * (a point is a rect of no size).
+ */
+export async function restsInCanvas(
+  page: Page,
+  target: Locator | (() => Promise<Rect | null>),
+): Promise<void> {
+  const read = typeof target === 'function' ? target : () => target.boundingBox()
+  let last = ''
+  await expect
+    .poll(
+      async () => {
+        const [canvas, rect] = [
+          await sceneCanvas(page).boundingBox(),
+          await read().catch(() => null),
+        ]
+        const now = JSON.stringify([canvas, rect])
+        const still = now === last
+        last = now
+        if (!still || !canvas || !rect) return 'moving'
+        const inside =
+          rect.x >= canvas.x &&
+          rect.y >= canvas.y &&
+          rect.x + rect.width <= canvas.x + canvas.width &&
+          rect.y + rect.height <= canvas.y + canvas.height
+        return inside ? 'inside' : 'outside'
+      },
+      { intervals: [150] },
+    )
+    .toBe('inside')
+}
+
+/** Every selection target the canvas draws as a card, in DOM order. */
+export const drawnBoxes = (page: Page): Promise<string[]> =>
+  page
+    .locator('.scene-box[data-box-id]')
+    .evaluateAll((boxes) => boxes.map((box) => (box as HTMLElement).dataset.boxId!))
+
+/** Every selection target the canvas draws as a link, in DOM order. */
+export const drawnLinks = (page: Page): Promise<string[]> =>
+  page
+    .locator('g.scene-link[data-select-id]')
+    .evaluateAll((links) => links.map((link) => (link as SVGElement).dataset.selectId!))
+
+/** Every selection target the Index lists, in order. */
+export const listedRows = (page: Page): Promise<string[]> =>
+  indexRail(page)
+    .locator('[data-index-row]')
+    .evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.indexRow!))
+
+/** The fixture Domain's bundle, as the Studio server answers it. */
+export async function fixtureBundle(request: APIRequestContext): Promise<{
+  ir: {
+    classes: Record<
+      string,
+      { type: 'node' | 'edge'; abstract?: boolean; endpoints?: { name: string; types: string[] }[] }
+    >
+  }
+}> {
+  const response = await request.get(`/api/domain/${encodeURIComponent(FIXTURE_ID)}/bundle`)
+  expect(response.ok()).toBe(true)
+  return response.json()
+}
 
 /** One chat on the stubbed agent's strip. */
 export function chatInfo(id: string, title: string, status: ChatInfo['status'] = 'idle'): ChatInfo {

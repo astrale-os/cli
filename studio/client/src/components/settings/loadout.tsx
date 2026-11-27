@@ -3,6 +3,9 @@ import type { AgentUsage, HarnessLoadout } from '@shared/contracts/agent'
 import { RefreshCw } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 
+import type { UnreadableFile } from '@/lib/api'
+
+import { UnreadableState } from '@/components/unreadable-state'
 import { formatTokens } from '@/components/work-panel/context-ring'
 import { useAgentSystemPrompt } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
@@ -66,12 +69,15 @@ export function AgentLoadout({
   loading,
   errorMessage,
   usage,
+  usageUnreadable,
   onRefresh,
 }: {
   loadout?: HarnessLoadout
   loading: boolean
   errorMessage?: string
   usage?: AgentUsage
+  /** the usage file, when it is not read whole: said instead of totals that would read as none */
+  usageUnreadable?: UnreadableFile
   onRefresh: () => void
 }) {
   const sourceHint =
@@ -128,10 +134,16 @@ export function AgentLoadout({
           <SettingsHint text="Agent turns recorded in this machine-wide Studio history, succeeded or not." />
           <span className="ml-auto text-[11px] text-muted-foreground">this machine</span>
         </span>
-        <MetaRow label="Turns" value={usage?.runs ?? 0} />
-        <MetaRow label="Tokens" value={formatTokens(usage?.tokens ?? 0)} />
-        <MetaRow label="Cost" value={`$${(usage?.costUsd ?? 0).toFixed(4)}`} />
-        {usage?.lastTokens != null && (
+        {usageUnreadable ? (
+          <UnreadableState file={usageUnreadable} what="The usage" />
+        ) : (
+          <>
+            <MetaRow label="Turns" value={usage?.runs ?? 0} />
+            <MetaRow label="Tokens" value={formatTokens(usage?.tokens ?? 0)} />
+            <MetaRow label="Cost" value={`$${(usage?.costUsd ?? 0).toFixed(4)}`} />
+          </>
+        )}
+        {!usageUnreadable && usage?.lastTokens != null && (
           <MetaRow
             label="Last turn"
             value={`${formatTokens(usage.lastTokens)} tok · $${(usage.lastCostUsd ?? 0).toFixed(4)}`}

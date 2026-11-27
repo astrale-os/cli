@@ -10,6 +10,8 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
+import type { DeclaredEnvironment, DeclaredEnvironments } from '../../shared/contracts/versions'
+
 import { workspaceKey } from '../state/home'
 import { isPackageImportSpecifier, resolvePackageImport } from './package-imports'
 
@@ -36,9 +38,21 @@ interface ProjectConfigAnalysis {
   readonly domainFile: string | null
   /** Dataset module coordinates of `tests: tests({ datasets: [dataset('…')] })`, in order. */
   readonly datasets: readonly string[]
+  /** The Environments of `environments: { … }`, by name, with their deployment adapter. */
+  readonly environments: Readonly<DeclaredEnvironments>
 }
 
-const NO_PROJECT: ProjectConfigAnalysis = Object.freeze({ domainFile: null, datasets: [] })
+const NO_ENVIRONMENTS: Readonly<DeclaredEnvironments> = Object.freeze({
+  declared: false,
+  environments: [],
+  complete: true,
+})
+
+const NO_PROJECT: ProjectConfigAnalysis = Object.freeze({
+  domainFile: null,
+  datasets: [],
+  environments: NO_ENVIRONMENTS,
+})
 
 /**
  * Read the Project declared by `astrale.config.ts` without executing it: the configuration is
@@ -61,7 +75,83 @@ export function analyzeProjectConfig(root: string): ProjectConfigAnalysis {
   return Object.freeze({
     domainFile: domainOf(objectPropertyValue(input, 'domain'), source, project),
     datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
+    environments: Object.freeze(environmentsOf(objectPropertyValue(input, 'environments'), source)),
   })
+}
+
+/**
+ * The Environment names of `environments: { … }` and the adapter factory each `deployment`
+ * calls, when visible. A spread, a computed name or a non-literal `environments` is not read and
+ * leaves `complete` false: the names are then not all known.
+ */
+function environmentsOf(node: Node | undefined, source: SourceFile): DeclaredEnvironments {
+  if (node === undefined) return { declared: false, environments: [], complete: true }
+  const value = resolveLocalValue(node, source)
+  if (!value || !Node.isObjectLiteralExpression(value)) {
+    return { declared: true, environments: [], complete: false }
+  }
+  const environments: DeclaredEnvironment[] = []
+  let complete = true
+  for (const property of value.getProperties()) {
+    if (!Node.isPropertyAssignment(property) && !Node.isShorthandPropertyAssignment(property)) {
+      complete = false
+      continue
+    }
+    const name = Node.isPropertyAssignment(property)
+      ? literalPropertyName(property.getNameNode())
+      : property.getName()
+    if (name === null) {
+      complete = false
+      continue
+    }
+    const environment = resolveLocalValue(
+      Node.isPropertyAssignment(property) ? property.getInitializer() : property.getNameNode(),
+      source,
+    )
+    const deployment =
+      environment && Node.isObjectLiteralExpression(environment)
+        ? resolveLocalValue(objectPropertyValue(environment, 'deployment'), source)
+        : null
+    const adapter =
+      deployment && Node.isCallExpression(deployment)
+        ? importedBindingOf(deployment.getExpression(), source)
+        : null
+    environments.push({ name, ...(adapter ? { adapter } : {}) })
+  }
+  return { declared: true, environments, complete }
+}
+
+function literalPropertyName(node: Node): string | null {
+  if (Node.isIdentifier(node)) return node.getText()
+  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+    return node.getLiteralValue()
+  }
+  return null
+}
+
+/** The module and export an identifier (or `namespace.member`) is imported as, verbatim. */
+function importedBindingOf(
+  node: Node,
+  source: SourceFile,
+): { module: string; export: string } | null {
+  const value = unwrap(node)
+  for (const declaration of source.getImportDeclarations()) {
+    const module = declaration.getModuleSpecifierValue()
+    if (Node.isIdentifier(value)) {
+      const local = value.getText()
+      if (declaration.getDefaultImport()?.getText() === local) return { module, export: 'default' }
+      const named = declaration
+        .getNamedImports()
+        .find((entry) => (entry.getAliasNode()?.getText() ?? entry.getName()) === local)
+      if (named) return { module, export: named.getName() }
+    } else if (
+      Node.isPropertyAccessExpression(value) &&
+      declaration.getNamespaceImport()?.getText() === value.getExpression().getText()
+    ) {
+      return { module, export: value.getName() }
+    }
+  }
+  return null
 }
 
 function domainOf(node: Node | undefined, source: SourceFile, root: string): string | null {

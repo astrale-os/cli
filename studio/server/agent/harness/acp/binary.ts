@@ -21,7 +21,6 @@ import type { ReadableStream as WebReadableStream } from 'node:stream/web'
  * long as it runs, since each turn spawns the CLI afresh. Conversations live in
  * the agents' own homes, never here, so dropping a build loses none.
  */
-import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { createWriteStream, unlinkSync } from 'node:fs'
 import {
@@ -44,6 +43,7 @@ import { pipeline } from 'node:stream/promises'
 import type { HarnessCli } from '../../../../shared/contracts/agent'
 import type { AcpProvider } from './command'
 
+import { captureProcess } from '../../../process'
 import { PINNED_AGENT_BINARIES } from './pinned-binaries'
 
 export interface PinnedArtifact {
@@ -359,20 +359,19 @@ function splitIntegrity(integrity: string): [string, string] {
   return [integrity.slice(0, separator), integrity.slice(separator + 1)]
 }
 
-function untar(archive: string, destination: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile('tar', ['-xzf', archive, '-C', destination], (error, _stdout, stderr) => {
-      if (!error) return resolve()
-      const code = (error as NodeJS.ErrnoException).code
-      reject(
-        new Error(
-          code === 'ENOENT'
-            ? '`tar` is required to unpack it and was not found on PATH'
-            : `tar failed: ${stderr.trim() || error.message}`,
-        ),
-      )
-    })
+/** How long unpacking a harness may take. */
+const UNTAR_TIMEOUT_MS = 120_000
+
+async function untar(archive: string, destination: string): Promise<void> {
+  const run = await captureProcess(['tar', '-xzf', archive, '-C', destination], {
+    timeoutMs: UNTAR_TIMEOUT_MS,
   })
+  if (run.exitCode === 0 && !run.timedOut && !run.spawnError) return
+  // the runner's shell answers 127 for a program it cannot find
+  if (run.exitCode === 127)
+    throw new Error('`tar` is required to unpack it and was not found on PATH')
+  if (run.timedOut) throw new Error(`tar did not finish within ${UNTAR_TIMEOUT_MS}ms`)
+  throw new Error(`tar failed: ${run.stderr.trim() || run.spawnError || `exit ${run.exitCode}`}`)
 }
 
 async function publish(staging: string, directory: string, artifact: PinnedArtifact) {
@@ -448,12 +447,9 @@ async function olderThan(path: string, ageMs = ABANDONED_STAGING_MS): Promise<bo
 }
 
 /** `claude --version` → `2.1.288`, or undefined when it cannot be read. */
-function readBinaryVersion(path: string): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    execFile(path, ['--version'], { timeout: VERSION_TIMEOUT_MS }, (error, stdout) => {
-      resolve(error ? undefined : /\d+\.\d+\.\d+/.exec(stdout)?.[0])
-    })
-  })
+async function readBinaryVersion(path: string): Promise<string | undefined> {
+  const run = await captureProcess([path, '--version'], { timeoutMs: VERSION_TIMEOUT_MS })
+  return run.exitCode === 0 && !run.timedOut ? /\d+\.\d+\.\d+/.exec(run.stdout)?.[0] : undefined
 }
 
 function compareVersions(left: string, right: string): number {

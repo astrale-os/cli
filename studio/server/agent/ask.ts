@@ -8,13 +8,20 @@
  * It deliberately bypasses the one-run-per-chat lock (the fork is isolated from the
  * parent conversation) so you can ask while a main agent turn is running.
  */
+import type { StudioSchemaBundle } from '../../shared/contracts/schema'
 import type { AnchorRef } from '../../shared/contracts/workspace'
 import type { AskResult } from './harness/adapter'
+import type { AskDomain } from './prompts/ask'
 import type { AgentWorkspace } from './workspace'
 
-import { KERNEL_DOMAIN_ID, KERNEL_ORIGIN } from '../../shared/contracts/workspace'
+import {
+  domainAddressOf,
+  isReadOnlyDomainId,
+  KERNEL_ORIGIN,
+} from '../../shared/contracts/workspace'
 import { getBundle } from '../introspect/cache'
 import { getKernelBundle } from '../introspect/kernel'
+import { versions } from '../workspace/versions/service'
 import { resolveChat } from './chats'
 import { getHarnessById } from './harness/registry'
 import { getHarness, resolveHarnessConfiguration } from './harness/selection'
@@ -70,22 +77,15 @@ export async function runAsk(
     }
 
   const ref = body.anchor?.ref ?? '(no target)'
-  const handle = body.domainId
-    ? workspace.domains.find((candidate) => candidate.id === body.domainId)
-    : undefined
-  const kernel = body.domainId === KERNEL_DOMAIN_ID
-  const bundle = kernel ? await getKernelBundle() : handle ? await getBundle(handle.id) : null
+  const { domain, bundle } = await askedDomain(workspace, body.domainId)
   const prompt = buildAskPrompt({
     anchorRef: ref,
     excerpt: body.excerpt || ref,
     question,
     ir: bundle?.ir ?? null,
     overlay: bundle?.overlay,
-    ...(kernel
-      ? { domain: { origin: KERNEL_ORIGIN } }
-      : handle
-        ? { domain: { origin: domainOrigin(handle), path: domainRelativePath(workspace, handle) } }
-        : {}),
+    ...(domain ? { domain } : {}),
+    readOnly: body.domainId !== undefined && isReadOnlyDomainId(body.domainId),
   })
   return harness.ask({
     root: workspace.root,
@@ -100,4 +100,34 @@ export async function runAsk(
     signal,
     onDelta,
   })
+}
+
+/** The Domain an aside is about and the Schema it is described from, whichever Domain it is. */
+async function askedDomain(
+  workspace: AgentWorkspace,
+  domainId: string | undefined,
+): Promise<{ domain?: AskDomain; bundle: StudioSchemaBundle | null }> {
+  if (!domainId) return { bundle: null }
+  const address = domainAddressOf(domainId)
+  if (address.kind === 'invalid') return { bundle: null }
+  if (address.kind === 'kernel')
+    return { domain: { source: 'kernel', origin: KERNEL_ORIGIN }, bundle: await getKernelBundle() }
+  if (address.kind === 'publication') {
+    const { origin, version } = address
+    const opened = await versions().published.open(origin, version)
+    return {
+      domain: { source: 'publication', origin, version },
+      bundle: opened.status === 'ok' ? opened.value : null,
+    }
+  }
+  const handle = workspace.domains.find((candidate) => candidate.id === address.id)
+  if (!handle) return { bundle: null }
+  return {
+    domain: {
+      source: 'project',
+      origin: domainOrigin(handle),
+      path: domainRelativePath(workspace, handle),
+    },
+    bundle: await getBundle(handle.id),
+  }
 }
