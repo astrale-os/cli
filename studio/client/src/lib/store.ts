@@ -92,8 +92,8 @@ interface UIState {
   /** The Domain the levels read. It never scopes the agent or comments. */
   readerDomainId?: string
   /** The dataset the Data level reads, of `readerDomainId`, by its module path: the one name a
-   *  dataset keeps whether it loads or not. Null reads its first ready one. Another Domain
-   *  starts at null again. */
+   *  dataset keeps whether it loads or not. Null shows the Domain's Datasets page. Another
+   *  Domain starts at null again. */
   dataset: string | null
   /** appearance preference, persisted in this browser */
   theme: Theme
@@ -201,7 +201,7 @@ interface UIState {
    *  through the Workspace level comes back to it. */
   openDomain: (domainId: string) => void
   /** Read the dataset at module `path` through the lenses, the lens and selection kept; null
-   *  reads the Domain's first ready one. `openSchema` goes back to the Schema. */
+   *  shows the Domain's Datasets page. `openSchema` goes back to the Schema. */
   openDataLevel: (path: string | null) => void
   setReaderDomain: (domainId?: string) => void
   setPanelOpen: (open: boolean) => void

@@ -187,7 +187,12 @@ test('datasets are choices in the crumb; the one open says what it holds', async
   await page.getByTestId('level-dataset').click()
   const menu = page.getByRole('menu')
   const choices = menu.getByRole('menuitemradio')
-  await expect(choices).toHaveText(['No dataset', 'First scenario', 'Second scenario'])
+  await expect(choices).toHaveText([
+    'Schema only',
+    'All datasets',
+    'First scenario',
+    'Second scenario',
+  ])
   await expect(menu).not.toContainText('Description')
   await menu.getByRole('menuitemradio', { name: 'First scenario' }).click()
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
@@ -206,7 +211,9 @@ test('datasets are choices in the crumb; the one open says what it holds', async
   await expect(policies.filter({ hasText: 'mayManageInvoice' })).toContainText('1 place')
 })
 
-test('a Domain that references no dataset says so in the crumb, concisely', async ({ page }) => {
+test('a Domain that references no dataset says so in the crumb, and lists none to open', async ({
+  page,
+}) => {
   await page.route('**/api/domain/*/datasets', (route) =>
     route.fulfill({ json: { domainId: FIXTURE_ID, datasets: [], extractedAt: '' } }),
   )
@@ -214,5 +221,6 @@ test('a Domain that references no dataset says so in the crumb, concisely', asyn
   await page.getByTestId('level-dataset').click()
   const menu = page.getByRole('menu')
   await expect(menu.getByText('No Dataset referenced', { exact: true })).toBeVisible()
-  await expect(menu.getByRole('menuitemradio')).toHaveText(['No dataset'])
+  // nothing to open but the Schema, and the Datasets page that says how to write one
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Schema only', 'All datasets'])
 })

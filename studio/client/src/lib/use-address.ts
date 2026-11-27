@@ -20,7 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 
-import { datasetLabel, findDataset, isReadyDataset } from '@/studio/data/model'
+import { datasetLabel, findDataset } from '@/studio/data/model'
 import { datasetScope, useDataView } from '@/studio/data/store'
 import { scenariosQueryOptions } from '@/studio/data/use-scenarios'
 import { useWorkspaceView } from '@/studio/workspace/selection'
@@ -48,7 +48,7 @@ interface Checks {
   schema?: { domainId: string; ref: string }
   data?: {
     domainId: string
-    /** the dataset named; none opens the first ready one, and there is nothing to check */
+    /** the dataset named; none opens the Domain's Datasets page, and there is nothing to check */
     path: string
     /** the Data level's view */
     view: DataSelection
@@ -314,10 +314,9 @@ function useDataCheck(domains: readonly DomainSummary[]): void {
         const ui = useUI.getState()
         const still = ui.dataset === check.path && shownDomainId(ui, domains) === check.domainId
         if (still) ui.openDataLevel(null)
-        const ready = datasets.data.datasets.some(isReadyDataset)
         reportMissing(
-          `${nameOf(domains, check.domainId)} declares no dataset ${check.path}: ${ready ? 'its first ready dataset is open instead' : 'it has no ready dataset, and its Schema is open instead'}.`,
-          { level: ready ? 'data' : 'domain', domainId: check.domainId },
+          `${nameOf(domains, check.domainId)} declares no dataset ${check.path}: its datasets are listed instead.`,
+          { level: 'data', domainId: check.domainId },
         )
       })
     if (check.view.scenario && scenarios.isPending) return

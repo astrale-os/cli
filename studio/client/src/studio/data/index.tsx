@@ -92,6 +92,9 @@ import { newScenarioId, useScenarios } from './use-scenarios'
 import { DataWait } from './wait'
 import { walkFactsOf, walkOnMap } from './walk'
 
+/** The Data level with no dataset chosen: the Domain's datasets, each to open. */
+export { DatasetsPage } from './datasets-page'
+
 export interface DataLevelProps {
   domainId: string
   /** the Domain's origin, as its wait names it */

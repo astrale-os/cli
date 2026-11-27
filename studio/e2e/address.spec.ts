@@ -250,9 +250,59 @@ test.describe('the Data level', () => {
     await page.goto(`${DOMAIN}/data?dataset=tests%2Fdatasets%2Fgone.ts`)
     await reportedOnce(
       page,
-      `${ORIGIN} declares no dataset tests/datasets/gone.ts: its first ready dataset is open instead.`,
+      `${ORIGIN} declares no dataset tests/datasets/gone.ts: its datasets are listed instead.`,
     )
-    await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
+    await expect(page.getByTestId('datasets-page')).toHaveAttribute('data-state', 'some')
+    await expect.poll(() => here(page)).toBe(`${DOMAIN}/data?lens=structure`)
+  })
+
+  test("a Domain's Datasets page is a place: the palette, reload, Back, Forward and a pasted address reach it", async ({
+    page,
+    request,
+  }) => {
+    const dataset = await supportDesk(request)
+    await openSchema(page)
+    await page.keyboard.press('ControlOrMeta+k')
+    await page.getByPlaceholder('Search the schema…').fill('datasets')
+    await page.getByRole('option', { name: /^Datasets/ }).click()
+    const datasets = page.getByTestId('datasets-page')
+    await expect(datasets).toHaveAttribute('data-state', 'some', { timeout: 60_000 })
+    const listed = `${DOMAIN}/data?lens=structure`
+    await expect.poll(() => here(page)).toBe(listed)
+
+    // each dataset is a card that says how it stands; one the Schema refuses says why
+    const card = (path: string) => datasets.locator(`[data-dataset-card="${path}"]`)
+    await expect(card(dataset)).toHaveAttribute('data-standing', 'admitted')
+    await expect(card(dataset)).toContainText('Admitted against this Schema')
+    await expect(card(dataset).locator('[data-dataset-holdings]')).toContainText('Nodes')
+    const broken = card('./tests/datasets/broken.ts')
+    await expect(broken).toHaveAttribute('data-standing', 'unreadable')
+    await expect(broken.locator('[data-dataset-reason]')).toHaveText(
+      'Dataset edge source nobody is not a Node of this Dataset.',
+    )
+
+    const lands = async (on: Page) =>
+      expect(on.getByTestId('datasets-page')).toHaveAttribute('data-state', 'some', {
+        timeout: 60_000,
+      })
+    await page.reload()
+    await lands(page)
+    await expect.poll(() => here(page)).toBe(listed)
+
+    // a card opens its dataset; Back returns to the page, Forward to the dataset
+    await card(dataset).click()
+    const level = page.getByTestId('data-level')
+    await expect(level).toHaveAttribute('data-state', 'ready', { timeout: 60_000 })
+    const opened = `${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}&lens=structure`
+    await expect.poll(() => here(page)).toBe(opened)
+    await page.goBack()
+    await lands(page)
+    await expect.poll(() => here(page)).toBe(listed)
+    await page.goForward()
+    await expect(level).toHaveAttribute('data-state', 'ready', { timeout: 60_000 })
+    await expect.poll(() => here(page)).toBe(opened)
+
+    await inAnotherBrowser(page, listed, lands)
   })
 
   test('the retired Tests address lands on the Data level with the same dataset, said once', async ({

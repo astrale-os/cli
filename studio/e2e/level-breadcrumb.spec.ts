@@ -1,10 +1,12 @@
 import {
+  chatAction,
   expect,
   FIXTURE_ID,
   indexRow,
   inspector,
   lensButton,
   openSchema,
+  PEER_ID,
   sceneBox,
   test,
   type Page,
@@ -63,7 +65,7 @@ test('a round trip through the Workspace level keeps the selection', async ({ pa
   await expect(inspector(page).getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
 })
 
-test('the dataset crumb opens the Data level, and No dataset returns with the selection kept', async ({
+test('the dataset crumb opens the Data level, and Schema only returns with the selection kept', async ({
   page,
 }) => {
   await openSchema(page)
@@ -84,9 +86,10 @@ test('the dataset crumb opens the Data level, and No dataset returns with the se
   await expect(panel).toContainText('2 in this dataset.')
 
   await page.getByTestId('level-dataset').click()
-  await page.getByRole('menuitemradio', { name: 'No dataset' }).click()
+  await page.getByRole('menuitemradio', { name: 'Schema only' }).click()
   await expect(page.getByTestId('schema-level')).toBeVisible()
-  await expect(page.getByTestId('level-dataset')).toHaveText('No dataset')
+  // none open: the crumb counts the ones there are
+  await expect(page.getByTestId('level-dataset')).toHaveText(/^\d+ datasets?$/)
   await expect(sceneBox(page, 'class.Ticket')).toHaveAttribute('data-selected', 'true')
   await expect(inspector(page).getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible()
 })
@@ -112,4 +115,84 @@ test('the Domain crumb switches Domain, and the dataset crumb lists only what th
   await page.getByRole('menuitemradio', { name: 'crm.studio-demo.astrale.ai' }).click()
   await expect(sceneBox(page, 'class.Invoice')).toBeVisible({ timeout: 60_000 })
   await expect(crumbs(page)).toContainText('crm.studio-demo.astrale.ai')
+})
+
+/** Counts the turns submitted to the agent from now on: a prepared request is never one. */
+function submissions(page: Page): () => number {
+  let submitted = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/agent/submit')) submitted += 1
+  })
+  return () => submitted
+}
+
+/** Asks for a Dataset through `ask`, and reads the unsent request the agent's composer then holds. */
+async function askForDataset(page: Page, ask: () => Promise<void>): Promise<string> {
+  const opened = chatAction(page, 'open')
+  await ask()
+  const chat = (await (await opened).json()) as { id: string }
+  const composer = page.locator('[data-agent-composer]')
+  await expect(composer).toHaveValue(
+    /^Write a demo Dataset for the ops\.studio-demo\.astrale\.ai Domain/,
+  )
+  const request = await composer.inputValue()
+  await page.request.post('/api/agent/chats', { data: { action: 'close', chatId: chat.id } })
+  return request
+}
+
+test('a Domain with no Dataset says so on the crumb, and its menu prepares an unsent request', async ({
+  page,
+}) => {
+  const submitted = submissions(page)
+  await page.goto(`/domain/${PEER_ID}`)
+  await expect(page.getByTestId('schema-level')).toBeVisible()
+
+  // the crumb itself says it, quietly: a glyph and its title, before the menu opens
+  const crumb = page.getByTestId('level-dataset')
+  await expect(crumb).toHaveAttribute('data-hint', 'ask-dataset')
+  await expect(crumb).toHaveAttribute(
+    'title',
+    'No Dataset referenced: the agent can be asked to write one',
+  )
+  await expect(crumb).toHaveText('No dataset')
+
+  await crumb.click()
+  const notice = page.locator('[data-no-dataset="note"]')
+  await expect(notice).toContainText(
+    'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level draws and the Rules lens decides on.',
+  )
+  await expect(notice).toContainText(
+    'It is a module defined with defineDataset from @astrale-os/sdk/testing, listed in astrale.config.ts.',
+  )
+  const request = await askForDataset(page, () =>
+    notice.getByRole('button', { name: 'Ask the agent to write one' }).click(),
+  )
+  await expect(notice).toHaveCount(0)
+  expect(request).toContain("tests: tests({ datasets: [dataset('./tests/datasets/<name>.ts')] })")
+  expect(submitted()).toBe(0)
+})
+
+test('the menu of a Domain with no Dataset leads to its Datasets page, which shows the code and asks too', async ({
+  page,
+}) => {
+  const submitted = submissions(page)
+  await page.goto(`/domain/${PEER_ID}`)
+  await expect(page.getByTestId('schema-level')).toBeVisible()
+  await page.getByTestId('level-dataset').click()
+  await page.locator('[data-action="dataset-declaration"]').click()
+
+  const datasets = page.getByTestId('datasets-page')
+  await expect(datasets).toHaveAttribute('data-state', 'none')
+  await expect(page.getByTestId('level-dataset')).toHaveText('All datasets')
+  const empty = datasets.locator('[data-no-dataset="page"]')
+  await expect(empty).toContainText('export default defineDataset(schema, { id, title, graph })')
+  await expect(empty).toContainText(
+    "tests: tests({ datasets: [dataset('./tests/datasets/<name>.ts')] })",
+  )
+  await askForDataset(page, () =>
+    empty.getByRole('button', { name: 'Ask the agent to write one' }).click(),
+  )
+  // the request is prepared beside the page, which stays where it was
+  await expect(datasets).toHaveAttribute('data-state', 'none')
+  expect(submitted()).toBe(0)
 })

@@ -141,6 +141,32 @@ export function useChatMutations() {
 }
 
 /**
+ * Hand the agent a request without sending it: a new chat, the request in its composer, the
+ * agent tab open. The reader reviews it, edits it, and sends it; nothing here submits a turn.
+ * `prepare` answers whether the request is in place; a chat that could not open says why in
+ * `useChatMutations`' own toast.
+ */
+export function usePrepareAgentRequest(): {
+  prepare: (request: string, ready: string) => Promise<boolean>
+  preparing: boolean
+} {
+  const { open } = useChatMutations()
+  const prepare = async (request: string, ready: string) => {
+    try {
+      const chat = await open.mutateAsync(undefined)
+      const { setAgentDraft, setPanelTab } = useUI.getState()
+      setAgentDraft(chat.id, request)
+      setPanelTab('agent')
+      toast.success(ready)
+      return true
+    } catch {
+      return false
+    }
+  }
+  return { prepare, preparing: open.isPending }
+}
+
+/**
  * Every harness's models — one live ACP probe of each, warmed for the workspace.
  *
  * Not deferred to the picker: the composer's label IS the catalog (an unpinned chat

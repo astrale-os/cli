@@ -51,7 +51,7 @@ import { useWorkspaceUiSync } from '@/lib/workspace-ui'
 import { LevelBreadcrumb } from '@/studio/bar/level-breadcrumb'
 import { GLYPHS } from '@/studio/canvas/glyphs'
 import { loadDataLevel } from '@/studio/data/load'
-import { datasetName, isReadyDataset } from '@/studio/data/model'
+import { datasetName } from '@/studio/data/model'
 import { DataWait } from '@/studio/data/wait'
 import { LENS_NAMES, type LensKey, lensReadable } from '@/studio/lenses/keys'
 import { Reading, RemoteNotice } from '@/studio/workspace/remote'
@@ -60,6 +60,9 @@ const LazySchemaLevel = lazy(() =>
   import('./studio/schema-level').then(({ SchemaLevel }) => ({ default: SchemaLevel })),
 )
 const LazyDataLevel = lazy(() => loadDataLevel().then(({ DataLevel }) => ({ default: DataLevel })))
+const LazyDatasetsPage = lazy(() =>
+  loadDataLevel().then(({ DatasetsPage }) => ({ default: DatasetsPage })),
+)
 const LazyWorkspaceLevel = lazy(() =>
   import('./studio/workspace/index').then(({ WorkspaceLevel }) => ({ default: WorkspaceLevel })),
 )
@@ -104,14 +107,13 @@ function SchemaOnScreen({ domainId }: { domainId: string }) {
 }
 
 /**
- * When the reader asked for the Data level of a Domain, or for another dataset of it: the one
- * clock its wait is said on. Opened on no dataset, the dataset it then names is the same ask.
+ * When the reader asked for the Data level of a Domain, for its Datasets page, or for another
+ * dataset of it: the one clock its wait is said on.
  */
 function useAskedAt(domainId: string, datasetPath: string | null): number {
   const [asked, setAsked] = useState(() => ({ domainId, datasetPath, at: Date.now() }))
   if (asked.domainId === domainId && asked.datasetPath === datasetPath) return asked.at
-  const again = asked.domainId !== domainId || asked.datasetPath !== null
-  const next = { domainId, datasetPath, at: again ? Date.now() : asked.at }
+  const next = { domainId, datasetPath, at: Date.now() }
   setAsked(next)
   return next.at
 }
@@ -119,8 +121,7 @@ function useAskedAt(domainId: string, datasetPath: string | null): number {
 /**
  * The Data level: one dataset of the Domain, named by its module, read through the lens. Named
  * or not, it mounts: a dataset that cannot be read says where and why.
- * Opened on no dataset, it names the Domain's first ready one, so a later failure keeps naming
- * it; with none ready it goes back to the Schema, the selection kept.
+ * Opened on no dataset, it is the Domain's Datasets page: each dataset it references, to open.
  * The level's code, the Domain's datasets and its Schema are asked for at once, none waiting on
  * another; until they answer, the wait says which dataset opens and what is being read.
  */
@@ -135,29 +136,25 @@ function DataRouter({
 }) {
   const queryClient = useQueryClient()
   const datasetPath = useUI((s) => s.dataset)
-  const openSchema = useUI((s) => s.openSchema)
-  const openDataLevel = useUI((s) => s.openDataLevel)
-  const named = datasetPath !== null
-  const { data, isError } = useDatasets(domainId)
-  const first = data?.datasets.find(isReadyDataset)?.path
-  const settled = isError || data !== undefined
+  const { data } = useDatasets(domainId)
   const since = useAskedAt(domainId, datasetPath)
   useEffect(() => {
     void loadDataLevel()
     void queryClient.prefetchQuery(bundleQueryOptions(domainId))
   }, [domainId, queryClient])
-  useEffect(() => {
-    if (named || !settled) return
-    if (first === undefined) openSchema()
-    else openDataLevel(first)
-  }, [first, named, openDataLevel, openSchema, settled])
-  if (!named)
+  if (datasetPath === null)
     return (
-      <DataWait
-        since={since}
-        dataset={`the first ready dataset of ${origin}`}
-        reading={`Reading the datasets ${origin} declares`}
-      />
+      <Suspense
+        fallback={
+          <DataWait
+            since={since}
+            dataset={`the datasets of ${origin}`}
+            reading="Loading the Data level"
+          />
+        }
+      >
+        <LazyDatasetsPage domainId={domainId} origin={origin} since={since} />
+      </Suspense>
     )
   return (
     <Suspense

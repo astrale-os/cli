@@ -6,9 +6,8 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useChatMutations } from '@/lib/chats'
+import { usePrepareAgentRequest } from '@/lib/chats'
 import { useUpdates } from '@/lib/hooks'
-import { useUI } from '@/lib/store'
 
 /**
  * A quiet, per-domain signal: package drift belongs beside the domain it affects,
@@ -17,24 +16,18 @@ import { useUI } from '@/lib/store'
  */
 export function DomainPackageUpdates({ domainId, origin }: { domainId: string; origin: string }) {
   const { data } = useUpdates(domainId)
-  const { open } = useChatMutations()
-  const setAgentDraft = useUI((state) => state.setAgentDraft)
-  const setPanelTab = useUI((state) => state.setPanelTab)
+  const request = usePrepareAgentRequest()
   const [opened, setOpened] = useState(false)
   const outdated = data?.sdk.outdated ?? []
 
   if (outdated.length === 0) return null
 
   const prepare = async () => {
-    try {
-      const chat = await open.mutateAsync(undefined)
-      setAgentDraft(chat.id, packageUpdatePrompt(origin, data!))
-      setPanelTab('agent')
-      setOpened(false)
-      toast.success('Update request ready — review it, then send when you are ready')
-    } catch {
-      // useChatMutations owns the actionable error toast.
-    }
+    const ready = await request.prepare(
+      packageUpdatePrompt(origin, data!),
+      'Update request ready — review it, then send when you are ready',
+    )
+    if (ready) setOpened(false)
   }
 
   return (
@@ -74,7 +67,7 @@ export function DomainPackageUpdates({ domainId, origin }: { domainId: string; o
         <Button
           size="sm"
           className="w-full"
-          disabled={open.isPending}
+          disabled={request.preparing}
           onClick={() => void prepare()}
         >
           Prepare update with agent

@@ -58,7 +58,7 @@ test('a dataset belongs to its Domain', () => {
     dataset: './tests/datasets/triage.ts',
   })
 
-  // the same Domain keeps it; another one starts on its own first dataset
+  // the same Domain keeps it; another one starts on its own Datasets page
   useUI.getState().setReaderDomain('issues')
   expect(useUI.getState().dataset).toBe('./tests/datasets/triage.ts')
   useUI.getState().setReaderDomain('admin')

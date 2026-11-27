@@ -35,7 +35,7 @@ test('a Domain opens on its Schema in Structure, every relationship drawn', asyn
 }) => {
   await openSchema(page)
   await expect(lensButton(page, 'structure')).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('level-dataset')).toHaveText('No dataset')
+  await expect(page.getByTestId('level-dataset')).toHaveText(/^\d+ datasets?$/)
 
   const { ir } = await fixtureBundle(request)
   const relationships = Object.entries(ir.classes)

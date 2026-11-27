@@ -17,6 +17,7 @@ import { parseClassRefKey } from '@shared/schema/identity'
 import { resolveClass } from '../../schema-studio/inheritance'
 import { moduleHues, moduleOfMember } from '../../schema-studio/modules'
 import { originShort } from '../lenses/structure'
+import { shortRevision } from '../workspace/words'
 import { coreEdgeId, dataEntries, displayName, lastSeg, nodeAnchor } from './names'
 
 /** The module of what a Schema declares at its root: its Classes belong to no module, and wear no hue. */
@@ -133,6 +134,13 @@ export const moduleName = (path: string) => lastSeg(path).replace(/\.[a-z]+$/i, 
  */
 export function datasetLabel(entry: StudioDataset | StudioDatasetFailure): string {
   return entry.status === 'ready' ? entry.title?.trim() || entry.id : moduleName(entry.path)
+}
+
+/** How a dataset stands against the Schema shown, in a sentence: admitted against it, or another revision. */
+export function admittedSentence(dataset: StudioDataset): string {
+  return dataset.schemaMatch
+    ? `Admitted against this Schema (revision ${shortRevision(dataset.revision)}).`
+    : 'Admitted against another Schema revision: it is read again once the Schema settles.'
 }
 
 /** The dataset at `path` as the crumb names it: by its entry once it is read, else by its module. */

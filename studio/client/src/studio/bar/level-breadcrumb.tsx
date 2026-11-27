@@ -2,10 +2,11 @@
  * The level breadcrumb: how far in the Studio reads — the Workspace, one Domain of it, and,
  * when one is open, a dataset of that Domain. The Workspace crumb opens the Workspace level,
  * which names no Domain. Each crumb past it switches what it names: another Domain is read at
- * the same level (a dataset level opens its first ready dataset); a dataset opens the Data
- * level on it, even one that could not be read, which then says why; "No dataset" goes back to
- * the Schema, the lens and selection kept. A Publication's crumb names its origin and version,
- * read-only, and has no dataset after it: a published bundle carries none.
+ * the same level (at the Data level, on its Datasets page); a dataset opens the Data level on it,
+ * even one that could not be read, which then says why; "All datasets" opens the Domain's
+ * Datasets page; "Schema only" goes back to the Schema, the lens and selection kept. A
+ * Publication's crumb names its origin and version, read-only, and has no dataset after it: a
+ * published bundle carries none.
  */
 
 import type { DomainSummary } from '@shared/contracts/workspace'
@@ -13,7 +14,15 @@ import type { DomainSummary } from '@shared/contracts/workspace'
 import { publicationOf } from '@shared/contracts/versions'
 import { isReadOnlyDomainId } from '@shared/contracts/workspace'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Check, ChevronRight, ChevronsUpDown, Database, Loader2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  ChevronRight,
+  ChevronsUpDown,
+  Database,
+  Loader2,
+  Sparkles,
+} from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 
 import { AnchorButton } from '@/components/anchor'
@@ -28,6 +37,7 @@ import { cn } from '@/lib/utils'
 
 import { loadDataLevel } from '../data/load'
 import { datasetLabel } from '../data/model'
+import { NoDatasetNote, useAskForDataset } from '../data/no-dataset'
 import { PublicationCrumb } from './publication-crumb'
 
 const TRIGGER =
@@ -99,7 +109,7 @@ export function LevelBreadcrumb({
           )}
           <UpdatesBadge domainId={domain.id} domainPath={domain.path} />
           <Separator />
-          <DatasetCrumb domainId={domain.id} />
+          <DatasetCrumb domain={domain} />
         </>
       )}
     </nav>
@@ -183,9 +193,13 @@ function DomainCrumb({
  * The dataset crumb. A Domain's datasets are extracted once its Schema has answered — the
  * extraction builds on the same bundle, and never delays its first read — so the crumb lists
  * them, and the first open of one waits on nothing already asked. Hovering or focusing the crumb
- * loads the Data level's code.
+ * loads the Data level's code. "All datasets" opens the Domain's Datasets page. A Domain that
+ * references none says so on the crumb itself — a glyph, when the agent can be asked for one —
+ * and its menu says what a Dataset is, leads to the page that says where one is declared, and,
+ * when the Domain is the Workspace's to write, hands the agent the request to write one.
  */
-function DatasetCrumb({ domainId }: { domainId: string }) {
+function DatasetCrumb({ domain }: { domain: DomainSummary }) {
+  const domainId = domain.id
   const [open, setOpen] = useState(false)
   const reading = useUI((s) => s.level === 'data')
   const datasetPath = useUI((s) => s.dataset)
@@ -197,6 +211,15 @@ function DatasetCrumb({ domainId }: { domainId: string }) {
   const entries = data?.datasets ?? []
   // the Data level reads the dataset named, read or not
   const current = reading ? (entries.find((entry) => entry.path === datasetPath) ?? null) : null
+  const listed = reading && datasetPath === null
+  const none = !!data && entries.length === 0
+  const { ask, asking } = useAskForDataset(domain)
+  // each choice closes the menu, then goes where it says
+  const pick = (go: () => void) => () => {
+    setOpen(false)
+    go()
+  }
+  const hint = none && ask !== undefined
 
   const preload = () => void loadDataLevel()
   return (
@@ -211,31 +234,60 @@ function DatasetCrumb({ domainId }: { domainId: string }) {
         <button
           type="button"
           data-testid="level-dataset"
-          title="Open a dataset"
+          {...(hint ? { 'data-hint': 'ask-dataset' } : {})}
+          title={
+            hint
+              ? 'No Dataset referenced: the agent can be asked to write one'
+              : none
+                ? 'No Dataset referenced'
+                : 'Open a dataset'
+          }
           onPointerEnter={preload}
           onFocus={preload}
-          className={cn(TRIGGER, current ? 'font-medium text-foreground' : 'text-muted-foreground')}
+          className={cn(
+            TRIGGER,
+            current || listed ? 'font-medium text-foreground' : 'text-muted-foreground',
+            // a word the crumb always says stays whole; a dataset's own title may be cut
+            !current && 'shrink-0',
+          )}
         >
           {current?.status === 'failed' ? (
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
           ) : (
-            current && <Database className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            (current || listed || entries.length > 0) && (
+              <Database className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            )
           )}
           <span className="truncate">
-            {current ? datasetLabel(current) : reading ? 'Dataset' : 'No dataset'}
+            {current
+              ? datasetLabel(current)
+              : listed
+                ? 'All datasets'
+                : reading
+                  ? 'Dataset'
+                  : // none open: how many there are to open, so "none" is said only of a Domain with none
+                    entries.length > 0
+                    ? `${entries.length} ${entries.length === 1 ? 'dataset' : 'datasets'}`
+                    : 'No dataset'}
           </span>
+          {hint && <Sparkles aria-hidden className="h-3.5 w-3.5 shrink-0 text-primary/80" />}
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
       <PopoverContent side="bottom" align="start" role="menu" className="w-72 p-1">
         <Choice
           current={!reading}
-          onPick={() => {
-            setOpen(false)
-            openSchema()
-          }}
+          title="Read the Schema with no dataset open"
+          onPick={pick(openSchema)}
         >
-          No dataset
+          Schema only
+        </Choice>
+        <Choice
+          current={listed}
+          title="Every dataset this Domain references, each to open"
+          onPick={pick(() => openDataLevel(null))}
+        >
+          All datasets
         </Choice>
         <div className="my-1 h-px bg-border" />
         {!data ? (
@@ -243,8 +295,12 @@ function DatasetCrumb({ domainId }: { domainId: string }) {
             {!isError && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isError ? 'Datasets unavailable.' : 'Extracting datasets…'}
           </p>
-        ) : entries.length === 0 ? (
-          <p className="px-2 py-1.5 text-[12px] text-muted-foreground">No Dataset referenced</p>
+        ) : none ? (
+          <NoDatasetNote
+            {...(ask ? { onAsk: pick(ask) } : {})}
+            asking={asking}
+            onDeclared={pick(() => openDataLevel(null))}
+          />
         ) : (
           // a dataset that could not be read keeps its place: opening it says where and why
           entries.map((entry) => (
@@ -252,10 +308,7 @@ function DatasetCrumb({ domainId }: { domainId: string }) {
               key={entry.path}
               current={entry.path === current?.path}
               title={entry.status === 'failed' ? entry.error.message : entry.path}
-              onPick={() => {
-                setOpen(false)
-                openDataLevel(entry.path)
-              }}
+              onPick={pick(() => openDataLevel(entry.path))}
             >
               {datasetLabel(entry)}
               {entry.status === 'failed' && (

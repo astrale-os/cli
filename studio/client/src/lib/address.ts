@@ -236,7 +236,8 @@ export function placeOf(address: Address): Place {
     return {
       level: 'data',
       domainId: address.domainId,
-      ...(address.dataset ? { dataset: address.dataset } : {}),
+      // no dataset is a place of its own, the Datasets page: always said, so neither refines the other
+      dataset: address.dataset,
       ...(address.lens ? { lens: address.lens } : {}),
     }
   return {
@@ -247,9 +248,9 @@ export function placeOf(address: Address): Place {
 }
 
 /**
- * Whether `next` is `last` said more fully: every part `last` names, `next` names alike. Opening
- * a dataset level on no dataset and then on the first ready one, or an address arriving without
- * a lens and written with the one shown, refines a place rather than leaving it.
+ * Whether `next` is `last` said more fully: every part `last` names, `next` names alike. An
+ * address arriving without a lens and written with the one shown refines a place rather than
+ * leaving it.
  */
 export function refines(last: Place, next: Place): boolean {
   return (Object.keys(last) as Array<keyof Place>).every((key) => last[key] === next[key])
@@ -266,7 +267,7 @@ export interface Shown {
   /** the Domain the levels read; none in a Workspace that holds no Domain */
   domainId?: string
   lens: LensKey
-  /** the dataset the Data level reads, by module path; null reads the first ready one */
+  /** the dataset the Data level reads, by module path; null shows the Domain's Datasets page */
   dataset: string | null
   /** the Schema selection, and the Domain it belongs to */
   selected?: string

@@ -311,11 +311,22 @@ describe('Back and Forward walk places, not selections', () => {
     ).toBe(false)
   })
 
-  test('a place said more fully is the same place: the first ready dataset named, the lens written', () => {
-    expect(isNewPlace(data({ dataset: undefined }), data({ dataset: DATASET }))).toBe(false)
+  test('a place said more fully is the same place: the lens written', () => {
     expect(isNewPlace(schema({ lens: undefined }), schema())).toBe(false)
+    expect(
+      isNewPlace(data({ dataset: DATASET, lens: undefined }), data({ dataset: DATASET })),
+    ).toBe(false)
     // and said less fully, it is a new one: the reader asked for it
+    expect(isNewPlace(schema(), schema({ lens: undefined }))).toBe(true)
+  })
+
+  test("a Domain's Datasets page is a place of its own, apart from each dataset it lists", () => {
+    expect(isNewPlace(data({ dataset: undefined }), data({ dataset: DATASET }))).toBe(true)
     expect(isNewPlace(data({ dataset: DATASET }), data({ dataset: undefined }))).toBe(true)
+    expect(isNewPlace(data({ dataset: undefined }), data({ dataset: undefined }))).toBe(false)
+    expect(
+      isNewPlace(data({ dataset: undefined, lens: undefined }), data({ dataset: undefined })),
+    ).toBe(false)
   })
 
   test('a place names no selection', () => {

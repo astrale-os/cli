@@ -15,7 +15,7 @@ import type { StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { Reading } from '@astrale-os/visual/react'
 import { ArrowUpRight, Lightbulb, ShieldCheck } from 'lucide-react'
-import { type ReactNode, useMemo } from 'react'
+import { Fragment, type ReactNode, useMemo } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -57,6 +57,7 @@ import {
   type DataNode,
   type DatasetModel,
   type PropertyLine,
+  admittedSentence,
   classLabel,
   datasetLabel,
   edgeId,
@@ -473,11 +474,7 @@ function DatasetPage(props: DataPanelProps) {
           <Fact label="Holds">
             {model.order.length} Nodes, {model.edges.length} Edges, {model.classes.length} Classes
           </Fact>
-          <Fact label="Schema">
-            {dataset.schemaMatch
-              ? `Admitted against this Schema (revision ${dataset.revision.slice(0, 12)}).`
-              : 'Admitted against another Schema revision: it is read again once the Schema settles.'}
-          </Fact>
+          <Fact label="Schema">{admittedSentence(dataset)}</Fact>
         </div>
       </Title>
       {lens === 'rules' && (
@@ -565,20 +562,30 @@ function DatasetPage(props: DataPanelProps) {
       </Section>
       {variables.length > 0 && (
         <Section label="Variables" kind={DATA_SECTIONS.variables} count={variables.length}>
-          <div className="space-y-1">
+          {/* a variable is named in code, at any length: its column is as wide as the longest
+              name, up to a cap past which a name is cut and its whole shown on hover */}
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px] leading-relaxed">
             {variables.map(([name, paths]) => (
-              <Fact key={name} label={name}>
-                {paths.map((path, index) => (
-                  <span key={path}>
-                    {index > 0 && ', '}
-                    <Pick id={pickIdOf(model, path)} onSelect={props.onSelect}>
-                      {endLabel(model, path)}
-                    </Pick>
-                  </span>
-                ))}
-              </Fact>
+              <Fragment key={name}>
+                <dt
+                  title={name}
+                  className="max-w-40 truncate pt-px text-[12px] text-muted-foreground"
+                >
+                  {name}
+                </dt>
+                <dd className="min-w-0">
+                  {paths.map((path, index) => (
+                    <span key={path}>
+                      {index > 0 && ', '}
+                      <Pick id={pickIdOf(model, path)} onSelect={props.onSelect}>
+                        {endLabel(model, path)}
+                      </Pick>
+                    </span>
+                  ))}
+                </dd>
+              </Fragment>
             ))}
-          </div>
+          </dl>
         </Section>
       )}
     </>

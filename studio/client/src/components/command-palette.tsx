@@ -597,14 +597,14 @@ export function CommandPalette() {
             </Command.Item>
           ))}
           <Command.Item
-            value="go to data dataset level who may policies"
+            value="go to data datasets dataset level who may policies"
             className={ITEM_CLS}
             onSelect={() => {
               openDataLevel(null)
               close()
             }}
           >
-            <Row icon={Database} label="Data" meta="a dataset, read through the lens" />
+            <Row icon={Database} label="Datasets" meta="the Domain's datasets, each to open" />
           </Command.Item>
         </Command.Group>
 
