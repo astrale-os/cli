@@ -21,6 +21,7 @@ import {
   projectCanonicalCore,
   type CanonicalDomainSchemaV1,
 } from './canonical-schema'
+import { decodeSchemaIR } from './schema-ir-json'
 
 const string = valueSchema<string>()({ type: 'string' })
 const boolean = valueSchema<boolean>()({ type: 'boolean' })
@@ -194,6 +195,19 @@ describe('canonical Schema projection', () => {
       )
       expect(extraction).toMatchObject({ status: 'preview', revision: null })
       expect(extraction.ir.importsByKey).toEqual({})
+    }
+  })
+
+  test('every projection is read back by the decoder of persisted IR', () => {
+    // The bundle cache and the review baseline persist this IR and decode it on the next
+    // launch; one the decoder refuses is extracted again at every launch, silently.
+    const admitted = extractCanonicalSchemaFromSdk(sdk, schema)
+    const preview = extractCanonicalSchemaFromSdk(
+      { ...sdk, schema: { resolve: sdk.schema.resolve } } as unknown as typeof sdk,
+      schema,
+    )
+    for (const { ir } of [admitted, preview]) {
+      expect(decodeSchemaIR(JSON.parse(JSON.stringify(ir)))).toEqual(ir)
     }
   })
 })
