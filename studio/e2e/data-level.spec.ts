@@ -1,9 +1,13 @@
 import type { StudioDatasets } from '../shared/contracts/schema'
 
 import {
+  datasetCard,
+  datasetLabel,
   expect,
   indexRow,
+  levelButton,
   listedRows,
+  openDatasetCard,
   openSchema,
   sceneBox,
   sceneCanvas,
@@ -22,10 +26,10 @@ import {
  * raised, and an invoice billed to Acme; the Ticket read Policy admits only who raised it.
  */
 
+/** Support desk is the one dataset of the fixture it can read: Data opens it. */
 async function openSupportDesk(page: Page) {
   await openSchema(page)
-  await page.getByTestId('level-dataset').click()
-  await page.getByRole('menuitemradio', { name: 'Support desk' }).click()
+  await levelButton(page, 'data').click()
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
   await expect(sceneBox(page, 'core.node.acme')).toBeVisible()
 }
@@ -189,14 +193,15 @@ test('read as an identity, what it cannot read dims, and a Node says its verdict
 test('a dataset its Schema refuses is listed, and opening it says where and why', async ({
   page,
 }) => {
-  await openSchema(page)
-  await page.getByTestId('level-dataset').click()
-  const menu = page.getByRole('menu')
-  await expect(menu.getByRole('menuitemradio', { name: 'Support desk' })).toBeVisible()
-  // it has no title to show: it is named by its module, and marked
-  const broken = menu.getByRole('menuitemradio', { name: /^broken/ })
-  await expect(broken).toContainText('could not be read')
-  await broken.click()
+  await openSupportDesk(page)
+  await datasetLabel(page).click()
+  await expect(datasetCard(page, './tests/datasets/support-desk.ts')).toBeVisible()
+  // it has no title to show: it is named by its module, and marked with why
+  const broken = datasetCard(page, './tests/datasets/broken.ts')
+  await expect(broken).toHaveAttribute('data-standing', 'unreadable')
+  await expect(broken.locator('[data-action="open-dataset"]')).toHaveText('broken')
+  await expect(broken).toContainText('Dataset edge source nobody is not a Node of this Dataset.')
+  await openDatasetCard(page, './tests/datasets/broken.ts')
 
   const failed = page.getByTestId('data-level-failed')
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'failed')
@@ -206,18 +211,13 @@ test('a dataset its Schema refuses is listed, and opening it says where and why'
   await expect(page.getByTestId('data-level-failed-reason')).toHaveText(
     'Dataset edge source nobody is not a Node of this Dataset.',
   )
-  await expect(page.getByTestId('level-dataset')).toContainText('broken')
+  await expect(datasetLabel(page)).toHaveText('broken')
 
-  // another dataset is one choice away; the crumb still marks the one refused, and says why
-  await page.getByTestId('level-dataset').click()
-  await menu.getByRole('menuitemradio', { name: 'Support desk' }).click()
+  // another dataset is one choice away: the label leads back to every dataset
+  await datasetLabel(page).click()
+  await openDatasetCard(page, './tests/datasets/support-desk.ts')
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
-  await page.getByTestId('level-dataset').click()
-  await expect(broken).toContainText('could not be read')
-  await expect(broken).toHaveAttribute(
-    'title',
-    'Dataset edge source nobody is not a Node of this Dataset.',
-  )
+  await expect(datasetLabel(page)).toHaveText('Support desk')
 })
 
 test('a dataset that stops loading while open says where and why, and comes back once fixed', async ({

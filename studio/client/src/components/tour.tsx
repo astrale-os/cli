@@ -35,7 +35,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     title: 'Three questions, one map',
-    body: 'Structure shows what exists: the classes and their relationships. Behavior shows what happens: the functions, what each one changes, and the integrations they call. Rules — who may see and change what — comes next. Press 1, 2 or 3; whatever you selected stays selected. Open a dataset from the bar to read the domain’s demo data and check on it who may do what.',
+    body: 'Structure shows what exists: the classes and their relationships. Behavior shows what happens: the functions, what each one changes, and the integrations they call. Rules — who may see and change what — comes next. Press 1, 2 or 3; whatever you selected stays selected. Switch to Data in the bar, or press D, to read the domain’s demo data and check on it who may do what.',
     targets: ['[data-tour="lenses"]'],
   },
   {

@@ -96,7 +96,7 @@ test('the Data level reads a dataset through the lens; the Schema is one step ba
   ui().setLens('structure')
   expect(ui()).toMatchObject({ level: 'data', lens: 'structure', selectedClass: 'class.Service' })
 
-  // back to the Schema, the dataset kept: the crumb still names it
+  // back to the Schema: the selection and the dataset are kept
   ui().openSchema()
   expect(ui()).toMatchObject({
     level: 'domain',
@@ -143,7 +143,7 @@ test('opening a Domain from the Workspace level keeps its selection, and drops a
     readerDomainId: 'issues',
     selectedClass: 'class.Issue',
     selectionDomainId: 'issues',
-    // the dataset is the Domain's too: the crumb still names it
+    // the dataset is the Domain's too: it is kept with the selection
     dataset: './tests/datasets/triage.ts',
   })
 

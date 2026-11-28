@@ -8,6 +8,7 @@ import {
   expect,
   indexRail,
   indexRow,
+  levelButton,
   openSchema,
   sceneBox,
   test,
@@ -43,10 +44,10 @@ const stored = async (request: APIRequestContext) =>
 test.beforeEach(async ({ request }) => clearScenarios(request))
 test.afterEach(async ({ request }) => clearScenarios(request))
 
+/** Support desk is the one dataset of the fixture it can read: Data opens it. */
 async function openSupportDesk(page: Page) {
   await openSchema(page)
-  await page.getByTestId('level-dataset').click()
-  await page.getByRole('menuitemradio', { name: 'Support desk' }).click()
+  await levelButton(page, 'data').click()
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
   await expect(sceneBox(page, 'core.node.acme')).toBeVisible()
 }

@@ -15,7 +15,7 @@ export function DataWait({
 }: {
   /** when the dataset was asked for, in epoch milliseconds */
   since: number
-  /** the dataset, as the crumb names it once its Domain's datasets are read */
+  /** the dataset, as its label names it once its Domain's datasets are read */
   dataset: string
   /** what is being read for it, as "Reading the Schema of crm.studio-demo.astrale.ai" */
   reading: string

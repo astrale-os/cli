@@ -191,7 +191,7 @@ export function openBlocker(
   if (view.published) return 'A published bundle holds no View code, so it cannot open here.'
   if (instances === undefined) return 'Reading the instances…'
   if (!instances.some((instance) => instance.active))
-    return 'Choose an instance you own in the header to open it.'
+    return 'Choose an instance you own to open it.'
   return ownerWarning ?? undefined
 }
 

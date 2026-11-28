@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { SECTION_MARKS } from '../inspector/marks'
 import { rulesOf } from '../rules/model'
 import { Callout, PageHeader } from '../workspace/header'
+import { DATA_ACCENT, DATA_GLYPH } from './accent'
 import { identitiesOf } from './access'
 import { DATA_SECTIONS, DataMark, OUTCOME_MARKS } from './marks'
 import { admittedSentence, datasetLabel, datasetModel } from './model'
@@ -155,7 +156,7 @@ export function DatasetsView({
       className="h-full w-full overflow-y-auto bg-canvas"
     >
       <div className="mx-auto max-w-2xl space-y-5 px-6 pb-24 pt-8">
-        <PageHeader kicker="Datasets" icon={<Database />} name={origin} />
+        <PageHeader kicker="Datasets" icon={<DATA_GLYPH className={DATA_ACCENT} />} name={origin} />
         {body}
       </div>
     </div>

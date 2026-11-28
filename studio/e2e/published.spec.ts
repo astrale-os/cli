@@ -9,6 +9,7 @@ import {
   FIXTURE_ID,
   indexRail,
   lensButton,
+  levelButton,
   PEER_ID,
   resetLayout,
   sceneBox,
@@ -83,8 +84,13 @@ test('a dependency opens the Publication it is built against, and the newest, re
   await expect(page.locator('[data-publication-notice="structure"]')).toContainText(
     `Publication ${PAYMENTS} 1.1.0, read-only.`,
   )
-  // no Publish, no dataset, nothing to install from a Publication
-  await expect(page.getByTestId('level-dataset')).toHaveCount(0)
+  // no Publish, no dataset, nothing to install from a Publication: Data says why it is disabled
+  await expect(levelButton(page, 'schema')).toHaveAttribute('aria-pressed', 'true')
+  await expect(levelButton(page, 'data')).toBeDisabled()
+  await levelButton(page, 'data').locator('..').hover()
+  await expect(page.locator('[data-level-reason="data"]')).toHaveText(
+    "A Publication carries no dataset: datasets are read from a Domain's sources.",
+  )
 
   // Structure, Behavior and Rules read it; Behavior says what a published Schema cannot tell. What a lens
   // finds none of, its canvas and its Index say, instead of a blank

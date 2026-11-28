@@ -126,6 +126,22 @@ export const lensButton = (
   lens: 'structure' | 'behavior' | 'rules' | 'views',
 ): Locator => page.getByTestId('lens-switch').locator(`button[data-lens="${lens}"]`)
 
+/** One segment of the bar's Schema | Data switch. */
+export const levelButton = (page: Page, level: 'schema' | 'data'): Locator =>
+  page.getByTestId('level-switch').locator(`button[data-level="${level}"]`)
+
+/** The open dataset's label on the Data level's canvas: its name, and the way to every dataset. */
+export const datasetLabel = (page: Page): Locator => page.getByTestId('dataset-label')
+
+/** One dataset's card on a Domain's Datasets page, by its module path. */
+export const datasetCard = (page: Page, path: string): Locator =>
+  page.locator(`[data-dataset-card="${path}"]`)
+
+/** Open a dataset from its Domain's Datasets page, by its module path. */
+export async function openDatasetCard(page: Page, path: string): Promise<void> {
+  await datasetCard(page, path).locator('[data-action="open-dataset"]').click()
+}
+
 /** Open the Studio on the fixture Domain's Schema and wait for its canvas to draw. */
 export async function openSchema(page: Page): Promise<void> {
   await page.goto('/')

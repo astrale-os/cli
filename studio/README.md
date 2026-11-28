@@ -56,8 +56,10 @@ drawn.
 ## Levels and lenses
 
 The Studio reads at three levels. Past the Workspace, a lens chooses the question the canvas
-answers. The level breadcrumb in the header switches level and Domain; `1` to `4` switch lens.
-Scenarios follow the lenses in the switch, locked.
+answers. The breadcrumb in the header (Workspace › Domain) opens the Workspace or another Domain;
+the **Schema | Data** switch beside it chooses whether the Domain's Schema or one of its datasets
+is read (`S` and `D`, or ⌘K); `1` to `4` switch lens. Scenarios follow the lenses in the switch,
+locked.
 
 | Lens | Question it answers |
 | --- | --- |
@@ -109,7 +111,13 @@ it and opens it there; a comment on it is filed under that Domain.
 Behavior, Rules and Views read the open Domain alone, and so does the Data level. A selection
 only a Domain drawn whole declares is let go on leaving Structure.
 
-**Data level**, one dataset of a Domain:
+**Data level**, one dataset of a Domain. **Data** opens the dataset last read on the Domain while
+the Domain still declares it, else the Domain's one readable dataset, else its **Datasets** page,
+which lists every dataset with why one cannot be read, or says what a Dataset is when there is
+none. The dataset last read is kept per Domain in the browser. The open dataset's name stands at
+the top left of the canvas in the Data accent, which also marks the switch's Data segment and the
+Index; clicked, it opens the Datasets page. **Schema** comes back with the lens and the selection
+kept. A Publication carries no dataset: its Data segment is disabled and says so.
 
 | Lens | What it draws |
 | --- | --- |
@@ -178,7 +186,7 @@ The URL names the place, so a reload, a pasted link, Back and Forward land where
 | --- | --- |
 | `/workspace` | The Workspace level. `?domain=<id>`, `?origin=<origin>` or `?domain=<id>&dependency=<alias>` names the map's selection. |
 | `/domain/<id>?lens=<lens>&select=<ref>` | A workspace Domain's Schema. |
-| `/domain/<id>/data?dataset=<path>&lens=<lens>&select=<id>&as=<identity>&verdict=<id>&scenario=<id>&step=<id>` | The Data level. The retired `/domain/<id>/tests?dataset=<path>` lands here, on the same dataset under Rules, and says so. |
+| `/domain/<id>/data?dataset=<path>&lens=<lens>&select=<id>&as=<identity>&verdict=<id>&scenario=<id>&step=<id>` | The Data level. Without `dataset`, the Domain's Datasets page. The retired `/domain/<id>/tests?dataset=<path>` lands here, on the same dataset under Rules, and says so. |
 | `/publication/<origin>/<version>?lens=<lens>&select=<ref>` | One Publication, read-only. |
 | `/` | No place: the Workspace's saved UI state decides. |
 
@@ -287,7 +295,7 @@ which is why the server binds loopback only and answers only the Studio's own pa
 A Domain's Views are drawn by its Views lens (`4`, or ⌘K → Views). A View selected there, or from
 the Index, opens its page in the Inspector: how it is built, where it mounts and is declared, what
 its code calls and reads as read from its sources (or that it is not read, and why), and one
-action, **Open**. When it cannot open, **Open** is disabled and the reason stands beside it: no
+action, **Open**, beside the active instance it opens on, chosen there. When it cannot open, **Open** is disabled and the reason stands beside it: no
 active instance, an active instance you do not own, or a Publication, whose bundle holds no View
 code. A function, Class or definition selected under Views lists the Views whose code reaches it.
 
@@ -297,7 +305,7 @@ the installed, verified View placement and owns the loopback Shell session, iden
 cleanup.
 
 The Studio opens Views only on an instance you own in Admin (the Admin Policy
-`OwnInstanceOrAdministerAdminInstance`). The header's instance switcher lists the others —
+`OwnInstanceOrAdministerAdminInstance`). The instance choice beside **Open** lists the others —
 instances you only use, local bookmarks such as a dev Kernel — greyed with the reason, and they
 cannot be picked; an active instance set from a terminal that you do not own carries a warning,
 and its Views are refused with the reason. On an owned instance, a View opens as the Admin

@@ -143,7 +143,7 @@ export function admittedSentence(dataset: StudioDataset): string {
     : 'Admitted against another Schema revision: it is read again once the Schema settles.'
 }
 
-/** The dataset at `path` as the crumb names it: by its entry once it is read, else by its module. */
+/** The dataset at `path` as its label names it: by its entry once it is read, else by its module. */
 export function datasetName(
   entries: readonly (StudioDataset | StudioDatasetFailure)[] | undefined,
   path: string,

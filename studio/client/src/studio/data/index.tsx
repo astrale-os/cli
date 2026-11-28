@@ -50,6 +50,7 @@ import { isolateScene } from '../scene/focus'
 import { useStage } from '../stage/store'
 import { accessOf, edgeVerdict, edgesOf, nodeVerdicts } from './access'
 import { BehaviorPanel, StepsInvolving } from './behavior-panel'
+import { DatasetLabel } from './dataset-label'
 import { IdentityPicker } from './identity-picker'
 import {
   type DatasetModel,
@@ -97,7 +98,7 @@ export { DatasetsPage } from './datasets-page'
 
 export interface DataLevelProps {
   domainId: string
-  /** the Domain's origin, as its wait names it */
+  /** the Domain's origin, as its wait and the dataset's label name it */
   origin: string
   /** The dataset's module path, as its Domain's config writes it: its name, read or not. */
   datasetPath: string
@@ -145,13 +146,14 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
     found?.status === 'failed' ||
     (found?.status === 'ready' && !bundle.isPending)
   useOnScreen(drawn ? { level: 'data', domainId } : undefined)
-  const wait = (reading: string) => (
-    <DataWait
-      since={since}
-      dataset={datasetName(datasets.data?.datasets, datasetPath)}
-      reading={reading}
-    />
-  )
+  const name = datasetName(datasets.data?.datasets, datasetPath)
+  // shown, read or not, the dataset is the one last read on its Domain: Data opens it again
+  const shown = found !== undefined && found.status !== 'missing'
+  const rememberDataset = useUI((state) => state.rememberDataset)
+  useEffect(() => {
+    if (shown) rememberDataset(domainId, datasetPath)
+  }, [datasetPath, domainId, rememberDataset, shown])
+  const wait = (reading: string) => <DataWait since={since} dataset={name} reading={reading} />
 
   let body
   if (datasets.isError)
@@ -170,6 +172,7 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
     return (
       <DatasetLevel
         domainId={domainId}
+        origin={origin}
         dataset={found.dataset}
         bundle={bundle.data}
         bundleError={bundle.isError ? bundle.error : undefined}
@@ -181,21 +184,27 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
       data-testid="data-level"
       data-state={found?.status ?? 'loading'}
       data-dataset-path={datasetPath}
-      className="h-full w-full"
+      className="relative h-full w-full"
     >
       {body}
+      {/* where the canvas would stand its label: a dataset not drawn is left the same way */}
+      <div className="absolute left-3 top-3">
+        <DatasetLabel name={name} origin={origin} />
+      </div>
     </div>
   )
 }
 
 function DatasetLevel({
   domainId,
+  origin,
   dataset,
   bundle,
   bundleError,
   lens,
 }: {
   domainId: string
+  origin: string
   dataset: StudioDataset
   bundle?: StudioSchemaBundle
   bundleError?: unknown
@@ -741,6 +750,7 @@ function DatasetLevel({
           onToggleGroup={onIndexToggle}
           onSelect={onIndexSelect}
           onClearSelection={() => select(scope, undefined)}
+          dataLevel
         />
         <div
           className="relative min-w-0 flex-1"
@@ -768,6 +778,7 @@ function DatasetLevel({
               onRevealed={revealed}
               onToggleGroup={onToggleGroup}
               onIsolate={onIsolate}
+              lensControls={() => <DatasetLabel name={datasetLabel(dataset)} origin={origin} />}
               lens={dataLens}
               // A new reading — the lens, the selection, the identity's marks, the step — frames the map again.
               frameToken={`${dataLens}|${selected ?? ''}|${dataLens === 'rules' ? `${identity}:${complete ? 'read' : ''}` : ''}|${behavior ? (step?.step.id ?? open?.scenario.id ?? '') : ''}`}

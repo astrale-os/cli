@@ -1,7 +1,16 @@
 import type { InstanceInfo, InstancesState } from '@shared/contracts/workspace'
 
 import { clearRegistry, PAYMENTS, serveRegistry } from './registry'
-import { expect, FIXTURE_ID, indexRow, openSchema, sceneBox, test, type Page } from './test'
+import {
+  expect,
+  FIXTURE_ID,
+  indexRow,
+  levelButton,
+  openSchema,
+  sceneBox,
+  test,
+  type Page,
+} from './test'
 
 /**
  * Views answers "what people see": every View the Domain declares is a card, after Rules and
@@ -86,7 +95,7 @@ test('a View is a card and an Index row; its page says what it is and why it can
   await expect(viewPage(page).getByRole('heading', { name: 'overview' })).toBeVisible()
   await expect(viewPage(page)).toContainText('CRM overview.')
   await expect(openAction(page)).toBeDisabled()
-  await expect(openBlocker(page)).toHaveText('Choose an instance you own in the header to open it.')
+  await expect(openBlocker(page)).toHaveText('Choose an instance you own to open it.')
   await expect(openAction(page)).toHaveAttribute(
     'aria-describedby',
     (await openBlocker(page).getAttribute('id'))!,
@@ -116,8 +125,7 @@ test('the Data level does not read Views: its tab is disabled and says where the
 }) => {
   await openSchema(page)
   await lensTab(page, 'views').click()
-  await page.getByTestId('level-dataset').click()
-  await page.getByRole('menuitemradio', { name: 'Support desk' }).click()
+  await levelButton(page, 'data').click()
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-lens', 'structure')
 

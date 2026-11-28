@@ -1,7 +1,8 @@
 /**
  * The Inspector's page for a View, the same under every lens: what it is, where the Schema
  * declares it, what its code reaches as read from source, and the one thing to do with it —
- * open it on the active instance — or, beside a disabled Open, the one reason it cannot open.
+ * open it on the active instance, chosen beside Open — or, under a disabled Open, the one reason
+ * it cannot open.
  */
 import type {
   StudioSchemaBundle,
@@ -13,7 +14,7 @@ import type {
 import { publicationOf } from '@shared/contracts/versions'
 import { useMemo, useState } from 'react'
 
-import { activeInstanceWarning } from '@/components/instance-switcher'
+import { activeInstanceWarning, InstanceSwitcher } from '@/components/instance-switcher'
 import { Button } from '@/components/ui/button'
 import { ViewModal } from '@/components/view-modal'
 import { useAnatomy, useInstances } from '@/lib/hooks'
@@ -153,7 +154,10 @@ function ViewFactsBlock({ view }: { view: ViewFacts }) {
   )
 }
 
-/** The page's one action: open the View on the active instance, or the reason it cannot. */
+/**
+ * The page's one action: open the View on the active instance, chosen beside it, or the reason it
+ * cannot. A published bundle holds no View code: no instance is chosen for it.
+ */
 function OpenView({ domainId, view }: { domainId: string; view: ViewFacts }) {
   const [open, setOpen] = useState(false)
   const instances = useInstances()
@@ -162,22 +166,30 @@ function OpenView({ domainId, view }: { domainId: string; view: ViewFacts }) {
     ? 'The instances could not be read, so no View can open.'
     : openBlocker(view, list, list === undefined ? null : activeInstanceWarning(list))
   return (
-    <div className="flex items-start gap-3" data-inspector-open="">
-      <Button
-        size="sm"
-        disabled={blocker !== undefined}
-        onClick={() => setOpen(true)}
-        data-action="open-view"
-        aria-describedby={blocker === undefined ? undefined : `open-view-${view.slug}`}
-      >
-        <GLYPHS.view />
-        Open
-      </Button>
+    <div className="space-y-1.5" data-inspector-open="">
+      <div className="flex min-w-0 items-center gap-2">
+        <Button
+          size="sm"
+          disabled={blocker !== undefined}
+          onClick={() => setOpen(true)}
+          data-action="open-view"
+          aria-describedby={blocker === undefined ? undefined : `open-view-${view.slug}`}
+        >
+          <GLYPHS.view />
+          Open
+        </Button>
+        {!view.published && (
+          <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground">
+            on
+            <InstanceSwitcher />
+          </span>
+        )}
+      </div>
       {blocker !== undefined && (
         <p
           id={`open-view-${view.slug}`}
           data-open-blocker=""
-          className="min-w-0 flex-1 pt-1 text-[12px] leading-relaxed text-muted-foreground"
+          className="text-[12px] leading-relaxed text-muted-foreground"
         >
           {blocker}
         </p>

@@ -3,6 +3,7 @@ import {
   expect,
   fixtureBundle,
   lensButton,
+  levelButton,
   openSchema,
   sceneBox,
   sceneCanvas,
@@ -35,7 +36,7 @@ test('a Domain opens on its Schema in Structure, every relationship drawn', asyn
 }) => {
   await openSchema(page)
   await expect(lensButton(page, 'structure')).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('level-dataset')).toHaveText(/^\d+ datasets?$/)
+  await expect(levelButton(page, 'schema')).toHaveAttribute('aria-pressed', 'true')
 
   const { ir } = await fixtureBundle(request)
   const relationships = Object.entries(ir.classes)

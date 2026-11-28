@@ -9,7 +9,8 @@
  *   screen (`notices.ts`).
  * - Writing: every change of place pushes a history entry; a change within a place (a
  *   selection, an identity, a step) replaces the current one. Hover, pan, zoom and drags are in
- *   no store the address reads, so they never reach it.
+ *   no store the address reads, so they never reach it. Switched to Data before its datasets are
+ *   read, the Studio writes nothing until the dataset is chosen: the entry then names it.
  */
 
 import type { StudioDataset } from '@shared/contracts/schema'
@@ -155,9 +156,10 @@ function datasetAt(domainId: string, path: string): StudioDataset | undefined {
   return found?.status === 'ready' ? found.dataset : undefined
 }
 
-/** The address of what the stores show now. */
+/** The address of what the stores show now; none while the Data level chooses its dataset. */
 function addressNow(): Address | undefined {
   const ui = useUI.getState()
+  if (ui.choosingDataset) return undefined
   const domainId = shownDomainId(ui, history.domains)
   let view: DataSelection | undefined
   if (ui.level === 'data' && domainId && ui.dataset) {

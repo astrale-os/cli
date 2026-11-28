@@ -77,6 +77,24 @@ function storeBrowserPreference(key: string, value: string): void {
   } catch {}
 }
 
+/** The browser key of the dataset last read on each Domain. */
+const LAST_DATASETS = 'studio.lastDatasets'
+/** How many Domains keep their last dataset: the one read longest ago gives way first. */
+const LAST_DATASETS_KEPT = 64
+
+function loadLastDatasets(): Readonly<Record<string, string>> {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(LAST_DATASETS) ?? '{}')
+    if (stored && typeof stored === 'object' && !Array.isArray(stored))
+      return Object.fromEntries(
+        Object.entries(stored).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      )
+  } catch {}
+  return {}
+}
+
 /** Paint the theme on <html> and report what is actually showing. */
 function paintTheme(theme: Theme): 'light' | 'dark' {
   const dark =
@@ -95,6 +113,12 @@ interface UIState {
    *  dataset keeps whether it loads or not. Null shows the Domain's Datasets page. Another
    *  Domain starts at null again. */
   dataset: string | null
+  /** Data was switched to before the Domain's datasets were read: the Data level waits, and the
+   *  dataset it opens on is chosen once they are (`studio/data/entry.ts`). */
+  choosingDataset: boolean
+  /** The dataset last read on each Domain, by Domain id, persisted in this browser: switching to
+   *  Data opens it again while its Domain still declares it. */
+  lastDatasets: Readonly<Record<string, string>>
   /** appearance preference, persisted in this browser */
   theme: Theme
   /** the theme actually painted — `system` resolved. Canvas colours that land in
@@ -204,6 +228,11 @@ interface UIState {
   /** Read the dataset at module `path` through the lenses, the lens and selection kept; null
    *  shows the Domain's Datasets page. `openSchema` goes back to the Schema. */
   openDataLevel: (path: string | null) => void
+  /** Read the shown Domain's Data level before its datasets are read: the dataset is chosen once
+   *  they are, by `openDataLevel`. Every other way to a level drops the choice. */
+  chooseDataset: () => void
+  /** Keep `path` as the dataset last read on `domainId`. */
+  rememberDataset: (domainId: string, path: string) => void
   setReaderDomain: (domainId?: string) => void
   setPanelOpen: (open: boolean) => void
   setPanelTab: (tab: PanelTab) => void
@@ -270,9 +299,11 @@ function revealPan(ref: string): string | null {
   return ref.startsWith('edge.') ? ref : revealFocus(ref)
 }
 
-/** What reading the Schema clears: an overlay, a reveal under way, an open thread. */
+/** What reading the Schema clears: an overlay, a reveal under way, an open thread, a dataset
+ *  still to choose. */
 const schemaLevel = {
   level: 'domain',
+  choosingDataset: false,
   panelOverlay: null,
   revealedRef: null,
   revealTarget: null,
@@ -285,6 +316,8 @@ const initialTheme = loadStored('studio.theme', ['system', 'light', 'dark'] as c
 export const useUI = create<UIState>((set) => ({
   level: 'domain',
   dataset: null,
+  choosingDataset: false,
+  lastDatasets: loadLastDatasets(),
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
   edgeStyle: 'curved',
@@ -349,11 +382,18 @@ export const useUI = create<UIState>((set) => ({
     set({ chatTabsWidth })
   },
   openWorkspace: () =>
-    set({ level: 'workspace', panelOverlay: null, revealTarget: null, openAnchorRef: null }),
+    set({
+      level: 'workspace',
+      choosingDataset: false,
+      panelOverlay: null,
+      revealTarget: null,
+      openAnchorRef: null,
+    }),
   openSchema: () => set(schemaLevel),
   openDomain: (domainId) =>
     set((s) => ({
       level: 'domain',
+      choosingDataset: false,
       readerDomainId: domainId,
       ...(domainId === s.readerDomainId ? {} : { dataset: null }),
       // the Domain read before, or the one the selection belongs to: the selection is still its
@@ -370,13 +410,40 @@ export const useUI = create<UIState>((set) => ({
       level: 'data',
       lens: dataLensOf(s.lens),
       dataset,
+      choosingDataset: false,
       panelOverlay: null,
       revealedRef: null,
       revealTarget: null,
       openAnchorRef: null,
     })),
+  chooseDataset: () =>
+    set((s) => ({
+      level: 'data',
+      lens: dataLensOf(s.lens),
+      dataset: null,
+      choosingDataset: true,
+      panelOverlay: null,
+      revealedRef: null,
+      revealTarget: null,
+      openAnchorRef: null,
+    })),
+  rememberDataset: (domainId, path) =>
+    set((s) => {
+      if (s.lastDatasets[domainId] === path) return {}
+      const { [domainId]: _before, ...others } = s.lastDatasets
+      const lastDatasets = Object.fromEntries([
+        ...Object.entries(others).slice(-(LAST_DATASETS_KEPT - 1)),
+        [domainId, path],
+      ])
+      storeBrowserPreference(LAST_DATASETS, JSON.stringify(lastDatasets))
+      return { lastDatasets }
+    }),
   setReaderDomain: (readerDomainId) =>
-    set((s) => (readerDomainId === s.readerDomainId ? {} : { readerDomainId, dataset: null })),
+    set((s) =>
+      readerDomainId === s.readerDomainId
+        ? {}
+        : { readerDomainId, dataset: null, choosingDataset: false },
+    ),
   setPanelOpen: (panelOpen) => set({ panelOpen }),
   setPanelTab: (panelTab) => set({ panelTab, panelOpen: true }),
   setPanelSide: (panelSide) => {
@@ -420,6 +487,7 @@ export const useUI = create<UIState>((set) => ({
     const selection = detailRefFor(ref)
     set({
       level: 'domain',
+      choosingDataset: false,
       panelOverlay: null,
       revealedRef: ref,
       selectionDomainId: domainId,

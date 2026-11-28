@@ -1,4 +1,5 @@
 import type { PublicationAddress } from '@shared/contracts/versions'
+import type { DomainSummary } from '@shared/contracts/workspace'
 
 import {
   publicationOf,
@@ -27,7 +28,6 @@ import { CommandPalette } from '@/components/command-palette'
 import { CommentDraftPopover } from '@/components/comment-draft-popover'
 import { CommentModeOverlay } from '@/components/comment-mode'
 import { NewDomainDialog } from '@/components/create-domain'
-import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings/dialog'
 import { StudioRuntimeNotice } from '@/components/studio-runtime-notice'
 import { Tour } from '@/components/tour'
@@ -49,7 +49,9 @@ import { useAddress } from '@/lib/use-address'
 import { cn } from '@/lib/utils'
 import { useWorkspaceUiSync } from '@/lib/workspace-ui'
 import { LevelBreadcrumb } from '@/studio/bar/level-breadcrumb'
+import { LEVEL_SHORTCUTS, LevelSwitch } from '@/studio/bar/level-switch'
 import { GLYPHS } from '@/studio/canvas/glyphs'
+import { openChosenDataset, switchToData } from '@/studio/data/entry'
 import { loadDataLevel } from '@/studio/data/load'
 import { datasetName } from '@/studio/data/model'
 import { DataWait } from '@/studio/data/wait'
@@ -128,6 +130,8 @@ function useAskedAt(domainId: string, datasetPath: string | null): number {
  * The Data level: one dataset of the Domain, named by its module, read through the lens. Named
  * or not, it mounts: a dataset that cannot be read says where and why.
  * Opened on no dataset, it is the Domain's Datasets page: each dataset it references, to open.
+ * Switched to before the Domain's datasets are read, it waits on them, then opens the dataset
+ * `openChosenDataset` chooses.
  * The level's code, the Domain's datasets and its Schema are asked for at once, none waiting on
  * another; until they answer, the wait says which dataset opens and what is being read.
  */
@@ -142,12 +146,24 @@ function DataRouter({
 }) {
   const queryClient = useQueryClient()
   const datasetPath = useUI((s) => s.dataset)
-  const { data } = useDatasets(domainId)
+  const choosing = useUI((s) => s.choosingDataset)
+  const { data, isError } = useDatasets(domainId)
   const since = useAskedAt(domainId, datasetPath)
   useEffect(() => {
     void loadDataLevel()
     void queryClient.prefetchQuery(bundleQueryOptions(domainId))
   }, [domainId, queryClient])
+  useEffect(() => {
+    if (choosing && (data || isError)) openChosenDataset(domainId, data?.datasets)
+  }, [choosing, data, domainId, isError])
+  if (choosing)
+    return (
+      <DataWait
+        since={since}
+        dataset={`the data of ${origin}`}
+        reading={`Reading the datasets ${origin} declares`}
+      />
+    )
   if (datasetPath === null)
     return (
       <Suspense
@@ -509,20 +525,32 @@ export function App() {
     if (agentSnap?.run) setRun(agentSnap.run)
   }, [agentSnap, setRun])
 
-  // global hotkeys: C toggles comment mode, A toggles ask mode (both ignored while typing)
+  // global hotkeys, all ignored while typing: C toggles comment mode, A toggles ask mode, S and D
+  // switch a Domain to its Schema and its Data, a digit switches lens
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const lens = LENS_NAMES.find((name) => name.shortcut === e.key)
-      if (e.key === 'c' || e.key === 'C') {
+      const key = e.key.toUpperCase()
+      const ui = useUI.getState()
+      if (key === 'C') {
         e.preventDefault()
         toggleCommentMode()
-      } else if (e.key === 'a' || e.key === 'A') {
+      } else if (key === 'A') {
         e.preventDefault()
         toggleAskMode()
-      } else if (lens && useUI.getState().level !== 'workspace') {
+      } else if (key === LEVEL_SHORTCUTS.schema && ui.level === 'data') {
+        e.preventDefault()
+        ui.openSchema()
+      } else if (key === LEVEL_SHORTCUTS.data && ui.level === 'domain') {
+        // a Publication carries no dataset
+        const shown = shownDomainId(ui, domains ?? [])
+        if (!shown || publicationOf(shown)) return
+        e.preventDefault()
+        switchToData(shown)
+      } else if (lens && ui.level !== 'workspace') {
         // a lens reads one Domain: at the Workspace level its key does nothing
         if (!lensReadable(lens, useUI.getState().level === 'data')) return
         e.preventDefault()
@@ -531,7 +559,7 @@ export function App() {
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [toggleCommentMode, toggleAskMode, setLens])
+  }, [domains, toggleCommentMode, toggleAskMode, setLens])
 
   if (!domains || !workspaceUiReady || !arrived) {
     return (
@@ -562,8 +590,19 @@ export function App() {
           {/* what you can do: on a narrow window, as wide as its controls, and no wider */}
           <div className="flex min-w-0 flex-1 items-center justify-end gap-1 max-lg:flex-none">
             <StudioRuntimeNotice />
-            <InstanceSwitcher />
-            <span className="mx-1 h-4 w-px bg-border" />
+            {level !== 'workspace' && scopedDomainId && (
+              <>
+                <LevelSwitch
+                  domain={{
+                    id: scopedDomainId,
+                    origin: publication?.origin ?? originOf(domains, scopedDomainId),
+                  }}
+                  dataLevel={level === 'data'}
+                  publication={publication !== undefined}
+                />
+                <span className="mx-1 h-4 w-px bg-border" />
+              </>
+            )}
             <IconAction
               label="Refresh domains"
               disabled={refreshDomains.isPending}
@@ -629,9 +668,7 @@ export function App() {
             ) : level === 'data' && scopedDomainId ? (
               <DataRouter
                 domainId={scopedDomainId}
-                origin={
-                  domains?.find((domain) => domain.id === scopedDomainId)?.origin ?? scopedDomainId
-                }
+                origin={originOf(domains, scopedDomainId)}
                 lens={dataLensOf(lens)}
               />
             ) : scopedDomainId ? (
@@ -653,6 +690,11 @@ export function App() {
       <Tour />
     </TooltipProvider>
   )
+}
+
+/** A Domain's origin, as the bar and its levels name it; its id when the Workspace lists none. */
+function originOf(domains: readonly DomainSummary[], domainId: string): string {
+  return domains.find((domain) => domain.id === domainId)?.origin ?? domainId
 }
 
 /**

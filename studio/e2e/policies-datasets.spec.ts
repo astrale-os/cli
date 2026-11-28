@@ -5,11 +5,15 @@ import type { StudioDataset } from '../shared/contracts/schema'
 
 import { revisionOf } from '../shared/contracts/scenarios'
 import {
+  datasetCard,
+  datasetLabel,
   FIXTURE_ID,
   expect,
   indexRail,
   inspector,
   lensButton,
+  levelButton,
+  openDatasetCard,
   openSchema,
   sceneBox,
   test,
@@ -21,8 +25,8 @@ import {
  * level's Rules lens, on a dataset of its Domain: the panel says how many pairs — an identity of
  * the dataset, or anyone, and a Node or Edge the Policy is decided over — it admits, each pair a
  * sentence; the map lights who it admits to what, and a pair lit, that pair alone; the Kernel's
- * verdicts where the Policy sits pin as Scenario steps. The datasets themselves are choices in
- * the dataset crumb, and the Rules lens's Index lists the Domain's Policies.
+ * verdicts where the Policy sits pin as Scenario steps. The datasets themselves are cards on the
+ * Domain's Datasets page, and the Rules lens's Index lists the Domain's Policies.
  *
  * The fixture's `support-desk` dataset holds Acme, Ann and Bob who work there, the ticket each
  * raised (`printer` by Ann, `login` by Bob) and an invoice; `mayReadTicket` admits a ticket's
@@ -68,7 +72,7 @@ test.describe('a Policy carried to a dataset', () => {
     const level = page.getByTestId('data-level')
     await expect(level).toHaveAttribute('data-state', 'ready')
     await expect(level).toHaveAttribute('data-lens', 'rules')
-    await expect(page.getByTestId('level-dataset')).toContainText('Support desk')
+    await expect(datasetLabel(page)).toHaveText('Support desk')
     const admits = panel(page).locator('[data-policy-admits]')
     await expect(admits).toHaveAttribute('data-policy-admits', '2/6')
     await expect(admits).toContainText('mayReadTicket admits 2 of 6 pairs.')
@@ -165,7 +169,9 @@ test.describe('a Policy carried to a dataset', () => {
   })
 })
 
-test('datasets are choices in the crumb; the one open says what it holds', async ({ page }) => {
+test('several datasets are cards on their page; the one open says what it holds', async ({
+  page,
+}) => {
   const datasets: StudioDataset[] = ['First scenario', 'Second scenario'].map((title, i) => ({
     status: 'ready',
     path: `tests/scenario-${i}.ts`,
@@ -184,22 +190,23 @@ test('datasets are choices in the crumb; the one open says what it holds', async
     route.fulfill({ json: { domainId: FIXTURE_ID, datasets, extractedAt: '' } }),
   )
   await openSchema(page)
-  await page.getByTestId('level-dataset').click()
-  const menu = page.getByRole('menu')
-  const choices = menu.getByRole('menuitemradio')
-  await expect(choices).toHaveText([
-    'Schema only',
-    'All datasets',
+  // two it can read, none read before: Data opens their page, where one is picked
+  await levelButton(page, 'data').click()
+  await expect(page.getByTestId('datasets-page')).toHaveAttribute('data-state', 'some')
+  await expect(page.locator('[data-dataset-card] [data-action="open-dataset"]')).toHaveText([
     'First scenario',
     'Second scenario',
   ])
-  await expect(menu).not.toContainText('Description')
-  await menu.getByRole('menuitemradio', { name: 'First scenario' }).click()
+  await expect(datasetCard(page, 'tests/scenario-0.ts')).toContainText('Description of scenario 0')
+  await openDatasetCard(page, 'tests/scenario-0.ts')
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
   await expect(panel(page)).toContainText('Description of scenario 0')
 
-  await page.getByTestId('level-dataset').click()
-  await menu.getByRole('menuitemradio', { name: 'Second scenario' }).click()
+  // the label leads back to the page: a button, no menu of datasets
+  await expect(datasetLabel(page)).not.toHaveAttribute('aria-haspopup')
+  await datasetLabel(page).click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await openDatasetCard(page, 'tests/scenario-1.ts')
   await expect(panel(page)).toContainText('Description of scenario 1')
   await expect(panel(page)).not.toContainText('Description of scenario 0')
   await expect(sceneBox(page, 'core.node.company-1')).toBeVisible()
@@ -211,16 +218,18 @@ test('datasets are choices in the crumb; the one open says what it holds', async
   await expect(policies.filter({ hasText: 'mayManageInvoice' })).toContainText('1 place')
 })
 
-test('a Domain that references no dataset says so in the crumb, and lists none to open', async ({
+test('a Domain that references no dataset says so on Data, which opens a page with none to open', async ({
   page,
 }) => {
   await page.route('**/api/domain/*/datasets', (route) =>
     route.fulfill({ json: { domainId: FIXTURE_ID, datasets: [], extractedAt: '' } }),
   )
   await openSchema(page)
-  await page.getByTestId('level-dataset').click()
-  const menu = page.getByRole('menu')
-  await expect(menu.getByText('No Dataset referenced', { exact: true })).toBeVisible()
-  // nothing to open but the Schema, and the Datasets page that says how to write one
-  await expect(menu.getByRole('menuitemradio')).toHaveText(['Schema only', 'All datasets'])
+  await expect(levelButton(page, 'data')).toHaveAttribute('data-hint', 'ask-dataset')
+  await levelButton(page, 'data').click()
+  // nothing to open: the Datasets page says what a Dataset is and how to write one
+  const datasets = page.getByTestId('datasets-page')
+  await expect(datasets).toHaveAttribute('data-state', 'none')
+  await expect(datasets.getByText('No Dataset referenced', { exact: true })).toBeVisible()
+  await expect(datasets.locator('[data-dataset-card]')).toHaveCount(0)
 })

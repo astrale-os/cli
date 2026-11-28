@@ -35,8 +35,8 @@ export function activeInstanceWarning(instances: readonly InstanceInfo[]): strin
 }
 
 /**
- * Top-left: the GLOBAL active Astrale instance, with a switcher. Backed entirely
- * by the `astrale` CLI (`instance list` / `instance use`) — the studio keeps no
+ * The active Astrale instance, with a switcher: where a View opens, beside its Open action.
+ * Backed entirely by the `astrale` CLI (`instance list` / `instance use`) — the studio keeps no
  * instance state of its own. Independent of the selected domain.
  *
  * Studio works only with the instances its user owns in Admin. The others stay
@@ -74,7 +74,7 @@ export function InstanceSwitcher() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <div className="inline-flex items-center gap-0.5">
+      <div className="inline-flex min-w-0 items-center gap-0.5">
         <InstanceTrigger
           active={active}
           loading={isPending}
@@ -112,25 +112,24 @@ function InstanceTrigger({
             ? 'Loading instances'
             : (warning ?? `Active instance: ${active ?? 'none'} — click to switch`)
         }
-        className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[13px] transition-colors hover:bg-accent"
+        className="inline-flex h-8 min-w-0 shrink items-center gap-1.5 whitespace-nowrap rounded-md border px-2 text-[13px] transition-colors hover:bg-accent"
       >
-        <Server className="h-3.5 w-3.5 text-muted-foreground" />
+        <Server className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         {loading ? (
           <Skeleton className="h-4 w-24" />
         ) : (
-          // a narrow window keeps the switch and names the instance in its title
-          <span className={cn('max-lg:sr-only', active ? 'font-medium' : 'text-muted-foreground')}>
+          <span className={cn('truncate', active ? 'font-medium' : 'text-muted-foreground')}>
             {active ?? 'no instance'}
           </span>
         )}
         {warning && (
           <TriangleAlert
-            className="h-3.5 w-3.5 text-warning"
+            className="h-3.5 w-3.5 shrink-0 text-warning"
             role="img"
             aria-label="You are not the owner of the active instance"
           />
         )}
-        <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       </button>
     </PopoverTrigger>
   )

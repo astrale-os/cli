@@ -234,10 +234,10 @@ describe('opening a View', () => {
     )
     expect(openBlocker({ published: false }, undefined, null)).toBe('Reading the instances…')
     expect(openBlocker({ published: false }, [], null)).toBe(
-      'Choose an instance you own in the header to open it.',
+      'Choose an instance you own to open it.',
     )
     expect(openBlocker({ published: false }, [instance({ active: false })], null)).toBe(
-      'Choose an instance you own in the header to open it.',
+      'Choose an instance you own to open it.',
     )
     expect(openBlocker({ published: false }, [instance({ owned: false })], 'Not yours.')).toBe(
       'Not yours.',

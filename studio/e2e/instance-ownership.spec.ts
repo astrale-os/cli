@@ -1,8 +1,11 @@
 import type { InstancesState } from '@shared/contracts/workspace'
 
-import { expect, test } from './test'
+import { expect, FIXTURE_ID, test } from './test'
 
-/** Studio works only with instances its user owns in Admin; the others stay listed. */
+/**
+ * Studio works only with instances its user owns in Admin; the others stay listed. The active
+ * instance is chosen where it matters, beside a View's Open action on its page, and nowhere else.
+ */
 const instances: InstancesState = {
   active: 'team',
   instances: [
@@ -42,9 +45,18 @@ test('instances the user does not own are listed but cannot be picked; an active
     return route.fulfill({ json: { ok: true, active: 'mine', output: '' } })
   })
 
-  await page.goto('/')
-  const trigger = page.getByRole('button', { name: /team/ }).first()
-  await expect(trigger).toHaveAttribute('title', /You are not the owner of team in Admin/)
+  await page.goto(`/domain/${encodeURIComponent(FIXTURE_ID)}?lens=views&select=view.overview`)
+  const viewPage = page.locator('[data-inspector-view="overview"]')
+  const trigger = viewPage.getByRole('button', { name: /team/ })
+  await expect(trigger).toHaveAttribute('title', /You are not the owner of team in Admin/, {
+    timeout: 60_000,
+  })
+  // beside Open, which says why it cannot open there
+  await expect(viewPage.locator('[data-action="open-view"]')).toBeDisabled()
+  await expect(viewPage.locator('[data-open-blocker]')).toHaveText(
+    'You are not the owner of team in Admin (Not owner). Its Views cannot be opened in Studio.',
+  )
+  await expect(page.locator('header').getByRole('button', { name: /team/ })).toHaveCount(0)
   await trigger.click()
 
   await expect(page.getByRole('alert').filter({ hasText: 'not the owner of team' })).toBeVisible()

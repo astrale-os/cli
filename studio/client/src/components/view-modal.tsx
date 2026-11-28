@@ -211,7 +211,7 @@ function PreviewState({
   if (!runtime?.instance) {
     return (
       <StateFrame icon={<Unplug />} title="Choose an Astrale instance">
-        The installed View reads data from the active instance in the Studio header.
+        The installed View reads data from the active instance, chosen beside Open on its page.
       </StateFrame>
     )
   }

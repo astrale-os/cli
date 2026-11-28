@@ -30,6 +30,7 @@ import { GLYPHS } from '../canvas/glyphs'
 import { pointing } from '../canvas/pointer'
 import { useCanvas } from '../canvas/store'
 import { TONE_TEXT } from '../canvas/tones'
+import { DATA_ACCENT, DATA_GLYPH } from '../data/accent'
 import { OpMarks } from '../rules/rule-mark'
 import { linesApart, measureIn } from './label-lines'
 import {
@@ -51,6 +52,8 @@ export interface IndexRailProps {
   onClearSelection: () => void
   /** the entries the filter keeps while it filters, else null: the canvas steps the rest back */
   onFilter?: (ids: readonly string[] | null) => void
+  /** it lists a dataset: its header wears the Data level's glyph and accent */
+  dataLevel?: boolean
 }
 
 /** What an item row takes beside its name: its indent, glyph, gap and right padding. */
@@ -75,6 +78,7 @@ export function IndexRail({
   onSelect,
   onClearSelection,
   onFilter,
+  dataLevel = false,
 }: IndexRailProps) {
   const [query, setQuery] = useState('')
   // The kinds whose chip was pressed: shown when the Scene lists them behind it, else hidden.
@@ -263,7 +267,11 @@ export function IndexRail({
   const tabStop = rows.some((row) => row.id === selected) ? selected : rows[0]?.id
 
   return (
-    <ModulesSidebar name="Index" onClearSelection={onClearSelection} header={<IndexHeader />}>
+    <ModulesSidebar
+      name="Index"
+      onClearSelection={onClearSelection}
+      header={<IndexHeader dataLevel={dataLevel} />}
+    >
       <div
         data-index-rail=""
         data-testid="index-rail"
@@ -384,11 +392,19 @@ export function IndexRail({
 }
 
 /** The rail's title bar and its own close button. The Domain it lists is named in the bar. */
-function IndexHeader() {
+function IndexHeader({ dataLevel }: { dataLevel: boolean }) {
   const rail = useRailCollapse()
   return (
     <header className="flex h-10 shrink-0 items-center gap-0.5 border-b px-3">
-      <h2 className="mr-auto text-[13px] font-semibold">Index</h2>
+      <h2
+        className={cn(
+          'mr-auto inline-flex items-center gap-1.5 text-[13px] font-semibold',
+          dataLevel && DATA_ACCENT,
+        )}
+      >
+        {dataLevel && <DATA_GLYPH aria-hidden className="h-3.5 w-3.5 shrink-0" />}
+        Index
+      </h2>
       {rail && (
         <button
           type="button"

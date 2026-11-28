@@ -2,6 +2,7 @@ import {
   expect,
   indexRow,
   lensButton,
+  levelButton,
   openSchema,
   sceneBox,
   sceneCanvas,
@@ -13,8 +14,8 @@ import {
 /**
  * A narrow window keeps the Studio usable. The detail panel docks beside the canvas only while
  * the canvas keeps a usable width next to it; on a narrower window it floats over the canvas,
- * which keeps its whole width beneath, until it is closed. The bar keeps every crumb and the lens
- * switch on screen, and nothing scrolls sideways.
+ * which keeps its whole width beneath, until it is closed. The bar keeps every crumb, the lens
+ * switch and the Schema | Data switch on screen, and nothing scrolls sideways.
  */
 
 /** The narrowest canvas a docked panel leaves beside it (`CANVAS_FLOOR` in `panel-shell.tsx`). */
@@ -107,7 +108,7 @@ test.describe('at 800 × 600', () => {
 
     // every crumb and every lens is on screen, and a lens still switches: the lens in use by
     // its name, the others by their glyph (their names stay their accessible names)
-    for (const crumb of ['level-workspace', 'level-domain', 'level-dataset'])
+    for (const crumb of ['level-workspace', 'level-domain'])
       await readable(page, page.getByTestId(crumb))
     await readable(page, lensButton(page, 'structure'))
     for (const lens of ['behavior', 'rules', 'views'] as const) {
@@ -123,6 +124,26 @@ test.describe('at 800 × 600', () => {
     await page.getByRole('button', { name: 'Close panel' }).click()
     await expect(panel).toHaveCount(0)
     expect(await width(canvas)).toBe(open)
+  })
+
+  test('the Schema | Data switch keeps the level in use by name, the other by its glyph', async ({
+    page,
+  }) => {
+    await openSchema(page)
+    await readable(page, levelButton(page, 'schema'))
+    await readable(page, levelButton(page, 'data'), GLYPH)
+    await expect(levelButton(page, 'data')).toHaveAccessibleName(/data/i)
+    await readable(page, page.getByTestId('level-domain'))
+    await noSidewaysScroll(page)
+
+    await levelButton(page, 'data').click()
+    await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
+    await readable(page, levelButton(page, 'data'))
+    await readable(page, levelButton(page, 'schema'), GLYPH)
+    await expect(levelButton(page, 'schema')).toHaveAccessibleName(/schema/i)
+    await readable(page, page.getByTestId('level-domain'))
+    await readable(page, lensButton(page, 'structure'))
+    await noSidewaysScroll(page)
   })
 
   test('the floating Inspector never lies over the selection it describes', async ({ page }) => {

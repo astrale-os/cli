@@ -9,6 +9,7 @@ import {
   FIXTURE_ID,
   indexRow,
   lensButton,
+  levelButton,
   openSchema,
   sceneBox,
   test,
@@ -175,8 +176,7 @@ test.describe('the Data level', () => {
     expect(put.ok()).toBe(true)
 
     await openSchema(page)
-    await page.getByTestId('level-dataset').click()
-    await page.getByRole('menuitemradio', { name: 'Support desk' }).click()
+    await levelButton(page, 'data').click()
     const level = page.getByTestId('data-level')
     await expect(level).toHaveAttribute('data-state', 'ready')
     const data = `${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}`

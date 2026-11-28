@@ -11,6 +11,7 @@ import {
   Box,
   Braces,
   Database,
+  DraftingCompass,
   Folder,
   Globe,
   Loader2,
@@ -29,6 +30,9 @@ import { introspectionPhaseLabel } from '@/lib/introspection'
 import { shownDomainId, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { folderModules, moduleOfClass } from '@/schema-studio/modules'
+import { LEVEL_SHORTCUTS } from '@/studio/bar/level-switch'
+import { DATA_GLYPH } from '@/studio/data/accent'
+import { switchToData } from '@/studio/data/entry'
 import { LENS_NAMES } from '@/studio/lenses/keys'
 
 /** Each Domain's overviews: the Domains it imports, in the Schema level's right panel, and its
@@ -316,6 +320,7 @@ export function CommandPalette() {
   const open = useUI((s) => s.paletteOpen)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
   const openDataLevel = useUI((s) => s.openDataLevel)
+  const openSchema = useUI((s) => s.openSchema)
   const setLens = useUI((s) => s.setLens)
   const setTourOpen = useUI((s) => s.setTourOpen)
   const selectClass = useUI((s) => s.selectClass)
@@ -587,6 +592,46 @@ export function CommandPalette() {
         </Command.Group>
 
         <Command.Group heading="Go to">
+          {shownId !== undefined && (
+            <>
+              <Command.Item
+                value="go to schema level declares"
+                className={ITEM_CLS}
+                onSelect={() => {
+                  openSchema()
+                  close()
+                }}
+              >
+                <Row
+                  icon={DraftingCompass}
+                  label="Schema"
+                  meta={`level · ${LEVEL_SHORTCUTS.schema}`}
+                />
+              </Command.Item>
+              <Command.Item
+                value="go to data level dataset"
+                className={cn(
+                  ITEM_CLS,
+                  'data-[disabled=true]:cursor-default data-[disabled=true]:opacity-55',
+                )}
+                disabled={publicationOf(shownId) !== undefined}
+                onSelect={() => {
+                  switchToData(shownId)
+                  close()
+                }}
+              >
+                <Row
+                  icon={DATA_GLYPH}
+                  label="Data"
+                  meta={
+                    publicationOf(shownId)
+                      ? 'a Publication carries no dataset'
+                      : `level · ${LEVEL_SHORTCUTS.data}`
+                  }
+                />
+              </Command.Item>
+            </>
+          )}
           {LENS_NAMES.filter((lens) => lens.available).map((lens) => (
             <Command.Item
               key={`lens.${lens.id}`}
