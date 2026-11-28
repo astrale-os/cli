@@ -172,6 +172,26 @@ export interface AnswerPageProps {
   asLabel?: string
   approximate: readonly string[]
   onSelect: (id: string) => void
+  /** hands the agent a request to change the Query, unsent; none on a Domain only read */
+  onChange?: () => void
+}
+
+/** The way to a change of what is read: a request to the agent, left for the reader to send. */
+function AgentAction({ label, note, onAsk }: { label: string; note: string; onAsk: () => void }) {
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        data-ask-agent
+        onClick={onAsk}
+        className="inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] font-medium transition-colors hover:bg-accent"
+      >
+        <Sparkles aria-hidden className="h-3.5 w-3.5 text-primary/80" />
+        {label}
+      </button>
+      <Meta>{note}</Meta>
+    </div>
+  )
 }
 
 export function AnswerPage(props: AnswerPageProps) {
@@ -285,6 +305,16 @@ export function AnswerPage(props: AnswerPageProps) {
         </div>
       </Section>
 
+      {props.onChange && (
+        <Section label="Change it" kind="functions">
+          <AgentAction
+            label="Ask the agent to change this Query"
+            note="Opens a new agent chat with the request ready, naming the Query and what it was asked with. Nothing is sent until you send it."
+            onAsk={props.onChange}
+          />
+        </Section>
+      )}
+
       <Section label="Approximate" hint="the Studio runs no Kernel">
         <ul className="list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-muted-foreground">
           {props.approximate.map((line) => (
@@ -326,6 +356,8 @@ export interface MeasurePageProps {
   starting: readonly DefinitionLink[]
   onSelect: (id: string | undefined) => void
   onQuery: (id: string) => void
+  /** hands the agent a request for a new Query, unsent; none on a Domain only read */
+  onNewQuery?: (about?: string) => void
 }
 
 export function MeasurePage(props: MeasurePageProps) {
@@ -353,6 +385,13 @@ export function MeasurePage(props: MeasurePageProps) {
           kind={DATA_SECTIONS.variables}
           count={props.starting.length}
         >
+          {props.onNewQuery && (
+            <AgentAction
+              label={`Ask the agent for a Query on ${selected.name}`}
+              note="Opens a new agent chat with the request ready. Nothing is sent until you send it."
+              onAsk={() => props.onNewQuery!(selected.name)}
+            />
+          )}
           {props.starting.length === 0 ? (
             <Empty>No Query of the Domain starts from this Class.</Empty>
           ) : (

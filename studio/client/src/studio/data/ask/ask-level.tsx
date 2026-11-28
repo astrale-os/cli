@@ -10,8 +10,10 @@
 
 import type { StudioDataset, StudioSchemaBundle } from '@shared/contracts/schema'
 
+import { isReadOnlyDomainId } from '@shared/contracts/workspace'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { usePrepareAgentRequest } from '@/lib/chats'
 import { useUI } from '@/lib/store'
 
 import type { Pins } from '../../canvas/pins'
@@ -291,6 +293,40 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
   }, [open, scope, select])
 
   const asLabel = identities.find((one) => one.id === as)?.label
+  // A change of what the Domain reads is the agent's to write: the request is put in its
+  // composer, unsent. A Domain the Studio only reads offers none.
+  const { prepare } = usePrepareAgentRequest()
+  const writable = !isReadOnlyDomainId(domainId)
+  const askChange = () => {
+    if (!definition) return
+    const held = slots
+      .filter((slot) => view.values[slot.id]?.length)
+      .map(
+        (slot) =>
+          `${slot.label} = ${slot.kind === 'value' ? view.values[slot.id]![0] : view.values[slot.id]!.map(labelOf).join(', ')}`,
+      )
+    void prepare(
+      [
+        `In the ${origin} Domain, change the Query \`${definition.id}\` (${definition.file}:${definition.line}).`,
+        '',
+        'What should change: ',
+        '',
+        `I was reading it on the dataset ${datasetLabel(dataset)}${held.length > 0 ? `, asked with ${held.join('; ')}` : ''}${asLabel ? `, as ${asLabel}` : ''}.`,
+      ].join('\n'),
+      'Query request ready — say what should change, then send',
+    )
+  }
+  const askNewQuery = (about?: string) =>
+    void prepare(
+      [
+        `In the ${origin} Domain, write a new Query${about ? ` that starts from ${about}` : ''}.`,
+        '',
+        'What it should answer: ',
+        '',
+        `Follow how the Domain's other Queries are written and exported, and check it against the dataset ${datasetLabel(dataset)}.`,
+      ].join('\n'),
+      'Query request ready — say what it should answer, then send',
+    )
   const measuredClass = !definition && selected ? measured.classes.get(selected) : undefined
   const starting = useMemo(
     () =>
@@ -430,6 +466,7 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
                     {...(asLabel ? { asLabel } : {})}
                     approximate={approximate}
                     onSelect={(id) => select(scope, id)}
+                    {...(writable ? { onChange: askChange } : {})}
                   />
                 ) : definition ? (
                   <p className="text-[13px] text-muted-foreground">
@@ -445,6 +482,7 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
                     starting={starting}
                     onSelect={(id) => select(scope, id)}
                     onQuery={(id) => open(scope, id)}
+                    {...(writable ? { onNewQuery: askNewQuery } : {})}
                   />
                 )}
               </Page>
