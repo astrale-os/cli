@@ -1,6 +1,8 @@
 import type {
   DefinitionEffect,
   DefinitionLink,
+  HandlerLink,
+  IrMethod,
   StudioDataset,
   StudioSchemaBundle,
 } from '@shared/contracts/schema'
@@ -79,6 +81,66 @@ export const QUERIES = {
   labels: query('desk.labels', 'everyLabel', [read('Label', 'root')]),
 }
 
+const method = (name: string, isStatic: boolean): IrMethod => ({
+  name,
+  input: { type: 'object' },
+  output: { mode: 'value', schema: { type: 'null' } },
+  static: isStatic,
+  abstract: false,
+  executable: true,
+})
+
+const write = (kind: DefinitionEffect['kind'], cls: string): DefinitionEffect => ({
+  kind,
+  class: cls,
+  verb: kind,
+  file: 'mutations.ts',
+  line: 1,
+})
+
+/** `Ticket.assign` hands a Ticket to an Agent; `Desk.open` is static and creates a Desk. */
+const MUTATIONS: DefinitionLink[] = [
+  {
+    kind: 'mutation',
+    id: 'desk.ticket.assign',
+    name: 'assignTicket',
+    file: 'mutations.ts',
+    line: 1,
+    classes: ['Ticket', 'ticket_handled_by'],
+    effects: [write('update', 'Ticket'), write('create', 'ticket_handled_by')],
+  },
+  {
+    kind: 'mutation',
+    id: 'desk.desk.open',
+    name: 'openDesk',
+    file: 'mutations.ts',
+    line: 9,
+    classes: ['Desk'],
+    effects: [write('create', 'Desk')],
+  },
+]
+
+const HANDLERS: HandlerLink[] = [
+  {
+    owner: 'Ticket',
+    ownerKind: 'class',
+    kind: 'action',
+    method: 'assign',
+    static: false,
+    implemented: true,
+    definitions: ['desk.ticket.assign'],
+  },
+  {
+    owner: 'Desk',
+    ownerKind: 'class',
+    kind: 'action',
+    method: 'open',
+    static: true,
+    implemented: true,
+    definitions: ['desk.desk.open'],
+  },
+]
+
 export function deskBundle(): StudioSchemaBundle {
   const agent = nodeClass('Agent', {
     extends: ['Identity'],
@@ -86,8 +148,8 @@ export function deskBundle(): StudioSchemaBundle {
   })
   const value = bundle(
     {
-      Desk: nodeClass('Desk'),
-      Ticket: nodeClass('Ticket'),
+      Desk: nodeClass('Desk', { methods: { open: method('open', true) } }),
+      Ticket: nodeClass('Ticket', { methods: { assign: method('assign', false) } }),
       Label: nodeClass('Label'),
       Agent: agent,
       desk_holds_ticket: edgeClass('desk_holds_ticket', [
@@ -109,8 +171,8 @@ export function deskBundle(): StudioSchemaBundle {
     },
     {
       overlay: {
-        handlerLinks: [],
-        definitions: Object.values(QUERIES),
+        handlerLinks: HANDLERS,
+        definitions: [...Object.values(QUERIES), ...MUTATIONS],
         integrations: [],
         sourceSpans: {},
       },

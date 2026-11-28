@@ -31,7 +31,7 @@ function endCount(end: SceneEnd, measured: EndMeasure): SceneEnd {
 }
 
 /** What a Class's card holds: its own Nodes, and those of Classes that descend from it and have no card. */
-interface Held {
+interface HeldByClass {
   nodes: number
   /** the Classes whose Nodes it counts beside its own, by name */
   through: string[]
@@ -46,9 +46,9 @@ function heldBy(
   bundle: StudioSchemaBundle,
   model: DatasetModel,
   drawn: ReadonlySet<string>,
-): Map<string, Held> {
+): Map<string, HeldByClass> {
   const domain = bundle.ir?.domain ?? model.origin
-  const held = new Map<string, Held>()
+  const held = new Map<string, HeldByClass>()
   const add = (target: string, nodes: number, through?: string) => {
     let known = held.get(target)
     if (!known) held.set(target, (known = { nodes: 0, through: [] }))
@@ -69,7 +69,7 @@ function heldBy(
   return held
 }
 
-function measuredNode(node: SceneNode, held: ReadonlyMap<string, Held>): SceneNode {
+function measuredNode(node: SceneNode, held: ReadonlyMap<string, HeldByClass>): SceneNode {
   if (node.kind !== 'class' && node.kind !== 'imported class' && node.kind !== 'kernel class')
     return node
   const { nodes, through } = held.get(node.id) ?? { nodes: 0, through: [] }
@@ -126,10 +126,13 @@ export function measuredScene(
   }
 }
 
-const slices = new WeakMap<Answer, WeakMap<StudioDataset, StudioDataset>>()
+/** What a slice holds of a dataset: Nodes by path, Edges by their place in the dataset. */
+type Held = Pick<Answer, 'nodes' | 'edges'>
+
+const slices = new WeakMap<Held, WeakMap<StudioDataset, StudioDataset>>()
 
 /** The dataset an answer reached: its Nodes, and the Edges it followed between them. */
-export function sliceOf(dataset: StudioDataset, answer: Answer): StudioDataset {
+export function sliceOf(dataset: StudioDataset, answer: Held): StudioDataset {
   let byDataset = slices.get(answer)
   if (!byDataset) slices.set(answer, (byDataset = new WeakMap()))
   const known = byDataset.get(dataset)

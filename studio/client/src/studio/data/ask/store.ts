@@ -25,6 +25,8 @@ export interface AskView {
   carried?: string
   /** how many times the dataset is laid down (`scale.ts`) */
   factor: number
+  /** through Behavior: the call asked, by its function's handler key, and the Node it is asked on */
+  call?: { readonly fn: string; readonly on?: string; readonly why?: Why }
 }
 
 interface AskState {
@@ -39,6 +41,8 @@ interface AskState {
   setAs: (scope: string, identity: string | undefined) => void
   select: (scope: string, id: string | undefined) => void
   setFactor: (scope: string, factor: number) => void
+  /** asks a call, or none; the Node it is asked on is the reader's, or a pick with its reason */
+  askCall: (scope: string, call: AskView['call']) => void
   setPanelOpen: (open: boolean) => void
 }
 
@@ -118,6 +122,11 @@ export const useAsk = create<AskState>((set) => {
         factor,
         ...(as === undefined ? {} : { as }),
         ...(query === undefined ? {} : { query }),
+      })),
+    askCall: (scope, call) =>
+      change(scope, ({ call: _before, selected: _selected, ...view }) => ({
+        ...view,
+        ...(call === undefined ? {} : { call }),
       })),
     setPanelOpen: (panelOpen) => set({ panelOpen }),
   }

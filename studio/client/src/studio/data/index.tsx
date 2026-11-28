@@ -51,6 +51,8 @@ import { isolateScene } from '../scene/focus'
 import { useStage } from '../stage/store'
 import { accessOf, edgeVerdict, edgesOf, nodeVerdicts } from './access'
 import { AskLevel } from './ask/ask-level'
+import { callEntries, callKeyOf, FUNCTIONS_GROUP, isCallEntry } from './ask/call'
+import { CallLevel } from './ask/call-level'
 import { BarLine, DataBar } from './ask/question-bar'
 import { scaled } from './ask/scale'
 import { useAsk, useAskView } from './ask/store'
@@ -159,6 +161,12 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
     if (shown) rememberDataset(domainId, datasetPath)
   }, [datasetPath, domainId, rememberDataset, shown])
   const wait = (reading: string) => <DataWait since={since} dataset={name} reading={reading} />
+  // Whether a call is asked of the dataset shown, and no Scenario is open over it.
+  const asked = useAsk((state) =>
+    found?.status === 'ready'
+      ? state.views[datasetScope(domainId, found.dataset.id)]?.call !== undefined
+      : false,
+  )
 
   let body
   if (datasets.isError)
@@ -177,6 +185,11 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
     // Through Structure a dataset is asked, never drawn whole (`ask/ask-level.tsx`).
     return (
       <AskLevel domainId={domainId} origin={origin} dataset={found.dataset} bundle={bundle.data} />
+    )
+  else if (lens === 'behavior' && bundle.data?.ir && asked)
+    // Through Behavior a function picked is asked of the dataset (`ask/call-level.tsx`).
+    return (
+      <CallLevel domainId={domainId} origin={origin} dataset={found.dataset} bundle={bundle.data} />
     )
   else
     return (
@@ -222,6 +235,7 @@ function DatasetLevel({
   // The size the dataset is read at is the reader's, the same through every lens (`ask/scale.ts`).
   const factor = useAskView(scope).factor
   const setFactor = useAsk((state) => state.setFactor)
+  const askCall = useAsk((state) => state.askCall)
   const openDataLevel = useUI((state) => state.openDataLevel)
   const model = useMemo(
     () => datasetModel(bundle?.ir ? scaled(dataset, bundle, factor) : dataset, bundle),
@@ -648,13 +662,36 @@ function DatasetLevel({
   const [indexShut, setIndexShut] = useState<ReadonlySet<string>>(NOTHING)
   const listed = useMemo(() => {
     if (isolated) return undefined
-    if (behavior)
-      return withGroup(
+    if (behavior) {
+      const withScenarios = withGroup(
         atRest.index,
         { id: SCENARIOS, label: 'Scenarios' },
         scenarioEntries(judged),
         `scenarios:${judged.map((one) => `${one.scenario.id}=${one.standing}`).join(',')}`,
       )
+      // Under the Scenarios, the Domain's functions: one picked is asked of the dataset.
+      const calls = bundle?.ir ? callEntries(bundle) : []
+      const listing = withScenarios.index!
+      return calls.length === 0
+        ? withScenarios
+        : {
+            ...withScenarios,
+            key: `${withScenarios.key}|functions:${calls.length}`,
+            index: {
+              ...listing,
+              groups: [
+                listing.groups[0]!,
+                { id: FUNCTIONS_GROUP, label: 'Functions' },
+                ...listing.groups.slice(1),
+              ],
+              entries: [
+                ...listing.entries.slice(0, judged.length),
+                ...calls,
+                ...listing.entries.slice(judged.length),
+              ],
+            },
+          }
+    }
     if (dataLens === 'rules' && rules) {
       const entries = policyEntries(rules)
       return entries.length > 0
@@ -677,15 +714,20 @@ function DatasetLevel({
       if (id === SCENARIOS) return openScenario(scope, undefined)
       if (id === POLICIES) return
       if (id.startsWith(SCENARIO_ENTRY)) return openScenario(scope, id.slice(SCENARIO_ENTRY.length))
+      // A function is asked of the dataset, on the Node selected when it takes it (`ask/call-level.tsx`).
+      const called = behavior && bundle?.ir && isCallEntry(id) ? callKeyOf(bundle, id) : undefined
+      if (called)
+        return askCall(scope, { fn: called, ...(selectedPath ? { on: selectedPath } : {}) })
       // A Policy has no card to bring into view: the map lights what it admits instead.
       if (rules && policyOf(rules, id)) return select(scope, id)
       selectAndReveal(id)
     },
-    [openScenario, rules, scope, select, selectAndReveal],
+    [askCall, behavior, bundle, openScenario, rules, scope, select, selectAndReveal, selectedPath],
   )
   const onIndexToggle = useCallback(
     (group: string) => {
-      if (group !== SCENARIOS && group !== POLICIES) return onToggleGroup(group)
+      if (group !== SCENARIOS && group !== POLICIES && group !== FUNCTIONS_GROUP)
+        return onToggleGroup(group)
       setIndexShut((shut) => {
         const next = new Set(shut)
         if (!next.delete(group)) next.add(group)

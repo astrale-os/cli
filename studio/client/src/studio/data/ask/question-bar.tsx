@@ -124,7 +124,8 @@ const givesWords = (gives: NonNullable<Candidate['gives']>): string =>
     ? 'nothing'
     : `${counted(gives.matched)} ${gives.matched === 1 ? 'row' : 'rows'} · ${counted(gives.nodes)} Nodes`
 
-function SlotChip({
+/** One slot of a question as a chip: what it holds, why, and what it can take. */
+export function SlotChip({
   slot,
   value,
   why,
@@ -362,20 +363,31 @@ function SlotChip({
   )
 }
 
-function AsChip({
+/** Who asks, as a chip: one of the dataset's identities, or the choice that stands for none. */
+export function AsChip({
   identities,
   as,
   deciding,
   onAs,
-}: Pick<QuestionBarProps, 'identities' | 'as' | 'deciding' | 'onAs'>) {
+  verb = 'read as',
+  whole = { label: 'the Domain', detail: 'everything' },
+  note = 'A Query runs under whoever asks: the same question answers with what that identity may read.',
+}: Pick<QuestionBarProps, 'identities' | 'as' | 'deciding' | 'onAs'> & {
+  /** what the identity does, before its name */
+  verb?: string
+  /** the choice that is no identity of the dataset */
+  whole?: { label: string; detail: string }
+  /** what choosing an identity changes, in a sentence */
+  note?: string
+}) {
   const [open, setOpen] = useState(false)
   const current = identities.find((one) => one.id === as)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button type="button" data-ask-as={as ?? ''} className={cn(CHIP, 'shrink-0')}>
-          <span className="shrink-0 text-muted-foreground">read as</span>
-          <span className="min-w-0 truncate font-medium">{current?.label ?? 'the Domain'}</span>
+          <span className="shrink-0 text-muted-foreground">{verb}</span>
+          <span className="min-w-0 truncate font-medium">{current?.label ?? whole.label}</span>
           {deciding !== undefined && (
             <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
               {deciding}
@@ -386,19 +398,18 @@ function AsChip({
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-72 p-0">
         <p className="border-b px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
-          A Query runs under whoever asks: the same question answers with what that identity may
-          read.
+          {note}
         </p>
         <div className="max-h-72 overflow-y-auto p-1" role="listbox">
           <Row
             current={as === undefined}
-            detail="everything"
+            detail={whole.detail}
             onPick={() => {
               onAs(undefined)
               setOpen(false)
             }}
           >
-            the Domain
+            {whole.label}
           </Row>
           {identities.map((one) => (
             <Row

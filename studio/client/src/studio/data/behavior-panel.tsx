@@ -652,7 +652,8 @@ function StepRow({
  * What a call's function is declared to write, write by write, and what its mutations require
  * before they write: the Schema's Writes and Preconditions, in its words, marks and tones.
  */
-function Declared({
+/** What a call's function is declared to write and requires, in the Schema's sections. */
+export function Declared({
   judged,
   domainId,
   model,
