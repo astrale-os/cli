@@ -467,6 +467,8 @@ export interface SceneGroup {
   /** The id of the SceneArea the group belongs to, on a canvas of several Domains. */
   area?: string
   label: string
+  /** Its label is a phrase, read in its own case (`Owns or belongs to Project`), not a heading. */
+  phrase?: true
   /** The group's hue on the colour wheel. */
   hue?: number
   /**
