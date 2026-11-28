@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { IrClass, SchemaIR } from '../../shared/contracts/schema'
+import type { DefinitionLink, IrClass, SchemaIR } from '../../shared/contracts/schema'
 
 import { readDefinitions } from './source-overlay/definitions'
 import { buildHandlerLinks } from './source-overlay/handlers'
@@ -15,6 +15,9 @@ const roots: string[] = []
 afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
+
+/** A link without its input, which the tests of the input pin on their own. */
+const withoutInput = ({ input: _input, ...link }: DefinitionLink) => link
 
 const ir: SchemaIR = {
   version: 'v1',
@@ -286,7 +289,7 @@ function archiveFirst(context) {
 
     const project = newProject()
     const { definitions, idByDeclaration } = readDefinitions({ domainRoot: root, project })
-    expect(definitions).toEqual([
+    expect(definitions.map(withoutInput)).toEqual([
       {
         kind: 'query',
         id: 'issues.issue.in-project',
@@ -441,7 +444,7 @@ export const close = defineAction()('Issue.close', async (context) =>
     const at = (file: string) => (line: number) => ({ file: `mutations/${file}.ts`, line })
     const open = at('open')
     const close = at('close')
-    expect(definitions).toEqual([
+    expect(definitions.map(withoutInput)).toEqual([
       {
         kind: 'mutation',
         id: 'tracker.issue.close',
@@ -1149,6 +1152,388 @@ export const addressed = defineQuery()(() => ({
         ],
       ],
     })
+  })
+
+  test('reads what each definition takes as input and what its `build` compares each field with', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-definition-inputs-'))
+    roots.push(root)
+    mkdirSync(join(root, 'queries'))
+    mkdirSync(join(root, 'mutations'))
+    writeFileSync(join(root, 'types.ts'), `export type Status = 'open' | 'active' | 'closed'\n`)
+    writeFileSync(
+      join(root, 'queries/issue.ts'),
+      `import type { NodeId, NodePath } from '@astrale-os/sdk'
+import { defineQuery, Property, Query } from '@astrale-os/sdk/query'
+import type { Filters } from 'some-package'
+import { visible } from 'some-package'
+
+import type { Status } from '../types.ts'
+
+interface IssueInput {
+  /** the Issue to read */
+  issue: NodeId
+  note?: string
+}
+
+export const one = defineQuery()('tracker.issue.one', {
+  build: (input: IssueInput, { Issue }) => Issue.get(input.issue),
+})
+
+export const withSibling = defineQuery()('tracker.issue.with-sibling', {
+  build: (input: { issue: NodeId; sibling?: NodePath }, { Issue, project_contains_issue }) =>
+    Issue.with((issue) => ({
+      project: issue.project
+        .with((project) => ({
+          sibling: project
+            .via(project_contains_issue)
+            .where((candidate) => candidate.id.in(input.sibling === undefined ? [] : [input.sibling]))
+            .find(),
+        }))
+        .get(),
+    })).get(input.issue),
+})
+
+export const several = defineQuery()('tracker.issue.several', {
+  build: (input: { ids: readonly NodeId[] }, { Issue }) =>
+    Issue.where((issue) => issue.id.in(input.ids)).all(),
+})
+
+export const byStatus = defineQuery()('tracker.issue.by-status', {
+  build: (input: { status: Status }, { Issue }) =>
+    Issue.where((issue) => issue.status.eq(input.status)).all(),
+})
+
+export const projects = defineQuery()('tracker.projects', {
+  build: (_input: void, { Project }) => Project.all(),
+})
+
+export const filtered = defineQuery()('tracker.issue.filtered', {
+  build: (input: Filters, { Issue }) => Issue.where((issue) => issue.title.eq(input.title)).all(),
+})
+
+export const shown = defineQuery()('tracker.issue.shown', {
+  build: (input: { issue: NodeId }, { Issue }) =>
+    Issue.where((issue) => visible(issue, input.issue)).all(),
+})
+
+export const byKey = defineQuery()('tracker.issue.by-key', {
+  build: (key: string, { Issue }) => Issue.where((issue) => issue.$prop.id.eq(key)).find(),
+})
+
+export const anyOf = defineQuery()('tracker.issue.any-of', {
+  build: (input: { ids: NodeId | readonly NodeId[] }, { Issue }) => {
+    const ids = Array.isArray(input.ids) ? input.ids : [input.ids]
+    return Issue.where((issue) => issue.id.in(ids)).all()
+  },
+})
+
+export const titled = defineQuery()<string>((Tracker) => ({
+  id: 'tracker.issue.titled',
+  build: (title) =>
+    Query.from({ nodes: [Tracker.classes.Issue] }).filter({
+      predicate: Property(Tracker.classes.Issue.properties.title.key).equals(title),
+    }),
+}))
+`,
+    )
+    writeFileSync(
+      join(root, 'mutations/close.ts'),
+      `import type { NodeId } from '@astrale-os/sdk'
+import { defineMutation } from '@astrale-os/sdk/mutation'
+
+import type { Status } from '../types.ts'
+
+export const closeIssue = defineMutation()<{ issue: NodeId; from: Status; title: string }>(
+  (Tracker) => ({
+    id: 'tracker.issue.close',
+    build: (input, mutation) => {
+      close(mutation, Tracker.classes.Issue, input.issue, input.from)
+      mutation.updateNode({ node: input.issue, class: Tracker.classes.Issue, props: { title: input.title } })
+    },
+  }),
+)
+
+function close(mutation, Issue, node, from) {
+  mutation.transition({ node, class: Issue, property: 'status', from, event: 'close' })
+}
+
+type Linked = 'project_contains_issue' | 'issue_has_comment'
+
+export const unlink = defineMutation()<{ edges: { readonly [E in Linked]: readonly Ends[] } }>(
+  (Tracker) => ({
+    id: 'tracker.issue.unlink',
+    build: (input, mutation) => {
+      for (const ends of input.edges.issue_has_comment)
+        mutation.deleteEdge({ class: Tracker.classes.issue_has_comment, ...ends })
+    },
+  }),
+)
+
+interface Ends {
+  source: NodeId
+  target: NodeId
+}
+`,
+    )
+    const issue = tracker.classes.Issue!
+    // an Issue's business id: a Property its handle keeps under `$prop`
+    const keyed = { ...issue, properties: { ...issue.properties, id: { type: 'string' } } }
+    const { definitions } = readDefinitions({
+      domainRoot: root,
+      project: newProject(),
+      ir: { ...tracker, classes: { ...tracker.classes, Issue: keyed } },
+      dependencies: { shell: 'shell.example' },
+    })
+    const query = (line: number) => ({ file: 'queries/issue.ts', line })
+    const mutation = (line: number) => ({ file: 'mutations/close.ts', line })
+    const status = { kind: 'value' as const, literals: ['open', 'active', 'closed'] }
+    const inputs = Object.fromEntries(
+      definitions.map((definition) => [definition.id, definition.input]),
+    )
+    expect(inputs).toEqual({
+      // a Node id `get` reads, and a field `build` never reads
+      'tracker.issue.one': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'issue',
+            optional: false,
+            type: 'NodeId',
+            kind: 'node',
+            doc: 'the Issue to read',
+            ...query(10),
+            read: true,
+            uses: [{ kind: 'node', class: 'Issue', verb: 'get', ...query(15) }],
+          },
+          {
+            name: 'note',
+            optional: true,
+            type: 'string',
+            kind: 'value',
+            ...query(11),
+            read: false,
+            uses: [],
+          },
+        ],
+      },
+      // an optional id among the Nodes a traversed Class keeps
+      'tracker.issue.with-sibling': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'issue',
+            optional: false,
+            type: 'NodeId',
+            kind: 'node',
+            ...query(19),
+            read: true,
+            uses: [{ kind: 'node', class: 'Issue', verb: 'get', ...query(29) }],
+          },
+          {
+            name: 'sibling',
+            optional: true,
+            type: 'NodePath',
+            kind: 'node',
+            ...query(19),
+            read: true,
+            uses: [{ kind: 'node', class: 'Issue', verb: 'in', ...query(25) }],
+          },
+        ],
+      },
+      'tracker.issue.several': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'ids',
+            optional: false,
+            type: 'readonly NodeId[]',
+            kind: 'nodes',
+            ...query(33),
+            read: true,
+            uses: [{ kind: 'node', class: 'Issue', verb: 'in', ...query(34) }],
+          },
+        ],
+      },
+      // a union of literals, from a module of the Domain, compared with a Property
+      'tracker.issue.by-status': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'status',
+            optional: false,
+            type: 'Status',
+            ...status,
+            ...query(38),
+            read: true,
+            uses: [
+              { kind: 'property', class: 'Issue', property: 'status', verb: 'eq', ...query(39) },
+            ],
+          },
+        ],
+      },
+      'tracker.projects': { form: 'none', fields: [] },
+      'tracker.issue.filtered': {
+        form: 'unread',
+        fields: [],
+        gaps: [
+          {
+            ...query(47),
+            reason:
+              'takes its input as `Filters`, imported from `some-package`, which the reading does not follow',
+          },
+        ],
+      },
+      // read, compared with nothing the reading is certain of, and why
+      'tracker.issue.shown': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'issue',
+            optional: false,
+            type: 'NodeId',
+            kind: 'node',
+            ...query(51),
+            read: true,
+            uses: [],
+          },
+        ],
+        gaps: [
+          {
+            ...query(52),
+            reason: 'hands the input field `issue` to `visible`, which the reading cannot follow',
+          },
+        ],
+      },
+      // one value, named after the parameter, compared with the Property `id`, not the Node id
+      'tracker.issue.by-key': {
+        form: 'value',
+        fields: [
+          {
+            name: 'key',
+            optional: false,
+            type: 'string',
+            kind: 'value',
+            ...query(56),
+            read: true,
+            uses: [{ kind: 'property', class: 'Issue', property: 'id', verb: 'eq', ...query(56) }],
+          },
+        ],
+      },
+      // a type that mixes one id and a list says nothing certain; a type test reads it, quietly
+      'tracker.issue.any-of': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'ids',
+            optional: false,
+            type: 'NodeId | readonly NodeId[]',
+            kind: 'unknown',
+            ...query(60),
+            read: true,
+            uses: [{ kind: 'node', class: 'Issue', verb: 'in', ...query(62) }],
+          },
+        ],
+      },
+      // the type the call names; a Query V6 predicate names the Property by its key
+      'tracker.issue.titled': {
+        form: 'value',
+        fields: [
+          {
+            name: 'title',
+            optional: false,
+            type: 'string',
+            kind: 'value',
+            ...query(68),
+            read: true,
+            uses: [
+              {
+                kind: 'property',
+                class: 'Issue',
+                property: 'title',
+                verb: 'equals',
+                ...query(70),
+              },
+            ],
+          },
+        ],
+      },
+      // the type the call names, followed through a helper; a field it writes is read, not compared
+      'tracker.issue.close': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'issue',
+            optional: false,
+            type: 'NodeId',
+            kind: 'node',
+            ...mutation(6),
+            read: true,
+            uses: [
+              { kind: 'node', class: 'Issue', verb: 'transition', ...mutation(17) },
+              { kind: 'node', class: 'Issue', verb: 'updateNode', ...mutation(11) },
+            ],
+          },
+          {
+            name: 'from',
+            optional: false,
+            type: 'Status',
+            ...status,
+            ...mutation(6),
+            read: true,
+            uses: [
+              {
+                kind: 'property',
+                class: 'Issue',
+                property: 'status',
+                verb: 'transition',
+                ...mutation(17),
+              },
+            ],
+          },
+          {
+            name: 'title',
+            optional: false,
+            type: 'string',
+            kind: 'value',
+            ...mutation(6),
+            read: true,
+            uses: [],
+          },
+        ],
+      },
+      // the members of a mapped type over literal keys; an Edge's ends spread from an item of one
+      'tracker.issue.unlink': {
+        form: 'fields',
+        fields: [
+          {
+            name: 'edges',
+            optional: false,
+            type: '{ readonly [E in Linked]: readonly Ends[] }',
+            kind: 'unknown',
+            ...mutation(22),
+            read: true,
+            uses: [
+              {
+                kind: 'node',
+                class: 'Issue',
+                verb: 'deleteEdge',
+                path: ['issue_has_comment', 'source'],
+                ...mutation(27),
+              },
+              {
+                kind: 'node',
+                class: 'Comment',
+                verb: 'deleteEdge',
+                path: ['issue_has_comment', 'target'],
+                ...mutation(27),
+              },
+            ],
+          },
+        ],
+      },
+    })
+    // the definitions' own reading leaves the input out
+    expect(definitions.flatMap((definition) => definition.gaps ?? [])).toEqual([])
   })
 
   test('reads the runtime Integrations and follows each handler to the operations it reaches', () => {

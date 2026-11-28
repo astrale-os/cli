@@ -12,10 +12,14 @@ import {
   type CallExpression,
   type Project,
   type SourceFile,
+  type TypeNode,
 } from 'ts-morph'
 
 import type {
   DefinitionEffect,
+  DefinitionInput,
+  DefinitionInputField,
+  DefinitionInputUse,
   DefinitionLink,
   DefinitionPrecondition,
   DefinitionPreconditionKind,
@@ -39,9 +43,11 @@ import {
   type Flow,
   type FlowCache,
   type FlowLanguage,
+  type FlowSession,
   type FunctionFlow,
   type Reading,
 } from './flow'
+import { declaredInput, type DeclaredInput } from './inputs'
 import {
   authoredTypeScriptFiles,
   bindingName,
@@ -109,10 +115,31 @@ interface QueryFactory {
   readonly kind: 'query'
 }
 
+/** A part of a definition's input: the member paths from the input it stands for. */
+interface Input {
+  readonly kind: 'input'
+  /** one per part it may be: `input.a ?? input.b` stands for both */
+  readonly paths: ReadonlyArray<readonly string[]>
+}
+
+/**
+ * What a condition compares: `node`, a row's `id` or `path`; `property`, the Property `name`;
+ * `group`, what names Properties by member (a row's `$prop`, where a Property goes when a handle
+ * member takes its name, and a Class handle's `properties`); `key`, the key of the Property
+ * `name`, which the Query V6 `Property(key)` compares.
+ */
+interface Term {
+  readonly kind: 'term'
+  readonly of: 'node' | 'property' | 'group' | 'key'
+  readonly classes: readonly string[]
+  readonly name: string
+}
+
 /**
  * What a value is to a definition's reading: a resolved Domain or its Classes (the
  * closure form), the Query handles `d`, Classes and rows, the Mutation builder and its
- * verbs, a Query V6, string literals, or a list of these.
+ * verbs, a Query V6, string literals, or a list of these; to the reading of its input, a
+ * part of the input, a term and the condition verb it compares with, and the Query V6 `Property`.
  */
 type Value =
   | { readonly kind: 'domain'; readonly origin: string | undefined; readonly alias?: string }
@@ -135,6 +162,10 @@ type Value =
   | { readonly kind: 'list'; readonly items: ReadonlyArray<Flow<Value> | undefined> }
   | QueryFactory
   | QueryV6
+  | Input
+  | Term
+  | { readonly kind: 'compare'; readonly term: Term; readonly name: string }
+  | { readonly kind: 'predicate' }
 
 const DOMAIN: Value = { kind: 'domain', origin: undefined }
 const HANDLES: Value = { kind: 'handles' }
@@ -210,6 +241,8 @@ const READING = new Set([
 ])
 /** A Node handle's own members: none names a relation. */
 const ROW_MEMBERS = new Set(['id', 'path', '$class', 'via', 'is', 'isExactly'])
+/** Where a Property goes on a handle when one of its own members takes the Property's name. */
+const PROPERTY_GROUP = '$prop'
 /** A Query V6's bindings, which name no Class. */
 const V6_BINDINGS = new Set(['edge', 'source', 'target', 'node'])
 
@@ -263,6 +296,8 @@ interface Model {
   /** each end of an Edge Class: the Classes it accepts; undefined without the IR */
   endsOf(edge: string): ReadonlyArray<readonly string[]> | undefined
   relation(classes: readonly string[], name: string): Relation | undefined
+  /** whether each of the Classes declares the Property, itself or through a Class it extends */
+  hasProperty(classes: readonly string[], name: string): boolean
   /** a state Property's transitions: `from → event → to` */
   machine(
     key: string,
@@ -372,6 +407,8 @@ function modelOf(ir: SchemaIR | null, dependencies: ReadonlyMap<string, string>)
       if (edges.size !== 1) return undefined
       return { edge: [...edges][0]!, far: [...far], own }
     },
+    hasProperty: (classes, name) =>
+      classes.length > 0 && classes.every((cls) => properties(cls).has(name)),
     machine: (key, property) => {
       for (const ancestor of satisfies(key)) {
         const metadata = declared(ancestor)?.propertyMetadata?.[property] as
@@ -404,6 +441,33 @@ function nearOf(model: Model, edge: string, direction: string | undefined): read
   if (direction === 'outgoing') return source
   if (direction === 'incoming') return target
   return [...source, ...target]
+}
+
+/** Where a call's verb is written: its name, so each link of a chain has its own line. */
+function siteOf(expression: CallExpression): Node {
+  const callee = unwrapExpression(expression.getExpression())
+  return Node.isPropertyAccessExpression(callee) ? callee.getNameNode() : expression
+}
+
+/** What a verb's options write under `name`, when they are written as an object. */
+function writtenProperty(options: Node | undefined, name: string): Node | undefined {
+  const property = options && resolveObjectLiteral(options)?.getProperty(name)
+  return property && objectPropertyValue(property)
+}
+
+/**
+ * What a verb needs of a node: its value, or what the authored helper it calls returns
+ * even when nothing handed to that helper is followed (`query: clientEdge(input.id)`).
+ */
+function demand(node: Node | undefined, reading: Reading<Value>): Flow<Value> | undefined {
+  if (!node) return undefined
+  const value = reading.evaluate(node)
+  const call = value ? undefined : unwrapExpression(node)
+  if (!call || !Node.isCallExpression(call)) return value
+  const helper = reading.evaluate(call.getExpression())
+  if (!helper || !isFunctionFlow(helper)) return undefined
+  const flows = call.getArguments().map((argument) => reading.evaluate(argument))
+  return reading.visit(helper, flows, call)
 }
 
 /** A definition's reading: its effects and the language its values are read in. */
@@ -447,12 +511,6 @@ function definitionLanguage(args: {
     for (const cls of classes) record({ kind: 'read', class: cls, verb, role }, at)
   }
 
-  /** Where a call's verb is written: its name, so each link of a chain has its own line. */
-  const siteOf = (expression: CallExpression): Node => {
-    const callee = unwrapExpression(expression.getExpression())
-    return Node.isPropertyAccessExpression(callee) ? callee.getNameNode() : expression
-  }
-
   /** Read each callback argument with the row it receives. */
   const callbacks = (expression: CallExpression, row: Row, reading: Reading<Value>) => {
     for (const argument of expression.getArguments()) {
@@ -478,27 +536,6 @@ function definitionLanguage(args: {
     role: rows.role,
     edge: rows.classes.length > 0 && rows.classes.every(model.isEdge),
   })
-
-  /** What a verb's options write under `name`, when they are written as an object. */
-  const writtenProperty = (options: Node | undefined, name: string): Node | undefined => {
-    const property = options && resolveObjectLiteral(options)?.getProperty(name)
-    return property && objectPropertyValue(property)
-  }
-
-  /**
-   * What a verb needs of a node: its value, or what the authored helper it calls returns
-   * even when nothing handed to that helper is followed (`query: clientEdge(input.id)`).
-   */
-  const demand = (node: Node | undefined, reading: Reading<Value>): Flow<Value> | undefined => {
-    if (!node) return undefined
-    const value = reading.evaluate(node)
-    const call = value ? undefined : unwrapExpression(node)
-    if (!call || !Node.isCallExpression(call)) return value
-    const helper = reading.evaluate(call.getExpression())
-    if (!helper || !isFunctionFlow(helper)) return undefined
-    const flows = call.getArguments().map((argument) => reading.evaluate(argument))
-    return reading.visit(helper, flows, call)
-  }
 
   /** The Classes a verb names; a gap where a branch names one it cannot tell, and its reason. */
   const named = (
@@ -1050,6 +1087,564 @@ function definitionLanguage(args: {
   return { language, effects, preconditions, unnamed }
 }
 
+/** A term's conditions that compare it with what they are handed (`x.status.eq(…)`). */
+const COMPARES = new Set([
+  'eq',
+  'in',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'between',
+  'startsWith',
+  // a Query V6 `Property(key)` predicate's
+  'equals',
+  'greater',
+  'greaterOrEqual',
+  'less',
+  'lessOrEqual',
+])
+/** Row-set reads whose argument names one of their Nodes (`X.get(id)`, `x.project.is(id)`). */
+const NAMES_NODE = new Set(['get', 'find', 'exists', 'is'])
+/** Array methods that give some of the items they are called on, in some order. */
+const KEEPS_ITEMS = new Set([
+  'filter',
+  'find',
+  'findLast',
+  'at',
+  'slice',
+  'sort',
+  'toSorted',
+  'reverse',
+  'toReversed',
+])
+/** Methods that read what they are called on and give no part of it: nothing to follow. */
+const READS_ONLY = new Set([
+  'includes',
+  'indexOf',
+  'lastIndexOf',
+  'has',
+  'join',
+  'startsWith',
+  'endsWith',
+  'trim',
+  'toLowerCase',
+  'toUpperCase',
+  'toString',
+  'localeCompare',
+])
+
+const INPUT: Input = { kind: 'input', paths: [[]] }
+const PREDICATE: Value = { kind: 'predicate' }
+
+/** The name an identifier imports from the SDK; undefined for any other identifier. */
+function importedFromSdk(identifier: Node): string | undefined {
+  const declaration = declarationOf(identifier)
+  if (!declaration || !Node.isImportSpecifier(declaration)) return undefined
+  const module = declaration.getImportDeclaration().getModuleSpecifierValue()
+  return module === '@astrale-os/sdk' || module.startsWith('@astrale-os/sdk/')
+    ? declaration.getName()
+    : undefined
+}
+
+function isInput(flow: Flow<Value> | undefined): flow is Input {
+  return flow?.kind === 'input'
+}
+
+/** The parts of the input a value is: itself, or the items of a list. */
+function inputsOf(flow: Flow<Value> | undefined): Input[] {
+  if (isInput(flow)) return [flow]
+  return flow?.kind === 'list' ? flow.items.flatMap(inputsOf) : []
+}
+
+/** Whether a flow holds a part of the input. */
+function carries(flow: Flow<Value> | undefined): boolean {
+  if (!flow || isFunctionFlow(flow)) return false
+  if (isObjectFlow(flow)) return [...flow.properties.values()].some(carries)
+  return flow.kind === 'input' || (flow.kind === 'list' && flow.items.some(carries))
+}
+
+/** Whether a flow holds the input itself, whose every field it stands for. */
+function carriesWhole(flow: Flow<Value> | undefined): boolean {
+  if (!flow || isFunctionFlow(flow)) return false
+  if (isObjectFlow(flow)) return [...flow.properties.values()].some(carriesWhole)
+  if (flow.kind === 'list') return flow.items.some(carriesWhole)
+  return flow.kind === 'input' && flow.paths.some((path) => path.length === 0)
+}
+
+/** One part of the input for several, standing for each. */
+function joinInputs(inputs: readonly Input[]): Input | undefined {
+  const paths = new Map<string, readonly string[]>()
+  for (const input of inputs) for (const path of input.paths) paths.set(path.join('.'), path)
+  return paths.size > 0 ? { kind: 'input', paths: [...paths.values()] } : undefined
+}
+
+function describeInput(input: Input): string {
+  return input.paths
+    .map((path) => (path.length === 0 ? 'the input' : `the input field \`${path.join('.')}\``))
+    .join(' or ')
+}
+
+/**
+ * The objects a node writes, through `const` names, choices and the spreads they hold
+ * (`{ a, ...(b === undefined ? {} : { b }) }`).
+ */
+function writtenObjects(node: Node | undefined, seen = new Set<string>()): Node[] {
+  if (!node) return []
+  const value = unwrapExpression(node)
+  if (seen.has(nodeKey(value))) return []
+  seen.add(nodeKey(value))
+  if (Node.isConditionalExpression(value))
+    return [
+      ...writtenObjects(value.getWhenTrue(), seen),
+      ...writtenObjects(value.getWhenFalse(), seen),
+    ]
+  if (Node.isBinaryExpression(value)) {
+    const operator = value.getOperatorToken().getKind()
+    if (operator === SyntaxKind.AmpersandAmpersandToken)
+      return writtenObjects(value.getRight(), seen)
+    if (operator === SyntaxKind.BarBarToken || operator === SyntaxKind.QuestionQuestionToken)
+      return [...writtenObjects(value.getLeft(), seen), ...writtenObjects(value.getRight(), seen)]
+    return []
+  }
+  const object = resolveObjectLiteral(value)
+  if (!object) return []
+  return [
+    object,
+    ...object
+      .getProperties()
+      .flatMap((property) =>
+        Node.isSpreadAssignment(property) ? writtenObjects(property.getExpression(), seen) : [],
+      ),
+  ]
+}
+
+/** What the objects a node writes write under `name`, in any of them. */
+function writtenUnder(node: Node | undefined, name: string): Node[] {
+  return writtenObjects(node).flatMap((object) => {
+    const property = Node.isObjectLiteralExpression(object) ? object.getProperty(name) : undefined
+    const value = property && objectPropertyValue(property)
+    return value ? [value] : []
+  })
+}
+
+/**
+ * The reading of what a definition's `build` does with its input: each comparison it makes of a
+ * field where the reading is certain, which fields it reads, and where a part of the input leaves
+ * what the reading follows. It reads in `base`, the definition's own language, whose effects it
+ * leaves out and whose gaps it keeps silent: its gaps are those of the input alone.
+ */
+function inputReading(args: {
+  base: FlowLanguage<Value>
+  declared: DeclaredInput
+  model: Model
+  domainRoot: string
+}): {
+  language: FlowLanguage<Value>
+  /** the comparisons of each field, by name, in the order the reading meets them */
+  uses: ReadonlyMap<string, DefinitionInputUse[]>
+  /** the fields a member access or a spread reads */
+  read: ReadonlySet<string>
+  /** whether the input itself leaves what the reading follows, which reads any field */
+  escaped: () => boolean
+  /** gaps for the input Nodes a `Query.from` names whose Class nothing after it names */
+  finish: (session: FlowSession<Value>) => void
+} {
+  const { base, declared, model, domainRoot } = args
+  const uses = new Map<string, DefinitionInputUse[]>()
+  const recorded = new Set<string>()
+  const read = new Set<string>()
+  let escaped = false
+  // `Query.from` sites naming input Nodes by id, by `nodeKey`, until an expand or a Class filter names their Class
+  const pending = new Map<string, { at: Node; inputs: Input[]; named: boolean }>()
+  // the base language's gaps are the definition's, read by its own session
+  const silent = new WeakMap<Reading<Value>, Reading<Value>>()
+  const quiet = (reading: Reading<Value>): Reading<Value> => {
+    let muted = silent.get(reading)
+    if (!muted) {
+      muted = { ...reading, gap: () => {} }
+      silent.set(reading, muted)
+    }
+    return muted
+  }
+
+  /** The field a path from the input reads, and the members below it it takes. */
+  const fieldOf = (path: readonly string[]): [string, string[]] | undefined => {
+    if (declared.form === 'value') return [declared.fields[0]!.name, [...path]]
+    const [name, ...below] = path
+    return name !== undefined && declared.fields.some((field) => field.name === name)
+      ? [name, below]
+      : undefined
+  }
+
+  /** Each part of the input `flow` is, compared with a Node or a Property of each of `classes`. */
+  const use = (
+    flow: Flow<Value> | undefined,
+    kind: DefinitionInputUse['kind'],
+    classes: readonly string[] | undefined,
+    property: string | undefined,
+    verb: string,
+    at: Node,
+    reading: Reading<Value>,
+  ) => {
+    const inputs = inputsOf(flow)
+    if (inputs.length === 0) return
+    const part = describeInput(joinInputs(inputs)!)
+    if (!classes || classes.length === 0) {
+      reading.gap(at, `compares ${part} with a Class the reading cannot tell`)
+      return
+    }
+    if (kind === 'property' && property === undefined) {
+      reading.gap(at, `compares ${part} with a Property the reading cannot tell`)
+      return
+    }
+    const file = relToRoot(domainRoot, at.getSourceFile().getFilePath())
+    const line = at.getStartLineNumber()
+    for (const path of inputs.flatMap((input) => input.paths)) {
+      const field = fieldOf(path)
+      if (!field) continue
+      const [name, below] = field
+      for (const cls of classes) {
+        const key = [name, below.join('.'), kind, cls, property, verb, file, line].join('|')
+        if (recorded.has(key)) continue
+        recorded.add(key)
+        const found = uses.get(name) ?? []
+        uses.set(name, found)
+        found.push({
+          kind,
+          class: cls,
+          ...(property === undefined ? {} : { property }),
+          verb,
+          ...(below.length > 0 ? { path: below } : {}),
+          file,
+          line,
+        })
+      }
+    }
+  }
+
+  /** What a builder verb compares: the Nodes it names, and the Properties it requires. */
+  const verbUses = (name: string, expression: CallExpression, reading: Reading<Value>) => {
+    const args = expression.getArguments()
+    const at = siteOf(expression)
+    const options = args[0] && reading.evaluate(args[0])
+    if (name === 'expect.unchanged') {
+      const range = classesOf(demand(args[0], reading))
+      use(
+        args[1] && reading.evaluate(args[1]),
+        'node',
+        range,
+        undefined,
+        name,
+        args[1] ?? at,
+        reading,
+      )
+      return
+    }
+    if (!WRITES[name]) return
+    const classes = classesOf(
+      propertyOf(options, 'class') ?? demand(writtenProperty(args[0], 'class'), reading),
+    )
+    const written = (key: string) => writtenUnder(args[0], key)[0] ?? at
+    if (name.endsWith('Edge') || name === 'expect.edge') {
+      const ends = classes?.map((edge) => model.endsOf(edge))
+      ;(['source', 'target'] as const).forEach((part, index) => {
+        const accepted =
+          ends && ends.every((end) => end !== undefined)
+            ? unique(ends.flatMap((end) => end![index] ?? []))
+            : undefined
+        use(propertyOf(options, part), 'node', accepted, undefined, name, written(part), reading)
+      })
+    } else {
+      use(propertyOf(options, 'node'), 'node', classes, undefined, name, written('node'), reading)
+    }
+    if (name === 'transition') {
+      const property = single(propertyOf(options, 'property'))
+      use(
+        propertyOf(options, 'from'),
+        'property',
+        classes,
+        property,
+        name,
+        written('from'),
+        reading,
+      )
+    }
+    if (name !== 'expect.node' && name !== 'expect.edge' && name !== 'transition') return
+    const props = writtenUnder(args[0], 'props')
+    const equals = props.flatMap((node) => writtenUnder(node, 'equals'))
+    const given = propertyOf(propertyOf(options, 'props'), 'equals')
+    if (given && isObjectFlow(given)) {
+      for (const [property, flow] of given.properties) {
+        const place = equals.flatMap((node) => writtenUnder(node, property))[0] ?? at
+        use(flow, 'property', classes, property, name, place, reading)
+      }
+    } else if (carries(given)) {
+      reading.gap(at, `compares ${describe(given!)} with Properties the reading cannot tell`)
+    }
+    // a key the source computes is no property of the object the reading evaluates
+    for (const object of equals.flatMap((node) => writtenObjects(node))) {
+      if (!Node.isObjectLiteralExpression(object)) continue
+      for (const property of object.getProperties()) {
+        if (!Node.isPropertyAssignment(property)) continue
+        const key = property.getNameNode()
+        const value = property.getInitializer()
+        if (!Node.isComputedPropertyName(key) || !value) continue
+        const flow = reading.evaluate(value)
+        if (!carries(flow)) continue
+        const names = literal(reading.evaluate(key.getExpression()))
+        if (names?.length === 1) use(flow, 'property', classes, names[0], name, property, reading)
+        else
+          reading.gap(
+            property,
+            `compares ${describe(flow!)} with a Property the reading cannot tell: ${quotedSource(key)}`,
+          )
+      }
+    }
+  }
+
+  /** What a read method compares: the Node a row-set read names, the input Nodes a Query starts from. */
+  const methodUses = (
+    value: Extract<Value, { kind: 'method' }>,
+    expression: CallExpression,
+    reading: Reading<Value>,
+  ) => {
+    const { of, name } = value
+    const args = expression.getArguments()
+    const at = siteOf(expression)
+    if (of.kind === 'rows' && NAMES_NODE.has(name)) {
+      const flow = args[0] && reading.evaluate(args[0])
+      if (of.partial && carries(flow))
+        reading.gap(
+          at,
+          `compares ${describe(flow!)} with Classes the reading cannot tell in every branch`,
+        )
+      else use(flow, 'node', of.classes, undefined, name, at, reading)
+      return
+    }
+    if (of.kind === 'query') {
+      const from = args[0] && reading.evaluate(args[0])
+      const nodes = inputsOf(propertyOf(from, 'nodes'))
+      if (nodes.length > 0) pending.set(nodeKey(at), { at, inputs: nodes, named: false })
+      const edges = propertyOf(from, 'edges')
+      if (carries(edges))
+        reading.gap(
+          at,
+          `starts from ${describe(edges!)} as Edges, whose Class the reading cannot tell`,
+        )
+      return
+    }
+    if (of.kind !== 'v6' || of.expanded || !of.unnamed) return
+    const site = pending.get(of.unnamed)
+    if (!site || site.named) return
+    const options = args[0] && reading.evaluate(args[0])
+    let classes: readonly string[] | undefined
+    if (name === 'expand') {
+      const edges = classListOf(propertyOf(options, 'via'))
+      const direction = single(propertyOf(options, 'direction'))
+      classes = edges && unique(edges.flatMap((edge) => nearOf(model, edge, direction)))
+    } else if (name === 'filter') {
+      classes = classesOf(propertyOf(options, 'class'))
+    }
+    if (!classes || classes.length === 0) return
+    site.named = true
+    for (const input of site.inputs)
+      use(input, 'node', classes, undefined, 'Query.from', site.at, reading)
+  }
+
+  /** A method called on a part of the input: the items it visits and gives, or a gap. */
+  const inputCall = (value: Input, expression: CallExpression, reading: Reading<Value>) => {
+    const name = value.paths[0]?.at(-1)
+    if (name === undefined || value.paths.some((path) => path.at(-1) !== name)) return undefined
+    const items: Input = { kind: 'input', paths: value.paths.map((path) => path.slice(0, -1)) }
+    if (ITERATES.has(name)) {
+      const given = expression.getArguments().map((argument) => {
+        const flow = reading.evaluate(argument)
+        return flow && isFunctionFlow(flow)
+          ? reading.visit(flow, name.startsWith('reduce') ? [undefined, items] : [items], argument)
+          : undefined
+      })
+      if (name === 'map' || name === 'flatMap') return given.find(carries)
+      return KEEPS_ITEMS.has(name) ? items : undefined
+    }
+    if (KEEPS_ITEMS.has(name)) return items
+    if (READS_ONLY.has(name)) return undefined
+    if (carriesWhole(items)) escaped = true
+    reading.gap(
+      siteOf(expression),
+      `calls \`${name}\` on ${describeInput(items)}, which the reading cannot follow`,
+    )
+    return undefined
+  }
+
+  const describe = (flow: Flow<Value>): string => {
+    if (isInput(flow)) return describeInput(flow)
+    if (isObjectFlow(flow)) return 'an object holding a part of the input'
+    if (flow.kind === 'list') return 'a list holding a part of the input'
+    return base.describe(flow)
+  }
+
+  const language: FlowLanguage<Value> = {
+    member: (value, name, at, reading) => {
+      if (value.kind === 'input') {
+        if (declared.form === 'fields' && value.paths.some((path) => path.length === 0))
+          read.add(name)
+        return { kind: 'input', paths: value.paths.map((path) => [...path, name]) }
+      }
+      if (value.kind === 'term') {
+        if (value.of === 'group')
+          return model.hasProperty(value.classes, name)
+            ? { kind: 'term', of: 'property', classes: value.classes, name }
+            : undefined
+        if (value.of === 'property' && name === 'key') return { ...value, of: 'key' }
+        return value.of !== 'key' && COMPARES.has(name)
+          ? { kind: 'compare', term: value, name }
+          : undefined
+      }
+      if (value.kind === 'compare' || value.kind === 'predicate') return undefined
+      const given = base.member(value, name, at, quiet(reading))
+      if (given) return given
+      if (value.kind === 'rows' && value.handle && name === 'properties')
+        return { kind: 'term', of: 'group', classes: value.classes, name }
+      if (value.kind !== 'row') return undefined
+      const { classes } = value
+      if (name === 'id' || name === 'path') return { kind: 'term', of: 'node', classes, name }
+      if (name === PROPERTY_GROUP) return { kind: 'term', of: 'group', classes, name }
+      return !ROW_MEMBERS.has(name) && model.hasProperty(classes, name)
+        ? { kind: 'term', of: 'property', classes, name }
+        : undefined
+    },
+    call: (value, expression, reading) => {
+      if (value.kind === 'compare') {
+        const { term, name } = value
+        const args = expression.getArguments()
+        for (const argument of name === 'between' ? args : args.slice(0, 1)) {
+          const property = term.of === 'property' ? term.name : undefined
+          use(
+            reading.evaluate(argument),
+            term.of === 'property' ? 'property' : 'node',
+            term.classes,
+            property,
+            name,
+            siteOf(expression),
+            reading,
+          )
+        }
+        return undefined
+      }
+      if (value.kind === 'predicate') {
+        const key = expression.getArguments()[0]
+        const term = key && reading.evaluate(key)
+        return term?.kind === 'term' && term.of === 'key' ? { ...term, of: 'property' } : undefined
+      }
+      if (value.kind === 'input') return inputCall(value, expression, reading)
+      if (value.kind === 'verb') verbUses(value.name, expression, reading)
+      if (value.kind === 'method') methodUses(value, expression, reading)
+      return base.call?.(value, expression, quiet(reading))
+    },
+    evaluate: (node, reading) => {
+      // a spread part of the input stands for its items
+      if (Node.isArrayLiteralExpression(node) && node.getElements().some(Node.isSpreadElement)) {
+        const items: Array<Flow<Value> | undefined> = []
+        for (const element of node.getElements()) {
+          if (!Node.isSpreadElement(element)) {
+            items.push(reading.evaluate(element))
+            continue
+          }
+          const spread = reading.evaluate(element.getExpression())
+          if (spread?.kind === 'list') items.push(...spread.items)
+          else items.push(carries(spread) ? spread : undefined)
+        }
+        return { kind: 'list', items }
+      }
+      // a set of parts of the input holds them
+      if (Node.isNewExpression(node)) {
+        const constructed = node.getExpression().getText()
+        const first = node.getArguments()[0]
+        const flow =
+          first && (constructed === 'Set' || constructed === 'ReadonlySet')
+            ? reading.evaluate(first)
+            : undefined
+        return carries(flow) ? flow : undefined
+      }
+      if (Node.isIdentifier(node) && importedFromSdk(node) === 'Property') return PREDICATE
+      return base.evaluate?.(node, quiet(reading))
+    },
+    names: base.names,
+    decide: (condition, reading) => base.decide?.(condition, quiet(reading)),
+    either: (left, right) => {
+      if (isInput(left) || isInput(right)) return joinInputs([left, right].filter(isInput))
+      return base.either ? base.either(left, right) : left
+    },
+    holds: carries,
+    follows: (value) => base.follows?.(value) ?? base.holds(value),
+    describe,
+    signature: (value) => {
+      switch (value.kind) {
+        case 'input':
+          return `i:${value.paths.map((path) => path.join('.')).join('|')}`
+        case 'term':
+          return `t:${value.of}:${value.classes.join('|')}:${value.name}`
+        case 'compare':
+          return `c:${value.term.of}:${value.term.classes.join('|')}:${value.term.name}:${value.name}`
+        case 'list':
+          return `[${value.items
+            .map((item) =>
+              item === undefined
+                ? ''
+                : isFunctionFlow(item) || isObjectFlow(item)
+                  ? '?'
+                  : language.signature(item),
+            )
+            .join(',')}]`
+        default:
+          return base.signature(value)
+      }
+    },
+    element: (value) =>
+      isInput(value) ? value : value.kind === 'list' ? joinInputs(inputsOf(value)) : undefined,
+    spread: (value, at, reading) => {
+      if (!isInput(value)) return undefined
+      const properties = new Map<string, Flow<Value>>()
+      for (const path of value.paths) {
+        const members = declared.membersAt(path)
+        if (!members) {
+          if (path.length === 0) escaped = true
+          reading.gap(at, `spreads ${describeInput(value)}, whose fields the reading cannot tell`)
+          return undefined
+        }
+        if (path.length === 0 && declared.form === 'fields')
+          members.forEach((name) => read.add(name))
+        for (const name of members) {
+          const part: Input = { kind: 'input', paths: [[...path, name]] }
+          const known = properties.get(name)
+          properties.set(name, isInput(known) ? joinInputs([known, part])! : part)
+        }
+      }
+      return properties
+    },
+    lost: (flow) => {
+      if (carriesWhole(flow)) escaped = true
+    },
+  }
+
+  return {
+    language,
+    uses,
+    read,
+    escaped: () => escaped,
+    finish: (session) => {
+      for (const { at, inputs, named } of pending.values()) {
+        if (named) continue
+        session.gap(
+          at,
+          `starts from ${describeInput(joinInputs(inputs)!)} as Nodes whose Class the source does not name`,
+        )
+      }
+    },
+  }
+}
+
 /**
  * The properties an object written as a literal holds, through the spreads and `const` names the
  * reading can open; the parts it cannot open (a spread of a computed value, a computed key).
@@ -1388,6 +1983,8 @@ interface Read {
   effects: DefinitionEffect[]
   preconditions: DefinitionPrecondition[]
   gaps: SourceGap[]
+  /** absent when the reading finds no `build` */
+  input?: DefinitionInput
 }
 
 /**
@@ -1406,22 +2003,25 @@ function readDefinition(
   const session = flowSession(language, context.domainRoot, context.cache)
   const first = call.getArguments()[0]
   const projector = first && callableOf(first)
-  let id: string | undefined
-  let build: Callable | FunctionFlow<Value> | undefined
-  let flows: Array<Value | undefined>
-  if (projector) {
-    const projected = session.read(projector, [DOMAIN])
-    id = single(propertyOf(projected, 'id'))
+  // what `build` is handed after its input
+  const handed: Value[] = projector
+    ? kind === 'mutation'
+      ? [BUILDER]
+      : []
+    : [HANDLES, kind === 'mutation' ? BUILDER : STEPS]
+  /** The id and the `build` a session reads; a projected `build` closes over that session's reading. */
+  const located = (reading: FlowSession<Value>) => {
+    if (!projector) return { id: literalText(first), build: definedBuild(call) }
+    const projected = reading.read(projector, [DOMAIN])
     const written = propertyOf(projected, 'build')
-    build = written && isFunctionFlow(written) ? written : undefined
-    flows = kind === 'mutation' ? [undefined, BUILDER] : [undefined]
-  } else {
-    id = literalText(first)
-    build = definedBuild(call)
-    flows = [undefined, HANDLES, kind === 'mutation' ? BUILDER : STEPS]
+    return {
+      id: single(propertyOf(projected, 'id')),
+      build: written && isFunctionFlow(written) ? written : undefined,
+    }
   }
+  const { id, build } = located(session)
   if (id === undefined) return undefined
-  if (build) session.read(build, flows)
+  if (build) session.read(build, [undefined, ...handed])
   else session.gap(call, 'has no `build` the reading can find')
   for (const { at, text } of unnamed())
     session.gap(at, `starts from Nodes whose Class the source does not name: ${text}`)
@@ -1433,7 +2033,101 @@ function readDefinition(
     )
     gaps = session.gaps()
   }
-  return { id, effects, preconditions: [...preconditions.values()], gaps }
+  const input =
+    build &&
+    readInput({
+      kind,
+      context,
+      fn: build instanceof Node ? build : build.node,
+      // the type the call names for the input: `<Input, Output>` projected, `<Id, Input, …>` defined
+      written: call.getTypeArguments()[projector ? 0 : 1],
+      build: (reading) => located(reading).build,
+      handed,
+    })
+  return {
+    id,
+    effects,
+    preconditions: [...preconditions.values()],
+    gaps,
+    ...(input ? { input } : {}),
+  }
+}
+
+/**
+ * What a definition's `build` takes as input and does with it: the input its type declares, and a
+ * reading of `build` handed that input, in a session of its own so the definition's own reading is
+ * the same with or without it.
+ */
+function readInput(args: {
+  kind: DefinitionLink['kind']
+  context: { model: Model; domainRoot: string; cache: FlowCache }
+  fn: Callable
+  written: TypeNode | undefined
+  /** the `build` a session reads */
+  build: (session: FlowSession<Value>) => Callable | FunctionFlow<Value> | undefined
+  handed: readonly Value[]
+}): DefinitionInput {
+  const { kind, context, fn, written, handed } = args
+  const { domainRoot } = context
+  const declared = declaredInput(fn, written, domainRoot)
+  if (declared.form === 'none' || declared.form === 'unread') {
+    const gap = declared.gap
+    return {
+      form: declared.form,
+      fields: [],
+      ...(gap
+        ? {
+            gaps: [
+              {
+                file: relToRoot(domainRoot, gap.at.getSourceFile().getFilePath()),
+                line: gap.at.getStartLineNumber(),
+                reason: gap.reason,
+              },
+            ],
+          }
+        : {}),
+    }
+  }
+  const { language: base } = definitionLanguage({ kind, ...context })
+  const reading = inputReading({ base, declared, model: context.model, domainRoot })
+  const session = flowSession(reading.language, domainRoot, context.cache)
+  const build = args.build(session)
+  if (build) session.read(build, [INPUT, ...handed])
+  reading.finish(session)
+  const gaps = session.gaps()
+  const referenced = declared.form === 'value' && readsParameter(fn)
+  const fields = declared.fields.map((field): DefinitionInputField => {
+    const read =
+      declared.form === 'value'
+        ? referenced
+        : reading.read.has(field.name)
+          ? true
+          : reading.escaped()
+            ? undefined
+            : false
+    return {
+      ...field,
+      ...(read === undefined ? {} : { read }),
+      uses: reading.uses.get(field.name) ?? [],
+    }
+  })
+  return { form: declared.form, fields, ...(gaps.length > 0 ? { gaps } : {}) }
+}
+
+/** Whether a function reads its first parameter, named by an identifier. */
+function readsParameter(fn: Callable): boolean {
+  const parameter = fn.getParameters()[0]
+  const name = parameter?.getNameNode()
+  if (!parameter || !name || !Node.isIdentifier(name)) return true
+  const text = name.getText()
+  return (
+    fn
+      .getBody()
+      ?.getDescendantsOfKind(SyntaxKind.Identifier)
+      .some(
+        (identifier) => identifier.getText() === text && declarationOf(identifier) === parameter,
+      ) ?? false
+  )
 }
 
 /** Reads one `defineQuery()` or `defineMutation()` call into its link; undefined for any other call. */
@@ -1477,6 +2171,7 @@ export function definitionReader(args: {
     if (reading.effects.length > 0) link.effects = reading.effects
     if (reading.preconditions.length > 0) link.preconditions = reading.preconditions
     if (reading.gaps.length > 0) link.gaps = reading.gaps
+    if (reading.input) link.input = reading.input
     return link
   }
 }

@@ -18,6 +18,7 @@ import {
   type FunctionExpression,
   type MethodDeclaration,
   type PropertyAccessExpression,
+  type VariableDeclaration,
 } from 'ts-morph'
 
 import type { SourceGap } from '../../../shared/contracts/schema'
@@ -137,6 +138,18 @@ export interface FlowLanguage<V extends FlowValue> {
    * `….integrations`. What the reading meets from it counts; losing it is no gap.
    */
   anchor?(access: PropertyAccessExpression): V | undefined
+  /**
+   * What each pass of a `for … of` over a value binds; undefined when the language does not
+   * read the value as items. Absent, a loop over a value the language holds is a gap.
+   */
+  element?(value: V): Flow<V> | undefined
+  /**
+   * The properties spreading a value into an object literal writes (`{ ...value }`); absent or
+   * undefined, the spread writes none the reading follows.
+   */
+  spread?(value: V, at: Node, reading: Reading<V>): ReadonlyMap<string, Flow<V>> | undefined
+  /** Told of each flow holding what the language holds where it leaves what the reading follows. */
+  lost?(flow: Flow<V>): void
 }
 
 /** One reading session: functions read with the flows they are handed, sharing one bound. */
@@ -166,6 +179,16 @@ export const RETURNS_ARGUMENT = new Set([
   'Object.freeze',
   'Object.seal',
   'Object.preventExtensions',
+])
+
+/** Built-ins that test what they are handed and return none of it. */
+const TESTS_ARGUMENT = new Set([
+  'Array.isArray',
+  'Object.hasOwn',
+  'Number.isFinite',
+  'Number.isInteger',
+  'Number.isNaN',
+  'Number.isSafeInteger',
 ])
 
 /** How far one session follows, so a helper recursing with new closures ends. */
@@ -250,7 +273,7 @@ export function flowSession<V extends FlowValue>(
   const results = new Map<string, Flow<V> | undefined>()
   // Every function read; see `returns`.
   const readFunctions = new Set<string>()
-  const returns: Array<{ owner: Node; at: Node; reason: string }> = []
+  const returns: Array<{ owner: Node; at: Node; reason: string; flow: Flow<V> }> = []
   // Functions the language reads with the flows it hands them, skipped where written.
   const claimed = new Set<string>()
   const readings = new WeakMap<Scope<V>, Reading<V>>()
@@ -282,6 +305,11 @@ export function flowSession<V extends FlowValue>(
     const file = relToRoot(domainRoot, node.getSourceFile().getFilePath())
     const line = node.getStartLineNumber()
     gaps.set(`${file}:${line}:${reason}`, { file, line, reason })
+  }
+  /** A gap where `flow`, which holds what the language holds, leaves what the reading follows. */
+  const lose = (flow: Flow<V>, node: Node, reason: string) => {
+    language.lost?.(flow)
+    gap(node, reason)
   }
 
   const readingOf = (scope: Scope<V>): Reading<V> => {
@@ -382,8 +410,13 @@ export function flowSession<V extends FlowValue>(
       for (const property of value.getProperties()) {
         if (Node.isSpreadAssignment(property)) {
           const spread = evaluate(property.getExpression(), scope)
-          if (spread && isObjectFlow(spread))
-            for (const [name, flow] of spread.properties) properties.set(name, flow)
+          const written =
+            spread && isObjectFlow(spread)
+              ? spread.properties
+              : spread && isValue(spread)
+                ? language.spread?.(spread, property, readingOf(scope))
+                : undefined
+          for (const [name, flow] of written ?? []) properties.set(name, flow)
           continue
         }
         const name = propertyKey(property)
@@ -419,7 +452,7 @@ export function flowSession<V extends FlowValue>(
       }
       const property = element.getPropertyNameNode()
       if (property && Node.isComputedPropertyName(property)) {
-        if (holds(flow)) gap(element, `reads ${language.describe(flow)} by a computed name`)
+        if (holds(flow)) lose(flow, element, `reads ${language.describe(flow)} by a computed name`)
         continue
       }
       const read =
@@ -441,7 +474,7 @@ export function flowSession<V extends FlowValue>(
       const names = memberNames(parent, scope)
       if (names === undefined) {
         if (!quiet && holds(flow))
-          gap(parent, `reads ${language.describe(flow)} by a computed name`)
+          lose(flow, parent, `reads ${language.describe(flow)} by a computed name`)
         return
       }
       for (const name of names) {
@@ -467,6 +500,24 @@ export function flowSession<V extends FlowValue>(
       const carried = evaluate(parent, scope)
       if (carried) return climb(parent, carried, scope, quiet)
     }
+    // so do an array it is spread into and a constructor, while what they give still holds it
+    if ((Node.isSpreadElement(parent) || Node.isNewExpression(parent)) && !quiet) {
+      const carrier = Node.isSpreadElement(parent) ? parent.getParent() : parent
+      const carried =
+        carrier && (Node.isArrayLiteralExpression(carrier) || Node.isNewExpression(carrier))
+          ? evaluate(carrier, scope)
+          : undefined
+      if (carrier && carried && holds(carried)) return climb(carrier, carried, scope, quiet)
+    }
+    // a loop over the value binds its items; see `item`
+    if (
+      Node.isForOfStatement(parent) &&
+      parent.getExpression() === node &&
+      isValue(flow) &&
+      language.element?.(flow)
+    ) {
+      return
+    }
     if (Node.isConditionalExpression(parent)) {
       if (parent.getCondition() !== node) climb(parent, flow, scope, quiet)
       return
@@ -480,7 +531,7 @@ export function flowSession<V extends FlowValue>(
         !quiet &&
         holds(flow)
       ) {
-        gap(parent, `stores ${language.describe(flow)} where the reading cannot follow`)
+        lose(flow, parent, `stores ${language.describe(flow)} where the reading cannot follow`)
       }
       return
     }
@@ -503,10 +554,11 @@ export function flowSession<V extends FlowValue>(
           owner,
           at: parent,
           reason: `returns ${language.describe(flow)} to a caller the reading does not follow`,
+          flow,
         })
       }
     } else {
-      gap(parent, `hands ${language.describe(flow)} on where the reading cannot follow`)
+      lose(flow, parent, `hands ${language.describe(flow)} on where the reading cannot follow`)
     }
   }
 
@@ -579,6 +631,7 @@ export function flowSession<V extends FlowValue>(
       if (flow && holds(flow)) climb(expression, flow, scope, false)
       return
     }
+    if (TESTS_ARGUMENT.has(callee.getText())) return
     const flows = argumentFlows(args, scope)
     const helper = flows.some(following) ? functionOf(callee, scope) : closureCalled(callee, scope)
     if (!flows.some(following) && !helper) return
@@ -589,7 +642,8 @@ export function flowSession<V extends FlowValue>(
     }
     flows.forEach((flow, index) => {
       if (flow && holds(flow)) {
-        gap(
+        lose(
+          flow,
           args[index]!,
           `hands ${language.describe(flow)} to ${quotedSource(callee)}, which the reading cannot follow`,
         )
@@ -624,6 +678,14 @@ export function flowSession<V extends FlowValue>(
     return result
   }
 
+  /** What a `for … of` binds each pass: one item of what it iterates, as the language reads it. */
+  const item = (declaration: VariableDeclaration, scope: Scope<V>): Flow<V> | undefined => {
+    const loop = declaration.getParent()?.getParent()
+    if (!language.element || !loop || !Node.isForOfStatement(loop)) return undefined
+    const items = evaluate(loop.getExpression(), scope)
+    return items && isValue(items) ? language.element(items) : undefined
+  }
+
   /** Read `fn` handed `flows` by the reading `caller`, at `site`: what it returns. */
   const visit = (
     fn: FunctionFlow<V>,
@@ -635,6 +697,7 @@ export function flowSession<V extends FlowValue>(
     if (results.has(key)) return results.get(key)
     const depth = (caller?.depth ?? 0) + 1
     if (depth > MAX_DEPTH || count >= MAX_READINGS) {
+      for (const flow of flows) if (flow && holds(flow)) language.lost?.(flow)
       gap(
         site,
         `calls deeper than the reading follows (${MAX_DEPTH} calls, ${MAX_READINGS} functions)`,
@@ -662,7 +725,7 @@ export function flowSession<V extends FlowValue>(
         traversal.skip()
       } else if (Node.isVariableDeclaration(node)) {
         const initializer = node.getInitializer()
-        const flow = initializer && evaluate(initializer, scope)
+        const flow = initializer ? evaluate(initializer, scope) : item(node, scope)
         if (flow) bind(node.getNameNode(), flow, scope)
       } else if (Node.isCallExpression(node)) {
         call(node, scope)
@@ -688,8 +751,8 @@ export function flowSession<V extends FlowValue>(
     },
     gap,
     gaps: () => {
-      for (const { owner, at, reason } of returns) {
-        if (!readFunctions.has(nodeKey(owner))) gap(at, reason)
+      for (const { owner, at, reason, flow } of returns) {
+        if (!readFunctions.has(nodeKey(owner))) lose(flow, at, reason)
       }
       returns.length = 0
       return [...gaps.values()].sort((left, right) =>

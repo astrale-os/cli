@@ -82,8 +82,10 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
  * v13: an admitted bundle carries its root's dependency closure.
  * v14: a Mutation definition carries the preconditions its `build` states.
  * v15: a precondition carries the conditions and loops it is stated under.
+ * v16: a definition carries its input: each field its type declares and what `build` compares it
+ * with.
  */
-const BUNDLE_CACHE_VERSION = 15
+const BUNDLE_CACHE_VERSION = 16
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'introspect/cache.ts',

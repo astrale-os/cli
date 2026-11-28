@@ -233,6 +233,82 @@ export interface DefinitionLink {
   preconditions?: DefinitionPrecondition[]
   /** where the reading cannot tell what it does; absent when the effects are complete */
   gaps?: SourceGap[]
+  /** what its `build` takes as input and compares each part with; absent when it has no `build` */
+  input?: DefinitionInput
+}
+
+/**
+ * What a definition's `build` takes as its first parameter, as the type the source declares for
+ * it says, and what `build` does with each field.
+ */
+export interface DefinitionInput {
+  /**
+   * `fields`, an object, one entry per field its type declares, in declaration order; `value`, one
+   * value, one entry named after the parameter; `none`, no input (no parameter, or `undefined`,
+   * `null`, `void`); `unread`, a type the reading cannot resolve, with no entry and a gap
+   */
+  form: 'fields' | 'value' | 'none' | 'unread'
+  fields: DefinitionInputField[]
+  /**
+   * where the reading cannot resolve the type, or a use of a part of the input leaves what it
+   * follows; absent when it follows every use. The definition's own `gaps` leave these out.
+   */
+  gaps?: SourceGap[]
+}
+
+/**
+ * What a field's declared type alone says it holds: `node`, one Node id (`NodeId`, `NodePath`);
+ * `nodes`, a list of them; `value`, one plain value (a string, a number, a boolean, a literal);
+ * `values`, a list of them; `unknown`, anything else (an object, a mix, a type the reading cannot
+ * resolve).
+ */
+export type DefinitionInputKind = 'node' | 'nodes' | 'value' | 'values' | 'unknown'
+
+/** One field of a definition's input, where its type declares it. */
+export interface DefinitionInputField {
+  name: string
+  optional: boolean
+  /** the declared type as written, on one line */
+  type: string
+  kind: DefinitionInputKind
+  /** the literals a `value` or `values` field takes, when its type is a union of literals */
+  literals?: Array<string | number | boolean>
+  doc?: string
+  file: string
+  line: number
+  /**
+   * whether `build` reads it; absent when the reading cannot tell, as when the whole input leaves
+   * what it follows
+   */
+  read?: boolean
+  /**
+   * what `build` compares it with, where the reading is certain, in the order it meets them; empty
+   * when it compares it with nothing, short of what a gap of the input names
+   */
+  uses: DefinitionInputUse[]
+}
+
+/**
+ * One comparison `build` makes of an input field: `node`, it names a Node of `class`
+ * (`X.get(input.f)`, `x.id.in([input.f])`, `mutation.updateNode({ node: input.f })`, an Edge's
+ * `source` or `target`); `property`, it is compared with `property` of `class`
+ * (`x.status.eq(input.f)`, `x.$prop.id.eq(input.f)`, `props: { equals: { status: input.f } }`, a
+ * transition's `from`, `Property(X.properties.status.key).equals(input.f)`).
+ */
+export interface DefinitionInputUse {
+  kind: 'node' | 'property'
+  /** the local Class name or the exact imported key, as the IR keys them */
+  class: string
+  property?: string
+  /** what the source calls: `get`, `is`, `eq`, `in`, `Query.from`, a builder verb (`updateNode`) */
+  verb: string
+  /**
+   * the members below the field it takes, as `['id']` for `input.items[n].id`; absent for the
+   * field itself or its items
+   */
+  path?: string[]
+  file: string
+  line: number
 }
 
 /**
