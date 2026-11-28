@@ -15,17 +15,42 @@ test('clearing the selection closes the detail it opened, and leaves an overlay 
   expect(useUI.getState().panelOverlay).toEqual({ kind: 'domains' })
 })
 
-test('the Data level never reads a lens only the Schema answers', () => {
-  useUI.setState({ level: 'domain', lens: 'views' })
+test('a lens is the Schema’s: the Data level leaves it alone, and asking one opens the Schema', () => {
+  useUI.setState({ level: 'domain', lens: 'views', dataTab: 'query' })
   useUI.getState().openDataLevel('datasets/demo.dataset.ts')
-  expect(useUI.getState()).toMatchObject({ level: 'data', lens: 'structure' })
+  expect(useUI.getState()).toMatchObject({ level: 'data', lens: 'views', dataTab: 'query' })
+  useUI.getState().chooseDataset()
+  expect(useUI.getState()).toMatchObject({ level: 'data', lens: 'views', dataTab: 'query' })
 
+  useUI.getState().openDataLevel('datasets/demo.dataset.ts')
   useUI.getState().setLens('rules')
-  expect(useUI.getState()).toMatchObject({ level: 'data', lens: 'rules' })
+  expect(useUI.getState()).toMatchObject({
+    level: 'domain',
+    lens: 'rules',
+    dataset: 'datasets/demo.dataset.ts',
+  })
+})
 
-  // choosing Views from a Dataset reads the Schema it renders
-  useUI.getState().setLens('views')
-  expect(useUI.getState()).toMatchObject({ level: 'domain', lens: 'views' })
+test('a tab of the Data level is asked in place, and kept in this browser', () => {
+  const stored = new Map<string, string>()
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    },
+  })
+  try {
+    useUI.getState().openDataLevel('datasets/demo.dataset.ts')
+    useUI.getState().setDataTab('access')
+    expect(useUI.getState()).toMatchObject({ level: 'data', dataTab: 'access' })
+    expect(stored.get('studio.dataTab')).toBe('access')
+    useUI.getState().setDataTab('scenarios')
+    expect(stored.get('studio.dataTab')).toBe('scenarios')
+  } finally {
+    Reflect.deleteProperty(globalThis, 'localStorage')
+    useUI.getState().openSchema()
+  }
 })
 
 test('revealing a relationship asks the canvas for the LINE, and pins no focus on it', () => {
@@ -79,27 +104,29 @@ test('a dataset belongs to its Domain', () => {
   useUI.getState().openSchema()
 })
 
-test('the Data level reads a dataset through the lens; the Schema is one step back', () => {
+test('the Data level reads a dataset through its tabs; the Schema is one step back', () => {
   const ui = () => useUI.getState()
   ui().setReaderDomain('services')
   ui().setLens('behavior')
+  ui().setDataTab('scenarios')
   ui().selectClass('class.Service', 'services')
   ui().openDataLevel('./tests/datasets/identity-owners.ts')
   expect(ui()).toMatchObject({
     level: 'data',
     dataset: './tests/datasets/identity-owners.ts',
-    lens: 'behavior',
+    dataTab: 'scenarios',
   })
 
-  // the lens switches in place, Rules included, and the selection stays
-  ui().setLens('rules')
-  ui().setLens('structure')
-  expect(ui()).toMatchObject({ level: 'data', lens: 'structure', selectedClass: 'class.Service' })
+  // the tab switches in place, and the selection stays
+  ui().setDataTab('access')
+  ui().setDataTab('query')
+  expect(ui()).toMatchObject({ level: 'data', dataTab: 'query', selectedClass: 'class.Service' })
 
-  // back to the Schema: the selection and the dataset are kept
+  // back to the Schema: the lens, the selection and the dataset are kept
   ui().openSchema()
   expect(ui()).toMatchObject({
     level: 'domain',
+    lens: 'behavior',
     dataset: './tests/datasets/identity-owners.ts',
     selectedClass: 'class.Service',
   })

@@ -12,8 +12,8 @@ import {
 } from './test'
 
 /**
- * Scenarios at the Data level: a verdict the Rules lens decides is pinned as a step that expects
- * it, and Behavior reads the dataset's Scenarios, each step judged again on the dataset as written.
+ * Scenarios at the Data level: a verdict Access decides is pinned as a step that expects it, and
+ * the Scenarios tab reads the dataset's Scenarios, each step judged again on the dataset as written.
  *
  * In the fixture's `support-desk` dataset, Ann may not read Bob's ticket (`login`), and may not
  * settle the invoice billed to Acme: `Invoice.settle` asks `mayManageInvoice`, which she fails.
@@ -25,24 +25,26 @@ test.beforeEach(async ({ request }) => clearScenarios(request))
 test.afterEach(async ({ request }) => clearScenarios(request))
 
 const panel = (page: Page) => page.locator('[data-data-panel]')
-const lens = (page: Page) => page.getByTestId('data-level')
+const level = (page: Page) => page.getByTestId('data-level')
 const toastOf = (page: Page, text: string) =>
   page.locator('[data-sonner-toast]').filter({ hasText: text })
 
-test('verdicts pinned from Rules make a Scenario that Behavior judges again, step by step', async ({
+test('verdicts pinned under Access make a Scenario that Scenarios judges again, step by step', async ({
   page,
   request,
 }) => {
   await openSupportDesk(page)
 
-  // no Scenario yet: Behavior says what one is, and the first step is one action away
-  await page.keyboard.press('2')
-  await expect(lens(page)).toHaveAttribute('data-lens', 'behavior')
+  // no Scenario yet: Scenarios says what one is, and the first step is one action away
+  await page.keyboard.press('3')
+  await expect(level(page)).toHaveAttribute('data-tab', 'scenarios')
   await expect(panel(page).locator('[data-scenario-empty]')).toContainText(
-    'A Scenario is a list of steps on this dataset',
+    'A Scenario keeps answers as expected',
   )
-  await panel(page).locator('[data-scenario-first]').click()
-  await expect(lens(page)).toHaveAttribute('data-lens', 'rules')
+  const first = panel(page).locator('[data-scenario-first]')
+  await expect(first).toHaveText('Pin a verdict under Access →')
+  await first.click()
+  await expect(level(page)).toHaveAttribute('data-tab', 'access')
 
   await page.getByTestId('data-identity-trigger').click()
   await page.locator('[data-identity="ann"]').click()
@@ -51,7 +53,9 @@ test('verdicts pinned from Rules make a Scenario that Behavior judges again, ste
   await indexRow(page, 'core.node.login').click()
   await panel(page).locator('[data-verdict-pin="read:login"]').click()
   await page.locator('[data-pin-menu="read:login"] [data-pin-new]').click()
-  await expect(toastOf(page, 'New Scenario')).toBeVisible()
+  await expect(toastOf(page, 'New Scenario')).toContainText(
+    'Rename it and read it under Scenarios.',
+  )
 
   // her refused call of settle joins it; the ask it holds is marked, and not offered twice
   await indexRow(page, 'core.node.invoice-1').click()
@@ -70,8 +74,8 @@ test('verdicts pinned from Rules make a Scenario that Behavior judges again, ste
     .poll(async () => (await storedScenarios(request)).map((one) => one.steps.length))
     .toEqual([2])
 
-  // in Behavior the selected Node offers the steps that involve it
-  await page.keyboard.press('2')
+  // under Scenarios the selected Node offers the steps that involve it
+  await page.keyboard.press('3')
   await expect(panel(page).locator('[data-involving-step]')).toHaveCount(1)
   await expect(panel(page).locator('[data-involving-step]')).toContainText('Invoice.settle')
 
@@ -142,10 +146,10 @@ test('verdicts pinned from Rules make a Scenario that Behavior judges again, ste
   await expect(panel(page).locator('[data-scenario-standing]')).toHaveText('1 of 2 as expected')
   await expect(listed).toContainText('1 of 2 as expected')
 
-  // a step selected in Behavior arrives in Rules on its verdict
+  // a step selected under Scenarios arrives under Access on its verdict
   await steps.nth(1).locator('[data-step-select]').click()
-  await steps.nth(1).locator('[data-step-rules]').click()
-  await expect(lens(page)).toHaveAttribute('data-lens', 'rules')
+  await steps.nth(1).locator('[data-step-access]').click()
+  await expect(level(page)).toHaveAttribute('data-tab', 'access')
   await expect(page.getByTestId('data-identity-trigger')).toHaveText('ann')
   await expect(panel(page).locator('[data-verdict="call:Invoice.settle"]')).toHaveAttribute(
     'data-lit',
@@ -159,8 +163,8 @@ test('verdicts pinned from Rules make a Scenario that Behavior judges again, ste
   // reloaded, everything is where it was left
   await page.reload()
   await openSupportDesk(page)
-  await page.keyboard.press('2')
-  await expect(lens(page)).toHaveAttribute('data-lens', 'behavior')
+  await page.keyboard.press('3')
+  await expect(level(page)).toHaveAttribute('data-tab', 'scenarios')
   const row = panel(page).locator('[data-scenario-row]')
   await expect(row).toHaveCount(1)
   await expect(row.locator('[data-scenario-standing]')).toHaveText('1 of 2 as expected')
@@ -197,8 +201,8 @@ test('a Scenario written in another window reaches this one without a reload', a
   request,
 }) => {
   await openSupportDesk(page)
-  await page.keyboard.press('2')
-  await expect(lens(page)).toHaveAttribute('data-lens', 'behavior')
+  await page.keyboard.press('3')
+  await expect(level(page)).toHaveAttribute('data-tab', 'scenarios')
   await expect(panel(page).locator('[data-scenario-empty]')).toBeVisible()
 
   // another window writes one through the same route

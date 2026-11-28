@@ -3,7 +3,8 @@ import type { WorkspacePanelUiState, WorkspaceUiState } from '@shared/contracts/
 import { publicationOf } from '@shared/contracts/versions'
 import { create } from 'zustand'
 
-import { dataLensOf, isDataLens, LENS_NAMES, type LensId } from '@/studio/lenses/keys'
+import { DATA_TABS, type DataTab } from '@/studio/data/tabs'
+import { LENS_NAMES, type LensId } from '@/studio/lenses/keys'
 
 import { detailRefFor, type Target } from './targets'
 
@@ -130,9 +131,12 @@ interface UIState {
   chatTabsSide: ChatTabsSide
   /** the chat tab column's width when it sits on the left, persisted in this browser */
   chatTabsWidth: number
-  /** the question the canvas answers — Structure, Behavior, Rules or Views — persisted in this
-   *  browser. The Data level never reads a lens only the Schema answers (`isDataLens`). */
+  /** the question the canvas answers about a Schema — Structure, Behavior, Rules or Views —
+   *  persisted in this browser */
   lens: LensId
+  /** the question the Data level answers about a dataset — Query, Access or Scenarios —
+   *  persisted in this browser */
+  dataTab: DataTab
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
@@ -214,9 +218,11 @@ interface UIState {
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
   setChatTabsSide: (side: ChatTabsSide) => void
-  /** Ask the canvas another question: the Schema canvas, read through `lens`. The selection
-   *  stays. A lens the Data level does not read is asked of the Schema level. */
+  /** Ask the canvas another question of the Schema, read through `lens`. The selection stays.
+   *  Asked from the Workspace or the Data level, it opens the Schema level. */
   setLens: (lens: LensId) => void
+  /** Ask the Data level another question of the dataset shown. */
+  setDataTab: (tab: DataTab) => void
   setChatTabsWidth: (width: number) => void
   /** Read the whole Workspace. Every way into a Domain reads its Schema again. */
   openWorkspace: () => void
@@ -225,7 +231,7 @@ interface UIState {
   /** Read a Domain's Schema. The selection stays when it is that Domain's: a round trip
    *  through the Workspace level comes back to it. */
   openDomain: (domainId: string) => void
-  /** Read the dataset at module `path` through the lenses, the lens and selection kept; null
+  /** Read the dataset at module `path` through the Data level's tabs, the tab kept; null
    *  shows the Domain's Datasets page. `openSchema` goes back to the Schema. */
   openDataLevel: (path: string | null) => void
   /** Read the shown Domain's Data level before its datasets are read: the dataset is chosen once
@@ -328,6 +334,7 @@ export const useUI = create<UIState>((set) => ({
     LENS_NAMES.filter((name) => name.available).map((name) => name.id),
     'structure',
   ),
+  dataTab: loadStored('studio.dataTab', DATA_TABS, 'query'),
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
   panelOpen: false,
@@ -371,10 +378,14 @@ export const useUI = create<UIState>((set) => ({
       lens,
       ...(s.level === 'workspace'
         ? { level: 'domain' as const, panelOverlay: null, openAnchorRef: null }
-        : s.level === 'data' && !isDataLens(lens)
+        : s.level === 'data'
           ? schemaLevel
           : {}),
     }))
+  },
+  setDataTab: (dataTab) => {
+    storeBrowserPreference('studio.dataTab', dataTab)
+    set({ dataTab })
   },
   setChatTabsWidth: (width) => {
     const chatTabsWidth = clampTo(CHAT_TABS_WIDTH, width)
@@ -406,9 +417,8 @@ export const useUI = create<UIState>((set) => ({
       openAnchorRef: null,
     })),
   openDataLevel: (dataset) =>
-    set((s) => ({
+    set(() => ({
       level: 'data',
-      lens: dataLensOf(s.lens),
       dataset,
       choosingDataset: false,
       panelOverlay: null,
@@ -417,9 +427,8 @@ export const useUI = create<UIState>((set) => ({
       openAnchorRef: null,
     })),
   chooseDataset: () =>
-    set((s) => ({
+    set(() => ({
       level: 'data',
-      lens: dataLensOf(s.lens),
       dataset: null,
       choosingDataset: true,
       panelOverlay: null,

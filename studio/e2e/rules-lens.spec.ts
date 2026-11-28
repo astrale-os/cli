@@ -6,6 +6,7 @@ import {
   inspector,
   layoutRoute,
   lensButton,
+  listedRows,
   openSchema,
   sceneBox,
   sceneCanvas,
@@ -21,8 +22,12 @@ import {
  *
  * The fixture writes one read and traverse Policy on Ticket (`mayReadTicket`: the caller is its
  * reporter), `read: true` on Message, a call rule on `Invoice.settle` (`mayManageInvoice` on the
- * Invoice) and a contract with no Policy of its own on `Invoice.remind`; Team writes none.
+ * Invoice) and a contract with no Policy of its own on `Invoice.remind`; Team writes only
+ * `read: true`. `mayReadOpportunity` and `mayReadSubscription` guard the reads of their Classes,
+ * so three Policies open alike: `may read …`.
  */
+
+const ORIGIN = 'crm.studio-demo.astrale.ai'
 
 /** Where every card stands in the world, by id: the camera moving changes none of it. */
 const places = (page: Page) =>
@@ -91,10 +96,18 @@ test('Rules keeps the Structure map and reads each Class card’s rules (U1, U3,
   await expect(
     rule(page, 'class.Ticket', 'class.Ticket#traverse').locator('.scene-rule-text'),
   ).toHaveText('same as read')
-  // a Class that writes nothing says so, quietly, in the Kernel default's mark drawn hollow
-  const team = sceneBox(page, 'class.Team').locator('[data-rule-id][data-unwritten]').first()
-  await expect(team).toContainText('Kernel default')
+  // where a Class writes nothing, the row says whom the Kernel admits, quietly, its mark drawn
+  // hollow; the sentence is the row's own, on hover
+  const team = rule(page, 'class.Team', 'class.Team#create')
+  await expect(team).toHaveAttribute('data-unwritten', /.*/)
+  await expect(team.locator('.scene-rule-text')).toHaveText('Owning Domain only')
   await expect(shownMarks(team, '.rule-mark[data-unwritten]')).toHaveCount(1)
+  await team.hover()
+  await expect(team).toHaveAttribute('data-hovered', /.*/)
+  await expect(team).toHaveAttribute(
+    'title',
+    'Only Root, crm (its Domain) and holders of the create capability on Team may create one.',
+  )
   // the Methods' call rules fold into one row, shut at rest
   const calls = rule(page, 'class.Invoice', 'class.Invoice#call')
   await expect(calls).toHaveAttribute('data-fold', 'shut')
@@ -180,6 +193,37 @@ test('the Index lists the rules; selecting one lights every place it applies (U5
     'lit',
   )
   expect(await places(page)).toEqual(rested)
+})
+
+test('Policies whose names open alike are one family in the Index, each by the rest of its words', async ({
+  page,
+}) => {
+  await openRules(page)
+  const family = indexRow(page, 'policies.may-read')
+  await expect(family).toContainText('May read')
+  const others = indexRow(page, 'rules.who')
+  await expect(others).toContainText('Other Policies')
+  // the family's Policies by what follows the opening, then the one no family holds, in words
+  const policy = (name: string) => `policy.${ORIGIN}:policy.${name}`
+  const listed = (await listedRows(page)).filter(
+    (id) => id.startsWith('policy.') || id === 'policies.may-read' || id === 'rules.who',
+  )
+  expect(listed).toEqual([
+    'policies.may-read',
+    policy('mayReadOpportunity'),
+    policy('mayReadSubscription'),
+    policy('mayReadTicket'),
+    'rules.who',
+    policy('mayManageInvoice'),
+  ])
+  await expect(policyRow(page, 'mayReadOpportunity')).toContainText('… Opportunity')
+  await expect(policyRow(page, 'mayReadTicket')).toContainText('… Ticket')
+  await expect(policyRow(page, 'mayManageInvoice')).toContainText('may manage Invoice')
+
+  // a Policy is still found by its name as written
+  await indexRail(page).getByLabel('Filter the Index').fill('mayReadTicket')
+  await expect(indexRail(page).locator('[data-index-row^="policy."]')).toHaveCount(1)
+  await expect(policyRow(page, 'mayReadTicket')).toBeVisible()
 })
 
 /**

@@ -1,6 +1,8 @@
 /**
- * The Schema | Data switch: which level of the shown Domain the Studio reads. Schema is the
- * neutral default; Data wears the Data accent. It is the one control that moves between the two.
+ * The Schema | Data switch: which level of the shown Domain the Studio reads. It is a mode, not a
+ * tab, and is drawn as one: a pill beside the tabs' flat segments, the level read filled in its
+ * own colour — Schema its violet, Data the Data accent. It is the one control that moves between
+ * the two.
  * Data opens the dataset `studio/data/entry.ts` chooses, else the Domain's Datasets page; Schema
  * comes back with the lens and the selection kept. A Publication carries no dataset: its Data is
  * disabled and says why. A Domain that references no Dataset says so on the Data segment itself —
@@ -33,7 +35,14 @@ const NO_DATASET = 'No Dataset referenced'
 const ASK_DATASET = 'No Dataset referenced: the agent can be asked to write one'
 
 const SEGMENT =
-  'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium transition-colors max-xl:px-2 disabled:cursor-default disabled:text-muted-foreground/55'
+  'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] font-semibold transition-[background-color,color,box-shadow] duration-200 max-xl:px-2.5 disabled:cursor-default disabled:text-muted-foreground/55'
+
+/** The level read, filled in its colour. */
+const CURRENT = {
+  schema:
+    'bg-level-schema text-white shadow-[0_1px_3px_color-mix(in_oklch,var(--level-schema)_45%,transparent)]',
+  data: 'bg-primary text-primary-foreground shadow-[0_1px_3px_color-mix(in_oklch,var(--primary)_45%,transparent)]',
+} as const
 
 /** Below this width the segment not in use shows its glyph alone; its name stays its accessible name. */
 const LABEL_NARROW = 'max-lg:sr-only'
@@ -66,7 +75,7 @@ export function LevelSwitch({
       aria-label="Level"
       data-testid="level-switch"
       data-level={dataLevel ? 'data' : 'schema'}
-      className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5"
+      className="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-background p-[3px] shadow-xs"
     >
       <Segment
         level="schema"
@@ -133,10 +142,8 @@ function Segment({
             className={cn(
               SEGMENT,
               current
-                ? level === 'data'
-                  ? 'bg-primary text-primary-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]'
-                  : 'bg-card text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.06)]'
-                : 'text-muted-foreground hover:text-foreground',
+                ? CURRENT[level]
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             )}
           >
             <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />

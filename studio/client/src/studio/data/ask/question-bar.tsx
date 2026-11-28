@@ -125,7 +125,7 @@ const givesWords = (gives: NonNullable<Candidate['gives']>): string =>
     : `${counted(gives.matched)} ${gives.matched === 1 ? 'row' : 'rows'} · ${counted(gives.nodes)} Nodes`
 
 /** One slot of a question as a chip: what it holds, why, and what it can take. */
-export function SlotChip({
+function SlotChip({
   slot,
   value,
   why,
@@ -364,30 +364,20 @@ export function SlotChip({
 }
 
 /** Who asks, as a chip: one of the dataset's identities, or the choice that stands for none. */
-export function AsChip({
+function AsChip({
   identities,
   as,
   deciding,
   onAs,
-  verb = 'read as',
-  whole = { label: 'the Domain', detail: 'everything' },
-  note = 'A Query runs under whoever asks: the same question answers with what that identity may read.',
-}: Pick<QuestionBarProps, 'identities' | 'as' | 'deciding' | 'onAs'> & {
-  /** what the identity does, before its name */
-  verb?: string
-  /** the choice that is no identity of the dataset */
-  whole?: { label: string; detail: string }
-  /** what choosing an identity changes, in a sentence */
-  note?: string
-}) {
+}: Pick<QuestionBarProps, 'identities' | 'as' | 'deciding' | 'onAs'>) {
   const [open, setOpen] = useState(false)
   const current = identities.find((one) => one.id === as)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button type="button" data-ask-as={as ?? ''} className={cn(CHIP, 'shrink-0')}>
-          <span className="shrink-0 text-muted-foreground">{verb}</span>
-          <span className="min-w-0 truncate font-medium">{current?.label ?? whole.label}</span>
+          <span className="shrink-0 text-muted-foreground">read as</span>
+          <span className="min-w-0 truncate font-medium">{current?.label ?? 'the Domain'}</span>
           {deciding !== undefined && (
             <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
               {deciding}
@@ -398,18 +388,19 @@ export function AsChip({
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-72 p-0">
         <p className="border-b px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
-          {note}
+          A Query runs under whoever asks: the same question answers with what that identity may
+          read.
         </p>
         <div className="max-h-72 overflow-y-auto p-1" role="listbox">
           <Row
             current={as === undefined}
-            detail={whole.detail}
+            detail="everything"
             onPick={() => {
               onAs(undefined)
               setOpen(false)
             }}
           >
-            {whole.label}
+            the Domain
           </Row>
           {identities.map((one) => (
             <Row
@@ -478,7 +469,7 @@ function Scale({ factor, onFactor }: Pick<QuestionBarProps, 'factor' | 'onFactor
   )
 }
 
-/** What every lens says over a dataset's map: which dataset, at what size, and who reads it. */
+/** What every tab says over a dataset's map: which dataset, at what size, and who reads it. */
 export interface DataBarProps {
   datasetName: string
   nodes: number
@@ -488,13 +479,13 @@ export interface DataBarProps {
   onDatasets: () => void
   /** what stands at the right of the first line: who asks */
   aside?: ReactNode
-  /** the lens's own line: the question it answers */
+  /** the tab's own line: the question it answers */
   children: ReactNode
 }
 
 /**
- * The bar over a dataset's map: the dataset and its size on one line, the question the lens
- * answers on the next. The same through every lens, so a reader always knows what is read, at
+ * The bar over a dataset's map: the dataset and its size on one line, the question the tab
+ * answers on the next. The same under every tab, so a reader always knows what is read, at
  * what size and as whom.
  */
 export function DataBar(props: DataBarProps) {
@@ -529,7 +520,7 @@ export function DataBar(props: DataBarProps) {
   )
 }
 
-/** A lens's line of the bar: its glyph in the Data accent, what it reads, then what it found. */
+/** A tab's line of the bar: its glyph in the Data accent, what it reads, then what it found. */
 export function BarLine({
   glyph: Glyph,
   title,
@@ -669,7 +660,6 @@ export function QuestionBar(props: QuestionBarProps) {
           {props.breaches === 0
             ? 'every end holds as many links as it declares'
             : `${props.breaches} ${props.breaches === 1 ? 'end breaks' : 'ends break'} what ${props.breaches === 1 ? 'it declares' : 'they declare'}`}
-          {' · pick a Query in the Index to ask it of this dataset'}
         </BarLine>
       )}
     </DataBar>

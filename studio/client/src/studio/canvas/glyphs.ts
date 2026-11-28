@@ -6,9 +6,9 @@ import {
   CircleDashed,
   ClipboardCheck,
   Eye,
+  Fingerprint,
   GitFork,
   Globe,
-  KeyRound,
   Layers,
   ListChecks,
   ListTodo,
@@ -31,7 +31,7 @@ export const GLYPHS: Record<SceneGlyph, LucideIcon> = {
   function: SquareFunction,
   mutation: PencilLine,
   integration: Plug,
-  identity: KeyRound,
+  identity: Fingerprint,
   view: AppWindow,
   module: Layers,
   policy: ShieldCheck,
@@ -40,6 +40,14 @@ export const GLYPHS: Record<SceneGlyph, LucideIcon> = {
   scenario: ListTodo,
   query: Search,
   measure: Ruler,
+}
+
+/**
+ * The colour a glyph keeps wherever it is drawn, whatever its box's own hue: an identity reads as
+ * one on any card, row or chip. None for a glyph that wears the hue of what it stands in.
+ */
+export const GLYPH_COLOR: Partial<Record<SceneGlyph, string>> = {
+  identity: 'var(--color-identity)',
 }
 
 /** The pictogram each lens option's toggle wears: what turning it on draws. */

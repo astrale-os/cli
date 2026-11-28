@@ -25,7 +25,7 @@ import { SchemaIcon } from '../../schema-studio/schema-icon'
 import { ConstraintMark, RuleMark, RuleMarks } from '../rules/rule-mark'
 import { AREA_HEADER } from './areas'
 import { commentTarget } from './comment-target'
-import { GLYPHS } from './glyphs'
+import { GLYPH_COLOR, GLYPHS } from './glyphs'
 import { REGION_HEADER } from './layout'
 import { measureText } from './measure'
 import {
@@ -171,7 +171,10 @@ export const BoxView = memo(function BoxView({
         ) : far ? null : icon?.svg ? (
           <SchemaIcon svg={icon.svg} className="h-4 w-4" style={{ color: mark }} />
         ) : (
-          <GlyphIcon className="h-4 w-4 shrink-0" style={{ color: mark }} />
+          <GlyphIcon
+            className="h-4 w-4 shrink-0"
+            style={{ color: (icon?.glyph && GLYPH_COLOR[icon.glyph]) ?? mark }}
+          />
         )}
         <span className="scene-box-title">{model.title}</span>
         {(far ? model.frame : model.sublabel) && (

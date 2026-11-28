@@ -1,4 +1,5 @@
 import {
+  dataTabButton,
   expect,
   indexRow,
   lensButton,
@@ -142,7 +143,12 @@ test.describe('at 800 × 600', () => {
     await readable(page, levelButton(page, 'schema'), GLYPH)
     await expect(levelButton(page, 'schema')).toHaveAccessibleName(/schema/i)
     await readable(page, page.getByTestId('level-domain'))
-    await readable(page, lensButton(page, 'structure'))
+    // the Data level's tabs read alike: the one in use by name, the others by their glyph
+    await readable(page, dataTabButton(page, 'query'))
+    for (const tab of ['access', 'scenarios'] as const) {
+      await readable(page, dataTabButton(page, tab), GLYPH)
+      await expect(dataTabButton(page, tab)).toHaveAccessibleName(new RegExp(tab, 'i'))
+    }
     await noSidewaysScroll(page)
   })
 

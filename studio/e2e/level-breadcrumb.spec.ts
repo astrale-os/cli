@@ -94,15 +94,15 @@ test('Data opens the one dataset the Domain can read, and Schema returns with th
   await expect(datasetLabel(page)).toHaveText('Support desk')
   await expect(page.getByTestId('schema-level')).toHaveCount(0)
 
-  // read whole through Rules, it stands on the Tickets: the selection carried over from the Schema
-  await page.keyboard.press('3')
-  await expect(dataLevel(page)).toHaveAttribute('data-lens', 'rules')
+  // read whole under Access, it stands on the Tickets: the selection carried over from the Schema
+  await page.keyboard.press('2')
+  await expect(dataLevel(page)).toHaveAttribute('data-tab', 'access')
   await expect(indexRow(page, 'class.Ticket')).toHaveAttribute('aria-selected', 'true')
   const panel = page.locator('[data-data-panel]')
   await expect(panel).toContainText('Ticket')
   await expect(panel).toContainText('2 in this dataset.')
   await page.keyboard.press('1')
-  await expect(dataLevel(page)).toHaveAttribute('data-lens', 'structure')
+  await expect(dataLevel(page)).toHaveAttribute('data-tab', 'query')
 
   await levelButton(page, 'schema').click()
   await expect(page.getByTestId('schema-level')).toBeVisible()
@@ -126,6 +126,29 @@ test('Data opens the one dataset the Domain can read, and Schema returns with th
   await expect(page.getByTestId('schema-level')).toBeVisible()
 })
 
+test("the Schema keeps its lens and the Data level its tab, each across the other's", async ({
+  page,
+}) => {
+  await openSchema(page)
+  await lensButton(page, 'behavior').click()
+  await expect(page.getByTestId('schema-level')).toHaveAttribute('data-lens', 'behavior')
+
+  // the Data level opens on its own tab, and a tab picked there leaves the Schema's lens alone
+  await levelButton(page, 'data').click()
+  await expect(dataLevel(page)).toHaveAttribute('data-state', 'ready')
+  await expect(dataLevel(page)).toHaveAttribute('data-tab', 'query')
+  await page.keyboard.press('3')
+  await expect(dataLevel(page)).toHaveAttribute('data-tab', 'scenarios')
+
+  await levelButton(page, 'schema').click()
+  await expect(page.getByTestId('schema-level')).toHaveAttribute('data-lens', 'behavior')
+  await expect(lensButton(page, 'behavior')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page).toHaveURL(/[?&]lens=behavior\b/)
+
+  await levelButton(page, 'data').click()
+  await expect(dataLevel(page)).toHaveAttribute('data-tab', 'scenarios')
+})
+
 test('a Class selected on the Schema is selected on the dataset measured', async ({ page }) => {
   await openSchema(page)
   await sceneBox(page, 'class.Ticket').click()
@@ -147,7 +170,7 @@ test('the label leads to the Datasets page, and Data reopens the dataset last re
 
   await datasetLabel(page).click()
   await expect(datasetsPage(page)).toHaveAttribute('data-state', 'some')
-  await expect(page).toHaveURL(/\/data(\?lens=structure)?$/)
+  await expect(page).toHaveURL(/\/data(\?tab=query)?$/)
   await expect(datasetCard(page, SUPPORT_DESK)).toBeVisible()
   await expect(datasetCard(page, BROKEN)).toHaveAttribute('data-standing', 'unreadable')
   // the page is a place of its own: Back and Forward cross it
@@ -242,12 +265,12 @@ test('a Domain with no Dataset says so on the Data segment, and its Datasets pag
 
   await data.click()
   await expect(levelSwitch(page)).toHaveAttribute('data-level', 'data')
-  await expect(page).toHaveURL(/\/data(\?lens=structure)?$/)
+  await expect(page).toHaveURL(/\/data(\?tab=query)?$/)
   const datasets = datasetsPage(page)
   await expect(datasets).toHaveAttribute('data-state', 'none')
   const empty = datasets.locator('[data-no-dataset="page"]')
   await expect(empty).toContainText(
-    'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level draws and the Rules lens decides on.',
+    'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level asks through Queries and decides access on.',
   )
   await expect(empty).toContainText('export default defineDataset(schema, { id, title, graph })')
   await expect(empty).toContainText(

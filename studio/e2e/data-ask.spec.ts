@@ -4,33 +4,27 @@ import {
   drawnBoxes,
   expect,
   fixtureBundle,
-  indexRail,
   indexRow,
   openSupportDesk,
   sceneBox,
   sceneCanvas,
-  storedScenarios,
   test,
   type Page,
 } from './test'
 
 /**
- * Through Structure the Data level asks a dataset, never draws it whole. At rest the map is the
- * dataset measured against its Schema: each Class with its Node count, each relationship with its
- * Edge count. The Index lists the Domain's Queries under the Class each starts from; picking one
- * asks it, and the map is the slice it reaches from the Nodes its slots hold, as whoever asks may
- * read it. The bar over the map says the dataset, its size, who asks and the question; the panel
- * reads the answer. Through Behavior the Index also lists the Domain's functions; one picked is
- * asked as a call on a Node of the dataset, by one of its identities or anyone: the bar says the
- * verdict the Kernel would give and what the function is declared to write, and the call is kept
- * as a Scenario step.
+ * Under Query the Data level asks a dataset, never draws it whole. At rest the map is the dataset
+ * measured against its Schema: each Class with its Node count, each relationship with its Edge
+ * count. The Index lists the Domain's Queries under the Class each starts from; picking one asks
+ * it, and the map is the slice it reaches from the Nodes its slots hold, as whoever asks may read
+ * it. The bar over the map says the dataset, its size, who asks and the question; the panel reads
+ * the answer.
  *
  * The fixture declares three Queries: `ticketsAboutAccount` takes a Company and an optional status
  * and reads each Ticket about it with that Company and who raised it; `ticketPage` takes one
  * Ticket; `companies` takes nothing. In `support-desk`, Ann raised `printer`, which is about Acme,
  * and Bob raised `login`, which is about no account; the Ticket read Policy admits only who raised
- * a ticket. `Invoice.settle` admits only the Company an invoice is billed to, and the dataset's
- * identities are people; `Invoice.remind` admits every caller.
+ * a ticket.
  */
 
 const level = (page: Page) => page.getByTestId('data-level')
@@ -124,17 +118,17 @@ test("the Domain's Queries reach the Studio with what they read and what they ta
 
 test('at rest, the dataset is measured against its Schema, Class by Class', async ({ page }) => {
   await openSupportDesk(page)
-  await expect(level(page)).toHaveAttribute('data-lens', 'structure')
+  await expect(level(page)).toHaveAttribute('data-tab', 'query')
   await expect(level(page)).toHaveAttribute('data-ask', 'measure')
   await expect(datasetLabel(page)).toHaveText('Support desk')
   await expect(bar(page)).toContainText('6 Nodes · 6 Edges')
   await expect(barTitle(page)).toHaveText('Measured against its Schema')
   await expect(indexRow(page, 'ask.measure')).toHaveAttribute('aria-selected', 'true')
   // the Index lists each Query under the Class it starts from
-  await expect(indexRow(page, 'ask.queries.Ticket')).toContainText('Ticket · queries')
+  await expect(indexRow(page, 'ask.queries.Ticket')).toContainText('From Ticket')
   await expect(indexRow(page, 'query.crm.ticket.about-account')).toHaveText('Tickets about account')
   await expect(indexRow(page, 'query.crm.ticket.page')).toHaveText('Ticket page')
-  await expect(indexRow(page, 'ask.queries.Company')).toContainText('Company · queries')
+  await expect(indexRow(page, 'ask.queries.Company')).toContainText('From Company')
   await expect(indexRow(page, 'query.crm.company.all')).toHaveText('Companies')
 
   // the map is the Schema, each Class counting its Nodes; no Node is drawn
@@ -337,102 +331,28 @@ test('a Node of the slice selected reads its page; Esc backs out of it, then out
   await expect(barTitle(page)).toHaveText('Measured against its Schema')
 })
 
-test('Rules and Behavior read the same dataset under the same bar, at the same size', async ({
+test('Access and Scenarios read the same dataset under the same bar, at the same size', async ({
   page,
+  request,
 }) => {
+  await clearScenarios(request)
   await openSupportDesk(page)
-  await page.keyboard.press('3')
-  await expect(level(page)).toHaveAttribute('data-lens', 'rules')
+  await page.keyboard.press('2')
+  await expect(level(page)).toHaveAttribute('data-tab', 'access')
   await expect(datasetLabel(page)).toHaveText('Support desk')
   await expect(barTitle(page)).toHaveText('What anyone may read')
   await expect(bar(page)).toContainText('4 of 6 Nodes')
 
-  await page.keyboard.press('2')
-  await expect(level(page)).toHaveAttribute('data-lens', 'behavior')
-  await expect(barTitle(page)).toHaveText('What a call does')
-  await expect(bar(page)).toContainText('open a Scenario in the panel')
+  await page.keyboard.press('3')
+  await expect(level(page)).toHaveAttribute('data-tab', 'scenarios')
+  await expect(barTitle(page)).toHaveText('Scenarios')
+  await expect(bar(page)).toContainText('none kept on this dataset yet')
 
-  // the size the dataset is read at is the reader's, through every lens
+  // the size the dataset is read at is the reader's, on every tab
   await factor(page, 20).click()
   await expect(bar(page)).toContainText('82 Nodes · 120 Edges')
   await page.keyboard.press('1')
   await expect(level(page)).toHaveAttribute('data-ask', 'measure')
   await expect(factor(page, 20)).toHaveAttribute('aria-pressed', 'true')
   await expect(bar(page)).toContainText('82 Nodes · 120 Edges')
-})
-
-test.describe('a call asked through Behavior', () => {
-  test.beforeEach(async ({ request }) => clearScenarios(request))
-  test.afterEach(async ({ request }) => clearScenarios(request))
-
-  test('a function picked is asked on a Node with its verdict, and kept as a Scenario step', async ({
-    page,
-    request,
-  }) => {
-    await openSupportDesk(page)
-    await page.keyboard.press('2')
-    await expect(level(page)).toHaveAttribute('data-lens', 'behavior')
-    await indexRow(page, 'function.Invoice.settle').click()
-    await expect(level(page)).toHaveAttribute('data-ask-call', 'Invoice.settle')
-    await expect(barTitle(page)).toHaveText('Invoice.settle')
-
-    // it is asked on the dataset's one Invoice, picked for the reader, by anyone
-    const on = slot(page, 'on')
-    await expect(on).toContainText('invoice-1')
-    await expect(on.getByLabel('picked by the Studio')).toBeVisible()
-    await expect(page.locator('[data-ask-as]')).toHaveAttribute('data-ask-as', '')
-    const verdict = page.locator('[data-ask-verdict]')
-    const reason = page.locator('[data-ask-verdict-section]')
-    await expect(verdict).toHaveAttribute('data-ask-verdict', 'refused')
-    await expect(reason).toContainText('Anyone may not call Invoice.settle on invoice-1.')
-    await expect(reason).toContainText('It fails on ‘you are its customer’.')
-    // what it would write is declared, never applied: the Payment it creates stands absent
-    await expect(summary(page)).toHaveText('declared: creates, updates, links · not applied')
-    await expect(sceneBox(page, 'absent.class.Payment')).toBeVisible()
-    await expect.poll(() => drawnNodes(page)).toEqual(['invoice-1'])
-
-    // called by Ann, it is still refused: she is not the account the invoice is billed to
-    await readAs(page, /^ann/)
-    await expect(page.locator('[data-ask-as]')).toHaveAttribute('data-ask-as', 'ann')
-    await expect(reason).toContainText('ann may not call Invoice.settle on invoice-1.')
-    await expect(verdict).toHaveAttribute('data-ask-verdict', 'refused')
-    await expect.poll(() => drawnNodes(page)).toEqual(['ann', 'invoice-1'])
-    // a function every caller may call is allowed her
-    await indexRow(page, 'function.Invoice.remind').click()
-    await expect(verdict).toHaveAttribute('data-ask-verdict', 'allowed')
-    await expect(reason).toContainText('ann may call Invoice.remind on invoice-1.')
-    await expect(summary(page)).toHaveText('declared to write nothing')
-
-    // kept, the call is a step of the dataset's Scenario that expects the verdict it has
-    await indexRow(page, 'function.Invoice.settle').click()
-    await expect(verdict).toHaveAttribute('data-ask-verdict', 'refused')
-    await page.locator('[data-ask-keep]').click()
-    await expect(
-      page
-        .locator('[data-sonner-toast]')
-        .filter({ hasText: 'Kept as a step of Calls on Support desk' }),
-    ).toBeVisible()
-    await expect
-      .poll(async () => (await storedScenarios(request)).map((scenario) => scenario.steps))
-      .toMatchObject([
-        [
-          {
-            as: 'ann',
-            does: 'call',
-            fn: 'Invoice.settle',
-            on: { node: 'invoice-1' },
-            expect: 'refused',
-          },
-        ],
-      ])
-
-    // closed, the call gives the Scenarios back, and the step reads there as expected
-    await bar(page).getByRole('button', { name: 'Close the call' }).click()
-    await expect(level(page)).not.toHaveAttribute('data-ask-call')
-    await indexRail(page).locator('[data-index-row^="scenario."]').click()
-    const step = page.locator('[data-data-panel] [data-scenario-steps] [data-step]')
-    await expect(step).toHaveCount(1)
-    await expect(step).toHaveAttribute('data-standing', 'expected')
-    await expect(step).toContainText('ann calls Invoice.settle on invoice-1')
-  })
 })

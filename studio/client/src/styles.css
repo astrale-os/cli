@@ -52,6 +52,10 @@
   --schema-view: oklch(0.5 0.09 205);
   --schema-core: oklch(0.48 0.11 155);
   --schema-function: oklch(0.5 0.14 300);
+  /* who acts: a Class that is or extends Kernel Identity, and each of its Nodes */
+  --identity: oklch(0.66 0.15 82);
+  /* the Schema level's own colour on the Schema | Data switch; Data wears the primary */
+  --level-schema: oklch(0.5 0.19 292);
 
   /* what a function does to what it reaches — one hue per verb; a call stays neutral */
   --verb-create: oklch(0.53 0.13 150);
@@ -125,6 +129,8 @@
   --schema-view: oklch(0.72 0.08 205);
   --schema-core: oklch(0.7 0.11 155);
   --schema-function: oklch(0.72 0.12 300);
+  --identity: oklch(0.84 0.15 88);
+  --level-schema: oklch(0.62 0.18 292);
 
   --verb-create: oklch(0.72 0.13 150);
   --verb-update: oklch(0.84 0.14 100);
@@ -189,6 +195,8 @@
   --color-schema-view: var(--schema-view);
   --color-schema-core: var(--schema-core);
   --color-schema-function: var(--schema-function);
+  --color-identity: var(--identity);
+  --color-level-schema: var(--level-schema);
   --color-verb-create: var(--verb-create);
   --color-verb-update: var(--verb-update);
   --color-verb-delete: var(--verb-delete);

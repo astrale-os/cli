@@ -26,7 +26,7 @@ import { moduleTint } from '../../schema-studio/palette'
 import { SchemaIcon } from '../../schema-studio/schema-icon'
 import { ModulesSidebar, useRailCollapse } from '../../schema-studio/sidebar'
 import { commentTarget } from '../canvas/comment-target'
-import { GLYPHS } from '../canvas/glyphs'
+import { GLYPH_COLOR, GLYPHS } from '../canvas/glyphs'
 import { pointing } from '../canvas/pointer'
 import { useCanvas } from '../canvas/store'
 import { TONE_TEXT } from '../canvas/tones'
@@ -349,6 +349,7 @@ export function IndexRail({
                   id={row.id}
                   label={row.label}
                   hue={groupOf.get(row.id)?.hue}
+                  phrase={groupOf.get(row.id)?.phrase === true}
                   count={row.count}
                   collapsed={row.collapsed}
                   selected={selected === row.id}
@@ -477,6 +478,7 @@ function AreaRowView({
 function GroupRowView({
   id,
   label,
+  phrase,
   hue,
   count,
   collapsed,
@@ -492,6 +494,8 @@ function GroupRowView({
 }: {
   id: string
   label: string
+  /** read in its own case, not as a heading */
+  phrase: boolean
   hue?: number
   count: number
   collapsed: boolean
@@ -550,7 +554,11 @@ function GroupRowView({
         style={{ background: tint?.mark ?? 'var(--color-muted-foreground)' }}
       />
       <span
-        className="min-w-0 flex-1 truncate text-[11.5px] font-semibold uppercase tracking-wide"
+        title={phrase ? label : undefined}
+        className={cn(
+          'min-w-0 flex-1 truncate font-semibold',
+          phrase ? 'text-[12.5px]' : 'text-[11.5px] uppercase tracking-wide',
+        )}
         style={{ color: tint?.text }}
       >
         {label}
@@ -581,6 +589,7 @@ function ItemRowView({
   onHover: (id: string | null) => void
 }) {
   const Glyph = GLYPHS[row.icon?.glyph ?? 'class']
+  const glyphColor = row.icon?.glyph ? GLYPH_COLOR[row.icon.glyph] : undefined
   const tone = TONE_TEXT[row.tone ?? 'node']
   const wrapped = lines !== undefined && lines.length > 1
   return (
@@ -616,7 +625,11 @@ function ItemRowView({
           className={cn('h-3.5 w-3.5 shrink-0', wrapped && 'mt-0.5', tone)}
         />
       ) : (
-        <Glyph aria-hidden className={cn('h-3.5 w-3.5 shrink-0', wrapped && 'mt-0.5', tone)} />
+        <Glyph
+          aria-hidden
+          className={cn('h-3.5 w-3.5 shrink-0', wrapped && 'mt-0.5', tone)}
+          style={glyphColor ? { color: glyphColor } : undefined}
+        />
       )}
       {wrapped ? (
         <span className="flex min-w-0 shrink-0 flex-col" data-index-lines={lines.length}>

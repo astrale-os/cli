@@ -17,7 +17,7 @@ import { datasetScope, useDataView } from './store'
 
 /**
  * Opens `selected` (`name` in words) on the dataset of `domainId` last read, else its first ready
- * one, through the lens shown. A Domain with no ready dataset keeps the reader where they are,
+ * one, under Access. A Domain with no ready dataset keeps the reader where they are,
  * and says so.
  */
 export async function carryToDataset(
@@ -50,5 +50,7 @@ export async function carryToDataset(
   }
   // a Policy is no box on the map: nothing to bring into view, its pairs light where they are
   useDataView.getState().select(datasetScope(domainId, dataset.id), selected)
+  // a Policy is read under Access, whatever the dataset was last asked
+  useUI.getState().setDataTab('access')
   useUI.getState().openDataLevel(dataset.path)
 }

@@ -1,5 +1,5 @@
 /**
- * The Data level's panel through the Behavior lens: the dataset's Scenarios. With none it says
+ * The Data level's panel under Scenarios: the dataset's Scenarios. With none it says
  * what a Scenario is and opens the way to its first step; with some it lists each with its
  * standing. A Scenario open reads its steps as sentences — what is not as expected first, with
  * what was expected, what is found and its proof — and each step is moved, noted, flipped or
@@ -57,7 +57,7 @@ import { verdictView } from './verdict-view'
 export const SCENARIO_LIMIT =
   'Each step is judged on the dataset as written; writes are listed as declared, not applied.'
 
-export interface BehaviorPanelProps {
+export interface ScenariosPanelProps {
   domainId: string
   model: DatasetModel
   /** every Scenario of the dataset, judged for its standing */
@@ -69,13 +69,13 @@ export interface BehaviorPanelProps {
   scenarios: DatasetScenarios
   onOpen: (scenario: string | undefined) => void
   onStep: (step: JudgedStep | undefined) => void
-  /** selects the step and reads it in the Rules lens */
-  onRules: (step: JudgedStep) => void
-  /** opens the Rules lens on a Node whose verdicts can be pinned */
+  /** selects the step and reads it under Access */
+  onAccess: (step: JudgedStep) => void
+  /** opens Access on a Node whose verdicts can be pinned */
   onFirstStep: () => void
 }
 
-export function BehaviorPanel(props: BehaviorPanelProps) {
+export function ScenariosPanel(props: ScenariosPanelProps) {
   const { open } = props
   return (
     <Page
@@ -218,7 +218,7 @@ function Header({ kicker, children }: { kicker: string; children: ReactNode }) {
 
 // ── no Scenario open ──
 
-function ScenariosPage({ model, judged, scenarios, onOpen, onFirstStep }: BehaviorPanelProps) {
+function ScenariosPage({ model, judged, scenarios, onOpen, onFirstStep }: ScenariosPanelProps) {
   return (
     <>
       <Header kicker="Scenarios">
@@ -238,15 +238,9 @@ function ScenariosPage({ model, judged, scenarios, onOpen, onFirstStep }: Behavi
         </p>
       ) : judged.length === 0 ? (
         <section data-scenario-empty="" className="space-y-3">
-          <p className="text-[13px] leading-relaxed">
-            A Scenario is a list of steps on this dataset. Each step says who acts — one of its
-            identities, or anyone — what they do — read or traverse a Node or an Edge, or call a
-            function — and whether that is expected allowed or refused.
-          </p>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Each step is judged again whenever the Schema or the dataset changes, and a step no
-            longer as expected is the first thing its Scenario shows. A step is written by pinning a
-            verdict the Rules lens decides.
+            A Scenario keeps answers as expected — who may read, traverse or call what — and says
+            when one changes.
           </p>
           <button
             type="button"
@@ -254,7 +248,7 @@ function ScenariosPage({ model, judged, scenarios, onOpen, onFirstStep }: Behavi
             onClick={onFirstStep}
             className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1.5 text-[13px] font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
-            Pin the first step from Rules →
+            Pin a verdict under Access →
           </button>
         </section>
       ) : (
@@ -275,7 +269,6 @@ function ScenariosPage({ model, judged, scenarios, onOpen, onFirstStep }: Behavi
               </button>
             ))}
           </div>
-          <Meta>A step is added by pinning a verdict the Rules lens decides.</Meta>
         </Section>
       )}
     </>
@@ -284,7 +277,7 @@ function ScenariosPage({ model, judged, scenarios, onOpen, onFirstStep }: Behavi
 
 // ── a Scenario ──
 
-function ScenarioPage(props: BehaviorPanelProps & { open: JudgedScenario }) {
+function ScenarioPage(props: ScenariosPanelProps & { open: JudgedScenario }) {
   const { open, scenarios, onOpen, onStep, step: selected } = props
   const scenario = open.scenario
   const [renaming, setRenaming] = useState(false)
@@ -409,9 +402,7 @@ function ScenarioPage(props: BehaviorPanelProps & { open: JudgedScenario }) {
         data-scenario-steps=""
       >
         {open.steps.length === 0 ? (
-          <Empty>
-            This Scenario holds no step: pin a verdict the Rules lens decides to add the first.
-          </Empty>
+          <Empty>No step yet: pin a verdict under Access.</Empty>
         ) : (
           <ol className="space-y-1">
             {open.steps.map((judged) => (
@@ -420,7 +411,7 @@ function ScenarioPage(props: BehaviorPanelProps & { open: JudgedScenario }) {
                 model={props.model}
                 domainId={props.domainId}
                 onStep={onStep}
-                onRules={props.onRules}
+                onAccess={props.onAccess}
                 judged={judged}
                 last={open.steps.length}
                 selected={selected === judged.step.id}
@@ -535,8 +526,8 @@ function StepRow({
   model,
   domainId,
   onStep,
-  onRules,
-}: Pick<BehaviorPanelProps, 'model' | 'domainId' | 'onStep' | 'onRules'> & {
+  onAccess,
+}: Pick<ScenariosPanelProps, 'model' | 'domainId' | 'onStep' | 'onAccess'> & {
   judged: JudgedStep
   last: number
   selected: boolean
@@ -635,11 +626,11 @@ function StepRow({
             </button>
             <button
               type="button"
-              data-step-rules=""
-              onClick={() => onRules(judged)}
+              data-step-access=""
+              onClick={() => onAccess(judged)}
               className="ml-auto rounded-sm px-1 text-[12px] font-medium text-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
-              Rules →
+              Access →
             </button>
           </div>
         </div>
@@ -653,7 +644,7 @@ function StepRow({
  * before they write: the Schema's Writes and Preconditions, in its words, marks and tones.
  */
 /** What a call's function is declared to write and requires, in the Schema's sections. */
-export function Declared({
+function Declared({
   judged,
   domainId,
   model,
@@ -792,7 +783,7 @@ export function StepsInvolving({
             onClick={onFirstStep}
             className="rounded-sm text-[12px] font-medium text-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
-            Pin one of its verdicts from Rules →
+            Pin one of its verdicts from Access →
           </button>
         </div>
       ) : (

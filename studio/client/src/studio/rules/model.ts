@@ -439,7 +439,8 @@ export function callRuleOf(
  * operation's capability on the Class; an authorized callable with no Policy, or `false`, no other.
  * Undefined where the Schema writes a rule, `true` or a constraint: the reading says it.
  * `domain` names the declaring Domain (`admin`); `slots` says several sites of one Class written
- * alike at once (`create`, `update`, `delete`).
+ * alike at once (`create`, `update`, `delete`). One short sentence, read on hover: what shows is
+ * the mark's few words (`ADMITS`).
  */
 export function kernelDefaultOf(
   site: RuleSite,
@@ -449,21 +450,15 @@ export function kernelDefaultOf(
   const { on, written } = site
   if (written !== 'omitted' && written !== 'false' && written !== 'absent') return undefined
   if (on.kind === 'method' || on.kind === 'function')
-    return `${written === 'false' ? 'Written false' : 'No Policy is written'}, so only Root and ${domain}, the Domain that declares it, may call it.`
+    return `Only Root and ${domain}, its Domain, may call it.`
   if (on.kind !== 'class' && on.kind !== 'relationship') return undefined
-  const what =
-    written === 'false'
-      ? 'Written false'
-      : slots.length > 1
-        ? `Nothing is written for ${listed(slots, 'and')}`
-        : 'Nothing is written'
   const verbs = listed(slots, 'or')
   if (slots.every((slot) => slot === 'read' || slot === 'traverse'))
     return written === 'false'
-      ? `${what}, so only Root and ${domain}, the Domain that declares ${on.name}, may ${verbs} one.`
-      : `${what}, so every caller may ${verbs} one.`
+      ? `Only Root and ${domain}, its Domain, may ${verbs} one.`
+      : `Every caller may ${verbs} one.`
   if (slots.every((slot) => slot === 'create' || slot === 'update' || slot === 'delete'))
-    return `${what}, so only Root, ${domain} (the Domain that declares ${on.name}) and a caller holding ${slots.length > 1 ? 'that operation’s' : `the ${verbs}`} capability on ${on.name} may ${verbs} one.`
+    return `Only Root, ${domain} (its Domain) and holders of ${slots.length > 1 ? 'that operation’s' : `the ${verbs}`} capability on ${on.name} may ${verbs} one.`
   return undefined
 }
 

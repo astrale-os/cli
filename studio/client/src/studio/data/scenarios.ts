@@ -3,7 +3,7 @@
  * the Schema as it now stands, whenever either changes. A step is as expected, not as expected,
  * gone — what it names is no longer there, said exactly — or can't tell, with why; can't tell is
  * neither a pass nor a failure, and is counted apart. For a call, what the function is declared to
- * write is read from its source, in the Behavior lens's words, and never applied: the dataset a
+ * write is read from its source, in the Schema's Behavior lens's words, and never applied: the dataset a
  * step is judged on is the one written, whatever the steps before it would have written. The
  * preconditions its mutations state are read the same way, and none is checked.
  *
@@ -47,7 +47,7 @@ export type Standing = 'expected' | 'unexpected' | 'gone' | 'unknown'
 /** One kind of write a function is declared to make, on the Classes its source names. */
 export interface DeclaredChange {
   readonly verb: ChangeVerb
-  /** the Behavior lens's word for it: `creates`, `transitions` */
+  /** the Schema's Behavior lens's word for it: `creates`, `transitions` */
   readonly word: string
   /** the Classes it lands on, as the source names them, as the Schema marks them */
   readonly classes: readonly ClassLink[]
@@ -183,7 +183,7 @@ export function sameAsk(left: ScenarioAct & { as: string }, right: ScenarioAct &
 }
 
 /**
- * A verdict the Rules lens shows, as a step that expects it as it stands; none for a verdict
+ * A verdict Access shows, as a step that expects it as it stands; none for a verdict
  * that can't tell, which no step can expect.
  */
 export function stepOfVerdict(
@@ -458,7 +458,7 @@ export function judgeScenario(
 }
 
 /**
- * Where a step stands in the Rules lens: the scene id of the Node or Edge whose page shows its
+ * Where a step stands under Access: the scene id of the Node or Edge whose page shows its
  * verdict. A static Method's verdict shows on every Node of a Class it works on: the first.
  */
 export function rulesTargetOf(judging: Judging, judged: JudgedStep): string | undefined {

@@ -1,12 +1,19 @@
-import { edgeClass, nodeClass } from '@astrale-os/sdk/schema'
+import { edgeClass, nodeClass, policy } from '@astrale-os/sdk/schema'
 
 import { icons } from '../icons.js'
 import { Company, Person } from '../people/index.js'
 import { Document } from '../shared/index.js'
 import { number, string } from '../values.js'
 
+/** Only who owns an opportunity reads it. */
+export const mayReadOpportunity = policy({
+  description: 'The caller owns this opportunity.',
+  match: ({ edge, subject, object }) =>
+    edge({ source: object, class: () => OwnedBy, target: subject }),
+})
+
 export const Opportunity = nodeClass({
-  policies: { read: true },
+  policies: { read: () => mayReadOpportunity, traverse: () => mayReadOpportunity },
   description: 'A potential deal in the sales pipeline.',
   icon: icons.opportunity,
   properties: { name: string, stage: string, amount: number },

@@ -53,20 +53,28 @@ and SDK import aliases are followed; dynamically constructed values are not. A D
 dependencies are installed is read through its own SDK; without them, its source anatomy is
 drawn.
 
-## Levels and lenses
+## Levels, lenses and tabs
 
-The Studio reads at three levels. Past the Workspace, a lens chooses the question the canvas
-answers. The breadcrumb in the header (Workspace › Domain) opens the Workspace or another Domain;
-the **Schema | Data** switch beside it chooses whether the Domain's Schema or one of its datasets
-is read (`S` and `D`, or ⌘K); `1` to `4` switch lens. Scenarios follow the lenses in the switch,
-locked.
+The Studio reads at three levels. The breadcrumb in the header (Workspace › Domain) opens the
+Workspace or another Domain; the **Schema | Data** switch beside it chooses whether the Domain's
+Schema or one of its datasets is read (`S` and `D`, or ⌘K). The switch is a mode, drawn as one:
+the level read is filled in its own colour.
 
-| Lens | Question it answers |
+The two levels ask different things, so the tabs in the middle of the header differ. A Schema is
+read through **lenses**, a dataset through the Data level's **tabs**; a digit picks one.
+
+| Schema lens | Question it answers |
 | --- | --- |
-| **Structure** | What exists |
-| **Behavior** | What happens |
-| **Rules** | What is allowed and what must hold |
-| **Views** | What people see |
+| **Structure** `1` | What exists |
+| **Behavior** `2` | What happens |
+| **Rules** `3` | What is allowed and what must hold |
+| **Views** `4` | What people see |
+
+| Data tab | Question it answers |
+| --- | --- |
+| **Query** `1` | What the dataset holds, asked a part at a time |
+| **Access** `2` | Who may read and do what, and by which rule |
+| **Scenarios** `3` | What is expected to stay allowed or refused |
 
 Every level has the same layout: an **Index** listing what the canvas draws, the **Scene canvas**,
 and a panel that reads the selection in sentences (the **Inspector** at the Domain level). The
@@ -85,9 +93,9 @@ and nothing else is blanked.
 
 | Lens | What it draws |
 | --- | --- |
-| Structure | Node Classes as cards and relationships as links, grouped by module. Classes of another Domain or of the Kernel that a relationship end accepts are drawn quiet, framed by their Domain. The **Domains** control draws other Domains whole beside the open one (below). An option draws inheritance. |
+| Structure | Node Classes as cards and relationships as links, grouped by module. Classes of another Domain or of the Kernel that a relationship end accepts are drawn quiet, framed by their Domain. The **Domains** control draws other Domains whole beside the open one (below). An option draws inheritance. A Class that is or extends Kernel `Identity` wears the identity's glyph. Selected, a Class reads its Properties, then its relationships; a state Property draws its machine as a small diagram (states by how far they are from the initial one, one arrow per pair of states), which names where a state goes when it is pointed at and opens large with every event on its arrow. |
 | Behavior | Integrations, functions and the Classes they change, in three bands: each function links to the Classes it creates, updates, deletes, transitions, links or unlinks, and to the Integrations it calls. What the source reading cannot follow is said on the node. |
-| Rules | The Structure map with each Class card listing the rules on it: who may read, create, update, delete or call (Policies) and what must hold (constraints). The Index lists the rules. A rule opens on a page drawn by `@astrale-os/visual`. |
+| Rules | The Structure map with each Class card listing the rules on it: who may read, create, update, delete or call (Policies) and what must hold (constraints). A slot the Schema writes no Policy for says whom the Kernel admits in its place: `Owning Domain only`, or `Everyone`. The Index lists the Policies in words, those whose names open alike gathered under what they share (`Owns or belongs to Project` › `… of Issue`), then the forms of constraint. A rule opens on a page drawn by `@astrale-os/visual`. |
 | Views | Each View the Domain declares as a card: what it says of itself, how it is built (single-page app, inline HTML), where it mounts, the entrypoint first and marked, and where its sources do not back it (no code found, no client route). Views in more than one module are framed by module. A client route no View mounts is counted, not drawn. Where the sources say what a View's code reaches, the canvas reads in three bands: the Views, the functions their code calls, and the Classes those functions change, under the ids Behavior gives them; the `reads` option also draws the Classes each View reads, dashed. A View whose code cannot be read in full says so on its card. |
 
 The **Domains** control of the Structure canvas lists the open Domain, every other Domain of the
@@ -117,20 +125,23 @@ which lists every dataset with why one cannot be read, or says what a Dataset is
 none. The dataset last read is kept per Domain in the browser. **Schema** comes back with the lens
 and the selection kept. A Publication carries no dataset: its Data segment is disabled and says so.
 
-A bar stands over the map through every lens. Its first line names the open dataset in the Data
+A bar stands over the map under every tab. Its first line names the open dataset in the Data
 accent, which also marks the switch's Data segment and the Index (clicked, the name opens the
 Datasets page), says how many Nodes and Edges it holds, and sets the size it is read at. Its second
-line is the question the lens answers.
+line is the question the tab answers.
 
 > A dataset read at ×20 or ×100 is **faked**: the dataset as written, laid down that many times
 > with its identities shared, to read the level at a size nobody wrote by hand. It is not a
-> generated dataset, and the bar says so.
+> generated dataset, and the bar says so. Each size keeps its own arrangement of the map.
 
-| Lens | What it draws |
+| Tab | What it draws |
 | --- | --- |
-| Structure | Never the dataset whole. At rest, the dataset **measured against its Schema**: each Class with the Nodes it holds, each relationship with its Edges and, at each end, the links a Node really has against what the end declares; an end a Node breaks warns. The Index lists the Domain's **Queries**; one picked is **asked**: the map draws the slice it reaches from the Nodes its parameters hold, and the panel lists its answer. |
-| Rules | The dataset read as one of its identities, or as anyone: per Node and per Edge, what that identity may do and by which rule. Each verdict can be pinned to a Scenario. The Index also lists the Domain's Policies: one selected says how many pairs (an identity, or anyone, and a Node or Edge it is decided over) it admits, each pair a sentence, and the map lights what it admits. A Policy selected on the Schema's Rules lens opens here on a dataset of its Domain. |
-| Behavior | The dataset's Scenarios, each step judged on the dataset as written. The Index also lists the Domain's functions: one picked is **asked** of the dataset, on a Node and as an identity. The bar says whether the call is allowed and what the function is declared to write; the map draws what the call concerns, the caller and each Class it writes marked; the panel reads the verdict with the Edges that prove it, the declared writes and what they require, and keeps the call as a Scenario step. Nothing is applied. |
+| Query | Never the dataset whole. At rest, the dataset **measured against its Schema**: each Class with the Nodes it holds, each relationship with its Edges and, at each end, the links a Node really has against what the end declares; an end a Node breaks warns. The Index lists the Domain's **Queries** by the Class they start from; one picked is **asked**: the map draws the slice it reaches from the Nodes its parameters hold, and the panel lists its answer. |
+| Access | The dataset read as one of its identities, or as anyone: per Node and per Edge, what that identity may read, traverse and call, and by which rule, with the Edges that prove it. Each verdict can be pinned to a Scenario. The Index also lists the Domain's Policies, as the Schema's Rules lens does: one selected says how many pairs (an identity, or anyone, and a Node or Edge it is decided over) it admits, each pair a sentence, and the map lights what it admits. A Policy selected on the Schema's Rules lens opens here on a dataset of its Domain. |
+| Scenarios | The answers kept as expected: the dataset's Scenarios, each step judged on the dataset as written, the map lit with who a step acts as, what it acts on and the Edges its verdict stands on. |
+
+> The Data level runs nothing: there is no Kernel behind it. What a function would do to a dataset
+> is not a tab until one can be run on it; whether an identity may call it is Access's to say.
 
 **Asking a Query.** Each parameter of the Query is a chip on the bar. A chip holds a Node, several,
 or a value; opened, it lists what it can take with what asking with each gives, and a value's chip
@@ -144,9 +155,6 @@ what that identity may read, and counts what it withholds.
 > Asking is **approximate**: the Studio runs no Kernel. The answer follows what the Query reads
 > from the Nodes its parameters hold; the Query's own filters beyond those values, its order and
 > its bounds are not applied. A parameter the source reading cannot place is shown and not applied.
-
-The Data level does not read Views: a View renders on an instance, not over a dataset. Its tab
-stays in the switch, disabled, and says so.
 
 ### Scenarios
 
@@ -162,8 +170,8 @@ neither a pass nor a failure and is counted apart. Every Scenario states its lim
 
 > Each step is judged on the dataset as written; changes are listed as declared, not applied.
 
-What a call is declared to change is read from its source, in the Behavior lens's words, and is
-never applied: every step of a Scenario is judged on the same written dataset. Scenarios are stored
+What a call is declared to change is read from its source, in the words of the Schema's Behavior
+lens, and is never applied: every step of a Scenario is judged on the same written dataset. Scenarios are stored
 in the Domain's `.domain-studio/scenarios.json`; a Scenario holds at most 200 steps, and a Domain
 keeps at most 500 Scenarios (`SCENARIO_LIMITS` in `shared/contracts/scenarios.ts`).
 
@@ -206,13 +214,12 @@ The URL names the place, so a reload, a pasted link, Back and Forward land where
 | --- | --- |
 | `/workspace` | The Workspace level. `?domain=<id>`, `?origin=<origin>` or `?domain=<id>&dependency=<alias>` names the map's selection. |
 | `/domain/<id>?lens=<lens>&select=<ref>` | A workspace Domain's Schema. |
-| `/domain/<id>/data?dataset=<path>&lens=<lens>&select=<id>&as=<identity>&verdict=<id>&scenario=<id>&step=<id>` | The Data level. Without `dataset`, the Domain's Datasets page. The retired `/domain/<id>/tests?dataset=<path>` lands here, on the same dataset under Rules, and says so. |
+| `/domain/<id>/data?dataset=<path>&tab=<tab>&select=<id>&as=<identity>&verdict=<id>&scenario=<id>&step=<id>` | The Data level. Without `dataset`, the Domain's Datasets page. The retired `/domain/<id>/tests?dataset=<path>` lands here, on the same dataset under Access, and says so. |
 | `/publication/<origin>/<version>?lens=<lens>&select=<ref>` | One Publication, read-only. |
 | `/` | No place: the Workspace's saved UI state decides. |
 
-`<lens>` is `structure`, `behavior`, `rules` or `views`; the Data level does not read `views`, and
-an address naming it there opens the dataset without it and says so. A part of an address that
-names nothing is reported, and the rest still opens.
+`<lens>` is `structure`, `behavior`, `rules` or `views`; `<tab>` is `query`, `access` or
+`scenarios`. A part of an address that names nothing is reported, and the rest still opens.
 
 ## Comments and Ask
 

@@ -94,11 +94,6 @@ function arrive(parsed: ParsedAddress, domains: readonly DomainSummary[]): void 
         : undefined
   if (parsed.unknown)
     reportMissing(`The address names ${parsed.unknown}, which the Studio does not know.`, landing)
-  if (parsed.unread)
-    reportMissing(
-      `The Data level does not read ${parsed.unread}: read ${parsed.unread} at the Schema level.`,
-      landing,
-    )
   if (parsed.retired)
     reportMissing(
       `The address names ${parsed.retired}, which the Studio no longer has: the Data level reads the same dataset.`,
@@ -130,7 +125,7 @@ function arrive(parsed: ParsedAddress, domains: readonly DomainSummary[]): void 
     } else useUI.getState().clearSelection()
     return
   }
-  if (address.lens) ui.setLens(address.lens)
+  if (address.tab) ui.setDataTab(address.tab)
   useUI.getState().openDataLevel(address.dataset ?? null)
   if (address.dataset)
     useChecks.setState({ data: { domainId, path: address.dataset, view: address.view } })
@@ -177,6 +172,7 @@ function addressNow(): Address | undefined {
     level: ui.level,
     ...(domainId ? { domainId } : {}),
     lens: ui.lens,
+    dataTab: ui.dataTab,
     dataset: ui.dataset,
     ...(ui.selectedClass ? { selected: ui.selectedClass } : {}),
     ...(ui.selectionDomainId ? { selectionDomainId: ui.selectionDomainId } : {}),

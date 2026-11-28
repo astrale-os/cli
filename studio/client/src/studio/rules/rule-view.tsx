@@ -16,7 +16,7 @@ import { TONE_TEXT } from '../canvas/tones'
 import { Disclosure, Empty, Joined, Link, Meta, Section } from '../inspector/parts'
 import { Staged } from '../stage/staged'
 import { RuleStage } from '../stage/walk-stage'
-import { markOf } from './admission'
+import { admissionLabel, markOf } from './admission'
 import {
   callRuleOf,
   classOfTarget,
@@ -241,8 +241,8 @@ function SiteRow({ site, domain, domainId }: { site: RuleSite; domain: string; d
   const body = (
     <>
       {kernel !== undefined ? (
-        <p data-rule-kernel="" className="text-[13px] leading-relaxed">
-          {kernel}
+        <p data-rule-kernel="" title={kernel} className="text-[13px] text-muted-foreground">
+          {mark ? admissionLabel(mark.admits) : kernel}
         </p>
       ) : reading.status === 'unread' ? (
         <UnreadNote unread={reading} />
@@ -368,9 +368,7 @@ export function RuleSites({
     return (
       <Section label="Rules">
         {origin !== undefined && origin !== rules.origin ? (
-          <Empty>
-            {name} is declared by {domainWord(origin)}: its rules are read in that Domain.
-          </Empty>
+          <Empty>Declared by {domainWord(origin)}: its rules are read there.</Empty>
         ) : (
           <Empty>No rule sits on {name}.</Empty>
         )}
@@ -416,12 +414,19 @@ export function CallRule({
   if (site === undefined) return null
   const { reading } = site
   const kernel = kernelDefaultOf(site, domainWord(rules.origin))
-  if (kernel !== undefined && (reading.status === 'read' || site.written === 'false'))
+  if (kernel !== undefined && (reading.status === 'read' || site.written === 'false')) {
+    const mark = markOf(site)
     return (
-      <p data-rule-site={site.id} data-rule-kernel="" className="text-[13px] leading-relaxed">
-        {kernel}
+      <p
+        data-rule-site={site.id}
+        data-rule-kernel=""
+        title={kernel}
+        className="text-[13px] text-muted-foreground"
+      >
+        {mark ? admissionLabel(mark.admits) : kernel}
       </p>
     )
+  }
   if (reading.status === 'unread') return <UnreadNote unread={reading} />
   return (
     <RuleHost rule={reading.rule} className="block">

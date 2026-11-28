@@ -53,4 +53,28 @@ describe('the Scene of a lens', () => {
       else expect(composed).toEqual(alone)
     }
   })
+
+  test('a Class that is or extends Kernel Identity wears the identity’s glyph where it has no icon of its own', () => {
+    const KERNEL = 'kernel.astrale.ai'
+    const identity = classRef(KERNEL, 'Identity')
+    const value = bundle({
+      Agent: nodeClass('Agent', { extendsRefs: [identity] }),
+      Lead: nodeClass('Lead', { extendsRefs: [classRef('local.example.dev', 'Agent')] }),
+      Desk: nodeClass('Desk'),
+      Robot: nodeClass('Robot', { extendsRefs: [identity], icon: '<svg/>' }),
+    })
+    importClass(value, identity, nodeClass('Identity', { origin: KERNEL, ref: identity }))
+    // the lenses that draw every Class of the open Domain
+    for (const lens of LENSES.filter((each) => each.id === 'structure' || each.id === 'rules')) {
+      const scene = sceneOf(lens, value, optionsOf(lens, undefined))!
+      const icon = (name: string) => scene.nodes.find((node) => node.id === `class.${name}`)?.icon
+      expect([lens.id, icon('Agent'), icon('Lead'), icon('Desk'), icon('Robot')]).toEqual([
+        lens.id,
+        { glyph: 'identity' },
+        { glyph: 'identity' },
+        { glyph: 'class' },
+        { svg: '<svg/>', glyph: 'identity' },
+      ])
+    }
+  })
 })

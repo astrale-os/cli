@@ -137,8 +137,8 @@ export function DatasetsView({
         <p className="text-[13px] leading-relaxed text-muted-foreground">
           {DATASET_DEFINITION}{' '}
           {entries.length === 1
-            ? 'This Domain references one: open it to read it through the lenses.'
-            : `This Domain references ${entries.length} Datasets: open one to read it through the lenses.`}
+            ? 'This Domain references one: open it to query it and read who may access what.'
+            : `This Domain references ${entries.length} Datasets: open one to query it and read who may access what.`}
         </p>
         <ul className="space-y-3">
           {entries.map((entry) => (

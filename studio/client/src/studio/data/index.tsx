@@ -1,11 +1,11 @@
 /**
- * The Data level: one dataset of a Domain on the canvas, read through the same lenses as its
- * Schema. Structure draws each Node as a card in its Class's region and each Edge as a link;
- * Rules reads the dataset as one of its identities, or as anyone, and says per Node and per
- * Edge what that identity may do and by which rule, each verdict pinnable to a Scenario, and
- * lists the Domain's Policies: one selected — or carried from the Schema — lights who it admits
- * to what, pair by pair; Behavior reads the dataset's Scenarios, each step judged again on the dataset as written,
- * and lights what a step selected acts as, acts on, stands on and is declared to write.
+ * The Data level: one dataset of a Domain, asked through tabs of its own (`tabs.ts`). Query asks
+ * it a part at a time through the Domain's Queries (`ask/ask-level.tsx`). Access reads it as one
+ * of its identities, or as anyone, and says per Node and per Edge what that identity may read,
+ * traverse and call, and by which rule, each verdict pinnable to a Scenario; it lists the
+ * Domain's Policies: one selected — or carried from the Schema — lights who it admits to what,
+ * pair by pair. Scenarios reads the answers kept as expected, each step judged again on the
+ * dataset as written, and lights what a step selected acts as, acts on and stands on.
  *
  * The map is the Studio's Scene canvas, drawn from a pure projection of the dataset
  * (`projectData`); the Index lists the same Nodes, and the panel reads the selection in
@@ -31,12 +31,12 @@ import { useUI } from '@/lib/store'
 
 import type { Frame } from '../canvas/frame'
 import type { Pins } from '../canvas/pins'
-import type { LensKey } from '../lenses/keys'
 import type { DomainRules, PolicyRule } from '../rules/model'
 import type { OwnWalk } from '../scene/rules'
 import type { Scene, SceneEntry, SceneGroup } from '../scene/types'
 import type { Decided } from './panel'
 import type { Pinning } from './pin'
+import type { DataTab } from './tabs'
 
 import { DOCK_CLEARANCE, TOOLBAR_CLEARANCE } from '../../schema-studio/palette'
 import { PanelOpener, PanelShell } from '../../schema-studio/panel-shell'
@@ -46,17 +46,15 @@ import { useCanvas } from '../canvas/store'
 import { useLensPins } from '../canvas/use-lens-pins'
 import { IndexRail } from '../index-rail/index-rail'
 import { originShort } from '../lenses/structure'
+import { isPolicyGroup, policyIndex } from '../rules/policy-names'
 import { arrange, arrangementKey } from '../scene/arrange'
 import { isolateScene } from '../scene/focus'
 import { useStage } from '../stage/store'
 import { accessOf, edgeVerdict, edgesOf, nodeVerdicts } from './access'
 import { AskLevel } from './ask/ask-level'
-import { callEntries, callKeyOf, FUNCTIONS_GROUP, isCallEntry } from './ask/call'
-import { CallLevel } from './ask/call-level'
 import { BarLine, DataBar } from './ask/question-bar'
 import { scaled } from './ask/scale'
 import { useAsk, useAskView } from './ask/store'
-import { BehaviorPanel, StepsInvolving } from './behavior-panel'
 import { DatasetLabel } from './dataset-label'
 import { IdentityPicker } from './identity-picker'
 import {
@@ -73,7 +71,6 @@ import {
 import { DataPanel, defaultLit } from './panel'
 import { pairCase, pairProof } from './policy-pairs'
 import {
-  type DataLens,
   isGathered,
   isStandIn,
   projectData,
@@ -94,6 +91,7 @@ import {
   judgeScenario,
   rulesTargetOf,
 } from './scenarios'
+import { ScenariosPanel, StepsInvolving } from './scenarios-panel'
 import { datasetScope, useDataView, useDatasetView } from './store'
 import { usePolicyPairs, useReads } from './use-decided'
 import { newScenarioId, useScenarios } from './use-scenarios'
@@ -109,7 +107,8 @@ export interface DataLevelProps {
   origin: string
   /** The dataset's module path, as its Domain's config writes it: its name, read or not. */
   datasetPath: string
-  lens: LensKey
+  /** the question asked of the dataset */
+  tab: DataTab
   /** when the reader asked for the dataset, in epoch milliseconds: its wait's clock */
   since: number
 }
@@ -120,29 +119,35 @@ const FOCUS_NEIGHBOURS = 60
 const NO_VERDICT = '@none'
 const NOTHING: ReadonlySet<string> = new Set()
 const NO_PINS: Pins = new Map()
-/** The Index group of the dataset's Scenarios, through Behavior, and the entry of each. */
+/** The Index group of the dataset's Scenarios, under Scenarios, and the entry of each. */
 const SCENARIOS = 'scenarios'
 const SCENARIO_ENTRY = 'scenario.'
-/** The Index group of the Domain's Policies, through Rules; each entry is the Policy's selection id. */
+/** The Index group of the Domain's Policies no family holds, under Access; each entry is the Policy's selection id. */
 const POLICIES = 'policies'
 /** A pair of a Policy, lit: `pair:<identity>|<object>`. */
 const PAIR = 'pair:'
 
-/** A dataset's arrangement is kept as a lens of its Domain's layout record, one per dataset. */
-function pinsLensOf(datasetId: string): string {
+/**
+ * A dataset's arrangement is kept as a lens of its Domain's layout record, one per dataset and
+ * per size it is read at: a dataset laid down a hundred times is another map, and where its
+ * boxes were put says nothing of where the dataset's own stand.
+ */
+function pinsLensOf(datasetId: string, factor: number): string {
   const slug = datasetId
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-  const lens = `data-${slug}`
+  const size = factor > 1 ? `-x${factor}` : ''
+  const lens = `data-${slug}${size}`
   if (/^[a-z][a-z0-9-]{0,31}$/.test(lens)) return lens
   let hash = 0x811c9dc5
   for (let index = 0; index < datasetId.length; index++)
     hash = Math.imul(hash ^ datasetId.charCodeAt(index), 0x01000193)
-  return `data-${slug.slice(0, 17).replace(/-+$/, '')}-${(hash >>> 0).toString(36)}`
+  const room = 17 - size.length
+  return `data-${slug.slice(0, room).replace(/-+$/, '')}-${(hash >>> 0).toString(36)}${size}`
 }
 
-export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLevelProps) {
+export function DataLevel({ domainId, origin, datasetPath, tab, since }: DataLevelProps) {
   const bundle = useBundle(domainId)
   const datasets = useDatasets(domainId)
   const found = datasets.data ? findDataset(datasets.data.datasets, datasetPath) : undefined
@@ -161,13 +166,6 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
     if (shown) rememberDataset(domainId, datasetPath)
   }, [datasetPath, domainId, rememberDataset, shown])
   const wait = (reading: string) => <DataWait since={since} dataset={name} reading={reading} />
-  // Whether a call is asked of the dataset shown, and no Scenario is open over it.
-  const asked = useAsk((state) =>
-    found?.status === 'ready'
-      ? state.views[datasetScope(domainId, found.dataset.id)]?.call !== undefined
-      : false,
-  )
-
   let body
   if (datasets.isError)
     body = (
@@ -181,15 +179,10 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
   else if (found.status === 'missing')
     body = <Status title={`This Domain declares no dataset ${datasetPath}.`} />
   else if (bundle.isPending) body = wait(`Reading the Schema of ${origin}`)
-  else if (lens === 'structure' && bundle.data?.ir)
-    // Through Structure a dataset is asked, never drawn whole (`ask/ask-level.tsx`).
+  else if (tab === 'query' && bundle.data?.ir)
+    // A dataset is asked, never drawn whole (`ask/ask-level.tsx`).
     return (
       <AskLevel domainId={domainId} origin={origin} dataset={found.dataset} bundle={bundle.data} />
-    )
-  else if (lens === 'behavior' && bundle.data?.ir && asked)
-    // Through Behavior a function picked is asked of the dataset (`ask/call-level.tsx`).
-    return (
-      <CallLevel domainId={domainId} origin={origin} dataset={found.dataset} bundle={bundle.data} />
     )
   else
     return (
@@ -198,7 +191,7 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
         dataset={found.dataset}
         bundle={bundle.data}
         bundleError={bundle.isError ? bundle.error : undefined}
-        lens={lens}
+        tab={tab}
       />
     )
   return (
@@ -222,20 +215,18 @@ function DatasetLevel({
   dataset,
   bundle,
   bundleError,
-  lens,
+  tab,
 }: {
   domainId: string
   dataset: StudioDataset
   bundle?: StudioSchemaBundle
   bundleError?: unknown
-  lens: LensKey
+  tab: DataTab
 }) {
-  const dataLens: DataLens = lens
   const scope = datasetScope(domainId, dataset.id)
-  // The size the dataset is read at is the reader's, the same through every lens (`ask/scale.ts`).
+  // The size the dataset is read at is the reader's, the same under every tab (`ask/scale.ts`).
   const factor = useAskView(scope).factor
   const setFactor = useAsk((state) => state.setFactor)
-  const askCall = useAsk((state) => state.askCall)
   const openDataLevel = useUI((state) => state.openDataLevel)
   const model = useMemo(
     () => datasetModel(bundle?.ir ? scaled(dataset, bundle, factor) : dataset, bundle),
@@ -311,7 +302,7 @@ function DatasetLevel({
   // or one of its pairs is lit, its pairs do, and the identity's marks — who the map is read as,
   // what it reads — stand aside, still decided, until the Policy is no longer selected.
   const readAs = policy ? undefined : identity
-  const reads = useReads(dataLens === 'rules' ? access : undefined, identity)
+  const reads = useReads(tab === 'access' ? access : undefined, identity)
   const complete = reads && reads.pending === 0 && readAs !== undefined ? reads : undefined
 
   // The dataset's Scenarios, each step judged on the dataset as written and the Schema as it
@@ -327,19 +318,19 @@ function DatasetLevel({
     }),
     [access, bundle, model, unread],
   )
-  const behavior = dataLens === 'behavior'
+  const keeping = tab === 'scenarios'
   const judged = useMemo(
-    () =>
-      behavior ? scenarios.scenarios.map((one) => judgeScenario(judging, one, 'outcome')) : [],
-    [behavior, judging, scenarios.scenarios],
+    () => (keeping ? scenarios.scenarios.map((one) => judgeScenario(judging, one, 'outcome')) : []),
+    [keeping, judging, scenarios.scenarios],
   )
   const openSource = view.scenario
     ? scenarios.scenarios.find((one) => one.id === view.scenario)
     : undefined
   const open = useMemo(
-    () => (behavior && openSource ? judgeScenario(judging, openSource, 'full') : undefined),
-    [behavior, judging, openSource],
+    () => (keeping && openSource ? judgeScenario(judging, openSource, 'full') : undefined),
+    [keeping, judging, openSource],
   )
+  const brokenScenarios = judged.filter((one) => one.broken.length > 0).length
   const step = open && view.step ? open.steps.find((one) => one.step.id === view.step) : undefined
   // What the step selected marks on the map: who acts and how, and where its function's
   // declared writes would land — marked, never applied.
@@ -358,15 +349,14 @@ function DatasetLevel({
     if (edge) paths.add(edge.from).add(edge.to)
     return [...paths].filter((path) => model.nodes.has(path))
   }, [admits, model, selectedEdge, selectedPath])
-  // What a selection draws as its own cards whatever the bound: what it reaches and, in Rules,
+  // What a selection draws as its own cards whatever the bound: what it reaches and, under Access,
   // the identity read as.
   const focus = useMemo(() => {
     const paths = [...reach]
-    if (dataLens === 'rules' && !policy && identity !== ANYONE && paths.length > 0)
-      paths.push(identity)
+    if (tab === 'access' && !policy && identity !== ANYONE && paths.length > 0) paths.push(identity)
     if (step) paths.push(...step.facts.nodes, ...(step.facts.actor ? [step.facts.actor] : []))
     return [...new Set(paths)].filter((path) => model.nodes.has(path)).sort()
-  }, [dataLens, identity, model, policy, reach, step])
+  }, [tab, identity, model, policy, reach, step])
 
   const canvasScope = `${domainId}:data:${dataset.id}`
   const storedCollapsed = useCanvas((state) => state.collapsed[canvasScope])
@@ -400,21 +390,21 @@ function DatasetLevel({
   const atRest = useMemo(
     () =>
       projectData(model, {
-        lens: dataLens,
+        tab,
         collapsed,
         identities,
         ...(readAs === undefined ? {} : { as: readAs }),
         reads: complete,
         ...(marks ? { step: marks } : {}),
       }),
-    [collapsed, complete, dataLens, identities, marks, model, readAs],
+    [collapsed, complete, tab, identities, marks, model, readAs],
   )
   const focused = focus.length > 0 || opening.size > 0
   const projection = useMemo(
     () =>
       focused
         ? projectData(model, {
-            lens: dataLens,
+            tab,
             collapsed: shownCollapsed,
             focus,
             identities,
@@ -423,7 +413,7 @@ function DatasetLevel({
             ...(marks ? { step: marks } : {}),
           })
         : atRest,
-    [atRest, complete, dataLens, focus, focused, identities, marks, model, readAs, shownCollapsed],
+    [atRest, complete, tab, focus, focused, identities, marks, model, readAs, shownCollapsed],
   )
   const isolated = useMemo(
     () => (isolatedId ? isolateScene(projection.scene, isolatedId) : null),
@@ -435,9 +425,9 @@ function DatasetLevel({
     [isolated, shown, shownCollapsed],
   )
 
-  // The arrangement the reader made is kept per dataset, the same through every lens. A focus
+  // The arrangement the reader made is kept per dataset, the same under every tab. A focus
   // lays its few new cards in among the boxes as they stood at rest and moves none of them.
-  const { pins: lensPins, place, reset } = useLensPins(domainId, pinsLensOf(dataset.id))
+  const { pins: lensPins, place, reset } = useLensPins(domainId, pinsLensOf(dataset.id, factor))
   const shownFrame = useRef<Frame | null>(null)
   const restPins = useRef<{ key: string; pins: Pins; laidWith: Pins } | null>(null)
   const restKey = arrangementKey(atRest.scene, collapsed)
@@ -494,7 +484,7 @@ function DatasetLevel({
 
   // The verdicts of the selection, as the identity read as.
   const verdicts = useMemo((): Decided | undefined => {
-    if (dataLens !== 'rules' || !access) return undefined
+    if (tab !== 'access' || !access) return undefined
     if (selectedPath && model.nodes.has(selectedPath))
       return { kind: 'node', ...nodeVerdicts(access, identity, selectedPath) }
     const edge = selectedEdge === undefined ? undefined : model.edgeAt.get(selectedEdge)
@@ -505,7 +495,7 @@ function DatasetLevel({
         read: edgeVerdict(access, identity, edge, 'read'),
       }
     return undefined
-  }, [access, dataLens, identity, model, selectedEdge, selectedPath])
+  }, [access, tab, identity, model, selectedEdge, selectedPath])
   const lit = view.verdict === NO_VERDICT ? undefined : (view.verdict ?? defaultLit(verdicts))
   const litVerdict = verdicts ? listVerdicts(verdicts).find((one) => one.id === lit) : undefined
   const onLight = useCallback(
@@ -517,7 +507,7 @@ function DatasetLevel({
   // on the case it decided: each step at the Node or Edge it stands at, numbered as the stage and
   // the panel's path number it. None where the panel stages none.
   const walk = useMemo((): OwnWalk | undefined => {
-    if (isolated || !access || dataLens === 'behavior') return undefined
+    if (isolated || !access || tab === 'scenarios') return undefined
     if (policy) {
       const pair = view.verdict?.startsWith(PAIR)
         ? pairs?.pairs.find((one) => `${PAIR}${one.id}` === view.verdict)
@@ -528,7 +518,7 @@ function DatasetLevel({
       const { situation, fact } = explained.verdict
       return walkOnMap(projection, walkFactsOf(rule, access.data, situation, fact), 'who')
     }
-    if (dataLens !== 'rules' || !selected || !litVerdict?.decided) return undefined
+    if (tab !== 'access' || !selected || !litVerdict?.decided) return undefined
     if (litVerdict.by.kind !== 'rule') return undefined
     const { situation, fact } = litVerdict.decided
     return walkOnMap(
@@ -536,17 +526,17 @@ function DatasetLevel({
       walkFactsOf(litVerdict.by.rule, access.data, situation, fact),
       litVerdict.slot,
     )
-  }, [access, dataLens, isolated, litVerdict, pairs, policy, projection, selected, view.verdict])
+  }, [access, tab, isolated, litVerdict, pairs, policy, projection, selected, view.verdict])
 
-  // Through Rules the map lights what the identity reads; with a selection, the facts its lit
-  // verdict stands on. Without either it lights the selection's neighbourhood, as Structure does.
-  // A Policy selected lights, through Structure and Rules, who it admits to what, or the pair lit.
-  // Through Behavior a step selected lights who it acts as, what it acts on, the Edges its
+  // Under Access the map lights what the identity reads; with a selection, the facts its lit
+  // verdict stands on. Without either it lights the selection's neighbourhood.
+  // A Policy selected lights who it admits to what, or the pair lit.
+  // Under Scenarios a step selected lights who it acts as, what it acts on, the Edges its
   // verdict stands on and the regions its function is declared to write; a Scenario open
   // lights every Node and Edge its steps name.
   const spotlight = useMemo(() => {
     if (isolated) return undefined
-    if (dataLens === 'behavior') {
+    if (tab === 'scenarios') {
       const steps = step ? [step] : selected ? [] : (open?.steps ?? [])
       if (steps.length === 0) return undefined
       const all = [...new Set([...(selected ? [selected] : []), ...stepsLit(projection, steps)])]
@@ -556,7 +546,7 @@ function DatasetLevel({
       const ids = admits ? sceneIdsOf(projection, admits) : []
       return ids.length > 0 ? ids : undefined
     }
-    if (dataLens !== 'rules') return undefined
+    if (tab !== 'access') return undefined
     const as = identity === ANYONE ? [] : [identity]
     if (selected) {
       if (!litVerdict) return undefined
@@ -575,7 +565,7 @@ function DatasetLevel({
   }, [
     admits,
     complete,
-    dataLens,
+    tab,
     identity,
     isolated,
     litVerdict,
@@ -586,9 +576,9 @@ function DatasetLevel({
     step,
   ])
 
-  // Pinning a verdict, through Rules: added to a Scenario of the dataset, or to a new one.
+  // Pinning a verdict, under Access: added to a Scenario of the dataset, or to a new one.
   const pinning = useMemo((): Pinning | undefined => {
-    if (dataLens !== 'rules') return undefined
+    if (tab !== 'access') return undefined
     const onPin = (added: ScenarioStep, into: Scenario | undefined) => {
       const ask = askOf(model, added)
       if (into) {
@@ -615,14 +605,14 @@ function DatasetLevel({
       }
       scenarios.put(created)
       toast(`New Scenario ${created.name}`, {
-        description: 'Rename it and read it in the Behavior lens.',
+        description: 'Rename it and read it under Scenarios.',
         action: { label: 'Undo', onClick: () => scenarios.remove(created.id) },
       })
     }
     return { model, scenarios: scenarios.scenarios, as: identity, onPin, newId: newScenarioId }
-  }, [dataLens, dataset.path, identity, model, scenarios])
+  }, [tab, dataset.path, identity, model, scenarios])
 
-  // A step selected is a selection, an identity and a verdict at once: Rules reads it there.
+  // A step selected is a selection, an identity and a verdict at once: Access reads it there.
   const onStep = useCallback(
     (judgedStep: JudgedStep | undefined, scenario = open?.scenario.id) => {
       if (!judgedStep || !scenario) {
@@ -640,71 +630,49 @@ function DatasetLevel({
     },
     [judging, open, openScenario, scope, selectStep],
   )
-  const setLens = useUI((state) => state.setLens)
-  const onRules = useCallback(
+  const setDataTab = useUI((state) => state.setDataTab)
+  const onAccess = useCallback(
     (judgedStep: JudgedStep) => {
       onStep(judgedStep)
-      setLens('rules')
+      setDataTab('access')
     },
-    [onStep, setLens],
+    [onStep, setDataTab],
   )
-  // The way to a first step: Rules, on a Node whose verdicts can be pinned.
+  // The way to a first step: Access, on a Node whose verdicts can be pinned.
   const onFirstStep = useCallback(() => {
     if (!selectedPath) {
       const first = model.order.find((node) => !identities.has(node.path)) ?? model.order[0]
       if (first) select(scope, nodeId(first.path), true)
     }
-    setLens('rules')
-  }, [identities, model, scope, select, selectedPath, setLens])
+    setDataTab('access')
+  }, [identities, model, scope, select, selectedPath, setDataTab])
 
-  // Above the dataset's Nodes the Index lists, through Behavior, its Scenarios with their
-  // standing; through Rules, the Domain's Policies.
+  // Above the dataset's Nodes the Index lists, under Scenarios, its Scenarios with their
+  // standing; under Access, the Domain's Policies.
   const [indexShut, setIndexShut] = useState<ReadonlySet<string>>(NOTHING)
   const listed = useMemo(() => {
     if (isolated) return undefined
-    if (behavior) {
-      const withScenarios = withGroup(
+    if (keeping) {
+      return withGroups(
         atRest.index,
-        { id: SCENARIOS, label: 'Scenarios' },
+        [{ id: SCENARIOS, label: 'Scenarios' }],
         scenarioEntries(judged),
         `scenarios:${judged.map((one) => `${one.scenario.id}=${one.standing}`).join(',')}`,
       )
-      // Under the Scenarios, the Domain's functions: one picked is asked of the dataset.
-      const calls = bundle?.ir ? callEntries(bundle) : []
-      const listing = withScenarios.index!
-      return calls.length === 0
-        ? withScenarios
-        : {
-            ...withScenarios,
-            key: `${withScenarios.key}|functions:${calls.length}`,
-            index: {
-              ...listing,
-              groups: [
-                listing.groups[0]!,
-                { id: FUNCTIONS_GROUP, label: 'Functions' },
-                ...listing.groups.slice(1),
-              ],
-              entries: [
-                ...listing.entries.slice(0, judged.length),
-                ...calls,
-                ...listing.entries.slice(judged.length),
-              ],
-            },
-          }
     }
-    if (dataLens === 'rules' && rules) {
-      const entries = policyEntries(rules)
+    if (tab === 'access' && rules) {
+      const { groups, entries } = policiesListed(rules)
       return entries.length > 0
-        ? withGroup(
+        ? withGroups(
             atRest.index,
-            { id: POLICIES, label: 'Policies' },
+            groups,
             entries,
             `policies:${entries.map((entry) => `${entry.id}=${entry.sublabel}`).join(',')}`,
           )
         : undefined
     }
     return undefined
-  }, [atRest.index, behavior, dataLens, isolated, judged, rules])
+  }, [atRest.index, keeping, tab, isolated, judged, rules])
   const indexCollapsed = useMemo(
     () => (listed && indexShut.size > 0 ? new Set([...collapsed, ...indexShut]) : collapsed),
     [collapsed, indexShut, listed],
@@ -712,21 +680,17 @@ function DatasetLevel({
   const onIndexSelect = useCallback(
     (id: string) => {
       if (id === SCENARIOS) return openScenario(scope, undefined)
-      if (id === POLICIES) return
+      if (id === POLICIES || isPolicyGroup(id)) return
       if (id.startsWith(SCENARIO_ENTRY)) return openScenario(scope, id.slice(SCENARIO_ENTRY.length))
-      // A function is asked of the dataset, on the Node selected when it takes it (`ask/call-level.tsx`).
-      const called = behavior && bundle?.ir && isCallEntry(id) ? callKeyOf(bundle, id) : undefined
-      if (called)
-        return askCall(scope, { fn: called, ...(selectedPath ? { on: selectedPath } : {}) })
       // A Policy has no card to bring into view: the map lights what it admits instead.
       if (rules && policyOf(rules, id)) return select(scope, id)
       selectAndReveal(id)
     },
-    [askCall, behavior, bundle, openScenario, rules, scope, select, selectAndReveal, selectedPath],
+    [openScenario, rules, scope, select, selectAndReveal],
   )
   const onIndexToggle = useCallback(
     (group: string) => {
-      if (group !== SCENARIOS && group !== POLICIES && group !== FUNCTIONS_GROUP)
+      if (group !== SCENARIOS && group !== POLICIES && !isPolicyGroup(group))
         return onToggleGroup(group)
       setIndexShut((shut) => {
         const next = new Set(shut)
@@ -737,7 +701,7 @@ function DatasetLevel({
     [onToggleGroup],
   )
   const indexSelected =
-    behavior && listed && (step || !selected) && open
+    keeping && listed && (step || !selected) && open
       ? `${SCENARIO_ENTRY}${open.scenario.id}`
       : selected
 
@@ -753,25 +717,25 @@ function DatasetLevel({
     () => ({
       top: TOOLBAR_CLEARANCE,
       right: 0,
-      bottom: foot + (dataLens === 'rules' ? 64 + 20 * Math.min(model.classes.length, 8) : 0),
+      bottom: foot + (tab === 'access' ? 64 + 20 * Math.min(model.classes.length, 8) : 0),
       left: 0,
     }),
-    [dataLens, foot, model.classes.length],
+    [tab, foot, model.classes.length],
   )
 
-  // Esc backs out of the selection, then through Behavior out of the Scenario open; the canvas
+  // Esc backs out of the selection, then under Scenarios out of the Scenario open; the canvas
   // leaves an isolated neighbourhood first.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       const current = useDataView.getState().views[scope]
-      if (behavior && current?.scenario && !current.selected && !current.step)
+      if (keeping && current?.scenario && !current.selected && !current.step)
         openScenario(scope, undefined)
       else select(scope, undefined)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [behavior, openScenario, scope, select])
+  }, [keeping, openScenario, scope, select])
 
   const messages = [
     ...(bundleError
@@ -791,7 +755,7 @@ function DatasetLevel({
       className="flex h-full flex-col"
       data-testid="data-level"
       data-state="ready"
-      data-lens={lens}
+      data-tab={tab}
       data-dataset={dataset.id}
       data-dataset-path={dataset.path}
     >
@@ -817,13 +781,15 @@ function DatasetLevel({
             onFactor={(next) => setFactor(scope, next)}
             onDatasets={() => openDataLevel(null)}
           >
-            {behavior ? (
-              <BarLine glyph={GLYPHS.function} title="What a call does">
+            {keeping ? (
+              <BarLine glyph={GLYPHS.scenario} title={open ? open.scenario.name : 'Scenarios'}>
                 {open
-                  ? `${open.scenario.name} · ${open.steps.length} ${open.steps.length === 1 ? 'step' : 'steps'}, each judged on this dataset`
-                  : 'open a Scenario in the panel, or select a Node to read the steps that involve it'}
+                  ? `${open.steps.length} ${open.steps.length === 1 ? 'step' : 'steps'} · ${open.standing}`
+                  : judged.length === 0
+                    ? 'none kept on this dataset yet'
+                    : `${judged.length} kept on this dataset${brokenScenarios > 0 ? ` · ${brokenScenarios} no longer as expected` : ''}`}
               </BarLine>
-            ) : (
+            ) : tab === 'access' ? (
               <BarLine
                 glyph={GLYPHS.policy}
                 title={`What ${identityLabel(model, identity)} may read`}
@@ -836,11 +802,15 @@ function DatasetLevel({
                       ? 'deciding…'
                       : 'no rule of the Domain can be read'}
               </BarLine>
+            ) : (
+              <BarLine glyph={GLYPHS.query} title="The whole dataset">
+                its Schema could not be read, so no Query can be asked of it
+              </BarLine>
             )}
           </DataBar>
           <div
             className="relative min-h-0 flex-1"
-            {...(behavior ? { 'data-testid': 'data-behavior' } : {})}
+            {...(keeping ? { 'data-testid': 'data-scenarios' } : {})}
           >
             {
               <SceneCanvas
@@ -852,7 +822,7 @@ function DatasetLevel({
                 spotlight={spotlight}
                 {...(walk ? { walk } : {})}
                 // A step or a verdict lights the Edges its proof names, not every one between them.
-                spotlightLinks={behavior || selected ? 'named' : 'among'}
+                spotlightLinks={keeping || selected ? 'named' : 'among'}
                 revealTarget={reveal}
                 isolated={isolated ? isolatedId : undefined}
                 insets={insets}
@@ -864,12 +834,12 @@ function DatasetLevel({
                 onRevealed={revealed}
                 onToggleGroup={onToggleGroup}
                 onIsolate={onIsolate}
-                lens={dataLens}
-                // A new reading — the lens, the selection, the identity's marks, the step — frames the map again.
-                frameToken={`${dataLens}|${selected ?? ''}|${dataLens === 'rules' ? `${identity}:${complete ? 'read' : ''}` : ''}|${behavior ? (step?.step.id ?? open?.scenario.id ?? '') : ''}`}
+                lens={tab}
+                // A new reading — the tab, the selection, the identity's marks, the step — frames the map again.
+                frameToken={`${tab}|${selected ?? ''}|${tab === 'access' ? `${identity}:${complete ? 'read' : ''}` : ''}|${keeping ? (step?.step.id ?? open?.scenario.id ?? '') : ''}`}
               />
             }
-            {lens === 'rules' && (
+            {tab === 'access' && (
               <IdentityPicker
                 model={model}
                 identities={access?.identities ?? []}
@@ -887,8 +857,8 @@ function DatasetLevel({
         </div>
         {panelOpen && (
           <PanelShell onClose={() => (selected ? select(scope, undefined) : setPanelOpen(false))}>
-            {behavior && (step || !selected) ? (
-              <BehaviorPanel
+            {keeping && (step || !selected) ? (
+              <ScenariosPanel
                 domainId={domainId}
                 model={model}
                 judged={judged}
@@ -897,13 +867,13 @@ function DatasetLevel({
                 scenarios={scenarios}
                 onOpen={(id) => openScenario(scope, id)}
                 onStep={(next) => onStep(next)}
-                onRules={onRules}
+                onAccess={onAccess}
                 onFirstStep={onFirstStep}
               />
             ) : (
               <DataPanel
                 domainId={domainId}
-                lens={dataLens}
+                tab={tab}
                 model={model}
                 {...(access ? { access } : {})}
                 {...(unread ? { unread } : {})}
@@ -920,7 +890,7 @@ function DatasetLevel({
                 onLight={onLight}
                 onIdentity={(next) => setIdentity(scope, next)}
                 {...(pinning ? { pinning } : {})}
-                {...(behavior && (selectedPath || selectedEdge !== undefined)
+                {...(keeping && (selectedPath || selectedEdge !== undefined)
                   ? {
                       steps: (
                         <StepsInvolving
@@ -1049,36 +1019,36 @@ function scenarioEntries(judged: readonly JudgedScenario[]): SceneEntry[] {
 }
 
 /**
- * The Domain's Policies as Index entries, as its Schema's Rules lens lists them: its own, and
- * another Domain's that one of its places checks; each counted by the places it sits on.
+ * The Domain's Policies as the Index lists them, as its Schema's Rules lens does: its own, and
+ * another Domain's that one of its places checks, by family, each counted by the places it sits on.
  */
-function policyEntries(rules: DomainRules): SceneEntry[] {
+function policiesListed(rules: DomainRules) {
   const places = (count: number) => `${count} ${count === 1 ? 'place' : 'places'}`
-  return [...rules.policies, ...rules.imported].flatMap((policy): SceneEntry[] => {
-    const own = policy.origin === rules.origin
-    if (!own && policy.sitsOn.length === 0) return []
-    return [
-      {
-        id: policy.target,
-        kind: 'policy',
-        label: policy.name,
-        sublabel: own
-          ? places(policy.sitsOn.length)
-          : `${originShort(policy.origin)} · ${places(policy.sitsOn.length)}`,
-        group: POLICIES,
-        tone: 'who',
-        icon: { glyph: 'policy' },
-        ...(policy.description ? { keywords: [policy.description] } : {}),
-      },
-    ]
-  })
+  return policyIndex(rules, POLICIES, (policy, label, group) => ({
+    id: policy.target,
+    kind: 'policy',
+    label,
+    sublabel:
+      policy.origin === rules.origin
+        ? places(policy.sitsOn.length)
+        : `${originShort(policy.origin)} · ${places(policy.sitsOn.length)}`,
+    group,
+    tone: 'who',
+    icon: { glyph: 'policy' },
+    ...(policy.description ? { keywords: [policy.description] } : {}),
+  }))
 }
 
 /**
- * The Index with a group of its own above the dataset's Nodes and Edges, listed as the map lists
- * them. With no entry the group lists none: the panel says what would fill it.
+ * The Index with groups of its own above the dataset's Nodes and Edges, listed as the map lists
+ * them. With no entry a group lists none: the panel says what would fill it.
  */
-function withGroup(index: Scene, group: SceneGroup, entries: SceneEntry[], key: string): Scene {
+function withGroups(
+  index: Scene,
+  groups: readonly SceneGroup[],
+  entries: SceneEntry[],
+  key: string,
+): Scene {
   const nodes = index.nodes.map((node) => ({
     id: node.id,
     ...(node.anchor ? { anchor: node.anchor } : {}),
@@ -1104,6 +1074,6 @@ function withGroup(index: Scene, group: SceneGroup, entries: SceneEntry[], key: 
   return {
     ...index,
     key: `${index.key}|${key}`,
-    index: { groups: [group, ...index.groups], entries: [...entries, ...nodes, ...links] },
+    index: { groups: [...groups, ...index.groups], entries: [...entries, ...nodes, ...links] },
   }
 }

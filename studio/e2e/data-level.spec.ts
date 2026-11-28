@@ -16,10 +16,10 @@ import {
 } from './test'
 
 /**
- * Through Rules and Behavior the Data level reads a dataset whole on the canvas: its Nodes grouped
- * by Class, its Edges as links, the selection read in sentences in the panel. Through Rules it
+ * Under Access and Scenarios the Data level reads a dataset whole on the canvas: its Nodes grouped
+ * by Class, its Edges as links, the selection read in sentences in the panel. Under Access it
  * reads the dataset as one of its identities: what that identity cannot read dims, and a selected
- * Node says its verdict, by which rule, and lights the Edges that prove it. Through Structure the
+ * Node says its verdict, by which rule, and lights the Edges that prove it. Under Query the
  * dataset is asked, never drawn whole (`data-ask.spec.ts`).
  *
  * The fixture's `support-desk` dataset holds Acme, Ann and Bob who work there, the ticket each
@@ -47,8 +47,8 @@ test('a dataset read whole draws its Nodes grouped by Class, and a selected Edge
   page,
 }) => {
   await openSupportDesk(page)
-  await page.keyboard.press('3')
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-lens', 'rules')
+  await page.keyboard.press('2')
+  await expect(page.getByTestId('data-level')).toHaveAttribute('data-tab', 'access')
   const nodes = ['acme', 'invoice-1', 'ann', 'bob', 'login', 'printer']
   for (const node of nodes) await expect(sceneBox(page, `core.node.${node}`)).toBeVisible()
   for (let edge = 0; edge < 6; edge++)
@@ -117,8 +117,8 @@ test('read as an identity, what it cannot read dims, and a Node says its verdict
   page,
 }) => {
   await openSupportDesk(page)
-  await page.keyboard.press('3')
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-lens', 'rules')
+  await page.keyboard.press('2')
+  await expect(page.getByTestId('data-level')).toHaveAttribute('data-tab', 'access')
 
   const identity = page.getByTestId('data-identity')
   const trigger = page.getByTestId('data-identity-trigger')
@@ -181,9 +181,11 @@ test('read as an identity, what it cannot read dims, and a Node says its verdict
   await expect(mapStep(1)).toHaveAttribute('data-step', 'core.node.printer')
   await expect(mapStep(2)).toHaveAttribute('data-step', 'core.edge.5')
 
-  // Behavior on data is Scenarios: said, not drawn yet
-  await page.keyboard.press('2')
-  await expect(page.getByTestId('data-behavior')).toBeVisible()
+  // the same dataset under Scenarios keeps the drawing and says the Scenarios kept on it
+  await page.keyboard.press('3')
+  await expect(page.getByTestId('data-level')).toHaveAttribute('data-tab', 'scenarios')
+  await expect(page.getByTestId('data-scenarios')).toBeVisible()
+  await expect(sceneBox(page, 'core.node.printer')).toBeVisible()
 })
 
 test('a dataset its Schema refuses is listed, and opening it says where and why', async ({

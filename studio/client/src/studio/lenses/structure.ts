@@ -37,6 +37,7 @@ import type {
   SceneEnd,
   SceneFold,
   SceneGroup,
+  SceneIcon,
   SceneLink,
   SceneNode,
   SceneRow,
@@ -73,6 +74,23 @@ const ROOT_MODULE = 'root'
 export function originShort(origin: string): string {
   if (origin === KERNEL_ORIGIN) return 'kernel'
   return origin.split('.')[0] ?? origin
+}
+
+/** Whether a Class is Kernel `Identity` or extends it, however far up: one of its Nodes may act. */
+export function isIdentityClass(bundle: StudioSchemaBundle, ref: IrClassRef): boolean {
+  return kernelRolesOfClass(bundle, [ref]).includes('identity')
+}
+
+/** A Class's icon: its authored one, else the glyph of what it is — an identity's, or a Class's. */
+export function classIcon(
+  bundle: StudioSchemaBundle,
+  ref: IrClassRef,
+  member: Pick<IrClass, 'icon'> | undefined = resolveClass(bundle, ref),
+): SceneIcon {
+  return {
+    ...(member?.icon ? { svg: member.icon } : {}),
+    glyph: isIdentityClass(bundle, ref) ? 'identity' : 'class',
+  }
 }
 
 /** The selection target that opens a Class: its bare name at home, its exact key elsewhere. */
@@ -467,7 +485,7 @@ function projectPart(
       shape: 'card',
       label: name,
       ...groupOf(module),
-      icon: { ...(member.icon ? { svg: member.icon } : {}), glyph: 'class' },
+      icon: classIcon(bundle, own(name), member),
       tone: 'node',
       counts: [
         { label: 'properties', value: properties },
@@ -499,7 +517,7 @@ function projectPart(
       label: ref.name,
       sublabel: originShort(ref.origin),
       group,
-      icon: { ...(member?.icon ? { svg: member.icon } : {}), glyph: 'class' },
+      icon: classIcon(bundle, ref, member),
       tone: 'muted',
       counts: [
         { label: 'properties', value: Object.keys(member?.properties ?? {}).length },

@@ -56,12 +56,12 @@ const datasetsOf = (domainId: string, datasets: StudioDatasets['datasets']) =>
 
 test('switching to Data opens the chosen dataset at once when the datasets are read', () => {
   datasetsOf('desk', [TRIAGE, OWNERS])
-  useUI.setState({ readerDomainId: 'desk', level: 'domain', lens: 'rules', dataset: null })
+  useUI.setState({ readerDomainId: 'desk', level: 'domain', dataTab: 'access', dataset: null })
   useUI.getState().rememberDataset('desk', OWNERS.path)
   switchToData('desk')
   expect(useUI.getState()).toMatchObject({
     level: 'data',
-    lens: 'rules',
+    dataTab: 'access',
     dataset: OWNERS.path,
     choosingDataset: false,
   })
@@ -73,11 +73,19 @@ test('switching to Data opens the chosen dataset at once when the datasets are r
 })
 
 test('switching to Data before the datasets are read waits on them, then chooses', () => {
-  useUI.setState({ readerDomainId: 'unread', level: 'domain', lens: 'views', dataset: null })
+  useUI.setState({
+    readerDomainId: 'unread',
+    level: 'domain',
+    lens: 'views',
+    dataTab: 'scenarios',
+    dataset: null,
+  })
   switchToData('unread')
+  // the lens is the Schema's, left as it was; the Data level opens on the tab last asked
   expect(useUI.getState()).toMatchObject({
     level: 'data',
-    lens: 'structure',
+    lens: 'views',
+    dataTab: 'scenarios',
     dataset: null,
     choosingDataset: true,
   })

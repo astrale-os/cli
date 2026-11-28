@@ -168,9 +168,7 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
   )
   const projection = useMemo(
     () =>
-      slice
-        ? projectData(slice, { lens: 'structure', collapsed, identities: identitySet })
-        : undefined,
+      slice ? projectData(slice, { tab: 'query', collapsed, identities: identitySet }) : undefined,
     [collapsed, identitySet, slice],
   )
   const scene = useMemo<Scene>(
@@ -225,7 +223,7 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
       const root = queryShape(bundle, each).roots[0]?.ref.name ?? 'Other'
       const group = `ask.queries.${root}`
       if (!groups.some((known) => known.id === group))
-        groups.push({ id: group, label: `${root} · queries` })
+        groups.push({ id: group, label: `From ${root}` })
       entries.push({
         id: `${QUERY}${each.id}`,
         kind: 'query',
@@ -359,7 +357,7 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
       className="flex h-full flex-col"
       data-testid="data-level"
       data-state="ready"
-      data-lens="structure"
+      data-tab="query"
       data-dataset={dataset.id}
       data-dataset-path={dataset.path}
       data-ask={definition?.id ?? 'measure'}
@@ -444,7 +442,7 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
                 })
               }
               onIsolate={() => {}}
-              lens="structure"
+              lens="query"
               // Another question, another answer or another reader frames the map again.
               frameToken={`${sceneKey}|${JSON.stringify(view.values)}|${as ?? ''}|${view.factor}|${selected ?? ''}`}
             />
@@ -456,7 +454,7 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
             {slice && projection && selected ? (
               <DataPanel
                 domainId={domainId}
-                lens="structure"
+                tab="query"
                 model={slice}
                 identities={identitySet}
                 identity={as ?? ''}

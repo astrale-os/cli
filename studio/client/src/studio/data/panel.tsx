@@ -2,11 +2,11 @@
  * The Data level's panel: the selection read in sentences. Nothing selected reads the dataset; a
  * Node reads its Class, its properties as a small table, its Edges as sentences and what points
  * at it; an Edge reads its relationship and ends; a region lists its Nodes as a table; a link that
- * gathers Edges lists them. Through the Rules lens each page adds the verdicts of the identity
+ * gathers Edges lists them. Under Access each page adds the verdicts of the identity
  * read as — read, traverse, call — each with its rule, why, a way to light its proof, and a way
  * to pin it to a Scenario. A Policy reads what it admits on the dataset: how many of its pairs
  * of an identity and a Node or Edge, each pair a sentence that lights on the map and opens on
- * the verdicts the Kernel gives it where the Policy sits, each pinnable. Through the Behavior lens
+ * the verdicts the Kernel gives it where the Policy sits, each pinnable. Under Scenarios
  * a Node's or an Edge's page opens on the Scenario steps that involve it.
  */
 
@@ -23,8 +23,9 @@ import type { RuleOp } from '../scene/types'
 import type { Verdict } from './access'
 import type { Pinning } from './pin'
 import type { PolicyPair, PolicyPairs } from './policy-pairs'
-import type { DataLens, DataScene } from './project'
+import type { DataScene } from './project'
 import type { DecidedCase } from './rule-scope'
+import type { DataTab } from './tabs'
 
 import { TONE_TEXT } from '../canvas/tones'
 import { ClassGlyph } from '../inspector/marks'
@@ -91,7 +92,8 @@ export type Decided =
 
 export interface DataPanelProps {
   domainId: string
-  lens: DataLens
+  /** the question asked of the dataset: Access adds verdicts, Scenarios the steps that involve the selection */
+  tab: DataTab
   model: DatasetModel
   access?: Access
   /** why no rule of the Domain can be read, when none can */
@@ -108,9 +110,9 @@ export interface DataPanelProps {
   decided?: Decided
   /** the verdict whose proof the map lights; a Policy's pair lit (`pair:<id>`) */
   lit?: string
-  /** through Rules: how a verdict is pinned to a Scenario */
+  /** under Access: how a verdict is pinned to a Scenario */
   pinning?: Pinning
-  /** through Behavior: the Scenario steps that involve the Node or Edge selected */
+  /** under Scenarios: the Scenario steps that involve the Node or Edge selected */
   steps?: ReactNode
   onSelect: (id: string | undefined) => void
   onLight: (verdict: string) => void
@@ -454,7 +456,7 @@ function EdgeLines({
 // ── pages ──
 
 function DatasetPage(props: DataPanelProps) {
-  const { model, lens, reads, access, domainId } = props
+  const { model, tab, reads, access, domainId } = props
   const dataset = model.dataset
   const variables = Object.entries(dataset.variables).sort(([a], [b]) => a.localeCompare(b))
   const readsOf = (target: string) => reads?.classes.find((each) => each.target === target)
@@ -477,7 +479,7 @@ function DatasetPage(props: DataPanelProps) {
           <Fact label="Schema">{admittedSentence(dataset)}</Fact>
         </div>
       </Title>
-      {lens === 'rules' && (
+      {tab === 'access' && (
         <Section label={`Read · as ${identityLabel(props.model, props.identity)}`} kind="reads">
           {reads && reads.pending === 0 ? (
             <p className="text-[13px] leading-relaxed">
@@ -499,7 +501,7 @@ function DatasetPage(props: DataPanelProps) {
             <tr className="text-[11px] text-muted-foreground">
               <th className="pb-1 text-left font-normal">Class</th>
               <th className="pb-1 text-right font-normal">Nodes</th>
-              {lens === 'rules' && <th className="pb-1 text-right font-normal">Readable</th>}
+              {tab === 'access' && <th className="pb-1 text-right font-normal">Readable</th>}
             </tr>
           </thead>
           <tbody>
@@ -519,7 +521,7 @@ function DatasetPage(props: DataPanelProps) {
                     </span>
                   </td>
                   <td className="py-1.5 text-right tabular-nums">{cls.nodes.length}</td>
-                  {lens === 'rules' && (
+                  {tab === 'access' && (
                     <td className="py-1.5 text-right tabular-nums text-muted-foreground">
                       {counted && reads?.pending === 0 ? counted.allowed : '…'}
                     </td>
@@ -545,7 +547,7 @@ function DatasetPage(props: DataPanelProps) {
               <div key={one.id} className="flex items-baseline gap-2 text-[13px]">
                 <EndPick props={props} path={one.id} label={one.label} />
                 <span className="font-mono text-[11px] text-muted-foreground">{one.id}</span>
-                {lens === 'rules' && one.id !== props.identity && (
+                {tab === 'access' && one.id !== props.identity && (
                   <button
                     type="button"
                     data-read-as={one.id}
@@ -593,7 +595,7 @@ function DatasetPage(props: DataPanelProps) {
 }
 
 function NodePage(props: DataPanelProps & { node: DataNode }) {
-  const { node, model, domainId, lens, decided } = props
+  const { node, model, domainId, tab, decided } = props
   const cls = model.classOf.get(node.path)!
   const outgoing = model.outgoing.get(node.path) ?? []
   const incoming = (model.incoming.get(node.path) ?? []).filter((edge) => edge.from !== node.path)
@@ -622,8 +624,8 @@ function NodePage(props: DataPanelProps & { node: DataNode }) {
           {node.variables.length > 0 && <Fact label="Named">{node.variables.join(', ')}</Fact>}
         </div>
       </Title>
-      {lens === 'behavior' && props.steps}
-      {lens === 'rules' && decided?.kind === 'node' && (
+      {tab === 'scenarios' && props.steps}
+      {tab === 'access' && decided?.kind === 'node' && (
         <>
           <Section label={`Read · as ${identityLabel(props.model, props.identity)}`} kind="reads">
             <Verdicts verdicts={[decided.read]} props={props} />
@@ -657,7 +659,7 @@ function NodePage(props: DataPanelProps & { node: DataNode }) {
           </Section>
         </>
       )}
-      {lens === 'rules' && <NoRules unread={props.unread} />}
+      {tab === 'access' && <NoRules unread={props.unread} />}
       <Section
         label="Properties"
         kind="properties"
@@ -684,7 +686,7 @@ function NodePage(props: DataPanelProps & { node: DataNode }) {
 }
 
 function EdgePage(props: DataPanelProps & { edge: DataEdge }) {
-  const { edge, model, domainId, lens, decided, access } = props
+  const { edge, model, domainId, tab, decided, access } = props
   const relationship = relationshipLinkOf(edge)
   const words = access ? edgeWords(access, edge) : undefined
   return (
@@ -709,8 +711,8 @@ function EdgePage(props: DataPanelProps & { edge: DataEdge }) {
           {words && <Fact label="Reads">{words}.</Fact>}
         </div>
       </Title>
-      {lens === 'behavior' && props.steps}
-      {lens === 'rules' && decided?.kind === 'edge' && (
+      {tab === 'scenarios' && props.steps}
+      {tab === 'access' && decided?.kind === 'edge' && (
         <Section
           label={`As ${identityLabel(props.model, props.identity)}`}
           kind={DATA_SECTIONS.asIdentity}
@@ -718,7 +720,7 @@ function EdgePage(props: DataPanelProps & { edge: DataEdge }) {
           <Verdicts verdicts={[decided.traverse, decided.read]} props={props} />
         </Section>
       )}
-      {lens === 'rules' && <NoRules unread={props.unread} />}
+      {tab === 'access' && <NoRules unread={props.unread} />}
       <Section
         label="Properties"
         kind="properties"
@@ -732,7 +734,7 @@ function EdgePage(props: DataPanelProps & { edge: DataEdge }) {
 
 /** A region, or the card its Nodes past the bound stand behind: its Nodes as a table. */
 function ClassPage(props: DataPanelProps & { target: string; held?: readonly string[] }) {
-  const { model, target, held, lens, reads, domainId } = props
+  const { model, target, held, tab, reads, domainId } = props
   const cls = model.classByTarget.get(target)!
   const paths = held ?? cls.nodes
   const counted = reads?.classes.find((each) => each.target === target)
@@ -770,7 +772,7 @@ function ClassPage(props: DataPanelProps & { target: string; held?: readonly str
               ? `${held.length} of its ${cls.nodes.length} Nodes stand behind this card.`
               : `${cls.nodes.length} in this dataset.`}
           </Fact>
-          {lens === 'rules' && counted && reads?.pending === 0 && (
+          {tab === 'access' && counted && reads?.pending === 0 && (
             <Fact label="Readable">
               {identityLabel(props.model, props.identity, true)} reads {counted.allowed} of{' '}
               {counted.total}
@@ -798,13 +800,13 @@ function ClassPage(props: DataPanelProps & { target: string; held?: readonly str
                   {column.label}
                 </th>
               ))}
-              {lens === 'rules' && <th className="w-20 pb-1 text-right font-normal">Read</th>}
+              {tab === 'access' && <th className="w-20 pb-1 text-right font-normal">Read</th>}
             </tr>
           </thead>
           <tbody>
             {shown.map((node) => {
               const verdict =
-                lens === 'rules' && reads?.pending === 0 ? reads.verdicts.get(node.path) : undefined
+                tab === 'access' && reads?.pending === 0 ? reads.verdicts.get(node.path) : undefined
               const mark = verdict ? OUTCOME_MARKS[verdict.outcome] : undefined
               return (
                 <tr key={node.path} className="border-t border-border/60 align-top">
@@ -821,7 +823,7 @@ function ClassPage(props: DataPanelProps & { target: string; held?: readonly str
                       {node.properties.find((line) => line.key === column.key)?.value ?? '—'}
                     </td>
                   ))}
-                  {lens === 'rules' && (
+                  {tab === 'access' && (
                     <td
                       data-node-read={verdict?.outcome}
                       className={cn('py-1.5 text-right text-[12px]', mark && TONE_TEXT[mark.tone])}

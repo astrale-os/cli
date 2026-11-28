@@ -54,14 +54,7 @@ import type {
 } from '../scene/types'
 
 import { isKernelClass, resolveClass } from '../../schema-studio/inheritance'
-import {
-  ADMITS,
-  admissionLabel,
-  contractWords,
-  distinctMarks,
-  markOf,
-  opOf,
-} from '../rules/admission'
+import { admissionLabel, contractWords, distinctMarks, markOf, opOf } from '../rules/admission'
 import {
   callRuleOf,
   classOfTarget,
@@ -73,9 +66,10 @@ import {
   rulesOf,
   SLOT_ORDER,
 } from '../rules/model'
+import { policyIndex } from '../rules/policy-names'
 import { phraseIn } from './rule-phrase'
 import { walkOf, walkStepsOf } from './rule-walk'
-import { classTarget, endpointRefs, originShort, projectStructure } from './structure'
+import { classIcon, classTarget, endpointRefs, originShort, projectStructure } from './structure'
 
 export const RULES_OPTIONS: LensOption[] = [
   {
@@ -171,16 +165,6 @@ function alikeKey(site: RuleSite): string {
   return `${site.written}|${JSON.stringify(frame.condition ?? frame)}`
 }
 
-/**
- * A row where the Kernel's default applies: what the Schema wrote, quietly, and whom that
- * admits in a word. What the default admits in full is `kernelDefaultOf`'s to say, in the
- * row's title and the Inspector.
- */
-const KERNEL_DEFAULT = {
-  unwritten: 'Kernel default',
-  false: 'Written false',
-} as const
-
 const unwrittenSite = (site: RuleSite) => site.written === 'omitted' || site.written === 'absent'
 
 /** What a site walks, for a rule read: what selecting its row lights. */
@@ -219,13 +203,12 @@ function siteRow(
   if (ref.marks?.[0]?.admits === 'unread' && site.reading.status === 'unread')
     return { ...ref, label, text: site.reading.detail, title: site.reading.detail, unread: true }
   if (site.written === 'omitted' || site.written === 'absent' || site.written === 'false') {
-    // whom the default admits, whole, in its mark's words: holders never read as all it admits
+    // whom that admits, in its mark's few words; the row is drawn hollow where nothing is written
     const admits = ref.marks?.[0]?.admits
-    const said =
+    const text =
       admits === undefined || admits === 'policy' || admits === 'unread'
-        ? undefined
-        : ADMITS[admits]
-    const text = `${site.written === 'false' ? KERNEL_DEFAULT.false : KERNEL_DEFAULT.unwritten}${said ? ` · ${said}` : ''}`
+        ? 'No Policy written'
+        : admissionLabel(admits)
     return {
       ...ref,
       label,
@@ -475,9 +458,7 @@ export function projectRules(
               {
                 id: `${node.id}#none`,
                 label: 'policies',
-                text: abstract
-                  ? 'Abstract · the Class of each Node decides'
-                  : KERNEL_DEFAULT.unwritten,
+                text: abstract ? 'Abstract · the Class of each Node decides' : 'No Policy written',
                 title: abstract
                   ? `${name} is abstract: who may act on a Node is decided by the Class it is of.`
                   : `No rule is written on ${name}: the Kernel’s default decides each slot.`,
@@ -709,7 +690,7 @@ function bringIn(
       label: ref.name,
       sublabel: originShort(ref.origin),
       group,
-      icon: { ...(member?.icon ? { svg: member.icon } : {}), glyph: 'class' },
+      icon: classIcon(bundle, ref, member),
       tone: 'muted',
     })
     drawn.add(id)
@@ -778,28 +759,25 @@ function ownWalk(policy: PolicyRule): Pick<SceneEntry, 'walk' | 'steps'> {
   return walk.length > 0 ? { walk, steps: stepsNumbered(policy.reading.rule) } : {}
 }
 
-/** The Index: the Policies that sit somewhere, then the forms of constraint, each counted by place. */
+/** The Index: the Policies that sit somewhere, by family (`policyIndex`), then the forms of constraint, each counted by place. */
 function indexOf(rules: DomainRules): NonNullable<Scene['index']> {
-  const entries: SceneEntry[] = []
   const places = (count: number) => plural(count, 'place')
-  for (const policy of [...rules.policies, ...rules.imported]) {
-    const own = policy.origin === rules.origin
-    if (!own && policy.sitsOn.length === 0) continue
-    entries.push({
-      id: policy.target,
-      kind: 'policy',
-      label: policy.name,
-      sublabel: own
+  const policies = policyIndex(rules, WHO_GROUP, (policy, label, group) => ({
+    id: policy.target,
+    kind: 'policy',
+    label,
+    sublabel:
+      policy.origin === rules.origin
         ? places(policy.sitsOn.length)
         : `${originShort(policy.origin)} · ${places(policy.sitsOn.length)}`,
-      group: WHO_GROUP,
-      tone: 'who',
-      icon: { glyph: 'policy' },
-      ...(policy.description ? { keywords: [policy.description] } : {}),
-      ...decided(rules, policy.sitsOn),
-      ...ownWalk(policy),
-    })
-  }
+    group,
+    tone: 'who',
+    icon: { glyph: 'policy' },
+    ...(policy.description ? { keywords: [policy.description] } : {}),
+    ...decided(rules, policy.sitsOn),
+    ...ownWalk(policy),
+  }))
+  const entries: SceneEntry[] = [...policies.entries]
   const forms = new Map<string, { label: string; count: number }>()
   for (const site of rules.sites) {
     if (site.kind !== 'what') continue
@@ -821,10 +799,7 @@ function indexOf(rules: DomainRules): NonNullable<Scene['index']> {
       icon: { glyph: 'constraint' },
     })
   return {
-    groups: [
-      { id: WHO_GROUP, label: 'Policies' },
-      { id: WHAT_GROUP, label: 'Constraints' },
-    ],
+    groups: [...policies.groups, { id: WHAT_GROUP, label: 'Constraints' }],
     entries,
     ...(entries.length === 0 ? { empty: 'No rule is written: the Kernel’s defaults apply.' } : {}),
   }

@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { usePrepareAgentRequest } from '@/lib/chats'
 
 export const DATASET_DEFINITION =
-  'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level draws and the Rules lens decides on.'
+  'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level asks through Queries and decides access on.'
 
 /** Where a Dataset is declared: its module, whose one export is the Dataset… */
 const MODULE = 'tests/datasets/<name>.ts'
@@ -26,7 +26,7 @@ const CONFIG_LINE = `tests: tests({ datasets: [dataset('./${MODULE}')] })`
 /** The request the agent is handed: a demo Dataset of this Domain, declared where the Studio reads it. */
 export function datasetRequest(origin: string): string {
   return [
-    `Write a demo Dataset for the ${origin} Domain, so the Studio's Data level can draw it and its Rules lens can decide on it. Load the astrale-domain skill and follow its Dataset reference.`,
+    `Write a demo Dataset for the ${origin} Domain, so the Studio's Data level can ask it through the Domain's Queries and decide access on it. Load the astrale-domain skill and follow its Dataset reference.`,
     `Declare it in ${MODULE}, a module whose only export is the default one, defineDataset(schema, { id, title, description, graph }) from @astrale-os/sdk/testing, and list it in astrale.config.ts:\n${CONFIG_LINE}`,
     'Use only the Classes, Edges, properties and states the Schema declares, with believable values. Include identities its Policies treat differently, one of them with no access, and return variables naming those identities and the key Nodes. Change nothing else: not the Schema, the Policies or the functions.',
   ].join('\n\n')

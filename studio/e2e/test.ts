@@ -123,11 +123,15 @@ export const indexRow = (page: Page, id: string): Locator =>
 /** The Schema level's Inspector, whatever lens it reads through. */
 export const inspector = (page: Page): Locator => page.locator('[data-inspector-lens]')
 
-/** The lens switch in the bar. */
+/** One lens of the bar's switch at the Schema level. */
 export const lensButton = (
   page: Page,
   lens: 'structure' | 'behavior' | 'rules' | 'views',
 ): Locator => page.getByTestId('lens-switch').locator(`button[data-lens="${lens}"]`)
+
+/** One tab of the bar's switch at the Data level. */
+export const dataTabButton = (page: Page, tab: 'query' | 'access' | 'scenarios'): Locator =>
+  page.getByTestId('lens-switch').locator(`button[data-tab="${tab}"]`)
 
 /** One segment of the bar's Schema | Data switch. */
 export const levelButton = (page: Page, level: 'schema' | 'data'): Locator =>
@@ -154,7 +158,7 @@ export async function openSchema(page: Page): Promise<void> {
 
 /**
  * Open the fixture's Data level from its Schema and wait for the dataset to be read. Support desk
- * is the one dataset the fixture can read: Data opens it, through the lens last read.
+ * is the one dataset the fixture can read: Data opens it, on the tab last read.
  */
 export async function openSupportDesk(page: Page): Promise<void> {
   await openSchema(page)

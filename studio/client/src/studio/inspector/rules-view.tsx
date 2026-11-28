@@ -21,7 +21,6 @@ import { CallRule, RuleSites } from '../rules/rule-view'
 import { CallableName, Empty, Fact, Fold, Section } from './parts'
 import { ruleTargetOf } from './switches'
 import { type InspectorTarget, targetOf } from './target'
-import { withArticle } from './words'
 
 type FunctionTarget = Extract<InspectorTarget, { kind: 'function' }>
 
@@ -80,9 +79,6 @@ export function RulesView({
         const found = targetOf(bundle, each.target)
         return found.kind === 'function' ? [{ link: each, target: found }] : []
       })
-      const what = withArticle(
-        target.kind === 'integration' ? 'Integration' : target.definition.kind,
-      )
       return (
         <Section
           label="Policies"
@@ -91,16 +87,10 @@ export function RulesView({
           data-inspector-reach=""
         >
           {callers.length === 0 ? (
-            <Empty>
-              Rules sit on Classes, relationships and callables; {what} has none of its own, and no
-              function is read to reach it.
-            </Empty>
+            <Empty>No rule of its own.</Empty>
           ) : (
             <>
-              <Empty>
-                Rules sit on Classes, relationships and callables; {what} has none of its own. Who
-                may reach it is decided by the call rule of each function that does.
-              </Empty>
+              <Empty>No rule of its own: each function that reaches it decides.</Empty>
               <Fold
                 items={callers}
                 limit={3}

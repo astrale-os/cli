@@ -65,23 +65,27 @@ function kernelAdmits(op: RuleOp): RuleAdmission {
   return 'holders'
 }
 
-/** Whom a mark says a rule admits, in a few words: what its title and label read. */
+/**
+ * Whom a mark says a rule admits, in a few words: what its title and label read. Where only the
+ * Domain that owns the Class or callable may act, the words say that alone: Root, and for a
+ * write the holders of its capability, are `kernelDefaultOf`'s to add on hover.
+ */
 export const ADMITS: Record<RuleAdmission, string> = {
   policy: 'a Policy decides',
-  open: 'every caller',
-  'signed-in': 'any signed-in caller',
-  holders: 'Root, the Domain and capability holders',
-  closed: 'only Root and the Domain',
+  open: 'everyone',
+  'signed-in': 'anyone signed in',
+  holders: 'owning Domain only',
+  closed: 'owning Domain only',
   unread: 'not read here',
 }
 
-/** Whom an admission admits, as the label beside its mark reads: `Any signed-in caller`. */
+/** Whom an admission admits, as the label beside its mark reads: `Owning Domain only`. */
 export const admissionLabel = (admits: RuleAdmission) =>
   ADMITS[admits].charAt(0).toUpperCase() + ADMITS[admits].slice(1)
 
 /**
  * What a callable's contract admits, in words, whom as its mark says: `anonymous` opens it to
- * every caller, `authenticated` to any signed-in one.
+ * everyone, `authenticated` to anyone signed in.
  */
 export const contractAdmits = (auth: Exclude<CallAuth, 'authorized'>) =>
   `Its contract admits ${ADMITS[auth === 'anonymous' ? 'open' : 'signed-in']}`
@@ -90,12 +94,12 @@ export const contractAdmits = (auth: Exclude<CallAuth, 'authorized'>) =>
 export const contractWords = (auth?: CallAuth) =>
   `${contractAdmits(auth === 'anonymous' ? 'anonymous' : 'authenticated')}: no call rule applies.`
 
-/** Whom a mark admits, in words: `a Policy decides`, `Kernel default: every caller`. */
+/** Whom a mark admits, in words: `a Policy decides`, `everyone, nothing written`. */
 export function markAdmits(mark: SceneRuleMark): string {
-  return `${mark.unwritten && mark.admits !== 'unread' ? 'Kernel default: ' : ''}${ADMITS[mark.admits]}`
+  return `${ADMITS[mark.admits]}${mark.unwritten && mark.admits !== 'unread' ? ', nothing written' : ''}`
 }
 
-/** A mark said in words: `read · a Policy decides`, `create · Kernel default: …`. */
+/** A mark said in words: `read · a Policy decides`, `create · owning Domain only, nothing written`. */
 export function markWords(mark: SceneRuleMark): string {
   return `${mark.op} · ${markAdmits(mark)}`
 }

@@ -105,8 +105,8 @@ export function RuleMarks({
 }
 
 /**
- * A mark and whom it admits, in its tone: `Any signed-in caller`; where nothing is written,
- * `Kernel default` before it. What an entry of the Inspector leads with.
+ * A mark and whom it admits, in its tone: `Anyone signed in`, `Owning Domain only`; hollow where
+ * nothing is written. What an entry of the Inspector leads with.
  */
 export function Admission({
   mark,
@@ -130,9 +130,6 @@ export function Admission({
       style={{ '--mark-tone': toneOf(mark) } as CSSProperties}
     >
       <RuleMark mark={mark} title={null} />
-      {mark.unwritten && mark.admits !== 'unread' && (
-        <span className="admission-default">Kernel default</span>
-      )}
       <span className="admission-label">{admissionLabel(mark.admits)}</span>
       {children !== undefined && <span className="admission-why">{children}</span>}
     </span>

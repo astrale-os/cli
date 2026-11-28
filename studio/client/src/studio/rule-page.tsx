@@ -33,7 +33,7 @@ import {
   ruleSiteOf,
 } from './lenses/rules'
 import { originShort } from './lenses/structure'
-import { markOf, opOf } from './rules/admission'
+import { admissionLabel, markOf, opOf } from './rules/admission'
 import { classOfTarget, kernelDefaultOf, type RuleSite, rulesOf } from './rules/model'
 import { Admission, ConstraintMark, RuleMark, RuleMarks } from './rules/rule-mark'
 import { RuleHost, RuleNames, UnreadNote } from './rules/rule-view'
@@ -231,16 +231,14 @@ function admittedOf(
   auth?: 'open' | 'signed-in',
 ): readonly Admitted[] {
   if (auth === 'open' || (site && markOf(site)?.admits === 'open'))
-    return [
-      { who: 'everyone', glyph: Globe, tone: 'var(--color-admit-open)', label: 'Every caller' },
-    ]
+    return [{ who: 'everyone', glyph: Globe, tone: 'var(--color-admit-open)', label: 'Everyone' }]
   if (auth === 'signed-in')
     return [
       {
         who: 'signed-in',
         glyph: UserCheck,
         tone: 'var(--color-admit-signed-in)',
-        label: 'Any signed-in caller',
+        label: 'Anyone signed in',
       },
     ]
   const admitted: Admitted[] = [
@@ -288,8 +286,8 @@ function AdmittedMarks({ admitted }: { admitted: readonly Admitted[] }) {
 }
 
 /**
- * A rule nothing writes: the Kernel's default as its mark, whom that admits as marks, the
- * sentence under them, and where a rule would be written to decide instead.
+ * A rule nothing writes: the Kernel's default as its mark, whom that admits as marks (the
+ * sentence on hover), and where a rule would be written to decide instead.
  */
 function KernelDefault({
   site,
@@ -309,9 +307,8 @@ function KernelDefault({
     <>
       <Section label="Who is admitted" data-rule-page-kernel="">
         <div className="space-y-2.5">
-          {mark && <Admission mark={mark} />}
+          {mark && <Admission mark={mark} title={sentence} />}
           <AdmittedMarks admitted={admittedOf(site, domain)} />
-          <p className="text-[13px] leading-relaxed text-muted-foreground">{sentence}</p>
         </div>
       </Section>
       <Section label="Where a rule goes" data-rule-page-where="">
@@ -397,8 +394,14 @@ function Policies({ keys, domainId }: { keys: readonly string[]; domainId: strin
 /** One rule as a list reads it: its sentence, what the Kernel admits instead, or why it is not read. */
 function SiteSentence({ site, domain }: { site: RuleSite; domain: string }) {
   const kernel = kernelDefaultOf(site, domain)
-  if (kernel !== undefined)
-    return <p className="text-[13px] leading-relaxed text-muted-foreground">{kernel}</p>
+  if (kernel !== undefined) {
+    const mark = markOf(site)
+    return (
+      <p title={kernel} className="text-[13px] text-muted-foreground">
+        {mark ? admissionLabel(mark.admits) : kernel}
+      </p>
+    )
+  }
   if (site.reading.status === 'unread') return <UnreadNote unread={site.reading} />
   return (
     <RuleHost rule={site.reading.rule} className="block">

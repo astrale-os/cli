@@ -1,10 +1,24 @@
-import { expect, inspector, lensButton, openSchema, sceneBox, test, type Locator } from './test'
+import {
+  expect,
+  FIXTURE_ID,
+  inspector,
+  lensButton,
+  openSchema,
+  sceneBox,
+  test,
+  type Locator,
+} from './test'
 
 /**
  * The Inspector reads the selection through the lens on screen. Structure tells what a Class
  * is: its ancestry, its relationships as sentences, its properties — its own first, then what
  * it inherits, named by the base — and no methods, which are what it does. Behavior tells
- * what changes it, and what it does: its methods, each one a way into its function.
+ * what changes it, and what it does: its methods, each one a way into its function. A Property
+ * a state machine holds draws that machine.
+ *
+ * The fixture's `Subscription.status` is a machine: a `trial` converts to `active` or lapses to
+ * `cancelled`; an `active` one pauses or is cancelled; a `paused` one resumes or is cancelled;
+ * nothing leaves `cancelled`.
  */
 
 const refsOf = (rows: Locator) =>
@@ -56,6 +70,64 @@ test('Structure reads what a Class is, and leaves what it does to Behavior', asy
   await expect(lensButton(page, 'behavior')).toHaveAttribute('aria-pressed', 'true')
   await expect(panel).toHaveAttribute('data-inspector-lens', 'behavior')
   await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
+})
+
+test('a state Property draws its machine: where it starts, where each state goes, and large with its events', async ({
+  page,
+}) => {
+  await page.goto(
+    `/domain/${encodeURIComponent(FIXTURE_ID)}?lens=structure&select=class.Subscription`,
+  )
+  const panel = inspector(page)
+  await expect(panel.getByRole('heading', { name: 'Subscription', exact: true })).toBeVisible({
+    timeout: 60_000,
+  })
+  const states = panel.locator('[data-property-states]')
+  const diagram = states.locator('[data-state-diagram="sm"]')
+  const state = (id: string) => diagram.locator(`g[data-state="${id}"]`)
+  const caption = states.locator('[data-state-diagram-caption]')
+
+  // its states, the one every subscription starts in marked, the one nothing leaves marked final
+  expect(
+    (
+      await diagram
+        .locator('g[data-state]')
+        .evaluateAll((all) => all.map((one) => one.getAttribute('data-state')))
+    ).sort(),
+  ).toEqual(['active', 'cancelled', 'paused', 'trial'])
+  await expect(diagram.locator('g[data-state][data-initial]')).toHaveCount(1)
+  await expect(state('trial')).toHaveAttribute('aria-label', 'trial, initial')
+  await expect(state('cancelled')).toHaveAttribute('aria-label', 'cancelled, final')
+  await expect(caption).toHaveText('4 states · 6 transitions')
+
+  // a state pointed at, or focused, names where it goes
+  await state('trial').hover()
+  await expect(caption).toHaveText(/^trial · /)
+  await expect(caption).toContainText('convert → active')
+  await expect(caption).toContainText('lapse → cancelled')
+  await state('cancelled').hover()
+  await expect(caption).toHaveText('cancelled is final: nothing leaves it')
+  await page.mouse.move(0, 0)
+  await expect(caption).toHaveText('4 states · 6 transitions')
+  await state('paused').focus()
+  await expect(caption).toHaveText(/^paused · /)
+  await expect(caption).toContainText('resume → active')
+  await expect(caption).toContainText('cancel → cancelled')
+
+  // opened large, every arrow says its event
+  await states.getByRole('button', { name: 'Open the diagram large' }).click()
+  const dialog = page.locator('[data-state-diagram-dialog]')
+  await expect(dialog.getByRole('heading', { name: 'Subscription · status' })).toBeVisible()
+  const events = dialog.locator('[data-state-diagram="lg"] text[data-edge-label]')
+  await expect(events).toHaveCount(6)
+  expect((await events.allTextContents()).sort()).toEqual([
+    'cancel',
+    'cancel',
+    'convert',
+    'lapse',
+    'pause',
+    'resume',
+  ])
 })
 
 test('Behavior reads what changes a Class and what it does', async ({ page }) => {

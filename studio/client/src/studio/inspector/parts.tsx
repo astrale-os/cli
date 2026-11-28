@@ -99,7 +99,11 @@ export function Link({
       state.selectionDomainId === domainId,
   )
   if (target === undefined || here)
-    return <span className={cn(mono && 'font-mono text-[0.92em]', className)}>{children}</span>
+    return (
+      <span className={cn(mono && 'font-mono text-[0.92em] [overflow-wrap:anywhere]', className)}>
+        {children}
+      </span>
+    )
   return (
     <button
       type="button"
@@ -112,7 +116,8 @@ export function Link({
       }}
       className={cn(
         'inline rounded-sm text-left underline decoration-foreground/20 underline-offset-[3px] transition-colors hover:decoration-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-        mono ? 'font-mono text-[0.92em]' : 'font-medium',
+        // a name written as code wraps where it must: a long one never runs off its panel
+        mono ? 'font-mono text-[0.92em] [overflow-wrap:anywhere]' : 'font-medium',
         className,
       )}
     >

@@ -8,7 +8,6 @@ import {
 } from '@shared/contracts/versions'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Lock,
   type LucideIcon,
   MessagesSquare,
   Network,
@@ -54,14 +53,9 @@ import { GLYPHS } from '@/studio/canvas/glyphs'
 import { openChosenDataset, switchToData } from '@/studio/data/entry'
 import { loadDataLevel } from '@/studio/data/load'
 import { datasetName } from '@/studio/data/model'
+import { DATA_TAB_NAMES, type DataTab, isDataTab } from '@/studio/data/tabs'
 import { DataWait } from '@/studio/data/wait'
-import {
-  dataLensOf,
-  LENS_NAMES,
-  type LensId,
-  type LensKey,
-  lensReadable,
-} from '@/studio/lenses/keys'
+import { isLensId, LENS_NAMES, type LensId } from '@/studio/lenses/keys'
 import { Reading, RemoteNotice } from '@/studio/workspace/remote'
 
 const LazySchemaLevel = lazy(() =>
@@ -135,15 +129,7 @@ function useAskedAt(domainId: string, datasetPath: string | null): number {
  * The level's code, the Domain's datasets and its Schema are asked for at once, none waiting on
  * another; until they answer, the wait says which dataset opens and what is being read.
  */
-function DataRouter({
-  domainId,
-  origin,
-  lens,
-}: {
-  domainId: string
-  origin: string
-  lens: LensKey
-}) {
+function DataRouter({ domainId, origin, tab }: { domainId: string; origin: string; tab: DataTab }) {
   const queryClient = useQueryClient()
   const datasetPath = useUI((s) => s.dataset)
   const choosing = useUI((s) => s.choosingDataset)
@@ -192,7 +178,7 @@ function DataRouter({
         domainId={domainId}
         origin={origin}
         datasetPath={datasetPath}
-        lens={lens}
+        tab={tab}
         since={since}
       />
     </Suspense>
@@ -329,90 +315,85 @@ const LENS_TAB =
 /** Below this width a tab other than the current one shows its glyph alone; its name stays its accessible name. */
 const LENS_LABEL_NARROW = 'max-[1400px]:sr-only'
 
+/** Each tab of the Data level by the glyph of what it reads: a Query, a Policy, a Scenario. */
+const DATA_TAB_ICONS: Record<DataTab, LucideIcon> = {
+  query: GLYPHS.query,
+  access: GLYPHS.policy,
+  scenarios: GLYPHS.scenario,
+}
+
+/** One question of the switch, as a tab. */
+interface Question {
+  id: string
+  label: string
+  question: string
+  shortcut: string
+  icon: LucideIcon
+}
+
 /**
- * The lens switch: which question the canvas answers about the Domain. A lens a level does not
- * read is its glyph alone, disabled, its tooltip saying why; the Data level reads Rules before
- * the Schema does, and never a lens only the Schema answers. Scenarios keep their place after
- * the lenses, locked. On a narrow window every tab but the current one is its glyph alone.
+ * The questions asked of what is shown, as tabs. A Schema is read through its lenses, a dataset
+ * through the Data level's own tabs: the two levels ask different things, so the switch lists
+ * different tabs. On a narrow window every tab but the current one is its glyph alone.
  */
-function LensSwitch({
+function QuestionSwitch({
+  level,
+  questions,
   active,
-  dataLevel,
   onChange,
 }: {
-  active: LensId
-  dataLevel: boolean
-  onChange: (lens: LensId) => void
+  level: 'schema' | 'data'
+  questions: readonly Question[]
+  active: string
+  onChange: (id: string) => void
 }) {
   return (
     <nav
-      aria-label="Lens"
+      aria-label={level === 'data' ? 'Data tab' : 'Lens'}
       data-testid="lens-switch"
+      data-switch-level={level}
       data-tour="lenses"
       className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5"
     >
-      {LENS_NAMES.map((lens) => {
-        const current = lens.id === active
-        const readable = lensReadable(lens, dataLevel)
-        const Icon = LENS_ICONS[lens.id]
+      {questions.map(({ id, label, question, shortcut, icon: Icon }) => {
+        const current = id === active
         return (
-          <Tooltip key={lens.id}>
+          <Tooltip key={id}>
             <TooltipTrigger asChild>
-              {/* A disabled button gets no pointer events, so its tooltip hangs off a wrapper. */}
-              <span className="inline-flex">
-                <button
-                  type="button"
-                  aria-pressed={current}
-                  disabled={!readable}
-                  data-lens={lens.id}
-                  onClick={() => onChange(lens.id)}
-                  className={cn(
-                    LENS_TAB,
-                    current
-                      ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.06)]'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                  <span className={!readable ? 'sr-only' : current ? undefined : LENS_LABEL_NARROW}>
-                    {lens.label}
-                  </span>
-                </button>
-              </span>
+              <button
+                type="button"
+                aria-pressed={current}
+                {...(level === 'data' ? { 'data-tab': id } : { 'data-lens': id })}
+                onClick={() => onChange(id)}
+                className={cn(
+                  LENS_TAB,
+                  current
+                    ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.06)]'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className={current ? undefined : LENS_LABEL_NARROW}>{label}</span>
+              </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-72">
-              {readable ? (
-                <>
-                  {lens.question}
-                  <span className="ml-1.5 text-muted-foreground">{lens.shortcut}</span>
-                </>
-              ) : (
-                <span data-lens-reason={lens.id}>
-                  {(dataLevel && lens.schemaOnly) || `${lens.label} is not read yet.`}
-                </span>
-              )}
+              {question}
+              <span className="ml-1.5 text-muted-foreground">{shortcut}</span>
             </TooltipContent>
           </Tooltip>
         )
       })}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex">
-            <button type="button" disabled data-lens="scenarios" className={LENS_TAB}>
-              <GLYPHS.scenario className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span className={LENS_LABEL_NARROW}>Scenarios</span>
-              <Lock className="h-3 w-3 shrink-0" aria-label="locked" />
-            </button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          What a sequence of calls does to a Dataset
-          <span className="ml-1.5 text-muted-foreground">locked</span>
-        </TooltipContent>
-      </Tooltip>
     </nav>
   )
 }
+
+const SCHEMA_QUESTIONS: readonly Question[] = LENS_NAMES.filter((lens) => lens.available).map(
+  (lens) => ({ ...lens, icon: LENS_ICONS[lens.id] }),
+)
+const DATA_QUESTIONS: readonly Question[] = DATA_TAB_NAMES.map((tab) => ({
+  ...tab,
+  icon: DATA_TAB_ICONS[tab.id],
+}))
 
 /** A header action: icon only, its name and shortcut in the tooltip. */
 function IconAction({
@@ -480,6 +461,8 @@ export function App() {
   const openDomain = useUI((s) => s.openDomain)
   const lens = useUI((s) => s.lens)
   const setLens = useUI((s) => s.setLens)
+  const dataTab = useUI((s) => s.dataTab)
+  const setDataTab = useUI((s) => s.setDataTab)
   const setRun = useAgentLive((s) => s.setRun)
   const validIds = useMemo(() => new Set((domains ?? []).map((domain) => domain.id)), [domains])
   const scopedDomainId = shownDomainId(
@@ -526,13 +509,14 @@ export function App() {
   }, [agentSnap, setRun])
 
   // global hotkeys, all ignored while typing: C toggles comment mode, A toggles ask mode, S and D
-  // switch a Domain to its Schema and its Data, a digit switches lens
+  // switch a Domain to its Schema and its Data, a digit switches lens, or tab at the Data level
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      const lens = LENS_NAMES.find((name) => name.shortcut === e.key)
+      const lens = LENS_NAMES.find((name) => name.available && name.shortcut === e.key)
+      const tab = DATA_TAB_NAMES.find((name) => name.shortcut === e.key)
       const key = e.key.toUpperCase()
       const ui = useUI.getState()
       if (key === 'C') {
@@ -550,9 +534,13 @@ export function App() {
         if (!shown || publicationOf(shown)) return
         e.preventDefault()
         switchToData(shown)
-      } else if (lens && ui.level !== 'workspace') {
+      } else if (ui.level === 'data') {
+        // at the Data level a digit asks the dataset another question
+        if (!tab) return
+        e.preventDefault()
+        ui.setDataTab(tab.id)
+      } else if (lens && ui.level === 'domain') {
         // a lens reads one Domain: at the Workspace level its key does nothing
-        if (!lensReadable(lens, useUI.getState().level === 'data')) return
         e.preventDefault()
         setLens(lens.id)
       }
@@ -582,9 +570,24 @@ export function App() {
             />
           </div>
 
-          {/* what you ask — of a Domain: the Workspace level has no lens */}
-          {level !== 'workspace' && (
-            <LensSwitch active={lens} dataLevel={level === 'data'} onChange={setLens} />
+          {/* what you ask — of a Schema through its lenses, of a dataset through the Data
+              level's tabs: the Workspace level has neither */}
+          {level === 'data' ? (
+            <QuestionSwitch
+              level="data"
+              questions={DATA_QUESTIONS}
+              active={dataTab}
+              onChange={(id) => isDataTab(id) && setDataTab(id)}
+            />
+          ) : (
+            level !== 'workspace' && (
+              <QuestionSwitch
+                level="schema"
+                questions={SCHEMA_QUESTIONS}
+                active={lens}
+                onChange={(id) => isLensId(id) && setLens(id)}
+              />
+            )
           )}
 
           {/* what you can do: on a narrow window, as wide as its controls, and no wider */}
@@ -669,7 +672,7 @@ export function App() {
               <DataRouter
                 domainId={scopedDomainId}
                 origin={originOf(domains, scopedDomainId)}
-                lens={dataLensOf(lens)}
+                tab={dataTab}
               />
             ) : scopedDomainId ? (
               <SchemaRouter domainId={scopedDomainId} />

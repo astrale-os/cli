@@ -1,9 +1,9 @@
 /**
  * What the Data level remembers while the Studio is open, per dataset of a Domain: the selection
- * on the map, the identity the Rules lens reads as, the verdict the map lights, the Scenario the
- * Behavior lens has open and its step selected, and whether the panel is shown. Switching the
- * identity or the lens keeps the selection; another dataset has its own. A step selected is a
- * selection, an identity and a verdict at once, so the Rules lens reads it where it stands.
+ * on the map, the identity Access reads as, the verdict the map lights, the Scenario the
+ * Scenarios tab has open and its step selected, and whether the panel is shown. Switching the
+ * identity or the tab keeps the selection; another dataset has its own. A step selected is a
+ * selection, an identity and a verdict at once, so Access reads it where it stands.
  * Nothing here is written anywhere: Scenarios themselves are kept by the server.
  */
 
@@ -20,7 +20,7 @@ export interface DatasetView {
   identity: string
   /** the verdict the map lights for the selection, by id */
   verdict?: string
-  /** the Scenario the Behavior lens has open, by id */
+  /** the Scenario open under Scenarios, by id */
   scenario?: string
   /** the step of the open Scenario selected, by id: it holds while the selection, identity and verdict it set do */
   step?: string

@@ -5,8 +5,10 @@ import {
   output,
   policy,
   property,
+  stateProperty,
   valueSchema,
 } from '@astrale-os/sdk/schema'
+import { stateMachine } from '@astrale-os/sdk/state'
 
 import { PaymentProcessor, Payout } from '../external.js'
 import { icons } from '../icons.js'
@@ -82,11 +84,29 @@ export const Payment = nodeClass({
   properties: { amount: number, method: string },
 })
 
+/** A subscription's life: a trial converts or lapses; a running one pauses, resumes or ends. */
+export const subscriptionLifecycle = stateMachine({
+  initial: 'trial',
+  transitions: {
+    trial: { convert: 'active', lapse: 'cancelled' },
+    active: { pause: 'paused', cancel: 'cancelled' },
+    paused: { resume: 'active', cancel: 'cancelled' },
+    cancelled: {},
+  },
+})
+
+/** Only the account a subscription is for reads it. */
+export const mayReadSubscription = policy({
+  description: 'The caller is the account subscribed.',
+  match: ({ edge, subject, object }) =>
+    edge({ source: subject, class: () => SubscribedTo, target: object }),
+})
+
 export const Subscription = nodeClass({
-  policies: { read: true },
+  policies: { read: () => mayReadSubscription, traverse: () => mayReadSubscription },
   description: 'A recurring customer commitment.',
   icon: icons.subscription,
-  properties: { plan: string, monthly: number },
+  properties: { plan: string, monthly: number, status: stateProperty(subscriptionLifecycle) },
 })
 
 export const BilledTo = edgeClass.directed({

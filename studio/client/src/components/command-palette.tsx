@@ -33,6 +33,7 @@ import { folderModules, moduleOfClass } from '@/schema-studio/modules'
 import { LEVEL_SHORTCUTS } from '@/studio/bar/level-switch'
 import { DATA_GLYPH } from '@/studio/data/accent'
 import { switchToData } from '@/studio/data/entry'
+import { DATA_TAB_NAMES } from '@/studio/data/tabs'
 import { LENS_NAMES } from '@/studio/lenses/keys'
 
 /** Each Domain's overviews: the Domains it imports, in the Schema level's right panel, and its
@@ -322,6 +323,8 @@ export function CommandPalette() {
   const openDataLevel = useUI((s) => s.openDataLevel)
   const openSchema = useUI((s) => s.openSchema)
   const setLens = useUI((s) => s.setLens)
+  const setDataTab = useUI((s) => s.setDataTab)
+  const dataLevel = useUI((s) => s.level === 'data')
   const setTourOpen = useUI((s) => s.setTourOpen)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
@@ -632,19 +635,34 @@ export function CommandPalette() {
               </Command.Item>
             </>
           )}
-          {LENS_NAMES.filter((lens) => lens.available).map((lens) => (
-            <Command.Item
-              key={`lens.${lens.id}`}
-              value={`go to ${lens.label} lens ${lens.question}`}
-              className={ITEM_CLS}
-              onSelect={() => {
-                setLens(lens.id)
-                close()
-              }}
-            >
-              <Row icon={ArrowRight} label={lens.label} meta={`lens · ${lens.shortcut}`} />
-            </Command.Item>
-          ))}
+          {/* a dataset is asked through the Data level's tabs, a Schema through its lenses */}
+          {dataLevel
+            ? DATA_TAB_NAMES.map((tab) => (
+                <Command.Item
+                  key={`tab.${tab.id}`}
+                  value={`go to ${tab.label} tab ${tab.question}`}
+                  className={ITEM_CLS}
+                  onSelect={() => {
+                    setDataTab(tab.id)
+                    close()
+                  }}
+                >
+                  <Row icon={ArrowRight} label={tab.label} meta={`data · ${tab.shortcut}`} />
+                </Command.Item>
+              ))
+            : LENS_NAMES.filter((lens) => lens.available).map((lens) => (
+                <Command.Item
+                  key={`lens.${lens.id}`}
+                  value={`go to ${lens.label} lens ${lens.question}`}
+                  className={ITEM_CLS}
+                  onSelect={() => {
+                    setLens(lens.id)
+                    close()
+                  }}
+                >
+                  <Row icon={ArrowRight} label={lens.label} meta={`lens · ${lens.shortcut}`} />
+                </Command.Item>
+              ))}
           <Command.Item
             value="go to data datasets dataset level who may policies"
             className={ITEM_CLS}

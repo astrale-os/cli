@@ -23,7 +23,7 @@ import '../stage/stage.css'
 /** The word each operation a verdict decides is said by, as the Schema's rules say it. */
 const OP_WORD: Record<Slot, string> = { read: 'Read', traverse: 'Traverse', call: 'Call' }
 
-/** `Read · By Policy OwnService. Its condition holds through the Edges below.`, marked. */
+/** `Read · By Policy OwnService.`, marked, then why when the rule refused or could not tell. */
 export function VerdictBy({
   view,
   domainId,
@@ -61,7 +61,7 @@ export function VerdictBy({
       ) : (
         view.by
       )}
-      . {view.why}
+      .{view.why && ` ${view.why}`}
     </Meta>
   )
 }

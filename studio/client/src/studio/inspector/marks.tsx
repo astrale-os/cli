@@ -26,6 +26,7 @@ import {
   ClipboardCheck,
   Equal,
   Eye,
+  Fingerprint,
   Hash,
   Link,
   Link2,
@@ -64,6 +65,7 @@ import type { ClassLink, Count, MarkKind, ValueKind } from './structure'
 
 import { moduleTint } from '../../schema-studio/palette'
 import { SchemaIcon } from '../../schema-studio/schema-icon'
+import { GLYPH_COLOR } from '../canvas/glyphs'
 import { TONE_COLOR } from '../canvas/tones'
 
 /** The colour a Class wears: its module's hue, a relationship's, another Domain's quiet one. */
@@ -83,6 +85,8 @@ export function ClassGlyph({ link, className }: { link: ClassLink; className?: s
         <SchemaIcon svg={link.icon} className={size} style={style} />
       </span>
     )
+  if (link.identity)
+    return <Fingerprint className={size} style={{ color: GLYPH_COLOR.identity }} aria-hidden />
   const Glyph = link.relationship ? Spline : Box
   return <Glyph className={size} style={style} aria-hidden />
 }

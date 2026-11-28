@@ -161,7 +161,7 @@ test('a Function with no receiver reads like a method: the Class it works on, it
   const changes = read.locator('[data-inspector-function-changes]')
   await expect(changes).toContainText('crm.invoice.reconcile')
   await expect(changes).toContainText('updates an Invoice')
-  await expect(read).toContainText('any signed-in caller')
+  await expect(read).toContainText('Its contract admits anyone signed in')
   await expect(sceneBox(page, 'class.Invoice')).toHaveAttribute('data-emphasis', 'lit')
 
   // one that names no Class hangs off nothing: no Class to work on, nothing lit but its module
@@ -169,6 +169,6 @@ test('a Function with no receiver reads like a method: the Class it works on, it
   await expect(read.getByRole('heading', { name: 'exportLedger', exact: true })).toBeVisible()
   await expect(read).not.toContainText('Works on')
   await expect(read.locator('[data-method-returns]')).toContainText('Stream of text')
-  await expect(read).toContainText('every caller')
+  await expect(read).toContainText('Its contract admits everyone')
   await expect(sceneBox(page, 'class.Invoice')).not.toHaveAttribute('data-emphasis', 'lit')
 })

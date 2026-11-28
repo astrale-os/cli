@@ -11,9 +11,9 @@
  *   and pair of ends, counted (`deployment_of ×1500`); the canvas bundles the links between two
  *   boxes into one trunk.
  *
- * Through the Rules lens, a complete read summary marks each Node can read, can't read or
- * can't tell, and counts each region's readable Nodes in its label. Through the Behavior lens the
- * map is the dataset as written, as in Structure; a step selected marks who acts and how (reads,
+ * Under Access, a complete read summary marks each Node can read, can't read or
+ * can't tell, and counts each region's readable Nodes in its label. Under Scenarios the
+ * map is the dataset as written; a step selected marks who acts and how (reads,
  * traverses or calls), and marks each region its function is declared to write with the verbs,
  * outlined: declared, never applied. A declared Class no Node of the dataset is of stands as a
  * quiet card of its own, so its mark has a place.
@@ -33,6 +33,7 @@ import type {
 } from '../scene/types'
 import type { Outcome, Reads } from './access'
 import type { JudgedStep } from './scenarios'
+import type { DataTab } from './tabs'
 
 import { withArticle } from '../inspector/words'
 import { COLLAPSE_ABOVE } from '../scene/arrange'
@@ -51,15 +52,13 @@ export const REGION_BOUND = 40
 /** How many property rows a card reads when near; the rest are counted. */
 const ROWS_SHOWN = 6
 
-export type DataLens = 'structure' | 'behavior' | 'rules'
-
-/** A write a function is declared to make: its verb and the Behavior lens's word for it. */
+/** A write a function is declared to make: its verb and the Schema's Behavior lens's word for it. */
 export interface DeclaredVerb {
   readonly verb: ChangeVerb
   readonly word: string
 }
 
-/** What a Behavior step selected marks on the map. */
+/** What a Scenario's step selected marks on the map. */
 export interface StepMarks {
   /** the identity it acts as, by path */
   readonly actor?: string
@@ -67,7 +66,7 @@ export interface StepMarks {
   readonly does: ScenarioStep['does']
   /** the function it calls, for a call */
   readonly fn?: string
-  /** what its function is declared to write, by region, in the Behavior lens's order */
+  /** what its function is declared to write, by region, in the Schema's Behavior lens's order */
   readonly declared: ReadonlyMap<string, readonly DeclaredVerb[]>
   /** the declared Classes no Node of the dataset is of, by target: their names and verbs */
   readonly absent: ReadonlyMap<
@@ -144,18 +143,19 @@ function declaredBadges(
 }
 
 export interface DataSceneInput {
-  readonly lens: DataLens
+  /** the question asked of the dataset: what the map marks answers */
+  readonly tab: DataTab
   /** the regions drawn as one box */
   readonly collapsed: ReadonlySet<string>
   /** Node paths drawn as their own cards whatever the bound: the selection and what it reaches */
   readonly focus?: readonly string[]
   /** the paths of the dataset's identities */
   readonly identities?: ReadonlySet<string>
-  /** the identity the Rules lens reads as: a Node's path, or the anyone choice */
+  /** the identity Access reads as: a Node's path, or the anyone choice */
   readonly as?: string
   /** what `as` may read, once every Node is decided */
   readonly reads?: Reads
-  /** through Behavior: what the step selected marks */
+  /** under Scenarios: what the step selected marks */
   readonly step?: StepMarks
 }
 
@@ -229,13 +229,13 @@ const READ_BADGE: Record<Outcome, SceneBadge> = {
 }
 
 /**
- * A region's label: its Class, and in Rules, while it is open, how many of its Nodes the identity
+ * A region's label: its Class, and under Access, while it is open, how many of its Nodes the identity
  * reads. A collapsed region keeps its Class alone, so its box keeps its size once the reads are
  * decided; the identity picker counts every region.
  */
 function regionLabel(cls: DataClass, input: DataSceneInput): string {
   const reads =
-    input.lens === 'rules'
+    input.tab === 'access'
       ? input.reads?.classes.find((one) => one.target === cls.target)
       : undefined
   if (!reads || input.reads?.pending || input.collapsed.has(cls.target)) return classLabel(cls)
@@ -243,7 +243,7 @@ function regionLabel(cls: DataClass, input: DataSceneInput): string {
 }
 
 export function projectData(model: DatasetModel, input: DataSceneInput): DataScene {
-  const rules = input.lens === 'rules' && input.reads !== undefined && input.reads.pending === 0
+  const rules = input.tab === 'access' && input.reads !== undefined && input.reads.pending === 0
   const focus = new Set(input.focus ?? [])
   const identities = input.identities ?? new Set<string>()
 
@@ -288,7 +288,7 @@ export function projectData(model: DatasetModel, input: DataSceneInput): DataSce
   const folded: SceneFold[] = []
   const indexNodes: SceneNode[] = []
 
-  const step = input.lens === 'behavior' ? input.step : undefined
+  const step = input.tab === 'scenarios' ? input.step : undefined
   for (const cls of model.classes) {
     const declared = step
       ? declaredBadges(step.declared.get(cls.target), step, `on ${withArticle(cls.name)}`)
@@ -318,18 +318,18 @@ export function projectData(model: DatasetModel, input: DataSceneInput): DataSce
       if (step?.actor === path) badges.push(actorBadge(step))
       else if (identities.has(path)) {
         badges.push(
-          input.lens === 'rules' && input.as === path
+          input.tab === 'access' && input.as === path
             ? {
                 label: 'as this identity',
                 tone: 'call',
-                title: 'The Rules lens reads the dataset as this identity.',
+                title: 'Access reads the dataset as this identity.',
               }
             : { label: 'identity', title: 'A Node of a Class that is or extends Kernel Identity.' },
         )
       }
       const verdict = rules ? input.reads!.verdicts.get(path) : undefined
       if (verdict) badges.push(READ_BADGE[verdict.outcome])
-      if (input.lens !== 'rules')
+      if (input.tab !== 'access')
         for (const name of node.variables)
           badges.push({
             label: name,
@@ -526,11 +526,11 @@ export function projectData(model: DatasetModel, input: DataSceneInput): DataSce
     model.origin,
     model.dataset.id,
     fingerprintOf(model),
-    input.lens,
+    input.tab,
     regionsKey,
     [...focus].sort().join(','),
-    input.lens === 'rules' ? `${input.as ?? ''}:${rules ? 'read' : 'deciding'}` : '',
-    input.lens === 'behavior' ? stepKey(input.step) : '',
+    input.tab === 'access' ? `${input.as ?? ''}:${rules ? 'read' : 'deciding'}` : '',
+    input.tab === 'scenarios' ? stepKey(input.step) : '',
   ].join('|')
   const scene: Scene = { key, nodes, links, groups, folded, trunkLabel: 'labels' }
   // The Index names each region by its Class alone: the count is the map's and the picker's.

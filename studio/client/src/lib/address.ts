@@ -1,14 +1,15 @@
 /**
  * The address of a place in the Studio: the URL's path and query, so a reload, a link pasted in
- * another tab and Back/Forward land where the reader was. A place is a level, a Domain, a dataset
- * and a lens; within a place, the address also names the selection, and at the Data level the
- * Scenario and step open, the identity Rules reads as and the verdict lit.
+ * another tab and Back/Forward land where the reader was. A place is a level, a Domain, and a
+ * lens of its Schema or a dataset and a tab of the Data level; within a place, the address also
+ * names the selection, and at the Data level the Scenario and step open, the identity Access
+ * reads as and the verdict lit.
  *
  * - `/workspace`, with the map's selection: `?domain=<id>`, `?origin=<origin>`, or
  *   `?domain=<id>&dependency=<alias>`.
  * - `/domain/<id>?lens=<lens>&select=<ref>`: a workspace Domain's Schema.
- * - `/domain/<id>/data?dataset=<path>&lens=<lens>&select=<scene id>&as=<identity>&verdict=<id>&scenario=<id>&step=<id>`.
- *   The retired `/domain/<id>/tests?dataset=<path>` lands here, on the same dataset under Rules,
+ * - `/domain/<id>/data?dataset=<path>&tab=<tab>&select=<scene id>&as=<identity>&verdict=<id>&scenario=<id>&step=<id>`.
+ *   The retired `/domain/<id>/tests?dataset=<path>` lands here, on the same dataset under Access,
  *   and says so once.
  * - `/publication/<origin>/<version>?lens=<lens>&select=<ref>`: one published version, read-only.
  *
@@ -22,20 +23,14 @@ import type { StudioDataset } from '@shared/contracts/schema'
 import { ANYONE } from '@shared/contracts/scenarios'
 import { publicationOf, publishedDomainId } from '@shared/contracts/versions'
 
-import {
-  dataLensOf,
-  isDataLens,
-  isLensId,
-  type LensId,
-  type LensKey,
-  lensName,
-} from '@/studio/lenses/keys'
+import { type DataTab, isDataTab } from '@/studio/data/tabs'
+import { isLensId, type LensId } from '@/studio/lenses/keys'
 
 /** What the Data level holds of one dataset, as an address names it. */
 export interface DataSelection {
   /** the selected scene id: `core.node.<path>`, `core.edge.<i>`, a region… */
   selected?: string
-  /** the identity Rules reads as: a Node's path; absent reads as anyone */
+  /** the identity Access reads as: a Node's path; absent reads as anyone */
   identity?: string
   verdict?: string
   scenario?: string
@@ -60,20 +55,18 @@ export type Address =
       level: 'data'
       domainId: string
       dataset?: string
-      /** a lens the Data level reads */
-      lens?: LensKey
+      /** the question asked of the dataset */
+      tab?: DataTab
       view: DataSelection
     }
 
 /** What a URL says: a place, the Workspace's own state (bare `/`), and what it named that no Studio place is. */
 export interface ParsedAddress {
   address?: Address
-  /** the part of the URL that names nothing, in words: "the path /x", "the lens “x”" */
+  /** the part of the URL that names nothing, in words: "the path /x", "the lens “x”", "the tab “x”" */
   unknown?: string
   /** a place the Studio retired, in words, when the address lands where it is read now */
   retired?: string
-  /** a lens the level named does not read, by its label, when the address lands without it */
-  unread?: string
 }
 
 /** What the retired Tests place said: one dataset, the Domain's Policies proven on it. */
@@ -117,7 +110,7 @@ export function formatAddress(address: Address): string {
     const { view } = address
     return `${base}/data${query([
       ['dataset', address.dataset],
-      ['lens', address.lens],
+      ['tab', address.tab],
       ['select', view.selected],
       ['as', view.identity === ANYONE ? undefined : view.identity],
       ['verdict', view.verdict],
@@ -183,20 +176,17 @@ export function parseAddress(pathname: string, search: string): ParsedAddress {
   if (rest.length > 1 || (rest[0] !== undefined && rest[0] !== 'tests' && rest[0] !== 'data'))
     return { unknown: `the path ${pathname}` }
 
-  const lens = params.get('lens')
-  const unknownLens = lens !== null && !isLensId(lens) ? `the lens “${lens}”` : undefined
-  let unreadLens: string | undefined
-  const known = isLensId(lens) ? { lens } : {}
   const dataset = optional(params, 'dataset')
   let address: Address
-  // Tests read a dataset's Policies: the Data level reads the same dataset, its Rules lens them
+  let unknown: string | undefined
+  // Tests read a dataset's Policies: the Data level reads the same dataset, Access reads them
   if (rest[0] === 'tests')
     return {
       address: {
         level: 'data',
         domainId,
         ...(dataset ? { dataset } : {}),
-        lens: 'rules',
+        tab: 'access',
         view: {},
       },
       retired: RETIRED_TESTS,
@@ -213,28 +203,32 @@ export function parseAddress(pathname: string, search: string): ParsedAddress {
       const value = optional(params, name)
       if (value) view[field] = value
     }
-    // a lens only the Schema answers is not read at the Data level, which opens without it
-    if (known.lens !== undefined && !isDataLens(known.lens)) unreadLens = lensName(known.lens).label
+    const tab = params.get('tab')
+    if (tab !== null && !isDataTab(tab)) unknown = `the tab “${tab}”`
     address = {
       level: 'data',
       domainId,
       ...(dataset ? { dataset } : {}),
-      ...(known.lens !== undefined && isDataLens(known.lens) ? { lens: known.lens } : {}),
+      ...(isDataTab(tab) ? { tab } : {}),
       view: dataView(view),
     }
   } else {
+    const lens = params.get('lens')
+    if (lens !== null && !isLensId(lens)) unknown = `the lens “${lens}”`
     const select = optional(params, 'select')
-    address = { level: 'domain', domainId, ...known, ...(select ? { select } : {}) }
+    address = {
+      level: 'domain',
+      domainId,
+      ...(isLensId(lens) ? { lens } : {}),
+      ...(select ? { select } : {}),
+    }
   }
-  return {
-    address,
-    ...(unknownLens ? { unknown: unknownLens } : {}),
-    ...(unreadLens ? { unread: unreadLens } : {}),
-  }
+  return { address, ...(unknown ? { unknown } : {}) }
 }
 
 /**
- * The place an address names: its level, Domain, dataset and lens — not what is selected in it.
+ * The place an address names: its level, Domain, and its lens or its dataset and tab — not what
+ * is selected in it.
  * Back and Forward walk places; a selection within one replaces its entry.
  */
 export interface Place {
@@ -242,6 +236,7 @@ export interface Place {
   domainId?: string
   dataset?: string
   lens?: LensId
+  tab?: DataTab
 }
 
 export function placeOf(address: Address): Place {
@@ -252,7 +247,7 @@ export function placeOf(address: Address): Place {
       domainId: address.domainId,
       // no dataset is a place of its own, the Datasets page: always said, so neither refines the other
       dataset: address.dataset,
-      ...(address.lens ? { lens: address.lens } : {}),
+      ...(address.tab ? { tab: address.tab } : {}),
     }
   return {
     level: 'domain',
@@ -263,8 +258,8 @@ export function placeOf(address: Address): Place {
 
 /**
  * Whether `next` is `last` said more fully: every part `last` names, `next` names alike. An
- * address arriving without a lens and written with the one shown refines a place rather than
- * leaving it.
+ * address arriving without a lens or a tab and written with the one shown refines a place rather
+ * than leaving it.
  */
 export function refines(last: Place, next: Place): boolean {
   return (Object.keys(last) as Array<keyof Place>).every((key) => last[key] === next[key])
@@ -281,6 +276,8 @@ export interface Shown {
   /** the Domain the levels read; none in a Workspace that holds no Domain */
   domainId?: string
   lens: LensId
+  /** the question the Data level asks of a dataset */
+  dataTab: DataTab
   /** the dataset the Data level reads, by module path; null shows the Domain's Datasets page */
   dataset: string | null
   /** the Schema selection, and the Domain it belongs to */
@@ -304,7 +301,7 @@ export function addressOf(shown: Shown): Address | undefined {
       level: 'data',
       domainId,
       ...(dataset ? { dataset } : {}),
-      lens: dataLensOf(shown.lens),
+      tab: shown.dataTab,
       view: dataView(shown.view ?? {}),
     }
   const select = shown.selectionDomainId === domainId ? shown.selected : undefined

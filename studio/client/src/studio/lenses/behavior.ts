@@ -69,7 +69,7 @@ import { integrationTarget, replayLabel } from '../../schema-studio/integrations
 import { moduleHues, moduleLabel, moduleOfMember } from '../../schema-studio/modules'
 import { listed } from '../scene/types'
 import { consequencesOf } from './deletion'
-import { classTarget, endpointRefs, lineage, originShort } from './structure'
+import { classIcon, classTarget, endpointRefs, lineage, originShort } from './structure'
 
 export const BEHAVIOR_OPTIONS: LensOption[] = [
   {
@@ -1093,7 +1093,7 @@ export function projectBehavior(
       column: COLUMN.changed,
       label: ref.name,
       ...(home ? {} : { sublabel: originShort(ref.origin) }),
-      icon: { ...(member?.icon ? { svg: member.icon } : {}), glyph: 'class' },
+      icon: classIcon(bundle, ref, member),
       tone: home ? 'node' : 'muted',
       counts: changed > 0 ? [{ label: 'functions', value: changed }] : [],
       ...(tallies.length > 0 ? { tallies } : {}),

@@ -13,10 +13,10 @@ import {
 } from './test'
 
 /**
- * Views answers "what people see": every View the Domain declares is a card, after Rules and
- * before the locked Scenarios. A View opens on the active instance its user owns; when it
- * cannot, its one action is disabled and says why beside it. The Data level does not read
- * Views: its tab stays, disabled, its tooltip saying where Views are read.
+ * Views answers "what people see": every View the Domain declares is a card, in the last lens,
+ * after Rules. A View opens on the active instance its user owns; when it cannot, its one action
+ * is disabled and says why beside it. The Data level does not read Views: its switch lists its own
+ * tabs, Query, Access and Scenarios, and no lens.
  *
  * The fixture declares one View, `overview` ("CRM overview."), and no frontend serves it.
  */
@@ -44,17 +44,20 @@ async function instancesAre(page: Page, state: InstancesState) {
   await page.route('**/api/instances', (route) => route.fulfill({ json: state }))
 }
 
-test('Views sits after Rules and before Scenarios, and is a lens the address keeps', async ({
+test('Views sits after Rules, the last of the four lenses, and is a lens the address keeps', async ({
   page,
 }) => {
   await openSchema(page)
-  const tabs = page.getByTestId('lens-switch').locator('button[data-lens]')
-  await expect(tabs).toHaveCount(5)
+  const lenses = page.getByTestId('lens-switch')
+  await expect(lenses).toHaveAttribute('data-switch-level', 'schema')
+  const tabs = lenses.locator('button[data-lens]')
+  await expect(tabs).toHaveCount(4)
   expect(
     await tabs.evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-lens'))),
-  ).toEqual(['structure', 'behavior', 'rules', 'views', 'scenarios'])
-  await expect(lensTab(page, 'views')).toBeEnabled()
-  await expect(lensTab(page, 'scenarios')).toBeDisabled()
+  ).toEqual(['structure', 'behavior', 'rules', 'views'])
+  // no tab is locked, and none of the Data level's is listed here
+  for (const tab of await tabs.all()) await expect(tab).toBeEnabled()
+  await expect(lenses.locator('button[data-tab]')).toHaveCount(0)
 
   await lensTab(page, 'views').click()
   await expect(page).toHaveURL(/[?&]lens=views\b/)
@@ -120,31 +123,44 @@ test('a View opens only on an active instance its user owns', async ({ page }) =
   await expect(openBlocker(page)).toHaveCount(0)
 })
 
-test('the Data level does not read Views: its tab is disabled and says where they are read', async ({
+test('the Data level lists its own tabs and no lens; a digit picks one and the address names it', async ({
   page,
 }) => {
   await openSchema(page)
   await lensTab(page, 'views').click()
   await levelButton(page, 'data').click()
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-lens', 'structure')
+  const level = page.getByTestId('data-level')
+  await expect(level).toHaveAttribute('data-state', 'ready')
+  await expect(level).toHaveAttribute('data-tab', 'query')
 
-  await expect(lensTab(page, 'views')).toBeDisabled()
-  await lensTab(page, 'views').locator('..').hover()
-  await expect(page.locator('[data-lens-reason="views"]')).toHaveText(
-    'A View renders on an instance, not over a Dataset yet: read Views at the Schema level.',
+  const switcher = page.getByTestId('lens-switch')
+  await expect(switcher).toHaveAttribute('data-switch-level', 'data')
+  await expect(switcher.locator('button[data-lens]')).toHaveCount(0)
+  await expect(switcher.locator('button[data-tab]')).toHaveText(['Query', 'Access', 'Scenarios'])
+  await expect(switcher.locator('button[data-tab="query"]')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page).toHaveURL(/[?&]tab=query\b/)
+  await expect(page).not.toHaveURL(/[?&]lens=/)
+
+  // at the Data level a digit picks a tab, not a lens
+  await page.keyboard.press('2')
+  await expect(level).toHaveAttribute('data-tab', 'access')
+  await expect(switcher.locator('button[data-tab="access"]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
   )
+  await expect(page).toHaveURL(/[?&]tab=access\b/)
 
-  // an address naming Views at the Data level lands on the dataset without it, said once
+  // an address naming a tab the Data level has not lands on the dataset without it, said once
   const pasted = new URL(page.url())
-  pasted.searchParams.set('lens', 'views')
+  pasted.searchParams.set('tab', 'views')
   await page.goto(`${pasted.pathname}${pasted.search}`)
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-lens', 'structure')
+  await expect(level).toHaveAttribute('data-state', 'ready', { timeout: 60_000 })
+  await expect(level).toHaveAttribute('data-tab', 'access')
+  await expect(page).toHaveURL(/[?&]tab=access\b/)
   await expect(
-    page
-      .locator('[data-sonner-toast]')
-      .filter({ hasText: 'The Data level does not read Views: read Views at the Schema level.' }),
+    page.locator('[data-sonner-toast]').filter({
+      hasText: 'The address names the tab “views”, which the Studio does not know.',
+    }),
   ).toHaveCount(1)
 })
 

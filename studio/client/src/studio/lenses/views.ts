@@ -53,7 +53,7 @@ import {
   type SceneNode,
 } from '../scene/types'
 import { behaviorModel, type FunctionModel, VERB_WORDS } from './behavior'
-import { classTarget, originShort } from './structure'
+import { classIcon, classTarget, originShort } from './structure'
 
 const SCHEMA_DIR = 'schema'
 
@@ -445,7 +445,7 @@ function reachedBy(
         column: COLUMN.graph,
         label: ref.name,
         ...(home ? {} : { sublabel: originShort(ref.origin) }),
-        icon: { ...(member?.icon ? { svg: member.icon } : {}), glyph: 'class' },
+        icon: classIcon(bundle, ref, member),
         tone: home ? 'node' : 'muted',
       }
     }),

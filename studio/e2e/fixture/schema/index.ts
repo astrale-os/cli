@@ -5,6 +5,7 @@ import {
   Invoice,
   IssuedFrom,
   mayManageInvoice,
+  mayReadSubscription,
   PaidOutBy,
   Payment,
   ProcessedBy,
@@ -16,6 +17,7 @@ import { PaymentsSchema } from './external.js'
 import { escalateTicket, exportLedger, reconcileInvoice } from './functions/index.js'
 import { BelongsToTeam, Company, Person, platformTeam, Team, WorksAt } from './people/index.js'
 import {
+  mayReadOpportunity,
   Opportunity,
   OpportunityFor,
   OwnedBy,
@@ -75,7 +77,7 @@ export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
       description: 'CRM overview.',
     }),
   },
-  policies: { mayManageInvoice, mayReadTicket },
+  policies: { mayManageInvoice, mayReadOpportunity, mayReadSubscription, mayReadTicket },
   core: { nodes: { platform: platformTeam }, edges: [] },
 })
 

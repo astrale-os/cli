@@ -146,7 +146,8 @@ describe('a function', () => {
           name: 'invoice',
           type: 'Reference to Invoice',
           kind: 'reference',
-          refs: [{ target: 'class.Invoice', name: 'Invoice', open: true }],
+          // Invoice extends Kernel Identity: the link says so, for the glyph it wears
+          refs: [{ target: 'class.Invoice', name: 'Invoice', open: true, identity: true }],
           required: false,
         },
       ],

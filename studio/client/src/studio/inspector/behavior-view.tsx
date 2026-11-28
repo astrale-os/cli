@@ -153,10 +153,7 @@ export function ClassBehaviorView({
             is read from them.
           </Empty>
         ) : behavior.groups.length === 0 ? (
-          <Empty>
-            Nothing changes {withArticle(behavior.relationship ? `${name} link` : name)}: no
-            function writes it.
-          </Empty>
+          <Empty>No function writes it.</Empty>
         ) : (
           <div className="space-y-5">
             {behavior.groups.map((group) => (

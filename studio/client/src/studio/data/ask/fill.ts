@@ -29,8 +29,6 @@ export type Why =
   | { readonly kind: 'selected' }
   | { readonly kind: 'named'; readonly variable: string }
   | { readonly kind: 'richest'; readonly nodes: number; readonly classes: number }
-  /** a call's Node: the one that holds most links, where a call shows most */
-  | { readonly kind: 'linked'; readonly edges: number }
 
 export interface Candidate {
   readonly path: string
@@ -226,7 +224,5 @@ export function whyWords(why: Why): string {
       return `named ${why.variable} in the dataset`
     case 'richest':
       return `the fullest answer: ${why.nodes} Nodes of ${why.classes} ${why.classes === 1 ? 'kind' : 'kinds'}`
-    case 'linked':
-      return `the one with most links: ${why.edges}`
   }
 }

@@ -5,6 +5,7 @@ import type { StudioDatasets } from '../shared/contracts/schema'
 
 import {
   clearScenarios,
+  dataTabButton,
   expect,
   FIXTURE_ID,
   indexRow,
@@ -19,10 +20,10 @@ import {
 
 /**
  * Where a reader is, is an address: the URL's path and query name the level, the Domain, the
- * dataset, the lens and the selection — at the Data level the Scenario and its step too. A
- * reload and the address pasted in another browser land on the same view; Back and Forward walk
- * the places visited; what an address names that is gone lands on the nearest thing that is,
- * said once.
+ * Schema's lens or the dataset and its tab, and the selection — at the Data level the Scenario and
+ * its step too. A reload and the address pasted in another browser land on the same view; Back and
+ * Forward walk the places visited; what an address names that is gone lands on the nearest thing
+ * that is, said once.
  */
 
 const DOMAIN = `/domain/${encodeURIComponent(FIXTURE_ID)}`
@@ -159,7 +160,7 @@ test.describe('the Data level', () => {
   test.beforeEach(async ({ request }) => clearScenarios(request))
   test.afterEach(async ({ request }) => clearScenarios(request))
 
-  test('is addressed by its dataset, lens, open Scenario and step', async ({ page, request }) => {
+  test('is addressed by its dataset, tab, open Scenario and step', async ({ page, request }) => {
     const dataset = await supportDesk(request)
     const put = await request.post(scenariosRoute, {
       data: { action: 'put', scenario: walk(dataset), revision: 0 },
@@ -171,21 +172,21 @@ test.describe('the Data level', () => {
     const level = page.getByTestId('data-level')
     await expect(level).toHaveAttribute('data-state', 'ready')
     const data = `${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}`
-    await expect.poll(() => here(page)).toBe(`${data}&lens=structure`)
+    await expect.poll(() => here(page)).toBe(`${data}&tab=query`)
 
-    await lensButton(page, 'behavior').click()
-    await expect(level).toHaveAttribute('data-lens', 'behavior')
+    await dataTabButton(page, 'scenarios').click()
+    await expect(level).toHaveAttribute('data-tab', 'scenarios')
     await indexRow(page, 'scenario.address-walk').click()
     const panel = page.locator('[data-data-panel]')
     await panel.locator('[data-step-select="settle"]').click()
     // a step puts its Node, identity and verdict in view: the address carries them with it
-    const address = `${data}&lens=behavior&select=core.node.invoice-1&as=ann&verdict=call%3AInvoice.settle&scenario=address-walk&step=settle`
+    const address = `${data}&tab=scenarios&select=core.node.invoice-1&as=ann&verdict=call%3AInvoice.settle&scenario=address-walk&step=settle`
     await expect.poll(() => here(page)).toBe(address)
 
     const lands = async (on: Page) => {
       const opened = on.getByTestId('data-level')
       await expect(opened).toHaveAttribute('data-state', 'ready', { timeout: 60_000 })
-      await expect(opened).toHaveAttribute('data-lens', 'behavior')
+      await expect(opened).toHaveAttribute('data-tab', 'scenarios')
       const steps = on.locator('[data-data-panel] [data-scenario-steps] [data-step]')
       await expect(steps).toHaveCount(2)
       await expect(on.locator('[data-step="settle"]')).toHaveAttribute('data-selected', '')
@@ -197,15 +198,15 @@ test.describe('the Data level', () => {
     await lands(page)
     await inAnotherBrowser(page, address, lands)
 
-    // Back: the Structure lens on the dataset, then the Schema level it was opened from
+    // Back: the dataset under Query, then the Schema level it was opened from
     await page.goBack()
-    await expect(level).toHaveAttribute('data-lens', 'structure')
-    await expect.poll(() => here(page)).toBe(`${data}&lens=structure`)
+    await expect(level).toHaveAttribute('data-tab', 'query')
+    await expect.poll(() => here(page)).toBe(`${data}&tab=query`)
     await page.goBack()
     await expect(schemaLevel(page)).toBeVisible()
     await expect.poll(() => here(page)).toBe(`${DOMAIN}?lens=structure`)
     await page.goForward()
-    await expect(level).toHaveAttribute('data-lens', 'structure')
+    await expect(level).toHaveAttribute('data-tab', 'query')
   })
 
   test('an address naming a step or a Node that is gone opens without it, said once', async ({
@@ -218,7 +219,7 @@ test.describe('the Data level', () => {
     })
     const data = `${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}`
 
-    await page.goto(`${data}&lens=behavior&scenario=address-walk&step=escalate`)
+    await page.goto(`${data}&tab=scenarios&scenario=address-walk&step=escalate`)
     await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready', {
       timeout: 60_000,
     })
@@ -228,9 +229,9 @@ test.describe('the Data level', () => {
     )
     await expect(page.locator('[data-scenario-steps] [data-step]')).toHaveCount(2)
     await expect(page.locator('[data-step][data-selected]')).toHaveCount(0)
-    await expect.poll(() => here(page)).toBe(`${data}&lens=behavior&scenario=address-walk`)
+    await expect.poll(() => here(page)).toBe(`${data}&tab=scenarios&scenario=address-walk`)
 
-    await page.goto(`${data}&lens=structure&select=core.node.carol&as=carol`)
+    await page.goto(`${data}&tab=query&select=core.node.carol&as=carol`)
     await expect(page.getByTestId('data-level')).toHaveAttribute('data-ask', 'measure', {
       timeout: 60_000,
     })
@@ -238,7 +239,7 @@ test.describe('the Data level', () => {
       page,
       'The address names the Node carol and the identity carol, which Support desk does not hold: the dataset is open without them.',
     )
-    await expect.poll(() => here(page)).toBe(`${data}&lens=structure`)
+    await expect.poll(() => here(page)).toBe(`${data}&tab=query`)
 
     await page.goto(`${DOMAIN}/data?dataset=tests%2Fdatasets%2Fgone.ts`)
     await reportedOnce(
@@ -246,7 +247,7 @@ test.describe('the Data level', () => {
       `${ORIGIN} declares no dataset tests/datasets/gone.ts: its datasets are listed instead.`,
     )
     await expect(page.getByTestId('datasets-page')).toHaveAttribute('data-state', 'some')
-    await expect.poll(() => here(page)).toBe(`${DOMAIN}/data?lens=structure`)
+    await expect.poll(() => here(page)).toBe(`${DOMAIN}/data?tab=query`)
   })
 
   test("a Domain's Datasets page is a place: the palette, reload, Back, Forward and a pasted address reach it", async ({
@@ -260,7 +261,7 @@ test.describe('the Data level', () => {
     await page.getByRole('option', { name: /^Datasets/ }).click()
     const datasets = page.getByTestId('datasets-page')
     await expect(datasets).toHaveAttribute('data-state', 'some', { timeout: 60_000 })
-    const listed = `${DOMAIN}/data?lens=structure`
+    const listed = `${DOMAIN}/data?tab=query`
     await expect.poll(() => here(page)).toBe(listed)
 
     // each dataset is a card that says how it stands; one the Schema refuses says why
@@ -286,7 +287,7 @@ test.describe('the Data level', () => {
     await card(dataset).click()
     const level = page.getByTestId('data-level')
     await expect(level).toHaveAttribute('data-state', 'ready', { timeout: 60_000 })
-    const opened = `${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}&lens=structure`
+    const opened = `${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}&tab=query`
     await expect.poll(() => here(page)).toBe(opened)
     await page.goBack()
     await lands(page)
@@ -307,14 +308,14 @@ test.describe('the Data level', () => {
     const level = page.getByTestId('data-level')
     await expect(level).toHaveAttribute('data-state', 'ready', { timeout: 60_000 })
     await expect(level).toHaveAttribute('data-dataset-path', dataset)
-    await expect(level).toHaveAttribute('data-lens', 'rules')
+    await expect(level).toHaveAttribute('data-tab', 'access')
     await reportedOnce(
       page,
       'The address names Tests, which the Studio no longer has: the Data level reads the same dataset.',
     )
     await expect
       .poll(() => here(page))
-      .toBe(`${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}&lens=rules`)
+      .toBe(`${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}&tab=access`)
   })
 
   test('a notice waits while the dataset is read, then stays long enough to be read', async ({

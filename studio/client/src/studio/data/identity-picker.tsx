@@ -1,5 +1,5 @@
 /**
- * Who the Rules lens reads the dataset as: one of its identities, or anyone. It floats over the
+ * Who Access reads the dataset as: one of its identities, or anyone. It floats over the
  * map's lower left and says, per Class, how many Nodes the choice reads out of how many; while
  * the read is still being decided it says how far it is. While a Policy is selected, its pairs
  * mark the map and the choice's marks stand aside; it says so, and the choice stays to be made.

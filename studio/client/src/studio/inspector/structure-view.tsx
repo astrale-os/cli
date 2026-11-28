@@ -1,11 +1,12 @@
 /**
  * The Structure lens of the Inspector: what exists. A Class's place in the Schema, its
- * Properties and the relationships it stands in; a relationship's two ends. Methods, call rules
+ * Properties, then the relationships it stands in; a relationship's two ends, then its Properties. Methods, call rules
  * and Policies are other questions and never appear here.
  */
 import { AnchorButton } from '@/components/anchor'
 
 import { TONE_COLOR } from '../canvas/tones'
+import { StateDiagram } from '../state-diagram/state-diagram'
 import { ClassGlyph, CountMark, LifetimeMark } from './marks'
 import {
   ClassChip,
@@ -48,12 +49,11 @@ export function StructureView({
   return (
     <>
       <Lineage structure={structure} domainId={domainId} />
-      {structure.kind === 'relationship' ? (
+      {structure.kind === 'relationship' && (
         <RelationshipBody structure={structure} worded={holds.length > 0} domainId={domainId} />
-      ) : (
-        <ClassBody structure={structure} domainId={domainId} />
       )}
       <Properties structure={structure} domainId={domainId} />
+      {structure.kind === 'class' && <ClassBody structure={structure} domainId={domainId} />}
       {holds.length > 0 && (
         <Section label="Constraints" kind="constraints" count={holds.length}>
           <ul data-inspector-holds="" className="space-y-2 text-[13px] leading-relaxed">
@@ -111,7 +111,7 @@ function ClassBody({ structure, domainId }: { structure: ClassStructure; domainI
       data-inspector-relationships=""
     >
       {structure.relationships.length === 0 ? (
-        <Empty>{structure.name} stands in no relationship: no relationship’s end accepts it.</Empty>
+        <Empty>None.</Empty>
       ) : (
         <div className="space-y-4">
           {own.length > 0 && (
@@ -212,7 +212,7 @@ function Relationship({
 /**
  * What deleting one of the Class's Nodes does to the links it stands in, as the Kernel's
  * lifetimes say: the links that refuse the deletion unless the same change deletes them, then
- * those that go with it. Over the relationships of the Domain on screen, which it says.
+ * those that go with it. Over the relationships of the Domain on screen.
  */
 function WhenDeleted({ structure, domainId }: { structure: ClassStructure; domainId: string }) {
   const { deletion, name } = structure
@@ -225,14 +225,9 @@ function WhenDeleted({ structure, domainId }: { structure: ClassStructure; domai
       data-inspector-deletion={deletion === undefined ? 'unread' : ''}
     >
       {deletion === undefined ? (
-        <Empty>
-          What deleting a {name} does to its links is read from the canonical Schema, which this
-          reading does not carry.
-        </Empty>
+        <Empty>Not read: this reading carries no canonical Schema.</Empty>
       ) : count === 0 ? (
-        <Empty>
-          No relationship of this Domain holds a {name}: deleting one unlinks nothing here.
-        </Empty>
+        <Empty>Deleting one unlinks nothing.</Empty>
       ) : (
         <div className="space-y-4">
           {deletion.restricts.length > 0 && (
@@ -279,10 +274,6 @@ function WhenDeleted({ structure, domainId }: { structure: ClassStructure; domai
               />
             </div>
           )}
-          <Meta>
-            Read over this Domain’s relationships; the Kernel’s own links and those of the Domains
-            that depend on this one are not read here.
-          </Meta>
         </div>
       )}
     </Section>
@@ -427,11 +418,7 @@ function Properties({ structure, domainId }: { structure: Structure; domainId: s
   if (structure.properties.length === 0)
     return (
       <Section label="Properties" kind="properties">
-        <Empty>
-          {structure.kind === 'relationship'
-            ? 'A link carries no Property of its own.'
-            : `${structure.name} declares no Property and inherits none.`}
-        </Empty>
+        <Empty>None.</Empty>
       </Section>
     )
   return (
@@ -446,10 +433,12 @@ function Properties({ structure, domainId }: { structure: Structure; domainId: s
           items={own}
           limit={10}
           rows
-          render={(line) => <Property key={line.anchor} line={line} domainId={domainId} />}
+          render={(line) => (
+            <Property key={line.anchor} line={line} owner={structure.name} domainId={domainId} />
+          )}
         />
       ) : (
-        <Empty>{structure.name} declares none of its own.</Empty>
+        <Empty>None of its own.</Empty>
       )}
       {bases.map((base) => {
         const lines = inherited.filter((line) => line.from!.target === base.target)
@@ -465,7 +454,12 @@ function Properties({ structure, domainId }: { structure: Structure; domainId: s
           >
             <div className="divide-y divide-border/60">
               {lines.map((line) => (
-                <Property key={line.anchor} line={line} domainId={domainId} />
+                <Property
+                  key={line.anchor}
+                  line={line}
+                  owner={structure.name}
+                  domainId={domainId}
+                />
               ))}
             </div>
           </Disclosure>
@@ -479,7 +473,16 @@ function Properties({ structure, domainId }: { structure: Structure; domainId: s
  * A Property: its kind's mark, its name (required: heavier, marked), its type and other marks;
  * under it, quieter, what it says of itself and its states when it has a machine.
  */
-function Property({ line, domainId }: { line: PropertyLine; domainId: string }) {
+function Property({
+  line,
+  owner,
+  domainId,
+}: {
+  line: PropertyLine
+  /** the Class or relationship it is a Property of */
+  owner: string
+  domainId: string
+}) {
   const reveal = useAnchorReveal(line.anchor, line.name)
   const required = line.marks.some((mark) => mark.kind === 'required')
   return (
@@ -504,59 +507,53 @@ function Property({ line, domainId }: { line: PropertyLine; domainId: string }) 
         />
       </ValueHead>
       {line.description !== undefined && <ValueNote text={line.description} />}
-      {line.state !== undefined && <States state={line.state} />}
+      {line.state !== undefined && <States state={line.state} title={`${owner} · ${line.name}`} />}
     </div>
   )
 }
 
-/** A machine's states as chips, the initial one marked; its declared transitions on demand. */
-function States({ state }: { state: NonNullable<PropertyLine['state']> }) {
-  return (
-    <div className="space-y-1 pl-6 pt-1">
-      <div className="flex flex-wrap gap-1" data-property-states="">
-        {state.states.map((name) => {
-          const initial = name === state.initial
-          return (
-            <span
-              key={name}
-              data-state-chip={name}
-              data-initial={initial || undefined}
-              title={initial ? `${name}: where every one starts` : name}
-              className="inline-flex items-center gap-1 rounded-full border border-border px-2 font-mono text-[11px] leading-[18px]"
-              style={
-                initial
-                  ? {
-                      borderColor: `color-mix(in oklch, ${TONE_COLOR.transition} 45%, transparent)`,
-                    }
-                  : undefined
-              }
-            >
-              {initial && (
-                <span
-                  aria-label="initial"
-                  role="img"
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: TONE_COLOR.transition }}
-                />
-              )}
-              {name}
-            </span>
-          )
-        })}
+/**
+ * A machine: its states and transitions as one small diagram, opened large on demand. A machine
+ * that declares no transition is its states as chips, the initial one marked.
+ */
+function States({ state, title }: { state: NonNullable<PropertyLine['state']>; title: string }) {
+  if (state.transitions.length > 0)
+    return (
+      <div className="pl-6 pt-1.5" data-property-states="">
+        <StateDiagram machine={state} title={title} expandable />
       </div>
-      {state.transitions.length > 0 && (
-        <Disclosure
-          label={`${state.transitions.length} declared ${state.transitions.length === 1 ? 'transition' : 'transitions'}`}
-        >
-          <ul className="space-y-0.5 font-mono text-[11.5px]">
-            {state.transitions.map((step) => (
-              <li key={`${step.from}:${step.event}`}>
-                {step.from} <span className="text-muted-foreground">—{step.event}→</span> {step.to}
-              </li>
-            ))}
-          </ul>
-        </Disclosure>
-      )}
+    )
+  return (
+    <div className="flex flex-wrap gap-1 pl-6 pt-1" data-property-states="">
+      {state.states.map((name) => {
+        const initial = name === state.initial
+        return (
+          <span
+            key={name}
+            data-state-chip={name}
+            data-initial={initial || undefined}
+            title={initial ? `${name}: where every one starts` : name}
+            className="inline-flex items-center gap-1 rounded-full border border-border px-2 font-mono text-[11px] leading-[18px]"
+            style={
+              initial
+                ? {
+                    borderColor: `color-mix(in oklch, ${TONE_COLOR.transition} 45%, transparent)`,
+                  }
+                : undefined
+            }
+          >
+            {initial && (
+              <span
+                aria-label="initial"
+                role="img"
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: TONE_COLOR.transition }}
+              />
+            )}
+            {name}
+          </span>
+        )
+      })}
     </div>
   )
 }

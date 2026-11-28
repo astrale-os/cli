@@ -7,7 +7,7 @@ test('a Domain with no Dataset says what one is, where it is declared, and offer
   const html = renderToStaticMarkup(<NoDataset onAsk={() => {}} />)
   expect(html).toContain('No Dataset referenced')
   expect(html).toContain(
-    'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level draws and the Rules lens decides on.',
+    'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level asks through Queries and decides access on.',
   )
   expect(html).toContain('tests/datasets/&lt;name&gt;.ts')
   expect(html).toContain('@astrale-os/sdk/testing')

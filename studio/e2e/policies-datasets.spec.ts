@@ -20,11 +20,11 @@ import {
 
 /**
  * A Policy judged on a dataset. Selected on the Schema's Rules lens, it is carried into the Data
- * level's Rules lens, on a dataset of its Domain: the panel says how many pairs — an identity of
+ * level's Access tab, on a dataset of its Domain: the panel says how many pairs — an identity of
  * the dataset, or anyone, and a Node or Edge the Policy is decided over — it admits, each pair a
  * sentence; the map lights who it admits to what, and a pair lit, that pair alone; the Kernel's
  * verdicts where the Policy sits pin as Scenario steps. The datasets themselves are cards on the
- * Domain's Datasets page, and the Rules lens's Index lists the Domain's Policies.
+ * Domain's Datasets page, and the Index under Access lists the Domain's Policies.
  *
  * The fixture's `support-desk` dataset holds Acme, Ann and Bob who work there, the ticket each
  * raised (`printer` by Ann, `login` by Bob) and an invoice; `mayReadTicket` admits a ticket's
@@ -36,14 +36,16 @@ const POLICY = `policy.${origin}:policy.mayReadTicket`
 const panel = (page: Page) => page.locator('[data-data-panel]')
 const pair = (page: Page, id: string) => panel(page).locator(`[data-policy-pair="${id}"]`)
 
+/** A Policy's Index row, by its name: its id is `policy.<its Domain's key>:policy.<name>`. */
+const policyRow = (page: Page, name: string) =>
+  indexRail(page).locator(`[data-index-row^="policy."][data-index-row$=":policy.${name}"]`)
+
 /** Opens the Schema's Rules lens and selects a Policy from its Index row. */
 async function selectPolicy(page: Page, name: string) {
   await openSchema(page)
   await page.keyboard.press('3')
   await expect(lensButton(page, 'rules')).toHaveAttribute('aria-pressed', 'true')
-  await indexRail(page)
-    .locator(`[data-index-row^="policy."][data-index-row$=":policy.${name}"]`)
-    .click()
+  await policyRow(page, name).click()
 }
 
 test.describe('a Policy carried to a dataset', () => {
@@ -57,10 +59,10 @@ test.describe('a Policy carried to a dataset', () => {
     await selectPolicy(page, 'mayReadTicket')
     await inspector(page).locator(`[data-policy-on-dataset="${POLICY}"]`).click()
 
-    // the selection carries: the dataset opens under Rules on the Policy
+    // the selection carries: the dataset opens under Access on the Policy
     const level = page.getByTestId('data-level')
     await expect(level).toHaveAttribute('data-state', 'ready')
-    await expect(level).toHaveAttribute('data-lens', 'rules')
+    await expect(level).toHaveAttribute('data-tab', 'access')
     await expect(datasetLabel(page)).toHaveText('Support desk')
     const admits = panel(page).locator('[data-policy-admits]')
     await expect(admits).toHaveAttribute('data-policy-admits', '2/6')
@@ -203,11 +205,12 @@ test('several datasets are cards on their page; the one open says what it holds'
   await expect(sceneBox(page, 'class.Company')).not.toHaveAttribute('data-absent')
   await expect(sceneBox(page, 'class.Ticket')).toHaveAttribute('data-absent', 'true')
 
-  // under Rules, the Index lists the Domain's Policies, each with where it sits
-  await page.keyboard.press('3')
-  const policies = indexRail(page).locator('[data-index-row^="policy."]')
-  await expect(policies.filter({ hasText: 'mayReadTicket' })).toContainText('2 places')
-  await expect(policies.filter({ hasText: 'mayManageInvoice' })).toContainText('1 place')
+  // under Access, the Index lists the Domain's Policies in words, each with where it sits
+  await page.keyboard.press('2')
+  await expect(page.getByTestId('data-level')).toHaveAttribute('data-tab', 'access')
+  await expect(policyRow(page, 'mayReadTicket')).toContainText('2 places')
+  await expect(policyRow(page, 'mayManageInvoice')).toContainText('may manage Invoice')
+  await expect(policyRow(page, 'mayManageInvoice')).toContainText('1 place')
 })
 
 test('a Domain that references no dataset says so on Data, which opens a page with none to open', async ({

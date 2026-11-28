@@ -5,7 +5,8 @@ import { ANYONE } from '@shared/contracts/scenarios'
 import { publishedDomainId } from '@shared/contracts/versions'
 import { describe, expect, test } from 'bun:test'
 
-import { isDataLens, LENS_KEYS } from '@/studio/lenses/keys'
+import { DATA_TABS } from '@/studio/data/tabs'
+import { LENS_KEYS } from '@/studio/lenses/keys'
 
 import {
   type Address,
@@ -93,18 +94,18 @@ describe('an address reads back as the place it was written from', () => {
         }
   })
 
-  test('the Data level, in each lens it reads, with each view', () => {
-    for (const lens of [undefined, ...LENS_KEYS.filter(isDataLens)])
+  test('the Data level, in each of its tabs, with each view', () => {
+    for (const tab of [undefined, ...DATA_TABS])
       for (const view of DATA_VIEWS)
         for (const dataset of [undefined, DATASET]) {
           const address: Address = {
             level: 'data',
             domainId: ISSUES,
             ...(dataset ? { dataset } : {}),
-            ...(lens ? { lens } : {}),
+            ...(tab ? { tab } : {}),
             view,
           }
-          expect([lens, view, roundTrip(address)]).toEqual([lens, view, { address }])
+          expect([tab, view, roundTrip(address)]).toEqual([tab, view, { address }])
         }
   })
 
@@ -133,11 +134,11 @@ describe('an address reads back as the place it was written from', () => {
         level: 'data',
         domainId: ISSUES,
         dataset: DATASET,
-        lens: 'behavior',
+        tab: 'scenarios',
         view: { scenario: 'desk', step: 's2', identity: 'ann', selected: 'core.node.acme' },
       }),
     ).toBe(
-      '/domain/issues/data?dataset=.%2Ftests%2Fdatasets%2Ftriage.ts&lens=behavior&select=core.node.acme&as=ann&scenario=desk&step=s2',
+      '/domain/issues/data?dataset=.%2Ftests%2Fdatasets%2Ftriage.ts&tab=scenarios&select=core.node.acme&as=ann&scenario=desk&step=s2',
     )
     // the parameters keep one order: equal places format equal, whatever order they were set in
     expect(
@@ -188,21 +189,21 @@ describe('an address that names no place says what it named', () => {
     })
   })
 
-  test('the retired Tests place lands on the Data level, the same dataset under Rules, and says so', () => {
+  test('the retired Tests place lands on the Data level, the same dataset under Access, and says so', () => {
     expect(parseAddress('/domain/issues/tests', `?dataset=${encodeURIComponent(DATASET)}`)).toEqual(
       {
-        address: { level: 'data', domainId: ISSUES, dataset: DATASET, lens: 'rules', view: {} },
+        address: { level: 'data', domainId: ISSUES, dataset: DATASET, tab: 'access', view: {} },
         retired: 'Tests',
       },
     )
     expect(parseAddress('/domain/issues/tests', '')).toEqual({
-      address: { level: 'data', domainId: ISSUES, lens: 'rules', view: {} },
+      address: { level: 'data', domainId: ISSUES, tab: 'access', view: {} },
       retired: 'Tests',
     })
     // nothing writes it back: the place it lands on has its own address
     expect(
-      formatAddress({ level: 'data', domainId: ISSUES, dataset: DATASET, lens: 'rules', view: {} }),
-    ).toBe('/domain/issues/data?dataset=.%2Ftests%2Fdatasets%2Ftriage.ts&lens=rules')
+      formatAddress({ level: 'data', domainId: ISSUES, dataset: DATASET, tab: 'access', view: {} }),
+    ).toBe('/domain/issues/data?dataset=.%2Ftests%2Fdatasets%2Ftriage.ts&tab=access')
   })
 
   test('a lens the Studio does not have reads the place without it, and is named', () => {
@@ -212,10 +213,17 @@ describe('an address that names no place says what it named', () => {
     })
   })
 
-  test('a lens only the Schema answers reads the Data level without it, and is named', () => {
-    expect(parseAddress('/domain/issues/data', `?dataset=${DATASET}&lens=views`)).toEqual({
-      address: { level: 'data', domainId: ISSUES, dataset: DATASET, view: {} },
-      unread: 'Views',
+  test('a tab the Data level does not have reads the dataset without it, and is named', () => {
+    expect(
+      parseAddress('/domain/issues/data', `?dataset=${DATASET}&tab=timeline&select=core.node.acme`),
+    ).toEqual({
+      address: {
+        level: 'data',
+        domainId: ISSUES,
+        dataset: DATASET,
+        view: { selected: 'core.node.acme' },
+      },
+      unknown: 'the tab “timeline”',
     })
   })
 })
@@ -225,6 +233,7 @@ describe('the address of what is shown', () => {
     level: 'domain' as const,
     domainId: ISSUES,
     lens: 'structure' as const,
+    dataTab: 'query' as const,
     dataset: null,
   }
 
@@ -262,7 +271,7 @@ describe('the address of what is shown', () => {
       addressOf({
         ...shown,
         level: 'data',
-        lens: 'rules',
+        dataTab: 'access',
         dataset: DATASET,
         view: { identity: ANYONE, selected: 'core.node.acme', step: 'lost' },
       }),
@@ -270,7 +279,7 @@ describe('the address of what is shown', () => {
       level: 'data',
       domainId: ISSUES,
       dataset: DATASET,
-      lens: 'rules',
+      tab: 'access',
       view: { selected: 'core.node.acme' },
     })
   })
@@ -286,13 +295,16 @@ describe('Back and Forward walk places, not selections', () => {
   const data = (input: Partial<Extract<Address, { level: 'data' }>> = {}): Address => ({
     level: 'data',
     domainId: ISSUES,
-    lens: 'structure',
+    tab: 'query',
     view: {},
     ...input,
   })
 
-  test('a lens, a level, a Domain or a dataset is a new place', () => {
+  test('a lens, a tab, a level, a Domain or a dataset is a new place', () => {
     expect(isNewPlace(schema(), schema({ lens: 'rules' }))).toBe(true)
+    expect(isNewPlace(data({ dataset: DATASET }), data({ dataset: DATASET, tab: 'access' }))).toBe(
+      true,
+    )
     expect(isNewPlace(schema(), { level: 'workspace' })).toBe(true)
     expect(isNewPlace({ level: 'workspace' }, schema())).toBe(true)
     expect(isNewPlace(schema(), schema({ domainId: PUBLICATION }))).toBe(true)
@@ -318,11 +330,11 @@ describe('Back and Forward walk places, not selections', () => {
     ).toBe(false)
   })
 
-  test('a place said more fully is the same place: the lens written', () => {
+  test('a place said more fully is the same place: the lens or the tab written', () => {
     expect(isNewPlace(schema({ lens: undefined }), schema())).toBe(false)
-    expect(
-      isNewPlace(data({ dataset: DATASET, lens: undefined }), data({ dataset: DATASET })),
-    ).toBe(false)
+    expect(isNewPlace(data({ dataset: DATASET, tab: undefined }), data({ dataset: DATASET }))).toBe(
+      false,
+    )
     // and said less fully, it is a new one: the reader asked for it
     expect(isNewPlace(schema(), schema({ lens: undefined }))).toBe(true)
   })
@@ -332,7 +344,7 @@ describe('Back and Forward walk places, not selections', () => {
     expect(isNewPlace(data({ dataset: DATASET }), data({ dataset: undefined }))).toBe(true)
     expect(isNewPlace(data({ dataset: undefined }), data({ dataset: undefined }))).toBe(false)
     expect(
-      isNewPlace(data({ dataset: undefined, lens: undefined }), data({ dataset: undefined })),
+      isNewPlace(data({ dataset: undefined, tab: undefined }), data({ dataset: undefined })),
     ).toBe(false)
   })
 
@@ -342,6 +354,9 @@ describe('Back and Forward walk places, not selections', () => {
       domainId: ISSUES,
       lens: 'structure',
     })
+    expect(
+      placeOf(data({ dataset: DATASET, tab: 'access', view: { selected: 'core.node.acme' } })),
+    ).toEqual({ level: 'data', domainId: ISSUES, dataset: DATASET, tab: 'access' })
     expect(placeOf({ level: 'workspace', map: 'domain:issues' })).toEqual({ level: 'workspace' })
   })
 })

@@ -49,7 +49,7 @@ test('a Domain with no Dataset is told what one is, where it is declared, and of
   expect(html).toContain('data-testid="datasets-page" data-state="none"')
   expect(html).toContain('No Dataset referenced')
   expect(html).toContain(
-    'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level draws and the Rules lens decides on.',
+    'A Dataset is a small graph of Nodes and Edges, written in code, that the Data level asks through Queries and decides access on.',
   )
   // the two lines that declare one: the module, and the line of the configuration that lists it
   expect(html).toContain('tests/datasets/&lt;name&gt;.ts')
@@ -71,7 +71,9 @@ test('a Domain with no Dataset is told what one is, where it is declared, and of
 test('each Dataset is a card: its title, module, what it holds and how it stands, to open', () => {
   const html = page({ entries: [desk, stale] })
   expect(html).toContain('data-state="some"')
-  expect(html).toContain('This Domain references 2 Datasets: open one to read it')
+  expect(html).toContain(
+    'This Domain references 2 Datasets: open one to query it and read who may access what.',
+  )
   expect(html).not.toContain('data-action="ask-dataset"')
   const listed = cards(html)
   expect([...listed.keys()]).toEqual([desk.path, stale.path])

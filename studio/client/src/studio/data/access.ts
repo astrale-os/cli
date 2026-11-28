@@ -484,13 +484,7 @@ function decide(
     const outcome = outcomeOf(result)
     if (outcome === undefined)
       return verdict(ask, who, 'unknown', by, 'The rule decides no permission here.')
-    return verdict(
-      ask,
-      who,
-      outcome,
-      by,
-      outcome === 'refused' ? refusedWhy : 'Its condition holds on this dataset.',
-    )
+    return verdict(ask, who, outcome, by, outcome === 'refused' ? refusedWhy : '')
   }
   const checked = checkRule(site, access.data, asked)
   if (checked.status === 'unread')
@@ -513,16 +507,7 @@ function decide(
       decided,
     })
   const path = pathOf(access, proof.edges)
-  return verdict(
-    ask,
-    who,
-    'allowed',
-    by,
-    path.length > 0
-      ? 'Its condition holds through the Edges below.'
-      : 'Its condition holds on this dataset.',
-    { path, proof, decided },
-  )
+  return verdict(ask, who, 'allowed', by, '', { path, proof, decided })
 }
 
 /**

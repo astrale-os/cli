@@ -1,5 +1,5 @@
 /**
- * Pinning a verdict: beside each verdict the Rules lens decides, a menu adds it to one of the
+ * Pinning a verdict: beside each verdict Access decides, a menu adds it to one of the
  * dataset's Scenarios, or to a new one, as a step that expects it as it stands. A verdict that
  * can't tell is not pinned: no step can expect it. A Scenario that already asks the same is
  * marked, and not offered twice.

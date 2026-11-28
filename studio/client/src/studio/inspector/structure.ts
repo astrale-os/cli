@@ -24,6 +24,7 @@ import {
 import { moduleHues, moduleLabel, moduleOfMember } from '../../schema-studio/modules'
 import { endsHolding } from '../lenses/deletion'
 import { type Lifetime, lifetimesOf } from '../lenses/lifetimes'
+import { isIdentityClass } from '../lenses/structure'
 import { type DomainRules, ruleView, sitesOn } from '../rules/model'
 import {
   articleOf,
@@ -53,6 +54,8 @@ export interface ClassLink {
   readonly relationship?: true
   /** its module's hue; none for a Class at the Schema's root or of another Domain */
   readonly hue?: number
+  /** it is or extends Kernel Identity: with no icon of its own it wears the identity's glyph */
+  readonly identity?: true
 }
 
 /** A piece of a sentence: words, or a Class said by a name that opens it. */
@@ -243,6 +246,7 @@ export function classLink(bundle: StudioSchemaBundle, ref: IrClassRef): ClassLin
     ...(cls?.icon === undefined ? {} : { icon: cls.icon }),
     ...(relationship ? { relationship: true as const } : {}),
     ...(hue === undefined ? {} : { hue }),
+    ...(!relationship && isIdentityClass(bundle, ref) ? { identity: true as const } : {}),
   }
 }
 
