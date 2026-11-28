@@ -40,6 +40,7 @@ import type { Pinning } from './pin'
 
 import { DOCK_CLEARANCE, TOOLBAR_CLEARANCE } from '../../schema-studio/palette'
 import { PanelOpener, PanelShell } from '../../schema-studio/panel-shell'
+import { GLYPHS } from '../canvas/glyphs'
 import { SceneCanvas } from '../canvas/scene-canvas'
 import { useCanvas } from '../canvas/store'
 import { useLensPins } from '../canvas/use-lens-pins'
@@ -49,6 +50,10 @@ import { arrange, arrangementKey } from '../scene/arrange'
 import { isolateScene } from '../scene/focus'
 import { useStage } from '../stage/store'
 import { accessOf, edgeVerdict, edgesOf, nodeVerdicts } from './access'
+import { AskLevel } from './ask/ask-level'
+import { BarLine, DataBar } from './ask/question-bar'
+import { scaled } from './ask/scale'
+import { useAsk, useAskView } from './ask/store'
 import { BehaviorPanel, StepsInvolving } from './behavior-panel'
 import { DatasetLabel } from './dataset-label'
 import { IdentityPicker } from './identity-picker'
@@ -168,11 +173,15 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
   else if (found.status === 'missing')
     body = <Status title={`This Domain declares no dataset ${datasetPath}.`} />
   else if (bundle.isPending) body = wait(`Reading the Schema of ${origin}`)
+  else if (lens === 'structure' && bundle.data?.ir)
+    // Through Structure a dataset is asked, never drawn whole (`ask/ask-level.tsx`).
+    return (
+      <AskLevel domainId={domainId} origin={origin} dataset={found.dataset} bundle={bundle.data} />
+    )
   else
     return (
       <DatasetLevel
         domainId={domainId}
-        origin={origin}
         dataset={found.dataset}
         bundle={bundle.data}
         bundleError={bundle.isError ? bundle.error : undefined}
@@ -197,21 +206,27 @@ export function DataLevel({ domainId, origin, datasetPath, lens, since }: DataLe
 
 function DatasetLevel({
   domainId,
-  origin,
   dataset,
   bundle,
   bundleError,
   lens,
 }: {
   domainId: string
-  origin: string
   dataset: StudioDataset
   bundle?: StudioSchemaBundle
   bundleError?: unknown
   lens: LensKey
 }) {
   const dataLens: DataLens = lens
-  const model = useMemo(() => datasetModel(dataset, bundle), [bundle, dataset])
+  const scope = datasetScope(domainId, dataset.id)
+  // The size the dataset is read at is the reader's, the same through every lens (`ask/scale.ts`).
+  const factor = useAskView(scope).factor
+  const setFactor = useAsk((state) => state.setFactor)
+  const openDataLevel = useUI((state) => state.openDataLevel)
+  const model = useMemo(
+    () => datasetModel(bundle?.ir ? scaled(dataset, bundle, factor) : dataset, bundle),
+    [bundle, dataset, factor],
+  )
   // Rules decide against one moment: the same verdicts while the dataset is read.
   const [now] = useState(() => new Date().toISOString())
   const decided = useMemo(
@@ -222,7 +237,6 @@ function DatasetLevel({
   const unread = decided && 'status' in decided ? decided : undefined
   const identities = useMemo(() => new Set(access?.identities.map((one) => one.id)), [access])
 
-  const scope = datasetScope(domainId, dataset.id)
   const view = useDatasetView(scope)
   const reveal = useDataView((state) => state.reveal)
   const panelOpen = useDataView((state) => state.panelOpen)
@@ -752,52 +766,82 @@ function DatasetLevel({
           onClearSelection={() => select(scope, undefined)}
           dataLevel
         />
-        <div
-          className="relative min-w-0 flex-1"
-          {...(behavior ? { 'data-testid': 'data-behavior' } : {})}
-        >
-          {
-            <SceneCanvas
-              key={`${domainId}:${dataset.id}`}
-              scene={shown}
-              arrangement={arrangement}
-              domainId={domainId}
-              selected={selected}
-              spotlight={spotlight}
-              {...(walk ? { walk } : {})}
-              // A step or a verdict lights the Edges its proof names, not every one between them.
-              spotlightLinks={behavior || selected ? 'named' : 'among'}
-              revealTarget={reveal}
-              isolated={isolated ? isolatedId : undefined}
-              insets={insets}
-              pins={pins}
-              onPlace={onPlace}
-              onAutoArrange={lensPins.size > 0 && !isolated ? onAutoArrange : undefined}
-              onFrame={onFrame}
-              onSelect={onSelect}
-              onRevealed={revealed}
-              onToggleGroup={onToggleGroup}
-              onIsolate={onIsolate}
-              lensControls={() => <DatasetLabel name={datasetLabel(dataset)} origin={origin} />}
-              lens={dataLens}
-              // A new reading — the lens, the selection, the identity's marks, the step — frames the map again.
-              frameToken={`${dataLens}|${selected ?? ''}|${dataLens === 'rules' ? `${identity}:${complete ? 'read' : ''}` : ''}|${behavior ? (step?.step.id ?? open?.scenario.id ?? '') : ''}`}
-            />
-          }
-          {lens === 'rules' && (
-            <IdentityPicker
-              model={model}
-              identities={access?.identities ?? []}
-              identity={identity}
-              label={identityLabel(model, identity)}
-              anyone={access?.anyone !== undefined}
-              {...(policy ? { setAside: policy.name } : reads ? { reads } : {})}
-              onPick={(next) => setIdentity(scope, next)}
-              onSelectClass={(target) => selectAndReveal(target)}
-              {...(foot > 0 ? { bottom: foot } : {})}
-            />
-          )}
-          {!panelOpen && <PanelOpener label="Dataset panel" onOpen={() => setPanelOpen(true)} />}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <DataBar
+            datasetName={datasetLabel(dataset)}
+            nodes={model.order.length}
+            edges={model.edges.length}
+            factor={factor}
+            onFactor={(next) => setFactor(scope, next)}
+            onDatasets={() => openDataLevel(null)}
+          >
+            {behavior ? (
+              <BarLine glyph={GLYPHS.function} title="What a call does">
+                {open
+                  ? `${open.scenario.name} · ${open.steps.length} ${open.steps.length === 1 ? 'step' : 'steps'}, each judged on this dataset`
+                  : 'open a Scenario in the panel, or select a Node to read the steps that involve it'}
+              </BarLine>
+            ) : (
+              <BarLine
+                glyph={GLYPHS.policy}
+                title={`What ${identityLabel(model, identity)} may read`}
+              >
+                {policy
+                  ? `set aside while the Policy ${policy.name} is selected`
+                  : reads && reads.pending === 0
+                    ? `${reads.total.allowed} of ${reads.total.total} Nodes${reads.total.unknown > 0 ? ` · ${reads.total.unknown} the rules cannot tell` : ''}`
+                    : access
+                      ? 'deciding…'
+                      : 'no rule of the Domain can be read'}
+              </BarLine>
+            )}
+          </DataBar>
+          <div
+            className="relative min-h-0 flex-1"
+            {...(behavior ? { 'data-testid': 'data-behavior' } : {})}
+          >
+            {
+              <SceneCanvas
+                key={`${domainId}:${dataset.id}`}
+                scene={shown}
+                arrangement={arrangement}
+                domainId={domainId}
+                selected={selected}
+                spotlight={spotlight}
+                {...(walk ? { walk } : {})}
+                // A step or a verdict lights the Edges its proof names, not every one between them.
+                spotlightLinks={behavior || selected ? 'named' : 'among'}
+                revealTarget={reveal}
+                isolated={isolated ? isolatedId : undefined}
+                insets={insets}
+                pins={pins}
+                onPlace={onPlace}
+                onAutoArrange={lensPins.size > 0 && !isolated ? onAutoArrange : undefined}
+                onFrame={onFrame}
+                onSelect={onSelect}
+                onRevealed={revealed}
+                onToggleGroup={onToggleGroup}
+                onIsolate={onIsolate}
+                lens={dataLens}
+                // A new reading — the lens, the selection, the identity's marks, the step — frames the map again.
+                frameToken={`${dataLens}|${selected ?? ''}|${dataLens === 'rules' ? `${identity}:${complete ? 'read' : ''}` : ''}|${behavior ? (step?.step.id ?? open?.scenario.id ?? '') : ''}`}
+              />
+            }
+            {lens === 'rules' && (
+              <IdentityPicker
+                model={model}
+                identities={access?.identities ?? []}
+                identity={identity}
+                label={identityLabel(model, identity)}
+                anyone={access?.anyone !== undefined}
+                {...(policy ? { setAside: policy.name } : reads ? { reads } : {})}
+                onPick={(next) => setIdentity(scope, next)}
+                onSelectClass={(target) => selectAndReveal(target)}
+                {...(foot > 0 ? { bottom: foot } : {})}
+              />
+            )}
+            {!panelOpen && <PanelOpener label="Dataset panel" onOpen={() => setPanelOpen(true)} />}
+          </div>
         </div>
         {panelOpen && (
           <PanelShell onClose={() => (selected ? select(scope, undefined) : setPanelOpen(false))}>

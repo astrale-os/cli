@@ -15,6 +15,8 @@ import {
   type LucideIcon,
   PencilLine,
   Plug,
+  Ruler,
+  Search,
   ShieldCheck,
   Spline,
   SquareFunction,
@@ -36,6 +38,8 @@ export const GLYPHS: Record<SceneGlyph, LucideIcon> = {
   constraint: ListChecks,
   precondition: ClipboardCheck,
   scenario: ListTodo,
+  query: Search,
+  measure: Ruler,
 }
 
 /** The pictogram each lens option's toggle wears: what turning it on draws. */

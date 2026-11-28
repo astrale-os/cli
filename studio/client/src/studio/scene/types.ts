@@ -193,6 +193,8 @@ export type SceneGlyph =
   | 'constraint'
   | 'precondition'
   | 'scenario'
+  | 'query'
+  | 'measure'
 
 export interface SceneIcon {
   /** Authored SVG markup; the renderer sanitizes it. Wins over `glyph`. */

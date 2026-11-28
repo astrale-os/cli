@@ -114,16 +114,36 @@ only a Domain drawn whole declares is let go on leaving Structure.
 **Data level**, one dataset of a Domain. **Data** opens the dataset last read on the Domain while
 the Domain still declares it, else the Domain's one readable dataset, else its **Datasets** page,
 which lists every dataset with why one cannot be read, or says what a Dataset is when there is
-none. The dataset last read is kept per Domain in the browser. The open dataset's name stands at
-the top left of the canvas in the Data accent, which also marks the switch's Data segment and the
-Index; clicked, it opens the Datasets page. **Schema** comes back with the lens and the selection
-kept. A Publication carries no dataset: its Data segment is disabled and says so.
+none. The dataset last read is kept per Domain in the browser. **Schema** comes back with the lens
+and the selection kept. A Publication carries no dataset: its Data segment is disabled and says so.
+
+A bar stands over the map through every lens. Its first line names the open dataset in the Data
+accent, which also marks the switch's Data segment and the Index (clicked, the name opens the
+Datasets page), says how many Nodes and Edges it holds, and sets the size it is read at. Its second
+line is the question the lens answers.
+
+> A dataset read at ×20 or ×100 is **faked**: the dataset as written, laid down that many times
+> with its identities shared, to read the level at a size nobody wrote by hand. It is not a
+> generated dataset, and the bar says so.
 
 | Lens | What it draws |
 | --- | --- |
-| Structure | Each Node as a card in its Class's region, each Edge as a link. A dataset too large to read whole opens with every region folded. |
+| Structure | Never the dataset whole. At rest, the dataset **measured against its Schema**: each Class with the Nodes it holds, each relationship with its Edges and, at each end, the links a Node really has against what the end declares; an end a Node breaks warns. The Index lists the Domain's **Queries**; one picked is **asked**: the map draws the slice it reaches from the Nodes its parameters hold, and the panel lists its answer. |
 | Rules | The dataset read as one of its identities, or as anyone: per Node and per Edge, what that identity may do and by which rule. Each verdict can be pinned to a Scenario. The Index also lists the Domain's Policies: one selected says how many pairs (an identity, or anyone, and a Node or Edge it is decided over) it admits, each pair a sentence, and the map lights what it admits. A Policy selected on the Schema's Rules lens opens here on a dataset of its Domain. |
 | Behavior | The dataset's Scenarios, each step judged on the dataset as written. |
+
+**Asking a Query.** Each parameter of the Query is a chip on the bar. A chip holds a Node, several,
+or a value; opened, it lists what it can take with what asking with each gives, and a value's chip
+lists the values the dataset holds for the Property it is compared with. A parameter the Query
+requires is filled when the Query opens: with the Node selected on the map when it takes one, else
+a Node the dataset names by a variable, else the one whose answer is fullest; an answer too large to
+read holds one optional parameter the same way. A value the Studio picked wears a mark and says why,
+and is changed like any other. **Read as** asks as one of the dataset's identities: the answer keeps
+what that identity may read, and counts what it withholds.
+
+> Asking is **approximate**: the Studio runs no Kernel. The answer follows what the Query reads
+> from the Nodes its parameters hold; the Query's own filters beyond those values, its order and
+> its bounds are not applied. A parameter the source reading cannot place is shown and not applied.
 
 The Data level does not read Views: a View renders on an instance, not over a dataset. Its tab
 stays in the switch, disabled, and says so.
