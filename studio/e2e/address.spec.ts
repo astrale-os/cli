@@ -1,10 +1,10 @@
 import type { APIRequestContext } from '@playwright/test'
 
-import type { Scenario, ScenarioStore } from '../shared/contracts/scenarios'
+import type { Scenario } from '../shared/contracts/scenarios'
 import type { StudioDatasets } from '../shared/contracts/schema'
 
-import { revisionOf } from '../shared/contracts/scenarios'
 import {
+  clearScenarios,
   expect,
   FIXTURE_ID,
   indexRow,
@@ -12,6 +12,7 @@ import {
   levelButton,
   openSchema,
   sceneBox,
+  scenariosRoute,
   test,
   type Page,
 } from './test'
@@ -124,16 +125,6 @@ test('a Schema address naming what is gone lands on what holds it, and says so o
 
 // ─── The Data level ───────────────────────────────────────────────────────────
 
-const scenarios = `/api/domain/${encodeURIComponent(FIXTURE_ID)}/scenarios`
-
-async function clearScenarios(request: APIRequestContext) {
-  const store = (await (await request.get(scenarios)).json()) as ScenarioStore
-  for (const scenario of store.scenarios)
-    await request.post(scenarios, {
-      data: { action: 'delete', id: scenario.id, revision: revisionOf(store, scenario.id) },
-    })
-}
-
 /** The fixture's Support desk, by the module path the address names it with. */
 async function supportDesk(request: APIRequestContext): Promise<string> {
   const answer = (await (
@@ -170,7 +161,7 @@ test.describe('the Data level', () => {
 
   test('is addressed by its dataset, lens, open Scenario and step', async ({ page, request }) => {
     const dataset = await supportDesk(request)
-    const put = await request.post(scenarios, {
+    const put = await request.post(scenariosRoute, {
       data: { action: 'put', scenario: walk(dataset), revision: 0 },
     })
     expect(put.ok()).toBe(true)
@@ -222,7 +213,7 @@ test.describe('the Data level', () => {
     request,
   }) => {
     const dataset = await supportDesk(request)
-    await request.post(scenarios, {
+    await request.post(scenariosRoute, {
       data: { action: 'put', scenario: walk(dataset), revision: 0 },
     })
     const data = `${DOMAIN}/data?dataset=${encodeURIComponent(dataset)}`
@@ -240,7 +231,9 @@ test.describe('the Data level', () => {
     await expect.poll(() => here(page)).toBe(`${data}&lens=behavior&scenario=address-walk`)
 
     await page.goto(`${data}&lens=structure&select=core.node.carol&as=carol`)
-    await expect(sceneBox(page, 'core.node.acme')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('data-level')).toHaveAttribute('data-ask', 'measure', {
+      timeout: 60_000,
+    })
     await reportedOnce(
       page,
       'The address names the Node carol and the identity carol, which Support desk does not hold: the dataset is open without them.',

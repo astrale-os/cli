@@ -1,10 +1,7 @@
-import type { APIRequestContext } from '@playwright/test'
-
-import type { ScenarioStore } from '../shared/contracts/scenarios'
 import type { StudioDataset } from '../shared/contracts/schema'
 
-import { revisionOf } from '../shared/contracts/scenarios'
 import {
+  clearScenarios,
   datasetCard,
   datasetLabel,
   FIXTURE_ID,
@@ -16,6 +13,7 @@ import {
   openDatasetCard,
   openSchema,
   sceneBox,
+  storedScenarios,
   test,
   type Page,
 } from './test'
@@ -35,17 +33,8 @@ import {
 
 const origin = 'crm.studio-demo.astrale.ai'
 const POLICY = `policy.${origin}:policy.mayReadTicket`
-const scenarios = `/api/domain/${encodeURIComponent(FIXTURE_ID)}/scenarios`
 const panel = (page: Page) => page.locator('[data-data-panel]')
 const pair = (page: Page, id: string) => panel(page).locator(`[data-policy-pair="${id}"]`)
-
-async function clearScenarios(request: APIRequestContext) {
-  const store = (await (await request.get(scenarios)).json()) as ScenarioStore
-  for (const scenario of store.scenarios)
-    await request.post(scenarios, {
-      data: { action: 'delete', id: scenario.id, revision: revisionOf(store, scenario.id) },
-    })
-}
 
 /** Opens the Schema's Rules lens and selects a Policy from its Index row. */
 async function selectPolicy(page: Page, name: string) {
@@ -111,12 +100,11 @@ test.describe('a Policy carried to a dataset', () => {
     await verdicts.locator('[data-verdict-pin="read:login"]').click()
     await page.locator('[data-pin-menu="read:login"] [data-pin-new]').click()
     await expect
-      .poll(async () => {
-        const store = (await (await request.get(scenarios)).json()) as ScenarioStore
-        return store.scenarios.flatMap((scenario) =>
+      .poll(async () =>
+        (await storedScenarios(request)).flatMap((scenario) =>
           scenario.steps.map(({ does, on, as, expect }) => ({ does, on, as, expect })),
-        )
-      })
+        ),
+      )
       .toEqual([{ does: 'read', on: { node: 'login' }, as: 'ann', expect: 'refused' }])
 
     // the address carries the Policy and the pair lit: a reload lands on both
@@ -200,16 +188,20 @@ test('several datasets are cards on their page; the one open says what it holds'
   await expect(datasetCard(page, 'tests/scenario-0.ts')).toContainText('Description of scenario 0')
   await openDatasetCard(page, 'tests/scenario-0.ts')
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
-  await expect(panel(page)).toContainText('Description of scenario 0')
+  // the dataset opens measured against its Schema
+  const measure = page.locator('[data-ask-page="measure"]')
+  await expect(measure).toContainText('Description of scenario 0')
 
   // the label leads back to the page: a button, no menu of datasets
   await expect(datasetLabel(page)).not.toHaveAttribute('aria-haspopup')
   await datasetLabel(page).click()
   await expect(page.getByRole('menu')).toHaveCount(0)
   await openDatasetCard(page, 'tests/scenario-1.ts')
-  await expect(panel(page)).toContainText('Description of scenario 1')
-  await expect(panel(page)).not.toContainText('Description of scenario 0')
-  await expect(sceneBox(page, 'core.node.company-1')).toBeVisible()
+  await expect(measure).toContainText('Description of scenario 1')
+  await expect(measure).not.toContainText('Description of scenario 0')
+  // its one Company counts on the Company card; a Class it holds no Node of stands quiet
+  await expect(sceneBox(page, 'class.Company')).not.toHaveAttribute('data-absent')
+  await expect(sceneBox(page, 'class.Ticket')).toHaveAttribute('data-absent', 'true')
 
   // under Rules, the Index lists the Domain's Policies, each with where it sits
   await page.keyboard.press('3')

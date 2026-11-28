@@ -1,16 +1,12 @@
-import type { APIRequestContext } from '@playwright/test'
-
-import type { ScenarioStore } from '../shared/contracts/scenarios'
-
-import { revisionOf } from '../shared/contracts/scenarios'
 import {
-  FIXTURE_ID,
+  clearScenarios,
   expect,
   indexRail,
   indexRow,
-  levelButton,
-  openSchema,
+  openSupportDesk,
   sceneBox,
+  scenariosRoute,
+  storedScenarios,
   test,
   type Page,
 } from './test'
@@ -25,32 +21,8 @@ import {
  * no Payment.
  */
 
-const route = `/api/domain/${encodeURIComponent(FIXTURE_ID)}/scenarios`
-
-/** The suite's reset keeps `scenarios.json`: each run starts and ends with none. */
-async function clearScenarios(request: APIRequestContext) {
-  const store = (await (await request.get(route)).json()) as ScenarioStore
-  for (const scenario of store.scenarios) {
-    const response = await request.post(route, {
-      data: { action: 'delete', id: scenario.id, revision: revisionOf(store, scenario.id) },
-    })
-    expect(response.ok()).toBe(true)
-  }
-}
-
-const stored = async (request: APIRequestContext) =>
-  ((await (await request.get(route)).json()) as ScenarioStore).scenarios
-
 test.beforeEach(async ({ request }) => clearScenarios(request))
 test.afterEach(async ({ request }) => clearScenarios(request))
-
-/** Support desk is the one dataset of the fixture it can read: Data opens it. */
-async function openSupportDesk(page: Page) {
-  await openSchema(page)
-  await levelButton(page, 'data').click()
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
-  await expect(sceneBox(page, 'core.node.acme')).toBeVisible()
-}
 
 const panel = (page: Page) => page.locator('[data-data-panel]')
 const lens = (page: Page) => page.getByTestId('data-level')
@@ -94,7 +66,9 @@ test('verdicts pinned from Rules make a Scenario that Behavior judges again, ste
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
 
-  await expect.poll(async () => (await stored(request)).map((one) => one.steps.length)).toEqual([2])
+  await expect
+    .poll(async () => (await storedScenarios(request)).map((one) => one.steps.length))
+    .toEqual([2])
 
   // in Behavior the selected Node offers the steps that involve it
   await page.keyboard.press('2')
@@ -179,7 +153,7 @@ test('verdicts pinned from Rules make a Scenario that Behavior judges again, ste
   )
 
   await expect
-    .poll(async () => (await stored(request))[0]?.steps.map((one) => one.expect))
+    .poll(async () => (await storedScenarios(request))[0]?.steps.map((one) => one.expect))
     .toEqual(['allowed', 'refused'])
 
   // reloaded, everything is where it was left
@@ -207,13 +181,15 @@ test('verdicts pinned from Rules make a Scenario that Behavior judges again, ste
   await panel(page).locator('[data-scenario-delete]').click()
   await expect(panel(page).locator('[data-scenario-empty]')).toBeVisible()
   await expect(listed).toHaveCount(0)
-  await expect.poll(async () => (await stored(request)).length).toBe(0)
+  await expect.poll(async () => (await storedScenarios(request)).length).toBe(0)
   await toastOf(page, 'Scenario Ann reads login deleted')
     .getByRole('button', { name: 'Undo' })
     .click()
   await expect(listed).toHaveCount(1)
   await expect(listed).toContainText('1 of 2 as expected')
-  await expect.poll(async () => (await stored(request)).map((one) => one.steps.length)).toEqual([2])
+  await expect
+    .poll(async () => (await storedScenarios(request)).map((one) => one.steps.length))
+    .toEqual([2])
 })
 
 test('a Scenario written in another window reaches this one without a reload', async ({
@@ -226,7 +202,7 @@ test('a Scenario written in another window reaches this one without a reload', a
   await expect(panel(page).locator('[data-scenario-empty]')).toBeVisible()
 
   // another window writes one through the same route
-  const written = await request.post(route, {
+  const written = await request.post(scenariosRoute, {
     data: {
       action: 'put',
       revision: 0,
@@ -244,7 +220,7 @@ test('a Scenario written in another window reaches this one without a reload', a
   await expect(row.locator('[data-scenario-standing]')).toHaveText('1 of 1 as expected')
 
   // and one deleted there leaves this one too
-  const deleted = await request.post(route, {
+  const deleted = await request.post(scenariosRoute, {
     data: { action: 'delete', id: 'written-elsewhere', revision: 1 },
   })
   expect(deleted.ok()).toBe(true)

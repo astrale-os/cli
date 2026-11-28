@@ -5,6 +5,8 @@ export const FIXTURE_ID = workspaceKey(resolve(import.meta.dirname, 'fixture'))
 export const PEER_ID = workspaceKey(resolve(import.meta.dirname, 'fixture/peer'))
 
 import type { AgentRun, ChatInfo, ChatList } from '@shared/contracts/agent'
+import type { Scenario, ScenarioStore } from '@shared/contracts/scenarios'
+import type { DefinitionLink } from '@shared/contracts/schema'
 
 import {
   expect,
@@ -13,6 +15,7 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test'
+import { revisionOf } from '@shared/contracts/scenarios'
 import {
   WORKSPACE_MAP_ID,
   type WorkspacePanelUiState,
@@ -149,6 +152,18 @@ export async function openSchema(page: Page): Promise<void> {
   await expect(sceneBox(page, 'class.Invoice')).toBeVisible({ timeout: 60_000 })
 }
 
+/**
+ * Open the fixture's Data level from its Schema and wait for the dataset to be read. Support desk
+ * is the one dataset the fixture can read: Data opens it, through the lens last read.
+ */
+export async function openSupportDesk(page: Page): Promise<void> {
+  await openSchema(page)
+  await levelButton(page, 'data').click()
+  const level = page.getByTestId('data-level')
+  await expect(level).toHaveAttribute('data-state', 'ready')
+  await expect(level).toHaveAttribute('data-dataset', 'support-desk')
+}
+
 type Rect = { x: number; y: number; width: number; height: number }
 
 /**
@@ -212,10 +227,35 @@ export async function fixtureBundle(request: APIRequestContext): Promise<{
       { type: 'node' | 'edge'; abstract?: boolean; endpoints?: { name: string; types: string[] }[] }
     >
   }
+  overlay: { definitions: DefinitionLink[] }
 }> {
   const response = await request.get(`/api/domain/${encodeURIComponent(FIXTURE_ID)}/bundle`)
   expect(response.ok()).toBe(true)
   return response.json()
+}
+
+// ─── Scenarios ─────────────────────────────────────────────────────────────────
+
+/** Where the fixture Domain's Scenarios are read and written. */
+export const scenariosRoute = `/api/domain/${encodeURIComponent(FIXTURE_ID)}/scenarios`
+
+/** Every Scenario the fixture Domain keeps, every dataset's. */
+export async function storedScenarios(request: APIRequestContext): Promise<readonly Scenario[]> {
+  return ((await (await request.get(scenariosRoute)).json()) as ScenarioStore).scenarios
+}
+
+/**
+ * Delete every Scenario the fixture Domain keeps. The suite's reset leaves `scenarios.json` as it
+ * is: a test that writes Scenarios starts and ends with none.
+ */
+export async function clearScenarios(request: APIRequestContext): Promise<void> {
+  const store = (await (await request.get(scenariosRoute)).json()) as ScenarioStore
+  for (const scenario of store.scenarios) {
+    const response = await request.post(scenariosRoute, {
+      data: { action: 'delete', id: scenario.id, revision: revisionOf(store, scenario.id) },
+    })
+    expect(response.ok()).toBe(true)
+  }
 }
 
 /** One chat on the stubbed agent's strip. */

@@ -5,10 +5,9 @@ import {
   datasetLabel,
   expect,
   indexRow,
-  levelButton,
   listedRows,
   openDatasetCard,
-  openSchema,
+  openSupportDesk,
   sceneBox,
   sceneCanvas,
   sceneLink,
@@ -17,22 +16,15 @@ import {
 } from './test'
 
 /**
- * The Data level reads a dataset on the canvas: its Nodes grouped by Class, its Edges as links,
- * the selection read in sentences in the panel. Through Rules it reads the dataset as one of its
- * identities: what that identity cannot read dims, and a selected Node says its verdict, by
- * which rule, and lights the Edges that prove it.
+ * Through Rules and Behavior the Data level reads a dataset whole on the canvas: its Nodes grouped
+ * by Class, its Edges as links, the selection read in sentences in the panel. Through Rules it
+ * reads the dataset as one of its identities: what that identity cannot read dims, and a selected
+ * Node says its verdict, by which rule, and lights the Edges that prove it. Through Structure the
+ * dataset is asked, never drawn whole (`data-ask.spec.ts`).
  *
  * The fixture's `support-desk` dataset holds Acme, Ann and Bob who work there, the ticket each
  * raised, and an invoice billed to Acme; the Ticket read Policy admits only who raised it.
  */
-
-/** Support desk is the one dataset of the fixture it can read: Data opens it. */
-async function openSupportDesk(page: Page) {
-  await openSchema(page)
-  await levelButton(page, 'data').click()
-  await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready')
-  await expect(sceneBox(page, 'core.node.acme')).toBeVisible()
-}
 
 const panel = (page: Page) => page.locator('[data-data-panel]')
 
@@ -51,10 +43,12 @@ async function inside(page: Page, inner: string, outer: string): Promise<boolean
   )
 }
 
-test('a dataset draws its Nodes grouped by Class, and a selected Edge reads as a sentence', async ({
+test('a dataset read whole draws its Nodes grouped by Class, and a selected Edge reads as a sentence', async ({
   page,
 }) => {
   await openSupportDesk(page)
+  await page.keyboard.press('3')
+  await expect(page.getByTestId('data-level')).toHaveAttribute('data-lens', 'rules')
   const nodes = ['acme', 'invoice-1', 'ann', 'bob', 'login', 'printer']
   for (const node of nodes) await expect(sceneBox(page, `core.node.${node}`)).toBeVisible()
   for (let edge = 0; edge < 6; edge++)
@@ -69,7 +63,7 @@ test('a dataset draws its Nodes grouped by Class, and a selected Edge reads as a
   ] as const) {
     await expect(
       sceneCanvas(page).locator(`[data-region-id="${region}"] .scene-region-label`),
-    ).toHaveText(region.slice('class.'.length))
+    ).toHaveText(new RegExp(`^${region.slice('class.'.length)}\\b`))
     for (const member of members)
       expect(
         await inside(
@@ -83,8 +77,10 @@ test('a dataset draws its Nodes grouped by Class, and a selected Edge reads as a
   await expect(sceneBox(page, 'core.node.acme')).toContainText('Company')
   await expect(sceneBox(page, 'core.node.invoice-1')).toContainText('Invoice')
 
-  // the Index lists the same, Class by Class, each with its Nodes and the Edges they hold
-  expect(await listedRows(page)).toEqual([
+  // the Index lists the same, Class by Class, each with its Nodes and the Edges they hold, under
+  // the Domain's Policies
+  const listed = await listedRows(page)
+  expect(listed.slice(listed.indexOf('class.Company'))).toEqual([
     'class.Company',
     'core.node.acme',
     'class.Invoice',
@@ -250,7 +246,7 @@ test('a dataset that stops loading while open says where and why, and comes back
     './tests/datasets/support-desk.ts',
   )
   await expect(page.getByTestId('data-level-failed-reason')).toHaveText(failure)
-  await expect(sceneBox(page, 'core.node.acme')).toHaveCount(0)
+  await expect(sceneBox(page, 'class.Company')).toHaveCount(0)
 
   // fixed, it is extracted again and drawn where the reader stands
   await page.unroute('**/api/domain/*/datasets')
@@ -258,5 +254,6 @@ test('a dataset that stops loading while open says where and why, and comes back
   await expect(page.getByTestId('data-level')).toHaveAttribute('data-state', 'ready', {
     timeout: 60_000,
   })
-  await expect(sceneBox(page, 'core.node.acme')).toBeVisible()
+  await expect(page.getByTestId('data-level')).toHaveAttribute('data-ask', 'measure')
+  await expect(sceneBox(page, 'class.Company')).toBeVisible()
 })

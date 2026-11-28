@@ -7,22 +7,28 @@ import { expect, sceneBox, sceneCanvas, type Page } from './test'
 /**
  * A card's place in the world, from another card's. Not on screen: the camera refits on reload
  * and on a lens switch, and the world itself may be rebased by a uniform shift — only where
- * cards stand from one another is what the reader arranged.
+ * cards stand from one another is what the reader arranged. Read once both cards are placed: a
+ * card drawn before the layout answers has no place yet.
  */
-export const placeOf = (page: Page, id: string, from: string) =>
-  page.locator('.scene-world').evaluate(
-    (world, [id, from]) => {
+export const placeOf = async (page: Page, id: string, from: string) => {
+  const placed = await page.waitForFunction(
+    ([id, from]) => {
       const at = (box: string) => {
-        const el = world.querySelector<HTMLElement>(`.scene-box[data-box-id="${box}"]`)
+        const el = document.querySelector<HTMLElement>(
+          `.scene-world .scene-box[data-box-id="${box}"]`,
+        )
         const match = el && /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(el.style.transform)
-        if (!match) throw new Error(`no position on ${box}`)
-        return { x: Number(match[1]), y: Number(match[2]) }
+        return match ? { x: Number(match[1]), y: Number(match[2]) } : undefined
       }
       const [card, reference] = [at(id!), at(from!)]
-      return { x: Math.round(card.x - reference.x), y: Math.round(card.y - reference.y) }
+      return card && reference
+        ? { x: Math.round(card.x - reference.x), y: Math.round(card.y - reference.y) }
+        : undefined
     },
     [id, from],
   )
+  return (await placed.jsonValue()) as { x: number; y: number }
+}
 
 /** Wait until a card stops moving on screen: the camera eases into place after a lens switch. */
 export async function settled(page: Page, id: string) {

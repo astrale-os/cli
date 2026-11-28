@@ -94,11 +94,15 @@ test('Data opens the one dataset the Domain can read, and Schema returns with th
   await expect(datasetLabel(page)).toHaveText('Support desk')
   await expect(page.getByTestId('schema-level')).toHaveCount(0)
 
-  // it opens on the Tickets: the selection carried over from the Schema
+  // read whole through Rules, it stands on the Tickets: the selection carried over from the Schema
+  await page.keyboard.press('3')
+  await expect(dataLevel(page)).toHaveAttribute('data-lens', 'rules')
   await expect(indexRow(page, 'class.Ticket')).toHaveAttribute('aria-selected', 'true')
   const panel = page.locator('[data-data-panel]')
   await expect(panel).toContainText('Ticket')
   await expect(panel).toContainText('2 in this dataset.')
+  await page.keyboard.press('1')
+  await expect(dataLevel(page)).toHaveAttribute('data-lens', 'structure')
 
   await levelButton(page, 'schema').click()
   await expect(page.getByTestId('schema-level')).toBeVisible()
@@ -120,6 +124,18 @@ test('Data opens the one dataset the Domain can read, and Schema returns with th
   await page.getByPlaceholder('Search the schema…').fill('schema level')
   await page.getByRole('option', { name: /^Schema level · S/ }).click()
   await expect(page.getByTestId('schema-level')).toBeVisible()
+})
+
+test('a Class selected on the Schema is selected on the dataset measured', async ({ page }) => {
+  await openSchema(page)
+  await sceneBox(page, 'class.Ticket').click()
+  await expect(sceneBox(page, 'class.Ticket')).toHaveAttribute('data-selected', 'true')
+  await levelButton(page, 'data').click()
+  await expect(dataLevel(page)).toHaveAttribute('data-ask', 'measure')
+  await expect(sceneBox(page, 'class.Ticket')).toHaveAttribute('data-selected', 'true')
+  const measure = page.locator('[data-ask-page="measure"]')
+  await expect(measure).toContainText('Class · measured')
+  await expect(measure).toContainText('2 Nodes in this dataset')
 })
 
 test('the label leads to the Datasets page, and Data reopens the dataset last read, across a reload', async ({
