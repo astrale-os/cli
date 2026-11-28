@@ -11,10 +11,11 @@ import type { ScenarioStep } from '@shared/contracts/scenarios'
 import type { StudioSchemaBundle } from '@shared/contracts/schema'
 
 import type { SceneEntry } from '../../scene/types'
-import type { DatasetModel } from '../model'
+import type { DataClass, DatasetModel } from '../model'
 import type { JudgedStep } from '../scenarios'
 import type { Why } from './fill'
 
+import { targetOf } from '../../inspector/target'
 import { behaviorModel } from '../../lenses/behavior'
 import { indexOfEdgeId } from '../model'
 import { isA } from './shape'
@@ -45,13 +46,17 @@ export interface CallQuestion {
 /** The Domain's functions, as handlers key them, in the Behavior lens's order. */
 export function callablesOf(bundle: StudioSchemaBundle): Callable[] {
   if (!bundle.ir) return []
-  return behaviorModel(bundle).functions.map((fn) => ({
-    key: fn.key,
-    target: fn.id,
-    label: fn.label,
-    ...(fn.owner ? { owner: fn.owner } : {}),
-    static: fn.owner ? (bundle.ir!.classes[fn.owner]?.methods?.[fn.label]?.static ?? false) : true,
-  }))
+  return behaviorModel(bundle).functions.map((fn) => {
+    // Called on a Node or not, as a step's judge reads it (`scenarios.ts`).
+    const target = targetOf(bundle, fn.id)
+    return {
+      key: fn.key,
+      target: fn.id,
+      label: fn.label,
+      ...(fn.owner ? { owner: fn.owner } : {}),
+      static: target.kind === 'function' ? target.static === true : fn.owner === undefined,
+    }
+  })
 }
 
 /** The question as the step a Scenario would keep. */
@@ -64,13 +69,23 @@ export const stepOf = (question: CallQuestion): ScenarioStep => ({
   ...(question.on === undefined ? {} : { on: { node: question.on } }),
 })
 
-/** The Nodes a Method can be called on: those of its Class, or of one that descends from it. */
+/**
+ * The Nodes a function can be called on: those of the Classes that offer it, as the rules read
+ * each Class (`offers`); without the rules, those of the Class that declares it or of one that
+ * descends from it. A static one is called on none.
+ */
 export function targetsOf(
   model: DatasetModel,
   bundle: StudioSchemaBundle,
   callable: Callable,
+  offers?: (cls: DataClass) => readonly string[],
 ): string[] {
-  if (callable.static || !callable.owner || !bundle.ir) return []
+  if (callable.static || !bundle.ir) return []
+  if (offers)
+    return model.classes
+      .filter((cls) => offers(cls).includes(callable.key))
+      .flatMap((cls) => cls.nodes)
+  if (!callable.owner) return []
   const owner = { origin: bundle.ir.domain, kind: 'class' as const, name: callable.owner }
   return model.classes
     .filter((cls) => isA(bundle, { origin: cls.origin, kind: 'class', name: cls.name }, owner))
@@ -83,11 +98,9 @@ export function targetsOf(
  */
 export function pickTarget(
   model: DatasetModel,
-  bundle: StudioSchemaBundle,
-  callable: Callable,
+  targets: readonly string[],
   selected?: string,
 ): { readonly path: string; readonly why: Why } | undefined {
-  const targets = targetsOf(model, bundle, callable)
   if (targets.length === 0) return undefined
   if (selected !== undefined && targets.includes(selected))
     return { path: selected, why: { kind: 'selected' } }
@@ -97,7 +110,7 @@ export function pickTarget(
   const edges = (path: string) =>
     (model.outgoing.get(path)?.length ?? 0) + (model.incoming.get(path)?.length ?? 0)
   const fullest = targets.reduce((best, path) => (edges(path) > edges(best) ? path : best))
-  return { path: fullest, why: { kind: 'richest', nodes: edges(fullest) + 1, classes: 1 } }
+  return { path: fullest, why: { kind: 'linked', edges: edges(fullest) } }
 }
 
 export interface CallSlice {
@@ -125,7 +138,7 @@ export function callSlice(
   for (const path of judged.verdict?.proof.nodes ?? []) hold(path)
   for (const id of judged.verdict?.proof.edges ?? []) {
     const index = indexOfEdgeId(id)
-    const edge = index === undefined ? undefined : model.edges[index]
+    const edge = index === undefined ? undefined : model.edgeAt.get(index)
     if (!edge) continue
     edges.add(edge.index)
     hold(edge.from)

@@ -77,7 +77,7 @@ function measuredNode(node: SceneNode, held: ReadonlyMap<string, HeldByClass>): 
   const { rows: _rows, rules: _rules, tallies: _tallies, ...rest } = node
   return {
     ...rest,
-    counts: [{ label: 'Nodes', value: nodes }],
+    counts: [{ label: nodes === 1 ? 'Node' : 'Nodes', value: nodes }],
     badges: [
       nodes === 0
         ? { label: 'no Node', tone: 'muted', title: 'The dataset holds no Node of this Class.' }

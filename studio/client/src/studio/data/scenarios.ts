@@ -202,7 +202,7 @@ export function stepOfVerdict(
   const target = verdict.target
   if (target === undefined) return undefined
   const index = model.nodes.has(target) ? undefined : indexOfEdgeId(target)
-  const edge = index === undefined ? undefined : model.edges[index]
+  const edge = index === undefined ? undefined : model.edgeAt.get(index)
   if (verdict.slot === 'read')
     return { id, as, does: 'read', on: edge ? { edge: edgeRef(edge) } : { node: target }, expect }
   return edge ? { id, as, does: 'traverse', on: { edge: edgeRef(edge) }, expect } : undefined

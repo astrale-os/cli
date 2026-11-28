@@ -18,6 +18,8 @@ import { isA } from './shape'
 export interface EndMeasure {
   /** the end's name */
   readonly name: string
+  /** the Classes that stand at the end, by selection id: those it accepts and those of the dataset that descend from them */
+  readonly classes: readonly string[]
   /** Nodes that can stand at the end: of a Class it accepts */
   readonly nodes: number
   /** links per such Node: fewest, median, most */
@@ -82,14 +84,12 @@ export function measure(model: DatasetModel, bundle: StudioSchemaBundle): Measur
     known.at[1].set(edge.to, (known.at[1].get(edge.to) ?? 0) + 1)
   }
 
-  const standing = (accepted: readonly IrClassRef[]): string[] =>
-    model.classes
-      .filter((cls) =>
-        accepted.some((ref) =>
-          isA(bundle, { origin: cls.origin, kind: 'class', name: cls.name }, ref),
-        ),
-      )
-      .flatMap((cls) => cls.nodes)
+  const standing = (accepted: readonly IrClassRef[]) =>
+    model.classes.filter((cls) =>
+      accepted.some((ref) =>
+        isA(bundle, { origin: cls.origin, kind: 'class', name: cls.name }, ref),
+      ),
+    )
 
   const relations = new Map<string, RelationMeasure>()
   let breaches = 0
@@ -104,12 +104,13 @@ export function measure(model: DatasetModel, bundle: StudioSchemaBundle): Measur
     const ends = [0, 1].map((index): EndMeasure | undefined => {
       const end = member.endpoints?.[index]
       if (!end) return undefined
-      const accepted = (end.refs ?? []).filter((ref): ref is IrClassRef => ref.kind === 'class')
-      const nodes = standing(
-        accepted.length > 0
-          ? accepted
-          : end.types.map((name) => ({ origin: member.origin, kind: 'class' as const, name })),
-      )
+      const declared = (end.refs ?? []).filter((ref): ref is IrClassRef => ref.kind === 'class')
+      const accepted =
+        declared.length > 0
+          ? declared
+          : end.types.map((name) => ({ origin: member.origin, kind: 'class' as const, name }))
+      const stand = standing(accepted)
+      const nodes = stand.flatMap((cls) => cls.nodes)
       const counts = nodes
         .map((path) => known?.at[index as 0 | 1].get(path) ?? 0)
         .sort((left, right) => left - right)
@@ -119,6 +120,12 @@ export function measure(model: DatasetModel, bundle: StudioSchemaBundle): Measur
       if (below > 0 || above > 0) breaches += 1
       return {
         name: end.name,
+        classes: [
+          ...new Set([
+            ...accepted.map((ref) => classTarget(ref, domain)),
+            ...stand.map((cls) => cls.target),
+          ]),
+        ],
         nodes: nodes.length,
         min: counts[0] ?? 0,
         median: median(counts),

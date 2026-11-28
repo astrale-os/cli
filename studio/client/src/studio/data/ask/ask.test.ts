@@ -306,6 +306,7 @@ describe('a dataset measured against its Schema', () => {
   test('measures the links a Node has at each end against what the end declares', () => {
     const [desk, ticket] = measured.relations.get('class.desk_holds_ticket')!.ends!
     expect(desk).toMatchObject({ name: 'desk', nodes: 2, min: 2, median: 2, max: 3 })
+    expect(desk.classes).toEqual(['class.Desk'])
     expect(ticket).toMatchObject({ name: 'ticket', nodes: 5, min: 1, max: 1, below: 0, above: 0 })
     expect(spreadWords(desk)).toBe('2 to 3, mostly 2')
     expect(spreadWords(ticket)).toBe('1 each')

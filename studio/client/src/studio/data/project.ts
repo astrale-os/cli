@@ -495,7 +495,7 @@ export function projectData(model: DatasetModel, input: DataSceneInput): DataSce
   }
   for (const [key, gathering] of gathered) {
     const [first] = gathering.edges
-    const id = gathering.edges.length === 1 ? model.edges[first!]!.id : `edges.${key}`
+    const id = gathering.edges.length === 1 ? model.edgeAt.get(first!)!.id : `edges.${key}`
     links.push({
       id,
       kind: 'edge',

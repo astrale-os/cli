@@ -97,6 +97,11 @@ export interface DatasetModel {
   /** Nodes in dataset order. */
   readonly order: readonly DataNode[]
   readonly edges: readonly DataEdge[]
+  /**
+   * An Edge by its place in the dataset as written (`DataEdge.index`): a slice of a dataset holds
+   * some of its Edges, each under the place the whole dataset gives it.
+   */
+  readonly edgeAt: ReadonlyMap<number, DataEdge>
   readonly outgoing: ReadonlyMap<string, readonly DataEdge[]>
   readonly incoming: ReadonlyMap<string, readonly DataEdge[]>
   readonly outside: ReadonlyMap<string, OutsideEnd>
@@ -324,11 +329,51 @@ function build(dataset: StudioDataset, bundle: StudioSchemaBundle | undefined): 
     nodes,
     order,
     edges,
+    edgeAt: new Map(edges.map((edge) => [edge.index, edge])),
     outgoing,
     incoming,
     outside,
     classOf,
     classByTarget: new Map(sorted.map((cls) => [cls.target, cls])),
+  }
+}
+
+/**
+ * The part of a dataset that holds `nodes` and `edges` (by path, by place): the same Nodes and
+ * Edges under the same ids, so what is selected, lit or commented on in the part is that of the
+ * whole. An Edge is kept when both its ends are; `dataset` is what the part says it holds.
+ */
+export function sliceModel(
+  model: DatasetModel,
+  nodes: ReadonlySet<string>,
+  edges: ReadonlySet<number>,
+  dataset: StudioDataset,
+): DatasetModel {
+  const order = model.order.filter((node) => nodes.has(node.path))
+  const kept = model.edges.filter(
+    (edge) => edges.has(edge.index) && nodes.has(edge.from) && nodes.has(edge.to),
+  )
+  const classes = model.classes
+    .map((cls) => ({ ...cls, nodes: cls.nodes.filter((path) => nodes.has(path)) }))
+    .filter((cls) => cls.nodes.length > 0)
+  const byEnd = (end: 'from' | 'to') => {
+    const map = new Map<string, DataEdge[]>()
+    for (const edge of kept) map.set(edge[end], [...(map.get(edge[end]) ?? []), edge])
+    return map
+  }
+  return {
+    dataset,
+    origin: model.origin,
+    classes,
+    nodes: new Map(order.map((node) => [node.path, node])),
+    order,
+    edges: kept,
+    edgeAt: new Map(kept.map((edge) => [edge.index, edge])),
+    outgoing: byEnd('from'),
+    incoming: byEnd('to'),
+    outside: new Map(),
+    classOf: new Map(classes.flatMap((cls) => cls.nodes.map((path) => [path, cls] as const))),
+    classByTarget: new Map(classes.map((cls) => [cls.target, cls])),
   }
 }
 

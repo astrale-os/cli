@@ -517,7 +517,8 @@ export function DataBar(props: DataBarProps) {
         </button>
         {/* the first to give way on a narrow map: the panel and the measure say it too */}
         <span className="min-w-0 shrink-[4] truncate text-[12px] tabular-nums text-muted-foreground">
-          {counted(props.nodes)} Nodes · {counted(props.edges)} Edges
+          {counted(props.nodes)} {plural('Node', props.nodes)} · {counted(props.edges)}{' '}
+          {plural('Edge', props.edges)}
         </span>
         <Scale factor={props.factor} onFactor={props.onFactor} />
         <span className="ml-auto" />

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { datasetModel } from '../model'
+import { datasetModel, sliceModel } from '../model'
 import { deskBundle, deskDataset, QUERIES } from './__tests__/desk'
 import { measure } from './measure'
 import { ask } from './run'
@@ -65,6 +65,30 @@ describe('the slice an answer reached', () => {
       { from: 't4', to: 'ana', edgeName: 'ticket_handled_by' },
     ])
     expect(slice.variables).toEqual({ ana: ['ana'] })
+  })
+
+  test('as a model, keeps every Node and Edge under the id the whole dataset gives it', () => {
+    const part = sliceModel(model, answer.nodes, answer.edges, slice)
+    expect(part.order.map((node) => node.id)).toEqual([
+      'core.node.ana',
+      'core.node.support',
+      'core.node.t4',
+      'core.node.t5',
+    ])
+    // the Edges followed are the dataset's 4th, 5th and 11th: they keep those places
+    expect(part.edges.map((edge) => edge.id)).toEqual([
+      'core.edge.3',
+      'core.edge.4',
+      'core.edge.10',
+    ])
+    expect(part.edgeAt.get(10)).toBe(model.edges[10])
+    expect(part.edgeAt.get(0)).toBeUndefined()
+    expect(part.outgoing.get('support')?.map((edge) => edge.to)).toEqual(['t4', 't5'])
+    expect(part.classes.map((cls) => [cls.name, cls.nodes.length])).toEqual([
+      ['Agent', 1],
+      ['Desk', 1],
+      ['Ticket', 2],
+    ])
   })
 
   test('is one dataset per answer: the same slice again', () => {

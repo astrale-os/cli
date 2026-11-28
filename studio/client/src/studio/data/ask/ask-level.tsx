@@ -11,7 +11,7 @@
 import type { StudioDataset, StudioSchemaBundle } from '@shared/contracts/schema'
 
 import { isReadOnlyDomainId } from '@shared/contracts/workspace'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { usePrepareAgentRequest } from '@/lib/chats'
 import { useUI } from '@/lib/store'
@@ -27,7 +27,7 @@ import { IndexRail } from '../../index-rail/index-rail'
 import { Page } from '../../inspector/parts'
 import { arrange } from '../../scene/arrange'
 import { accessOf } from '../access'
-import { datasetLabel, datasetModel } from '../model'
+import { datasetLabel, datasetModel, sliceModel } from '../model'
 import { DataPanel } from '../panel'
 import { projectData, regionsAtRest } from '../project'
 import { datasetScope } from '../store'
@@ -155,8 +155,9 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
 
   // What the map draws: the slice the answer reached, else the dataset measured.
   const slice = useMemo(
-    () => (answer ? datasetModel(sliceOf(grown, answer), bundle) : undefined),
-    [answer, bundle, grown],
+    () =>
+      answer ? sliceModel(model, answer.nodes, answer.edges, sliceOf(grown, answer)) : undefined,
+    [answer, grown, model],
   )
   const identitySet = useMemo(() => new Set(identities.map((one) => one.id)), [identities])
   const [shut, setShut] = useState<Record<string, readonly string[]>>({})
@@ -183,6 +184,21 @@ export function AskLevel({ domainId, origin, dataset, bundle }: AskLevelProps) {
   // Where the reader placed boxes, kept per question for the session.
   const [placed, setPlaced] = useState<Record<string, Pins>>({})
   const pins = placed[sceneKey] ?? NO_PINS
+
+  // The selection is the thread across levels: a Class selected on the Schema is selected on
+  // the dataset measured, unless the dataset already holds a selection or a question of its own.
+  const schemaSelection = useUI((state) =>
+    state.selectionDomainId === domainId ? state.selectedClass : undefined,
+  )
+  const seeded = useRef<string | null>(null)
+  useEffect(() => {
+    if (seeded.current === scope) return
+    seeded.current = scope
+    const current = useAsk.getState().views[scope]
+    if (current?.selected !== undefined || current?.query !== undefined) return
+    if (schemaSelection && scene.nodes.some((node) => node.id === schemaSelection))
+      select(scope, schemaSelection)
+  }, [scene, schemaSelection, scope, select])
 
   const selected =
     view.selected !== undefined &&

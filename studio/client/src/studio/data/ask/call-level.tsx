@@ -33,10 +33,10 @@ import { IndexRail } from '../../index-rail/index-rail'
 import { Empty, Fact, Meta, Page, Section, Title } from '../../inspector/parts'
 import { arrange } from '../../scene/arrange'
 import { DATA_ACCENT } from '../accent'
-import { accessOf } from '../access'
+import { accessOf, callablesOf as callablesAt } from '../access'
 import { Declared } from '../behavior-panel'
 import { OUTCOME_MARKS } from '../marks'
-import { datasetLabel, datasetModel, identityLabel, nodeId } from '../model'
+import { datasetLabel, datasetModel, identityLabel, nodeId, sliceModel } from '../model'
 import { DataPanel } from '../panel'
 import { projectData, regionsAtRest, stepMarksOf } from '../project'
 import { withStep } from '../scenario-edits'
@@ -108,15 +108,23 @@ export function CallLevel({ domainId, origin, dataset, bundle }: CallLevelProps)
   )
   // A Method is asked on a Node of its Class: the reader's, else a pick made once, with its reason.
   const targets = useMemo(
-    () => (callable ? targetsOf(model, bundle, callable) : []),
-    [bundle, callable, model],
+    () =>
+      callable
+        ? targetsOf(
+            model,
+            bundle,
+            callable,
+            access ? (cls) => callablesAt(access, cls).map((one) => one.key) : undefined,
+          )
+        : [],
+    [access, bundle, callable, model],
   )
   const on = call.on !== undefined && targets.includes(call.on) ? call.on : undefined
   useEffect(() => {
     if (!callable || callable.static || on !== undefined) return
-    const pick = pickTarget(model, bundle, callable, call.on ?? view.carried)
+    const pick = pickTarget(model, targets, call.on ?? view.carried)
     if (pick) askCall(scope, { fn: call.fn, on: pick.path, why: pick.why })
-  }, [askCall, bundle, call.fn, call.on, callable, model, on, scope, view.carried])
+  }, [askCall, call.fn, call.on, callable, model, on, scope, targets, view.carried])
 
   const question = useMemo(
     () =>
@@ -143,8 +151,8 @@ export function CallLevel({ domainId, origin, dataset, bundle }: CallLevelProps)
     [judged, model, question],
   )
   const sliced = useMemo(
-    () => (slice ? datasetModel(sliceOf(grown, slice), bundle) : undefined),
-    [bundle, grown, slice],
+    () => (slice ? sliceModel(model, slice.nodes, slice.edges, sliceOf(grown, slice)) : undefined),
+    [grown, model, slice],
   )
   const identitySet = useMemo(() => new Set(identities.map((one) => one.id)), [identities])
   const [shut, setShut] = useState<readonly string[]>()

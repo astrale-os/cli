@@ -130,8 +130,8 @@ export function DataPanel(props: DataPanelProps) {
   if (props.policy) page = <PolicyPage {...props} policy={props.policy} />
   else if (path !== undefined && model.nodes.has(path))
     page = <NodePage {...props} node={model.nodes.get(path)!} />
-  else if (edgeIndex !== undefined && model.edges[edgeIndex])
-    page = <EdgePage {...props} edge={model.edges[edgeIndex]!} />
+  else if (edgeIndex !== undefined && model.edgeAt.has(edgeIndex))
+    page = <EdgePage {...props} edge={model.edgeAt.get(edgeIndex)!} />
   else if (selected && isStandIn(selected) && model.classByTarget.has(regionOfStandIn(selected)))
     page = (
       <ClassPage
@@ -853,7 +853,7 @@ function ClassPage(props: DataPanelProps & { target: string; held?: readonly str
 function GatheredPage(props: DataPanelProps & { link: string }) {
   const { model, link, projection, domainId } = props
   const indexes = projection.edgesOf.get(link) ?? []
-  const edges = indexes.map((index) => model.edges[index]!)
+  const edges = indexes.map((index) => model.edgeAt.get(index)!)
   const [first] = edges
   const fromClass = first ? model.classOf.get(first.from) : undefined
   const toClass = first ? model.classOf.get(first.to) : undefined

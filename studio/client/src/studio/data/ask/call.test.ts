@@ -50,21 +50,32 @@ describe('the Domain’s functions, as calls', () => {
 })
 
 describe('the Node a Method is asked on', () => {
+  const tickets = targetsOf(model, bundle, assign)
+
   test('is one of its Class; a static one takes none', () => {
-    expect(targetsOf(model, bundle, assign)).toEqual(['t1', 't2', 't3', 't4', 't5'])
+    expect(tickets).toEqual(['t1', 't2', 't3', 't4', 't5'])
     expect(targetsOf(model, bundle, open)).toEqual([])
-    expect(pickTarget(model, bundle, open)).toBeUndefined()
+    expect(pickTarget(model, [])).toBeUndefined()
+  })
+
+  test('is one of the Classes the rules say offer the function, when they are read', () => {
+    const offers = (cls: { name: string }) => (cls.name === 'Desk' ? ['Ticket.assign'] : [])
+    expect(targetsOf(model, bundle, assign, offers)).toEqual(['billing', 'support'])
   })
 
   test('is the one selected when the Method takes it, else one the dataset names', () => {
-    expect(pickTarget(model, bundle, assign, 't4')).toEqual({
-      path: 't4',
-      why: { kind: 'selected' },
-    })
+    expect(pickTarget(model, tickets, 't4')).toEqual({ path: 't4', why: { kind: 'selected' } })
     // a Desk is selected: the Method takes no Desk
-    expect(pickTarget(model, bundle, assign, 'billing')).toEqual({
+    expect(pickTarget(model, tickets, 'billing')).toEqual({
       path: 't1',
       why: { kind: 'named', variable: 'declined' },
+    })
+  })
+
+  test('is, with none named, the one with most links', () => {
+    expect(pickTarget(model, ['t3', 't2', 't5'])).toEqual({
+      path: 't2',
+      why: { kind: 'linked', edges: 4 },
     })
   })
 })

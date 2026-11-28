@@ -225,7 +225,7 @@ function objectWords(access: Access, fact: string): string {
   const { model } = access
   if (model.nodes.has(fact) || model.outside.has(fact)) return endLabel(model, fact)
   const index = indexOfEdgeId(fact)
-  const edge = index === undefined ? undefined : model.edges[index]
+  const edge = index === undefined ? undefined : model.edgeAt.get(index)
   if (edge) return `${edge.name} from ${endLabel(model, edge.from)} to ${endLabel(model, edge.to)}`
   return fact
 }
@@ -314,7 +314,7 @@ export function pairProof(
   if (subject !== undefined && subject !== access.anyone) nodes.add(subject)
   if (pair.object !== undefined) {
     const index = indexOfEdgeId(pair.object)
-    const edge = index === undefined ? undefined : access.model.edges[index]
+    const edge = index === undefined ? undefined : access.model.edgeAt.get(index)
     if (edge) {
       edges.add(edge.id)
       nodes.add(edge.from).add(edge.to)
@@ -347,7 +347,7 @@ export function pairVerdicts(
   const { model } = access
   const path = model.nodes.has(pair.object) ? pair.object : undefined
   const index = path === undefined ? indexOfEdgeId(pair.object) : undefined
-  const edge = index === undefined ? undefined : model.edges[index]
+  const edge = index === undefined ? undefined : model.edgeAt.get(index)
   const candidates: (Verdict | undefined)[] = []
   if (path !== undefined) {
     if (sites.some((site) => site.slot === 'read'))

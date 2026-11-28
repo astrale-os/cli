@@ -354,7 +354,7 @@ function DatasetLevel({
       for (const edge of edgesOf(model, selectedPath).slice(0, FOCUS_NEIGHBOURS))
         paths.add(edge.from === selectedPath ? edge.to : edge.from)
     }
-    const edge = selectedEdge === undefined ? undefined : model.edges[selectedEdge]
+    const edge = selectedEdge === undefined ? undefined : model.edgeAt.get(selectedEdge)
     if (edge) paths.add(edge.from).add(edge.to)
     return [...paths].filter((path) => model.nodes.has(path))
   }, [admits, model, selectedEdge, selectedPath])
@@ -497,7 +497,7 @@ function DatasetLevel({
     if (dataLens !== 'rules' || !access) return undefined
     if (selectedPath && model.nodes.has(selectedPath))
       return { kind: 'node', ...nodeVerdicts(access, identity, selectedPath) }
-    const edge = selectedEdge === undefined ? undefined : model.edges[selectedEdge]
+    const edge = selectedEdge === undefined ? undefined : model.edgeAt.get(selectedEdge)
     if (edge)
       return {
         kind: 'edge',
@@ -947,7 +947,7 @@ function isSelectable(model: DatasetModel, id: string, rules: DomainRules | unde
   const path = pathOfNodeId(id)
   if (path !== undefined) return model.nodes.has(path)
   const index = indexOfEdgeId(id)
-  if (index !== undefined) return model.edges[index] !== undefined
+  if (index !== undefined) return model.edgeAt.has(index)
   if (isStandIn(id)) return model.classByTarget.has(regionOfStandIn(id))
   if (id.startsWith('outside.')) return model.outside.has(id.slice('outside.'.length))
   return model.classByTarget.has(id) || isGathered(id)
@@ -1024,7 +1024,7 @@ function FailedDataset({ failure }: { failure: StudioDatasetFailure }) {
 
 /** Whether a step involves the Node or the Edge selected. */
 function involving(model: DatasetModel, path: string | undefined, edge: number | undefined) {
-  const selectedEdge = edge === undefined ? undefined : model.edges[edge]
+  const selectedEdge = edge === undefined ? undefined : model.edgeAt.get(edge)
   const ref = selectedEdge ? edgeRef(selectedEdge) : undefined
   return ({ step }: JudgedStep) => {
     if (path !== undefined) return involves(step, path)

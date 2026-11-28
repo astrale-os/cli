@@ -214,7 +214,7 @@ export function pathOf(
 ): PathStep[] {
   return edges.flatMap((id) => {
     const index = indexOfEdgeId(id)
-    const edge = index === undefined ? undefined : access.model.edges[index]
+    const edge = index === undefined ? undefined : access.model.edgeAt.get(index)
     return edge ? [{ edge: id, words: edgeWords(access, edge) }] : []
   })
 }

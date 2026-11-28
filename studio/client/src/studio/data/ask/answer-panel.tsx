@@ -365,8 +365,9 @@ export function MeasurePage(props: MeasurePageProps) {
   const dataset = model.dataset
   const relations = [...measure.relations.values()].sort((left, right) => right.edges - left.edges)
   if (selected) {
+    // The relationships the Class stands at an end of.
     const about = relations.filter((relation) =>
-      relation.ends?.some((end) => end.nodes > 0 && relation.edges > 0),
+      relation.ends?.some((end) => end.classes.includes(selected.target)),
     )
     return (
       <>
@@ -439,7 +440,8 @@ export function MeasurePage(props: MeasurePageProps) {
             <span className="font-mono text-[12px]">{dataset.path}</span>
           </Fact>
           <Fact label="Holds">
-            {counted(measure.nodes)} Nodes, {counted(measure.edges)} Edges, {classes.length} Classes
+            {counted(measure.nodes)} {plural('Node', measure.nodes)}, {counted(measure.edges)}{' '}
+            {plural('Edge', measure.edges)}, {classes.length} {plural('Class', classes.length)}
           </Fact>
           <Fact label="Schema">{admittedSentence(dataset)}</Fact>
           {props.factor > 1 && (
